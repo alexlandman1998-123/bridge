@@ -11602,6 +11602,113 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let signingEmailFailed = false
       let signingLinkFailureMessage = ''
 
+      const canQueueBackgroundSigningStart =
+        LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED &&
+        options.resend !== true &&
+        options.reminder !== true &&
+        isSupabaseConfigured &&
+        isUuidLike(mandatePacketId)
+      if (canQueueBackgroundSigningStart && !providedSignerLinks.some((signer) => normalizeText(signer?.signing_link))) {
+        const recipientRole = targetSignerRole === 'seller' ? 'seller' : 'agent'
+        const recipientEmail = recipientRole === 'seller' ? sellerEmail : agentRecipientEmail
+        const recipientName = recipientRole === 'seller' ? sellerName : agentRecipientName
+        let backgroundPacketVersionId = normalizeText(options.packetVersionId)
+        const signingSummary = mandatePacketStatus?.signingSummary && typeof mandatePacketStatus.signingSummary === 'object'
+          ? mandatePacketStatus.signingSummary
+          : {}
+        const hasPreparedSigningEnvelope = existingSignerRows.length > 0 && Number(signingSummary.fieldCount || 0) > 0
+        if (!hasPreparedSigningEnvelope) {
+          setMandateQuickStartProgress('Preparing signing envelope…')
+          const signingPreparation = await prepareSigningFields({
+            packetId: mandatePacketId,
+            packetVersionId: backgroundPacketVersionId || null,
+            packetType: 'mandate',
+            organisationId,
+            placeholders: {
+              'seller.display_name': sellerName,
+              'seller.email': sellerEmail,
+              'agent.display_name': agentRecipientName,
+              'agent.email': agentRecipientEmail,
+              'property.address': propertyTitle,
+              'property.listing_title': propertyTitle,
+              'mandate.asking_price': String(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
+            },
+            context: {
+              lead: {
+                sellerName: normalizeText(selectedLeadContact?.firstName),
+                sellerSurname: normalizeText(selectedLeadContact?.lastName),
+                sellerEmail,
+              },
+              mandateDraft: {
+                sellerEmail,
+              },
+              generatedByName: agentRecipientName,
+              generatedByUserEmail: agentRecipientEmail,
+              agentEmail: agentRecipientEmail,
+            },
+          })
+          backgroundPacketVersionId = normalizeText(signingPreparation?.version?.id) || backgroundPacketVersionId
+          await applyPreparedSigningLayoutForQuickFlow({
+            packetId: mandatePacketId,
+            versionId: backgroundPacketVersionId,
+            preparedFields: signingPreparation?.seed?.fields || [],
+          })
+        }
+        setMandateQuickStartProgress('Queueing signing…')
+        const origin =
+          (typeof window !== 'undefined' && window.location?.origin)
+            ? window.location.origin
+            : 'https://app.arch9.co.za'
+        const queuedSendResponse = await withPipelineTimeout(
+          invokeEdgeFunction('legal-document-job-runner', {
+            body: {
+              action: 'prepare_and_send_ready_packet',
+              background: true,
+              prepareSigningLink: true,
+              type: 'seller_mandate_sent',
+              to: recipientEmail,
+              organisationId,
+              packetId: mandatePacketId,
+              packetVersionId: backgroundPacketVersionId || null,
+              targetSignerRole,
+              recipientRole,
+              recipientName,
+              sellerName,
+              propertyTitle,
+              mandateType: 'Mandate',
+              mandateStartDate: '',
+              mandateEndDate: '',
+              askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
+              agentName: agentRecipientName,
+              baseUrl: origin,
+              expiresInHours: 168,
+            },
+          }),
+          'Mandate signing start could not be queued quickly enough. Please retry once the network settles.',
+          PIPELINE_CONTEXT_TIMEOUT_MS,
+        )
+        assertEdgeFunctionSuccess(queuedSendResponse, 'Mandate signing could not be queued.')
+        const queuedJob = queuedSendResponse?.data?.job || null
+        void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Mandate Signing Queued',
+          activityNote: `Mandate signing was queued in the background for the ${recipientRole}.`,
+          outcome: 'Queued',
+        }, { actor: currentAgent }).catch((activityError) => {
+          console.warn('[MANDATE] queued signing activity write skipped', activityError)
+        })
+        setError('')
+        setMessage('Mandate signing queued. You can continue working while Arch9 prepares and sends the signing email.')
+        void reloadRecords(organisationId)
+        return {
+          ok: true,
+          queued: true,
+          job: queuedJob,
+          recipientRole,
+          recipientEmail,
+        }
+      }
+
       if (isSupabaseConfigured && isUuidLike(mandatePacketId) && (!agentSigningLink || !sellerSigningLink)) {
         try {
           const signingPreparation = await prepareSigningFields({

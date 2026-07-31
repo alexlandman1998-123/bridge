@@ -90,6 +90,12 @@ async function sha256Text(value: string) {
   return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function generateSecureSigningToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function queueBackgroundTask(taskFactory: () => Promise<void>) {
   const runtime = globalThis as typeof globalThis & {
     EdgeRuntime?: {
@@ -560,6 +566,142 @@ async function callGenerateMandateFunction({
   } finally {
     timeout.clear();
   }
+}
+
+async function prepareSigningLinkForSendJob({
+  client,
+  packet,
+  version,
+  payload,
+}: {
+  client: any;
+  packet: JsonRecord;
+  version: JsonRecord;
+  payload: JsonRecord;
+}) {
+  if (normalizeKey(packet.packet_type) !== "mandate") {
+    throw Object.assign(new Error("Background signing preparation is currently available for mandate packets only."), {
+      code: "LEGAL_DOCUMENT_JOB_PREPARE_MANDATE_ONLY",
+    });
+  }
+
+  const targetSignerRole = normalizeKey(payload.targetSignerRole || payload.target_signer_role || payload.recipientRole);
+  if (!["agent", "seller"].includes(targetSignerRole)) {
+    throw Object.assign(new Error("A mandate send job must target the agent or seller signer."), {
+      code: "LEGAL_DOCUMENT_JOB_PREPARE_TARGET_REQUIRED",
+    });
+  }
+
+  const signersResult = await client
+    .from("document_packet_signers")
+    .select("id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, signing_order, status, signing_token, token_expires_at, token_used_at, viewed_at, signed_at, created_at, updated_at")
+    .eq("packet_id", normalizeText(packet.id))
+    .eq("packet_version_id", normalizeText(version.id))
+    .order("signing_order", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
+  if (signersResult.error) throw signersResult.error;
+  const signers: JsonRecord[] = Array.isArray(signersResult.data) ? signersResult.data.map(asRecord) : [];
+  if (!signers.length) {
+    throw Object.assign(new Error("No packet signers are available for background signing preparation."), {
+      code: "LEGAL_DOCUMENT_JOB_PREPARE_SIGNERS_MISSING",
+    });
+  }
+
+  const agentSigner = signers.find((signer) => normalizeKey(signer.signer_role) === "agent") || null;
+  const targetSigner = signers.find((signer) => normalizeKey(signer.signer_role) === targetSignerRole) || null;
+  if (!targetSigner) {
+    throw Object.assign(new Error("The requested mandate signer is not configured on this packet."), {
+      code: "LEGAL_DOCUMENT_JOB_PREPARE_TARGET_MISSING",
+    });
+  }
+  if (targetSignerRole === "seller" && normalizeKey(agentSigner?.status) !== "signed") {
+    throw Object.assign(new Error("The agent must sign the mandate before seller-side signing links can be sent."), {
+      code: "LEGAL_DOCUMENT_JOB_PREPARE_AGENT_NOT_SIGNED",
+    });
+  }
+
+  const signerStatus = normalizeKey(targetSigner.status);
+  if (["signed", "declined"].includes(signerStatus)) {
+    throw Object.assign(new Error("The requested mandate signer has already completed signing or declined."), {
+      code: "LEGAL_DOCUMENT_JOB_PREPARE_TARGET_COMPLETE",
+    });
+  }
+
+  const dispatchResult = await client.rpc("bridge_authorize_applied_envelope_dispatch_e4", {
+    p_packet_id: normalizeText(packet.id),
+    p_version_id: normalizeText(version.id),
+    p_regenerate: booleanFlag(payload.resend),
+    p_target_signer_role: targetSignerRole,
+  });
+  if (dispatchResult.error) {
+    const error = Object.assign(new Error(normalizeText(dispatchResult.error.message) || "Signing dispatch could not be authorized."), {
+      code: normalizeText(dispatchResult.error.details) || normalizeText(dispatchResult.error.code) || "LEGAL_DOCUMENT_JOB_PREPARE_DISPATCH_FAILED",
+      details: dispatchResult.error,
+    });
+    throw error;
+  }
+  const dispatch = asRecord(dispatchResult.data);
+  const dispatchId = normalizeText(dispatch.dispatchId || dispatch.dispatch_id);
+  if (!dispatchId) {
+    throw Object.assign(new Error("Signing dispatch authorization did not return a dispatch ID."), {
+      code: "LEGAL_DOCUMENT_JOB_PREPARE_DISPATCH_ID_MISSING",
+    });
+  }
+
+  const expiryHours = Math.min(168, Math.max(1, numberValue(payload.expiresInHours || payload.expires_in_hours, 168)));
+  const issuedAt = new Date().toISOString();
+  const expiresAt = new Date(Date.parse(issuedAt) + expiryHours * 60 * 60 * 1000).toISOString();
+  const existingToken = normalizeText(targetSigner.signing_token);
+  const tokenExpiry = dateValue(targetSigner.token_expires_at);
+  const shouldRefresh = booleanFlag(payload.resend) || !existingToken || !tokenExpiry || tokenExpiry <= Date.now() ||
+    Boolean(normalizeText(targetSigner.token_used_at));
+  const nextToken = shouldRefresh ? generateSecureSigningToken() : existingToken;
+  const activeDeliveryStatus = ["sent", "viewed"].includes(signerStatus);
+  const updateResult = await client
+    .from("document_packet_signers")
+    .update({
+      signing_token: nextToken,
+      token_expires_at: expiresAt,
+      token_used_at: shouldRefresh ? null : targetSigner.token_used_at || null,
+      viewed_at: shouldRefresh ? null : targetSigner.viewed_at || null,
+      status: activeDeliveryStatus ? targetSigner.status : "ready_to_send",
+    })
+    .eq("id", normalizeText(targetSigner.id))
+    .select("id, organisation_id, packet_id, packet_document_id, packet_version_id, signer_role, signer_name, signer_email, signing_order, status, signing_token, token_expires_at, token_used_at, viewed_at, signed_at, created_at, updated_at")
+    .single();
+  if (updateResult.error) throw updateResult.error;
+  const updatedSigner = asRecord(updateResult.data);
+  const baseUrl = normalizeText(payload.baseUrl || payload.base_url).replace(/\/$/, "") || "https://app.arch9.co.za";
+  const portalLink = `${baseUrl}/sign/${nextToken}`;
+
+  await client.from("document_packet_events").insert({
+    packet_id: normalizeText(packet.id),
+    organisation_id: normalizeText(packet.organisation_id),
+    version_id: normalizeText(version.id),
+    event_type: "signer_links_generated",
+    event_payload_json: {
+      signerCount: 1,
+      packetVersionId: normalizeText(version.id),
+      expiresAt,
+      regenerate: booleanFlag(payload.resend),
+      targetSignerRole,
+      dispatchReference: `background-signing-dispatch:${normalizeText(packet.id)}:${normalizeText(version.id)}:${issuedAt}`,
+      dispatchId,
+      issuedAt,
+      backgroundPrepared: true,
+    },
+  });
+
+  return {
+    portalLink,
+    dispatchId,
+    dispatchAlreadyDelivered: dispatch.alreadyDelivered === true,
+    recipientRole: targetSignerRole,
+    recipientEmail: normalizeText(updatedSigner.signer_email).toLowerCase(),
+    recipientName: normalizeText(updatedSigner.signer_name),
+    expiresAt,
+    issuedAt,
+  };
 }
 
 async function releaseGenerationLease({
@@ -1381,7 +1523,59 @@ async function runSendForSignatureJob({
     dispatch_id: normalizeText(requestPayload.dispatchId || requestPayload.dispatch_id || job.dispatch_id) || undefined,
   };
   const emailType = normalizeKey(emailPayload.type);
-  const portalLink = normalizeText(emailPayload.portalLink || emailPayload.portal_link);
+  let portalLink = normalizeText(emailPayload.portalLink || emailPayload.portal_link);
+  let preparedSigningLink: JsonRecord | null = null;
+  if (!extractSigningToken(portalLink) && booleanFlag(emailPayload.prepareSigningLink || emailPayload.prepare_signing_link)) {
+    try {
+      preparedSigningLink = await prepareSigningLinkForSendJob({
+        client,
+        packet,
+        version,
+        payload: {
+          ...emailPayload,
+          targetSignerRole: normalizeText(emailPayload.targetSignerRole || emailPayload.target_signer_role || emailPayload.recipientRole || job.target_signer_role),
+        },
+      });
+      portalLink = normalizeText(preparedSigningLink.portalLink);
+      emailPayload.portalLink = portalLink;
+      emailPayload.portal_link = portalLink;
+      emailPayload.dispatchId = normalizeText(preparedSigningLink.dispatchId);
+      emailPayload.dispatch_id = normalizeText(preparedSigningLink.dispatchId);
+      emailPayload.recipientRole = normalizeText(preparedSigningLink.recipientRole) || normalizeText(emailPayload.recipientRole);
+      emailPayload.recipient_role = normalizeText(preparedSigningLink.recipientRole) || normalizeText(emailPayload.recipient_role);
+      emailPayload.to = normalizeText(emailPayload.to) || normalizeText(preparedSigningLink.recipientEmail);
+      emailPayload.recipientName = normalizeText(emailPayload.recipientName) || normalizeText(preparedSigningLink.recipientName) || "Signer";
+    } catch (error) {
+      await updateJobStatus({
+        client,
+        jobId,
+        status: "failed",
+        error: {
+          errorCode: normalizeText((error as { code?: unknown })?.code) || "LEGAL_DOCUMENT_JOB_PREPARE_SIGNING_LINK_FAILED",
+          error: normalizeText((error as { message?: unknown })?.message) || "Signing link preparation failed.",
+          phase7BackgroundPrepareSend: true,
+        },
+        packetVersionId: normalizeText(version.id),
+        metadata: {
+          phase7FailedAt: new Date().toISOString(),
+          phase7RequestId: requestId,
+          phase7BackgroundPrepareSend: true,
+        },
+      });
+      return {
+        ok: false,
+        status: 409,
+        body: {
+          success: false,
+          error: normalizeText((error as { message?: unknown })?.message) || "Signing link preparation failed.",
+          errorCode: normalizeText((error as { code?: unknown })?.code) || "LEGAL_DOCUMENT_JOB_PREPARE_SIGNING_LINK_FAILED",
+          requestId,
+          jobId,
+          retryable: true,
+        },
+      };
+    }
+  }
   if (!["seller_mandate_sent", "seller_mandate", "otp_signing"].includes(emailType) || !extractSigningToken(portalLink)) {
     await updateJobStatus({
       client,
@@ -1390,6 +1584,7 @@ async function runSendForSignatureJob({
       error: {
         errorCode: "LEGAL_DOCUMENT_JOB_SEND_PAYLOAD_INVALID",
         phase3SendOnly: true,
+        phase7BackgroundPrepareSend: booleanFlag(emailPayload.prepareSigningLink || emailPayload.prepare_signing_link),
       },
       packetVersionId: normalizeText(version.id),
       dispatchId: normalizeText(emailPayload.dispatchId || emailPayload.dispatch_id) || null,
@@ -1471,6 +1666,7 @@ async function runSendForSignatureJob({
     result: {
       contract: "legal-document-job-runner-phase3-send-v1",
       sendOnly: true,
+      preparedSigningLink: Boolean(preparedSigningLink),
       jobId,
       packetId: normalizeText(packet.id),
       packetVersionId: normalizeText(version.id),
@@ -1490,6 +1686,7 @@ async function runSendForSignatureJob({
       phase3CompletedAt: new Date().toISOString(),
       phase3RequestId: requestId,
       phase3SendOnly: true,
+      phase7BackgroundPrepareSend: Boolean(preparedSigningLink),
     },
   });
 
@@ -1627,13 +1824,16 @@ async function createSendReadyJobAndRun({
   const portalLink = normalizeText(emailPayload.portalLink || emailPayload.portal_link);
   const dispatchId = normalizeText(emailPayload.dispatchId || emailPayload.dispatch_id || payload.dispatchId || payload.dispatch_id);
   const emailType = normalizeKey(emailPayload.type);
-  if (!["seller_mandate_sent", "seller_mandate", "otp_signing"].includes(emailType) || !extractSigningToken(portalLink)) {
+  const prepareSigningLink = booleanFlag(payload.prepareSigningLink || payload.prepare_signing_link);
+  if (!["seller_mandate_sent", "seller_mandate", "otp_signing"].includes(emailType) || (!extractSigningToken(portalLink) && !prepareSigningLink)) {
     return {
       ok: false,
       status: 400,
       body: {
         success: false,
-        error: "Server send requires a supported email type and packet-bound signing link.",
+        error: prepareSigningLink
+          ? "Server prepare-and-send requires a supported email type."
+          : "Server send requires a supported email type and packet-bound signing link.",
         errorCode: "LEGAL_DOCUMENT_SERVER_SEND_PAYLOAD_INVALID",
         requestId,
       },
@@ -1646,19 +1846,26 @@ async function createSendReadyJobAndRun({
     normalizeText(version.id),
     dispatchId,
     targetSignerRole,
-    extractSigningToken(portalLink),
+    extractSigningToken(portalLink) || "server-prepared-link",
     normalizeText(emailPayload.to).toLowerCase(),
   ].join(":"));
   const idempotencyKey = normalizeText(payload.idempotencyKey || payload.idempotency_key) ||
-    `phase4-send:${packetId}:${recipientDigest.slice(0, 40)}`;
+    `${prepareSigningLink ? "phase7-prepare-send" : "phase4-send"}:${packetId}:${recipientDigest.slice(0, 40)}`;
   const createResult = await client.rpc("bridge_create_legal_document_job_phase1", {
     p_packet_id: packetId,
     p_job_type: "send_for_signature",
     p_idempotency_key: idempotencyKey,
-    p_request_payload_json: emailPayload,
+    p_request_payload_json: {
+      ...emailPayload,
+      prepareSigningLink,
+      prepare_signing_link: prepareSigningLink,
+      baseUrl: normalizeText(payload.baseUrl || payload.base_url || emailPayload.baseUrl || emailPayload.base_url) || undefined,
+      expiresInHours: numberValue(payload.expiresInHours || payload.expires_in_hours || emailPayload.expiresInHours || emailPayload.expires_in_hours, 168),
+    },
     p_target_signer_role: targetSignerRole || null,
     p_metadata_json: {
       phase4UiServerSend: true,
+      phase7BackgroundPrepareSend: prepareSigningLink,
       requestedByUserId: authority.kind === "user" ? authority.userId : null,
       requestId,
     },
@@ -1946,6 +2153,33 @@ Deno.serve(async (req: Request) => {
         supabaseUrl,
         serviceRoleKey,
         background,
+      });
+      return jsonResponse(result.status, result.body);
+    }
+
+    if (action === "prepare_and_send_ready_packet") {
+      const authority = await resolveInvocationAuthority({ req, client, serviceRoleKey });
+      if (authority.kind === "none") {
+        return jsonResponse(401, {
+          success: false,
+          error: "Authenticated server-send authority is required.",
+          errorCode: "LEGAL_DOCUMENT_SERVER_SEND_AUTH_REQUIRED",
+          requestId,
+        });
+      }
+      const result = await createSendReadyJobAndRun({
+        client,
+        payload: {
+          ...payload,
+          prepareSigningLink: true,
+          prepare_signing_link: true,
+          background: payload.background ?? true,
+        },
+        authority,
+        requestId,
+        supabaseUrl,
+        serviceRoleKey,
+        background: true,
       });
       return jsonResponse(result.status, result.body);
     }
