@@ -3084,7 +3084,7 @@ function applyMandateManualOverride(data = null, sourceContext = {}) {
   placeholder('property_address', value('property_address'))
   placeholder('property_display_address', value('property_address'))
   placeholder('property_type', value('property_type'))
-  placeholder('property_structure_type', value('property_title'))
+  placeholder('property_title_type', value('property_title'))
   placeholder('property_erf_number', value('property_reference'))
   placeholder('erf_number', value('property_reference'))
   placeholder('erf_size', value('property_size'))
@@ -3175,6 +3175,9 @@ function MandateReviewPanel({
     buildMandateReviewRow('property_address', 'Address', firstNonEmptyText(property.fullAddress, property.displayAddress, placeholders.property_address, summary.property)),
     buildMandateReviewRow('property_type', 'Property type', formatMandateRouteLabel(firstNonEmptyText(property.propertyType, placeholders.property_type))),
     buildMandateReviewRow('property_title', 'Title type', formatMandateRouteLabel(firstNonEmptyText(
+      property.propertyTitleType,
+      property.property_title_type,
+      placeholders.property_title_type,
       property.propertyStructureType,
       property.titleType,
       property.title_type,

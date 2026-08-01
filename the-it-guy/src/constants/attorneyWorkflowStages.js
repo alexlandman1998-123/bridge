@@ -201,7 +201,7 @@ const sharedDataRequirements = {
   propertyTenure: dataRequirement({
     id: 'property_tenure',
     label: 'Property Tenure',
-    fields: ['property_tenure', 'propertyTenure', 'property_structure_type', 'propertyStructureType', 'ownership_type', 'routingProfile.propertyTenure', 'routing_profile.propertyTenure'],
+    fields: ['property_tenure', 'propertyTenure', 'property_title_type', 'propertyTitleType', 'title_type', 'titleType', 'property_structure_type', 'propertyStructureType', 'ownership_type', 'routingProfile.propertyTenure', 'routing_profile.propertyTenure'],
     factKey: 'propertyTenure',
     description: 'Determines rates, levy, HOA, and body corporate dependencies.',
     owner: 'agent',

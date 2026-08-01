@@ -93,6 +93,10 @@ const CANCELLATION_FIELD_CANDIDATES = [
 const PROPERTY_TENURE_FIELD_CANDIDATES = [
   'property_tenure',
   'propertyTenure',
+  'property_title_type',
+  'propertyTitleType',
+  'title_type',
+  'titleType',
   'property_structure_type',
   'propertyStructureType',
   'ownership_type',

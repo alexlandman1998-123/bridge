@@ -268,7 +268,14 @@ function buildOtpScenarioPlaceholders(templateContext = {}, propertyRecord = {})
     buyer_marital_status: normalizeText(buyer.maritalStatus || buyer.marital_status),
     buyer_marital_regime: normalizeText(buyer.maritalRegime || buyer.marital_regime),
     property_type: normalizeText(propertyRecord.propertyType || propertyRecord.property_type || propertyRecord.type),
-    property_structure_type: normalizeText(propertyRecord.propertyStructureType || propertyRecord.property_structure_type),
+    property_title_type: normalizeText(
+      propertyRecord.propertyTitleType ||
+        propertyRecord.property_title_type ||
+        propertyRecord.titleType ||
+        propertyRecord.title_type ||
+        propertyRecord.propertyStructureType ||
+        propertyRecord.property_structure_type,
+    ),
     property_address: normalizeText(propertyRecord.propertyAddress || propertyRecord.property_address || propertyRecord.address || propertyRecord.title),
     property_unit_number: normalizeText(propertyRecord.unitNumber || propertyRecord.unit_number),
     property_section_number: normalizeText(propertyRecord.sectionNumber || propertyRecord.section_number),

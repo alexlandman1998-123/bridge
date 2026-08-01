@@ -658,10 +658,18 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
         ? (maritalRegime === 'in_community' || maritalRegime === 'married_in_community' ? 'married_cop' : 'married_anc')
         : ownershipTypeRaw || sellerType
   const propertyStructureType =
+    flow.property_title_type ||
     flow.property_structure_type ||
     normalizePropertyStructureType(
-      onboarding?.propertyStructureType ||
+      onboarding?.propertyTitleType ||
+        onboarding?.property_title_type ||
+        onboarding?.propertyStructureType ||
+        canonicalFacts?.property?.property_title_type ||
+        canonicalFacts?.property?.title_type ||
+        canonicalFacts?.property?.title_type_raw ||
         canonicalFacts?.property?.property_structure_type ||
+        listing?.propertyTitleType ||
+        listing?.property_title_type ||
         listing?.propertyStructureType ||
         listing?.property_structure_type ||
         listing?.propertyType ||
@@ -875,10 +883,10 @@ export function getRequiredMandateInputs(requirementProfile = {}) {
       blocker: 'Property category missing',
     },
     {
-      key: 'property_structure_type',
-      label: 'Property structure type',
+      key: 'property_title_type',
+      label: 'Property title type',
       satisfied: hasValue(requirementProfile?.propertyStructureType),
-      blocker: 'Property structure type missing',
+      blocker: 'Property title type missing',
     },
     {
       key: 'asking_price',
@@ -937,7 +945,7 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
   const propertyBranch = normalizeKey(profile.propertyBranch || flow.property_branch || profile.propertyStructureType || profile.propertyCategory || 'residential')
   const maritalRegime = normalizeKey(profile.maritalRegime || flow.marital_regime || '')
   const propertyCategory = normalizeKey(profile.propertyCategory || flow.property_category || 'residential')
-  const propertyStructureType = normalizeKey(profile.propertyStructureType || flow.property_structure_type || 'other')
+  const propertyStructureType = normalizeKey(profile.propertyStructureType || flow.property_title_type || flow.property_structure_type || 'other')
   const documentTriggers = new Set(
     [...toArray(profile.documentTriggers), ...toArray(flow.document_triggers)].map(normalizeKey),
   )
