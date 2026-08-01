@@ -527,7 +527,14 @@ function resolveAgencyBrand(listing = {}) {
   const onboardingFormData = listing?.onboardingFormData?.formData && typeof listing.onboardingFormData.formData === 'object'
     ? listing.onboardingFormData.formData
     : {}
-  const onboardingBranding = sellerOnboardingFormData.portalBranding || sellerOnboardingSnakeFormData.portalBranding || onboardingFormData.portalBranding || {}
+  const onboardingBranding =
+    sellerOnboardingFormData.portalBranding ||
+    sellerOnboardingFormData.portal_branding ||
+    sellerOnboardingSnakeFormData.portalBranding ||
+    sellerOnboardingSnakeFormData.portal_branding ||
+    onboardingFormData.portalBranding ||
+    onboardingFormData.portal_branding ||
+    {}
   const listingBranding = {
     agencyOrganisation: listing?.agencyOrganisation,
     agency_organisation: listing?.agency_organisation,

@@ -3296,7 +3296,56 @@ function attachBrandingToListing(listing = null, branding = null) {
     logoUrl: pickFirstText(branding.logoDarkUrl, branding.logoDark, branding.logoUrl, listing.branding?.logoUrl),
     logoDarkUrl: pickFirstText(branding.logoDarkUrl, branding.logoDark, listing.branding?.logoDarkUrl),
     logoLightUrl: pickFirstText(branding.logoLightUrl, branding.logoLight, branding.logoUrl, listing.branding?.logoLightUrl),
+    primaryColour: pickFirstText(branding.primaryColour, branding.primaryColor, listing.branding?.primaryColour, listing.branding?.primaryColor),
+    secondaryColour: pickFirstText(branding.secondaryColour, branding.secondaryColor, listing.branding?.secondaryColour, listing.branding?.secondaryColor),
+    accentColour: pickFirstText(branding.accentColour, branding.accentColor, listing.branding?.accentColour, listing.branding?.accentColor),
   }
+  const sellerOnboardingFormData = listing.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+    ? listing.sellerOnboarding.formData
+    : {}
+  const sellerOnboardingSnakeFormData = listing.seller_onboarding?.form_data && typeof listing.seller_onboarding.form_data === 'object'
+    ? listing.seller_onboarding.form_data
+    : {}
+  const sellerOnboarding = listing.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
+    ? {
+      ...listing.sellerOnboarding,
+      portalBranding: {
+        ...(listing.sellerOnboarding.portalBranding || {}),
+        ...mergedBranding,
+      },
+      formData: {
+        ...sellerOnboardingFormData,
+        portalBranding: {
+          ...(sellerOnboardingFormData.portalBranding || {}),
+          ...mergedBranding,
+        },
+      },
+    }
+    : listing.sellerOnboarding
+  const sellerOnboardingSnake = listing.seller_onboarding && typeof listing.seller_onboarding === 'object'
+    ? {
+      ...listing.seller_onboarding,
+      portalBranding: {
+        ...(listing.seller_onboarding.portalBranding || {}),
+        ...mergedBranding,
+      },
+      portal_branding: {
+        ...(listing.seller_onboarding.portal_branding || {}),
+        ...mergedBranding,
+      },
+      form_data: {
+        ...sellerOnboardingSnakeFormData,
+        portalBranding: {
+          ...(sellerOnboardingSnakeFormData.portalBranding || {}),
+          ...mergedBranding,
+        },
+        portal_branding: {
+          ...(sellerOnboardingSnakeFormData.portal_branding || {}),
+          ...mergedBranding,
+        },
+      },
+    }
+    : listing.seller_onboarding
   return {
     ...listing,
     agencyOrganisation: pickFirstText(mergedBranding.organisationName, listing.agencyOrganisation),
@@ -3308,6 +3357,11 @@ function attachBrandingToListing(listing = null, branding = null) {
     organisationLogoUrl: pickFirstText(mergedBranding.logoDarkUrl, mergedBranding.logoUrl, listing.organisationLogoUrl),
     organisationLogoDarkUrl: pickFirstText(mergedBranding.logoDarkUrl, listing.organisationLogoDarkUrl),
     organisationLogoLightUrl: pickFirstText(mergedBranding.logoLightUrl, listing.organisationLogoLightUrl),
+    primaryColour: pickFirstText(mergedBranding.primaryColour, listing.primaryColour),
+    secondaryColour: pickFirstText(mergedBranding.secondaryColour, listing.secondaryColour),
+    accentColour: pickFirstText(mergedBranding.accentColour, listing.accentColour),
+    sellerOnboarding,
+    seller_onboarding: sellerOnboardingSnake,
     branding: mergedBranding,
   }
 }
