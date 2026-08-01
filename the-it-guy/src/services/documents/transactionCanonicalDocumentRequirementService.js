@@ -23,7 +23,7 @@ import {
 import {
   resolveCrossModuleDocumentKey,
   resolveCrossModuleDocumentReference,
-} from './crossModuleDocumentKeyMapService'
+} from './crossModuleDocumentKeyMapService.js'
 import {
   REQUIREMENT_LEVELS,
   REQUIREMENT_STATUSES,

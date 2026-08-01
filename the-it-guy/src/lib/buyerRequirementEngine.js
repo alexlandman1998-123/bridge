@@ -5,7 +5,7 @@ import {
 } from './purchaserPersonas.js'
 import { normalizeFinanceType } from '../core/transactions/financeType.js'
 import { resolveBuyerOnboardingFlow } from './buyerOnboardingFlow.js'
-import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService'
+import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService.js'
 
 // Phase 9 canonical document consolidation:
 // This legacy buyer requirement engine is retained as a compatibility fallback.

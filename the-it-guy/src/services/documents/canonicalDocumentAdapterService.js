@@ -8,7 +8,7 @@ import {
 import {
   getCrossModuleDocumentDefinition,
   resolveCrossModuleDocumentKey,
-} from './crossModuleDocumentKeyMapService'
+} from './crossModuleDocumentKeyMapService.js'
 
 export const CANONICAL_DOCUMENT_ADAPTERS_FLAG = 'VITE_CANONICAL_DOCUMENT_ADAPTERS_ENABLED'
 export const CANONICAL_DOCUMENT_ADAPTER_SOURCE = 'canonical_document_adapter'

@@ -219,7 +219,7 @@ import {
   maybeResolveTransactionDocumentRequirements,
 } from '../services/documents/transactionCanonicalDocumentRequirementService'
 import { getCanonicalDocumentRolloutMode } from '../services/documents/canonicalDocumentConsolidationService'
-import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService'
+import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService.js'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
 import { publishTransactionSharedProgress } from '../services/transactionSharedProgressService.js'
 import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'

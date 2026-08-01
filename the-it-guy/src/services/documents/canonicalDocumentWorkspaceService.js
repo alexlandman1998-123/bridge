@@ -12,7 +12,7 @@ import {
   evaluateAllGateReadinessFromRequirements,
   evaluateGateReadinessFromRequirements,
 } from './canonicalWorkflowGateService'
-import { resolveCrossModuleDocumentReference } from './crossModuleDocumentKeyMapService'
+import { resolveCrossModuleDocumentReference } from './crossModuleDocumentKeyMapService.js'
 
 export const CANONICAL_DOCUMENT_WORKSPACE_FLAG = 'VITE_CANONICAL_DOCUMENT_WORKSPACE_ENABLED'
 export const CANONICAL_READINESS_UI_FLAG = 'VITE_CANONICAL_READINESS_UI_ENABLED'

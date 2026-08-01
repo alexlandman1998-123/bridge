@@ -1,4 +1,4 @@
-import { resolveCrossModuleDocumentReference } from '../../services/documents/crossModuleDocumentKeyMapService'
+import { resolveCrossModuleDocumentReference } from '../../services/documents/crossModuleDocumentKeyMapService.js'
 
 const PORTAL_WORKSPACE_CATEGORIES = ['sales', 'fica', 'bond', 'additional', 'property']
 
