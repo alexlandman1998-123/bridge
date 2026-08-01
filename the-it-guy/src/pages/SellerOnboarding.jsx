@@ -3620,10 +3620,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       return false
     }
 
-    if (!silent) {
-      setSaving(true)
-      setError('')
-    }
+    setSaving(true)
+    if (!silent) setError('')
     setDraftSyncStatus('saving')
 
     try {
@@ -3669,7 +3667,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       }
       return false
     } finally {
-      if (!silent) setSaving(false)
+      setSaving(false)
     }
   }
 

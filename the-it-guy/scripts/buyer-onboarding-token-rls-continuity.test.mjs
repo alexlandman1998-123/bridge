@@ -195,6 +195,7 @@ assert.match(
 
 const fetchOnboardingSource = functionBody(apiSource, 'fetchClientOnboardingByToken')
 const saveOnboardingSource = functionBody(apiSource, 'upsertClientOnboardingForm')
+const replayProjectionSource = functionBody(apiSource, 'replayBuyerOnboardingProjections')
 const snapshotSaveWrapperSource = functionBody(apiSource, 'syncOnboardingTransactionFinanceSnapshot')
 const onboardingPortalAccessWrapperSource = functionBody(apiSource, 'getBuyerOnboardingPortalAccess')
 
@@ -245,6 +246,96 @@ assert.match(
   saveOnboardingSource,
   /syncOnboardingTransactionFinanceSnapshot\s*\(/,
   'onboarding save must persist through the guarded snapshot wrapper',
+)
+const platformFeeValidationIndex = saveOnboardingSource.indexOf("isPlatformFeeConsentAccepted(formDataForPersistence, 'buyer')")
+const snapshotSaveIndex = saveOnboardingSource.indexOf('syncOnboardingTransactionFinanceSnapshot')
+assert.ok(
+  platformFeeValidationIndex !== -1 && platformFeeValidationIndex < snapshotSaveIndex,
+  'buyer platform fee consent must be validated before the atomic onboarding snapshot is saved',
+)
+assert.match(
+  saveOnboardingSource,
+  /try\s*\{[\s\S]*ensureTransactionRequiredDocuments\s*\([\s\S]*\}\s*catch\s*\(\s*requiredDocumentsError\s*\)/,
+  'required-document projection after snapshot save must be best-effort',
+)
+assert.match(
+  saveOnboardingSource,
+  /try\s*\{[\s\S]*acceptBuyerPlatformFeeConsent\s*\([\s\S]*\}\s*catch\s*\(\s*platformFeeConsentError\s*\)/,
+  'platform-fee consent persistence after snapshot save must be best-effort',
+)
+assert.match(
+  saveOnboardingSource,
+  /try\s*\{[\s\S]*document_key['"]\s*,\s*['"]information_sheet[\s\S]*\}\s*catch\s*\(\s*informationSheetError\s*\)/,
+  'information-sheet projection after snapshot save must be best-effort',
+)
+assert.match(
+  saveOnboardingSource,
+  /try\s*\{[\s\S]*markTransactionAwaitingSignedOtp\s*\([\s\S]*\}\s*catch\s*\(\s*otpProjectionError\s*\)/,
+  'awaiting-signed-OTP projection after snapshot save must be best-effort',
+)
+assert.doesNotMatch(
+  saveOnboardingSource,
+  /throw\s+(requiredDocumentsError|platformFeeConsentError|informationSheetError|roleplayerRequestError|workflowEvidenceError|otpProjectionError|financeEventError)\b/,
+  'post-snapshot buyer onboarding projections must not throw client-facing submit failures',
+)
+assert.match(
+  apiSource,
+  /function\s+buildBuyerOnboardingProjectionFailurePayload\s*\([\s\S]*source:\s*'buyer_onboarding_projection_recovery_marker'[\s\S]*errorCategory:[\s\S]*errorCode:/,
+  'buyer onboarding projection failures must create sanitized recovery marker payloads',
+)
+assert.match(
+  apiSource,
+  /async\s+function\s+recordBuyerOnboardingProjectionFailureMarker\s*\([\s\S]*logTransactionEventIfPossible[\s\S]*catch\s*\(\s*markerError\s*\)/,
+  'buyer onboarding recovery marker logging must never create another client-facing failure',
+)
+for (const eventType of [
+  'buyer_onboarding_required_documents_projection_failed',
+  'buyer_onboarding_platform_fee_consent_projection_failed',
+  'buyer_onboarding_information_sheet_projection_failed',
+  'buyer_onboarding_roleplayer_projection_failed',
+  'buyer_onboarding_workflow_evidence_projection_failed',
+  'buyer_onboarding_awaiting_signed_otp_projection_failed',
+  'buyer_onboarding_finance_event_projection_failed',
+]) {
+  assert.match(
+    saveOnboardingSource,
+    new RegExp(`eventType:\\s*['"]${eventType}['"]`),
+    `${eventType} recovery marker must be recorded when its projection fails`,
+  )
+}
+assert.match(
+  apiSource,
+  /const\s+BUYER_ONBOARDING_PROJECTION_REPAIR_EVENT_TYPES\s*=\s*\{[\s\S]*required_documents:[\s\S]*platform_fee_consent:[\s\S]*information_sheet:[\s\S]*roleplayer:[\s\S]*workflow_evidence:[\s\S]*awaiting_signed_otp:[\s\S]*finance_event:/,
+  'buyer onboarding repair path must define every recovery marker as a replayable projection',
+)
+assert.match(
+  replayProjectionSource,
+  /resolveActiveProfileContext\s*\([\s\S]*\['agent', 'agency_admin', 'developer', 'internal_admin', 'admin', 'platform_admin'\]/,
+  'buyer onboarding projection replay must be restricted to internal roles',
+)
+assert.match(
+  replayProjectionSource,
+  /resolveBuyerOnboardingProjectionRepairTargets\s*\([\s\S]*useRecoveryMarkers/,
+  'buyer onboarding projection replay must be able to target projections from recovery markers',
+)
+for (const marker of [
+  'ensureTransactionRequiredDocuments',
+  'acceptBuyerPlatformFeeConsent',
+  'processBuyerAppointedBondOriginatorRequest',
+  'processWorkflowEvidenceIfPossible',
+  'markTransactionAwaitingSignedOtp',
+  'finance_type_selected',
+]) {
+  assert.match(
+    apiSource,
+    new RegExp(marker),
+    `buyer onboarding projection replay must reuse ${marker}`,
+  )
+}
+assert.match(
+  replayProjectionSource,
+  /buyer_onboarding_projection_replay_completed|buyer_onboarding_projection_replay_failed/,
+  'buyer onboarding projection replay must record a replay summary event',
 )
 assert.doesNotMatch(
   saveOnboardingSource,
