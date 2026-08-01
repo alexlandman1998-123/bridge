@@ -271,7 +271,6 @@ function getEmptyStateCopy(isPrincipalView) {
 }
 
 function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
-  if (filterKey === 'all') return true
   const transaction = row?.transaction || {}
   const financeType = String(transaction.finance_type || '').trim().toLowerCase()
   const typeText = [
@@ -283,49 +282,79 @@ function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
   ].join(' ').toLowerCase()
   const stage = String(row?.stage || transaction.lifecycle_state || '').toLowerCase()
   const mainStage = formatMainStage(row).key
-  const health = getHealth(row, mainStage).label.toLowerCase()
-  const developmentName = String(row?.development?.name || '').trim().toLowerCase()
-  const buyerName = String(row?.buyer?.name || '').trim().toLowerCase()
-  const buyerBondOriginatorRequest = getBuyerBondOriginatorRequestSummary(row)
-  const bondOriginatorProgress = getBondOriginatorAgentProgressSummary(row)
-  const searchHaystack = [
-    buyerName,
-    row?.buyer?.email,
-    row?.buyer?.phone,
-    developmentName,
-    row?.unit?.unit_number,
-    row?.transaction?.property_address_line_1,
-    transaction.transaction_reference,
-    transaction.reference,
-    transaction.property_description,
-    financeType,
-    stage,
-    mainStage,
-    health,
-    buyerBondOriginatorRequest?.label,
-    buyerBondOriginatorRequest?.summary,
-    buyerBondOriginatorRequest?.companyName,
-    bondOriginatorProgress?.statusLabel,
-    bondOriginatorProgress?.headline,
-    bondOriginatorProgress?.summary,
-  ]
-    .map((value) => String(value || '').trim().toLowerCase())
-    .filter(Boolean)
-    .join(' ')
-
   const normalizedSearch = String(searchTerm || '').trim().toLowerCase()
-  if (normalizedSearch && !searchHaystack.includes(normalizedSearch)) return false
+  if (normalizedSearch) {
+    const buyerBondOriginatorRequest = getBuyerBondOriginatorRequestSummary(row)
+    const bondOriginatorProgress = getBondOriginatorAgentProgressSummary(row)
+    const health = getHealth(row, mainStage).label.toLowerCase()
+    const searchHaystack = [
+      row?.buyer?.name,
+      row?.buyer?.email,
+      row?.buyer?.phone,
+      row?.development?.name,
+      row?.unit?.unit_number,
+      row?.transaction?.property_address_line_1,
+      transaction.transaction_reference,
+      transaction.reference,
+      transaction.property_description,
+      financeType,
+      stage,
+      mainStage,
+      health,
+      buyerBondOriginatorRequest?.label,
+      buyerBondOriginatorRequest?.summary,
+      buyerBondOriginatorRequest?.companyName,
+      bondOriginatorProgress?.statusLabel,
+      bondOriginatorProgress?.headline,
+      bondOriginatorProgress?.summary,
+    ]
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean)
+      .join(' ')
 
-  if (filterKey === 'needs_review') return buyerBondOriginatorRequest?.actionRequired === true
+    if (!searchHaystack.includes(normalizedSearch)) return false
+  }
+
+  if (filterKey === 'all') return true
+  if (filterKey === 'needs_review') return getBuyerBondOriginatorRequestSummary(row)?.actionRequired === true
   if (filterKey === 'development') return Boolean(row?.development?.id) || typeText.includes('development')
   if (filterKey === 'second_hand') return typeText.includes('second') || typeText.includes('private') || (!row?.development?.id && !typeText.includes('commercial'))
   if (filterKey === 'commercial') return typeText.includes('commercial')
   if (filterKey === 'cash') return financeType === 'cash'
   if (filterKey === 'bond') return financeType === 'bond' || financeType === 'combination'
   if (filterKey === 'registered') return mainStage === 'REG' || stage.includes('registered')
-  if (filterKey === 'blocked') return health === 'blocked'
+  if (filterKey === 'blocked') return getHealth(row, mainStage).label.toLowerCase() === 'blocked'
   if (filterKey === 'active') return !['REG'].includes(mainStage) && !['registered', 'completed', 'archived', 'cancelled'].includes(stage)
   return true
+}
+
+function buildVisibleTransactionRowModel(row, index) {
+  const updatedAt = row?.transaction?.updated_at || row?.transaction?.created_at || null
+  const canOpenRow = Boolean(row?.transaction?.id || row?.unit?.id)
+  const mainStage = formatMainStage(row)
+  const health = getHealth(row, mainStage.key)
+  const progressPercent = getProgressPercent(row, mainStage.key)
+  const approvalConfidence = calculateApprovalProbability(row)
+  const operationalRisk = calculateOperationalRisk(row)
+  const velocity = calculateTransactionVelocity(row)
+
+  return {
+    row,
+    index,
+    updatedAt,
+    canOpenRow,
+    mainStage,
+    health,
+    progressPercent,
+    transactionConfidence: Math.round((approvalConfidence.score * 0.55) + ((100 - operationalRisk.riskScore) * 0.25) + (velocity.velocityScore * 0.2)),
+    buyerName: resolvePortalBuyerName(row),
+    propertyDisplay: getPropertyDisplay(row),
+    propertyImageUrl: getPropertyImageUrl(row),
+    propertyTypeLabel: getPropertyTypeLabel(row),
+    transactionReference: row?.transaction?.transaction_reference || row?.transaction?.reference || '',
+    buyerBondOriginatorRequest: getBuyerBondOriginatorRequestSummary(row),
+    bondOriginatorProgress: getBondOriginatorAgentProgressSummary(row),
+  }
 }
 
 function AgentTransactionsTable({
@@ -361,6 +390,10 @@ function AgentTransactionsTable({
     const start = (currentPage - 1) * pageSize
     return (filteredRows || []).slice(start, start + pageSize)
   }, [currentPage, filteredRows])
+  const visibleRowModels = useMemo(
+    () => visibleRows.map((row, index) => buildVisibleTransactionRowModel(row, index)),
+    [visibleRows],
+  )
 
   const pageStart = filteredRows.length ? (currentPage - 1) * pageSize + 1 : 0
   const pageEnd = Math.min(filteredRows.length, currentPage * pageSize)
@@ -485,23 +518,24 @@ function AgentTransactionsTable({
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((row, index) => {
-              const updatedAt = row?.transaction?.updated_at || row?.transaction?.created_at || null
-              const canOpenRow = Boolean(row?.transaction?.id || row?.unit?.id)
-              const mainStage = formatMainStage(row)
-              const health = getHealth(row, mainStage.key)
-              const progressPercent = getProgressPercent(row, mainStage.key)
-              const approvalConfidence = calculateApprovalProbability(row)
-              const operationalRisk = calculateOperationalRisk(row)
-              const velocity = calculateTransactionVelocity(row)
-              const transactionConfidence = Math.round((approvalConfidence.score * 0.55) + ((100 - operationalRisk.riskScore) * 0.25) + (velocity.velocityScore * 0.2))
-              const buyerName = resolvePortalBuyerName(row)
-              const propertyDisplay = getPropertyDisplay(row)
-              const propertyImageUrl = getPropertyImageUrl(row)
-              const propertyTypeLabel = getPropertyTypeLabel(row)
-              const transactionReference = row?.transaction?.transaction_reference || row?.transaction?.reference || ''
-              const buyerBondOriginatorRequest = getBuyerBondOriginatorRequestSummary(row)
-              const bondOriginatorProgress = getBondOriginatorAgentProgressSummary(row)
+            {visibleRowModels.map((model) => {
+              const {
+                row,
+                index,
+                updatedAt,
+                canOpenRow,
+                mainStage,
+                health,
+                progressPercent,
+                transactionConfidence,
+                buyerName,
+                propertyDisplay,
+                propertyImageUrl,
+                propertyTypeLabel,
+                transactionReference,
+                buyerBondOriginatorRequest,
+                bondOriginatorProgress,
+              } = model
               const healthLabel = health.label === 'Attention' ? 'Needs Attention' : health.label
 
               return (

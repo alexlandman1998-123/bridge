@@ -892,6 +892,7 @@ function isRecoverableSellerPortalPayloadRpcError(error) {
   const code = String(error.code || '').toLowerCase()
   const message = String(error.message || error.details || '').toLowerCase()
   return (
+    isStatementTimeoutError(error) ||
     status >= 500 ||
     code === '500' ||
     code === 'xx000' ||
@@ -899,6 +900,40 @@ function isRecoverableSellerPortalPayloadRpcError(error) {
     message.includes('server error') ||
     message.includes('bridge_private_listing_seller_portal_payload')
   )
+}
+
+function isCompletedSellerOnboardingContext(context = null) {
+  const status = normalizeStatusKey(
+    context?.onboarding?.status ||
+      context?.listing?.sellerOnboarding?.status ||
+      context?.listing?.seller_onboarding?.status ||
+      context?.listing?.sellerOnboardingStatus ||
+      context?.listing?.seller_onboarding_status ||
+      '',
+  )
+  return ['completed', 'complete', 'submitted', 'under_review'].includes(status)
+}
+
+async function recoverSellerOnboardingSubmitAfterTimeout(token, timeoutError) {
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) return null
+
+  console.warn('[Private Listings] seller onboarding submit timed out; checking whether completion committed', {
+    reason: buildSupabaseErrorSummary(timeoutError),
+  })
+
+  const context = await getSellerOnboardingByToken(normalizedToken, {
+    includeRequirementsAndDocuments: false,
+    corePayload: true,
+  }).catch((recoveryError) => {
+    console.warn('[Private Listings] seller onboarding timeout recovery lookup failed', {
+      reason: buildSupabaseErrorSummary(recoveryError),
+    })
+    return null
+  })
+
+  if (!context?.listing || !isCompletedSellerOnboardingContext(context)) return null
+  return context
 }
 
 function isMissingPrivateListingActivityError(error) {
@@ -6834,6 +6869,12 @@ export async function submitSellerOnboarding(token, payload = {}) {
     (isMissingRpcError(rpc.error, 'bridge_complete_private_listing_seller_onboarding') ||
       isMissingPrivateListingActivityError(rpc.error))
   if (rpc.error && !useClientFallback) {
+    if (isStatementTimeoutError(rpc.error)) {
+      const recoveredContext = await recoverSellerOnboardingSubmitAfterTimeout(normalizedToken, rpc.error)
+      if (recoveredContext?.listing) {
+        return recoveredContext
+      }
+    }
     throw rpc.error
   }
   if (!rpc.error) {

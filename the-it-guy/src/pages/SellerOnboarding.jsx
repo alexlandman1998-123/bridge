@@ -327,7 +327,16 @@ function resolveSellerOnboardingSubmitError(error) {
   if (message.toLowerCase().includes('fetch failed')) {
     return 'We could not reach the onboarding service. Please check your connection and try again.'
   }
+  if (message.toLowerCase().includes('statement timeout') || message.toLowerCase().includes('canceling statement due to')) {
+    return 'The onboarding service took too long to confirm your submission. Please refresh once before submitting again.'
+  }
   return message
+}
+
+function isSellerOnboardingTimeoutError(error) {
+  const message = String(error?.message || error || '').toLowerCase()
+  const code = String(error?.code || '').toLowerCase()
+  return code === '57014' || message.includes('statement timeout') || message.includes('canceling statement due to')
 }
 
 function areCanonicalSellerFactsEnabled() {
@@ -2821,7 +2830,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
       if (useDbFirstSellerOnboarding) {
         try {
-          const context = await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: false })
+          const context = await getSellerOnboardingByToken(token, {
+            includeRequirementsAndDocuments: false,
+            corePayload: true,
+          })
           const found = context?.listing || null
           if (!found) {
             setError('Seller onboarding link is invalid or inactive.')
@@ -2864,7 +2876,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           ].includes(onboardingStatus))
           setLoading(false)
           return
-        } catch {
+        } catch (loadError) {
+          if (isSellerOnboardingTimeoutError(loadError)) {
+            setError('The onboarding service took too long to load this link. Please refresh in a moment.')
+            setLoading(false)
+            return
+          }
           // Fall through to runtime workflow for backwards compatibility.
         }
       }
