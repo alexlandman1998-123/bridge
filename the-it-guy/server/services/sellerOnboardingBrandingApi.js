@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
-import { resolveOnboardingBranding } from '../../src/lib/onboardingBranding.js'
+import {
+  getOrganisationOnboardingBrandingSources,
+  resolveOnboardingBranding,
+} from '../../src/lib/onboardingBranding.js'
 
 let cachedRuntimeEnv = null
 
@@ -158,6 +161,17 @@ async function resolveStorageAssetUrl(client, { bucket = '', path = '', fallback
   return normalizeText(fallbackUrl)
 }
 
+function pickFirstSourceText(sources = [], keys = []) {
+  for (const source of sources) {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) continue
+    for (const key of keys) {
+      const value = normalizeText(source[key])
+      if (value) return value
+    }
+  }
+  return ''
+}
+
 async function resolveSellerBranding(client, organisationId = '') {
   const normalizedOrganisationId = normalizeText(organisationId)
   if (!normalizedOrganisationId) return null
@@ -165,7 +179,7 @@ async function resolveSellerBranding(client, organisationId = '') {
   const [organisationResult, settingsResult] = await Promise.all([
     client
       .from('organisations')
-      .select('id, name, display_name, logo_url')
+      .select('id, name, display_name, logo_url, settings_json')
       .eq('id', normalizedOrganisationId)
       .maybeSingle(),
     client
@@ -182,43 +196,27 @@ async function resolveSellerBranding(client, organisationId = '') {
   const settings = settingsResult.data?.settings_json && typeof settingsResult.data.settings_json === 'object'
     ? settingsResult.data.settings_json
     : {}
-  const onboarding = settings.agencyOnboarding && typeof settings.agencyOnboarding === 'object'
-    ? settings.agencyOnboarding
-    : {}
-  const agencyInformation = onboarding.agencyInformation && typeof onboarding.agencyInformation === 'object'
-    ? onboarding.agencyInformation
-    : {}
-  const branding = onboarding.branding && typeof onboarding.branding === 'object' ? onboarding.branding : {}
-  const settingsBranding = settings.branding && typeof settings.branding === 'object' ? settings.branding : {}
-  const resolved = resolveOnboardingBranding(
-    branding,
-    settingsBranding,
-    {
-      organisationName: normalizeText(agencyInformation.tradingName || agencyInformation.agencyName),
-    },
-    organisation,
-  )
+  const brandingSources = getOrganisationOnboardingBrandingSources({ organisation, settings })
+  const resolved = resolveOnboardingBranding(...brandingSources)
 
   const logoLightUrl = await resolveStorageAssetUrl(client, {
-    bucket: branding.logoLightBucket,
-    path: branding.logoLightPath,
+    bucket: pickFirstSourceText(brandingSources, ['logoLightBucket', 'logo_light_bucket']),
+    path: pickFirstSourceText(brandingSources, ['logoLightPath', 'logo_light_path']),
     fallbackUrl: resolved.logoLightUrl,
   })
   const logoDarkUrl = await resolveStorageAssetUrl(client, {
-    bucket: branding.logoDarkBucket,
-    path: branding.logoDarkPath,
+    bucket: pickFirstSourceText(brandingSources, ['logoDarkBucket', 'logo_dark_bucket']),
+    path: pickFirstSourceText(brandingSources, ['logoDarkPath', 'logo_dark_path']),
     fallbackUrl: resolved.logoDarkUrl,
   })
   const logoIconUrl = await resolveStorageAssetUrl(client, {
-    bucket: branding.logoIconBucket || branding.portalIconBucket || branding.mobileIconBucket,
-    path: branding.logoIconPath || branding.portalIconPath || branding.mobileIconPath,
+    bucket: pickFirstSourceText(brandingSources, ['logoIconBucket', 'logo_icon_bucket', 'portalIconBucket', 'portal_icon_bucket', 'mobileIconBucket', 'mobile_icon_bucket']),
+    path: pickFirstSourceText(brandingSources, ['logoIconPath', 'logo_icon_path', 'portalIconPath', 'portal_icon_path', 'mobileIconPath', 'mobile_icon_path']),
     fallbackUrl: resolved.logoIconUrl,
   })
   const logoUrl = normalizeText(logoDarkUrl || logoLightUrl || logoIconUrl)
   const organisationName = normalizeText(
     resolved.organisationName ||
-      agencyInformation.tradingName ||
-      agencyInformation.agencyName ||
       organisation.display_name ||
       organisation.name,
   )
@@ -314,4 +312,3 @@ export async function createSellerOnboardingBrandingResponse({ method = 'GET', u
     })
   }
 }
-

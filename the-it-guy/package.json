@@ -126,6 +126,7 @@
     "test:listing-show-day-capture": "node scripts/listing-show-day-capture.test.mjs",
     "test:show-day-phase5": "node scripts/show-day-phase5.test.mjs",
     "test:agents-avatar-null-safety": "node scripts/agents-avatar-null-safety.test.mjs",
+    "test:agent-settings-refresh-stability": "node scripts/agent-settings-refresh-stability.test.mjs",
     "test:agent-password-reset-phase2": "node scripts/agent-password-reset-phase2.test.mjs",
     "test:agent-password-reset-phase3": "node scripts/agent-password-reset-phase3.test.mjs",
     "test:agent-password-reset-phase4": "node scripts/agent-password-reset-phase4.test.mjs",

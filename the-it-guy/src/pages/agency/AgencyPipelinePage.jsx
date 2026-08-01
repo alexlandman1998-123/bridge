@@ -630,13 +630,20 @@ function mapConnectedAttorneyToPreferredAttorney(assignment = {}) {
   return {
     id: relationshipId || partnerOrganisationId || companyName,
     preferredPartnerId: relationshipId || partnerOrganisationId,
+    partnerRelationshipId: relationshipId,
     partnerOrganisationId,
     partnerType: 'transfer_attorney',
     companyName: companyName || 'Connected transfer attorney',
     contactPerson: normalizeText(assignment.contactPerson || assignment.contact_person || assignment.primaryContactName || assignment.primary_contact_name || assignment.email),
     email: normalizeText(assignment.email || assignment.primaryContactEmail || assignment.primary_contact_email),
+    phone: normalizeText(assignment.phone || assignment.phoneNumber || assignment.phone_number || assignment.primaryContactPhone || assignment.primary_contact_phone),
+    preferredAttorneyUserId: normalizeText(assignment.preferredAttorneyUserId || assignment.preferred_attorney_user_id || assignment.userId || assignment.user_id),
+    preferredAttorneyName: normalizeText(assignment.preferredAttorneyName || assignment.preferred_attorney_name || assignment.userName || assignment.user_name || assignment.contactPerson || assignment.contact_person),
+    preferredAttorneyEmail: normalizeText(assignment.preferredAttorneyEmail || assignment.preferred_attorney_email || assignment.userEmail || assignment.user_email || assignment.email || assignment.primaryContactEmail || assignment.primary_contact_email),
+    preferredAttorneyPhone: normalizeText(assignment.preferredAttorneyPhone || assignment.preferred_attorney_phone || assignment.userPhone || assignment.user_phone || assignment.phone || assignment.phoneNumber || assignment.phone_number),
     province: normalizeText(assignment.province || assignment.region),
     isPreferredDefault: assignment.isPreferredDefault === true || assignment.preferred === true,
+    selectionSource: 'connected_partner',
   }
 }
 
@@ -10659,6 +10666,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             sellerContactEmail: sellerEmail,
             sellerContactPhone: normalizeText(selectedLeadContact?.phone),
             transferAttorneyPreferredPartnerId: preferredAttorneyId,
+            transferAttorneyPreferredSelection: preferredAttorney,
+            transferAttorneyPreferredUserId: normalizeText(preferredAttorney?.preferredAttorneyUserId || preferredAttorney?.userId || preferredAttorney?.selectedPerson?.id),
+            transferAttorneyPreferredUserName: normalizeText(preferredAttorney?.preferredAttorneyName || preferredAttorney?.userName || preferredAttorney?.selectedPerson?.name || preferredAttorney?.contactPerson),
+            transferAttorneyPreferredUserEmail: normalizeText(preferredAttorney?.preferredAttorneyEmail || preferredAttorney?.userEmail || preferredAttorney?.selectedPerson?.email || preferredAttorney?.email),
+            transferAttorneyPreferredUserPhone: normalizeText(preferredAttorney?.preferredAttorneyPhone || preferredAttorney?.userPhone || preferredAttorney?.selectedPerson?.phone || preferredAttorney?.phone),
           })
           token = normalizeText(onboarding?.token) || token
           onboardingLink = normalizeText(onboarding?.link) || onboardingLink

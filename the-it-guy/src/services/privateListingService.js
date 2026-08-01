@@ -1,6 +1,6 @@
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { buildSellerClientPortalLink, buildSellerOnboardingLink, generateSellerOnboardingToken } from '../lib/agentListingStorage'
-import { resolveOnboardingBranding } from '../lib/onboardingBranding'
+import { getOrganisationOnboardingBrandingSources, resolveOnboardingBranding } from '../lib/onboardingBranding'
 import {
   getPlatformFeeConsentConfig,
   isPlatformFeeConsentAccepted,
@@ -167,6 +167,55 @@ function getPreferredTransferAttorneyAcceptanceId(acceptance = {}) {
       acceptance?.id ||
       '',
   )
+}
+
+function normalizePreferredTransferAttorneySelection(selection = {}, fallbackId = '') {
+  const source = selection && typeof selection === 'object' ? selection : {}
+  const preferredPartnerId = normalizeText(
+    source.preferredPartnerId ||
+      source.preferred_partner_id ||
+      source.partnerRelationshipId ||
+      source.partner_relationship_id ||
+      source.relationshipId ||
+      source.relationship_id ||
+      source.partnerId ||
+      source.partner_id ||
+      fallbackId ||
+      source.id,
+  )
+  const partnerRelationshipId = normalizeText(
+    source.partnerRelationshipId ||
+      source.partner_relationship_id ||
+      source.relationshipId ||
+      source.relationship_id,
+  )
+  const partnerOrganisationId = normalizeText(
+    source.partnerOrganisationId ||
+      source.partner_organisation_id ||
+      source.organisationId ||
+      source.organisation_id,
+  )
+  const companyName = normalizeText(
+    source.companyName ||
+      source.company_name ||
+      source.organisationName ||
+      source.organisation_name ||
+      source.name ||
+      source.label,
+  )
+
+  if (!preferredPartnerId && !partnerRelationshipId && !partnerOrganisationId && !companyName) return null
+
+  return {
+    preferredPartnerId: preferredPartnerId || partnerRelationshipId || partnerOrganisationId || companyName,
+    partnerRelationshipId: partnerRelationshipId || null,
+    partnerOrganisationId: partnerOrganisationId || null,
+    companyName,
+    contactPerson: normalizeText(source.contactPerson || source.contact_person || source.primaryContactName || source.primary_contact_name),
+    email: normalizeText(source.email || source.emailAddress || source.email_address || source.primaryContactEmail || source.primary_contact_email).toLowerCase(),
+    phone: normalizeText(source.phone || source.phoneNumber || source.phone_number || source.primaryContactPhone || source.primary_contact_phone),
+    selectionSource: normalizeText(source.selectionSource || source.selection_source) || (partnerRelationshipId ? 'connected_partner' : 'agency_recommended'),
+  }
 }
 
 function getSellerPortalAccessStorageKey(token = '') {
@@ -3146,7 +3195,7 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
     const [organisationResult, settingsResult] = await Promise.all([
       client
         .from('organisations')
-        .select('id, name, display_name, logo_url')
+        .select('id, name, display_name, logo_url, settings_json')
         .eq('id', normalizedOrganisationId)
         .maybeSingle(),
       client
@@ -3158,28 +3207,8 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
 
     const organisation = organisationResult.error ? null : organisationResult.data
     const settings = settingsResult.error ? null : settingsResult.data?.settings_json
-    const onboarding = settings?.agencyOnboarding && typeof settings.agencyOnboarding === 'object'
-      ? settings.agencyOnboarding
-      : {}
-    const agencyInformation = onboarding?.agencyInformation && typeof onboarding.agencyInformation === 'object'
-      ? onboarding.agencyInformation
-      : {}
-    const branding = onboarding?.branding && typeof onboarding.branding === 'object'
-      ? onboarding.branding
-      : {}
-    const settingsBranding = settings?.branding && typeof settings.branding === 'object'
-      ? settings.branding
-      : {}
     const resolvedBranding = resolveOnboardingBranding(
-      branding,
-      settingsBranding,
-      {
-        organisationName: pickFirstText(
-          agencyInformation.tradingName,
-          agencyInformation.agencyName,
-        ),
-      },
-      organisation,
+      ...getOrganisationOnboardingBrandingSources({ organisation, settings }),
     )
     const organisationName = resolvedBranding.organisationName
     const logoLightUrl = resolvedBranding.logoLightUrl
@@ -3198,8 +3227,8 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
       logoIconUrl,
       logoDark: logoDarkUrl,
       logoLight: logoLightUrl,
-      primaryColour: pickFirstText(resolvedBranding.primaryColour, '#274C69'),
-      secondaryColour: pickFirstText(resolvedBranding.secondaryColour, '#10273A'),
+      primaryColour: resolvedBranding.primaryColour,
+      secondaryColour: resolvedBranding.secondaryColour,
       accentColour: resolvedBranding.accentColour,
     }
   } catch (error) {
@@ -3226,6 +3255,35 @@ async function fetchSellerOnboardingPublicBrandingSnapshot(token) {
     console.warn('[Private Listings] public seller onboarding branding snapshot unavailable.', error)
     return null
   }
+}
+
+function mergeSellerOnboardingBrandingSnapshots(localBranding = null, publicBranding = null) {
+  if (!localBranding) return publicBranding
+  if (!publicBranding) return localBranding
+  return {
+    ...localBranding,
+    ...publicBranding,
+    organisationId: pickFirstText(publicBranding.organisationId, localBranding.organisationId),
+    organisationName: pickFirstText(publicBranding.organisationName, publicBranding.agencyName, localBranding.organisationName, localBranding.agencyName),
+    agencyName: pickFirstText(publicBranding.agencyName, publicBranding.organisationName, localBranding.agencyName, localBranding.organisationName),
+    logoUrl: pickFirstText(publicBranding.logoUrl, publicBranding.logoDarkUrl, publicBranding.logoLightUrl, publicBranding.logoIconUrl, localBranding.logoUrl),
+    logoDarkUrl: pickFirstText(publicBranding.logoDarkUrl, publicBranding.logoDark, localBranding.logoDarkUrl, localBranding.logoDark),
+    logoLightUrl: pickFirstText(publicBranding.logoLightUrl, publicBranding.logoLight, localBranding.logoLightUrl, localBranding.logoLight),
+    logoIconUrl: pickFirstText(publicBranding.logoIconUrl, publicBranding.logoIcon, localBranding.logoIconUrl, localBranding.logoIcon),
+    logoDark: pickFirstText(publicBranding.logoDark, publicBranding.logoDarkUrl, localBranding.logoDark, localBranding.logoDarkUrl),
+    logoLight: pickFirstText(publicBranding.logoLight, publicBranding.logoLightUrl, localBranding.logoLight, localBranding.logoLightUrl),
+    primaryColour: pickFirstText(publicBranding.primaryColour, publicBranding.primaryColor, localBranding.primaryColour, localBranding.primaryColor),
+    secondaryColour: pickFirstText(publicBranding.secondaryColour, publicBranding.secondaryColor, localBranding.secondaryColour, localBranding.secondaryColor),
+    accentColour: pickFirstText(publicBranding.accentColour, publicBranding.accentColor, localBranding.accentColour, localBranding.accentColor),
+  }
+}
+
+async function resolveSellerOnboardingBrandingSnapshot(client, organisationId, token) {
+  const [localBranding, publicBranding] = await Promise.all([
+    fetchOrganisationBrandingSnapshot(client, organisationId),
+    fetchSellerOnboardingPublicBrandingSnapshot(token),
+  ])
+  return mergeSellerOnboardingBrandingSnapshots(localBranding, publicBranding)
 }
 
 function attachBrandingToListing(listing = null, branding = null) {
@@ -6737,6 +6795,7 @@ export async function sendSellerOnboarding(
     transferAttorneyPreferredUserName = '',
     transferAttorneyPreferredUserEmail = '',
     transferAttorneyPreferredUserPhone = '',
+    transferAttorneyPreferredSelection = null,
   } = {},
 ) {
   const client = requireClient()
@@ -6748,7 +6807,15 @@ export async function sendSellerOnboarding(
   const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   if (!listing?.id) throw new Error('Private listing not found.')
 
-  const requestedPreferredAttorneyId = normalizeText(transferAttorneyPreferredPartnerId)
+  const requestedPreferredAttorneySnapshot = normalizePreferredTransferAttorneySelection(
+    transferAttorneyPreferredSelection,
+    transferAttorneyPreferredPartnerId,
+  )
+  const requestedPreferredAttorneyId = normalizeText(
+    transferAttorneyPreferredPartnerId ||
+      requestedPreferredAttorneySnapshot?.preferredPartnerId ||
+      requestedPreferredAttorneySnapshot?.partnerRelationshipId,
+  )
   let preferredAttorneyBuilder = client
     .from('organisation_preferred_partners')
     .select('id, partner_organisation_id, company_name, contact_person, email_address, phone_number, is_preferred_default')
@@ -6788,6 +6855,22 @@ export async function sendSellerOnboarding(
     }
   } else if (requestedPreferredAttorneyId) {
     preferredTransferAttorney = await resolveConnectedTransferAttorneySelection(client, listing.organisationId, requestedPreferredAttorneyId)
+  }
+
+  if (preferredTransferAttorney && requestedPreferredAttorneySnapshot) {
+    preferredTransferAttorney = {
+      ...preferredTransferAttorney,
+      partnerRelationshipId: preferredTransferAttorney.partnerRelationshipId || requestedPreferredAttorneySnapshot.partnerRelationshipId,
+      partnerOrganisationId: preferredTransferAttorney.partnerOrganisationId || requestedPreferredAttorneySnapshot.partnerOrganisationId,
+      companyName: preferredTransferAttorney.companyName || requestedPreferredAttorneySnapshot.companyName,
+      contactPerson: preferredTransferAttorney.contactPerson || requestedPreferredAttorneySnapshot.contactPerson,
+      email: preferredTransferAttorney.email || requestedPreferredAttorneySnapshot.email,
+      phone: preferredTransferAttorney.phone || requestedPreferredAttorneySnapshot.phone,
+      selectionSource: preferredTransferAttorney.selectionSource || requestedPreferredAttorneySnapshot.selectionSource,
+    }
+  }
+  if (!preferredTransferAttorney && requestedPreferredAttorneySnapshot?.preferredPartnerId && requestedPreferredAttorneySnapshot?.companyName) {
+    preferredTransferAttorney = requestedPreferredAttorneySnapshot
   }
 
   if (!preferredTransferAttorney?.preferredPartnerId || !normalizeText(preferredTransferAttorney.companyName)) {
@@ -7035,11 +7118,10 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     throw buildSellerPortalAuthRequiredError(portalPayload.portalAuth)
   }
   if (portalPayload?.listing) {
-    const [initialBranding, mediaByListingId] = await Promise.all([
-      fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(portalPayload.listing)),
+    const [branding, mediaByListingId] = await Promise.all([
+      resolveSellerOnboardingBrandingSnapshot(client, resolveListingOrganisationId(portalPayload.listing), normalizedToken),
       fetchMediaRowsForListings(client, [portalPayload.listing.id]),
     ])
-    const branding = initialBranding || await fetchSellerOnboardingPublicBrandingSnapshot(normalizedToken)
     const listingWithMedia = attachDistributionMediaToListing(
       portalPayload.listing,
       mediaByListingId.get(String(portalPayload.listing.id)) || [],
@@ -7052,11 +7134,10 @@ export async function getSellerOnboardingByToken(token, options = {}) {
 
   const attachSellerOnboardingPayloadContext = async (apiPayload) => {
     if (!apiPayload?.listing) return null
-    const [initialBranding, mediaByListingId] = await Promise.all([
-      fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(apiPayload.listing)),
+    const [branding, mediaByListingId] = await Promise.all([
+      resolveSellerOnboardingBrandingSnapshot(client, resolveListingOrganisationId(apiPayload.listing), normalizedToken),
       fetchMediaRowsForListings(client, [apiPayload.listing.id]),
     ])
-    const branding = initialBranding || await fetchSellerOnboardingPublicBrandingSnapshot(normalizedToken)
     const listingWithMedia = attachDistributionMediaToListing(
       apiPayload.listing,
       mediaByListingId.get(String(apiPayload.listing.id)) || [],
@@ -7105,9 +7186,7 @@ export async function getSellerOnboardingByToken(token, options = {}) {
       ? rawListing.mandate_packet
       : null
   const listing = sanitizeSellerPortalListingFinalArtifacts(rawListing, rawMandatePacket)
-  const branding =
-    await fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(listing)) ||
-    await fetchSellerOnboardingPublicBrandingSnapshot(normalizedToken)
+  const branding = await resolveSellerOnboardingBrandingSnapshot(client, resolveListingOrganisationId(listing), normalizedToken)
   return {
     onboarding: query.data,
     listing: attachBrandingToListing(listing, branding),

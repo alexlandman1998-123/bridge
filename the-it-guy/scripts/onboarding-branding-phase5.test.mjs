@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 import { mergeAgencyOnboardingDraft } from '../src/lib/agencyOnboarding.js'
-import { resolveOnboardingBranding } from '../src/lib/onboardingBranding.js'
+import {
+  getOrganisationOnboardingBrandingSources,
+  resolveOnboardingBranding,
+} from '../src/lib/onboardingBranding.js'
 
 const onboardingDraft = mergeAgencyOnboardingDraft({}, {
   branding: {
@@ -58,6 +61,36 @@ assert.equal(resolvedLandingSpecificColours.primaryColour, '#494B8A')
 assert.equal(resolvedLandingSpecificColours.secondaryColour, '#000000')
 assert.equal(resolvedLandingSpecificColours.accentColour, '#CEAC69')
 
+const resolvedOrganisationSettingsBranding = resolveOnboardingBranding(
+  ...getOrganisationOnboardingBrandingSources({
+    organisation: {
+      name: 'New Agency Pty Ltd',
+      settings_json: {
+        agencyOnboarding: {
+          agencyInformation: {
+            tradingName: 'New Agency',
+          },
+          branding: {
+            logoLight: 'https://cdn.example.com/new-agency-light.svg',
+            logoDarkBucket: 'organisation-branding',
+            logoDarkPath: 'organisations/new-agency/branding/logo-dark.svg',
+            brandColours: {
+              primary: '#123abc',
+              secondary: '#202b3a',
+              accent: '#f6c343',
+            },
+          },
+        },
+      },
+    },
+  }),
+)
+assert.equal(resolvedOrganisationSettingsBranding.organisationName, 'New Agency')
+assert.equal(resolvedOrganisationSettingsBranding.logoLightUrl, 'https://cdn.example.com/new-agency-light.svg')
+assert.equal(resolvedOrganisationSettingsBranding.primaryColour, '#123abc')
+assert.equal(resolvedOrganisationSettingsBranding.secondaryColour, '#202b3a')
+assert.equal(resolvedOrganisationSettingsBranding.accentColour, '#f6c343')
+
 const files = {
   settingsPage: await readFile(new URL('../src/pages/settings/SettingsOrganisationPage.jsx', import.meta.url), 'utf8'),
   settingsApi: await readFile(new URL('../src/lib/settingsApi.js', import.meta.url), 'utf8'),
@@ -79,14 +112,16 @@ assert.match(files.settingsApi, /\.from\('organisation_settings'\)[\s\S]*setting
 assert.match(files.settingsApi, /clearOrganisationRuntimeCache\(\)[\s\S]*onboarding:\s*mergedDraft/)
 assert.match(files.buyerApi, /async function fetchOrganisationBrandContext[\s\S]*\.from\('organisation_settings'\)[\s\S]*settingsJson/)
 assert.match(files.buyerApi, /getOrganisationOnboardingBrandingSources[\s\S]*agencyOnboarding\.branding[\s\S]*settingsJson\.branding/)
-assert.match(files.sellerService, /const settingsBranding[\s\S]*resolveOnboardingBranding\(\s*branding,\s*settingsBranding/)
+assert.match(files.sellerService, /getOrganisationOnboardingBrandingSources\(\{ organisation, settings \}\)/)
 assert.match(files.sellerService, /function resolveListingOrganisationId/, 'seller onboarding service should normalize listing organisation id casing')
-assert.match(files.sellerService, /fetchOrganisationBrandingSnapshot\(client, resolveListingOrganisationId\(portalPayload\.listing\)\)/, 'seller onboarding portal payload should attach organisation settings branding')
-assert.match(files.sellerService, /fetchSellerOnboardingPublicBrandingSnapshot\(normalizedToken\)/, 'seller onboarding should fall back to token-scoped public branding when anonymous settings reads are blocked')
+assert.match(files.sellerService, /resolveSellerOnboardingBrandingSnapshot\(client, resolveListingOrganisationId\(portalPayload\.listing\), normalizedToken\)/, 'seller onboarding portal payload should attach organisation settings branding')
+assert.match(files.sellerService, /fetchSellerOnboardingPublicBrandingSnapshot\(token\)/, 'seller onboarding should fall back to token-scoped public branding when anonymous settings reads are blocked')
+assert.match(files.sellerService, /resolveSellerOnboardingBrandingSnapshot\(client, resolveListingOrganisationId\(portalPayload\.listing\), normalizedToken\)/, 'seller onboarding should merge local branding with token-scoped public branding')
 assert.match(files.sellerBrandingApi, /seller_portal_token/, 'public seller branding API should resolve stable portal tokens')
 assert.match(files.sellerBrandingApi, /seller_portal_invite_token_hash/, 'public seller branding API should resolve invite tokens by hash without exposing token material')
 assert.match(files.sellerBrandingApi, /createSignedUrl\(normalizedPath, 60 \* 60 \* 24 \* 7\)/, 'public seller branding API should mint fresh logo URLs from storage paths')
 assert.match(files.sellerBrandingApi, /resolveOnboardingBranding\(/, 'public seller branding API should use the shared onboarding branding resolver')
+assert.match(files.sellerBrandingApi, /getOrganisationOnboardingBrandingSources\(\{ organisation, settings \}\)/, 'public seller branding API should inspect organisation settings_json and organisation_settings branding sources')
 assert.match(files.sellerBrandingRoute, /createSellerOnboardingBrandingResponse/, 'seller branding route should delegate to the token-scoped API service')
 
 assert.match(files.clientOnboarding, /primaryColour=\{onboardingBrand\.primaryColour\}/)

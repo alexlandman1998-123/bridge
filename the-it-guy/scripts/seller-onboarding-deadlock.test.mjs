@@ -4,6 +4,8 @@ import fs from 'node:fs/promises'
 const appRoot = new URL('../', import.meta.url)
 const listingDetailSource = await fs.readFile(new URL('src/pages/AgentListingDetail.jsx', appRoot), 'utf8')
 const privateListingSource = await fs.readFile(new URL('src/services/privateListingService.js', appRoot), 'utf8')
+const agencyPipelineSource = await fs.readFile(new URL('src/pages/agency/AgencyPipelinePage.jsx', appRoot), 'utf8')
+const sellerOnboardingSource = await fs.readFile(new URL('src/pages/SellerOnboarding.jsx', appRoot), 'utf8')
 
 const editSellerHandler = listingDetailSource.match(/function handleEditSellerProfile\(\) \{[\s\S]*?\n  }\n\n  async function handleSaveSellerContact/)?.[0] || ''
 const saveSellerHandler = listingDetailSource.match(/async function handleSaveSellerContact\(event\) \{[\s\S]*?\n  }\n\n  function handleDownloadSellerProfilePdf/)?.[0] || ''
@@ -23,5 +25,11 @@ assert.match(listingDetailSource, /No portal link required/, 'Seller workspace m
 assert.match(sendOnboarding, /sellerFirstName,[\s\S]*?firstName: sellerFirstName/, 'New onboarding records must include the seller first name.')
 assert.match(sendOnboarding, /sellerEmail: resolvedSellerEmail/, 'New onboarding records must include the seller email.')
 assert.match(sendOnboarding, /sellerPhone: resolvedSellerPhone/, 'New onboarding records must include the seller phone.')
+assert.match(sendOnboarding, /transferAttorneyPreferredSelection = null/, 'Seller onboarding send must accept the selected transfer attorney snapshot.')
+assert.match(sendOnboarding, /requestedPreferredAttorneySnapshot/, 'Seller onboarding send must normalize the selected transfer attorney snapshot.')
+assert.match(sendOnboarding, /preferredTransferAttorney = requestedPreferredAttorneySnapshot/, 'Selected transfer attorney details must be preserved when partner lookup cannot rehydrate them.')
+assert.match(agencyPipelineSource, /transferAttorneyPreferredSelection: preferredAttorney/, 'Agency seller onboarding must pass the selected transfer attorney object.')
+assert.match(agencyPipelineSource, /partnerRelationshipId: relationshipId/, 'Connected transfer attorney options must preserve the relationship id.')
+assert.match(sellerOnboardingSource, /existing\.preferred_transfer_attorney/, 'Seller onboarding must read legacy snake-case preferred transfer attorney payloads.')
 
 console.log('seller onboarding deadlock checks passed')

@@ -107,6 +107,7 @@ const AGENT_WORKSPACE_TABS = [
   { key: 'leads', label: 'Leads', icon: Users },
   { key: 'prospecting', label: 'Prospecting', icon: Phone },
   { key: 'performance', label: 'Performance', icon: Trophy },
+  { key: 'settings', label: 'Settings', icon: KeyRound },
 ]
 
 const ORGANISATION_ROLE_OPTIONS = [
@@ -7551,7 +7552,7 @@ export function AgentWorkspacePage() {
         commissionStructures={commissionStructures}
         workspaceSnapshot={workspaceSnapshot}
         branchOptions={detailBranchOptions}
-        onRefresh={loadWorkspace}
+        onRefresh={() => loadFullWorkspace({ blockInitialRender: false })}
       />
     </section>
   )

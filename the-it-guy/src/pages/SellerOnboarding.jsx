@@ -1415,10 +1415,20 @@ function getFlowContract(existing = {}, listing = {}, canonicalFacts = {}) {
 function normalizeFormData(listing) {
   const seller = listing?.seller || {}
   const existing = listing?.sellerOnboarding?.formData || {}
-  const preferredTransferAttorney = existing.preferredTransferAttorney && typeof existing.preferredTransferAttorney === 'object'
+  const preferredTransferAttorneySource = [
+    existing.preferredTransferAttorney,
+    existing.preferred_transfer_attorney,
+    existing.transferAttorney,
+    existing.transfer_attorney,
+  ].find((candidate) => candidate && typeof candidate === 'object')
+  const preferredTransferAttorney = preferredTransferAttorneySource
     ? {
-      ...existing.preferredTransferAttorney,
-      preferredPartnerId: getPreferredTransferAttorneyId(existing.preferredTransferAttorney),
+      ...preferredTransferAttorneySource,
+      preferredPartnerId: getPreferredTransferAttorneyId(preferredTransferAttorneySource),
+      companyName: preferredTransferAttorneySource.companyName || preferredTransferAttorneySource.company_name || preferredTransferAttorneySource.name || '',
+      contactPerson: preferredTransferAttorneySource.contactPerson || preferredTransferAttorneySource.contact_person || '',
+      email: preferredTransferAttorneySource.email || preferredTransferAttorneySource.emailAddress || preferredTransferAttorneySource.email_address || '',
+      phone: preferredTransferAttorneySource.phone || preferredTransferAttorneySource.phoneNumber || preferredTransferAttorneySource.phone_number || '',
     }
     : null
   const canonicalFacts = getCanonicalSellerFacts(listing)

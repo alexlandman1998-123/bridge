@@ -245,6 +245,59 @@ function collectSources(inputs = []) {
   return inputs.flatMap((input) => collectBrandingSources(input))
 }
 
+function pushRecord(target, value) {
+  if (isRecord(value)) target.push(value)
+}
+
+function pushNestedRecords(target, source, keys) {
+  if (!isRecord(source)) return
+  for (const key of keys) {
+    pushRecord(target, source[key])
+  }
+}
+
+function getNestedRecord(source, ...keys) {
+  if (!isRecord(source)) return {}
+  for (const key of keys) {
+    if (isRecord(source[key])) return source[key]
+  }
+  return {}
+}
+
+export function getOrganisationOnboardingBrandingSources({ organisation = {}, settings = {}, organisationSettings = {} } = {}) {
+  const sources = []
+  const settingsSources = []
+  pushRecord(settingsSources, settings)
+  pushRecord(settingsSources, organisationSettings)
+  pushRecord(settingsSources, getNestedRecord(organisation, 'settings_json', 'settingsJson'))
+
+  const onboardingSources = []
+  for (const source of settingsSources) {
+    pushNestedRecords(onboardingSources, source, ['agencyOnboarding', 'agency_onboarding', 'sellerOnboarding', 'seller_onboarding', 'onboarding', 'publicOnboarding', 'public_onboarding'])
+  }
+
+  for (const onboarding of onboardingSources) {
+    pushNestedRecords(sources, onboarding, ['branding', 'portalBranding', 'portal_branding', 'onboardingBranding', 'onboarding_branding'])
+  }
+  for (const source of settingsSources) {
+    pushNestedRecords(sources, source, ['branding', 'portalBranding', 'portal_branding', 'onboardingBranding', 'onboarding_branding', 'publicIdentity', 'public_identity'])
+  }
+  for (const onboarding of onboardingSources) {
+    const agencyInformation = getNestedRecord(onboarding, 'agencyInformation', 'agency_information')
+    if (isRecord(agencyInformation)) {
+      sources.push({
+        ...agencyInformation,
+        organisationName: normalizeOnboardingBrandingText(agencyInformation.tradingName || agencyInformation.trading_name || agencyInformation.agencyName || agencyInformation.agency_name),
+        agencyName: normalizeOnboardingBrandingText(agencyInformation.agencyName || agencyInformation.agency_name || agencyInformation.tradingName || agencyInformation.trading_name),
+      })
+    }
+  }
+  sources.push(...onboardingSources)
+  sources.push(...settingsSources)
+  pushRecord(sources, organisation)
+  return sources
+}
+
 export function hasResolvedOnboardingBrandingValue(field, ...sources) {
   const keys = FIELD_KEYS[field] || []
   if (!keys.length) return false
