@@ -199,7 +199,7 @@ Deno.serve(async (req: Request) => {
     const requestedPacketVersionId = normalizeText(payload.packetVersionId || payload.packet_version_id);
     const signingToken = extractSigningToken(payload.portalLink || payload.portal_link);
     const dispatchId = normalizeText(payload.dispatchId || payload.dispatch_id);
-    const isResend = booleanFlag(payload.resend) || booleanFlag(payload.reminder);
+    const requestedResend = booleanFlag(payload.resend) || booleanFlag(payload.reminder);
     if (!packetId || !signingToken) {
       return jsonResponse(400, {
         success: false,
@@ -334,9 +334,11 @@ Deno.serve(async (req: Request) => {
     const requestedRecipient = normalizeEmail(payload.to);
     const tokenExpiry = Date.parse(normalizeText(signer?.token_expires_at));
     const signerStatus = normalizeText(signer?.status).toLowerCase();
-    const signerMayBeRecordedByDispatch = Boolean(dispatchId) && ["sent", "viewed"].includes(signerStatus);
+    const signerAlreadyActive = ["sent", "viewed"].includes(signerStatus);
+    const isResend = requestedResend && signerAlreadyActive;
+    const signerMayBeRecordedByDispatch = Boolean(dispatchId) && signerAlreadyActive;
     const signerCanReceiveDelivery = isResend
-      ? ["sent", "viewed"].includes(signerStatus)
+      ? signerAlreadyActive
       : signerStatus === "ready_to_send" || signerMayBeRecordedByDispatch;
     if (
       !signer ||
@@ -511,6 +513,7 @@ Deno.serve(async (req: Request) => {
       recipientRole: signerRole || null,
       emailConfirmed: true,
       idempotencyKey: providerIdempotencyKey,
+      requestedResend,
     };
     const deliveryRpc = isOtpSigning
       ? "bridge_record_otp_signing_delivery_phase2"

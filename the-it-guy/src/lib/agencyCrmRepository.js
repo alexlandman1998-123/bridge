@@ -691,29 +691,40 @@ export async function listAgencyCrmLeadContacts(organisationId, options = {}) {
     throw new Error('Supabase is required before loading agency CRM data.')
   }
   const includeLocalFallback = options?.includeLocalFallback !== false
+  const includePrimaryRecords = options?.includePrimaryRecords !== false
+  const includeRelatedRecords = options?.includeRelatedRecords !== false
 
-  const contactPromise = supabase
-    .from('contacts')
-    .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
-    .eq('organisation_id', workspaceId)
-    .order('updated_at', { ascending: false })
-  const activityPromise = supabase
-    .from('lead_activities')
-    .select(LEAD_ACTIVITY_SELECT_FIELDS)
-    .eq('organisation_id', workspaceId)
-    .order('activity_date', { ascending: false })
-  const taskPromise = supabase
-    .from('tasks')
-    .select(TASK_SELECT_FIELDS)
-    .eq('organisation_id', workspaceId)
-    .order('updated_at', { ascending: false })
-  const leadPromise = selectLeadsWithCompatibility((fields) =>
-    supabase
-      .from('leads')
-      .select(fields)
+  const emptyResult = { data: [], error: null }
+  const contactPromise = includePrimaryRecords
+    ? supabase
+      .from('contacts')
+      .select('contact_id, organisation_id, assigned_agent_id, first_name, last_name, phone, email, contact_type, notes, created_at, updated_at')
       .eq('organisation_id', workspaceId)
-      .order('updated_at', { ascending: false }),
-  )
+      .order('updated_at', { ascending: false })
+    : Promise.resolve(emptyResult)
+  const activityPromise = includeRelatedRecords
+    ? supabase
+      .from('lead_activities')
+      .select(LEAD_ACTIVITY_SELECT_FIELDS)
+      .eq('organisation_id', workspaceId)
+      .order('activity_date', { ascending: false })
+    : Promise.resolve(emptyResult)
+  const taskPromise = includeRelatedRecords
+    ? supabase
+      .from('tasks')
+      .select(TASK_SELECT_FIELDS)
+      .eq('organisation_id', workspaceId)
+      .order('updated_at', { ascending: false })
+    : Promise.resolve(emptyResult)
+  const leadPromise = includePrimaryRecords
+    ? selectLeadsWithCompatibility((fields) =>
+      supabase
+        .from('leads')
+        .select(fields)
+        .eq('organisation_id', workspaceId)
+        .order('updated_at', { ascending: false }),
+    )
+    : Promise.resolve(emptyResult)
 
   const [leadResult, contactResult, activityResult, taskResult] = await Promise.all([
     leadPromise,
@@ -752,7 +763,10 @@ export async function listAgencyCrmLeadContacts(organisationId, options = {}) {
     leadActivities: remoteLeadActivities,
     tasks: remoteTasks,
   }, {
-    replaceCollections: ['contacts', 'leads', 'leadActivities', 'tasks'],
+    replaceCollections: [
+      ...(includePrimaryRecords ? ['contacts', 'leads'] : []),
+      ...(includeRelatedRecords ? ['leadActivities', 'tasks'] : []),
+    ],
   })
 
   return {

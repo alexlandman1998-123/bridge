@@ -4880,29 +4880,40 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       if (isSupabaseConfigured && supabase && isUuidLike(orgId)) {
         try {
-          const [crmSnapshot, inboundLeadEmails, privateListings] = await Promise.all([
-            withPipelineTimeout(
-              listAgencyCrmLeadContacts(orgId),
-              'Lead data is taking too long to load.',
-              PIPELINE_CRM_RECORDS_TIMEOUT_MS,
-            ),
-            withPipelineTimeout(
-              listInboundLeadEmails(orgId, { limit: 200 }),
-              'Captured enquiry data is taking too long to load.',
-              PIPELINE_CRM_RECORDS_TIMEOUT_MS,
-            ).catch((captureLoadError) => {
-              console.warn('[PIPELINE] inbound lead email load failed; continuing without captured enquiry rows.', captureLoadError)
-              return []
+          const inboundLeadEmailsPromise = withPipelineTimeout(
+            listInboundLeadEmails(orgId, { limit: 200 }),
+            'Captured enquiry data is taking too long to load.',
+            PIPELINE_CRM_RECORDS_TIMEOUT_MS,
+          ).catch((captureLoadError) => {
+            console.warn('[PIPELINE] inbound lead email load failed; continuing without captured enquiry rows.', captureLoadError)
+            return []
+          })
+          const privateListingsPromise = withPipelineTimeout(
+            getOrganisationPrivateListings(orgId, { includeRequirementsAndDocuments: false }),
+            'Private listing data is taking too long to load.',
+            PIPELINE_RECORDS_TIMEOUT_MS,
+          ).catch((listingLoadError) => {
+            console.warn('[PIPELINE] private listing fallback load failed; continuing with CRM leads only.', listingLoadError)
+            return []
+          })
+          const relatedCrmSnapshotPromise = withPipelineTimeout(
+            listAgencyCrmLeadContacts(orgId, {
+              includePrimaryRecords: false,
+              includeLocalFallback: false,
             }),
-            withPipelineTimeout(
-              getOrganisationPrivateListings(orgId, { includeRequirementsAndDocuments: false }),
-              'Private listing data is taking too long to load.',
-              PIPELINE_RECORDS_TIMEOUT_MS,
-            ).catch((listingLoadError) => {
-              console.warn('[PIPELINE] private listing fallback load failed; continuing with CRM leads only.', listingLoadError)
-              return []
+            'Lead activity data is taking too long to load.',
+            PIPELINE_CRM_RECORDS_TIMEOUT_MS,
+          ).catch((relatedLoadError) => {
+            console.warn('[PIPELINE] lead activity/task load failed; continuing with primary lead rows only.', relatedLoadError)
+            return { leadActivities: [], tasks: [] }
+          })
+          const crmSnapshot = await withPipelineTimeout(
+            listAgencyCrmLeadContacts(orgId, {
+              includeRelatedRecords: false,
             }),
-          ])
+            'Lead data is taking too long to load.',
+            PIPELINE_CRM_RECORDS_TIMEOUT_MS,
+          )
 
           const crmContacts = Array.isArray(crmSnapshot.contacts) ? crmSnapshot.contacts : []
           const crmLeads = filterDeletedAgencyLeadRows(
@@ -4916,12 +4927,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             leads: crmLeads,
             leadActivities: Array.isArray(crmSnapshot.leadActivities) ? crmSnapshot.leadActivities : [],
             tasks: Array.isArray(crmSnapshot.tasks) ? crmSnapshot.tasks : [],
-            inboundLeadEmails: Array.isArray(inboundLeadEmails) ? inboundLeadEmails : [],
+            inboundLeadEmails: [],
           }
           if (requestId === reloadRequestRef.current) {
             applySnapshotRecords(mergedSnapshot)
+            if (crmLeads.length) {
+              markPrimaryRecordsReady()
+            }
           }
 
+          const [inboundLeadEmails, privateListings] = await Promise.all([
+            inboundLeadEmailsPromise,
+            privateListingsPromise,
+          ])
           const privateListingRows = Array.isArray(privateListings) ? privateListings : []
           listingOptionsForAppointments = dedupeListingOptions([
             ...listingOptionsForAppointments,
@@ -4961,6 +4979,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           if (requestId === reloadRequestRef.current) {
             applySnapshotRecords(mergedSnapshot)
             markPrimaryRecordsReady()
+          }
+
+          const relatedCrmSnapshot = await relatedCrmSnapshotPromise
+          mergedSnapshot = {
+            ...mergedSnapshot,
+            leadActivities: Array.isArray(relatedCrmSnapshot.leadActivities) ? relatedCrmSnapshot.leadActivities : [],
+            tasks: Array.isArray(relatedCrmSnapshot.tasks) ? relatedCrmSnapshot.tasks : [],
+          }
+          if (requestId === reloadRequestRef.current) {
+            applySnapshotRecords(mergedSnapshot)
           }
         } catch (dbLoadError) {
           console.warn('[PIPELINE] supabase lead/contact load failed; no local CRM fallback will be loaded.', dbLoadError)

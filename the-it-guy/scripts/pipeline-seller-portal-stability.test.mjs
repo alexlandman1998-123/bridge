@@ -47,8 +47,23 @@ assert.doesNotMatch(leadWorkspaceTabSelectionBlock, /navigate\(/, 'lead workspac
 assert.doesNotMatch(leadWorkspaceTabSelectionBlock, /scrollIntoView/, 'lead workspace tab handler should not force a page jump on tab changes')
 assert.match(
   pipelineSource,
-  /if \(applyLocalSnapshot && localFallbackAvailable && requestId === reloadRequestRef\.current\)/,
+  /if \([\s\S]*?applyLocalSnapshot &&[\s\S]*?localFallbackAvailable &&[\s\S]*?requestId === reloadRequestRef\.current[\s\S]*?\) \{[\s\S]*?applySnapshotRecords\(snapshot\)[\s\S]*?markPrimaryRecordsReady\(\)/,
   'pipeline reload should only paint local snapshots when unsafe fallbacks are explicitly enabled',
+)
+assert.match(
+  pipelineSource,
+  /relatedCrmSnapshotPromise = withPipelineTimeout\([\s\S]*?listAgencyCrmLeadContacts\(orgId, \{[\s\S]*?includePrimaryRecords: false[\s\S]*?includeLocalFallback: false/s,
+  'pipeline list load should hydrate lead activities/tasks separately from the first lead row paint',
+)
+assert.match(
+  pipelineSource,
+  /listAgencyCrmLeadContacts\(orgId, \{[\s\S]*?includeRelatedRecords: false[\s\S]*?\}\)/s,
+  'pipeline list load should fetch leads and contacts before waiting on related activity/task rows',
+)
+assert.match(
+  pipelineSource,
+  /if \(crmLeads\.length\) \{[\s\S]*?markPrimaryRecordsReady\(\)[\s\S]*?\}/,
+  'pipeline list load should leave the skeleton up for truly empty CRM results until private-listing fallback is checked',
 )
 assert.match(pipelineSource, /const PIPELINE_CONTEXT_TIMEOUT_MS = 8000/, 'context loads should not timeout at 3.5s')
 assert.match(pipelineSource, /const PIPELINE_RECORDS_TIMEOUT_MS = 10000/, 'private listing and record enrichments should get the same 10s budget as CRM')
@@ -82,6 +97,16 @@ assert.match(
   agencyCrmRepositorySource,
   /\.eq\('lead_id', resolvedLeadId\)[\s\S]*?\.from\('tasks'\)[\s\S]*?\.eq\('lead_id', resolvedLeadId\)/,
   'lead workspace activities and tasks should load against the resolved canonical lead id',
+)
+assert.match(
+  agencyCrmRepositorySource,
+  /const includePrimaryRecords = options\?\.includePrimaryRecords !== false[\s\S]*?const includeRelatedRecords = options\?\.includeRelatedRecords !== false/s,
+  'CRM lead list repository should support primary-row and related-row load phases',
+)
+assert.match(
+  agencyCrmRepositorySource,
+  /includePrimaryRecords[\s\S]*?\.from\('contacts'\)[\s\S]*?: Promise\.resolve\(emptyResult\)[\s\S]*?includeRelatedRecords[\s\S]*?\.from\('lead_activities'\)[\s\S]*?: Promise\.resolve\(emptyResult\)/s,
+  'CRM lead list repository should skip unneeded table queries for lightweight phases',
 )
 assert.match(
   agencyCrmRepositorySource,
