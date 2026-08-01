@@ -27,3 +27,14 @@ test('validation recovery reports only blocking missing fields once', () => {
   assert.match(recovery, /mandate generation needs: Title \/ ERF \/ portion number\./)
   assert.doesNotMatch(recovery, /ERF Number.*ERF Number|Agent Phone|Estate Name|Transferring Attorney/i)
 })
+
+test('raw postgres permission failures do not fall back to generic generation copy', () => {
+  const recovery = formatLegalDocumentGenerationRecovery({
+    code: '42501',
+    message: 'Active organisation membership is required.',
+  }, { packetType: 'mandate' })
+
+  assert.match(recovery, /Your current organisation role cannot generate this mandate\./)
+  assert.match(recovery, /legal-document access/)
+  assert.doesNotMatch(recovery, /could not confirm a usable mandate draft/i)
+})

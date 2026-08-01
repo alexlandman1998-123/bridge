@@ -5,6 +5,10 @@ const migration = await readFile(
   new URL('../../supabase/migrations/202607310001_seller_onboarding_submit_fast_return.sql', import.meta.url),
   'utf8',
 )
+const progressMigration = await readFile(
+  new URL('../../supabase/migrations/202608010001_seller_onboarding_progress_fast_return.sql', import.meta.url),
+  'utf8',
+)
 const privateListingService = await readFile(
   new URL('../src/services/privateListingService.js', import.meta.url),
   'utf8',
@@ -39,9 +43,39 @@ assert.doesNotMatch(
   'seller onboarding submit must not depend on the heavy portal payload enrichment',
 )
 assert.match(
+  progressMigration,
+  /create or replace function public\.bridge_update_private_listing_seller_onboarding_progress\(/,
+  'migration should replace the seller onboarding progress RPC',
+)
+assert.match(
+  progressMigration,
+  /return jsonb_build_object\([\s\S]*?'listing', to_jsonb\(v_listing\),[\s\S]*?'onboarding', to_jsonb\(v_onboarding\) - 'seller_portal_password_hash' - 'seller_portal_access_token_hash' - 'seller_portal_invite_token_hash'[\s\S]*?'requirements', '\[\]'::jsonb,[\s\S]*?'documents', '\[\]'::jsonb,[\s\S]*?'appointments', '\[\]'::jsonb,/,
+  'seller onboarding progress should return a minimal payload after core draft writes',
+)
+assert.doesNotMatch(
+  progressMigration,
+  /return public\.bridge_private_listing_seller_portal_payload\(p_token\);/,
+  'seller onboarding progress must not depend on the heavy portal payload enrichment',
+)
+assert.match(
   privateListingService,
   /function mapSellerClientPortalPayload\(payload\)[\s\S]*?const requirements = normalizeRequirementRows\(Array\.isArray\(payload\?\.requirements\) \? payload\.requirements : \[\]\)/,
   'client submit mapper should tolerate the empty requirements array returned by core payload',
+)
+assert.match(
+  privateListingService,
+  /function deferSellerOnboardingFollowUp\(label, task\)[\s\S]*?Promise\.resolve\(\)[\s\S]*?\.then\(task\)[\s\S]*?console\.warn\(`\[Private Listings\] \$\{label\} skipped`, error\)/,
+  'seller onboarding follow-ups should be scheduled outside the save/submit hot path',
+)
+assert.match(
+  privateListingService,
+  /deferSellerOnboardingFollowUp\('seller requirement sync after onboarding progress update'[\s\S]*?syncPrivateListingRequirements\(rpcContext\.listing, \{[\s\S]*?reason: 'seller_onboarding_progress'/,
+  'seller onboarding draft saves should not wait for requirement sync before returning',
+)
+assert.match(
+  privateListingService,
+  /deferSellerOnboardingFollowUp\('seller requirements sync after onboarding submit'[\s\S]*?syncPrivateListingRequirements\(rpcContext\.listing, \{[\s\S]*?reason: 'onboarding_completed'/,
+  'seller onboarding submit should not wait for optional requirement sync before returning',
 )
 assert.match(
   privateListingService,

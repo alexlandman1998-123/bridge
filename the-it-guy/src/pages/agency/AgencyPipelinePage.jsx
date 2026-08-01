@@ -740,6 +740,46 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function hasExplicitMandateSentEvidence({ lead = {}, mandatePacketStatus = null } = {}) {
+  const packet = mandatePacketStatus?.packet && typeof mandatePacketStatus.packet === 'object'
+    ? mandatePacketStatus.packet
+    : {}
+  const sourceContext = packet.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : {}
+  const values = [
+    lead?.mandateStatus,
+    lead?.mandate_status,
+    sourceContext?.mandateStatus,
+    sourceContext?.mandate_status,
+    sourceContext?.signingStatus,
+    sourceContext?.signing_status,
+    mandatePacketStatus?.signingStatus,
+    mandatePacketStatus?.state,
+    packet?.status,
+    packet?.state,
+  ].map(normalizeKey)
+  const sentStates = new Set([
+    'mandate sent',
+    'mandate_sent',
+    'sent',
+    'sent for signature',
+    'sent_for_signature',
+    'sent to seller',
+    'sent_to_seller',
+    'ready for client signature',
+    'ready_for_client_signature',
+    'seller signature requested',
+    'seller_signature_requested',
+    'awaiting seller signature',
+    'awaiting_seller_signature',
+  ])
+  return Boolean(
+    normalizeText(lead?.mandateSentAt || lead?.mandate_sent_at || sourceContext?.mandateSentAt || sourceContext?.mandate_sent_at) ||
+      values.some((value) => sentStates.has(value)),
+  )
+}
+
 const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity', 'listing_journey'])
 const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'properties', 'activity', 'appointments', 'documents', 'offers', 'insights', 'mapping'])
 
@@ -7014,7 +7054,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       const mandateLabel = selectedLeadMandateSignedEvidence
         ? 'Mandate Signed'
-        : normalizeText(selectedLead?.mandateStatus || selectedLead?.mandate_status || selectedLead?.stage || selectedLead?.status).toLowerCase().includes('sent')
+        : hasExplicitMandateSentEvidence({ lead: selectedLead, mandatePacketStatus })
           ? 'Mandate Sent'
           : normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id || mandatePacketStatus?.packet?.id)
             ? 'Mandate Generated'

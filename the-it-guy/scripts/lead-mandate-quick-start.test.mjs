@@ -79,7 +79,7 @@ for (const reference of [
   'PreferredAttorneySelectionModal',
   'sellerAttorneyPickerOpen',
   'transferAttorneyPreferredPartnerId: preferredAttorneyId',
-  'Listing Readiness Score',
+  'Listing Readiness',
   "{ key: 'seller', label: 'Seller', meta: '' }",
   "{ key: 'property', label: 'Property', meta: '' }",
   "{ key: 'mandate', label: 'Mandate', meta: '' }",
@@ -87,7 +87,6 @@ for (const reference of [
   'data-testid="seller-journey-rail"',
   'gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))`',
   'Edit Offer / Terms',
-  'Edit Wording / Terms',
   'autoGenerateEnabled={legalWorkspaceOpen}',
 ]) {
   assert.ok(source.includes(reference), `AgencyPipelinePage should keep ${reference}.`)
@@ -111,7 +110,8 @@ const quickStartBlock = getFunctionBlock('handleMandateQuickStartGenerateAndSend
 for (const reference of [
   'selectedLeadMandateQuickStartBlockers.length',
   'handleGenerateMandateFromSellerLead',
-  'handleSendMandateToSeller({ packetId: mandatePacketId })',
+  'handleSendMandateToSeller({',
+  'packetVersionId: mandatePacketVersionId',
   'setMandateQuickStartOpen(false)',
 ]) {
   assert.ok(quickStartBlock.includes(reference), `Quick start flow should keep ${reference}.`)
@@ -132,6 +132,18 @@ assert.ok(
 assert.ok(
   !source.includes("selectedLeadStageKey.includes('onboarding submitted')"),
   'Mandate confirmation should not treat lead stage text as submitted onboarding evidence.',
+)
+assert.ok(
+  source.includes('function hasExplicitMandateSentEvidence'),
+  'Seller lead activity should use an explicit mandate sent evidence resolver.',
+)
+assert.ok(
+  source.includes('hasExplicitMandateSentEvidence({ lead: selectedLead, mandatePacketStatus })'),
+  'Seller lead timeline should use explicit mandate sent evidence.',
+)
+assert.ok(
+  !source.includes("selectedLead?.stage || selectedLead?.status).toLowerCase().includes('sent')"),
+  'Seller onboarding sent must not be interpreted as mandate sent activity.',
 )
 assert.ok(
   source.includes('await updateAgencyCrmLeadRecord(organisationId, lead.leadId'),

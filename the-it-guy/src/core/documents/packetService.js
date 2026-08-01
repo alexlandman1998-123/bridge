@@ -125,6 +125,9 @@ const LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED = readBooleanFlag(
   import.meta.env.VITE_LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED,
   true,
 )
+const LEGAL_DOCUMENT_BROWSER_BACKGROUND_GENERATION_ENABLED =
+  LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED &&
+  readBooleanFlag(import.meta.env.VITE_LEGAL_DOCUMENT_BROWSER_BACKGROUND_GENERATION_ENABLED, false)
 
 function throwContainmentPolicyFailure(policy = {}) {
   throw createPacketError(
@@ -3577,7 +3580,7 @@ export async function generatePacketVersion({
           )
         }
         if (
-          LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED &&
+          LEGAL_DOCUMENT_BROWSER_BACKGROUND_GENERATION_ENABLED &&
           validation.packetType === 'mandate' &&
           renderMode === 'native_structured'
         ) {

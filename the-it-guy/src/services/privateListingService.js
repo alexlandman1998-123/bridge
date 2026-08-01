@@ -936,6 +936,15 @@ async function recoverSellerOnboardingSubmitAfterTimeout(token, timeoutError) {
   return context
 }
 
+function deferSellerOnboardingFollowUp(label, task) {
+  if (typeof task !== 'function') return
+  void Promise.resolve()
+    .then(task)
+    .catch((error) => {
+      console.warn(`[Private Listings] ${label} skipped`, error)
+    })
+}
+
 function isMissingPrivateListingActivityError(error) {
   return isMissingTableError(error, 'private_listing_activity')
 }
@@ -6987,52 +6996,34 @@ export async function submitSellerOnboarding(token, payload = {}) {
     if (!rpcContext?.listing) {
       throw new Error('Seller onboarding link is invalid or inactive.')
     }
-    await ensureSellerClientPortalContext(client, {
+    deferSellerOnboardingFollowUp('seller client portal context sync after onboarding submit', () => ensureSellerClientPortalContext(client, {
       listing: rpcContext.listing,
       onboarding: rpcContext.onboarding,
       formData: payload.formData,
-    }).catch((contextError) => {
-      console.warn('[Private Listings] seller client portal context sync skipped after onboarding submit', contextError)
-      return null
-    })
-    await persistCanonicalSellerFactPayload(client, {
+    }))
+    deferSellerOnboardingFollowUp('canonical seller facts persistence after onboarding submit', () => persistCanonicalSellerFactPayload(client, {
       listingId: rpcContext.listing.id,
       onboardingId: rpcContext.onboarding?.id,
       formData: payload.formData,
       listing: rpcContext.listing,
       draft: false,
-    }).catch((factError) => {
-      console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding submit', factError)
-      return null
-    })
-    await syncSellerOnboardingPublicationDraft(client, {
+    }))
+    deferSellerOnboardingFollowUp('seller onboarding publication draft sync after onboarding submit', () => syncSellerOnboardingPublicationDraft(client, {
       listing: rpcContext.listing,
       formData: payload.formData,
-    }).catch((publicationError) => {
-      console.warn('[Private Listings] seller onboarding publication draft sync skipped after onboarding submit', publicationError)
-      return null
-    })
-    const requirementSync = await syncPrivateListingRequirements(rpcContext.listing, {
-      emitActivity: true,
-      reason: 'onboarding_completed',
-    }).catch((requirementsError) => {
-      console.error('[Private Listings] seller requirements sync failed after onboarding submit', requirementsError)
-      return null
-    })
-    if (requirementSync?.listing) {
-      rpcContext = {
-        ...rpcContext,
+    }))
+    deferSellerOnboardingFollowUp('seller requirements sync after onboarding submit', async () => {
+      const requirementSync = await syncPrivateListingRequirements(rpcContext.listing, {
+        emitActivity: true,
+        reason: 'onboarding_completed',
+      })
+      if (!requirementSync?.listing) return null
+      return ensureSellerClientPortalContext(client, {
         listing: requirementSync.listing,
-      }
-      await ensureSellerClientPortalContext(client, {
-        listing: rpcContext.listing,
         onboarding: rpcContext.onboarding,
         formData: payload.formData,
-      }).catch((contextError) => {
-        console.warn('[Private Listings] seller client portal context sync skipped after requirement sync', contextError)
-        return null
       })
-    }
+    })
     void maybeResolveCanonicalSellerRequirements({
       listing: rpcContext.listing,
       formData: payload.formData,
@@ -7055,7 +7046,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
       if (normalizedLeadId) leadIdsToSync.add(normalizedLeadId)
     }
 
-    await syncSellerJourneyLeadStage(client, {
+    deferSellerOnboardingFollowUp('seller journey lead stage sync after onboarding submit', () => syncSellerJourneyLeadStage(client, {
       organisationId: leadOrganisationId,
       leadIds: Array.from(leadIdsToSync),
       onboardingToken: leadTokenForLeadSync,
@@ -7068,22 +7059,19 @@ export async function submitSellerOnboarding(token, payload = {}) {
         listing_id: listingIdForLeadSync || null,
         updated_at: new Date().toISOString(),
       },
-    }).catch(() => false)
+    }))
     await acceptSellerPlatformFeeConsent(client, {
       token: normalizedToken,
       formData: payload.formData,
       listing: rpcContext.listing,
       onboarding: rpcContext.onboarding,
     })
-    await ensureAcceptedPreferredTransferAttorneyAllocation(client, {
+    deferSellerOnboardingFollowUp('transfer attorney allocation after onboarding submit', () => ensureAcceptedPreferredTransferAttorneyAllocation(client, {
       listing: rpcContext.listing,
       onboarding: rpcContext.onboarding,
       formData: payload.formData,
       source: 'seller_onboarding_completed',
-    }).catch((allocationError) => {
-      console.warn('[Private Listings] transfer attorney allocation skipped after onboarding submit', allocationError)
-      return null
-    })
+    }))
     return rpcContext
   }
   if (isMissingPrivateListingActivityError(rpc.error)) {
@@ -7281,29 +7269,17 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
     if (!rpcContext?.listing) {
       throw new Error('Seller onboarding link is invalid or inactive.')
     }
-    await persistCanonicalSellerFactPayload(client, {
+    deferSellerOnboardingFollowUp('canonical seller facts persistence after onboarding progress update', () => persistCanonicalSellerFactPayload(client, {
       listingId: rpcContext.listing.id,
       onboardingId: rpcContext.onboarding?.id,
       formData: payload.formData,
       listing: rpcContext.listing,
       draft: true,
-    }).catch((factError) => {
-      console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding progress update', factError)
-      return null
-    })
-    const requirementSync = await syncPrivateListingRequirements(rpcContext.listing, {
+    }))
+    deferSellerOnboardingFollowUp('seller requirement sync after onboarding progress update', () => syncPrivateListingRequirements(rpcContext.listing, {
       emitActivity: false,
       reason: 'seller_onboarding_progress',
-    }).catch((requirementsError) => {
-      console.warn('[Private Listings] seller requirement sync skipped after onboarding progress update', requirementsError)
-      return null
-    })
-    if (requirementSync?.listing) {
-      rpcContext = {
-        ...rpcContext,
-        listing: requirementSync.listing,
-      }
-    }
+    }))
     void maybeResolveCanonicalSellerRequirements({
       listing: rpcContext.listing,
       formData: payload.formData,
@@ -7361,24 +7337,18 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
       })
       return null
     })
-  await persistCanonicalSellerFactPayload(client, {
+  const listingForProgress = refreshedListing || context.listing
+  deferSellerOnboardingFollowUp('canonical seller facts persistence after onboarding fallback progress update', () => persistCanonicalSellerFactPayload(client, {
     listingId: refreshedListing?.id || context.listing.id,
     onboardingId: updateQuery.data?.id,
     formData: nextFormData,
     listing: refreshedListing || context.listing,
     draft: true,
-  }).catch((factError) => {
-    console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding fallback progress update', factError)
-    return null
-  })
-  const requirementSync = await syncPrivateListingRequirements(refreshedListing || context.listing, {
+  }))
+  deferSellerOnboardingFollowUp('seller requirement sync after onboarding fallback progress update', () => syncPrivateListingRequirements(refreshedListing || context.listing, {
     emitActivity: false,
     reason: 'seller_onboarding_progress',
-  }).catch((requirementsError) => {
-    console.warn('[Private Listings] seller requirement sync skipped after onboarding fallback progress update', requirementsError)
-    return null
-  })
-  const listingForProgress = requirementSync?.listing || refreshedListing || context.listing
+  }))
   void maybeResolveCanonicalSellerRequirements({
     listing: listingForProgress,
     formData: nextFormData,

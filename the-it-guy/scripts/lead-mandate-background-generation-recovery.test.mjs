@@ -43,6 +43,8 @@ for (const token of [
 }
 
 for (const token of [
+  'LEGAL_DOCUMENT_BROWSER_BACKGROUND_GENERATION_ENABLED',
+  'VITE_LEGAL_DOCUMENT_BROWSER_BACKGROUND_GENERATION_ENABLED',
   'conditionalMasterCoverageReady',
   'conditionalSigningCanPrepare',
   'conditionalPackCanProceed',

@@ -393,6 +393,31 @@ function isPermissionDeniedError(error) {
   return code === '42501' || message.includes('row-level security') || details.includes('row-level security')
 }
 
+function normalizeEditableDocumentDraftRpcError(error) {
+  if (!error) return error
+  if (isPermissionDeniedError(error)) {
+    const accessError = new Error(
+      'Packet creation is blocked by organisation permissions. Confirm your active organisation membership and role, then retry.',
+    )
+    accessError.code = 'PACKETS_RLS_DENIED'
+    accessError.cause = error
+    accessError.details = error.details || null
+    return accessError
+  }
+  if (
+    isMissingTableOrSchemaError(error) ||
+    normalizeText(error?.code).toUpperCase() === 'PGRST202' ||
+    normalizeText(error?.message).toLowerCase().includes('bridge_create_editable_document_draft_c1')
+  ) {
+    const schemaError = new Error('Editable document draft creation is not available in this project schema yet.')
+    schemaError.code = 'PACKETS_SCHEMA_MISSING'
+    schemaError.cause = error
+    schemaError.details = error.details || null
+    return schemaError
+  }
+  return error
+}
+
 function normalizeBoolean(value, fallback = false) {
   if (typeof value === 'boolean') return value
   return fallback
@@ -1841,7 +1866,7 @@ export async function createEditableDocumentDraftFromTemplate(input = {}) {
     p_section_manifest_json: buildEditableDraftSectionManifest(editableDraft),
     p_placeholders_json: input.placeholders && typeof input.placeholders === 'object' ? input.placeholders : {},
   })
-  if (error) throw error
+  if (error) throw normalizeEditableDocumentDraftRpcError(error)
   if (result?.contract !== 'c1-v1' || !result?.packet?.id || !result?.version?.id) {
     throw new Error('The editable document draft contract returned an invalid result.')
   }

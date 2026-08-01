@@ -450,6 +450,10 @@ export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacket
   const evidenceStage = derivedStage || sellerJourneyStageSnapshot('new_lead', 'New')
   const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
   const listingCreatedIndex = STAGE_INDEX.get('listing_created') ?? 0
+  const onboardingSubmittedIndex = STAGE_INDEX.get('seller_onboarding_submitted') ?? 0
+  if (onboardingSignals.pending && !onboardingSignals.submitted && leadStageIndex >= onboardingSubmittedIndex) {
+    return evidenceStage
+  }
   const canUseLeadStageAsProgressFloor =
     (leadStageIndex < listingCreatedIndex || hasListingShell({ lead, listing }))
   return canUseLeadStageAsProgressFloor ? laterSellerJourneyStage(evidenceStage, leadStage) : evidenceStage
