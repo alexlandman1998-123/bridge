@@ -81,6 +81,27 @@ function firstText(...values) {
   return ''
 }
 
+function readPath(source = {}, path = '') {
+  const record = source && typeof source === 'object' && !Array.isArray(source) ? source : {}
+  const key = normalizeText(path)
+  if (!key) return undefined
+  if (Object.prototype.hasOwnProperty.call(record, key)) return record[key]
+  if (!key.includes('.')) return undefined
+  return key.split('.').reduce((current, part) => (
+    current && typeof current === 'object' && Object.prototype.hasOwnProperty.call(current, part)
+      ? current[part]
+      : undefined
+  ), record)
+}
+
+function firstPathText(source = {}, paths = []) {
+  for (const path of paths) {
+    const text = normalizeText(readPath(source, path))
+    if (text) return text
+  }
+  return ''
+}
+
 function resolveDevelopmentSellerDetailsFromTransactionDetail(transactionDetail = {}) {
   const unit = transactionDetail?.unit || {}
   const source =
@@ -2107,11 +2128,42 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
     sourceOffer?.conditions && typeof sourceOffer.conditions === 'object'
       ? sourceOffer.conditions
       : {}
+  const buyerContract = onboarding?.buyer && typeof onboarding.buyer === 'object' ? onboarding.buyer : {}
+  const buyerPerson = buyerContract?.person && typeof buyerContract.person === 'object'
+    ? buyerContract.person
+    : onboarding?.person && typeof onboarding.person === 'object'
+      ? onboarding.person
+      : {}
+  const buyerCompany = buyerContract?.company && typeof buyerContract.company === 'object'
+    ? buyerContract.company
+    : onboarding?.company && typeof onboarding.company === 'object'
+      ? onboarding.company
+      : {}
+  const buyerCompanySignatory = buyerCompany?.authorised_signatory && typeof buyerCompany.authorised_signatory === 'object'
+    ? buyerCompany.authorised_signatory
+    : buyerCompany?.authorized_signatory && typeof buyerCompany.authorized_signatory === 'object'
+      ? buyerCompany.authorized_signatory
+      : {}
+  const buyerTrust = buyerContract?.trust && typeof buyerContract.trust === 'object'
+    ? buyerContract.trust
+    : onboarding?.trust && typeof onboarding.trust === 'object'
+      ? onboarding.trust
+      : {}
+  const buyerTrustSignatory = buyerTrust?.authorised_trustee && typeof buyerTrust.authorised_trustee === 'object'
+    ? buyerTrust.authorised_trustee
+    : buyerTrust?.authorized_trustee && typeof buyerTrust.authorized_trustee === 'object'
+      ? buyerTrust.authorized_trustee
+      : {}
+  const buyerFinance = buyerContract?.finance && typeof buyerContract.finance === 'object'
+    ? buyerContract.finance
+    : onboarding?.finance && typeof onboarding.finance === 'object'
+      ? onboarding.finance
+      : {}
   const purchaserRows = Array.isArray(onboarding.purchasers) ? onboarding.purchasers : []
   const primaryPurchaser = purchaserRows[0] && typeof purchaserRows[0] === 'object' ? purchaserRows[0] : {}
   const secondaryPurchaser = purchaserRows[1] && typeof purchaserRows[1] === 'object' ? purchaserRows[1] : {}
-  const buyerFirstName = firstText(onboarding.firstName, onboarding.buyerFirstName)
-  const buyerLastName = firstText(onboarding.lastName, onboarding.surname, onboarding.buyerLastName)
+  const buyerFirstName = firstText(onboarding.firstName, onboarding.buyerFirstName, buyerPerson.first_name)
+  const buyerLastName = firstText(onboarding.lastName, onboarding.surname, onboarding.buyerLastName, buyerPerson.last_name)
   const buyerFullName = firstText(
     packetDraft.buyerFullName,
     sourceBuyer.fullName,
@@ -2122,7 +2174,12 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
     buyer.name,
     onboarding.fullName,
     onboarding.full_name,
+    buyerPerson.full_name,
     [buyerFirstName, buyerLastName].map(normalizeText).filter(Boolean).join(' '),
+    buyerCompany.company_name,
+    buyerCompany.name,
+    buyerTrust.trust_name,
+    buyerTrust.name,
   )
   const propertyAddress = firstText(
     packetDraft.propertyAddress,
@@ -2147,6 +2204,9 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
       transaction.purchaser_type,
       onboarding.purchaserType,
       onboarding.purchaser_type,
+      buyerContract.legal_type,
+      buyerContract.purchaser_type,
+      buyerContract.branch,
       'individual',
     )),
     buyerFullName,
@@ -2161,29 +2221,44 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
       onboarding.identityNumber,
       onboarding.companyRegistrationNumber,
       onboarding.trustRegistrationNumber,
+      buyerPerson.identity_number_or_passport_number,
+      buyerPerson.identity_number,
+      buyerPerson.passport_number,
+      buyerCompany.company_registration_number,
+      buyerCompany.registration_number,
+      buyerTrust.trust_registration_number,
+      buyerTrust.registration_number,
     ),
-    buyerEmail: firstText(packetDraft.buyerEmail, sourceBuyer.email, primaryPurchaser.email, buyer.email, onboarding.email, onboarding.buyerEmail),
-    buyerPhone: firstText(packetDraft.buyerPhone, sourceBuyer.phone, primaryPurchaser.phone, buyer.phone, onboarding.phone, onboarding.buyerPhone),
+    buyerEmail: firstText(packetDraft.buyerEmail, sourceBuyer.email, primaryPurchaser.email, buyer.email, onboarding.email, onboarding.buyerEmail, buyerPerson.email, buyerCompanySignatory.email, buyerTrustSignatory.email),
+    buyerPhone: firstText(packetDraft.buyerPhone, sourceBuyer.phone, primaryPurchaser.phone, buyer.phone, onboarding.phone, onboarding.buyerPhone, buyerPerson.phone, buyerCompanySignatory.phone, buyerTrustSignatory.phone),
     buyerDomiciliumAddress: firstText(
       packetDraft.buyerDomiciliumAddress,
       sourceBuyer.domiciliumAddress,
       onboarding.residentialAddress,
       onboarding.physicalAddress,
       onboarding.domiciliumAddress,
+      [
+        firstPathText(buyerPerson, ['residential_address.line_1']),
+        firstPathText(buyerPerson, ['residential_address.suburb']),
+        firstPathText(buyerPerson, ['residential_address.city']),
+        firstPathText(buyerPerson, ['residential_address.postal_code']),
+      ].map(normalizeText).filter(Boolean).join(', '),
+      buyerPerson.street_address,
+      buyerPerson.residential_address,
     ),
-    buyerRepresentativeName: firstText(packetDraft.buyerRepresentativeName, sourceBuyer.representativeName, onboarding.authorizedRepresentativeName, onboarding.authorisedRepresentativeName),
-    buyerRepresentativeCapacity: firstText(packetDraft.buyerRepresentativeCapacity, sourceBuyer.representativeCapacity, onboarding.authorizedRepresentativeCapacity, onboarding.authorisedRepresentativeCapacity),
-    buyerMaritalRegime: firstText(packetDraft.buyerMaritalRegime, sourceBuyer.maritalRegime, sourceBuyer.maritalStatus, onboarding.maritalRegime, onboarding.maritalStatus),
-    buyerSpouseFullName: firstText(packetDraft.buyerSpouseFullName, sourceBuyer.spouseFullName, onboarding.spouseFullName, onboarding.spouse_name),
-    buyerSpouseIdNumber: firstText(packetDraft.buyerSpouseIdNumber, sourceBuyer.spouseIdNumber, onboarding.spouseIdNumber, onboarding.spouse_id_number),
-    buyerSpouseEmail: firstText(packetDraft.buyerSpouseEmail, sourceBuyer.spouseEmail, onboarding.spouseEmail, onboarding.spouse_email),
-    buyerTrusteeNames: firstText(packetDraft.buyerTrusteeNames, sourceBuyer.trusteeNames, onboarding.trusteeNames),
-    buyerResolutionDate: toIsoDate(firstText(packetDraft.buyerResolutionDate, sourceBuyer.resolutionDate, onboarding.resolutionDate)),
-    buyerAuthorityBasis: firstText(packetDraft.buyerAuthorityBasis, sourceBuyer.authorityBasis, onboarding.authorityBasis),
-    coBuyerFullName: firstText(packetDraft.coBuyerFullName, secondaryPurchaser.name, secondaryPurchaser.fullName, secondaryPurchaser.full_name, onboarding.co_buyer_name, onboarding.coBuyerName, onboarding.co_buyer_full_name, onboarding.coBuyerFullName),
+    buyerRepresentativeName: firstText(packetDraft.buyerRepresentativeName, sourceBuyer.representativeName, onboarding.authorizedRepresentativeName, onboarding.authorisedRepresentativeName, buyerCompanySignatory.name, buyerCompanySignatory.full_name, buyerTrustSignatory.name, buyerTrustSignatory.full_name),
+    buyerRepresentativeCapacity: firstText(packetDraft.buyerRepresentativeCapacity, sourceBuyer.representativeCapacity, onboarding.authorizedRepresentativeCapacity, onboarding.authorisedRepresentativeCapacity, buyerCompanySignatory.capacity, buyerCompanySignatory.signing_capacity, buyerTrustSignatory.capacity, buyerTrustSignatory.signing_capacity),
+    buyerMaritalRegime: firstText(packetDraft.buyerMaritalRegime, sourceBuyer.maritalRegime, sourceBuyer.maritalStatus, onboarding.maritalRegime, onboarding.maritalStatus, buyerPerson.marital_regime, buyerPerson.marital_status),
+    buyerSpouseFullName: firstText(packetDraft.buyerSpouseFullName, sourceBuyer.spouseFullName, onboarding.spouseFullName, onboarding.spouse_name, buyerPerson.spouse_full_name),
+    buyerSpouseIdNumber: firstText(packetDraft.buyerSpouseIdNumber, sourceBuyer.spouseIdNumber, onboarding.spouseIdNumber, onboarding.spouse_id_number, buyerPerson.spouse_identity_number, buyerPerson.spouse_id_number),
+    buyerSpouseEmail: firstText(packetDraft.buyerSpouseEmail, sourceBuyer.spouseEmail, onboarding.spouseEmail, onboarding.spouse_email, buyerPerson.spouse_email),
+    buyerTrusteeNames: firstText(packetDraft.buyerTrusteeNames, sourceBuyer.trusteeNames, onboarding.trusteeNames, Array.isArray(buyerTrust.trustees) ? buyerTrust.trustees.map((trustee) => trustee?.full_name || trustee?.name).filter(Boolean).join('; ') : ''),
+    buyerResolutionDate: toIsoDate(firstText(packetDraft.buyerResolutionDate, sourceBuyer.resolutionDate, onboarding.resolutionDate, buyerCompany.resolution_date, buyerTrust.resolution_date)),
+    buyerAuthorityBasis: firstText(packetDraft.buyerAuthorityBasis, sourceBuyer.authorityBasis, onboarding.authorityBasis, buyerCompany.authority_basis, buyerTrust.authority_basis),
+    coBuyerFullName: firstText(packetDraft.coBuyerFullName, secondaryPurchaser.name, secondaryPurchaser.fullName, secondaryPurchaser.full_name, [secondaryPurchaser.first_name, secondaryPurchaser.last_name].map(normalizeText).filter(Boolean).join(' '), onboarding.co_buyer_name, onboarding.coBuyerName, onboarding.co_buyer_full_name, onboarding.coBuyerFullName),
     coBuyerEmail: firstText(packetDraft.coBuyerEmail, secondaryPurchaser.email, onboarding.co_buyer_email, onboarding.coBuyerEmail),
     coBuyerPhone: firstText(packetDraft.coBuyerPhone, secondaryPurchaser.phone, onboarding.co_buyer_phone, onboarding.coBuyerPhone),
-    coBuyerIdNumber: firstText(packetDraft.coBuyerIdNumber, secondaryPurchaser.idNumber, secondaryPurchaser.id_number, secondaryPurchaser.identityNumber, onboarding.co_buyer_id_number, onboarding.coBuyerIdNumber, onboarding.co_buyer_identity_number, onboarding.coBuyerIdentityNumber),
+    coBuyerIdNumber: firstText(packetDraft.coBuyerIdNumber, secondaryPurchaser.idNumber, secondaryPurchaser.id_number, secondaryPurchaser.identityNumber, secondaryPurchaser.identity_number, secondaryPurchaser.identity_number_or_passport_number, secondaryPurchaser.passport_number, onboarding.co_buyer_id_number, onboarding.coBuyerIdNumber, onboarding.co_buyer_identity_number, onboarding.coBuyerIdentityNumber),
 
     sellerEntityType: normalizeEntityType(firstText(packetDraft.sellerEntityType, sourceSeller.entityType, sellerDetails.entityType, transaction.seller_type, 'company'), 'company'),
     sellerFullName: firstText(
@@ -2223,10 +2298,10 @@ function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null,
     erfNumber: firstText(packetDraft.erfNumber, sourceProperty.erfNumber, onboarding.erfNumber, privateListing.erfNumber),
 
     purchasePrice: String(firstText(packetDraft.purchasePrice, sourceOffer.purchasePrice, transaction.purchase_price, transaction.sales_price, unit.price)),
-    depositAmount: String(firstText(packetDraft.depositAmount, sourceOffer.depositAmount, transaction.deposit_amount, onboarding.depositAmount, onboarding.deposit_amount)),
-    financeType: normalizeOtpFinanceType(firstText(packetDraft.financeType, sourceOffer.financeType, transaction.finance_type, onboarding.financeType, onboarding.finance_type, 'cash')),
-    bondAmount: String(firstText(packetDraft.bondAmount, sourceOffer.bondAmount, transaction.bond_amount, onboarding.bondAmount, onboarding.bond_amount)),
-    cashAmount: String(firstText(packetDraft.cashAmount, sourceOffer.cashAmount, transaction.cash_amount, onboarding.cashAmount, onboarding.cash_amount)),
+    depositAmount: String(firstText(packetDraft.depositAmount, sourceOffer.depositAmount, transaction.deposit_amount, onboarding.depositAmount, onboarding.deposit_amount, buyerFinance.deposit_amount)),
+    financeType: normalizeOtpFinanceType(firstText(packetDraft.financeType, sourceOffer.financeType, transaction.finance_type, onboarding.financeType, onboarding.finance_type, buyerFinance.finance_type, buyerFinance.purchase_finance_type, 'cash')),
+    bondAmount: String(firstText(packetDraft.bondAmount, sourceOffer.bondAmount, transaction.bond_amount, onboarding.bondAmount, onboarding.bond_amount, buyerFinance.bond_amount)),
+    cashAmount: String(firstText(packetDraft.cashAmount, sourceOffer.cashAmount, transaction.cash_amount, onboarding.cashAmount, onboarding.cash_amount, buyerFinance.cash_amount)),
     occupationDate: toIsoDate(firstText(packetDraft.occupationDate, offerConditions.occupationDate, offerConditions.occupation_date, onboarding.occupationDate, onboarding.occupation_date)),
     transferDate: toIsoDate(firstText(packetDraft.transferDate, sourceOffer.transferDate, sourceOffer.transfer_date, transaction.expected_transfer_date, transaction.target_registration_date, onboarding.transferDate, onboarding.transfer_date)),
     suspensiveConditions: firstText(packetDraft.suspensiveConditions, offerConditions.suspensiveConditions, offerConditions.suspensive_conditions, onboarding.suspensiveConditions, onboarding.suspensive_conditions),

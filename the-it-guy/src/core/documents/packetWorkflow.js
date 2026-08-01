@@ -63,6 +63,19 @@ function asRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
+function readPath(source = {}, path = '') {
+  const record = asRecord(source)
+  const key = normalizeText(path)
+  if (!key) return undefined
+  if (Object.prototype.hasOwnProperty.call(record, key)) return record[key]
+  if (!key.includes('.')) return undefined
+  return key.split('.').reduce((current, part) => (
+    current && typeof current === 'object' && Object.prototype.hasOwnProperty.call(current, part)
+      ? current[part]
+      : undefined
+  ), record)
+}
+
 function appendAnnexureLabel(current = '', label = '') {
   const nextLabel = normalizeText(label)
   if (!nextLabel) return normalizeText(current)
@@ -78,7 +91,7 @@ function firstRecordText(records = [], keys = []) {
     const record = asRecord(row)
     if (!Object.keys(record).length) continue
     for (const key of keys) {
-      const text = normalizeText(record?.[key])
+      const text = normalizeText(readPath(record, key))
       if (text) return text
     }
   }
@@ -633,17 +646,49 @@ function dedupePartyRecords(parties = []) {
 function buildBuyerParties({ buyer = null, onboardingFormData = null } = {}) {
   const buyerRecord = asRecord(buyer)
   const onboarding = asRecord(onboardingFormData)
-  const purchasers = Array.isArray(onboarding.purchasers) ? onboarding.purchasers : []
+  const buyerContract = asRecord(onboarding.buyer)
+  const buyerPerson = asRecord(buyerContract.person || onboarding.person)
+  const buyerCompany = asRecord(buyerContract.company || onboarding.company)
+  const buyerTrust = asRecord(buyerContract.trust || onboarding.trust)
+  const purchasers = Array.isArray(onboarding.purchasers)
+    ? onboarding.purchasers
+    : Array.isArray(buyerContract.co_purchasers)
+      ? buyerContract.co_purchasers
+      : []
   const purchaserParties = purchasers.map((purchaser, index) => normalizePartyRecord(purchaser, {
     role: 'Buyer',
     title: `Buyer ${index + 1}`,
   }))
   const fallbackBuyer = normalizePartyRecord({
     ...onboarding,
-    name: firstText(buyerRecord.name, onboarding.fullName, onboarding.full_name, combineName(onboarding.firstName, onboarding.lastName), onboarding.firstName),
-    idNumber: firstText(onboarding.idNumber, onboarding.identityNumber, onboarding.companyRegistrationNumber, onboarding.trustRegistrationNumber),
-    email: firstText(buyerRecord.email, onboarding.email),
-    phone: firstText(buyerRecord.phone, onboarding.phone),
+    name: firstText(
+      buyerRecord.name,
+      onboarding.fullName,
+      onboarding.full_name,
+      buyerPerson.full_name,
+      combineName(buyerPerson.first_name, buyerPerson.last_name),
+      combineName(onboarding.firstName, onboarding.lastName),
+      buyerCompany.company_name,
+      buyerCompany.name,
+      buyerTrust.trust_name,
+      buyerTrust.name,
+      onboarding.firstName,
+    ),
+    idNumber: firstText(
+      onboarding.idNumber,
+      onboarding.identityNumber,
+      buyerPerson.identity_number_or_passport_number,
+      buyerPerson.identity_number,
+      buyerPerson.passport_number,
+      onboarding.companyRegistrationNumber,
+      onboarding.trustRegistrationNumber,
+      buyerCompany.company_registration_number,
+      buyerCompany.registration_number,
+      buyerTrust.trust_registration_number,
+      buyerTrust.registration_number,
+    ),
+    email: firstText(buyerRecord.email, onboarding.email, buyerPerson.email, buyerCompany.authorised_signatory?.email, buyerTrust.authorised_trustee?.email),
+    phone: firstText(buyerRecord.phone, onboarding.phone, buyerPerson.phone, buyerCompany.authorised_signatory?.phone, buyerTrust.authorised_trustee?.phone),
   }, {
     role: 'Buyer',
     title: 'Buyer 1',
@@ -1270,7 +1315,22 @@ export function resolveOtpPacketPlaceholders({
     transactionMetadata,
     source,
   ]
-  const buyerEntityTypeRaw = normalizeText(transaction?.purchaser_type || onboarding.purchaserType || onboarding.purchaser_type || 'individual').toLowerCase()
+  const buyerContract = asRecord(onboarding.buyer)
+  const buyerPerson = asRecord(buyerContract.person || onboarding.person)
+  const buyerCompany = asRecord(buyerContract.company || onboarding.company)
+  const buyerCompanySignatory = asRecord(buyerCompany.authorised_signatory || buyerCompany.authorized_signatory)
+  const buyerTrust = asRecord(buyerContract.trust || onboarding.trust)
+  const buyerTrustSignatory = asRecord(buyerTrust.authorised_trustee || buyerTrust.authorized_trustee)
+  const onboardingFinance = asRecord(buyerContract.finance || onboarding.finance)
+  const buyerEntityTypeRaw = normalizeText(
+    transaction?.purchaser_type ||
+      onboarding.purchaserType ||
+      onboarding.purchaser_type ||
+      buyerContract.legal_type ||
+      buyerContract.purchaser_type ||
+      buyerContract.branch ||
+      'individual',
+  ).toLowerCase()
   const developmentSeller = resolveDevelopmentSellerDetails({ unit, transaction, contextSellerDetails: sellerDetails })
   const sellerSignatory = developmentSeller.signatory || {}
   const sellerEntityTypeRaw = normalizeText(developmentSeller.entityType || transaction?.seller_type || 'company').toLowerCase()
@@ -1285,7 +1345,39 @@ export function resolveOtpPacketPlaceholders({
       transaction?.matter_owner ||
       'Seller',
   )
-  const purchasePrice = normalizeOptionalNumber(transaction?.purchase_price) ?? normalizeOptionalNumber(transaction?.sales_price)
+  const purchasePrice =
+    normalizeOptionalNumber(transaction?.purchase_price) ??
+    normalizeOptionalNumber(transaction?.sales_price) ??
+    normalizeOptionalNumber(onboardingFinance.purchase_price) ??
+    normalizeOptionalNumber(offer.purchase_price) ??
+    normalizeOptionalNumber(offer.purchasePrice) ??
+    normalizeOptionalNumber(offer.offerAmount)
+  const depositAmount =
+    normalizeOptionalNumber(transaction?.deposit_amount) ??
+    normalizeOptionalNumber(onboarding.deposit_amount) ??
+    normalizeOptionalNumber(onboarding.depositAmount) ??
+    normalizeOptionalNumber(onboardingFinance.deposit_amount) ??
+    normalizeOptionalNumber(onboardingFinance.depositAmount) ??
+    normalizeOptionalNumber(offer.deposit_amount) ??
+    normalizeOptionalNumber(offer.depositAmount)
+  const bondAmount =
+    normalizeOptionalNumber(transaction?.bond_amount) ??
+    normalizeOptionalNumber(onboarding.bond_amount) ??
+    normalizeOptionalNumber(onboarding.bondAmount) ??
+    normalizeOptionalNumber(onboardingFinance.bond_amount) ??
+    normalizeOptionalNumber(onboardingFinance.bondAmount) ??
+    normalizeOptionalNumber(offer.bond_amount) ??
+    normalizeOptionalNumber(offer.bondAmount)
+  const financeTypeRaw = firstText(
+    transaction?.finance_type,
+    onboarding.finance_type,
+    onboarding.financeType,
+    onboardingFinance.finance_type,
+    onboardingFinance.purchase_finance_type,
+    offer.finance_type,
+    offer.financeType,
+    'cash',
+  )
   const grossCommissionPercentage = normalizeOptionalNumber(transaction?.gross_commission_percentage)
   const grossCommissionAmount =
     normalizeOptionalNumber(transaction?.gross_commission_amount) ??
@@ -1340,8 +1432,8 @@ export function resolveOtpPacketPlaceholders({
     normalizeOptionalNumber(transaction?.cash_amount) ??
     normalizeOptionalNumber(onboarding.cash_amount) ??
     normalizeOptionalNumber(onboarding.cashAmount) ??
-    normalizeOptionalNumber(onboarding?.finance?.cash_amount) ??
-    normalizeOptionalNumber(onboarding?.finance?.cashAmount) ??
+    normalizeOptionalNumber(onboardingFinance.cash_amount) ??
+    normalizeOptionalNumber(onboardingFinance.cashAmount) ??
     normalizeOptionalNumber(offer.cash_amount) ??
     normalizeOptionalNumber(offer.cashAmount) ??
     normalizeOptionalNumber(offer.cashComponent)
@@ -1354,10 +1446,14 @@ export function resolveOtpPacketPlaceholders({
     onboarding.company_registration_number,
     onboarding.entityRegistrationNumber,
     onboarding.entity_registration_number,
+    buyerCompany.company_registration_number,
+    buyerCompany.registration_number,
   ))
   const buyerTrustRegistrationNumber = normalizeNullableText(firstText(
     onboarding.trustRegistrationNumber,
     onboarding.trust_registration_number,
+    buyerTrust.trust_registration_number,
+    buyerTrust.registration_number,
     buyerEntityTypeRaw === 'trust' ? onboarding.entityRegistrationNumber || onboarding.entity_registration_number : '',
   ))
   const buyerRepresentativeName = normalizeNullableText(firstText(
@@ -1371,6 +1467,10 @@ export function resolveOtpPacketPlaceholders({
     onboarding.trust_representative_name,
     onboarding.trusteeName,
     onboarding.trustee_name,
+    buyerCompanySignatory.name,
+    buyerCompanySignatory.full_name,
+    buyerTrustSignatory.name,
+    buyerTrustSignatory.full_name,
   ))
   const buyerRepresentativeCapacity = normalizeNullableText(firstText(
     onboarding.authorizedRepresentativeCapacity,
@@ -1383,19 +1483,26 @@ export function resolveOtpPacketPlaceholders({
     onboarding.trust_representative_capacity,
     onboarding.trusteeCapacity,
     onboarding.trustee_capacity,
+    buyerCompanySignatory.capacity,
+    buyerCompanySignatory.signing_capacity,
+    buyerTrustSignatory.capacity,
+    buyerTrustSignatory.signing_capacity,
   ))
-  const buyerMaritalStatus = normalizeNullableText(firstText(onboarding.maritalStatus, onboarding.marital_status))
+  const buyerMaritalStatus = normalizeNullableText(firstText(onboarding.maritalStatus, onboarding.marital_status, buyerPerson.marital_status))
+  const buyerMaritalRegime = normalizeNullableText(firstText(onboarding.maritalRegime, onboarding.marital_regime, buyerPerson.marital_regime))
   const buyerSpouseFullName = normalizeNullableText(firstText(
     onboarding.spouseFullName,
     onboarding.spouse_full_name,
     onboarding.spouseName,
     onboarding.spouse_name,
+    buyerPerson.spouse_full_name,
   ))
   const buyerSpouseConsentRequired = normalizeYesNoFlag(
-    firstPresent(onboarding.spouseConsentRequired, onboarding.spouse_consent_required),
+    firstPresent(onboarding.spouseConsentRequired, onboarding.spouse_consent_required, buyerPerson.spouse_consent_required),
     isMarriedInCommunityBuyer({
       buyer_marital_status: buyerMaritalStatus,
-      buyer_spouse_consent_required: firstPresent(onboarding.spouseConsentRequired, onboarding.spouse_consent_required),
+      buyer_marital_regime: buyerMaritalRegime,
+      buyer_spouse_consent_required: firstPresent(onboarding.spouseConsentRequired, onboarding.spouse_consent_required, buyerPerson.spouse_consent_required),
     }),
   )
   const sellerMaritalStatus = normalizeNullableText(firstText(
@@ -1438,29 +1545,41 @@ export function resolveOtpPacketPlaceholders({
     buyer_id_number:
       normalizeNullableText(primaryBuyer.idNumber) ||
       normalizeNullableText(onboarding.idNumber) ||
+      normalizeNullableText(buyerPerson.identity_number_or_passport_number) ||
+      normalizeNullableText(buyerPerson.identity_number) ||
+      normalizeNullableText(buyerPerson.passport_number) ||
       (buyerEntityTypeRaw === 'trust' ? buyerTrustRegistrationNumber : buyerCompanyRegistrationNumber) ||
       null,
     buyer_email: normalizeNullableText(primaryBuyer.email) || normalizeNullableText(buyer?.email) || null,
     buyer_phone: normalizeNullableText(primaryBuyer.phone) || normalizeNullableText(buyer?.phone) || null,
     buyer_marital_status: buyerMaritalStatus,
+    buyer_marital_regime: buyerMaritalRegime,
     buyer_spouse_full_name: buyerSpouseFullName,
     buyer_spouse_name: buyerSpouseFullName,
-    buyer_spouse_id_number: normalizeNullableText(firstText(onboarding.spouseIdNumber, onboarding.spouse_id_number)),
-    buyer_spouse_email: normalizeNullableText(firstText(onboarding.spouseEmail, onboarding.spouse_email)),
+    buyer_spouse_id_number: normalizeNullableText(firstText(onboarding.spouseIdNumber, onboarding.spouse_id_number, buyerPerson.spouse_identity_number, buyerPerson.spouse_id_number)),
+    buyer_spouse_email: normalizeNullableText(firstText(onboarding.spouseEmail, onboarding.spouse_email, buyerPerson.spouse_email)),
     buyer_spouse_consent_required: buyerSpouseConsentRequired,
     buyer_entity_type: toTitleCase(buyerEntityTypeRaw || 'individual'),
     'buyer.entity_type_raw': buyerEntityTypeRaw || 'individual',
     buyer_company_registration_number: buyerEntityTypeRaw === 'trust' ? null : buyerCompanyRegistrationNumber,
     buyer_representative_name: buyerRepresentativeName,
     buyer_representative_capacity: buyerRepresentativeCapacity,
-    buyer_resolution_date: normalizeNullableText(firstText(onboarding.resolutionDate, onboarding.resolution_date, onboarding.companyResolutionDate, onboarding.company_resolution_date)),
-    buyer_authority_basis: normalizeNullableText(firstText(onboarding.authorityBasis, onboarding.authority_basis, onboarding.authorityGranted, onboarding.authority_granted)),
+    buyer_resolution_date: normalizeNullableText(firstText(onboarding.resolutionDate, onboarding.resolution_date, onboarding.companyResolutionDate, onboarding.company_resolution_date, buyerCompany.resolution_date, buyerTrust.resolution_date)),
+    buyer_authority_basis: normalizeNullableText(firstText(onboarding.authorityBasis, onboarding.authority_basis, onboarding.authorityGranted, onboarding.authority_granted, buyerCompany.authority_basis, buyerTrust.authority_basis)),
     buyer_trust_registration_number: buyerTrustRegistrationNumber,
-    buyer_trustee_names: normalizeNullableText(normalizeNameList(firstPresent(onboarding.trusteeNames, onboarding.trustee_names, onboarding.trustees))),
+    buyer_trustee_names: normalizeNullableText(normalizeNameList(firstPresent(onboarding.trusteeNames, onboarding.trustee_names, onboarding.trustees, buyerTrust.trustees))),
     buyer_marketing_opt_in: normalizeNullableText(onboarding.marketingConsent),
     buyer_domicilium_address:
       normalizeNullableText(onboarding.residentialAddress) ||
       normalizeNullableText(onboarding.physicalAddress) ||
+      normalizeNullableText(compactUniqueJoin([
+        buyerPerson.residential_address?.line_1,
+        buyerPerson.residential_address?.suburb,
+        buyerPerson.residential_address?.city,
+        buyerPerson.residential_address?.postal_code,
+      ])) ||
+      normalizeNullableText(buyerPerson.residential_address) ||
+      normalizeNullableText(buyerPerson.street_address) ||
       null,
 
     seller_parties: sellerParties,
@@ -1520,10 +1639,10 @@ export function resolveOtpPacketPlaceholders({
     storeroom: normalizeNullableText(firstRecordText(propertyRecords, ['storeroom', 'storeRoom', 'store_room', 'storageRoom', 'storage_room'])),
 
     purchase_price: formatCurrency(purchasePrice),
-    deposit_amount: formatCurrency(transaction?.deposit_amount),
-    finance_type: toTitleCase(String(transaction?.finance_type || 'cash').replace('combination', 'hybrid')),
-    'transaction.finance_type_raw': normalizeText(transaction?.finance_type || 'cash').toLowerCase(),
-    bond_amount: formatCurrency(transaction?.bond_amount),
+    deposit_amount: formatCurrency(depositAmount),
+    finance_type: toTitleCase(String(financeTypeRaw || 'cash').replace('combination', 'hybrid')),
+    'transaction.finance_type_raw': normalizeText(financeTypeRaw || 'cash').toLowerCase(),
+    bond_amount: formatCurrency(bondAmount),
     cash_amount: formatCurrency(cashAmount),
     occupation_date: normalizeNullableText(firstText(offerConditions.occupationDate, offerConditions.occupation_date, offer.occupationDate, offer.occupation_date, onboarding.occupationDate, onboarding.occupation_date)),
     transfer_date: normalizeNullableText(firstText(transaction?.expected_transfer_date, transaction?.target_registration_date, onboarding.transferDate, onboarding.transfer_date, offer.transferDate, offer.transfer_date)),

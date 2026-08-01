@@ -217,10 +217,10 @@ export function resolveLegalDocumentScenarioProfile(options = {}) {
     'seller_marital_regime', 'seller_marital_status', 'seller.marital_regime', 'seller.marital_status', 'sellerMaritalRegime', 'sellerMaritalStatus', 'maritalRegime', 'maritalStatus', 'marital_regime', 'marital_status',
   ]))
   const buyerEntitySignal = normalizeLegalPartyEntityType(firstValue(buyerSources, [
-    'buyer_entity_type', 'buyer.entity_type_raw', 'buyer.entity_type', 'buyerEntityType', 'buyer_type', 'buyerType', 'purchaser_type', 'purchaserType', 'entityType', 'entity_type',
+    'buyer_entity_type', 'buyer.entity_type_raw', 'buyer.entity_type', 'buyerEntityType', 'buyer_type', 'buyerType', 'purchaser_type', 'purchaserType', 'entityType', 'entity_type', 'buyer.legal_type', 'buyer.purchaser_type', 'buyer.branch',
   ]))
   const buyerMaritalSignal = normalizeLegalMaritalRegime(firstValue(buyerSources, [
-    'buyer_marital_regime', 'buyer_marital_status', 'buyer.marital_regime', 'buyer.marital_status', 'buyerMaritalRegime', 'buyerMaritalStatus', 'purchaser_marital_status', 'maritalRegime', 'maritalStatus', 'marital_regime', 'marital_status',
+    'buyer_marital_regime', 'buyer_marital_status', 'buyer.marital_regime', 'buyer.marital_status', 'buyer.person.marital_regime', 'buyer.person.marital_status', 'buyerMaritalRegime', 'buyerMaritalStatus', 'purchaser_marital_status', 'maritalRegime', 'maritalStatus', 'marital_regime', 'marital_status',
   ]))
   const propertyTitleType = resolvePropertyTitleType(sources)
   const financeType = packetType === 'otp'

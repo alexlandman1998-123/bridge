@@ -194,18 +194,29 @@ function buildOtpTemplateContext({
       leadRecord.buyer_entity_type,
       leadRecord.purchaserType,
       leadRecord.purchaser_type,
+      onboardingFormData.purchaserType,
+      onboardingFormData.purchaser_type,
+      onboardingFormData.buyer?.legal_type,
+      onboardingFormData.buyer?.purchaser_type,
+      onboardingFormData.buyer?.branch,
     ),
     maritalStatus: firstTextValue(
       offerRecord.buyerMaritalStatus,
       offerRecord.buyer_marital_status,
       leadRecord.buyerMaritalStatus,
       leadRecord.buyer_marital_status,
+      onboardingFormData.maritalStatus,
+      onboardingFormData.marital_status,
+      onboardingFormData.buyer?.person?.marital_status,
     ),
     maritalRegime: firstTextValue(
       offerRecord.buyerMaritalRegime,
       offerRecord.buyer_marital_regime,
       leadRecord.buyerMaritalRegime,
       leadRecord.buyer_marital_regime,
+      onboardingFormData.maritalRegime,
+      onboardingFormData.marital_regime,
+      onboardingFormData.buyer?.person?.marital_regime,
     ),
   }
   const financeType = firstTextValue(
@@ -310,6 +321,12 @@ export function resolveOtpReadiness({
   const transactionRecord = asPlainObject(transaction)
   const offerRecord = asPlainObject(offer)
   const onboardingRecord = asPlainObject(onboardingFormData)
+  const onboardingBuyer = asPlainObject(onboardingRecord.buyer)
+  const onboardingBuyerPerson = asPlainObject(onboardingBuyer.person || onboardingRecord.person)
+  const onboardingBuyerCompany = asPlainObject(onboardingBuyer.company || onboardingRecord.company)
+  const onboardingBuyerTrust = asPlainObject(onboardingBuyer.trust || onboardingRecord.trust)
+  const onboardingBuyerCompanySignatory = asPlainObject(onboardingBuyerCompany.authorised_signatory || onboardingBuyerCompany.authorized_signatory)
+  const onboardingBuyerTrustSignatory = asPlainObject(onboardingBuyerTrust.authorised_trustee || onboardingBuyerTrust.authorized_trustee)
   const offerConditions = readOfferConditions(offerRecord)
   const residentialOfferTerms = readResidentialOfferTerms(offerRecord)
   const offerStatus = normalizeOfferStatus(offerRecord.status || offerRecord.offerStatus || offerRecord.workflowStatus)
@@ -323,6 +340,13 @@ export function resolveOtpReadiness({
     [contactRecord.firstName, contactRecord.lastName].map(normalizeText).filter(Boolean).join(' '),
     leadRecord.buyerName,
     leadRecord.buyer_name,
+    onboardingRecord.fullName,
+    onboardingRecord.full_name,
+    [onboardingBuyerPerson.first_name, onboardingBuyerPerson.last_name].map(normalizeText).filter(Boolean).join(' '),
+    onboardingBuyerCompany.company_name,
+    onboardingBuyerCompany.name,
+    onboardingBuyerTrust.trust_name,
+    onboardingBuyerTrust.name,
     leadRecord.name,
   )
   const buyerEmail = firstTextValue(
@@ -332,6 +356,10 @@ export function resolveOtpReadiness({
     offerRecord.buyerEmail,
     offerRecord.buyer_email,
     contactRecord.email,
+    onboardingRecord.email,
+    onboardingBuyerPerson.email,
+    onboardingBuyerCompanySignatory.email,
+    onboardingBuyerTrustSignatory.email,
     leadRecord.email,
   ).toLowerCase()
   const buyerPhone = firstTextValue(
@@ -341,6 +369,10 @@ export function resolveOtpReadiness({
     offerRecord.buyerPhone,
     offerRecord.buyer_phone,
     contactRecord.phone,
+    onboardingRecord.phone,
+    onboardingBuyerPerson.phone,
+    onboardingBuyerCompanySignatory.phone,
+    onboardingBuyerTrustSignatory.phone,
     leadRecord.phone,
   )
   const propertyLabel = firstTextValue(

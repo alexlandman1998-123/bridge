@@ -44,7 +44,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'Alex Buyer',
     validationRule: 'text_non_empty',
-    aliases: ['buyer.display_name', 'buyer.name', 'buyer.displayName', 'buyer_name', 'buyerFullName', 'buyer_fullname', 'buyerFullname', 'purchaser_name', 'purchaser.full_name', 'purchaser.display_name'],
+    aliases: ['buyer.display_name', 'buyer.name', 'buyer.displayName', 'buyer_name', 'buyerFullName', 'buyer_fullname', 'buyerFullname', 'purchaser_name', 'purchaser.full_name', 'purchaser.display_name', 'buyer.person.full_name', 'buyer.person.name', 'buyer.person.first_name', 'buyer.company.name', 'buyer.company.company_name', 'buyer.trust.name', 'buyer.trust.trust_name'],
   },
   {
     key: 'buyer_id_number',
@@ -56,7 +56,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: '9001015009088',
     validationRule: 'text_non_empty',
-    aliases: ['buyer.registration_or_id', 'buyer.id_number', 'buyer_id', 'buyerIdNumber', 'purchaser_id_number'],
+    aliases: ['buyer.registration_or_id', 'buyer.id_number', 'buyer_id', 'buyerIdNumber', 'purchaser_id_number', 'buyer.person.identity_number_or_passport_number', 'buyer.person.identity_number', 'buyer.person.passport_number'],
   },
   {
     key: 'buyer_email',
@@ -68,7 +68,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'buyer@example.com',
     validationRule: 'email_or_empty',
-    aliases: ['buyer.email', 'buyerEmail', 'purchaser_email'],
+    aliases: ['buyer.email', 'buyerEmail', 'purchaser_email', 'buyer.person.email', 'buyer.company.authorised_signatory.email', 'buyer.company.authorized_signatory.email', 'buyer.trust.authorised_trustee.email', 'buyer.trust.authorized_trustee.email'],
   },
   {
     key: 'buyer_phone',
@@ -80,7 +80,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: '0820000000',
     validationRule: 'phone_or_empty',
-    aliases: ['buyer.phone', 'purchaser_phone'],
+    aliases: ['buyer.phone', 'purchaser_phone', 'buyer.person.phone', 'buyer.company.authorised_signatory.phone', 'buyer.company.authorized_signatory.phone', 'buyer.trust.authorised_trustee.phone', 'buyer.trust.authorized_trustee.phone'],
   },
   {
     key: 'buyer_marital_status',
@@ -92,7 +92,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'Married In Community',
     validationRule: 'text_or_empty',
-    aliases: ['buyer.marital_status', 'buyer_marital', 'buyerMaritalStatus', 'purchaser_marital_status'],
+    aliases: ['buyer.marital_status', 'buyer_marital', 'buyerMaritalStatus', 'purchaser_marital_status', 'buyer.person.marital_status'],
   },
   {
     key: 'buyer_spouse_full_name',
@@ -104,7 +104,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'Taylor Buyer',
     validationRule: 'text_or_empty',
-    aliases: ['buyer.spouse_full_name', 'buyer.spouse_name', 'buyer_spouse_name', 'buyer_spouse', 'buyerSpouseFullName', 'buyerSpouseName', 'purchaser_spouse_name'],
+    aliases: ['buyer.spouse_full_name', 'buyer.spouse_name', 'buyer_spouse_name', 'buyer_spouse', 'buyerSpouseFullName', 'buyerSpouseName', 'purchaser_spouse_name', 'buyer.person.spouse_full_name'],
   },
   {
     key: 'buyer_spouse_id_number',
@@ -116,7 +116,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: '9102025009088',
     validationRule: 'text_or_empty',
-    aliases: ['buyer.spouse_id_number', 'buyerSpouseIdNumber', 'purchaser_spouse_id_number'],
+    aliases: ['buyer.spouse_id_number', 'buyerSpouseIdNumber', 'purchaser_spouse_id_number', 'buyer.person.spouse_identity_number', 'buyer.person.spouse_id_number'],
   },
   {
     key: 'buyer_spouse_email',
@@ -128,7 +128,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'buyer.spouse@example.com',
     validationRule: 'email_or_empty',
-    aliases: ['buyer.spouse_email', 'buyerSpouseEmail', 'purchaser_spouse_email'],
+    aliases: ['buyer.spouse_email', 'buyerSpouseEmail', 'purchaser_spouse_email', 'buyer.person.spouse_email'],
   },
   {
     key: 'buyer_spouse_consent_required',
@@ -140,7 +140,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'Yes',
     validationRule: 'text_or_empty',
-    aliases: ['buyer.spouse_consent_required', 'buyerSpouseConsentRequired', 'purchaser_spouse_consent_required'],
+    aliases: ['buyer.spouse_consent_required', 'buyerSpouseConsentRequired', 'purchaser_spouse_consent_required', 'buyer.person.spouse_consent_required'],
   },
   {
     key: 'buyer_entity_type',
@@ -152,7 +152,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'Individual',
     validationRule: 'text_non_empty',
-    aliases: ['buyer.entity_type', 'buyer.entity_type_raw', 'buyerEntityType', 'buyer_type', 'purchaser.entity_type', 'purchaser.entity_type_raw', 'purchaser_type'],
+    aliases: ['buyer.entity_type', 'buyer.entity_type_raw', 'buyerEntityType', 'buyer_type', 'purchaser.entity_type', 'purchaser.entity_type_raw', 'purchaser_type', 'buyer.legal_type', 'buyer.purchaser_type', 'buyer.branch'],
   },
   {
     key: 'buyer_company_registration_number',
@@ -164,7 +164,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: '2022/123456/07',
     validationRule: 'text_or_empty',
-    aliases: ['buyer.company_registration_number', 'buyer.registration_number', 'buyerCompanyRegistrationNumber', 'buyer_registration_number', 'purchaser_company_registration_number'],
+    aliases: ['buyer.company_registration_number', 'buyer.registration_number', 'buyerCompanyRegistrationNumber', 'buyer_registration_number', 'purchaser_company_registration_number', 'buyer.company.registration_number', 'buyer.company.company_registration_number'],
   },
   {
     key: 'buyer_representative_name',
@@ -176,7 +176,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'Jordan Representative',
     validationRule: 'text_or_empty',
-    aliases: ['buyer.representative_name', 'buyer.authorised_representative_name', 'buyer.authorized_representative_name', 'buyerRepresentativeName', 'buyerAuthorisedRepresentativeName', 'buyerAuthorizedRepresentativeName', 'purchaser_representative_name'],
+    aliases: ['buyer.representative_name', 'buyer.authorised_representative_name', 'buyer.authorized_representative_name', 'buyerRepresentativeName', 'buyerAuthorisedRepresentativeName', 'buyerAuthorizedRepresentativeName', 'purchaser_representative_name', 'buyer.company.authorised_signatory.name', 'buyer.company.authorized_signatory.name', 'buyer.trust.authorised_trustee.name', 'buyer.trust.authorized_trustee.name'],
   },
   {
     key: 'buyer_representative_capacity',
@@ -188,7 +188,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'Director',
     validationRule: 'text_or_empty',
-    aliases: ['buyer.representative_capacity', 'buyer.authorised_representative_capacity', 'buyer.authorized_representative_capacity', 'buyerRepresentativeCapacity', 'buyerAuthorisedRepresentativeCapacity', 'buyerAuthorizedRepresentativeCapacity', 'purchaser_representative_capacity'],
+    aliases: ['buyer.representative_capacity', 'buyer.authorised_representative_capacity', 'buyer.authorized_representative_capacity', 'buyerRepresentativeCapacity', 'buyerAuthorisedRepresentativeCapacity', 'buyerAuthorizedRepresentativeCapacity', 'purchaser_representative_capacity', 'buyer.company.authorised_signatory.capacity', 'buyer.company.authorized_signatory.capacity', 'buyer.trust.authorised_trustee.capacity', 'buyer.trust.authorized_trustee.capacity'],
   },
   {
     key: 'buyer_resolution_date',
@@ -200,7 +200,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: '2026-07-01',
     validationRule: 'date_or_text',
-    aliases: ['buyer.resolution_date', 'buyerResolutionDate', 'purchaser_resolution_date'],
+    aliases: ['buyer.resolution_date', 'buyerResolutionDate', 'purchaser_resolution_date', 'buyer.company.resolution_date', 'buyer.trust.resolution_date'],
   },
   {
     key: 'buyer_authority_basis',
@@ -212,7 +212,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'Board resolution dated 2026-07-01',
     validationRule: 'text_or_empty',
-    aliases: ['buyer.authority_basis', 'buyerAuthorityBasis', 'purchaser_authority_basis'],
+    aliases: ['buyer.authority_basis', 'buyerAuthorityBasis', 'purchaser_authority_basis', 'buyer.company.authority_basis', 'buyer.trust.authority_basis'],
   },
   {
     key: 'buyer_trust_registration_number',
@@ -224,7 +224,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'IT1234/2020',
     validationRule: 'text_or_empty',
-    aliases: ['buyer.trust_registration_number', 'buyerTrustRegistrationNumber', 'purchaser_trust_registration_number'],
+    aliases: ['buyer.trust_registration_number', 'buyerTrustRegistrationNumber', 'purchaser_trust_registration_number', 'buyer.trust.registration_number', 'buyer.trust.trust_registration_number'],
   },
   {
     key: 'buyer_trustee_names',
@@ -236,7 +236,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'Jordan Trustee; Taylor Trustee',
     validationRule: 'text_or_empty',
-    aliases: ['buyer.trustee_names', 'buyerTrusteeNames', 'purchaser_trustee_names'],
+    aliases: ['buyer.trustee_names', 'buyerTrusteeNames', 'purchaser_trustee_names', 'buyer.trust.trustees'],
   },
   {
     key: 'buyer_marketing_opt_in',
@@ -248,7 +248,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: 'Yes',
     validationRule: 'text_or_empty',
-    aliases: ['buyer.marketing_opt_in'],
+    aliases: ['buyer.marketing_opt_in', 'buyer.marketing_consent'],
   },
   {
     key: 'buyer_domicilium_address',
@@ -260,7 +260,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['otp'],
     sampleValue: '14 Sample Road, Pretoria',
     validationRule: 'text_or_empty',
-    aliases: ['buyer.domicilium_address'],
+    aliases: ['buyer.domicilium_address', 'buyer.person.residential_address', 'buyer.person.residential_address.line_1', 'buyer.person.physical_address'],
   },
 
   // Seller Details
