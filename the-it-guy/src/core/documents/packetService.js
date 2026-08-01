@@ -125,6 +125,9 @@ const LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED = readBooleanFlag(
   import.meta.env.VITE_LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED,
   true,
 )
+const LEGAL_DOCUMENT_SERVER_PDF_GENERATION_JOB_ENABLED =
+  LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED &&
+  readBooleanFlag(import.meta.env.VITE_LEGAL_DOCUMENT_SERVER_PDF_GENERATION_JOB_ENABLED, true)
 const LEGAL_DOCUMENT_BROWSER_BACKGROUND_GENERATION_ENABLED =
   LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED &&
   readBooleanFlag(import.meta.env.VITE_LEGAL_DOCUMENT_BROWSER_BACKGROUND_GENERATION_ENABLED, false)
@@ -498,6 +501,113 @@ function buildGenerationPayload({
     sourceContext: mandateData?.sourceContext || context?.sourceContext || null,
     generatedAt,
     generatedBy: normalizeText(context?.generatedByUserId) || null,
+  }
+}
+
+function buildPhase2FrozenDraftReusePreparation({
+  packetId = null,
+  packetType = '',
+  context = {},
+  template = null,
+} = {}) {
+  const reuse = context?.phase2DraftReuse && typeof context.phase2DraftReuse === 'object'
+    ? context.phase2DraftReuse
+    : null
+  if (!reuse?.enabled) return null
+
+  const freeze = context?.editableRenderFreeze && typeof context.editableRenderFreeze === 'object'
+    ? context.editableRenderFreeze
+    : null
+  const resolvedPacketId = normalizeText(reuse.packetId || reuse.packet?.id || packetId)
+  const sourceVersionId = normalizeText(freeze?.sourceVersionId || reuse.packetVersionId)
+  const freezeId = normalizeText(freeze?.freezeId || reuse.freezeId)
+  if (!resolvedPacketId || !sourceVersionId || !freezeId) return null
+
+  const normalizedPacketType = normalizeText(packetType || reuse.packetType || 'mandate').toLowerCase()
+  const selectedTemplate = reuse.selectedTemplate && typeof reuse.selectedTemplate === 'object'
+    ? reuse.selectedTemplate
+    : {}
+  const resolvedTemplate = template || reuse.template || {
+    id: normalizeText(selectedTemplate.id || selectedTemplate.templateId) || null,
+    packet_type: normalizedPacketType,
+    template_key: normalizeText(selectedTemplate.key || selectedTemplate.templateKey) || null,
+    template_label: normalizeText(selectedTemplate.label || selectedTemplate.templateLabel) || null,
+    version_tag: normalizeText(selectedTemplate.revision || selectedTemplate.version || selectedTemplate.versionTag) || null,
+    template_format: 'html',
+    metadata_json: {
+      render_mode: 'native_structured',
+      last_render_validation: {
+        renderable: true,
+        sectionCount: Array.isArray(freeze?.sectionManifest) ? freeze.sectionManifest.length : 0,
+      },
+    },
+  }
+  const placeholders =
+    freeze?.placeholders && typeof freeze.placeholders === 'object'
+      ? freeze.placeholders
+      : reuse.resolvedMergeFields && typeof reuse.resolvedMergeFields === 'object'
+        ? reuse.resolvedMergeFields
+        : context?.mandateData?.placeholders && typeof context.mandateData.placeholders === 'object'
+          ? context.mandateData.placeholders
+          : {}
+  const validationSummary = reuse.validationSummary && typeof reuse.validationSummary === 'object'
+    ? reuse.validationSummary
+    : {}
+  const warnings = Array.isArray(reuse.warnings)
+    ? reuse.warnings
+    : Array.isArray(validationSummary.warnings)
+      ? validationSummary.warnings
+      : []
+  const missingPlaceholders = Array.isArray(validationSummary.missingRequiredFields)
+    ? validationSummary.missingRequiredFields
+    : []
+
+  return {
+    packet: {
+      ...(reuse.packet && typeof reuse.packet === 'object' ? reuse.packet : {}),
+      id: resolvedPacketId,
+      organisation_id: normalizeText(reuse.packet?.organisation_id || reuse.organisationId || context?.organisationId) || null,
+      packet_type: normalizedPacketType,
+      source_context_json: context?.sourceContext || {},
+    },
+    validation: {
+      packetType: normalizedPacketType,
+      validationAction: 'generate',
+      placeholders,
+      sectionManifest: Array.isArray(freeze?.sectionManifest) ? freeze.sectionManifest : [],
+      missingPlaceholders,
+      critical: [],
+      warnings,
+      aliasHits: [],
+      unknownFields: [],
+      isValidForGeneration: true,
+      mandateValidation: {
+        canProceed: true,
+        missingRequiredFields: missingPlaceholders,
+        warnings,
+        blockingErrors: [],
+        phase2DraftReuse: true,
+      },
+      sellerValidation: { canProceed: true },
+      conditionalPackCanProceed: true,
+      legalScenarioValidation: { canProceed: true, issues: [], requirements: [] },
+      legalDocumentScenarioProfile: reuse.legalDocumentScenarioProfile || context?.mandateData?.legalDocumentScenarioProfile || null,
+      legalDocumentScenarioKey: normalizeText(reuse.legalDocumentScenarioKey || context?.mandateData?.legalDocumentScenarioKey) || null,
+      legalDocumentScenarioComplete: true,
+      legalDocumentMissingRoutingFacts: [],
+      mandateScenarioProfile: reuse.mandateScenarioProfile || context?.mandateData?.mandateScenarioProfile || null,
+      mandateTemplateVariant: normalizeText(reuse.mandateTemplateVariant || context?.mandateData?.placeholders?.mandate_template_variant) || null,
+      templateResolutionSource: 'phase2_frozen_draft_reuse',
+      branding: reuse.branding || context?.branding || {},
+    },
+    previewHtml: '',
+    template: resolvedTemplate,
+    templateResolution: {
+      source: 'phase2_frozen_draft_reuse',
+      template: resolvedTemplate,
+      candidateCount: null,
+    },
+    phase2DraftReuse: true,
   }
 }
 
@@ -3335,12 +3445,18 @@ export async function generatePacketVersion({
 } = {}) {
   const normalizedPacketType = requirePdfRenderablePacketType(packetType)
   context = applyFrozenEditableRenderInput(context)
+  const phase2DraftReusePreparation = buildPhase2FrozenDraftReusePreparation({
+    packetId,
+    packetType: normalizedPacketType,
+    context,
+    template,
+  })
   // Phase 4 gives the user an immediate, read-only explanation before a
   // generation lease, renderer request, storage upload, or packet-version
   // write can begin. The Edge Function repeats this check against its own
   // authoritative template row; this client guard is never the authority.
-  let preflightTemplate = template
-  if (['otp', 'mandate'].includes(normalizedPacketType)) {
+  let preflightTemplate = phase2DraftReusePreparation?.template || template
+  if (!phase2DraftReusePreparation && ['otp', 'mandate'].includes(normalizedPacketType)) {
     const preflightTemplateResolution = await resolveTemplateForPacket({
       packetType: normalizedPacketType,
       context: {
@@ -3352,7 +3468,7 @@ export async function generatePacketVersion({
     preflightTemplate = preflightTemplateResolution?.template || template || null
     requireLegalTemplateGenerationApproval(preflightTemplate, normalizedPacketType)
   }
-  if (!templateUsesNativeRenderer(preflightTemplate, normalizedPacketType)) {
+  if (!phase2DraftReusePreparation && !templateUsesNativeRenderer(preflightTemplate, normalizedPacketType)) {
     await requireDocumentConversionHealth()
   }
   const generationAttemptId = createGenerationAttemptId()
@@ -3389,16 +3505,16 @@ export async function generatePacketVersion({
   }
   if (generationLeasePacketId) await claimGenerationLease(generationLeasePacketId)
   try {
-    const prepared = await savePacketDraft({
-      packetId,
-      packetType: normalizedPacketType,
-      context: {
-        ...context,
+    const prepared = phase2DraftReusePreparation || await savePacketDraft({
+        packetId,
+        packetType: normalizedPacketType,
+        context: {
+          ...context,
+          validationAction: 'generate',
+        },
+        template: preflightTemplate,
         validationAction: 'generate',
-      },
-      template: preflightTemplate,
-      validationAction: 'generate',
-    })
+      })
 
     const { packet, validation } = prepared
     if (!generationLeaseClaimed) await claimGenerationLease(packet.id)
@@ -3580,7 +3696,7 @@ export async function generatePacketVersion({
           )
         }
         if (
-          LEGAL_DOCUMENT_BROWSER_BACKGROUND_GENERATION_ENABLED &&
+          (LEGAL_DOCUMENT_SERVER_PDF_GENERATION_JOB_ENABLED || LEGAL_DOCUMENT_BROWSER_BACKGROUND_GENERATION_ENABLED) &&
           validation.packetType === 'mandate' &&
           renderMode === 'native_structured'
         ) {
@@ -3623,6 +3739,9 @@ export async function generatePacketVersion({
               body: {
                 action: 'generate_ready_packet',
                 background: true,
+                jobType: 'generate_packet_version',
+                jobDisplayType: 'generate_mandate_pdf',
+                phase3ServerPdfGeneration: true,
                 packetId: packet.id,
                 packet_id: packet.id,
                 organisationId: packet.organisation_id,
@@ -3680,6 +3799,14 @@ export async function generatePacketVersion({
                 packetUpdate: {
                   sourceContextJson: backgroundSourceContext,
                   brandingSnapshotJson: validation.branding || {},
+                },
+                jobMetadata: {
+                  phase3ServerPdfGeneration: true,
+                  jobDisplayType: 'generate_mandate_pdf',
+                  modalMayClose: true,
+                  sourceAuthority: generationPayload.editableRenderFreeze?.freezeId
+                    ? 'frozen_editable_draft'
+                    : 'prepared_packet_draft',
                 },
                 successEventPayload: {
                   leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,

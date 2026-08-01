@@ -169,9 +169,20 @@ const PIPELINE_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
 const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
-const LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED = ['1', 'true', 'yes', 'on', 'enabled'].includes(
-  String(import.meta.env.VITE_LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED || '').trim().toLowerCase(),
+function readPipelineBooleanFlag(value, fallback = false) {
+  const text = String(value ?? '').trim().toLowerCase()
+  if (!text) return Boolean(fallback)
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(text)) return true
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(text)) return false
+  return Boolean(fallback)
+}
+const LEGAL_DOCUMENT_SERVER_SIGNATURE_JOB_ENABLED = readPipelineBooleanFlag(
+  import.meta.env.VITE_LEGAL_DOCUMENT_SERVER_SIGNATURE_JOB_ENABLED,
+  true,
 )
+const LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED =
+  LEGAL_DOCUMENT_SERVER_SIGNATURE_JOB_ENABLED &&
+  readPipelineBooleanFlag(import.meta.env.VITE_LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED, true)
 const SELLER_ATTORNEY_PICKER_TIMEOUT_MS = 5000
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 8000
@@ -3349,6 +3360,102 @@ function findEditableMandateSourceVersion(versions = []) {
   return (Array.isArray(versions) ? versions : []).find(hasEditableMandateSections) || null
 }
 
+function getMandatePhase1DraftPrecreation(sourceContext = {}) {
+  const context = isPlainObject(sourceContext) ? sourceContext : {}
+  return isPlainObject(context.phase1DraftPrecreation) ? context.phase1DraftPrecreation : context
+}
+
+function buildPhase2ReusableTemplateFromDraft(draft = {}) {
+  const selectedTemplate = isPlainObject(draft.selectedTemplate) ? draft.selectedTemplate : {}
+  const templateId = normalizeText(selectedTemplate.id || draft.selectedTemplateId)
+  if (!templateId) return null
+  return {
+    id: templateId,
+    packet_type: 'mandate',
+    template_key: normalizeText(selectedTemplate.key || draft.selectedTemplateKey),
+    template_label: normalizeText(selectedTemplate.label || draft.selectedTemplateLabel),
+    version_tag: normalizeText(selectedTemplate.revision || draft.selectedTemplateRevision),
+    template_format: 'html',
+    metadata_json: {
+      render_mode: 'native_structured',
+      last_render_validation: {
+        renderable: true,
+        sectionCount: Array.isArray(draft.renderFreeze?.sectionManifest) ? draft.renderFreeze.sectionManifest.length : 0,
+      },
+    },
+  }
+}
+
+function buildPhase2MandateValidationFromDraft(draft = {}) {
+  const validationSummary = isPlainObject(draft.validationSummary) ? draft.validationSummary : {}
+  const warnings = Array.isArray(validationSummary.warnings)
+    ? validationSummary.warnings
+    : Array.isArray(draft.warnings)
+      ? draft.warnings
+      : []
+  const missingRequiredFields = Array.isArray(validationSummary.missingRequiredFields)
+    ? validationSummary.missingRequiredFields
+    : []
+  return {
+    canProceed: true,
+    missingRequiredFields,
+    warnings,
+    blockingErrors: [],
+    sourceHash: normalizeText(draft.source_hash || draft.sourceHash),
+    phase2DraftReuse: true,
+  }
+}
+
+function resolvePhase2FrozenMandateDraftReuse({ packet = null, sourceContext = {}, manualOverride = null } = {}) {
+  const overrideFields = isPlainObject(manualOverride?.fields) ? manualOverride.fields : {}
+  if (Object.keys(overrideFields).length) return null
+  const packetContext = isPlainObject(packet?.source_context_json) ? packet.source_context_json : sourceContext
+  const draft = getMandatePhase1DraftPrecreation(packetContext)
+  const sourceHash = normalizeText(draft.source_hash || draft.sourceHash)
+  const rootSourceHash = normalizeText(packetContext.source_hash || packetContext.sourceHash)
+  const draftStatus = normalizeText(draft.draft_status || draft.draftStatus).toLowerCase()
+  const renderFreeze = isPlainObject(draft.renderFreeze) ? draft.renderFreeze : null
+  const freezeId = normalizeText(renderFreeze?.freezeId)
+  const sourceVersionId = normalizeText(renderFreeze?.sourceVersionId || draft.packetVersionId)
+  const packetVersion = (Array.isArray(packet?.versions) ? packet.versions : []).find((version) =>
+    normalizeText(version?.id) === sourceVersionId,
+  )
+  const template = buildPhase2ReusableTemplateFromDraft(draft)
+  const mandateData = isPlainObject(draft.mandateData) ? draft.mandateData : null
+  const packetStatus = normalizeText(packet?.status).toLowerCase()
+  if (!packet?.id || !sourceHash || sourceHash !== rootSourceHash) return null
+  if (draftStatus !== 'ready' || !renderFreeze || !freezeId || !sourceVersionId || !template || !mandateData) return null
+  if (['generated', 'signing_prep', 'sent', 'partially_signed', 'signed', 'completed', 'voided', 'archived'].includes(packetStatus)) return null
+  if (packetVersion?.id && normalizeText(packetVersion.render_freeze_id) && normalizeText(packetVersion.render_freeze_id) !== freezeId) return null
+  if (packetVersion?.id && normalizeText(packetVersion.render_freeze_status).toLowerCase() && normalizeText(packetVersion.render_freeze_status).toLowerCase() !== 'frozen') return null
+
+  const warnings = Array.isArray(draft.warnings) ? draft.warnings : []
+  const validationSummary = isPlainObject(draft.validationSummary) ? draft.validationSummary : {}
+  return {
+    enabled: true,
+    sourceHash,
+    packetId: packet.id,
+    packetVersionId: sourceVersionId,
+    freezeId,
+    packet,
+    selectedTemplate: isPlainObject(draft.selectedTemplate) ? draft.selectedTemplate : {
+      id: normalizeText(draft.selectedTemplateId),
+      revision: normalizeText(draft.selectedTemplateRevision),
+    },
+    template,
+    renderFreeze,
+    mandateData,
+    mandateValidation: buildPhase2MandateValidationFromDraft(draft),
+    validationSummary,
+    warnings,
+    resolvedMergeFields: isPlainObject(draft.resolvedMergeFields) ? draft.resolvedMergeFields : mandateData.placeholders || {},
+    mandateScenarioProfile: draft.mandateData?.mandateScenarioProfile || draft.mandateData?.scenarioProfile || null,
+    legalDocumentScenarioProfile: draft.mandateData?.legalDocumentScenarioProfile || null,
+    mandateTemplateVariant: normalizeText(draft.resolvedMergeFields?.mandate_template_variant || mandateData.placeholders?.mandate_template_variant),
+    sourceContext: isPlainObject(draft.sourceContext) ? draft.sourceContext : sourceContext,
+  }
+}
+
 function isD3PersistedSigningVersion(version = null) {
   if (!normalizeText(version?.id)) return false
   if (normalizeText(version?.render_status || version?.renderStatus).toLowerCase() !== 'generated') return false
@@ -3366,9 +3473,25 @@ function isActiveLegalDocumentGenerationJob(job = null) {
   return ['queued', 'claimed', 'running'].includes(status)
 }
 
+function isActiveLegalDocumentSendJob(job = null) {
+  const status = normalizeText(job?.status || job?.jobStatus || job?.job_status).toLowerCase()
+  const jobType = normalizeText(job?.jobType || job?.job_type).toLowerCase()
+  return jobType === 'send_for_signature' && ['queued', 'claimed', 'running'].includes(status)
+}
+
 function findLatestMandateGenerationJob(jobs = []) {
   return (Array.isArray(jobs) ? jobs : [])
     .filter((job) => normalizeText(job?.jobType || job?.job_type).toLowerCase() === 'generate_packet_version')
+    .sort((first, second) => {
+      const firstTime = Date.parse(normalizeText(first?.updatedAt || first?.updated_at || first?.createdAt || first?.created_at))
+      const secondTime = Date.parse(normalizeText(second?.updatedAt || second?.updated_at || second?.createdAt || second?.created_at))
+      return (Number.isFinite(secondTime) ? secondTime : 0) - (Number.isFinite(firstTime) ? firstTime : 0)
+    })[0] || null
+}
+
+function findLatestMandateSendJob(jobs = []) {
+  return (Array.isArray(jobs) ? jobs : [])
+    .filter((job) => normalizeText(job?.jobType || job?.job_type).toLowerCase() === 'send_for_signature')
     .sort((first, second) => {
       const firstTime = Date.parse(normalizeText(first?.updatedAt || first?.updated_at || first?.createdAt || first?.created_at))
       const secondTime = Date.parse(normalizeText(second?.updatedAt || second?.updated_at || second?.createdAt || second?.created_at))
@@ -3386,6 +3509,18 @@ function buildMandateGenerationQueuedStatus({ packet = null, versions = [], job 
     warnings: Array.isArray(warnings) ? warnings : [],
     actionHint: 'Mandate generation is running in the background.',
     legalDocumentJob: job || null,
+  }
+}
+
+function buildMandateDraftReadyStatus({ packet = null, version = null, warnings = [], actionHint = 'Mandate draft is ready.' } = {}) {
+  return {
+    packetType: 'mandate',
+    state: 'draft',
+    packet,
+    versions: [version].filter(Boolean),
+    signingSummary: null,
+    warnings: Array.isArray(warnings) ? warnings : [],
+    actionHint,
   }
 }
 
@@ -6256,6 +6391,59 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId)
   const selectedLeadPropertyArea = normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest)
   const selectedLeadPropertyType = normalizeText(selectedLead?.propertyInterest)
+
+  const patchSelectedLeadRecord = useCallback((patch = {}, leadId = selectedLeadRecordId) => {
+    const resolvedLeadId = normalizeLeadIdentityKey(leadId)
+    if (!resolvedLeadId || !patch || typeof patch !== 'object') return
+    setRecords((previous) => ({
+      ...previous,
+      leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) =>
+        normalizeLeadIdentityKey(lead?.leadId) === resolvedLeadId
+          ? { ...lead, ...patch, updatedAt: patch.updatedAt || new Date().toISOString() }
+          : lead,
+      ),
+    }))
+  }, [selectedLeadRecordId])
+
+  async function refreshSelectedLeadMandateTarget({
+    packetId = selectedLeadMandatePacketId,
+    leadId = selectedLeadRecordId,
+    leadPatch = null,
+    reason = 'targeted mandate refresh',
+  } = {}) {
+    const resolvedLeadId = normalizeText(leadId)
+    const resolvedPacketId = normalizeText(packetId)
+    if (leadPatch && typeof leadPatch === 'object') {
+      patchSelectedLeadRecord(leadPatch, resolvedLeadId)
+    }
+    if (!organisationId || !resolvedLeadId || !isUuidLike(resolvedPacketId)) return null
+
+    try {
+      const [status, jobs] = await Promise.all([
+        resolveDocumentPacketStatus({
+          packetType: 'mandate',
+          packetId: resolvedPacketId,
+          leadId: normalizeLeadUuid(resolvedLeadId),
+          transactionId: isUuidLike(selectedLeadLinkedTransactionId) ? selectedLeadLinkedTransactionId : '',
+          organisationId,
+        }),
+        listLegalDocumentJobsForPacket({ packetId: resolvedPacketId, limit: 5 }).catch((jobError) => {
+          console.warn('[MANDATE] targeted job status refresh skipped', { reason, jobError })
+          return []
+        }),
+      ])
+      const latestJob = findLatestMandateSendJob(jobs) || findLatestMandateGenerationJob(jobs) || status?.legalDocumentJob || null
+      const nextStatus = latestJob ? { ...status, legalDocumentJob: latestJob } : status
+      if (nextStatus?.packet?.id && documentPacketBelongsToLead(nextStatus.packet, resolvedLeadId)) {
+        setMandatePacketStatus(nextStatus)
+      }
+      return nextStatus
+    } catch (refreshError) {
+      console.warn('[MANDATE] targeted mandate refresh failed', { reason, refreshError })
+      return null
+    }
+  }
+
   const selectedLeadOnboardingStatusKey = normalizeSellerOnboardingStatus(
     selectedLead?.sellerOnboardingStatus || selectedLead?.sellerOnboarding?.status,
     {
@@ -7535,6 +7723,93 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     mandatePacketStatus?.legalDocumentJob,
     mandatePacketStatus?.packet?.id,
     organisationId,
+    selectedLeadIsSeller,
+    selectedLeadLinkedTransactionId,
+    selectedLeadRecordId,
+  ])
+
+  useEffect(() => {
+    const job = mandatePacketStatus?.legalDocumentJob || null
+    const packetId = normalizeText(mandatePacketStatus?.packet?.id)
+    const jobId = normalizeText(job?.jobId || job?.job_id)
+    if (
+      !selectedLeadRecordId ||
+      !selectedLeadIsSeller ||
+      !organisationId ||
+      !isUuidLike(packetId) ||
+      !jobId ||
+      !isActiveLegalDocumentSendJob(job)
+    ) return undefined
+
+    let cancelled = false
+    let timerId = null
+    const pollDelays = [3000, 7000, 12000, 20000]
+
+    const pollJob = async (attemptIndex = 0) => {
+      try {
+        const jobs = await listLegalDocumentJobsForPacket({ packetId, limit: 5 })
+        if (cancelled) return
+        const latestJob =
+          jobs.find((row) => normalizeText(row?.jobId || row?.job_id) === jobId) ||
+          findLatestMandateSendJob(jobs)
+        if (latestJob) {
+          setMandatePacketStatus((previous) => (
+            normalizeText(previous?.packet?.id) === packetId
+              ? { ...previous, legalDocumentJob: latestJob }
+              : previous
+          ))
+        }
+        const latestStatus = normalizeText(latestJob?.status).toLowerCase()
+        if (latestStatus === 'succeeded') {
+          const sentAtIso = new Date().toISOString()
+          const resolved = await resolveDocumentPacketStatus({
+            packetType: 'mandate',
+            packetId,
+            leadId: normalizeLeadUuid(selectedLeadRecordId),
+            transactionId: isUuidLike(selectedLeadLinkedTransactionId) ? selectedLeadLinkedTransactionId : '',
+            organisationId,
+          })
+          if (!cancelled) {
+            const leadPatch = {
+              stage: 'Mandate Sent',
+              status: 'Mandate Sent',
+              mandateStatus: 'sent_for_signature',
+              mandateSentAt: sentAtIso,
+              mandatePacketId: packetId,
+            }
+            patchSelectedLeadRecord(leadPatch, selectedLeadRecordId)
+            void updateAgencyCrmLeadRecord(organisationId, selectedLeadRecordId, leadPatch).catch((leadUpdateError) => {
+              console.warn('[MANDATE] targeted lead mandate status update skipped after background send', leadUpdateError)
+            })
+            setMandatePacketStatus(resolved)
+            setMessage('Mandate signing email sent.')
+          }
+          return
+        }
+        if (latestStatus === 'failed' || latestStatus === 'cancelled') {
+          if (!cancelled && latestStatus === 'failed') {
+            setError('Mandate sending could not complete in the background. Open the mandate workspace to review the signer setup.')
+          }
+          return
+        }
+      } catch (pollError) {
+        console.warn('[MANDATE] background signing poll failed in pipeline view', pollError)
+      }
+      if (cancelled) return
+      const delay = pollDelays[Math.min(attemptIndex, pollDelays.length - 1)]
+      timerId = window.setTimeout(() => pollJob(attemptIndex + 1), delay)
+    }
+
+    timerId = window.setTimeout(() => pollJob(0), pollDelays[0])
+    return () => {
+      cancelled = true
+      if (timerId) window.clearTimeout(timerId)
+    }
+  }, [
+    mandatePacketStatus?.legalDocumentJob,
+    mandatePacketStatus?.packet?.id,
+    organisationId,
+    patchSelectedLeadRecord,
     selectedLeadIsSeller,
     selectedLeadLinkedTransactionId,
     selectedLeadRecordId,
@@ -10607,28 +10882,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let hydratedPrivateListing = null
       const hasLeadFormData = hasLeadSellerOnboardingFormData(selectedLead)
       const shouldFetchOnboardingContext = isSupabaseConfigured && onboardingToken && (!selectedLeadOnboardingCompleted || !hasLeadFormData)
-      if (shouldFetchOnboardingContext) {
-        onProgress?.('Checking seller onboarding…')
-        try {
-          const onboardingContext = await getSellerOnboardingByToken(onboardingToken, { includeRequirementsAndDocuments: false })
-          const hydratedOnboarding = onboardingContext?.listing?.sellerOnboarding || null
-          hydratedPrivateListing = onboardingContext?.listing || null
-          if (hydratedOnboarding?.formData) {
-            hydratedLead = {
-              ...selectedLead,
-              listingId: normalizeText(onboardingContext?.listing?.id || selectedLead?.listingId),
-              sellerOnboardingStatus: normalizeText(hydratedOnboarding.status || selectedLead?.sellerOnboardingStatus),
-              sellerOnboarding: {
-                ...(selectedLead?.sellerOnboarding || {}),
-                ...hydratedOnboarding,
-                formData: hydratedOnboarding.formData || {},
-              },
-            }
-          }
-        } catch (onboardingLookupError) {
-          console.warn('[MANDATE] seller onboarding lookup failed before generation', onboardingLookupError)
-        }
-      }
       const fetchExistingMandatePacket = async () => {
         if (mandatePacketId && isUuidLike(mandatePacketId)) {
           try {
@@ -10655,7 +10908,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             leadId: dbLeadId,
             limit: 1,
           })
-          return Array.isArray(existingPackets) ? existingPackets[0] || null : null
+          const packetRow = Array.isArray(existingPackets) ? existingPackets[0] || null : null
+          if (!packetRow?.id) return null
+          const packetWithVersions = await fetchDocumentPacket(packetRow.id, {
+            includeVersions: true,
+            includeEvents: false,
+          }).catch((hydrateError) => {
+            console.warn('[MANDATE] existing packet version hydration failed before generation', {
+              packetId: packetRow.id,
+              error: hydrateError,
+            })
+            return null
+          })
+          if (packetWithVersions?.id && documentPacketBelongsToLead(packetWithVersions, selectedLead.leadId)) {
+            return packetWithVersions
+          }
+          return documentPacketBelongsToLead(packetRow, selectedLead.leadId) ? packetRow : null
         } catch (listError) {
           if (!['PACKETS_SCHEMA_MISSING', 'PACKETS_RLS_DENIED'].includes(listError?.code)) {
             throw listError
@@ -10663,7 +10931,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
         return null
       }
-      const existingPacketForGeneration = await fetchExistingMandatePacket()
+      if (shouldFetchOnboardingContext) {
+        onProgress?.('Checking seller onboarding and prepared draft…')
+      }
+      const [onboardingContext, existingPacketForGeneration] = await Promise.all([
+        shouldFetchOnboardingContext
+          ? getSellerOnboardingByToken(onboardingToken, { includeRequirementsAndDocuments: false }).catch((onboardingLookupError) => {
+              console.warn('[MANDATE] seller onboarding lookup failed before generation', onboardingLookupError)
+              return null
+            })
+          : Promise.resolve(null),
+        fetchExistingMandatePacket(),
+      ])
+      const hydratedOnboarding = onboardingContext?.listing?.sellerOnboarding || null
+      hydratedPrivateListing = onboardingContext?.listing || null
+      if (hydratedOnboarding?.formData) {
+        hydratedLead = {
+          ...selectedLead,
+          listingId: normalizeText(onboardingContext?.listing?.id || selectedLead?.listingId),
+          sellerOnboardingStatus: normalizeText(hydratedOnboarding.status || selectedLead?.sellerOnboardingStatus),
+          sellerOnboarding: {
+            ...(selectedLead?.sellerOnboarding || {}),
+            ...hydratedOnboarding,
+            formData: hydratedOnboarding.formData || {},
+          },
+        }
+      }
       const existingPacketSourceContext =
         existingPacketForGeneration?.source_context_json && typeof existingPacketForGeneration.source_context_json === 'object'
           ? existingPacketForGeneration.source_context_json
@@ -10678,6 +10971,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           mandate_manual_override: providedManualOverride,
         } : {}),
       }
+      const phase2DraftReuse = resolvePhase2FrozenMandateDraftReuse({
+        packet: existingPacketForGeneration,
+        sourceContext: sourceContextForGeneration,
+        manualOverride: providedManualOverride,
+      })
       const leadForMapping = {
         ...hydratedLead,
         name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim(),
@@ -10692,58 +10990,70 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         assignedAgentName: normalizeText(hydratedLead?.assignedAgentName || currentAgent.fullName),
         assignedAgentEmail: normalizeText(hydratedLead?.assignedAgentEmail || currentAgent.email),
       }
-      let mandateData = mapSellerOnboardingToMandateData(
-        {
-          onboardingSubmission: {
-            ...((leadForMapping?.sellerOnboarding?.formData && typeof leadForMapping.sellerOnboarding.formData === 'object')
-              ? leadForMapping.sellerOnboarding.formData
-              : {}),
-            status: normalizeText(leadForMapping?.sellerOnboardingStatus || leadForMapping?.sellerOnboarding?.status),
-            askingPrice: Number(hydratedLead?.estimatedValue || hydratedLead?.budget || leadForMapping?.sellerOnboarding?.formData?.askingPrice || 0) || '',
-            mandateType: 'sole',
+      let mandateData = phase2DraftReuse?.mandateData || null
+      let mandatePreflight = phase2DraftReuse?.mandateValidation || null
+      if (phase2DraftReuse) {
+        template = phase2DraftReuse.template
+        templateResolution = {
+          source: 'phase2_frozen_draft_reuse',
+          template,
+          candidateCount: null,
+        }
+        onProgress?.('Using prepared mandate draft…')
+      } else {
+        mandateData = mapSellerOnboardingToMandateData(
+          {
+            onboardingSubmission: {
+              ...((leadForMapping?.sellerOnboarding?.formData && typeof leadForMapping.sellerOnboarding.formData === 'object')
+                ? leadForMapping.sellerOnboarding.formData
+                : {}),
+              status: normalizeText(leadForMapping?.sellerOnboardingStatus || leadForMapping?.sellerOnboarding?.status),
+              askingPrice: Number(hydratedLead?.estimatedValue || hydratedLead?.budget || leadForMapping?.sellerOnboarding?.formData?.askingPrice || 0) || '',
+              mandateType: 'sole',
+            },
+            lead: leadForMapping,
+            privateListing: hydratedPrivateListing || {},
+            agency: {
+              name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+              legalName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+              organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            },
+            organisation: {
+              id: organisationId,
+              name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+              displayName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+            },
+            agent: currentAgent,
+            contact: selectedLeadContact || {},
+            transaction: {},
           },
-          lead: leadForMapping,
-          privateListing: hydratedPrivateListing || {},
-          agency: {
-            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-            legalName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-            organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-          },
-          organisation: {
-            id: organisationId,
-            name: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-            displayName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
-          },
-          agent: currentAgent,
-          contact: selectedLeadContact || {},
-          transaction: {},
-        },
-      )
-      mandateData = applyMandateManualOverrideToData(mandateData, sourceContextForGeneration)
-      const mandatePreflight = validateMandateGenerationData(mandateData, { action: 'generate' })
-      if (!mandatePreflight.canProceed) {
-        console.warn('[MANDATE] generation preflight found missing data; continuing with mandate generation.', {
-          leadId: selectedLead?.leadId || null,
-          missingRequiredFields: mandatePreflight.missingRequiredFields,
-          warnings: mandatePreflight.warnings,
-        })
-      }
-      templateResolution = await resolveActiveTemplate({
-        packetType: 'mandate',
-        moduleType: 'residential',
-        organisationId,
-        includeSections: true,
-        context: {
+        )
+        mandateData = applyMandateManualOverrideToData(mandateData, sourceContextForGeneration)
+        mandatePreflight = validateMandateGenerationData(mandateData, { action: 'generate' })
+        if (!mandatePreflight.canProceed) {
+          console.warn('[MANDATE] generation preflight found missing data; continuing with mandate generation.', {
+            leadId: selectedLead?.leadId || null,
+            missingRequiredFields: mandatePreflight.missingRequiredFields,
+            warnings: mandatePreflight.warnings,
+          })
+        }
+        templateResolution = await resolveActiveTemplate({
+          packetType: 'mandate',
+          moduleType: 'residential',
           organisationId,
-          validationAction: 'generate',
-          mandateData,
-          sourceContext: mandateData?.sourceContext || {},
-        },
-      }).catch((templateError) => {
-        console.warn('[MANDATE] active residential template resolution failed; generation will use runtime fallback where possible.', templateError)
-        return null
-      })
-      template = templateResolution?.template || null
+          includeSections: true,
+          context: {
+            organisationId,
+            validationAction: 'generate',
+            mandateData,
+            sourceContext: mandateData?.sourceContext || {},
+          },
+        }).catch((templateError) => {
+          console.warn('[MANDATE] active residential template resolution failed; generation will use runtime fallback where possible.', templateError)
+          return null
+        })
+        template = templateResolution?.template || null
+      }
 
       const packetSourceContextJson = {
         ...sourceContextForGeneration,
@@ -10793,7 +11103,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let packet = existingPacket
       let fallbackPacketId = ''
       try {
-        if (packet?.id && !providedRenderFreeze && !findEditableMandateSourceVersion(packet?.versions || [])) {
+        if (packet?.id && !providedRenderFreeze && !phase2DraftReuse && !findEditableMandateSourceVersion(packet?.versions || [])) {
           packet = await createEditableMandatePacket()
         }
         if (!packet?.id) {
@@ -10809,8 +11119,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       let generatedVersionResult = null
       if (packet?.id) {
-        onProgress?.('Merging seller and property details…')
-        let renderFreeze = providedRenderFreeze && typeof providedRenderFreeze === 'object' ? providedRenderFreeze : null
+        onProgress?.(phase2DraftReuse ? 'Reusing frozen mandate source…' : 'Merging seller and property details…')
+        let renderFreeze = providedRenderFreeze && typeof providedRenderFreeze === 'object'
+          ? providedRenderFreeze
+          : phase2DraftReuse?.renderFreeze || null
         let renderSourceVersion = null
         if (!renderFreeze?.freezeId) {
           renderSourceVersion = findEditableMandateSourceVersion(packet?.versions || [])
@@ -10834,7 +11146,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }
         const renderEditableSections = Array.isArray(providedEditableSections) && providedEditableSections.length
           ? providedEditableSections
-          : Array.isArray(renderSourceVersion?.editable_content_json?.sections)
+          : Array.isArray(phase2DraftReuse?.renderFreeze?.editableContent?.sections)
+            ? phase2DraftReuse.renderFreeze.editableContent.sections
+            : Array.isArray(renderSourceVersion?.editable_content_json?.sections)
             ? renderSourceVersion.editable_content_json.sections
             : []
         const generationRequest = {
@@ -10852,6 +11166,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             agentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
             editableRenderFreeze: renderFreeze,
             editableSections: renderEditableSections,
+            phase2DraftReuse: phase2DraftReuse
+              ? {
+                  ...phase2DraftReuse,
+                  packet,
+                  organisationId,
+                  packetId: packet.id,
+                }
+              : null,
             mandateData,
             mandateValidation: mandatePreflight,
             sourceContext: mandateData.sourceContext,
@@ -10965,6 +11287,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             }
           }
           if (!recoveredGeneration) {
+            const recoveredDraftVersion = renderSourceVersion || findEditableMandateSourceVersion(packet?.versions || [])
+            if (packet?.id && recoveredDraftVersion?.id && renderFreeze?.freezeId) {
+              console.warn('[MANDATE] PDF generation did not complete, but a frozen editable draft is available for reuse.', {
+                packetId: packet.id,
+                versionId: recoveredDraftVersion.id,
+                code: generationError?.code || null,
+              })
+              generatedVersionResult = {
+                packet,
+                version: recoveredDraftVersion,
+                validation: {
+                  ...(generationError?.validation || {}),
+                  warnings: generationError?.validation?.warnings || mandatePreflight?.warnings || [],
+                },
+                draftReadyOnly: true,
+                generationErrorCode: generationError?.code || 'MANDATE_PDF_GENERATION_NOT_CONFIRMED',
+              }
+              onProgress?.('Mandate draft saved.')
+              recoveredGeneration = true
+            }
+          }
+          if (!recoveredGeneration) {
             const details = normalizeText(generationError?.message || String(generationError))
             const blocker = generationError instanceof Error
               ? generationError
@@ -10984,35 +11328,39 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       const backgroundGenerationQueued = generatedVersionResult?.backgroundGenerationQueued === true
-      const nextLeadMandateStatus = backgroundGenerationQueued ? 'Mandate Generating' : 'Mandate Generated'
+      const draftReadyOnly = generatedVersionResult?.draftReadyOnly === true
+      const nextLeadMandateStatus = backgroundGenerationQueued
+        ? 'Mandate Generating'
+        : draftReadyOnly
+          ? 'Mandate Draft Ready'
+          : 'Mandate Generated'
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
         stage: nextLeadMandateStatus,
         status: nextLeadMandateStatus,
         mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
       })
-      setRecords((previous) => ({
-        ...previous,
-        leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) =>
-          normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(selectedLead.leadId)
-            ? {
-                ...lead,
-                stage: nextLeadMandateStatus,
-                status: nextLeadMandateStatus,
-                mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
-                updatedAt: new Date().toISOString(),
-              }
-            : lead,
-        ),
-      }))
+      patchSelectedLeadRecord({
+        stage: nextLeadMandateStatus,
+        status: nextLeadMandateStatus,
+        mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
+      }, selectedLead.leadId)
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: backgroundGenerationQueued ? 'Mandate Generation Started' : 'Mandate Generated',
+        activityType: backgroundGenerationQueued
+          ? 'Mandate Generation Started'
+          : draftReadyOnly
+            ? 'Mandate Draft Ready'
+            : 'Mandate Generated',
         activityNote: backgroundGenerationQueued
           ? 'Mandate PDF generation was queued automatically and is running in the background.'
-          : 'Mandate was generated successfully.',
+          : draftReadyOnly
+            ? 'Mandate draft was saved and can be reused for PDF generation.'
+            : 'Mandate was generated successfully.',
         outcome: backgroundGenerationQueued
           ? 'Queued'
-          : normalizeText(packet?.id)
+          : draftReadyOnly
+            ? 'Draft ready'
+            : normalizeText(packet?.id)
             ? 'Mandate packet created'
             : 'Generated in fallback mode',
       }, { actor: currentAgent })
@@ -11020,6 +11368,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMessage(
         backgroundGenerationQueued
           ? 'Mandate generation is running in the background. Signing will unlock when the PDF is ready.'
+          : draftReadyOnly
+            ? 'Mandate draft saved. Select Generate Mandate again to continue from the saved draft.'
           : normalizeText(packet?.id)
             ? 'Mandate packet generated for this seller lead.'
           : 'Mandate generated. Packet tracking is running in fallback mode until packet schema/permissions are fully enabled.',
@@ -11034,6 +11384,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               job: generatedVersionResult?.job || null,
               warnings: generatedVersionResult?.validation?.warnings || [],
             })
+          : draftReadyOnly
+            ? buildMandateDraftReadyStatus({
+                packet: generatedVersionResult?.packet || packet,
+                version: generatedVersionResult?.version || null,
+                warnings: generatedVersionResult?.validation?.warnings || [],
+                actionHint: 'Mandate draft saved. Generate again to continue from the saved source.',
+              })
           : {
               packetType: 'mandate',
               state: 'generated',
@@ -11043,23 +11400,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               warnings: generatedVersionResult?.validation?.warnings || [],
               actionHint: 'Draft generated.',
             }
-        void withPipelineTimeout(
-          resolveDocumentPacketStatus({
-            packetType: 'mandate',
-            packetId: packet.id,
-            leadId: normalizeLeadUuid(selectedLead.leadId),
-            transactionId: isUuidLike(selectedLeadLinkedTransactionId) ? selectedLeadLinkedTransactionId : '',
-            organisationId,
-          }),
-          'Generated mandate status is taking too long to refresh.',
-          PIPELINE_RECORDS_TIMEOUT_MS,
-        ).then((refreshedStatus) => {
-          if (refreshedStatus?.packet?.id && documentPacketBelongsToLead(refreshedStatus.packet, selectedLead.leadId)) {
-            setMandatePacketStatus(refreshedStatus)
-          }
-        }).catch((statusError) => {
-          console.warn('[MANDATE] generated packet status refresh failed; using local generated status.', statusError)
-        })
       } else if (fallbackPacketId) {
         generatedStatus = {
           packetType: 'mandate',
@@ -11087,8 +11427,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (generatedStatus) {
         setMandatePacketStatus(generatedStatus)
       }
-      void reloadRecords(organisationId).catch((reloadError) => {
-        console.warn('[MANDATE] post-generation lead refresh failed; keeping generated packet available in workspace.', reloadError)
+      void refreshSelectedLeadMandateTarget({
+        packetId: normalizeText(packet?.id),
+        leadId: selectedLead.leadId,
+        leadPatch: {
+          stage: nextLeadMandateStatus,
+          status: nextLeadMandateStatus,
+          mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
+        },
+        reason: 'phase5_post_generate_targeted_refresh',
       })
       return {
         packet,
@@ -11638,9 +11985,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             mandatePacketId: '',
             mandateStatus: '',
           })
+          patchSelectedLeadRecord({
+            mandatePacketId: '',
+            mandateStatus: '',
+          }, selectedLead.leadId)
           const errorMessage = 'This lead was linked to a mandate packet for another lead. I cleared the stale link; generate a fresh mandate for this seller.'
           setError(errorMessage)
-          await reloadRecords(organisationId)
           return { ok: false, errorMessage }
         }
       }
@@ -11676,53 +12026,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         options.reminder !== true &&
         isSupabaseConfigured &&
         isUuidLike(mandatePacketId)
-      if (canQueueBackgroundSigningStart && !providedSignerLinks.some((signer) => normalizeText(signer?.signing_link))) {
+      if (canQueueBackgroundSigningStart) {
         const recipientRole = targetSignerRole === 'seller' ? 'seller' : 'agent'
         const recipientEmail = recipientRole === 'seller' ? sellerEmail : agentRecipientEmail
         const recipientName = recipientRole === 'seller' ? sellerName : agentRecipientName
-        let backgroundPacketVersionId = normalizeText(options.packetVersionId)
-        const signingSummary = mandatePacketStatus?.signingSummary && typeof mandatePacketStatus.signingSummary === 'object'
-          ? mandatePacketStatus.signingSummary
-          : {}
-        const hasPreparedSigningEnvelope = existingSignerRows.length > 0 && Number(signingSummary.fieldCount || 0) > 0
-        if (!hasPreparedSigningEnvelope) {
-          setMandateQuickStartProgress('Preparing signing envelope…')
-          const signingPreparation = await prepareSigningFields({
-            packetId: mandatePacketId,
-            packetVersionId: backgroundPacketVersionId || null,
-            packetType: 'mandate',
-            organisationId,
-            placeholders: {
-              'seller.display_name': sellerName,
-              'seller.email': sellerEmail,
-              'agent.display_name': agentRecipientName,
-              'agent.email': agentRecipientEmail,
-              'property.address': propertyTitle,
-              'property.listing_title': propertyTitle,
-              'mandate.asking_price': String(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
-            },
-            context: {
-              lead: {
-                sellerName: normalizeText(selectedLeadContact?.firstName),
-                sellerSurname: normalizeText(selectedLeadContact?.lastName),
-                sellerEmail,
-              },
-              mandateDraft: {
-                sellerEmail,
-              },
-              generatedByName: agentRecipientName,
-              generatedByUserEmail: agentRecipientEmail,
-              agentEmail: agentRecipientEmail,
-            },
-          })
-          backgroundPacketVersionId = normalizeText(signingPreparation?.version?.id) || backgroundPacketVersionId
-          await applyPreparedSigningLayoutForQuickFlow({
-            packetId: mandatePacketId,
-            versionId: backgroundPacketVersionId,
-            preparedFields: signingPreparation?.seed?.fields || [],
-          })
-        }
-        setMandateQuickStartProgress('Queueing signing…')
+        const backgroundPacketVersionId = normalizeText(options.packetVersionId)
+        setMandateQuickStartProgress('Sending started…')
         const origin =
           (typeof window !== 'undefined' && window.location?.origin)
             ? window.location.origin
@@ -11741,15 +12050,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               targetSignerRole,
               recipientRole,
               recipientName,
+              sellerEmail,
               sellerName,
               propertyTitle,
               mandateType: 'Mandate',
               mandateStartDate: '',
               mandateEndDate: '',
               askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
+              agentEmail: agentRecipientEmail,
               agentName: agentRecipientName,
               baseUrl: origin,
               expiresInHours: 168,
+              jobType: 'send_for_signature',
+              jobDisplayType: 'send_mandate_for_signature',
+              phase4SignatureSendJob: true,
+              jobMetadata: {
+                phase4SignatureSendJob: true,
+                jobDisplayType: 'send_mandate_for_signature',
+                modalMayClose: true,
+                sourceAuthority: 'agency_pipeline_quick_start',
+              },
             },
           }),
           'Mandate signing start could not be queued quickly enough. Please retry once the network settles.',
@@ -11757,6 +12077,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         )
         assertEdgeFunctionSuccess(queuedSendResponse, 'Mandate signing could not be queued.')
         const queuedJob = queuedSendResponse?.data?.job || null
+        if (queuedJob) {
+          setMandatePacketStatus((previous) => (
+            normalizeText(previous?.packet?.id) === mandatePacketId
+              ? { ...previous, legalDocumentJob: queuedJob }
+              : previous
+          ))
+        }
         void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
           agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
           activityType: 'Mandate Signing Queued',
@@ -11766,8 +12093,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           console.warn('[MANDATE] queued signing activity write skipped', activityError)
         })
         setError('')
-        setMessage('Mandate signing queued. You can continue working while Arch9 prepares and sends the signing email.')
-        void reloadRecords(organisationId)
+        setMessage('Mandate sending started. You can continue working while Arch9 prepares and sends the signing email.')
+        void refreshSelectedLeadMandateTarget({
+          packetId: mandatePacketId,
+          leadId: selectedLead.leadId,
+          leadPatch: {
+            mandateStatus: 'sending',
+            mandatePacketId,
+          },
+          reason: 'phase5_signature_send_job_queued_targeted_refresh',
+        })
         return {
           ok: true,
           queued: true,
@@ -11968,6 +12303,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         mandateSentAt: sentAtIso,
         mandateSigningLink: outboundMandateLink,
       })
+      patchSelectedLeadRecord({
+        stage: 'Mandate Sent',
+        status: 'Mandate Sent',
+        mandateStatus: finalMandateStatus,
+        mandateSentAt: sentAtIso,
+        mandateSigningLink: outboundMandateLink,
+      }, selectedLead.leadId)
       if (onboardingToken) {
         updateSellerWorkflowRecordByToken(onboardingToken, (row) => ({
           ...row,
@@ -12062,7 +12404,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMessage(signingEmailFailed
         ? 'Mandate signing link created, but the email could not be sent. Use resend from the mandate workspace.'
         : 'Mandate sent to seller.')
-      await reloadRecords(organisationId)
+      await refreshSelectedLeadMandateTarget({
+        packetId: mandatePacketId,
+        leadId: selectedLead.leadId,
+        leadPatch: {
+          stage: 'Mandate Sent',
+          status: 'Mandate Sent',
+          mandateStatus: finalMandateStatus,
+          mandateSentAt: sentAtIso,
+          mandateSigningLink: outboundMandateLink,
+        },
+        reason: 'phase5_post_send_targeted_refresh',
+      })
       return {
         ok: true,
         emailDeliveryId: emailDelivery?.emailDeliveryId || null,
@@ -20591,8 +20944,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         onView={handleWorkspaceViewMandate}
         onViewSigned={handleWorkspaceViewSignedMandate}
         onRefreshContext={async () => {
-          if (!organisationId) return
-          await reloadRecords(organisationId)
+          await refreshSelectedLeadMandateTarget({
+            packetId: normalizeText(mandatePacketStatus?.packet?.id || selectedLeadMandatePacketId),
+            leadId: selectedLeadRecordId,
+            reason: 'phase5_workspace_context_targeted_refresh',
+          })
         }}
         autoGenerateEnabled={legalWorkspaceOpen}
       />

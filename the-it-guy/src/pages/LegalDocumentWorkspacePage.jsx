@@ -2825,9 +2825,20 @@ const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 3500
 const LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS = 65000
 const LEGAL_WORKSPACE_PACKET_SAVE_TIMEOUT_MS = 18000
 const LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS = 10000
-const LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED = ['1', 'true', 'yes', 'on', 'enabled'].includes(
-  String(import.meta.env.VITE_LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED || '').trim().toLowerCase(),
+function readLegalWorkspaceBooleanFlag(value, fallback = false) {
+  const text = String(value ?? '').trim().toLowerCase()
+  if (!text) return Boolean(fallback)
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(text)) return true
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(text)) return false
+  return Boolean(fallback)
+}
+const LEGAL_DOCUMENT_SERVER_SIGNATURE_JOB_ENABLED = readLegalWorkspaceBooleanFlag(
+  import.meta.env.VITE_LEGAL_DOCUMENT_SERVER_SIGNATURE_JOB_ENABLED,
+  true,
 )
+const LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED =
+  LEGAL_DOCUMENT_SERVER_SIGNATURE_JOB_ENABLED &&
+  readLegalWorkspaceBooleanFlag(import.meta.env.VITE_LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED, true)
 
 function withLegalWorkspaceTimeout(task, message, timeoutMs = LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS) {
   let timeoutId = null
@@ -4534,6 +4545,16 @@ export default function LegalDocumentWorkspacePage() {
           body: useServerSendReady
             ? {
                 action: 'send_ready_packet',
+                background: true,
+                jobType: 'send_for_signature',
+                jobDisplayType: 'send_mandate_for_signature',
+                phase4SignatureSendJob: true,
+                jobMetadata: {
+                  phase4SignatureSendJob: true,
+                  jobDisplayType: 'send_mandate_for_signature',
+                  modalMayClose: true,
+                  sourceAuthority: 'legal_document_workspace',
+                },
                 ...emailPayload,
               }
             : emailPayload,
@@ -4542,6 +4563,18 @@ export default function LegalDocumentWorkspacePage() {
         LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS,
       )
       assertEdgeFunctionSuccess(emailResponse, `The OTP signing email could not be sent to ${recipientEmail}.`)
+      if (useServerSendReady && (emailResponse?.data?.accepted === true || emailResponse?.data?.background === true)) {
+        window.dispatchEvent(new Event('itg:transaction-updated'))
+        return {
+          queued: true,
+          job: emailResponse?.data?.job || null,
+          recipientRole: signerRole,
+          recipientEmail,
+          recipientEmails: [recipientEmail],
+          packetId: canonicalPacketId,
+          packetVersionId: canonicalVersionId,
+        }
+      }
       const serverSendResult = asRecord(asRecord(emailResponse?.data?.job).result || emailResponse?.data)
       const emailDeliveryId = normalizeText(serverSendResult?.emailId || emailResponse?.data?.emailId)
       const emailConfirmed = serverSendResult?.emailConfirmed === true || emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
@@ -4637,6 +4670,16 @@ export default function LegalDocumentWorkspacePage() {
           body: useServerSendReady
             ? {
                 action: 'send_ready_packet',
+                background: true,
+                jobType: 'send_for_signature',
+                jobDisplayType: 'send_mandate_for_signature',
+                phase4SignatureSendJob: true,
+                jobMetadata: {
+                  phase4SignatureSendJob: true,
+                  jobDisplayType: 'send_mandate_for_signature',
+                  modalMayClose: true,
+                  sourceAuthority: 'legal_document_workspace',
+                },
                 ...emailPayload,
               }
             : emailPayload,
@@ -4645,6 +4688,15 @@ export default function LegalDocumentWorkspacePage() {
         LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS,
       )
       assertEdgeFunctionSuccess(emailResponse, `The mandate signing email could not be sent to the ${recipientLabelLower}.`)
+      if (useServerSendReady && (emailResponse?.data?.accepted === true || emailResponse?.data?.background === true)) {
+        window.dispatchEvent(new Event('itg:transaction-updated'))
+        return {
+          queued: true,
+          job: emailResponse?.data?.job || null,
+          recipientRole: signerRole === 'agent' ? 'agent' : 'seller',
+          recipientEmail,
+        }
+      }
       const serverSendResult = asRecord(asRecord(emailResponse?.data?.job).result || emailResponse?.data)
       const emailDeliveryId = normalizeText(serverSendResult?.emailId || emailResponse?.data?.emailId)
       const emailConfirmed = serverSendResult?.emailConfirmed === true || emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)

@@ -68,6 +68,10 @@ function dateValue(value: unknown) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function isValidEmailText(value: unknown) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeText(value).toLowerCase());
+}
+
 function timeoutSignal(ms: number) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("timeout"), ms);
@@ -566,6 +570,205 @@ async function callGenerateMandateFunction({
   } finally {
     timeout.clear();
   }
+}
+
+function resolveMandateSendSignerIdentity(payload: JsonRecord, role: "agent" | "seller") {
+  const recipientRole = normalizeKey(payload.recipientRole || payload.recipient_role || payload.targetSignerRole);
+  const recipientEmail = normalizeText(payload.to).toLowerCase();
+  const recipientName = normalizeText(payload.recipientName || payload.recipient_name);
+  const email = role === "agent"
+    ? normalizeText(payload.agentEmail || payload.agent_email || (recipientRole === "agent" ? recipientEmail : "")).toLowerCase()
+    : normalizeText(payload.sellerEmail || payload.seller_email || (recipientRole === "seller" ? recipientEmail : "")).toLowerCase();
+  const name = role === "agent"
+    ? normalizeText(payload.agentName || payload.agent_name || (recipientRole === "agent" ? recipientName : ""))
+    : normalizeText(payload.sellerName || payload.seller_name || (recipientRole === "seller" ? recipientName : ""));
+  if (!isValidEmailText(email)) {
+    throw Object.assign(new Error(`A real ${role} email address is required before the mandate signing envelope can be prepared.`), {
+      code: role === "agent"
+        ? "LEGAL_DOCUMENT_JOB_PREPARE_AGENT_EMAIL_REQUIRED"
+        : "LEGAL_DOCUMENT_JOB_PREPARE_SELLER_EMAIL_REQUIRED",
+    });
+  }
+  return {
+    signerRole: role,
+    signerName: name || (role === "agent" ? "Agent" : "Seller"),
+    signerEmail: email,
+  };
+}
+
+async function prepareMandateSigningEnvelopeForSendJob({
+  client,
+  packet,
+  version,
+  payload,
+}: {
+  client: any;
+  packet: JsonRecord;
+  version: JsonRecord;
+  payload: JsonRecord;
+}) {
+  if (normalizeKey(packet.packet_type) !== "mandate") return null;
+  const packetId = normalizeText(packet.id);
+  const versionId = normalizeText(version.id);
+  const targetSignerRole = normalizeKey(payload.targetSignerRole || payload.target_signer_role || payload.recipientRole);
+  if (!["agent", "seller"].includes(targetSignerRole)) {
+    throw Object.assign(new Error("A mandate send job must target the agent or seller signer."), {
+      code: "LEGAL_DOCUMENT_JOB_PREPARE_TARGET_REQUIRED",
+    });
+  }
+
+  const [signersResult, fieldsResult, layoutsResult] = await Promise.all([
+    client
+      .from("document_packet_signers")
+      .select("id, signer_role, signer_name, signer_email, signing_order, status, signing_token, token_expires_at, token_used_at, viewed_at, signed_at")
+      .eq("packet_id", packetId)
+      .eq("packet_version_id", versionId)
+      .order("signing_order", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true }),
+    client
+      .from("document_signing_fields")
+      .select("id, signer_role, field_type, page_number, status, completed_at, signature_asset_path")
+      .eq("packet_id", packetId)
+      .eq("packet_version_id", versionId),
+    client
+      .from("document_signing_field_layouts")
+      .select("id, revision, status, placement_verified, fields_json, applied_at")
+      .eq("packet_id", packetId)
+      .eq("packet_version_id", versionId)
+      .order("revision", { ascending: false })
+      .limit(1),
+  ]);
+  if (signersResult.error) throw signersResult.error;
+  if (fieldsResult.error) throw fieldsResult.error;
+  if (layoutsResult.error) throw layoutsResult.error;
+
+  const signers: JsonRecord[] = Array.isArray(signersResult.data) ? signersResult.data.map(asRecord) : [];
+  const fields: JsonRecord[] = Array.isArray(fieldsResult.data) ? fieldsResult.data.map(asRecord) : [];
+  const layout = Array.isArray(layoutsResult.data) ? asRecord(layoutsResult.data[0]) : {};
+  const layoutFields = Array.isArray(layout.fields_json) ? layout.fields_json.map(asRecord) : [];
+  const hasAppliedLayout =
+    normalizeKey(layout.status) === "applied" &&
+    layout.placement_verified === true &&
+    layoutFields.length > 0;
+  const hasTargetSigner = signers.some((signer) => normalizeKey(signer.signer_role) === targetSignerRole);
+  const hasTargetSignatureField = fields.some((field) =>
+    normalizeKey(field.signer_role) === targetSignerRole &&
+    normalizeKey(field.field_type) === "signature" &&
+    normalizeKey(field.status) === "pending"
+  );
+  if (hasAppliedLayout && hasTargetSigner && hasTargetSignatureField) {
+    return {
+      alreadyPrepared: true,
+      layoutId: normalizeText(layout.id),
+      layoutRevision: numberValue(layout.revision, 0),
+      signerCount: signers.length,
+      fieldCount: fields.length,
+    };
+  }
+
+  const hasSigningProgress =
+    signers.some((signer) =>
+      ["signed", "declined", "sent", "viewed"].includes(normalizeKey(signer.status)) ||
+      Boolean(normalizeText(signer.signing_token || signer.token_used_at || signer.viewed_at || signer.signed_at))
+    ) ||
+    fields.some((field) =>
+      normalizeKey(field.status) !== "pending" ||
+      Boolean(normalizeText(field.completed_at || field.signature_asset_path))
+    );
+  if (hasSigningProgress || signers.length || fields.length || normalizeText(layout.id)) {
+    throw Object.assign(new Error("The mandate signing envelope already has partial setup or activity. Review the signing setup before sending."), {
+      code: "LEGAL_DOCUMENT_JOB_PREPARE_ENVELOPE_REVIEW_REQUIRED",
+    });
+  }
+
+  const agent = resolveMandateSendSignerIdentity(payload, "agent");
+  const seller = resolveMandateSendSignerIdentity(payload, "seller");
+  const packetDocumentId = normalizeText(version.rendered_document_id) || null;
+  const signerRows = [agent, seller].map((signer, index) => ({
+    organisation_id: normalizeText(packet.organisation_id),
+    packet_id: packetId,
+    packet_document_id: packetDocumentId,
+    packet_version_id: versionId,
+    signer_role: signer.signerRole,
+    signer_name: signer.signerName,
+    signer_email: signer.signerEmail,
+    signing_order: index + 1,
+    status: "pending",
+  }));
+  const signersInsert = await client
+    .from("document_packet_signers")
+    .insert(signerRows)
+    .select("id, signer_role");
+  if (signersInsert.error) throw signersInsert.error;
+
+  const layoutFieldsInput = [
+    {
+      signerRole: "agent",
+      fieldType: "signature",
+      pageNumber: 4,
+      xPosition: 54,
+      yPosition: 269,
+      width: 186,
+      height: 44,
+      required: true,
+    },
+    {
+      signerRole: "seller",
+      fieldType: "signature",
+      pageNumber: 4,
+      xPosition: 355,
+      yPosition: 269,
+      width: 186,
+      height: 44,
+      required: true,
+    },
+  ];
+  const saveLayoutResult = await client.rpc("bridge_save_signing_field_placement_e2", {
+    p_packet_id: packetId,
+    p_version_id: versionId,
+    p_fields: layoutFieldsInput,
+    p_expected_revision: 0,
+    p_pdf_page_count: 4,
+  });
+  if (saveLayoutResult.error) throw saveLayoutResult.error;
+  const savedLayout = asRecord(saveLayoutResult.data);
+  const layoutRevision = numberValue(savedLayout.revision, 0);
+  if (layoutRevision < 1) {
+    throw Object.assign(new Error("The mandate signing layout was saved without a valid revision."), {
+      code: "LEGAL_DOCUMENT_JOB_PREPARE_LAYOUT_REVISION_MISSING",
+    });
+  }
+
+  const applyLayoutResult = await client.rpc("bridge_apply_signing_field_layout_e3", {
+    p_packet_id: packetId,
+    p_version_id: versionId,
+    p_layout_revision: layoutRevision,
+  });
+  if (applyLayoutResult.error) throw applyLayoutResult.error;
+  const appliedLayout = asRecord(applyLayoutResult.data);
+
+  await client.from("document_packet_events").insert({
+    packet_id: packetId,
+    organisation_id: normalizeText(packet.organisation_id),
+    version_id: versionId,
+    event_type: "mandate_signing_envelope_prepared_by_job",
+    event_payload_json: {
+      phase4SignatureSendJob: true,
+      signerCount: signerRows.length,
+      fieldCount: layoutFieldsInput.length,
+      targetSignerRole,
+      layoutId: normalizeText(appliedLayout.layoutId || appliedLayout.layout_id || savedLayout.layoutId || savedLayout.layout_id),
+      layoutRevision,
+    },
+  });
+
+  return {
+    alreadyPrepared: false,
+    layoutId: normalizeText(appliedLayout.layoutId || appliedLayout.layout_id || savedLayout.layoutId || savedLayout.layout_id),
+    layoutRevision,
+    signerCount: signerRows.length,
+    fieldCount: layoutFieldsInput.length,
+  };
 }
 
 async function prepareSigningLinkForSendJob({
@@ -1303,6 +1506,8 @@ async function runGeneratePacketVersionJob({
       status: "succeeded",
       result: {
         contract: "legal-document-job-runner-phase5-background-generation-v1",
+        phase3ServerPdfGeneration: true,
+        jobDisplayType: "generate_mandate_pdf",
         phase5BackgroundGeneration: true,
         jobId,
         packetId,
@@ -1316,6 +1521,8 @@ async function runGeneratePacketVersionJob({
       packetVersionId: versionId,
       generationAttemptId: UUID_PATTERN.test(generationAttemptId) ? generationAttemptId : null,
       metadata: {
+        phase3ServerPdfGeneration: true,
+        jobDisplayType: "generate_mandate_pdf",
         phase5CompletedAt: new Date().toISOString(),
         phase5RequestId: requestId,
         phase5BackgroundGeneration: true,
@@ -1354,10 +1561,14 @@ async function runGeneratePacketVersionJob({
         errorCode: normalizeText((error as { code?: unknown })?.code) || "LEGAL_DOCUMENT_JOB_GENERATION_FAILED",
         error: normalizeText((error as { message?: unknown })?.message) || "Mandate generation failed.",
         status: Number((error as { status?: unknown })?.status) || null,
+        phase3ServerPdfGeneration: true,
+        jobDisplayType: "generate_mandate_pdf",
         phase5BackgroundGeneration: true,
       },
       generationAttemptId: UUID_PATTERN.test(generationAttemptId) ? generationAttemptId : null,
       metadata: {
+        phase3ServerPdfGeneration: true,
+        jobDisplayType: "generate_mandate_pdf",
         phase5FailedAt: new Date().toISOString(),
         phase5RequestId: requestId,
         phase5BackgroundGeneration: true,
@@ -1524,9 +1735,26 @@ async function runSendForSignatureJob({
   };
   const emailType = normalizeKey(emailPayload.type);
   let portalLink = normalizeText(emailPayload.portalLink || emailPayload.portal_link);
+  const jobMetadata = asRecord(job.metadata_json);
+  const jobDisplayType = normalizeText(
+    requestPayload.jobDisplayType ||
+      requestPayload.job_display_type ||
+      jobMetadata.jobDisplayType ||
+      jobMetadata.job_display_type,
+  ) || "send_mandate_for_signature";
+  let preparedSigningEnvelope: JsonRecord | null = null;
   let preparedSigningLink: JsonRecord | null = null;
   if (!extractSigningToken(portalLink) && booleanFlag(emailPayload.prepareSigningLink || emailPayload.prepare_signing_link)) {
     try {
+      preparedSigningEnvelope = await prepareMandateSigningEnvelopeForSendJob({
+        client,
+        packet,
+        version,
+        payload: {
+          ...emailPayload,
+          targetSignerRole: normalizeText(emailPayload.targetSignerRole || emailPayload.target_signer_role || emailPayload.recipientRole || job.target_signer_role),
+        },
+      });
       preparedSigningLink = await prepareSigningLinkForSendJob({
         client,
         packet,
@@ -1553,10 +1781,14 @@ async function runSendForSignatureJob({
         error: {
           errorCode: normalizeText((error as { code?: unknown })?.code) || "LEGAL_DOCUMENT_JOB_PREPARE_SIGNING_LINK_FAILED",
           error: normalizeText((error as { message?: unknown })?.message) || "Signing link preparation failed.",
+          phase4SignatureSendJob: true,
+          jobDisplayType,
           phase7BackgroundPrepareSend: true,
         },
         packetVersionId: normalizeText(version.id),
         metadata: {
+          phase4SignatureSendJob: true,
+          jobDisplayType,
           phase7FailedAt: new Date().toISOString(),
           phase7RequestId: requestId,
           phase7BackgroundPrepareSend: true,
@@ -1581,12 +1813,14 @@ async function runSendForSignatureJob({
       client,
       jobId,
       status: "failed",
-      error: {
-        errorCode: "LEGAL_DOCUMENT_JOB_SEND_PAYLOAD_INVALID",
-        phase3SendOnly: true,
-        phase7BackgroundPrepareSend: booleanFlag(emailPayload.prepareSigningLink || emailPayload.prepare_signing_link),
-      },
-      packetVersionId: normalizeText(version.id),
+        error: {
+          errorCode: "LEGAL_DOCUMENT_JOB_SEND_PAYLOAD_INVALID",
+          phase3SendOnly: true,
+          phase4SignatureSendJob: true,
+          jobDisplayType,
+          phase7BackgroundPrepareSend: booleanFlag(emailPayload.prepareSigningLink || emailPayload.prepare_signing_link),
+        },
+        packetVersionId: normalizeText(version.id),
       dispatchId: normalizeText(emailPayload.dispatchId || emailPayload.dispatch_id) || null,
       metadata: { phase3RequestId: requestId },
     });
@@ -1613,6 +1847,8 @@ async function runSendForSignatureJob({
       phase3RequestId: requestId,
       phase3StartedAt: new Date(startedAt).toISOString(),
       phase3SendOnly: true,
+      phase4SignatureSendJob: true,
+      jobDisplayType,
     },
   });
 
@@ -1634,6 +1870,8 @@ async function runSendForSignatureJob({
         status: emailResult.status,
         retryable: errorBody.retryable === true,
         phase3SendOnly: true,
+        phase4SignatureSendJob: true,
+        jobDisplayType,
       },
       packetVersionId: normalizeText(version.id),
       dispatchId: normalizeText(emailPayload.dispatchId || emailPayload.dispatch_id) || null,
@@ -1641,6 +1879,8 @@ async function runSendForSignatureJob({
         phase3FailedAt: new Date().toISOString(),
         phase3RequestId: requestId,
         phase3SendOnly: true,
+        phase4SignatureSendJob: true,
+        jobDisplayType,
       },
     });
     return {
@@ -1666,6 +1906,10 @@ async function runSendForSignatureJob({
     result: {
       contract: "legal-document-job-runner-phase3-send-v1",
       sendOnly: true,
+      phase4SignatureSendJob: true,
+      jobDisplayType,
+      preparedSigningEnvelope: Boolean(preparedSigningEnvelope),
+      preparedSigningEnvelopeDetails: preparedSigningEnvelope,
       preparedSigningLink: Boolean(preparedSigningLink),
       jobId,
       packetId: normalizeText(packet.id),
@@ -1686,6 +1930,8 @@ async function runSendForSignatureJob({
       phase3CompletedAt: new Date().toISOString(),
       phase3RequestId: requestId,
       phase3SendOnly: true,
+      phase4SignatureSendJob: true,
+      jobDisplayType,
       phase7BackgroundPrepareSend: Boolean(preparedSigningLink),
     },
   });
@@ -1825,6 +2071,8 @@ async function createSendReadyJobAndRun({
   const dispatchId = normalizeText(emailPayload.dispatchId || emailPayload.dispatch_id || payload.dispatchId || payload.dispatch_id);
   const emailType = normalizeKey(emailPayload.type);
   const prepareSigningLink = booleanFlag(payload.prepareSigningLink || payload.prepare_signing_link);
+  const jobMetadata = asRecord(payload.jobMetadata || payload.job_metadata);
+  const jobDisplayType = normalizeText(payload.jobDisplayType || payload.job_display_type) || "send_mandate_for_signature";
   if (!["seller_mandate_sent", "seller_mandate", "otp_signing"].includes(emailType) || (!extractSigningToken(portalLink) && !prepareSigningLink)) {
     return {
       ok: false,
@@ -1850,7 +2098,7 @@ async function createSendReadyJobAndRun({
     normalizeText(emailPayload.to).toLowerCase(),
   ].join(":"));
   const idempotencyKey = normalizeText(payload.idempotencyKey || payload.idempotency_key) ||
-    `${prepareSigningLink ? "phase7-prepare-send" : "phase4-send"}:${packetId}:${recipientDigest.slice(0, 40)}`;
+    `${prepareSigningLink ? "phase4-signature-prepare-send" : "phase4-signature-send"}:${packetId}:${recipientDigest.slice(0, 40)}`;
   const createResult = await client.rpc("bridge_create_legal_document_job_phase1", {
     p_packet_id: packetId,
     p_job_type: "send_for_signature",
@@ -1859,12 +2107,19 @@ async function createSendReadyJobAndRun({
       ...emailPayload,
       prepareSigningLink,
       prepare_signing_link: prepareSigningLink,
+      jobDisplayType,
+      job_display_type: jobDisplayType,
+      phase4SignatureSendJob: true,
+      phase4_signature_send_job: true,
       baseUrl: normalizeText(payload.baseUrl || payload.base_url || emailPayload.baseUrl || emailPayload.base_url) || undefined,
       expiresInHours: numberValue(payload.expiresInHours || payload.expires_in_hours || emailPayload.expiresInHours || emailPayload.expires_in_hours, 168),
     },
     p_target_signer_role: targetSignerRole || null,
     p_metadata_json: {
+      ...jobMetadata,
       phase4UiServerSend: true,
+      phase4SignatureSendJob: true,
+      jobDisplayType,
       phase7BackgroundPrepareSend: prepareSigningLink,
       requestedByUserId: authority.kind === "user" ? authority.userId : null,
       requestId,
@@ -1900,6 +2155,8 @@ async function createSendReadyJobAndRun({
         background: true,
         scheduler,
         requestId,
+        jobDisplayType,
+        phase4SignatureSendJob: true,
         job: createdJob,
       },
     };
@@ -2004,6 +2261,7 @@ async function createGenerateReadyJobAndRun({
 
   const rendererRequest = asRecord(payload.rendererRequest || payload.renderer_request);
   const versionInput = asRecord(payload.versionInput || payload.version_input);
+  const jobMetadata = asRecord(payload.jobMetadata || payload.job_metadata);
   const generationPayload = asRecord(rendererRequest.generationPayload || rendererRequest.generation_payload);
   const generationAttemptId = normalizeText(
     payload.generationAttemptId || payload.generation_attempt_id ||
@@ -2062,6 +2320,9 @@ async function createGenerateReadyJobAndRun({
     },
     p_target_signer_role: null,
     p_metadata_json: {
+      ...jobMetadata,
+      phase3ServerPdfGeneration: true,
+      jobDisplayType: normalizeText(payload.jobDisplayType || payload.job_display_type) || "generate_mandate_pdf",
       phase5UiBackgroundGeneration: true,
       requestedByUserId: authority.kind === "user" ? authority.userId : null,
       requestId,

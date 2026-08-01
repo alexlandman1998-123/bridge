@@ -9,7 +9,10 @@ for (const token of [
   'prepare_and_send_ready_packet',
   'prepareSigningLink: true',
   'background: true',
-  'Mandate signing queued. You can continue working while Arch9 prepares and sends the signing email.',
+  'Mandate sending started. You can continue working while Arch9 prepares and sends the signing email.',
+  'Sending started…',
+  'phase4SignatureSendJob: true',
+  'jobDisplayType: \'send_mandate_for_signature\'',
   'Mandate Signing Queued',
 ]) {
   assert.ok(agencyPage.includes(token), `Agency quick-start must keep background signing token: ${token}`)
@@ -23,8 +26,12 @@ assert.match(
 
 for (const token of [
   'prepareSigningLinkForSendJob',
+  'prepareMandateSigningEnvelopeForSendJob',
   'generateSecureSigningToken',
+  'bridge_save_signing_field_placement_e2',
+  'bridge_apply_signing_field_layout_e3',
   'bridge_authorize_applied_envelope_dispatch_e4',
+  'phase4SignatureSendJob',
   'phase7BackgroundPrepareSend',
   'action === "prepare_and_send_ready_packet"',
 ]) {
@@ -35,6 +42,15 @@ assert.match(
   runner,
   /if \(!extractSigningToken\(portalLink\) && booleanFlag\(emailPayload\.prepareSigningLink \|\| emailPayload\.prepare_signing_link\)\) \{[\s\S]+prepareSigningLinkForSendJob/,
   'Runner should prepare a missing signing link inside the send job.',
+)
+
+const queueBlockStart = agencyPage.indexOf('if (canQueueBackgroundSigningStart) {')
+const queueBlockEnd = agencyPage.indexOf('if (isSupabaseConfigured && isUuidLike(mandatePacketId)', queueBlockStart)
+assert.ok(queueBlockStart > -1 && queueBlockEnd > queueBlockStart, 'Agency quick-start queue block should be discoverable.')
+const queueBlock = agencyPage.slice(queueBlockStart, queueBlockEnd)
+assert.ok(
+  !queueBlock.includes('Preparing signing envelope'),
+  'Agency quick-start should not prepare the mandate signing envelope in the modal before queueing the job.',
 )
 
 assert.equal(

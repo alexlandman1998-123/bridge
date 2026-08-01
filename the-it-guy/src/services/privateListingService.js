@@ -30,9 +30,19 @@ import {
 } from '../lib/privateListingRequirementEngine'
 import { createScopedSupabaseClient, DOCUMENTS_BUCKET_CANDIDATES, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { resolveSellerPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
-import { appendDocumentPacketEvent } from '../lib/documentPacketsApi'
+import {
+  appendDocumentPacketEvent,
+  createEditableDocumentDraftFromTemplate,
+  fetchDocumentPacket,
+  freezeEditableDocumentRevisionForRender,
+  updateDocumentPacketVersion,
+  updateDocumentPacket,
+} from '../lib/documentPacketsApi'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { uploadToStorageCandidateBuckets } from '../lib/storageFallbacks'
+import { mapSellerOnboardingToMandateData } from '../core/documents/mandateDataMapper'
+import { validateMandateGenerationData } from '../core/documents/mandateValidation'
+import { resolveActiveTemplate } from '../core/documents/packetService'
 import {
   normalizeListingSource,
   normalizePropertyCategory,
@@ -252,6 +262,400 @@ function normalizeCompatibilityKey(value) {
 
 function isTruthyFlag(value) {
   return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalizeKey(value))
+}
+
+function stableSerializeMandateDraftValue(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerializeMandateDraftValue(item)).join(',')}]`
+  }
+  if (isPlainObject(value)) {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableSerializeMandateDraftValue(value[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value ?? null)
+}
+
+function buildSellerMandateDraftSourceHash(input = {}) {
+  let hash = 2166136261
+  const serialized = stableSerializeMandateDraftValue(input)
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash ^= serialized.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `fnv1a_${(hash >>> 0).toString(16).padStart(8, '0')}`
+}
+
+function getSellerMandateDraftTemplateRevision(template = null) {
+  const metadata = isPlainObject(template?.metadata_json) ? template.metadata_json : {}
+  return normalizeText(template?.version_tag || template?.versionTag || metadata.version || metadata.templateVersion || template?.updated_at)
+}
+
+function findEditableMandateDraftVersion(versions = []) {
+  return (Array.isArray(versions) ? versions : []).find((version) =>
+    Array.isArray(version?.editable_content_json?.sections) && version.editable_content_json.sections.length > 0,
+  ) || null
+}
+
+function getSellerMandateDraftPacketId(listing = {}) {
+  return normalizeUuid(
+    listing?.mandatePacketId ||
+      listing?.mandate_packet_id ||
+      listing?.mandatePacket?.id ||
+      listing?.mandate_packet?.id,
+  )
+}
+
+function getSellerMandateDraftLeadId(listing = {}) {
+  return normalizeUuid(
+    listing?.sellerLeadId ||
+      listing?.seller_lead_id ||
+      listing?.originatingCrmLeadId ||
+      listing?.originating_crm_lead_id ||
+      listing?.leadId ||
+      listing?.lead_id,
+  )
+}
+
+function buildSellerMandateDraftTitle({ listing = {}, mandateData = {} } = {}) {
+  const seller = mandateData?.seller && typeof mandateData.seller === 'object' ? mandateData.seller : {}
+  const sellerName = normalizeText(
+    seller.fullName ||
+      listing?.sellerName ||
+      listing?.seller_name ||
+      listing?.ownerName ||
+      listing?.owner_name ||
+      listing?.title,
+  ) || 'Seller'
+  return `Mandate • ${sellerName}`
+}
+
+function buildSellerMandateDraftContext({ listing = {}, onboarding = {}, formData = {} } = {}) {
+  const onboardingFormData = {
+    ...(isPlainObject(onboarding?.form_data) ? onboarding.form_data : {}),
+    ...(isPlainObject(onboarding?.formData) ? onboarding.formData : {}),
+    ...(isPlainObject(formData) ? formData : {}),
+  }
+  const organisationId = normalizeUuid(resolveListingOrganisationId(listing) || listing?.organisation_id)
+  const leadId = getSellerMandateDraftLeadId(listing)
+  const listingId = normalizeUuid(listing?.id || listing?.private_listing_id || onboarding?.private_listing_id)
+  const assignedAgentId = normalizeUuid(
+    listing?.assignedAgentId ||
+      listing?.assigned_agent_id ||
+      listing?.assignedUserId ||
+      listing?.assigned_user_id ||
+      listing?.agentId ||
+      listing?.agent_id,
+  )
+  const agent = {
+    id: assignedAgentId || '',
+    fullName: normalizeText(listing?.assignedAgentName || listing?.assigned_agent_name || listing?.agentName || listing?.agent_name),
+    name: normalizeText(listing?.assignedAgentName || listing?.assigned_agent_name || listing?.agentName || listing?.agent_name),
+    email: normalizeText(listing?.assignedAgentEmail || listing?.assigned_agent_email || listing?.agentEmail || listing?.agent_email).toLowerCase(),
+  }
+  const lead = {
+    id: leadId || null,
+    lead_id: leadId || null,
+    sellerName: normalizeText(onboardingFormData.sellerName || onboardingFormData.firstName || listing?.sellerName || listing?.seller_name),
+    sellerSurname: normalizeText(onboardingFormData.sellerSurname || onboardingFormData.lastName || listing?.sellerSurname || listing?.seller_surname),
+    sellerEmail: normalizeText(onboardingFormData.sellerEmail || onboardingFormData.email || listing?.sellerEmail || listing?.seller_email).toLowerCase(),
+    sellerPhone: normalizeText(onboardingFormData.sellerPhone || onboardingFormData.phone || listing?.sellerPhone || listing?.seller_phone),
+    sellerOnboardingStatus: 'completed',
+    sellerOnboarding: {
+      status: 'completed',
+      submittedAt: onboarding?.submitted_at || onboarding?.submittedAt || null,
+      formData: onboardingFormData,
+    },
+    propertyAddress: normalizeText(
+      onboardingFormData.propertyAddress ||
+        onboardingFormData.propertyAddressLine1 ||
+        listing?.propertyAddress ||
+        listing?.property_address ||
+        listing?.addressLine1 ||
+        listing?.address_line_1 ||
+        listing?.formattedAddress ||
+        listing?.formatted_address,
+    ),
+    propertyType: normalizeText(onboardingFormData.propertyType || listing?.propertyType || listing?.property_type),
+    listingTitle: normalizeText(listing?.title || listing?.listingTitle || listing?.listing_title),
+    askingPrice: Number(onboardingFormData.askingPrice || listing?.askingPrice || listing?.asking_price || listing?.estimatedValue || listing?.estimated_value || 0) || 0,
+    assignedAgentName: agent.fullName,
+    assignedAgentEmail: agent.email,
+  }
+
+  return {
+    organisationId,
+    listingId,
+    leadId,
+    assignedAgentId,
+    onboardingFormData,
+    agent,
+    lead,
+    sourceContext: {
+      packetType: 'mandate',
+      contextType: 'listing_seller',
+      route: 'seller_onboarding_draft_precreation',
+      sellerId: normalizeUuid(onboardingFormData.sellerId || onboardingFormData.seller_id) || null,
+      agentId: assignedAgentId || null,
+      propertyId: normalizeUuid(listing?.propertyId || listing?.property_id) || null,
+      leadId: leadId || null,
+      onboardingId: normalizeUuid(onboarding?.id) || null,
+      listingId: listingId || null,
+      autoCreatedFromSellerOnboarding: true,
+    },
+  }
+}
+
+async function syncSellerMandateDraftPacketReference(client, { listing = {}, leadId = null, packetId = null } = {}) {
+  const listingId = normalizeUuid(listing?.id || listing?.private_listing_id)
+  const resolvedPacketId = normalizeUuid(packetId)
+  if (!resolvedPacketId) return
+  if (listingId) {
+    const listingUpdate = await client
+      .from('private_listings')
+      .update({ mandate_packet_id: resolvedPacketId, mandate_status: 'in_progress' })
+      .eq('id', listingId)
+      .is('mandate_packet_id', null)
+    if (listingUpdate.error && !isMissingColumnError(listingUpdate.error, 'mandate_packet_id')) {
+      console.warn('[Private Listings] mandate draft packet reference sync skipped for listing', listingUpdate.error)
+    }
+  }
+  const resolvedLeadId = normalizeUuid(leadId)
+  if (resolvedLeadId) {
+    const leadUpdate = await client
+      .from('leads')
+      .update({ mandate_packet_id: resolvedPacketId })
+      .eq('lead_id', resolvedLeadId)
+      .is('mandate_packet_id', null)
+    if (leadUpdate.error && !isMissingColumnError(leadUpdate.error, 'mandate_packet_id')) {
+      console.warn('[Private Listings] mandate draft packet reference sync skipped for lead', leadUpdate.error)
+    }
+  }
+}
+
+export async function precreateSellerMandateDraftFromOnboarding({ listing = {}, onboarding = {}, formData = {}, client: providedClient = null } = {}) {
+  const client = providedClient || requireClient()
+  const draftContext = buildSellerMandateDraftContext({ listing, onboarding, formData })
+  if (!draftContext.organisationId || !draftContext.listingId) {
+    return { created: false, draftStatus: 'failed', reason: 'missing_source_context' }
+  }
+
+  const mandateData = mapSellerOnboardingToMandateData({
+    onboardingSubmission: {
+      ...draftContext.onboardingFormData,
+      status: 'completed',
+      submittedAt: onboarding?.submitted_at || onboarding?.submittedAt || null,
+    },
+    lead: draftContext.lead,
+    privateListing: listing,
+    agency: {
+      name: normalizeText(listing?.organisationName || listing?.organisation_name || listing?.agencyName || listing?.agency_name),
+      legalName: normalizeText(listing?.organisationName || listing?.organisation_name || listing?.agencyName || listing?.agency_name),
+      organisationName: normalizeText(listing?.organisationName || listing?.organisation_name || listing?.agencyName || listing?.agency_name),
+    },
+    organisation: {
+      id: draftContext.organisationId,
+      name: normalizeText(listing?.organisationName || listing?.organisation_name || listing?.agencyName || listing?.agency_name),
+      displayName: normalizeText(listing?.organisationName || listing?.organisation_name || listing?.agencyName || listing?.agency_name),
+    },
+    agent: draftContext.agent,
+    contact: {},
+    transaction: {},
+    mandateDraft: {
+      ...draftContext.onboardingFormData,
+      sellerOnboardingStatus: 'completed',
+      sourceMode: 'saved',
+      documentStart: 'seller_lead_mandate',
+    },
+  })
+  const mandateValidation = validateMandateGenerationData(mandateData, { action: 'generate' })
+  const existingPacketId = getSellerMandateDraftPacketId(listing)
+  const [templateResolution, existingPacket] = await Promise.all([
+    resolveActiveTemplate({
+      packetType: 'mandate',
+      moduleType: 'residential',
+      organisationId: draftContext.organisationId,
+      includeSections: true,
+      context: {
+        organisationId: draftContext.organisationId,
+        validationAction: 'generate',
+        mandateData,
+        sourceContext: {
+          ...draftContext.sourceContext,
+          ...(mandateData?.sourceContext && typeof mandateData.sourceContext === 'object' ? mandateData.sourceContext : {}),
+        },
+      },
+    }),
+    existingPacketId
+      ? fetchDocumentPacket(existingPacketId, { includeVersions: true, includeEvents: false }).catch(() => null)
+      : Promise.resolve(null),
+  ])
+  const template = templateResolution?.template || null
+  if (!normalizeUuid(template?.id)) {
+    return { created: false, draftStatus: 'failed', reason: 'missing_template', mandateData, mandateValidation }
+  }
+
+  const templateRevision = getSellerMandateDraftTemplateRevision(template)
+  const sourceHash = buildSellerMandateDraftSourceHash({
+    seller: mandateData?.seller || null,
+    agent: mandateData?.agent || draftContext.agent,
+    property: mandateData?.property || null,
+    mandateType: mandateData?.mandate?.type || draftContext.onboardingFormData.mandateType || 'sole',
+    templateRevision,
+    templateId: template.id,
+    mergeFields: mandateData?.placeholders || {},
+  })
+  const selectedTemplate = {
+    id: template.id,
+    key: normalizeText(template.template_key || template.key),
+    label: normalizeText(template.template_label || template.label),
+    revision: templateRevision || null,
+  }
+  let draftStatus = mandateValidation.canProceed ? 'ready' : 'needs_attention'
+  let draftFailure = null
+  const phase1SourceContext = {
+    ...draftContext.sourceContext,
+    ...(mandateData?.sourceContext && typeof mandateData.sourceContext === 'object' ? mandateData.sourceContext : {}),
+    source_hash: sourceHash,
+    draft_status: draftStatus,
+    draftStatus,
+    draftReady: draftStatus === 'ready',
+    draftReadyAt: draftStatus === 'ready' ? new Date().toISOString() : null,
+    mandateData,
+    selectedTemplate,
+    selectedTemplateId: selectedTemplate.id,
+    selectedTemplateRevision: selectedTemplate.revision,
+    resolvedMergeFields: mandateData?.placeholders || {},
+    warnings: [
+      ...(Array.isArray(mandateData?.warnings) ? mandateData.warnings : []),
+      ...(Array.isArray(mandateValidation?.warnings) ? mandateValidation.warnings : []),
+    ],
+    validationSummary: {
+      canProceed: Boolean(mandateValidation.canProceed),
+      missingRequiredFields: mandateValidation.missingRequiredFields || [],
+      warnings: mandateValidation.warnings || [],
+      blockingErrors: mandateValidation.blockingErrors || [],
+    },
+    sourceContext: draftContext.sourceContext,
+  }
+
+  const existingStatus = normalizeKey(existingPacket?.status)
+  if (['generated', 'signing_prep', 'sent', 'partially_signed', 'signed', 'completed', 'voided', 'archived'].includes(existingStatus)) {
+    return { created: false, draftStatus: 'failed', reason: 'packet_locked', packet: existingPacket }
+  }
+
+  let packet = existingPacket
+  let draftVersion = findEditableMandateDraftVersion(packet?.versions || [])
+  if (!packet?.id || !draftVersion?.id) {
+    packet = await createEditableDocumentDraftFromTemplate({
+      organisationId: draftContext.organisationId,
+      packetType: 'mandate',
+      title: buildSellerMandateDraftTitle({ listing, mandateData }),
+      templateId: template.id,
+      leadId: draftContext.leadId,
+      assignedAgentId: draftContext.assignedAgentId,
+      sourceContextJson: phase1SourceContext,
+      placeholders: mandateData?.placeholders || {},
+    })
+    draftVersion = packet?.currentVersion || packet?.versions?.[0] || null
+  } else {
+    draftVersion = await updateDocumentPacketVersion(draftVersion.id, {
+      placeholdersResolvedJson: mandateData?.placeholders || {},
+      placeholdersMissingJson: mandateValidation.missingRequiredFields || [],
+      validationSummaryJson: {
+        ...(draftVersion.validation_summary_json && typeof draftVersion.validation_summary_json === 'object'
+          ? draftVersion.validation_summary_json
+          : {}),
+        phase1DraftPrecreation: phase1SourceContext,
+        generationStatus: 'not_generated',
+      },
+    })
+  }
+
+  let renderFreeze = null
+  if (draftStatus === 'ready' && draftVersion?.id) {
+    try {
+      renderFreeze = await freezeEditableDocumentRevisionForRender({
+        packetId: packet.id,
+        versionId: draftVersion.id,
+        expectedEditSequence: draftVersion.edit_sequence || 0,
+      })
+    } catch (freezeError) {
+      draftStatus = 'failed'
+      draftFailure = {
+        stage: 'freeze_draft',
+        code: normalizeText(freezeError?.code) || null,
+        message: normalizeText(freezeError?.message || freezeError) || 'Editable mandate draft could not be frozen.',
+      }
+    }
+  }
+
+  const updatedPacket = await updateDocumentPacket(packet.id, {
+    status: draftStatus === 'ready' ? 'ready_for_generation' : 'draft',
+    templateId: selectedTemplate.id,
+    templateKeySnapshot: selectedTemplate.key || null,
+    templateLabelSnapshot: selectedTemplate.label || null,
+    ...(draftContext.assignedAgentId ? { assignedAgentId: draftContext.assignedAgentId } : {}),
+    sourceContextJson: {
+      ...(packet?.source_context_json && typeof packet.source_context_json === 'object' ? packet.source_context_json : {}),
+      ...phase1SourceContext,
+      source_hash: sourceHash,
+      draft_status: draftStatus,
+      draftStatus,
+      draftReady: draftStatus === 'ready',
+      draftReadyAt: draftStatus === 'ready' ? phase1SourceContext.draftReadyAt : null,
+      draftFailure,
+      phase1DraftPrecreation: {
+        ...phase1SourceContext,
+        draft_status: draftStatus,
+        draftStatus,
+        draftReady: draftStatus === 'ready',
+        draftReadyAt: draftStatus === 'ready' ? phase1SourceContext.draftReadyAt : null,
+        draftFailure,
+        packetId: packet.id,
+        packetVersionId: draftVersion?.id || null,
+        renderFreeze,
+        frozenDraftExists: Boolean(renderFreeze?.freezeId),
+        preparedAt: new Date().toISOString(),
+      },
+    },
+  })
+
+  await syncSellerMandateDraftPacketReference(client, {
+    listing,
+    leadId: draftContext.leadId,
+    packetId: updatedPacket.id,
+  })
+  await appendDocumentPacketEvent({
+    packetId: updatedPacket.id,
+    organisationId: updatedPacket.organisation_id,
+    versionId: draftVersion?.id || null,
+    eventType: 'seller_onboarding_mandate_draft_precreated',
+    eventPayload: {
+      activity_type: 'mandate_draft_precreated',
+      privateListingId: draftContext.listingId,
+      leadId: draftContext.leadId,
+      onboardingId: normalizeUuid(onboarding?.id) || null,
+      sourceHash,
+      draftStatus,
+      selectedTemplate,
+      renderFreeze,
+      message: draftStatus === 'ready'
+        ? 'Editable mandate draft was prepared from seller onboarding.'
+        : 'Editable mandate draft was prepared but needs attention before generation.',
+    },
+  }).catch(() => null)
+
+  return {
+    created: true,
+    draftStatus,
+    sourceHash,
+    packet: updatedPacket,
+    version: draftVersion,
+    renderFreeze,
+    template,
+    templateResolution,
+    mandateData,
+    mandateValidation,
+  }
 }
 
 export function isSellerPortalInviteReadyAfterSignedMandate(listing = {}, context = {}) {
@@ -7012,6 +7416,12 @@ export async function submitSellerOnboarding(token, payload = {}) {
       listing: rpcContext.listing,
       formData: payload.formData,
     }))
+    deferSellerOnboardingFollowUp('mandate editable draft pre-creation after onboarding submit', () => precreateSellerMandateDraftFromOnboarding({
+      client,
+      listing: rpcContext.listing,
+      onboarding: rpcContext.onboarding,
+      formData: payload.formData,
+    }))
     deferSellerOnboardingFollowUp('seller requirements sync after onboarding submit', async () => {
       const requirementSync = await syncPrivateListingRequirements(rpcContext.listing, {
         emitActivity: true,
@@ -7185,6 +7595,12 @@ export async function submitSellerOnboarding(token, payload = {}) {
   }).catch(() => false)
 
   const listingForContext = requirementSync?.listing || transitionResult?.listing || fallbackListing
+  deferSellerOnboardingFollowUp('mandate editable draft pre-creation after onboarding fallback submit', () => precreateSellerMandateDraftFromOnboarding({
+    client,
+    listing: listingForContext,
+    onboarding: updateOnboarding.data,
+    formData: nextFormData,
+  }))
   await ensureSellerClientPortalContext(client, {
     listing: listingForContext,
     onboarding: updateOnboarding.data,
