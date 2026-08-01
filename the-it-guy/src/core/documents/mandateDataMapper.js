@@ -552,14 +552,23 @@ function resolvePropertyProfile(onboarding = {}, lead = {}, privateListing = {},
   )
   const displayAddress = joinUniqueAddressParts(formatUnitNumber(unitNumber), complexName, estateName, address)
   const propertyStructureType = firstText(
+    mandateDraft.propertyTitleType,
+    mandateDraft.property_title_type,
     mandateDraft.propertyStructureType,
     mandateDraft.property_structure_type,
+    onboarding.propertyTitleType,
+    onboarding.property_title_type,
     onboarding.propertyStructureType,
     onboarding.property_structure_type,
+    privateListing.propertyTitleType,
+    privateListing.property_title_type,
     privateListing.propertyStructureType,
     privateListing.property_structure_type,
+    lead.propertyTitleType,
+    lead.property_title_type,
     lead.propertyStructureType,
     lead.property_structure_type,
+    transaction.property_title_type,
     transaction.property_structure_type,
   )
   const propertyType = firstText(
@@ -892,6 +901,9 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
 
     property_address: safePlaceholder(property.fullAddress),
     property_type: safePlaceholder(toTitleCase(property.propertyType)),
+    property_title_type: safePlaceholder(property.propertyStructureType),
+    'property.title_type': safePlaceholder(property.propertyStructureType),
+    'property.title_type_raw': safePlaceholder(property.propertyStructureType),
     property_structure_type: safePlaceholder(property.propertyStructureType),
     property_suburb: safePlaceholder(property.suburb),
     property_city: safePlaceholder(property.city),

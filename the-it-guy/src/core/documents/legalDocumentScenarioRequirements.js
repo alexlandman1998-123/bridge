@@ -65,10 +65,22 @@ function unique(values = []) {
 
 function firstValue(source = {}, keys = []) {
   for (const key of keys) {
-    const value = source?.[key]
+    const value = readPath(source, key)
     if (value !== null && value !== undefined && normalizeText(value) !== '') return value
   }
   return ''
+}
+
+function readPath(source = {}, path = '') {
+  const key = normalizeText(path)
+  if (!key) return undefined
+  if (Object.prototype.hasOwnProperty.call(source, key)) return source[key]
+  if (!key.includes('.')) return undefined
+  return key.split('.').reduce((current, part) => (
+    current && typeof current === 'object' && Object.prototype.hasOwnProperty.call(current, part)
+      ? current[part]
+      : undefined
+  ), source)
 }
 
 export function buildLegalDocumentRequirementDraftFromPlaceholders(placeholders = {}) {
@@ -97,7 +109,15 @@ export function buildLegalDocumentRequirementDraftFromPlaceholders(placeholders 
     buyerSpouseIdNumber: firstValue(source, ['buyer_spouse_id_number']),
     buyerSpouseEmail: firstValue(source, ['buyer_spouse_email']),
     propertyAddress: firstValue(source, ['property_address', 'property_full_address']),
-    propertyTitleType: firstValue(source, ['property_title_type', 'property.title_type_raw']),
+    propertyTitleType: firstValue(source, [
+      'property_title_type',
+      'property.title_type',
+      'property.title_type_raw',
+      'property_structure_type',
+      'propertyStructureType',
+      'property.property_structure_type',
+      'property.structure_type',
+    ]),
     unitNumber: firstValue(source, ['property_unit_number', 'unit_number', 'property_section_number']),
     complexName: firstValue(source, ['property_complex_name', 'property_sectional_title_scheme', 'complex_name']),
     erfNumber: firstValue(source, ['property_erf_number', 'erf_number']),

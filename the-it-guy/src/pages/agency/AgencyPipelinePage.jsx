@@ -565,6 +565,7 @@ function applyMandateManualOverrideToData(mandateData = null, sourceContext = {}
   placeholder('property_address', field('property_address'))
   placeholder('property_display_address', field('property_address'))
   placeholder('property_type', field('property_type'))
+  placeholder('property_title_type', field('property_title'))
   placeholder('property_structure_type', field('property_title'))
   placeholder('property_erf_number', field('property_reference'))
   placeholder('erf_number', field('property_reference'))

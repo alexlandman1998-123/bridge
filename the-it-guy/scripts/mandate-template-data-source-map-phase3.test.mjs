@@ -84,6 +84,7 @@ const mappedMandate = mapSellerOnboardingToMandateData({
     lastName: 'Seller',
     idNumber: '7801015009088',
     propertyAddress: '12 Sample Street, Pretoria',
+    propertyStructureType: 'freehold',
     askingPrice: 2850000,
     commissionPercentage: 5,
     status: 'completed',
@@ -107,6 +108,10 @@ const mappedMandate = mapSellerOnboardingToMandateData({
     ffcNumber: 'FFC-AGENT-123456',
   },
 })
+
+assert.equal(mappedMandate.placeholders.property_title_type, 'full_title')
+assert.equal(mappedMandate.placeholders.property_structure_type, 'freehold')
+assert.equal(mappedMandate.placeholders['property.title_type_raw'], 'full_title')
 
 const report = buildMandateTemplateDataSourceReport({
   generatedAt: '2026-07-28T12:00:00.000Z',

@@ -43,6 +43,7 @@ const companyFullTitle = mapSellerOnboardingToMandateData({
 
 assert.equal(companyFullTitle.placeholders.seller_clause_profile, 'company')
 assert.equal(companyFullTitle.placeholders.property_title_type, 'full_title')
+assert.equal(companyFullTitle.placeholders.property_structure_type, 'freehold')
 assert.equal(companyFullTitle.placeholders.property_clause_profile, 'full_title')
 assert.equal(companyFullTitle.placeholders.mandate_template_variant, 'company_full_title')
 assert.equal(companyFullTitle.placeholders.seller_representative_capacity, 'Director')
@@ -72,6 +73,7 @@ const marriedSectional = mapSellerOnboardingToMandateData({
 
 assert.equal(marriedSectional.placeholders.seller_clause_profile, 'individual_spouse_consent')
 assert.equal(marriedSectional.placeholders.property_title_type, 'sectional_title')
+assert.equal(marriedSectional.placeholders.property_structure_type, 'sectional_title')
 assert.equal(marriedSectional.placeholders.property_clause_profile, 'sectional_title')
 assert.equal(marriedSectional.placeholders.mandate_template_variant, 'individual_spouse_consent_sectional_title')
 assert.match(marriedSectional.placeholders.mandate_active_clause_packs, /seller_individual_capacity_pack/)

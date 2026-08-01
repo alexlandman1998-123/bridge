@@ -119,7 +119,15 @@ function resolvePropertyTitleType(sources = []) {
     'propertyType',
     'property_branch',
     'flow.property_branch',
+    'canonicalFacts.property.property_title_type',
+    'canonicalFacts.property.title_type',
+    'canonicalFacts.property.title_type_raw',
+    'canonicalFacts.property.property_structure_type',
     'canonicalFacts.property.property_type',
+    'canonical_facts.property.property_title_type',
+    'canonical_facts.property.title_type',
+    'canonical_facts.property.title_type_raw',
+    'canonical_facts.property.property_structure_type',
     'canonical_facts.property.property_type',
   ])
   const normalizedExplicit = normalizeLegalPropertyTitleType(explicit)

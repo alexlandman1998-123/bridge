@@ -245,6 +245,8 @@ test('builds canonical payload with readiness and resolver input', () => {
     trustRegistrationNumber: 'IT1234/2024',
     trustName: 'Taylor Family Trust',
     trusteeName: 'Taylor Trustee',
+    authorisedTrusteeCapacity: 'Trustee',
+    trustAuthorityBasis: 'Letters of authority',
     trustRegisteredAddress: '22 Road',
     propertyAddress: '22 Road',
     suburb: 'Sandton',
@@ -271,6 +273,8 @@ test('builds canonical payload with readiness and resolver input', () => {
   assert.equal(payload.canonicalSellerFacts.seller.legal_type, 'trust')
   assert.equal(payload.canonicalSellerFacts.property.estate_or_hoa, true)
   assert.equal(payload.canonicalSellerFacts.property.property_structure_type, 'full_title')
+  assert.equal(payload.canonicalSellerFacts.property.property_title_type, 'full_title')
+  assert.equal(payload.canonicalSellerFacts.property.title_type_raw, 'full_title')
   assert.equal(payload.canonicalSellerFacts.property.property_type, 'freehold')
   assert.equal(payload.canonicalSellerFacts.property_disclosure.digitally_complete, true)
   assert.equal(payload.canonicalSellerFactReadiness.validation.ok, true)

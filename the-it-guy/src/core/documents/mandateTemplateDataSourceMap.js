@@ -228,8 +228,8 @@ const FIELD_SOURCE_OVERRIDES = {
     fallbackSourcePaths: ['property_address'],
   },
   property_title_type: {
-    primarySourcePaths: ['mandateDraft.propertyStructureType', 'onboardingSubmission.propertyStructureType'],
-    fallbackSourcePaths: ['privateListing.propertyStructureType', 'lead.propertyStructureType', 'transaction.property_structure_type'],
+    primarySourcePaths: ['mandateDraft.propertyTitleType', 'mandateDraft.propertyStructureType', 'onboardingSubmission.property_title_type', 'onboardingSubmission.propertyStructureType'],
+    fallbackSourcePaths: ['privateListing.propertyTitleType', 'privateListing.propertyStructureType', 'lead.propertyTitleType', 'lead.propertyStructureType', 'transaction.property_title_type', 'transaction.property_structure_type'],
   },
   erf_number: {
     primarySourcePaths: ['mandateDraft.erfNumber', 'onboardingSubmission.erfNumber'],
