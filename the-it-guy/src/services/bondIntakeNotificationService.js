@@ -2,6 +2,10 @@ import { buildFinanceReadinessHandoffPacket } from '../core/finance/financeReadi
 import { getBondApplicationProgress, getBondIntakeSummary } from '../core/transactions/bondIntakeSelectors'
 import { deriveFinanceManagedBy, isBondFinanceType } from '../core/transactions/financeType'
 import { invokeEdgeFunction, supabase } from '../lib/supabaseClient'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from './portalCanonicalFieldFallbacks.js'
 
 export const BOND_NOTIFICATION_EVENTS = Object.freeze({
   BOND_INTAKE_STARTED: 'BOND_INTAKE_STARTED',
@@ -701,14 +705,25 @@ export async function resolveBondNotificationRecipients(transactionInput = {}, o
   }
 }
 
-function buyerName(transaction = {}, recipients = {}) {
-  return safeDisplayName([
-    recipients.buyer?.name,
-    transaction.buyer_name,
-    transaction.buyerName,
-    transaction.client_name,
-    transaction.clientName,
-  ], 'the buyer')
+function buyerName(transaction = {}, recipients = {}, metadata = {}) {
+  return resolvePortalBuyerName(
+    {
+      ...transaction,
+      transaction,
+      buyer: recipients.buyer,
+      onboardingFormData: metadata.onboardingFormData || metadata.onboarding_form_data,
+      workDeliveryPayload: metadata.workDeliveryPayload || metadata.work_delivery_payload,
+    },
+    {
+      fallback: safeDisplayName([
+        recipients.buyer?.name,
+        transaction.buyer_name,
+        transaction.buyerName,
+        transaction.client_name,
+        transaction.clientName,
+      ], 'the buyer'),
+    },
+  )
 }
 
 function propertyLabel(transaction = {}, metadata = {}) {
@@ -717,7 +732,16 @@ function propertyLabel(transaction = {}, metadata = {}) {
   const address = normalizeText(transaction.property_address_line_1 || transaction.propertyAddressLine1 || transaction.property_description || metadata.propertyLabel)
   if (unit && development) return `Unit ${unit}, ${development}`
   if (unit) return `Unit ${unit}`
-  return address || development || 'the property'
+  return resolvePortalPropertyLabel(
+    {
+      ...transaction,
+      transaction,
+      onboardingFormData: metadata.onboardingFormData || metadata.onboarding_form_data,
+      workDeliveryPayload: metadata.workDeliveryPayload || metadata.work_delivery_payload,
+      propertyLabel: metadata.propertyLabel,
+    },
+    { fallback: address || development || 'the property' },
+  )
 }
 
 function resolveEventKey(eventType, metadata = {}) {
@@ -730,7 +754,7 @@ function resolveEventKey(eventType, metadata = {}) {
 }
 
 function buildEventCopy(eventType, { transaction = {}, recipients = {}, metadata = {} } = {}) {
-  const buyer = buyerName(transaction, recipients)
+  const buyer = buyerName(transaction, recipients, metadata)
   const property = propertyLabel(transaction, metadata)
   const actorName = safeDisplayName([metadata.actorName, metadata.actor?.name], 'Arch9')
   const assigneeName = safeDisplayName([metadata.assignee?.name, metadata.assigneeName, recipients.assignedConsultant?.name], 'the assigned consultant')
@@ -1098,7 +1122,7 @@ function chooseBuyerIntroConsultant(recipients = {}) {
 }
 
 function enrichNotificationMetadata({ transaction = {}, metadata = {}, recipients = {}, intakeSummary = null } = {}) {
-  const buyer = buyerName(transaction, recipients)
+  const buyer = buyerName(transaction, recipients, metadata)
   const property = propertyLabel(transaction, metadata)
   const introConsultant = chooseBuyerIntroConsultant(recipients)
   const organisationName = normalizeText(

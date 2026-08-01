@@ -73,9 +73,10 @@ const [listingDetail, outboxService, migration] = await Promise.all([
 ])
 
 check('seller workspace exposes delivery choice and visible outbox state', () => {
-  assert.match(listingDetail, /Seller delivery mode/)
+  assert.match(listingDetail, /SELLER_REVIEW_DELIVERY_OPTIONS/)
+  assert.match(listingDetail, /handleCanonicalListingOfferSendToSeller/)
   assert.match(listingDetail, /prepareNotificationOutbox\(/)
-  assert.match(listingDetail, /No pending seller notifications/)
+  assert.match(listingDetail, /notification outbox/)
 })
 check('outbox records provider outcomes instead of leaving jobs silently queued', () => {
   assert.match(outboxService, /updateNotificationOutboxStatus/)

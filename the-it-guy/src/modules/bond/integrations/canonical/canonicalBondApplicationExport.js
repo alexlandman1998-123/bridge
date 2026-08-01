@@ -2,6 +2,9 @@ import {
   canonicalizeBondApplicationSnapshot,
   hashCanonicalBondApplicationPayload,
 } from '../../application/submission/bondApplicationSnapshotHash.js'
+import {
+  resolvePortalPropertyLabel,
+} from '../../../../services/portalCanonicalFieldFallbacks.js'
 
 export const BOND_APPLICATION_CANONICAL_EXPORT_SCHEMA_VERSION = 'phase-8-canonical-v1'
 export const BOND_APPLICATION_CANONICAL_EXPORT_CONTENT_TYPE = 'application/vnd.arch9.bond-application.canonical+json;version=1'
@@ -149,14 +152,20 @@ function answersFromParticipant(participant = {}) {
 function buildParticipantExport(participant = {}, index = 0) {
   const role = participant.role || participant.participantRole || 'primary_applicant'
   const participantKey = participant.participantKey || participant.participant_key || `${role}:${index + 1}`
+  const answers = answersFromParticipant(participant)
+  const personal = answers.personal || {}
+  const compositeName = [
+    personal.first_name || personal.firstName,
+    personal.last_name || personal.lastName || personal.surname,
+  ].map(normalizeText).filter(Boolean).join(' ')
   return compactObject({
     participantId: participant.participantId || participant.id || null,
     participantKey,
     role,
     ordinal: participant.ordinal || index + 1,
     status: participant.status || null,
-    displayName: pickFirst(participant.displayName, participant.fullName, participant.answers?.personal?.full_name),
-    answers: normalizeMoneyFields(stripSensitive(answersFromParticipant(participant))),
+    displayName: pickFirst(participant.displayName, participant.fullName, personal.full_name, personal.fullName, personal.name, compositeName),
+    answers: normalizeMoneyFields(stripSensitive(answers)),
     declarations: stripSensitive(participant.declarations || participant.declarationEvidence || []),
     documents: [],
   })
@@ -249,6 +258,16 @@ export function buildCanonicalBondApplicationExport({
     ...(snapshot.documentManifest || snapshot.document_manifest || []),
     ...supplementalDocuments,
   ])
+  const snapshotProperty = snapshot.property || snapshot.shared?.property || snapshot.application?.property || {}
+  const canonicalPropertyLabel = resolvePortalPropertyLabel(
+    {
+      ...snapshot,
+      property: snapshotProperty,
+      onboardingFormData: snapshot.onboardingFormData || snapshot.onboarding_form_data || snapshot.formData || snapshot.form_data,
+      transaction: snapshot.transaction || normalizedApplication?.transaction || {},
+    },
+    { fallback: '' },
+  )
   const canonical = {
     canonicalSchemaVersion: BOND_APPLICATION_CANONICAL_EXPORT_SCHEMA_VERSION,
     contentType: BOND_APPLICATION_CANONICAL_EXPORT_CONTENT_TYPE,
@@ -267,7 +286,11 @@ export function buildCanonicalBondApplicationExport({
       supersededBySubmissionId: submissionRecord.supersededBySubmissionId,
     },
     application: compactObject({
-      property: stripSensitive(snapshot.property || snapshot.shared?.property || snapshot.application?.property || {}),
+      property: compactObject({
+        ...stripSensitive(snapshotProperty),
+        address: canonicalPropertyLabel || snapshotProperty.address || snapshotProperty.propertyAddress,
+        displayAddress: canonicalPropertyLabel || snapshotProperty.displayAddress || snapshotProperty.display_address,
+      }),
       finance: normalizeMoneyFields(stripSensitive(snapshot.finance || snapshot.shared?.finance || snapshot.application?.finance || {})),
       applicantStructure: snapshot.application?.applicantStructure || snapshot.shared?.applicantStructure || null,
       selectedBanks: normalizeSelectedBanks(snapshot),
@@ -291,4 +314,3 @@ export async function hashCanonicalBondApplicationExport(canonicalExport) {
 export function canonicalizeBondApplicationExport(canonicalExport) {
   return canonicalizeBondApplicationSnapshot(canonicalExport)
 }
-

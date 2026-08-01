@@ -2540,6 +2540,7 @@ function buildOriginatorSummaryCsv(canonicalExport = {}) {
     ['source', '', '', 'submission_id', canonicalExport.source?.submissionId || ''],
     ['source', '', '', 'submission_version', canonicalExport.source?.submissionVersion || ''],
     ['source', '', '', 'snapshot_hash', canonicalExport.source?.snapshotHash || ''],
+    ['property', '', '', 'display_address', canonicalExport.application?.property?.displayAddress || canonicalExport.application?.property?.display_address || canonicalExport.application?.property?.address || ''],
     ['property', '', '', 'development_name', canonicalExport.application?.property?.developmentName || canonicalExport.application?.property?.development_name || ''],
     ['property', '', '', 'unit_number', canonicalExport.application?.property?.unitNumber || canonicalExport.application?.property?.unit_number || ''],
     ['finance', '', '', 'purchase_price', canonicalExport.application?.finance?.purchasePrice?.amount || ''],

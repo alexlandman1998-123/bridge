@@ -97,7 +97,7 @@ export function resolvePortalCanonicalText(mergeFieldKey = '', sources = [], opt
   for (const source of buildPortalCanonicalSources(sources)) {
     const value = resolveCanonicalFieldValue(source, mergeFieldKey, options)
     const text = normalizeText(Array.isArray(value) ? value.map((item) => normalizeText(item?.name || item)).filter(Boolean).join(', ') : value)
-    if (text) return text
+    if (text && !isPendingPlaceholder(text)) return text
   }
   return ''
 }
@@ -138,6 +138,13 @@ export function resolvePortalSellerName(row = {}, options = {}) {
 
 export function resolvePortalBuyerName(row = {}, { fallback = 'Buyer pending' } = {}) {
   const transaction = isPlainObject(row.transaction) ? row.transaction : {}
+  const formData = isPlainObject(row.formData)
+    ? row.formData
+    : isPlainObject(row.onboardingFormData)
+      ? row.onboardingFormData
+      : isPlainObject(row.onboarding_form_data)
+        ? row.onboarding_form_data
+        : {}
   const payload = isPlainObject(row.workDeliveryPayload)
     ? row.workDeliveryPayload
     : isPlainObject(row.work_delivery_payload)
@@ -156,7 +163,7 @@ export function resolvePortalBuyerName(row = {}, { fallback = 'Buyer pending' } 
     transaction.clientName,
     payload.buyerName,
     payload.buyer_name,
-    resolvePortalCanonicalText('buyer_full_name', [row, transaction, payload], { packetType: 'otp' }),
+    resolvePortalCanonicalText('buyer_full_name', [formData, transaction, payload, row], { packetType: 'otp' }),
   ) || fallback
 }
 

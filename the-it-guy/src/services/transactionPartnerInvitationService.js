@@ -1,5 +1,9 @@
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { createInvite, INVITE_TYPES } from './inviteService'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from './portalCanonicalFieldFallbacks.js'
 
 export const TRANSACTION_PARTNER_INVITATION_ROLES = Object.freeze({
   transferAttorney: 'transfer_attorney',
@@ -366,12 +370,23 @@ async function getTransactionPartnerInvitationEmailContext(client, transactionId
     transactionReference:
       normalizeText(transaction.transaction_reference || transaction.matter_number || transaction.reference) ||
       context.transactionReference,
-    propertyLabel:
-      unitLabel ||
-      addressLabel ||
-      normalizeText(transaction.property_description || transaction.title || development?.name || development?.development_name) ||
-      context.propertyLabel,
-    buyerLabel: normalizeText(buyer?.name || buyer?.full_name || buyer?.email),
+    propertyLabel: resolvePortalPropertyLabel(
+      {
+        ...transaction,
+        transaction,
+        buyer,
+        unit,
+        development,
+      },
+      {
+        fallback:
+          unitLabel ||
+          addressLabel ||
+          normalizeText(transaction.property_description || transaction.title || development?.name || development?.development_name) ||
+          context.propertyLabel,
+      },
+    ),
+    buyerLabel: resolvePortalBuyerName({ ...transaction, transaction, buyer }, { fallback: normalizeText(buyer?.email) }),
   }
 }
 
@@ -1037,4 +1052,8 @@ export async function resendTransactionPartnerInvitation(invitationId) {
     emailResult,
     deliveryResult,
   }
+}
+
+export const __transactionPartnerInvitationServiceTestUtils = {
+  getTransactionPartnerInvitationEmailContext,
 }
