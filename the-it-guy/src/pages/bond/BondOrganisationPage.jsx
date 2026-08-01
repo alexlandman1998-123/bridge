@@ -67,6 +67,10 @@ import {
   updateRoutingRule,
 } from '../../services/bondRoutingRulesService'
 import { buildRegionalCommandCentreViewModel } from '../../modules/bond/utils/regionalCommandCentreViewModel'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from '../../services/portalCanonicalFieldFallbacks'
 
 const FALLBACK_ORGANISATION_TABS = Object.freeze([
   { key: 'overview', label: 'Overview' },
@@ -2743,7 +2747,7 @@ function OrganisationApplicationsTable({ rows = [], showBranchColumn = false, sh
                 onClick={() => row.transactionId && navigate(`/bond/files/${row.transactionId}`)}
               >
                 <td className="px-4 py-4 align-top">
-                  <p className="text-sm font-semibold text-[#142132]">{row.client || 'Buyer pending'}</p>
+                  <p className="text-sm font-semibold text-[#142132]">{resolvePortalBuyerName(row)}</p>
                   <p className="mt-1 text-xs text-[#71869d]">{formatApplicationReference(row)}</p>
                 </td>
                 {showRegionColumn ? <td className="px-4 py-4 align-top text-sm text-[#17324d]">{row.region || 'Unassigned'}</td> : null}
@@ -4034,8 +4038,8 @@ function PartnerWorkspaceRoute({
               <tbody>
                 {workspace.applications.map((row) => (
                   <tr key={row.key || row.id || row.transactionId} className="border-t border-[#edf2f7] bg-white align-top">
-                    <td className="px-4 py-4 text-sm font-semibold text-[#142132]">{row.client || row.buyerName || row.buyer?.name || 'Buyer pending'}</td>
-                    <td className="px-4 py-4 text-sm text-[#17324d]">{row.property || row.address || row.propertyAddress || 'Property pending'}</td>
+                    <td className="px-4 py-4 text-sm font-semibold text-[#142132]">{resolvePortalBuyerName(row)}</td>
+                    <td className="px-4 py-4 text-sm text-[#17324d]">{resolvePortalPropertyLabel(row)}</td>
                     <td className="px-4 py-4 text-sm text-[#17324d]">{getPartnerWorkspaceApplicationReference(row)}</td>
                     <td className="px-4 py-4 text-sm text-[#17324d]">{row.consultant || row.assignedConsultantId || row.assignedUserId || 'Unassigned'}</td>
                     <td className="px-4 py-4 text-sm text-[#17324d]">{row.branch || row.branchId || 'Unassigned'}</td>

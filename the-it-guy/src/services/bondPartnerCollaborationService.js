@@ -4,6 +4,10 @@ import {
   resolveBondOrganisationScope,
 } from './bondOrganisationScopeResolver'
 import { getPartnerPortalOperationalRows } from './bondPartnerPortalService'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from './portalCanonicalFieldFallbacks.js'
 
 export const BOND_PARTNER_REQUEST_TYPES = Object.freeze({
   comment: 'comment',
@@ -122,11 +126,11 @@ function getApplicationReference(row = {}) {
 }
 
 function getApplicationBuyer(row = {}) {
-  return normalizeText(row.buyer || row.buyerName || row.client || row.clientName || row.buyer?.name) || 'Buyer pending'
+  return resolvePortalBuyerName(row)
 }
 
 function getApplicationProperty(row = {}) {
-  return normalizeText(row.property || row.propertyAddress || row.property_address || row.address) || 'Property pending'
+  return resolvePortalPropertyLabel(row)
 }
 
 function getActorId(context = {}) {

@@ -30,6 +30,11 @@ import {
   applyAttorneyOperationsScope,
   buildAttorneyOperationsScope,
 } from '../core/transactions/attorneyOperationsScope.js'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+  resolvePortalSellerName,
+} from './portalCanonicalFieldFallbacks.js'
 
 const MANAGEMENT_ROLES = new Set(['firm_admin', 'director_partner'])
 
@@ -860,10 +865,16 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
             ? 'Awaiting FICA'
             : 'On Track'
 
-      const clientName =
-        buyersById[transaction.buyer_id]?.name ||
-        buyersById[transaction.buyer_id]?.email ||
-        `Buyer ${String(transaction.buyer_id || '').slice(0, 8)}`
+      const identityRow = {
+        ...transaction,
+        transaction,
+        buyer: buyersById[transaction.buyer_id],
+        unit,
+        development,
+      }
+      const clientName = resolvePortalBuyerName(identityRow, {
+        fallback: buyersById[transaction.buyer_id]?.email || `Buyer ${String(transaction.buyer_id || '').slice(0, 8)}`,
+      })
 
       const assignmentRole =
         assignment.primaryAttorneyId === currentUserId
@@ -883,12 +894,10 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
         matterReference: getMatterReference(transaction, transaction.id),
         clientName,
         buyerName: clientName,
-        sellerName: transaction.seller_name || transaction.seller_email || 'Seller pending',
-        propertyLabel:
-          transaction.property_description ||
-          [transaction.property_address_line_1, transaction.suburb, transaction.city].filter(Boolean).join(', ') ||
-          (unit?.unit_number ? `Unit ${unit.unit_number}` : '') ||
-          'Property pending',
+        sellerName: resolvePortalSellerName(identityRow, { fallback: transaction.seller_email || 'Seller pending' }),
+        propertyLabel: resolvePortalPropertyLabel(identityRow, {
+          fallback: unit?.unit_number ? `Unit ${unit.unit_number}` : 'Property pending',
+        }),
         developmentName: transaction.development_name || development?.development_name || development?.name || 'Standalone matter',
         unitNumber: unit?.unit_label || unit?.unit_number || '',
         phase: unit?.phase || unit?.block || '',

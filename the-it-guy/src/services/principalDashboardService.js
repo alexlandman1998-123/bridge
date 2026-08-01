@@ -13,6 +13,11 @@ import {
   buildCommissionTrackerFromRows,
 } from './commissionService'
 import { buildPartnerBusinessDistribution } from './partnerBusinessDistributionService'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+  resolvePortalSellerName,
+} from './portalCanonicalFieldFallbacks.js'
 
 const COMPLETED_STATES = ['registered', 'closed', 'completed']
 const RISK_DOCUMENT_STATUSES = ['requested', 'pending', 'missing', 'rejected', 'overdue']
@@ -453,9 +458,12 @@ function getResidentialPipelineStageKey(row = {}) {
 }
 
 function getResidentialClientDetails(row = {}) {
-  const sellerName =
-    normalizeText(row.seller_name || row.seller_names || row.owner_name || row.owner_names || row.landlord_name)
-  const buyerName = normalizeText(row.buyer_name || row.purchaser_name || row.client_name || row.tenant_name)
+  const sellerName = resolvePortalSellerName(row, {
+    fallback: normalizeText(row.owner_name || row.owner_names || row.landlord_name),
+  })
+  const buyerName = resolvePortalBuyerName(row, {
+    fallback: normalizeText(row.purchaser_name || row.client_name || row.tenant_name),
+  })
   if (sellerName) return { clientLabel: 'Seller', clientName: sellerName }
   if (buyerName) return { clientLabel: 'Buyer', clientName: buyerName }
   return { clientLabel: 'Buyer', clientName: 'Buyer pending' }
@@ -475,7 +483,9 @@ function getResidentialPipelineImage(row = {}) {
 function buildActiveTransactionCard(row = {}, usersByKey = new Map()) {
   const progressPercent = getActiveTransactionStageProgress(row)
   const stage = normalizeText(row.current_main_stage || row.stage || row.lifecycle_state || row.operational_state) || 'Transaction opened'
-  const propertyName = normalizeText(row.unit_number || row.property_title || row.listing_title || row.property_address_line_1 || row.transaction_reference || row.id)
+  const propertyName = resolvePortalPropertyLabel(row, {
+    fallback: normalizeText(row.unit_number || row.property_title || row.listing_title || row.transaction_reference || row.id),
+  })
   const developmentName = normalizeText(row.development_name || row.suburb || row.city || row.transaction_type) || 'Listing'
   const financeKey = getFinanceBucket(row)
   const nextAction = normalizeText(row.next_action || row.waiting_on_role || row.operational_state || row.attorney_stage || stage)
@@ -495,7 +505,7 @@ function buildActiveTransactionCard(row = {}, usersByKey = new Map()) {
     reference: normalizeText(row.transaction_reference || row.id),
     propertyName,
     developmentName,
-    buyerName: normalizeText(row.buyer_name || row.purchaser_name || row.client_name) || 'Buyer pending',
+    buyerName: resolvePortalBuyerName(row, { fallback: normalizeText(row.purchaser_name || row.client_name) || 'Buyer pending' }),
     assignedAgent: getAgentName(row, usersByKey),
     stage,
     stageKey: getResidentialPipelineStageKey(row),

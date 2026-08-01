@@ -12,6 +12,10 @@ import { FINANCE_INTELLIGENCE_DISCLAIMER } from '../../services/financeIntellige
 import { Link, useLocation } from 'react-router-dom'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import OrganisationAvatar from '../organisation/OrganisationAvatar'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from '../../services/portalCanonicalFieldFallbacks'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -780,7 +784,7 @@ function ActiveApplicationCard({ application = {} }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-[0.78rem] font-semibold text-[#58718b]">{application.developmentName || 'Location pending'}</p>
-            <p className="mt-1 truncate text-base font-semibold tracking-normal text-[#142132]">{application.buyerName || 'Unknown buyer'}</p>
+            <p className="mt-1 truncate text-base font-semibold tracking-normal text-[#142132]">{resolvePortalBuyerName(application.row || application, { fallback: application.buyerName || 'Unknown buyer' })}</p>
           </div>
           <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
             {application.statusLabel || 'On Track'}
@@ -791,7 +795,7 @@ function ActiveApplicationCard({ application = {} }) {
       <div className="flex flex-1 flex-col p-4">
         <section className="flex min-h-[56px] items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-[1.02rem] font-semibold tracking-normal text-[#142132]">{application.propertyLabel || 'Property pending'}</p>
+            <p className="truncate text-[1.02rem] font-semibold tracking-normal text-[#142132]">{resolvePortalPropertyLabel(application.row || application, { fallback: application.propertyLabel || 'Property pending' })}</p>
             <p className="mt-1 truncate text-xs text-[#71879d]">
               {[application.financeType || 'Bond', application.bankName || 'Bank not selected'].filter(Boolean).join(' • ')}
             </p>

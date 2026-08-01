@@ -1,5 +1,9 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { normalizeOrganisationPartnerVisibilityLevel } from '../lib/partnersRepository'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from './portalCanonicalFieldFallbacks.js'
 
 export const PARTNER_PROFILE_ACCESS_DENIED_MESSAGE = 'Partner relationship not found or access denied.'
 export const PARTNER_PROFILE_NOT_ACCEPTED_MESSAGE = 'This partner relationship is not active yet.'
@@ -700,8 +704,8 @@ function normalizeApplication(row = {}) {
     applicationId: normalizeText(row.application_id || row.applicationId),
     transactionId: normalizeText(row.transaction_id || row.transactionId),
     applicationReference: normalizeText(row.application_reference || row.applicationReference) || 'Application',
-    buyerDisplayName: normalizeText(row.buyer_display_name || row.buyerDisplayName) || 'Buyer',
-    propertyDisplayName: normalizeText(row.property_display_name || row.propertyDisplayName) || 'Property pending',
+    buyerDisplayName: resolvePortalBuyerName(row, { fallback: normalizeText(row.buyer_display_name || row.buyerDisplayName) || 'Buyer' }),
+    propertyDisplayName: resolvePortalPropertyLabel(row, { fallback: normalizeText(row.property_display_name || row.propertyDisplayName) || 'Property pending' }),
     stage: normalizeText(row.stage) || 'pending',
     status: normalizeText(row.status) || 'pending',
     bankSubmittedCount: Number(row.bank_submitted_count || row.bankSubmittedCount || 0) || 0,

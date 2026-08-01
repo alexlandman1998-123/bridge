@@ -79,6 +79,11 @@ import { getAgentCommissionTracker } from '../services/commissionService'
 import { getAgentPrivateListingSummaries } from '../services/privateListingService'
 import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
 import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+  resolvePortalSellerName,
+} from '../services/portalCanonicalFieldFallbacks'
+import {
   DASHBOARD_PERFORMANCE_METRICS,
   createDashboardPerformanceTrace,
   persistDashboardPerformanceTrace,
@@ -2237,7 +2242,7 @@ function Dashboard() {
             unitId: row?.unit?.id || null,
             developmentName: row?.development?.name || 'Unknown Development',
             unitNumber: row?.unit?.unit_number || '-',
-            buyerName: row?.buyer?.name || 'Buyer pending',
+            buyerName: resolvePortalBuyerName(row),
             reference: row?.transaction?.transaction_reference || row?.transaction?.id || 'Application',
             bank: row?.transaction?.bank || 'Bank not set',
             financeType: row?.transaction?.finance_type || row?.unit?.finance_type || 'bond',
@@ -4194,18 +4199,8 @@ function renderActiveTransactionsBlock({
     }[stageKey] || 'Active')
 
     const resolveClientDetails = (row = {}, item = {}) => {
-      const sellerName = String(
-        row?.seller?.name ||
-        row?.transaction?.seller_name ||
-        row?.transaction?.owner_name ||
-        '',
-      ).trim()
-      const buyerName = String(
-        row?.buyer?.name ||
-        row?.transaction?.buyer_name ||
-        item?.buyerName ||
-        '',
-      ).trim()
+      const sellerName = String(resolvePortalSellerName(row, { fallback: row?.transaction?.owner_name || '' })).trim()
+      const buyerName = String(resolvePortalBuyerName(row || item, { fallback: item?.buyerName || '' })).trim()
       if (sellerName) return { label: 'Seller', name: sellerName }
       if (buyerName) return { label: 'Buyer', name: buyerName }
       return { label: 'Buyer', name: 'Buyer pending' }
@@ -4228,7 +4223,7 @@ function renderActiveTransactionsBlock({
 
       return {
         id: recordId,
-        title: item.propertyIdentifier || (item.unitNumber ? `Unit ${item.unitNumber}` : 'Transaction'),
+        title: resolvePortalPropertyLabel(sourceRow || item, { fallback: item.propertyIdentifier || (item.unitNumber ? `Unit ${item.unitNumber}` : 'Transaction') }),
         subtitle: locationLabel || developmentName || 'Residential active deal',
         value: Number(item.dealValue || 0),
         valueLabel: compactCurrency.format(Number(item.dealValue || 0)).replace('ZAR', 'R'),
@@ -4327,7 +4322,7 @@ function renderActiveTransactionsBlock({
               const unitContext = [item.phaseLabel ? `Phase ${item.phaseLabel}` : null, item.blockLabel ? `Block ${item.blockLabel}` : null]
                 .filter(Boolean)
                 .join(' • ')
-              const buyerLabel = String(item.buyerName || '').trim() || 'Buyer pending'
+              const buyerLabel = resolvePortalBuyerName(item, { fallback: String(item.buyerName || '').trim() || 'Buyer pending' })
               const financeLabel = formatFinanceType(item.financeType)
               const updatedLabel = formatRelativeTime(item.updatedAt)
               const updatedDateTimeLabel = formatDateTime(item.updatedAt)

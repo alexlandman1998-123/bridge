@@ -817,6 +817,7 @@
     "test:canonical-field-resolver-phase2": "node scripts/canonical-field-resolver-phase2.test.mjs",
     "test:document-generation-canonical-fields-phase3": "node scripts/document-generation-canonical-fields-phase3.test.mjs",
     "test:portal-canonical-fields-phase4": "node scripts/portal-canonical-fields-phase4.test.mjs",
+    "test:dashboard-canonical-fields-phase5": "node scripts/dashboard-canonical-fields-phase5.test.mjs",
     "test:conditional-clause-packs-phase4": "node scripts/conditional-clause-packs-phase4.test.mjs",
     "test:conditional-clause-packs-phase5": "node scripts/conditional-clause-packs-phase5.test.mjs",
     "test:conditional-clause-packs-phase6": "node scripts/conditional-clause-packs-phase6.test.mjs",

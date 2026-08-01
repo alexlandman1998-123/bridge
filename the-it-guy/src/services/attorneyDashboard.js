@@ -16,6 +16,11 @@ import {
   isMissingTableError,
   requireClient,
 } from './attorneyFirmServiceShared'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+  resolvePortalSellerName,
+} from './portalCanonicalFieldFallbacks.js'
 
 function toLower(value) {
   return String(value || '').trim().toLowerCase()
@@ -592,12 +597,10 @@ function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}
       transaction.seller_has_existing_bond === true ||
       toLower(transaction.seller_has_existing_bond) === 'true' ||
       toLower(transaction.seller_existing_bond) === 'true'
-    const propertyAddress =
-      transaction.property_description ||
-      [transaction.property_address_line_1, transaction.suburb, transaction.city].filter(Boolean).join(', ') ||
-      'Property address pending'
-    const buyerName = buyer.name || buyer.email || 'Client pending'
-    const sellerName = transaction.seller_name || transaction.seller || 'Seller pending'
+    const identityRow = { ...transaction, transaction, buyer, unit: primaryUnit }
+    const propertyAddress = resolvePortalPropertyLabel(identityRow, { fallback: 'Property address pending' })
+    const buyerName = resolvePortalBuyerName(identityRow, { fallback: buyer.email || 'Client pending' })
+    const sellerName = resolvePortalSellerName(identityRow, { fallback: 'Seller pending' })
     const referralOrganisationId = transaction.originating_partner_organisation_id || transaction.referral_source_organisation_id || ''
     const referralOrganisation = organisationsById[referralOrganisationId] || {}
     const card = {
@@ -1287,10 +1290,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
       activeMatters: assigned.slice(0, 6).map((matter) => ({
         id: matter.transactionId,
         reference: getMatterReference(matter.transaction, matter.transactionId),
-        propertyAddress:
-          matter.transaction?.property_description ||
-          [matter.transaction?.property_address_line_1, matter.transaction?.suburb, matter.transaction?.city].filter(Boolean).join(', ') ||
-          'Property pending',
+        propertyAddress: resolvePortalPropertyLabel({ transaction: matter.transaction }, { fallback: 'Property pending' }),
         href: `/transactions/${encodeURIComponent(matter.transactionId)}`,
       })),
     }

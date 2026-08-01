@@ -4,6 +4,11 @@ import {
   ATTORNEY_MATTER_SCOPE_LANES,
   buildAttorneyMatterScope,
 } from '../core/transactions/attorneyMatterScope.js'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+  resolvePortalSellerName,
+} from './portalCanonicalFieldFallbacks.js'
 
 export const ATTORNEY_MATTER_PAGE_SIZES = [20, 50, 100]
 
@@ -382,6 +387,9 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
   const matterTypeKeys = row.matterType === 'Transfer + Bond'
     ? ['transfer', 'bond']
     : [laneKey]
+  const propertyLabel = resolvePortalPropertyLabel(row)
+  const buyerName = resolvePortalBuyerName(row)
+  const sellerName = resolvePortalSellerName(row, { fallback: 'Seller pending' })
 
   const nextRow = {
     rowKind: row.rowKind || 'incoming',
@@ -397,9 +405,9 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
     matterTypeKeys,
     laneKey,
     attorneyRole: row.attorneyRole || '',
-    property: row.property || 'Property pending',
-    buyer: row.buyerName || 'Buyer pending',
-    seller: row.sellerName || 'Seller pending',
+    property: propertyLabel,
+    buyer: buyerName,
+    seller: sellerName,
     development: row.development || '',
     unit: row.unit || '',
     phase: row.phase || '',
@@ -428,9 +436,9 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
     matterValue: Number(row.purchasePrice || 0),
     financeType: row.financeType || '',
     purchasePrice: Number(row.purchasePrice || 0),
-    propertyLabel: row.property || 'Property pending',
-    buyerName: row.buyerName || 'Buyer pending',
-    sellerName: row.sellerName || 'Seller pending',
+    propertyLabel,
+    buyerName,
+    sellerName,
     currentStage: stage.label,
     lastUpdated: row.incomingSince || null,
     status: row.statusLabel || 'Incoming',
@@ -602,6 +610,9 @@ function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {}
           : health.key === 'attention'
             ? 'Attention'
             : 'Active'
+  const propertyLabel = resolvePortalPropertyLabel(matter)
+  const buyerName = resolvePortalBuyerName(matter)
+  const sellerName = resolvePortalSellerName(matter, { fallback: 'Seller pending' })
 
   const row = {
     matterId: matter.matterId,
@@ -610,9 +621,9 @@ function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {}
     matterReference: matter.matterReference,
     matterType: getMatterTypeLabel(matter),
     matterTypeKeys,
-    property: matter.propertyLabel || 'Property pending',
-    buyer: matter.buyerName || matter.clientName || 'Buyer pending',
-    seller: matter.sellerName || 'Seller pending',
+    property: propertyLabel,
+    buyer: buyerName,
+    seller: sellerName,
     development: matter.developmentName && normalize(matter.developmentName) !== 'standalone matter' ? matter.developmentName : '',
     unit: matter.unitNumber || '',
     phase: matter.phase || '',
@@ -645,9 +656,9 @@ function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {}
     matterValue: Number(matter.purchasePrice || 0),
     financeType: matter.financeType || '',
     purchasePrice: Number(matter.purchasePrice || 0),
-    propertyLabel: matter.propertyLabel || 'Property pending',
-    buyerName: matter.buyerName || matter.clientName || 'Buyer pending',
-    sellerName: matter.sellerName || 'Seller pending',
+    propertyLabel,
+    buyerName,
+    sellerName,
     sellerHasExistingBond: matter.sellerHasExistingBond || false,
     currentBondBank: matter.currentBondBank || matter.bank || '',
     estimatedSettlementAmount: matter.estimatedSettlementAmount || 0,

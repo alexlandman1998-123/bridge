@@ -3,6 +3,7 @@ import BondEmptyState from './BondEmptyState'
 import BondRiskBadge from './BondRiskBadge'
 import BondStatusBadge from './BondStatusBadge'
 import { FINANCE_INTELLIGENCE_DISCLAIMER } from '../../services/financeIntelligenceService'
+import { resolvePortalBuyerName } from '../../services/portalCanonicalFieldFallbacks'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -206,7 +207,7 @@ export default function BondTransactionTable({ rows = [] }) {
                   onClick={() => row.transactionId && navigate(`/bond/files/${row.transactionId}`)}
                 >
                   <td className="w-[30%] px-4 py-4 align-top">
-                    <p className="text-sm font-semibold text-[#142132]">{row.client || 'Buyer pending'}</p>
+                    <p className="text-sm font-semibold text-[#142132]">{resolvePortalBuyerName(row)}</p>
                     {row.bank ? <p className="mt-1 text-xs text-[#6e849b]">{row.bank}</p> : null}
                     {row.property ? <p className="mt-1 text-xs text-[#60758d]">{row.property}</p> : null}
                     {row.applicationReference ? <p className="mt-1 text-xs text-[#7b8ea3]">{row.applicationReference}</p> : null}

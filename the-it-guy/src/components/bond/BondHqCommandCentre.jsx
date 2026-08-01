@@ -24,6 +24,11 @@ import { createElement, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import ActivePipelineCarousel from '../pipeline/ActivePipelineCarousel'
 import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+  resolvePortalSellerName,
+} from '../../services/portalCanonicalFieldFallbacks'
+import {
   SOUTH_AFRICA_DISTRICT_PATHS,
   SOUTH_AFRICA_MAP_VIEWBOX,
   SOUTH_AFRICA_PROVINCE_LABELS,
@@ -1083,15 +1088,14 @@ function getBondApplicationArea(application = {}) {
 
 function getBondApplicationSeller(application = {}) {
   const row = application.row || {}
-  return normalizeText(
-    application.sellerName ||
-      row?.seller?.name ||
-      row?.sellerName ||
-      row?.transaction?.seller_name ||
-      row?.transaction?.sellerName ||
-      row?.transaction?.assigned_agent ||
-      application.agentName,
-  ) || 'Seller pending'
+  return resolvePortalSellerName(
+    {
+      ...row,
+      sellerName: application.sellerName,
+      transaction: row.transaction,
+    },
+    { fallback: row?.transaction?.assigned_agent || application.agentName || 'Seller pending' },
+  )
 }
 
 function getBondApplicationValueRaw(application = {}) {
@@ -1113,7 +1117,7 @@ function getBondApplicationStatusLabel(application = {}) {
 function buildBondApplicationCarouselRecords(applications = []) {
   return (Array.isArray(applications) ? applications : []).slice(0, 10).map((application, index) => ({
     id: application.id || application.transactionId || `${index}-${application.propertyLabel || application.buyerName || 'bond-application'}`,
-    title: application.propertyLabel || application.developmentName || 'Property pending',
+    title: resolvePortalPropertyLabel(application.row || application, { fallback: application.propertyLabel || application.developmentName || 'Property pending' }),
     subtitle: getBondApplicationArea(application),
     value: getBondApplicationValueRaw(application),
     valueLabel: formatCompactMoneyLabel(application.bondValue || '', 'R0'),
@@ -1123,7 +1127,7 @@ function buildBondApplicationCarouselRecords(applications = []) {
     stageKey: getBondApplicationCarouselStage(application),
     statusLabel: getBondApplicationStatusLabel(application),
     clientLabel: 'Buyer',
-    clientName: application.buyerName || 'Buyer pending',
+    clientName: resolvePortalBuyerName(application.row || application, { fallback: application.buyerName || 'Buyer pending' }),
     secondaryClientLabel: 'Seller',
     secondaryClientName: getBondApplicationSeller(application),
     imageUrl: application.imageUrl || application.propertyImage || application.row?.property?.imageUrl || application.row?.listing?.imageUrl,

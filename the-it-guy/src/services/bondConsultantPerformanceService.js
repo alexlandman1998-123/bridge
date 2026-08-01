@@ -11,6 +11,7 @@ import {
 } from './bondPartnerCollaborationService'
 import { getPartnerHealth } from './bondPartnerIntelligenceService'
 import { getPartnerPortalOperationalRows } from './bondPartnerPortalService'
+import { resolvePortalBuyerName } from './portalCanonicalFieldFallbacks.js'
 
 export const BOND_CONSULTANT_PERFORMANCE_EVENTS = Object.freeze({
   consultantTargetSet: 'CONSULTANT_TARGET_SET',
@@ -893,7 +894,9 @@ export function getConsultantWorkspace(consultantId = '', context = {}, options 
 }
 
 function getApplicationBuyerName(row = {}) {
-  return normalizeText(row.buyerName || row.buyer_name || row.clientName || row.client_name || row.purchaserName || row.purchaser_name || row.buyer?.name) || 'Buyer pending'
+  return resolvePortalBuyerName(row, {
+    fallback: normalizeText(row.purchaserName || row.purchaser_name) || 'Buyer pending',
+  })
 }
 
 function getApplicationReference(row = {}) {

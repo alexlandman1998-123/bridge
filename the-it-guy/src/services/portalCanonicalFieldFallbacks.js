@@ -8,6 +8,30 @@ function normalizeText(value) {
   return String(value ?? '').trim()
 }
 
+const PENDING_PLACEHOLDER_KEYS = new Set([
+  'buyer',
+  'buyer_pending',
+  'buyer_details_pending',
+  'seller',
+  'seller_pending',
+  'seller_details_pending',
+  'property',
+  'property_pending',
+  'address_pending',
+  'not_assigned',
+  'not_captured',
+  'not_provided',
+  'not_set',
+])
+
+function isPendingPlaceholder(value) {
+  const key = normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return PENDING_PLACEHOLDER_KEYS.has(key)
+}
+
 function isPlainObject(value) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
@@ -15,7 +39,7 @@ function isPlainObject(value) {
 function firstText(...values) {
   for (const value of values) {
     const text = normalizeText(value)
-    if (text) return text
+    if (text && !isPendingPlaceholder(text)) return text
   }
   return ''
 }
@@ -78,18 +102,38 @@ export function resolvePortalCanonicalText(mergeFieldKey = '', sources = [], opt
   return ''
 }
 
-export function resolvePortalSellerName({ listing = {}, formData = {}, fallback = 'Seller' } = {}) {
+export function resolvePortalSellerName(row = {}, options = {}) {
+  const listing = isPlainObject(row.listing) ? row.listing : {}
+  const formData = isPlainObject(row.formData)
+    ? row.formData
+    : isPlainObject(row.onboardingFormData)
+      ? row.onboardingFormData
+      : isPlainObject(row.onboarding_form_data)
+        ? row.onboarding_form_data
+        : {}
+  const transaction = isPlainObject(row.transaction) ? row.transaction : {}
+  const payload = isPlainObject(row.workDeliveryPayload)
+    ? row.workDeliveryPayload
+    : isPlainObject(row.work_delivery_payload)
+      ? row.work_delivery_payload
+      : {}
+  const fallback = options.fallback ?? row.fallback ?? 'Seller'
   const flatName = [
-    firstText(formData.sellerName, formData.sellerFirstName, formData.firstName, formData.name),
+    firstText(row.sellerName, row.seller_name, formData.sellerName, formData.sellerFirstName, formData.firstName, formData.name),
     firstText(formData.sellerSurname, formData.lastName, formData.surname),
   ].filter(Boolean).join(' ').trim()
   return firstText(
     flatName,
+    row?.seller?.name,
+    row?.seller,
+    transaction.seller_name,
+    transaction.sellerName,
+    payload.sellerName,
+    payload.seller_name,
     listing?.seller?.name,
     listing?.sellerName,
-    resolvePortalCanonicalText('seller_full_name', [formData, listing], { packetType: 'mandate' }),
-    fallback,
-  )
+    resolvePortalCanonicalText('seller_full_name', [row, formData, listing, transaction, payload], { packetType: 'mandate' }),
+  ) || fallback
 }
 
 export function resolvePortalBuyerName(row = {}, { fallback = 'Buyer pending' } = {}) {
@@ -113,8 +157,7 @@ export function resolvePortalBuyerName(row = {}, { fallback = 'Buyer pending' } 
     payload.buyerName,
     payload.buyer_name,
     resolvePortalCanonicalText('buyer_full_name', [row, transaction, payload], { packetType: 'otp' }),
-    fallback,
-  )
+  ) || fallback
 }
 
 export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pending' } = {}) {
@@ -145,6 +188,5 @@ export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pend
     payload.property_label,
     canonicalAddress,
     [canonicalSuburb, canonicalCity].filter(Boolean).join(', '),
-    fallback,
-  )
+  ) || fallback
 }

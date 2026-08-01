@@ -91,6 +91,11 @@ import {
   resendWorkspaceUserInvite,
   revokeWorkspaceUserInvite,
 } from '../services/workspaceUserInviteService'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+  resolvePortalSellerName,
+} from '../services/portalCanonicalFieldFallbacks'
 
 const PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
@@ -4148,13 +4153,10 @@ function getTransactionAmount(row = {}) {
 }
 
 function getTransactionTitle(row = {}) {
-  return (
-    row?.development?.name ||
-    row?.transaction?.property_description ||
-    row?.transaction?.property_address_line_1 ||
-    row?.unit?.unit_number && `Unit ${row.unit.unit_number}` ||
-    'Transaction workspace'
-  )
+  const unitLabel = row?.unit?.unit_number ? `Unit ${row.unit.unit_number}` : ''
+  return resolvePortalPropertyLabel(row, {
+    fallback: row?.development?.name || unitLabel || 'Transaction workspace',
+  })
 }
 
 function getLeadType(row = {}) {
@@ -4174,7 +4176,10 @@ function getLeadType(row = {}) {
 }
 
 function getLeadName(row = {}) {
-  return row.name || row.fullName || row.full_name || row.clientName || row.client_name || row.buyerName || row.sellerName || row.email || 'Lead'
+  const resolver = getLeadType(row) === 'Seller' ? resolvePortalSellerName : resolvePortalBuyerName
+  return resolver(row, {
+    fallback: row.name || row.fullName || row.full_name || row.clientName || row.client_name || row.email || 'Lead',
+  })
 }
 
 function getLeadId(row = {}) {
@@ -4182,7 +4187,9 @@ function getLeadId(row = {}) {
 }
 
 function getLeadLinkedProperty(row = {}) {
-  return row.listingTitle || row.listing_title || row.propertyTitle || row.property_title || row.propertyAddress || row.property_address || row.developmentName || row.development_name || 'No listing assigned'
+  return resolvePortalPropertyLabel(row, {
+    fallback: row.listingTitle || row.listing_title || row.propertyTitle || row.property_title || row.developmentName || row.development_name || 'No listing assigned',
+  })
 }
 
 function getTaskDueLabel(row = {}) {
@@ -5828,7 +5835,7 @@ function AgentMemberWorkspace({
                 {myAllocatedRows.map((row) => (
                   <tr key={row?.transaction?.id || row?.unit?.id}>
                     <td className="px-4 py-3 font-semibold text-[#142132]">{row?.transaction?.transaction_reference || 'Transaction'}</td>
-                    <td className="px-4 py-3">{row?.buyer?.name || 'Buyer pending'}</td>
+                    <td className="px-4 py-3">{resolvePortalBuyerName(row)}</td>
                     <td className="px-4 py-3">{row?.development?.name || 'Private transaction'}</td>
                     <td className="px-4 py-3">{row?.unit?.unit_number || '—'}</td>
                     <td className="px-4 py-3">{row?.stage || 'Pending'}</td>

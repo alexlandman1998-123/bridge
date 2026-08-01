@@ -29,6 +29,10 @@ import {
   declineBondIntakeApplication,
   fetchBondConsultantOptions,
 } from '../services/bondIntakeWorkflowService'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from '../services/portalCanonicalFieldFallbacks'
 
 const CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -80,21 +84,16 @@ function stageLabelFromKey(key) {
 
 function getPropertyLabel(row) {
   if (getTransactionScopeForRow(row) === 'private') {
-    return (
-      row?.transaction?.property_description ||
-      row?.transaction?.property_address_line_1 ||
-      [row?.transaction?.suburb, row?.transaction?.city].filter(Boolean).join(', ') ||
-      'Private property matter'
-    )
+    return resolvePortalPropertyLabel(row, { fallback: 'Private property matter' })
   }
 
   const unitNumber = row?.unit?.unit_number ? `Unit ${row.unit.unit_number}` : 'Unit pending'
   const development = row?.development?.name || 'Development pending'
-  return `${unitNumber}, ${development}`
+  return resolvePortalPropertyLabel(row, { fallback: `${unitNumber}, ${development}` })
 }
 
 function getBuyerLabel(row) {
-  return row?.buyer?.name || row?.transaction?.buyer_name || 'Buyer pending'
+  return resolvePortalBuyerName(row)
 }
 
 function getMissingDocumentCount(row) {

@@ -4,6 +4,10 @@ import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { buildDeveloperTransactionReadinessProfileFromRow } from '../core/transactions/developerTransactionReadinessProfile.js'
 import { buildBondOriginatorAgentProgressViewModel } from '../modules/bond/integrations'
 import { calculateApprovalProbability, calculateOperationalRisk, calculateTransactionVelocity } from '../services/financeIntelligenceService'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from '../services/portalCanonicalFieldFallbacks'
 import Button from './ui/Button'
 import DataTable, { DataTableInner } from './ui/DataTable'
 import LoadingSkeleton from './LoadingSkeleton'
@@ -122,7 +126,7 @@ function getPropertyDisplay(row) {
   const suburb = row?.transaction?.suburb || row?.property?.suburb || row?.development?.suburb || ''
   const description = row?.transaction?.property_description || row?.unit?.name || row?.unit?.title || ''
   const development = row?.development?.name || ''
-  const title = addressLine || unitLabel || description || 'Property pending'
+  const title = resolvePortalPropertyLabel(row, { fallback: addressLine || unitLabel || description || 'Property pending' })
   const secondary = suburb || development || (title !== description ? description : '') || 'Listing / development pending'
   return { title, secondary }
 }
@@ -491,7 +495,7 @@ function AgentTransactionsTable({
               const operationalRisk = calculateOperationalRisk(row)
               const velocity = calculateTransactionVelocity(row)
               const transactionConfidence = Math.round((approvalConfidence.score * 0.55) + ((100 - operationalRisk.riskScore) * 0.25) + (velocity.velocityScore * 0.2))
-              const buyerName = row?.buyer?.name || 'Buyer pending'
+              const buyerName = resolvePortalBuyerName(row)
               const propertyDisplay = getPropertyDisplay(row)
               const propertyImageUrl = getPropertyImageUrl(row)
               const propertyTypeLabel = getPropertyTypeLabel(row)

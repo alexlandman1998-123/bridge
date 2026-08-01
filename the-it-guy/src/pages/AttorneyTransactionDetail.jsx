@@ -160,6 +160,11 @@ import {
   buildBondApplicationViewModel,
   getBondApplicationPdfFilename,
 } from '../modules/bond/utils/bondApplicationViewModel'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+  resolvePortalSellerName,
+} from '../services/portalCanonicalFieldFallbacks'
 
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'today', label: 'Today' },
@@ -816,7 +821,16 @@ function isPlaceholderPartyName(value = '') {
 
 function resolveBuyerDisplayName({ buyer = null, transaction = null, onboardingFormData = null, participants = [] } = {}) {
   const buyerParticipant = Array.isArray(participants) ? participants.find((participant) => participant?.roleType === 'buyer') : null
+  const canonicalName = resolvePortalBuyerName(
+    {
+      buyer,
+      transaction,
+      onboardingFormData,
+    },
+    { fallback: '' },
+  )
   const candidateNames = [
+    cleanDetailText(canonicalName),
     cleanDetailText(buyer?.name),
     cleanDetailText(buyer?.fullName),
     cleanDetailText(transaction?.buyer_name),
@@ -1172,8 +1186,9 @@ function normalizeRichTextToPlainText(value) {
     .trim()
 }
 
-function buildPropertyAddress(transaction) {
-  return [
+function buildPropertyAddress(transaction, onboardingFormData = {}) {
+  const canonicalAddress = resolvePortalPropertyLabel({ transaction, onboardingFormData }, { fallback: '' })
+  return canonicalAddress || [
     transaction?.property_address_line_1,
     transaction?.property_address_line_2,
     transaction?.suburb,
@@ -10753,12 +10768,19 @@ function AttorneyTransactionDetail() {
   const sellerDisplayName = useMemo(() => {
     const sellerParticipant = transactionParticipants.find((participant) => participant?.roleType === 'seller')
     return (
+      resolvePortalSellerName(
+        {
+          transaction,
+          onboardingFormData: data?.onboardingFormData,
+        },
+        { fallback: '' },
+      ) ||
       cleanDetailText(transaction?.seller_name) ||
       cleanDetailText(roleplayerForm.sellerName) ||
       cleanDetailText(sellerParticipant?.participantName) ||
       'Seller details pending'
     )
-  }, [roleplayerForm.sellerName, transaction?.seller_name, transactionParticipants])
+  }, [data?.onboardingFormData, roleplayerForm.sellerName, transaction, transaction?.seller_name, transactionParticipants])
   const sellerEmail = useMemo(() => {
     const sellerParticipant = transactionParticipants.find((participant) => participant?.roleType === 'seller')
     return cleanDetailEmail(
@@ -10818,7 +10840,7 @@ function AttorneyTransactionDetail() {
   const financeRequiresBondSupport = hasCapturedFinanceType && isBondOrHybridFinance
   const displayPurchasePriceValue = hasCapturedFinancials ? Number(transaction?.purchase_price || transaction?.sales_price || 0) : 0
   const bondAmountFallback = hasCapturedFinanceType ? (financeRequiresBondSupport ? 'Pending' : 'N/A') : 'Not captured'
-  const propertyAddress = buildPropertyAddress(transaction)
+  const propertyAddress = buildPropertyAddress(transaction, data?.onboardingFormData)
   const matterHeadline = !isPrivateMatter
     ? `${development?.name || 'Development'}${unit?.unit_number ? ` • Unit ${unit.unit_number}` : ''}`
     : transaction?.property_description || transaction?.property_address_line_1 || 'Private Property Transaction'

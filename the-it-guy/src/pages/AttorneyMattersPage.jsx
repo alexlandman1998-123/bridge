@@ -25,6 +25,11 @@ import {
 } from '../lib/api'
 import { getAssignableAttorneyFirmMembers } from '../services/transactionAttorneyAssignments'
 import { assignAttorneyIncomingMatterPrimary } from '../services/transferFirmAllocationService'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+  resolvePortalSellerName,
+} from '../services/portalCanonicalFieldFallbacks'
 
 const DEFAULT_FILTERS = {
   status: 'all',
@@ -297,22 +302,25 @@ function AssignedBySource({ source = {} }) {
 }
 
 function getMatterPreview(row = {}) {
+  const buyerName = resolvePortalBuyerName(row)
+  const sellerName = resolvePortalSellerName(row, { fallback: 'Seller pending' })
+  const propertyLabel = resolvePortalPropertyLabel(row)
   return {
     matterId: row.matterId,
     matterReference: row.matterReference || row.reference,
     financeType: row.financeType || '',
     purchasePrice: row.purchasePrice || row.matterValue || 0,
-    sellerName: row.sellerName || row.seller || '',
+    sellerName,
     sellerHasExistingBond: row.sellerHasExistingBond || false,
     currentBondBank: row.currentBondBank || row.bank || '',
     estimatedSettlementAmount: row.estimatedSettlementAmount || 0,
-    propertyLabel: row.propertyLabel || row.property || '',
+    propertyLabel,
     lifecycleState: row.lifecycleState || 'active',
     currentStage: row.currentStage || row.stage?.label || '',
     registrationDate: row.registrationDate || null,
     lastUpdated: row.lastUpdated || row.lastActivity || row.createdAt || null,
-    buyerName: row.buyerName || row.buyer || '',
-    clientName: row.clientName || row.buyer || '',
+    buyerName,
+    clientName: row.clientName || buyerName,
     developmentName: row.developmentName || row.development || '',
   }
 }
@@ -789,8 +797,8 @@ function IncomingAssignmentDialog({
         </div>
 
         <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          <p className="font-semibold text-slate-800">{row.buyer || row.buyerName || row.clientName || 'Buyer pending'}</p>
-          <p className="mt-1 truncate">{row.property}</p>
+          <p className="font-semibold text-slate-800">{resolvePortalBuyerName(row)}</p>
+          <p className="mt-1 truncate">{resolvePortalPropertyLabel(row)}</p>
           {row.preferredAttorney?.name || row.preferredAttorney?.email ? (
             <p className="mt-2 text-xs font-semibold text-[#00614f]">
               Agent preference: {[row.preferredAttorney.name, row.preferredAttorney.email].filter(Boolean).join(' · ')}

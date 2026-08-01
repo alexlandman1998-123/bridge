@@ -1,5 +1,9 @@
 import { buildDeveloperTransactionReadinessProfileFromRow } from '../core/transactions/developerTransactionReadinessProfile.js'
 import { getReportNextAction } from '../core/transactions/reportNextAction.js'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from './portalCanonicalFieldFallbacks.js'
 
 const ZAR_COMPACT = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -911,15 +915,15 @@ export function deriveResidentialDashboardMetrics({
           stageKey: row?.stageKey || '',
           valueRaw,
           value: formatCurrencyCompactZAR(valueRaw),
-          address: row?.address || row?.title || row?.propertyIdentifier || row?.propertyName || '',
-          propertyName: row?.propertyName || row?.address || row?.title || row?.propertyIdentifier || row?.propertyName || '',
+          address: resolvePortalPropertyLabel(row, { fallback: row?.address || row?.title || row?.propertyIdentifier || row?.propertyName || '' }),
+          propertyName: resolvePortalPropertyLabel(row, { fallback: row?.propertyName || row?.address || row?.title || row?.propertyIdentifier || '' }),
           developmentName: row?.developmentName || row?.area || row?.suburb || row?.development?.name || '',
           area: row?.area || row?.suburb || row?.developmentName || '',
           assignedAgent: row?.assignedAgent || row?.assigned_agent || row?.agent || '',
           ownerName: row?.assignedAgent || row?.assigned_agent || row?.agent || '',
           ownerRoleLabel: row?.ownerRoleLabel || 'Agent',
           clientLabel: row?.clientLabel || 'Buyer',
-          clientName: row?.clientName || row?.buyerName || row?.buyer?.name || '',
+          clientName: resolvePortalBuyerName(row, { fallback: row?.clientName || row?.buyerName || row?.buyer?.name || '' }),
           daysInStage: row?.daysInStage || row?.daysActive || '',
           nextAction: nextAction || row?.nextAction || row?.next_action || '',
           health: developerHealth || row?.health || null,

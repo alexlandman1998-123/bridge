@@ -288,7 +288,7 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     packetTypes: ['mandate', 'otp'],
     sampleValue: 'Sam Seller',
     validationRule: 'text_non_empty',
-    aliases: ['seller.display_name', 'seller.name', 'seller.displayName', 'seller_name', 'sellerFullName', 'seller_fullname', 'sellerFullname', 'vendor_name', 'vendor.full_name', 'vendor.display_name'],
+    aliases: ['seller.display_name', 'seller.name', 'seller.displayName', 'seller_name', 'sellerFullName', 'seller_fullname', 'sellerFullname', 'vendor_name', 'vendor.full_name', 'vendor.display_name', 'seller.person.full_name', 'seller.person.name', 'seller.person.first_name', 'seller.person.last_name', 'seller.person.surname'],
   },
   {
     key: 'seller_id_number',

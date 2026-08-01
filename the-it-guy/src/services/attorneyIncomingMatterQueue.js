@@ -21,6 +21,11 @@ import {
   requireClient,
 } from './attorneyFirmServiceShared'
 import { getAttorneyFirmById, getCurrentUserPrimaryAttorneyFirm } from './attorneyFirms'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+  resolvePortalSellerName,
+} from './portalCanonicalFieldFallbacks.js'
 
 export const ATTORNEY_INCOMING_MATTER_PAGE_SIZES = [20, 50, 100]
 
@@ -299,12 +304,15 @@ function getMatterReference(transaction = {}, fallbackId = '') {
 }
 
 function getPropertyLabel(transaction = {}, unit = null) {
-  return (
-    normalizeText(transaction.property_description) ||
-    compact([transaction.property_address_line_1, transaction.suburb, transaction.city]).join(', ') ||
-    (unit?.unit_label ? `Unit ${unit.unit_label}` : '') ||
-    (unit?.unit_number ? `Unit ${unit.unit_number}` : '') ||
-    'Property pending'
+  const unitLabel = (unit?.unit_label ? `Unit ${unit.unit_label}` : '') || (unit?.unit_number ? `Unit ${unit.unit_number}` : '')
+  return resolvePortalPropertyLabel(
+    {
+      ...transaction,
+      transaction,
+      unit,
+      unitLabel,
+    },
+    { fallback: unitLabel || 'Property pending' },
   )
 }
 
@@ -531,8 +539,8 @@ export function buildAttorneyPreInstructionRow(allocation = {}, firm = null) {
   const mandatePacketId = allocation.mandate_packet_id || allocation.mandatePacketId || ''
   const firmName = firm?.name || allocation.company_name || allocation.companyName || 'Transfer firm'
   const selectedAt = allocation.mandate_signed_at || allocation.mandateSignedAt || allocation.selected_at || allocation.selectedAt || null
-  const property = allocation.property_label || allocation.propertyLabel || 'Property pending'
-  const sellerName = allocation.seller_name || allocation.sellerName || 'Seller pending'
+  const property = resolvePortalPropertyLabel(allocation)
+  const sellerName = resolvePortalSellerName(allocation, { fallback: 'Seller pending' })
   const reference = allocation.listing_reference || allocation.listingReference || `PL-${String(listingId).slice(0, 8).toUpperCase()}`
   const agent = allocation.assigned_agent_name || allocation.assignedAgentName || allocation.assigned_agent_email || allocation.assignedAgentEmail || ''
   const row = {
@@ -617,6 +625,15 @@ function buildIncomingMatterRow({ assignment, transaction, onboarding, documentR
     normalizedAssignment.preferred_contact_name || normalizedAssignment.attorney_firm_name || 'Unassigned',
   )
   const waitingOnLabels = contract.waitingOn.map((item) => WAITING_ON_LABELS[item] || item)
+  const identityRow = {
+    ...transaction,
+    transaction,
+    onboarding,
+    onboardingFormData: onboarding?.formData || onboarding?.form_data || onboarding?.onboarding_form_data,
+    buyer,
+    unit,
+    development,
+  }
   const row = {
     id: normalizedAssignment.id,
     assignmentId: normalizedAssignment.id,
@@ -634,9 +651,9 @@ function buildIncomingMatterRow({ assignment, transaction, onboarding, documentR
     waitingOnLabels,
     incomingSince,
     incomingAgeDays: daysSince(incomingSince),
-    buyerName: buyer?.name || buyer?.email || 'Buyer pending',
+    buyerName: resolvePortalBuyerName(identityRow),
     buyerEmail: buyer?.email || '',
-    sellerName: transaction.seller_name || transaction.seller_email || 'Seller pending',
+    sellerName: resolvePortalSellerName(identityRow, { fallback: transaction.seller_email || 'Seller pending' }),
     property: getPropertyLabel(transaction, unit),
     development: getDevelopmentName(transaction, unit, development),
     unit: unit?.unit_label || unit?.unit_number || '',

@@ -2,6 +2,7 @@ import {
   getFinanceReadinessAnalytics,
   getFinanceReadinessSummary,
 } from '../core/finance/financeReadinessSelectors'
+import { resolvePortalBuyerName } from './portalCanonicalFieldFallbacks.js'
 
 export const FINANCE_INTELLIGENCE_DISCLAIMER =
   'Arch9 operational insights are estimates based on workflow and onboarding data. Final financial approval remains subject to lender assessment and supporting documentation.'
@@ -477,7 +478,7 @@ export function buildReadinessOutcomeCalibration(rows = []) {
     if (bucket.examples.length < 3) {
       bucket.examples.push({
         transactionId: getTransaction(row).id || '',
-        buyer: row?.buyer?.name || getTransaction(row).buyer_name || 'Buyer pending',
+        buyer: resolvePortalBuyerName(row),
         score,
         outcome: outcome.label,
       })
@@ -627,7 +628,7 @@ export function buildExecutiveReportModel(rows = [], { title = 'Bond Operations 
   const readinessOutcomeCalibration = buildReadinessOutcomeCalibration(rows)
   const riskRows = rows.map((row) => ({
     transactionId: getTransaction(row).id || '',
-    buyer: row?.buyer?.name || getTransaction(row).buyer_name || 'Buyer pending',
+    buyer: resolvePortalBuyerName(row),
     approvalConfidence: calculateApprovalProbability(row),
     operationalRisk: calculateOperationalRisk(row),
     velocity: calculateTransactionVelocity(row),

@@ -22,6 +22,10 @@ import BondTransactionTable, { APPLICATION_PROGRESS_STAGE_OPTIONS, resolveBondPr
 import { BOND_TRANSACTION_VIEW_PARAM, bondViews, getBondTransactionView, getBondTransactionViewFromStatus } from '../../config/bondViews'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import * as bondCommandCenterService from '../../services/bondCommandCenterService'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from '../../services/portalCanonicalFieldFallbacks'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -411,11 +415,10 @@ export function buildHqApplicationRegisterRows(rows = [], now = Date.now()) {
     const bondValue = getBondValue(row)
     const applicationReference = safeDisplayText(row.applicationReference || row.transactionReference || row.bondApplicationId, '')
     const readableReference = applicationReference || (row.transactionId ? `BND-${normalizeText(row.transactionId).slice(-4).toUpperCase()}` : 'Reference pending')
-    const propertyDisplay = safeDisplayText(
-      row.property ||
-        [row.developmentName, row.unitLabel].map((item) => safeDisplayText(item)).filter(Boolean).join(' • '),
-      'Property pending',
-    )
+    const propertyDisplay = resolvePortalPropertyLabel(row, {
+      fallback: [row.developmentName, row.unitLabel].map((item) => safeDisplayText(item)).filter(Boolean).join(' • ') || 'Property pending',
+    })
+    const client = resolvePortalBuyerName(row, { fallback: safeDisplayText(row.client, 'Buyer pending') })
     return {
       ...row,
       createdTimestamp: getCreatedTimestamp(row),
@@ -435,6 +438,7 @@ export function buildHqApplicationRegisterRows(rows = [], now = Date.now()) {
       bondValue,
       bondValueLabel: row.bondAmountLabel || formatCurrency(bondValue),
       applicationReferenceDisplay: readableReference,
+      client,
       propertyDisplay,
       nextActionLabel: getFriendlyNextAction(row, statusKey),
       openHref: row.transactionId ? `/bond/files/${encodeURIComponent(row.transactionId)}` : '/bond/pipeline?view=all',
