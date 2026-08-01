@@ -19,7 +19,7 @@ import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCa
 
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 15000
 const BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS = 45000
-const BRIDGE_AUTH_BOOTSTRAP_SLOW_MS = BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS
+const BRIDGE_AUTH_BOOTSTRAP_SLOW_MS = 15000
 
 const EMPTY_AUTH_STATE = Object.freeze({
   status: 'loading',
@@ -370,7 +370,11 @@ export function AuthSessionProvider({ children }) {
             },
           })
         }, BRIDGE_AUTH_BOOTSTRAP_SLOW_MS)
-        const nextState = await loadBridgeAuthState({ session, selectedWorkspaceId })
+        const nextState = await withBootstrapTimeout(loadBridgeAuthState({ session, selectedWorkspaceId }), {
+          timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
+          phase: 'bridge',
+          getDiagnostics: getActiveAuthBootStepDiagnostics,
+        })
         resolvedBridgeState = nextState
         if (!active) {
           bridgeOutcome = 'cancelled'
