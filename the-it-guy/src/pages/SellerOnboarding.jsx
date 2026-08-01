@@ -211,7 +211,7 @@ const PROPERTY_STRUCTURE_META = {
   share_block: { icon: Building2, description: 'Share block ownership structure.' },
   freehold: { icon: Home, description: 'Freehold ownership.' },
   agricultural_holding: { icon: Landmark, description: 'Agricultural holding or farm-style title.' },
-  other: { icon: Circle, description: 'Another legal structure.' },
+  other: { icon: Circle, description: 'Another title type.' },
 }
 
 const PROPERTY_STRUCTURES_BY_CATEGORY = {
@@ -441,7 +441,7 @@ function getPropertyStructureOptionsByCategory(category) {
       value,
       label: getPropertyStructureTypeLabel(value),
       icon: PROPERTY_STRUCTURE_META[value]?.icon || Circle,
-      description: PROPERTY_STRUCTURE_META[value]?.description || 'Property legal structure.',
+      description: PROPERTY_STRUCTURE_META[value]?.description || 'Property title type.',
     }))
 }
 
@@ -1500,8 +1500,15 @@ function normalizeFormData(listing) {
     : propertyTypeOptions[0]?.value || candidatePropertyType || 'house'
   const propertyStructureOptions = getPropertyStructureOptionsByCategory(resolvedPropertyCategory)
   const rawPropertyStructureType = normalizePropertyStructureType(
-    existing.propertyStructureType ||
+    existing.propertyTitleType ||
+      existing.property_title_type ||
+      existing.propertyStructureType ||
+      canonicalFacts?.property?.property_title_type ||
+      canonicalFacts?.property?.title_type ||
+      canonicalFacts?.property?.title_type_raw ||
       canonicalFacts?.property?.property_structure_type ||
+      listing?.propertyTitleType ||
+      listing?.property_title_type ||
       listing?.propertyStructureType ||
       listing?.property_structure_type ||
       existing.propertyType ||
@@ -3870,7 +3877,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const missingAddressItems = getPropertyAddressMissingItems(address)
 
       if (!form.propertyCategory || !form.propertyType || !form.propertyStructureType) {
-        return 'Property category, property type, and structure type are required.'
+        return 'Property category, property type, and title type are required.'
       }
       if (missingAddressItems.length) {
         return `Please complete the property address before continuing: ${missingAddressItems.join(', ')}.`
@@ -4023,7 +4030,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         return 'Please select a property category.'
       }
       if (activeMobilePaneIndex === propertyPaneIndexes.type && (!form.propertyType || !form.propertyStructureType)) {
-        return 'Please select the property type and legal structure.'
+        return 'Please select the property type and title type.'
       }
       if (activeMobilePaneIndex === propertyPaneIndexes.address) {
         const address = resolveProgressionPropertyAddress(listing || {}, form || {})
@@ -4617,7 +4624,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               <FormSection
                 icon={Landmark}
                 title="Who owns this property?"
-                description="Choose the owner type first, then define the legal structure."
+                description="Choose the owner type first, then define the ownership structure."
                 illustration="ownership"
                 mobilePaneIndex={sellerPaneIndexes.ownership}
               >
@@ -5323,7 +5330,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 <FormSection
                   icon={Home}
                   title="Property type & structure"
-                  description="Choose the specific property type and the legal structure."
+                  description="Choose the specific property type and title type."
                   illustration="property_details"
                   mobilePaneIndex={propertyPaneIndexes.type}
                 >
@@ -5378,7 +5385,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     </div>
                   </div>
                   <p className="mt-3 text-xs font-medium leading-5 text-[#35546c]">
-                    {getPropertyCategoryLabel(form.propertyCategory)} controls the type list. The legal structure controls scheme, land, or commercial follow-up fields; estate / HOA details are captured separately.
+                    {getPropertyCategoryLabel(form.propertyCategory)} controls the type list. The title type controls scheme, land, or commercial follow-up fields; estate / HOA details are captured separately.
                   </p>
                 </FormSection>
 
@@ -6014,7 +6021,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   items={[
                     { label: 'Category', value: getPropertyCategoryLabel(form.propertyCategory) },
                     { label: 'Property Type', value: propertyTypeLabel },
-                    { label: 'Structure', value: getPropertyStructureTypeLabel(form.propertyStructureType) },
+                    { label: 'Title type', value: getPropertyStructureTypeLabel(form.propertyStructureType) },
                     { label: 'Branch', value: flow.property_branch_label || formatValue(propertyBranch) },
                     { label: 'Address', value: propertyAddressDetails.formatted || [form.propertyAddress, form.suburb, form.city, form.province].filter(Boolean).join(', ') },
                     { label: propertySummaryLabel, value: propertySummaryValue },

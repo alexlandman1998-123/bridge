@@ -901,10 +901,6 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
 
     property_address: safePlaceholder(property.fullAddress),
     property_type: safePlaceholder(toTitleCase(property.propertyType)),
-    property_title_type: safePlaceholder(property.propertyStructureType),
-    'property.title_type': safePlaceholder(property.propertyStructureType),
-    'property.title_type_raw': safePlaceholder(property.propertyStructureType),
-    property_structure_type: safePlaceholder(property.propertyStructureType),
     property_suburb: safePlaceholder(property.suburb),
     property_city: safePlaceholder(property.city),
     property_province: safePlaceholder(property.province),

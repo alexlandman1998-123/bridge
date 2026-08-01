@@ -72,7 +72,7 @@ test('maps canonical packet placeholders back to the UI readiness contract', () 
   assert.equal(draft.cashAmount, '3250000')
 })
 
-test('accepts seller onboarding structure aliases as legal property title type', () => {
+test('accepts legacy seller onboarding structure aliases as legal property title type', () => {
   const draft = buildLegalDocumentRequirementDraftFromPlaceholders({
     property_structure_type: 'sectional_title',
     property_address: '12 Sample Street',

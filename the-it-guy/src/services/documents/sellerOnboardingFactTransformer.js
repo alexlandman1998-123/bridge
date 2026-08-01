@@ -816,7 +816,7 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   push(missingIf(!hasValue(facts.property?.address_details?.city || facts.property?.city), 'property_city_missing', 'Property city is required.'))
   push(missingIf(!hasValue(facts.property?.address_details?.province || facts.property?.province), 'province_missing', 'Province is required for property classification.'))
   push(missingIf(!hasValue(facts.property?.property_category), 'property_category_missing', 'Property category is required.'))
-  push(missingIf(!hasValue(facts.property?.property_structure_type), 'property_structure_type_missing', 'Property structure type is required.'))
+  push(missingIf(!hasValue(facts.property?.property_title_type || facts.property?.property_structure_type), 'property_title_type_missing', 'Property title type is required.'))
   push(missingIf(!hasValue(facts.property?.rates_taxes), 'rates_taxes_missing', 'Rates and taxes are required.'))
   push(missingIf(!hasValue(facts.property?.levies) && !facts.property?.levies_not_applicable, 'levies_missing', 'Levies are required, or must be marked not applicable.'))
   push(missingIf(!hasValue(facts.property?.utilities?.water_billing_type || facts.property?.water_billing_type), 'water_billing_type_missing', 'Water billing type is required.'))
@@ -918,7 +918,7 @@ export function calculateSellerFactReadiness(facts = {}) {
     property_classification: sectionScore([
       propertyBranch,
       facts.property?.property_category,
-      facts.property?.property_structure_type,
+      facts.property?.property_title_type || facts.property?.property_structure_type,
       facts.property?.address_details?.line_1 || facts.property?.address_line_1 || facts.property?.address,
       facts.property?.address_details?.suburb || facts.property?.suburb,
       facts.property?.address_details?.city || facts.property?.city,

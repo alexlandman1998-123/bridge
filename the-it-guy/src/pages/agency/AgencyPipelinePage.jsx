@@ -566,7 +566,6 @@ function applyMandateManualOverrideToData(mandateData = null, sourceContext = {}
   placeholder('property_display_address', field('property_address'))
   placeholder('property_type', field('property_type'))
   placeholder('property_title_type', field('property_title'))
-  placeholder('property_structure_type', field('property_title'))
   placeholder('property_erf_number', field('property_reference'))
   placeholder('erf_number', field('property_reference'))
   placeholder('erf_size', field('property_size'))
@@ -1986,7 +1985,7 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
       sourceLabel: Object.keys(onboarding).length ? 'Provided by seller' : 'Updated by agent',
       rows: [
         { label: 'Property type', value: propertyType },
-        { label: 'Property subtype', value: firstWorkspaceText(onboarding?.propertySubtype, onboarding?.property_subtype, onboarding?.propertyStructureType, onboarding?.property_structure_type, propertyDetails?.propertySubtype, propertyDetails?.propertyStructureType) },
+        { label: 'Property title type', value: firstWorkspaceText(onboarding?.propertyTitleType, onboarding?.property_title_type, onboarding?.propertySubtype, onboarding?.property_subtype, onboarding?.propertyStructureType, onboarding?.property_structure_type, propertyDetails?.propertyTitleType, propertyDetails?.property_title_type, propertyDetails?.propertySubtype, propertyDetails?.propertyStructureType) },
         { label: 'Complex / Estate', value: firstWorkspaceText(onboarding?.complexName, onboarding?.estateName, onboarding?.estateComplexName, propertyDetails?.complexName, listingSource?.estateName) },
         { label: 'Erf / Stand number', value: firstWorkspaceText(lead?.erfNumber, onboarding?.erfNumber, onboarding?.standNumber, onboarding?.propertyReference, propertyDetails?.erfNumber) },
         { label: 'Sectional title', value: firstWorkspaceValue(onboarding?.sectionalTitle, onboarding?.isSectionalTitle, propertyDetails?.sectionalTitle) },

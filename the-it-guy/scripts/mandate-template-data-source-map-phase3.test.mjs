@@ -110,8 +110,12 @@ const mappedMandate = mapSellerOnboardingToMandateData({
 })
 
 assert.equal(mappedMandate.placeholders.property_title_type, 'full_title')
-assert.equal(mappedMandate.placeholders.property_structure_type, 'freehold')
 assert.equal(mappedMandate.placeholders['property.title_type_raw'], 'full_title')
+assert.equal(
+  Object.prototype.hasOwnProperty.call(mappedMandate.placeholders, 'property_structure_type'),
+  false,
+  'Mandate placeholders should expose property_title_type, not the legacy property_structure_type tag.',
+)
 
 const report = buildMandateTemplateDataSourceReport({
   generatedAt: '2026-07-28T12:00:00.000Z',
