@@ -1,3 +1,5 @@
+import { getCanonicalSourceAliasesForMergeField } from './canonicalFieldResolver.js'
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -93,6 +95,18 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     sampleValue: 'Married In Community',
     validationRule: 'text_or_empty',
     aliases: ['buyer.marital_status', 'buyer_marital', 'buyerMaritalStatus', 'purchaser_marital_status', 'buyer.person.marital_status'],
+  },
+  {
+    key: 'buyer_marital_regime',
+    label: 'Buyer Marital Regime',
+    category: 'Buyer Details',
+    description: 'Buyer marital regime used for legal capacity and spouse-consent clauses.',
+    dataSource: 'onboarding_form_data.buyer.person.marital_regime',
+    required: false,
+    packetTypes: ['otp'],
+    sampleValue: 'in_community',
+    validationRule: 'text_or_empty',
+    aliases: ['buyer.marital_regime', 'buyerMaritalRegime', 'purchaser_marital_regime', 'buyer.person.marital_regime'],
   },
   {
     key: 'buyer_spouse_full_name',
@@ -337,6 +351,18 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     aliases: ['seller.marital_status', 'sellerMaritalStatus', 'vendor_marital_status'],
   },
   {
+    key: 'seller_marital_regime',
+    label: 'Seller Marital Regime',
+    category: 'Seller Details',
+    description: 'Seller marital regime used for mandate and OTP capacity clauses.',
+    dataSource: 'seller onboarding maritalRegime',
+    required: false,
+    packetTypes: ['mandate', 'otp'],
+    sampleValue: 'in_community',
+    validationRule: 'text_or_empty',
+    aliases: ['seller.marital_regime', 'sellerMaritalRegime', 'vendor_marital_regime'],
+  },
+  {
     key: 'seller_spouse_full_name',
     label: 'Seller Spouse Full Name',
     category: 'Seller Details',
@@ -577,6 +603,18 @@ const CANONICAL_MERGE_FIELD_DEFINITIONS = [
     sampleValue: 'Pretoria',
     validationRule: 'text_or_empty',
     aliases: ['property.city'],
+  },
+  {
+    key: 'property_postal_code',
+    label: 'Property Postal Code',
+    category: 'Property Details',
+    description: 'Postal code for the property address.',
+    dataSource: 'seller onboarding property postal code OR transaction postal_code',
+    required: false,
+    packetTypes: ['otp', 'mandate'],
+    sampleValue: '0081',
+    validationRule: 'text_or_empty',
+    aliases: ['property.postal_code', 'property.postalCode', 'property.address.postal_code', 'property.address.postalCode'],
   },
   {
     key: 'property_type',
@@ -2429,10 +2467,11 @@ const CANONICAL_FIELDS_BY_KEY = new Map()
 const ALIAS_TO_CANONICAL = new Map()
 
 function normalizeCanonicalDefinition(definition = {}) {
+  const sourceAliases = getCanonicalSourceAliasesForMergeField(definition.key)
   return {
     ...definition,
     key: normalizeUnderscoreKey(definition.key),
-    aliases: Array.from(new Set((definition.aliases || []).map((item) => normalizeText(item)).filter(Boolean))),
+    aliases: Array.from(new Set([...(definition.aliases || []), ...sourceAliases].map((item) => normalizeText(item)).filter(Boolean))),
   }
 }
 

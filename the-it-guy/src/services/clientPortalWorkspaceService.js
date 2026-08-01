@@ -38,6 +38,10 @@ import {
 } from './sellerPostMandateDocumentOrchestrationService.js'
 import { isSellerPostMandateMandateSigned } from './sellerPostMandateDocumentContract.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
+import {
+  resolvePortalPropertyLabel,
+  resolvePortalSellerName,
+} from './portalCanonicalFieldFallbacks.js'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -89,23 +93,18 @@ function isInvalidClientPortalLinkError(error = null) {
 }
 
 function formatListingAddress(listing = {}, formData = {}) {
-  return String(
-    formData.propertyAddress ||
-      listing.propertyAddress ||
-      listing.addressLine1 ||
-      listing.listingTitle ||
-      listing.title ||
-      'Property sale',
-  ).trim()
+  return resolvePortalPropertyLabel({
+    listing,
+    formData,
+    property: listing.property,
+    propertyAddress: formData.propertyAddress || listing.propertyAddress,
+    address: listing.addressLine1,
+    title: listing.listingTitle || listing.title,
+  }, { fallback: 'Property sale' })
 }
 
 function getSellerDisplayName(listing = {}, formData = {}) {
-  const fromForm = [
-    formData.sellerName || formData.firstName || formData.name,
-    formData.sellerSurname || formData.lastName || formData.surname,
-  ].filter(Boolean).join(' ').trim()
-  const fromListing = listing?.seller?.name || listing?.sellerName || ''
-  return fromForm || fromListing || 'Seller'
+  return resolvePortalSellerName({ listing, formData, fallback: 'Seller' })
 }
 
 function mapSellerRequiredDocument(requirement = {}) {

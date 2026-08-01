@@ -7,6 +7,10 @@ import {
   buildMandateScenarioPlaceholders,
   resolveMandateScenarioProfile,
 } from './mandateScenarioProfile.js'
+import {
+  buildCanonicalMergeFieldPayload,
+  mergeCanonicalMergeFieldPayload,
+} from './canonicalFieldResolver.js'
 
 const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -315,6 +319,42 @@ function buildMapperInput(input = {}, legacyLead = {}, legacyAgency = {}, legacy
     transaction: {},
     mandateDraft: {},
   }
+}
+
+function getStructuredCanonicalSources({
+  onboarding = {},
+  lead = {},
+  privateListing = {},
+  transaction = {},
+  mandateDraft = {},
+} = {}) {
+  return [
+    onboarding,
+    onboarding.canonicalFacts,
+    onboarding.canonical_facts,
+    onboarding.sellerCanonicalFacts,
+    onboarding.seller_canonical_facts_json,
+    mandateDraft.canonicalFacts,
+    mandateDraft.canonical_facts,
+    mandateDraft.sellerCanonicalFacts,
+    mandateDraft.seller_canonical_facts_json,
+    privateListing.canonicalFacts,
+    privateListing.canonical_facts,
+    privateListing.sellerCanonicalFacts,
+    privateListing.seller_canonical_facts_json,
+    lead.canonicalFacts,
+    lead.canonical_facts,
+    lead.sellerCanonicalFacts,
+    lead.seller_canonical_facts_json,
+    lead.sellerOnboarding?.canonicalFacts,
+    lead.sellerOnboarding?.canonical_facts,
+    transaction.canonicalFacts,
+    transaction.canonical_facts,
+    transaction.sellerCanonicalFacts,
+    transaction.seller_canonical_facts_json,
+    transaction.seller_onboarding_form_data,
+    transaction.onboarding_form_data,
+  ].filter((source) => source && typeof source === 'object' && !Array.isArray(source))
 }
 
 function draftHasAnyValue(draft = {}, keys = []) {
@@ -868,7 +908,15 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     warnings.push(`${toTitleCase(seller.entityType)} representative ID number is missing.`)
   }
 
-  const basePlaceholders = {
+  const canonicalPlaceholders = buildCanonicalMergeFieldPayload(getStructuredCanonicalSources({
+    onboarding,
+    lead,
+    privateListing,
+    transaction,
+    mandateDraft,
+  }), { packetType: 'mandate' })
+
+  const basePlaceholders = mergeCanonicalMergeFieldPayload({
     mandate_introduction_purpose: firstText(
       mandate.introductionPurpose,
       'This Mandate Agreement records the appointment of the Agent by the Seller to market the property described in this agreement and to perform the related services set out herein. The purpose of this document is to confirm the parties, the property, the mandate terms, commission arrangements, and any special conditions applicable to the marketing and sale of the property.',
@@ -984,7 +1032,7 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     agent_email: safePlaceholder(agentProfile.email),
     agent_phone: safePlaceholder(agentProfile.phone),
     agent_ffc_number: safePlaceholder(agentProfile.ffcNumber),
-  }
+  }, canonicalPlaceholders)
   const scenarioProfile = resolveMandateScenarioProfile({
     placeholders: basePlaceholders,
     seller,

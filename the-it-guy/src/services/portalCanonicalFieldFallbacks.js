@@ -1,0 +1,150 @@
+import {
+  buildCanonicalMergeFieldPayload,
+  resolveCanonicalFieldValue,
+} from '../core/documents/canonicalFieldResolver.js'
+
+function normalizeText(value) {
+  if (value && typeof value === 'object') return ''
+  return String(value ?? '').trim()
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function firstText(...values) {
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text) return text
+  }
+  return ''
+}
+
+function addSource(target, source, seen = new WeakSet()) {
+  if (!isPlainObject(source)) return
+  if (seen.has(source)) return
+  seen.add(source)
+  target.push(source)
+
+  for (const key of [
+    'onboardingFormData',
+    'onboarding_form_data',
+    'formData',
+    'form_data',
+    'buyerOnboardingFormData',
+    'buyer_onboarding_form_data',
+    'sellerOnboardingFormData',
+    'seller_onboarding_form_data',
+    'sellerCanonicalFacts',
+    'seller_canonical_facts_json',
+    'canonicalFacts',
+    'canonical_facts',
+    'workDeliveryPayload',
+    'work_delivery_payload',
+  ]) {
+    if (isPlainObject(source[key])) target.push(source[key])
+  }
+
+  if (isPlainObject(source.sellerOnboarding?.formData)) target.push(source.sellerOnboarding.formData)
+  if (isPlainObject(source.sellerOnboarding?.canonicalFacts)) target.push(source.sellerOnboarding.canonicalFacts)
+  if (isPlainObject(source.transaction)) addSource(target, source.transaction, seen)
+  if (isPlainObject(source.listing)) addSource(target, source.listing, seen)
+  if (isPlainObject(source.privateListing)) addSource(target, source.privateListing, seen)
+  if (isPlainObject(source.buyer)) target.push({ buyer: source.buyer })
+  if (isPlainObject(source.seller)) target.push({ seller: source.seller })
+  if (isPlainObject(source.property)) target.push({ property: source.property })
+  if (isPlainObject(source.finance)) target.push({ finance: source.finance })
+}
+
+export function buildPortalCanonicalSources(...groups) {
+  const sources = []
+  const seen = new WeakSet()
+  for (const group of groups.flat()) {
+    addSource(sources, group, seen)
+  }
+  return sources
+}
+
+export function buildPortalCanonicalMergePayload(sources = [], options = {}) {
+  return buildCanonicalMergeFieldPayload(buildPortalCanonicalSources(sources), options)
+}
+
+export function resolvePortalCanonicalText(mergeFieldKey = '', sources = [], options = {}) {
+  for (const source of buildPortalCanonicalSources(sources)) {
+    const value = resolveCanonicalFieldValue(source, mergeFieldKey, options)
+    const text = normalizeText(Array.isArray(value) ? value.map((item) => normalizeText(item?.name || item)).filter(Boolean).join(', ') : value)
+    if (text) return text
+  }
+  return ''
+}
+
+export function resolvePortalSellerName({ listing = {}, formData = {}, fallback = 'Seller' } = {}) {
+  const flatName = [
+    firstText(formData.sellerName, formData.sellerFirstName, formData.firstName, formData.name),
+    firstText(formData.sellerSurname, formData.lastName, formData.surname),
+  ].filter(Boolean).join(' ').trim()
+  return firstText(
+    flatName,
+    listing?.seller?.name,
+    listing?.sellerName,
+    resolvePortalCanonicalText('seller_full_name', [formData, listing], { packetType: 'mandate' }),
+    fallback,
+  )
+}
+
+export function resolvePortalBuyerName(row = {}, { fallback = 'Buyer pending' } = {}) {
+  const transaction = isPlainObject(row.transaction) ? row.transaction : {}
+  const payload = isPlainObject(row.workDeliveryPayload)
+    ? row.workDeliveryPayload
+    : isPlainObject(row.work_delivery_payload)
+      ? row.work_delivery_payload
+      : {}
+  return firstText(
+    row?.buyer?.name,
+    row?.buyer,
+    row?.buyerName,
+    row?.buyer_name,
+    row?.client,
+    row?.clientName,
+    transaction.buyer_name,
+    transaction.buyerName,
+    transaction.client_name,
+    transaction.clientName,
+    payload.buyerName,
+    payload.buyer_name,
+    resolvePortalCanonicalText('buyer_full_name', [row, transaction, payload], { packetType: 'otp' }),
+    fallback,
+  )
+}
+
+export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pending' } = {}) {
+  const transaction = isPlainObject(row.transaction) ? row.transaction : {}
+  const payload = isPlainObject(row.workDeliveryPayload)
+    ? row.workDeliveryPayload
+    : isPlainObject(row.work_delivery_payload)
+      ? row.work_delivery_payload
+      : {}
+  const canonicalAddress = resolvePortalCanonicalText('property_address', [row, transaction, payload], { packetType: 'otp' })
+  const canonicalSuburb = resolvePortalCanonicalText('property_suburb', [row, transaction, payload], { packetType: 'otp' })
+  const canonicalCity = resolvePortalCanonicalText('property_city', [row, transaction, payload], { packetType: 'otp' })
+  return firstText(
+    row?.property?.display_address,
+    row?.property?.displayAddress,
+    row?.property?.address,
+    row?.property,
+    row?.propertyAddress,
+    row?.property_address,
+    row?.address,
+    transaction.property_name,
+    transaction.propertyName,
+    transaction.property_address_line_1,
+    transaction.propertyAddressLine1,
+    transaction.property_address,
+    transaction.property_description,
+    payload.propertyLabel,
+    payload.property_label,
+    canonicalAddress,
+    [canonicalSuburb, canonicalCity].filter(Boolean).join(', '),
+    fallback,
+  )
+}

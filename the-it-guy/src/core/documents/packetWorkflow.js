@@ -4,6 +4,10 @@ import {
   resolveCanonicalMergeFieldKey,
   validateTemplateTokensAgainstRegistry,
 } from './mergeFieldRegistry'
+import {
+  buildCanonicalMergeFieldPayload,
+  mergeCanonicalMergeFieldPayload,
+} from './canonicalFieldResolver'
 import { mapSellerOnboardingToMandateData } from './mandateDataMapper'
 import {
   classifySellerParty,
@@ -1539,7 +1543,31 @@ export function resolveOtpPacketPlaceholders({
     developmentSeller.trusteeNames,
   ))
 
-  return {
+  const canonicalPlaceholders = buildCanonicalMergeFieldPayload([
+    onboarding,
+    onboarding.canonicalFacts,
+    onboarding.canonical_facts,
+    source,
+    source.canonicalFacts,
+    source.canonical_facts,
+    {
+      buyer: buyerContract,
+      finance: onboardingFinance,
+      seller: sourceSeller,
+      property: sourceProperty,
+    },
+    {
+      buyer: buyerContract,
+      finance: onboardingFinance,
+      seller: sourceSeller,
+      property: addressDetails,
+    },
+    transaction?.onboarding_form_data,
+    transaction?.buyer_onboarding_form_data,
+    transaction?.seller_onboarding_form_data,
+  ].filter((item) => item && typeof item === 'object' && !Array.isArray(item)), { packetType: 'otp' })
+
+  const basePlaceholders = {
     buyer_parties: buyerParties,
     buyer_full_name: normalizeNullableText(primaryBuyer.name) || normalizeNullableText(buyer?.name) || normalizeNullableText(onboarding.firstName) || null,
     buyer_id_number:
@@ -1704,6 +1732,8 @@ export function resolveOtpPacketPlaceholders({
 
     special_conditions: normalizeNullableText(specialConditions) || null,
   }
+
+  return mergeCanonicalMergeFieldPayload(basePlaceholders, canonicalPlaceholders)
 }
 
 export function resolveMandatePacketPlaceholders({

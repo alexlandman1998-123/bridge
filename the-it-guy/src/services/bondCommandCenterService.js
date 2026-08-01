@@ -28,6 +28,10 @@ import {
 import { resolveEffectiveBondAssignment } from './bondAssignmentService'
 import { getSystemBanks } from './bondOriginatorBankService'
 import { buildBondOriginatorIntakePackageViewModel } from '../modules/bond/integrations'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from './portalCanonicalFieldFallbacks.js'
 
 const PRIORITY_CARD_META = Object.freeze({
   missing_documents: {
@@ -340,12 +344,7 @@ export function filterDemoBondApplications(rows = [], { includeDemoRows = true }
 }
 
 function getBuyerName(row = {}) {
-  return (
-    normalizeText(row?.buyer?.name) ||
-    normalizeText(row?.transaction?.buyer_name) ||
-    normalizeText(row?.transaction?.client_name) ||
-    'Buyer pending'
-  )
+  return resolvePortalBuyerName(row)
 }
 
 function getPropertyLabel(row = {}) {
@@ -354,7 +353,7 @@ function getPropertyLabel(row = {}) {
       normalizeText(row?.transaction?.property_description) ||
       normalizeText(row?.transaction?.property_address_line_1) ||
       [row?.transaction?.suburb, row?.transaction?.city].map(normalizeText).filter(Boolean).join(', ') ||
-      'Private property matter'
+      resolvePortalPropertyLabel(row, { fallback: 'Private property matter' })
     )
   }
 
@@ -363,7 +362,7 @@ function getPropertyLabel(row = {}) {
   if (development && unit) return `${development} • Unit ${unit}`
   if (development) return development
   if (unit) return `Unit ${unit}`
-  return 'Property pending'
+  return resolvePortalPropertyLabel(row)
 }
 
 function getPartnerLabel(row = {}) {

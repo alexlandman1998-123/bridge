@@ -1,5 +1,9 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { BOND_PARTNER_TYPES } from './bondPartnerManagementService'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from './portalCanonicalFieldFallbacks.js'
 
 export const BOND_PARTNER_PORTAL_EVENTS = Object.freeze({
   login: 'PARTNER_LOGIN',
@@ -229,8 +233,8 @@ function normalizeApplication(row = {}) {
     ...row,
     assignment,
     id: getApplicationId(row) || assignment?.id || assignment?.transactionId,
-    buyer: normalizeText(row.buyer || row.buyerName || row.client || row.buyer?.name || transaction.buyer_name || payload.buyerName || payload.buyer_name) || 'Buyer pending',
-    property: normalizeText(row.property || row.propertyAddress || row.property_address || row.address || transaction.property_address_line_1 || transaction.property_description || payload.propertyLabel || payload.property_label) || 'Property pending',
+    buyer: resolvePortalBuyerName({ ...row, transaction, workDeliveryPayload: payload }),
+    property: resolvePortalPropertyLabel({ ...row, transaction, workDeliveryPayload: payload }),
     reference: normalizeText(row.applicationReference || row.application_reference || row.transactionReference || row.transaction_reference || transaction.transaction_reference || transaction.matter_number || assignment?.id) || 'Application',
     consultant: normalizeText(row.consultant || row.consultantName || row.assignedConsultantName || row.assigned_consultant_name || payload.consultantName || payload.consultant_name) || 'Assigned consultant',
     consultantEmail: normalizeText(row.consultantEmail || row.consultant_email || row.assignedUserEmail || row.assigned_user_email || payload.consultantEmail || payload.consultant_email),

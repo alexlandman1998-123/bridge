@@ -26,6 +26,10 @@ import {
   generateFinanceInsights,
   getReadinessOutcomeCalibrationForRow,
 } from './financeIntelligenceService'
+import {
+  resolvePortalBuyerName,
+  resolvePortalPropertyLabel,
+} from './portalCanonicalFieldFallbacks.js'
 
 export const BOND_OPERATIONAL_QUEUE_KEYS = Object.freeze({
   NEW_APPLICATIONS: 'new_applications',
@@ -215,12 +219,7 @@ function normalizeQueueItem(record = {}, owners = {}, source = 'canonical') {
 }
 
 function getBuyerName(row = {}) {
-  return (
-    normalizeText(row?.buyer?.name) ||
-    normalizeText(row?.transaction?.buyer_name || row?.transaction?.buyerName) ||
-    normalizeText(row?.transaction?.client_name || row?.transaction?.clientName) ||
-    'Buyer pending'
-  )
+  return resolvePortalBuyerName(row)
 }
 
 function getDevelopmentName(row = {}) {
@@ -236,7 +235,7 @@ function getPropertyLabel(row = {}) {
       [row?.transaction?.suburb, row?.transaction?.city].map(normalizeText).filter(Boolean).join(', '),
   )
   if (unitNumber) return `Unit ${unitNumber}`
-  return privateProperty || developmentName || 'Property pending'
+  return privateProperty || resolvePortalPropertyLabel(row, { fallback: developmentName || 'Property pending' })
 }
 
 function getAgentName(row = {}) {
