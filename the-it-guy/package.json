@@ -55,6 +55,7 @@
     "test:lead-mandate-background-signing-start": "node scripts/lead-mandate-background-signing-start.test.mjs",
     "test:lead-mandate-targeted-refresh-phase5": "node scripts/lead-mandate-targeted-refresh-phase5.test.mjs",
     "test:lead-mandate-parallel-reads-phase6": "node scripts/lead-mandate-parallel-reads-phase6.test.mjs",
+    "test:lead-mandate-timing-logs-phase7": "node scripts/lead-mandate-timing-logs-phase7.test.mjs",
     "test:workspace-branding-hydration": "node scripts/workspace-branding-hydration.test.mjs",
     "test:workspace-branding-observability": "node scripts/workspace-branding-observability.test.mjs",
     "test:dashboard-performance-telemetry": "node --test src/services/observability/__tests__/dashboardPerformanceTelemetry.test.js && node scripts/dashboard-performance-telemetry.test.mjs",

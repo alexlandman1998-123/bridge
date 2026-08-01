@@ -300,6 +300,124 @@ async function updateJobStatus({
   return asRecord(rpcResult.data);
 }
 
+function normalizeErrorCode(error: unknown, fallback = "LEGAL_DOCUMENT_STAGE_FAILED") {
+  return normalizeText((error as { code?: unknown })?.code) ||
+    normalizeText((error as { errorCode?: unknown })?.errorCode) ||
+    fallback;
+}
+
+function normalizeErrorMessage(error: unknown, fallback = "Legal document stage failed.") {
+  return normalizeText((error as { message?: unknown })?.message) ||
+    normalizeText((error as { error?: unknown })?.error) ||
+    fallback;
+}
+
+async function recordJobStageTiming({
+  client,
+  job,
+  packet = null,
+  packetVersionId = null,
+  stage,
+  startedAt,
+  completedAt = Date.now(),
+  status = "succeeded",
+  errorCode = null,
+  errorMessage = null,
+  metadata = {},
+}: {
+  client: any;
+  job: JsonRecord;
+  packet?: JsonRecord | null;
+  packetVersionId?: string | null;
+  stage: string;
+  startedAt: number;
+  completedAt?: number;
+  status?: string;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  metadata?: JsonRecord;
+}) {
+  const timingPacket = packet && typeof packet === "object" ? packet : {};
+  const packetId = normalizeText(timingPacket.id || job.packet_id);
+  if (!packetId) return;
+  const started = Number.isFinite(startedAt) ? startedAt : Date.now();
+  const completed = Number.isFinite(completedAt) ? completedAt : Date.now();
+  const durationMs = Math.max(0, Math.round(completed - started));
+  const insertResult = await client
+    .from("legal_document_job_stage_timings")
+    .insert({
+      organisation_id: normalizeText(timingPacket.organisation_id || job.organisation_id) || null,
+      job_id: normalizeText(job.id) || null,
+      packet_id: packetId,
+      packet_version_id: normalizeText(packetVersionId || job.packet_version_id) || null,
+      stage,
+      started_at: new Date(started).toISOString(),
+      completed_at: new Date(completed).toISOString(),
+      duration_ms: durationMs,
+      status,
+      error_code: normalizeText(errorCode) || null,
+      error_message: normalizeText(errorMessage) || null,
+      metadata_json: metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata : {},
+    });
+  if (insertResult.error) {
+    console.warn("[legal-document-job-runner] phase7 stage timing write skipped", {
+      jobId: normalizeText(job.id) || null,
+      packetId,
+      stage,
+      code: insertResult.error.code || null,
+      message: insertResult.error.message || null,
+    });
+  }
+}
+
+async function timeJobStage<T>({
+  client,
+  job,
+  packet = null,
+  packetVersionId = null,
+  stage,
+  metadata = {},
+  task,
+}: {
+  client: any;
+  job: JsonRecord;
+  packet?: JsonRecord | null;
+  packetVersionId?: string | null;
+  stage: string;
+  metadata?: JsonRecord;
+  task: () => Promise<T>;
+}) {
+  const stageStartedAt = Date.now();
+  try {
+    const result = await task();
+    await recordJobStageTiming({
+      client,
+      job,
+      packet,
+      packetVersionId,
+      stage,
+      startedAt: stageStartedAt,
+      status: "succeeded",
+      metadata,
+    });
+    return result;
+  } catch (error) {
+    await recordJobStageTiming({
+      client,
+      job,
+      packet,
+      packetVersionId,
+      stage,
+      startedAt: stageStartedAt,
+      status: "failed",
+      errorCode: normalizeErrorCode(error),
+      errorMessage: normalizeErrorMessage(error),
+      metadata,
+    }).catch(() => null);
+    throw error;
+  }
+}
+
 async function fetchJob(client: any, jobId: string) {
   const jobResult = await client
     .from("legal_document_jobs")
@@ -1377,11 +1495,34 @@ async function runGeneratePacketVersionJob({
   });
 
   try {
-    const generateResult = await callGenerateMandateFunction({
-      supabaseUrl,
-      serviceRoleKey,
-      requestId,
-      payload: rendererRequest,
+    const generateResult = await timeJobStage({
+      client,
+      job,
+      packet,
+      stage: "render_pdf",
+      metadata: {
+        requestId,
+        jobDisplayType: "generate_mandate_pdf",
+        phase3ServerPdfGeneration: true,
+        phase5BackgroundGeneration: true,
+      },
+      task: async () => {
+        const result = await callGenerateMandateFunction({
+          supabaseUrl,
+          serviceRoleKey,
+          requestId,
+          payload: rendererRequest,
+        });
+        if (!result.ok) {
+          const errorBody = result.body;
+          throw Object.assign(new Error(normalizeText(errorBody.error) || "Mandate generation failed."), {
+            code: normalizeText(errorBody.errorCode) || "LEGAL_DOCUMENT_JOB_GENERATION_FAILED",
+            status: result.status,
+            details: errorBody,
+          });
+        }
+        return result;
+      },
     });
     if (!generateResult.ok) {
       const errorBody = generateResult.body;
@@ -1437,9 +1578,26 @@ async function runGeneratePacketVersionJob({
       throw new Error("The generated packet version was not created.");
     }
 
-    const certificationResult = await client.rpc("bridge_certify_native_structured_legal_pdf", {
-      p_packet_id: packetId,
-      p_generated_version_id: versionId,
+    const certificationResult: any = await timeJobStage({
+      client,
+      job,
+      packet,
+      packetVersionId: versionId,
+      stage: "certify_pdf",
+      metadata: {
+        requestId,
+        jobDisplayType: "generate_mandate_pdf",
+        phase3ServerPdfGeneration: true,
+        phase5BackgroundGeneration: true,
+      },
+      task: async () => {
+        const result = await client.rpc("bridge_certify_native_structured_legal_pdf", {
+          p_packet_id: packetId,
+          p_generated_version_id: versionId,
+        });
+        if (result.error) throw result.error;
+        return result;
+      },
     });
     if (certificationResult.error) throw certificationResult.error;
     const certification = asRecord(certificationResult.data);
@@ -1746,23 +1904,62 @@ async function runSendForSignatureJob({
   let preparedSigningLink: JsonRecord | null = null;
   if (!extractSigningToken(portalLink) && booleanFlag(emailPayload.prepareSigningLink || emailPayload.prepare_signing_link)) {
     try {
-      preparedSigningEnvelope = await prepareMandateSigningEnvelopeForSendJob({
+      preparedSigningEnvelope = await timeJobStage({
         client,
+        job,
         packet,
-        version,
-        payload: {
-          ...emailPayload,
-          targetSignerRole: normalizeText(emailPayload.targetSignerRole || emailPayload.target_signer_role || emailPayload.recipientRole || job.target_signer_role),
+        packetVersionId: normalizeText(version.id),
+        stage: "prepare_signing_fields",
+        metadata: {
+          requestId,
+          jobDisplayType,
+          phase4SignatureSendJob: true,
+        },
+        task: () => prepareMandateSigningEnvelopeForSendJob({
+          client,
+          packet,
+          version,
+          payload: {
+            ...emailPayload,
+            targetSignerRole: normalizeText(emailPayload.targetSignerRole || emailPayload.target_signer_role || emailPayload.recipientRole || job.target_signer_role),
+          },
+        }),
+      });
+      await recordJobStageTiming({
+        client,
+        job,
+        packet,
+        packetVersionId: normalizeText(version.id),
+        stage: "apply_signing_layout",
+        startedAt: Date.now(),
+        status: "succeeded",
+        metadata: {
+          requestId,
+          jobDisplayType,
+          phase4SignatureSendJob: true,
+          sourceStage: "prepare_signing_fields",
         },
       });
-      preparedSigningLink = await prepareSigningLinkForSendJob({
+      preparedSigningLink = await timeJobStage({
         client,
+        job,
         packet,
-        version,
-        payload: {
-          ...emailPayload,
-          targetSignerRole: normalizeText(emailPayload.targetSignerRole || emailPayload.target_signer_role || emailPayload.recipientRole || job.target_signer_role),
+        packetVersionId: normalizeText(version.id),
+        stage: "create_signing_links",
+        metadata: {
+          requestId,
+          jobDisplayType,
+          phase4SignatureSendJob: true,
         },
+        task: () => prepareSigningLinkForSendJob({
+          client,
+          packet,
+          version,
+          payload: {
+            ...emailPayload,
+            targetSignerRole: normalizeText(emailPayload.targetSignerRole || emailPayload.target_signer_role || emailPayload.recipientRole || job.target_signer_role),
+          },
+        }),
       });
       portalLink = normalizeText(preparedSigningLink.portalLink);
       emailPayload.portalLink = portalLink;
@@ -1852,11 +2049,29 @@ async function runSendForSignatureJob({
     },
   });
 
+  const sendEmailStageStartedAt = Date.now();
   const emailResult = await callSigningEmailFunction({
-    supabaseUrl,
-    serviceRoleKey,
-    requestId,
-    payload: emailPayload,
+      supabaseUrl,
+      serviceRoleKey,
+      requestId,
+      payload: emailPayload,
+  });
+  await recordJobStageTiming({
+    client,
+    job,
+    packet,
+    packetVersionId: normalizeText(version.id),
+    stage: "send_email",
+    startedAt: sendEmailStageStartedAt,
+    status: emailResult.ok ? "succeeded" : "failed",
+    errorCode: emailResult.ok ? null : normalizeText(emailResult.body?.errorCode) || "LEGAL_DOCUMENT_JOB_SEND_FAILED",
+    errorMessage: emailResult.ok ? null : normalizeText(emailResult.body?.error) || "Signing email delivery failed.",
+    metadata: {
+      requestId,
+      jobDisplayType,
+      phase4SignatureSendJob: true,
+      recipientRole: normalizeText(emailPayload.recipientRole || emailPayload.recipient_role) || null,
+    },
   });
   if (!emailResult.ok) {
     const errorBody = emailResult.body;
@@ -1899,6 +2114,23 @@ async function runSendForSignatureJob({
 
   const delivery = asRecord(emailResult.body.delivery);
   const emailConfirmed = emailResult.body.emailConfirmed === true || Boolean(normalizeText(emailResult.body.emailId));
+  await recordJobStageTiming({
+    client,
+    job,
+    packet,
+    packetVersionId: normalizeText(version.id),
+    stage: "record_delivery",
+    startedAt: Date.now(),
+    status: emailConfirmed ? "succeeded" : "skipped",
+    metadata: {
+      requestId,
+      jobDisplayType,
+      phase4SignatureSendJob: true,
+      emailConfirmed,
+      emailId: normalizeText(emailResult.body.emailId) || null,
+      dispatchId: normalizeText(delivery.dispatchId || delivery.dispatch_id) || null,
+    },
+  });
   const result = await updateJobStatus({
     client,
     jobId,

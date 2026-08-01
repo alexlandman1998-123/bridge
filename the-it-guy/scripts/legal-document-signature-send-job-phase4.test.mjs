@@ -66,7 +66,7 @@ for (const token of [
 
 assert.match(
   runner,
-  /preparedSigningEnvelope = await prepareMandateSigningEnvelopeForSendJob[\s\S]+preparedSigningLink = await prepareSigningLinkForSendJob[\s\S]+callSigningEmailFunction/,
+  /preparedSigningEnvelope = await timeJobStage[\s\S]+prepareMandateSigningEnvelopeForSendJob[\s\S]+preparedSigningLink = await timeJobStage[\s\S]+prepareSigningLinkForSendJob[\s\S]+callSigningEmailFunction/,
   'Runner should prepare envelope, prepare link, then send email inside the job.',
 )
 assert.match(
