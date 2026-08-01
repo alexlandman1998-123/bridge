@@ -333,6 +333,18 @@ function resolveSellerOnboardingSubmitError(error) {
   return message
 }
 
+function resolveSellerOnboardingDraftError(error) {
+  const message = String(error?.message || '').trim()
+  if (!message) return 'Unable to save draft right now. Please try again.'
+  if (message.toLowerCase().includes('fetch failed')) {
+    return 'We could not reach the onboarding service. Please check your connection and try again.'
+  }
+  if (isSellerOnboardingTimeoutError(error)) {
+    return 'The onboarding service took too long to save your draft. Please retry in a moment.'
+  }
+  return message
+}
+
 function isSellerOnboardingTimeoutError(error) {
   const message = String(error?.message || error || '').toLowerCase()
   const code = String(error?.code || '').toLowerCase()
@@ -3652,7 +3664,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       console.error('[Seller Onboarding] draft save failed', draftError)
       setDraftSyncStatus('error')
       if (!silent) {
-        setError(draftError?.message || 'Unable to save draft right now. Please try again.')
+        setError(resolveSellerOnboardingDraftError(draftError))
         scrollSellerOnboardingToTop({ focusAlert: true })
       }
       return false

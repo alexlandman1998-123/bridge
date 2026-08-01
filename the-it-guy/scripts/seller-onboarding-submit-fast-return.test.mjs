@@ -50,6 +50,26 @@ assert.match(
 )
 assert.match(
   privateListingService,
+  /bridge_update_private_listing_seller_onboarding_progress[\s\S]*?!isStatementTimeoutError\(rpc\.error\)[\s\S]*?throw rpc\.error/,
+  'seller onboarding progress should fall back to the direct update path when the progress RPC times out',
+)
+assert.match(
+  privateListingService,
+  /function fetchSellerOnboardingProgressFallbackContext\(client, token\)[\s\S]*?fetchSellerOnboardingCoreApiPayload\(normalizedToken, \{[\s\S]*?onboardingId: query\.data\.id[\s\S]*?listingId: query\.data\.private_listing_id/,
+  'seller onboarding progress fallback should use the fast token-scoped API context before heavy portal payload lookups',
+)
+assert.match(
+  privateListingService,
+  /fetchSellerOnboardingProgressFallbackContext\(client, normalizedToken\) \|\|[\s\S]*?getSellerOnboardingByToken\(token, \{ includeRequirementsAndDocuments: false \}\)/,
+  'seller onboarding progress should only use the heavier onboarding lookup if the fast context is unavailable',
+)
+assert.match(
+  privateListingService,
+  /getPrivateListing\(context\.listing\.id, \{ includeRequirementsAndDocuments: false \}\)[\s\S]*?catch\(\(listingError\)/,
+  'seller onboarding progress fallback should not fail a saved draft when listing refresh enrichment fails',
+)
+assert.match(
+  privateListingService,
   /function recoverSellerOnboardingSubmitAfterTimeout\(token, timeoutError\)[\s\S]*?getSellerOnboardingByToken\(normalizedToken, \{[\s\S]*?includeRequirementsAndDocuments: false,[\s\S]*?corePayload: true,[\s\S]*?\}\)/,
   'seller onboarding submit should re-read the lightweight payload after a statement timeout before surfacing an error',
 )
@@ -72,6 +92,11 @@ assert.match(
   sellerOnboardingPage,
   /catch \(loadError\) \{[\s\S]*?isSellerOnboardingTimeoutError\(loadError\)[\s\S]*?setError\('The onboarding service took too long to load this link\. Please refresh in a moment\.'\)[\s\S]*?return/,
   'seller onboarding page should not convert load-time statement timeouts into invalid-link errors',
+)
+assert.match(
+  sellerOnboardingPage,
+  /function resolveSellerOnboardingDraftError\(error\)[\s\S]*?isSellerOnboardingTimeoutError\(error\)[\s\S]*?The onboarding service took too long to save your draft/,
+  'seller onboarding draft save should not show raw statement-timeout errors to sellers',
 )
 assert.match(
   privateListingService,

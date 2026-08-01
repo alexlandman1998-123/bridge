@@ -3258,6 +3258,46 @@ async function fetchSellerOnboardingCoreApiPayload(token, options = {}) {
   return mapSellerClientPortalCorePayload(payload)
 }
 
+async function fetchSellerOnboardingProgressFallbackContext(client, token) {
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) return null
+  const phase2Columns = 'id, private_listing_id, token, token_expires_at, seller_portal_token, seller_portal_invite_created_at, seller_portal_invite_expires_at, seller_portal_invite_consumed_at, seller_portal_activation_source, seller_portal_status, seller_portal_invitation_sent_at, seller_portal_invitation_last_sent_at, seller_portal_invitation_cancelled_at, seller_portal_activated_at, seller_portal_terms_accepted_at, seller_portal_terms_version, seller_portal_terms_acceptance_id, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at'
+  const legacyColumns = 'id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at'
+  let query = await client
+    .from('private_listing_seller_onboarding')
+    .select(phase2Columns)
+    .eq('token', normalizedToken)
+    .maybeSingle()
+  if (query.error && isMissingSchemaError(query.error)) {
+    query = await client
+      .from('private_listing_seller_onboarding')
+      .select(legacyColumns)
+      .eq('token', normalizedToken)
+      .maybeSingle()
+  }
+  if (query.error) throw query.error
+  if (!query.data?.id || !query.data?.private_listing_id) return null
+
+  const apiPayload = await fetchSellerOnboardingCoreApiPayload(normalizedToken, {
+    onboardingId: query.data.id,
+    listingId: query.data.private_listing_id,
+  }).catch((apiError) => {
+    console.warn('[Private Listings] seller onboarding progress fallback context API lookup failed', {
+      reason: buildSupabaseErrorSummary(apiError),
+    })
+    return null
+  })
+
+  if (!apiPayload?.listing) return null
+  return {
+    ...apiPayload,
+    onboarding: {
+      ...(apiPayload.onboarding || {}),
+      ...query.data,
+    },
+  }
+}
+
 function getSellerClientPortalEmail(listing = {}, onboarding = {}, formData = {}) {
   const onboardingFormData = onboarding?.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {}
   const listingFormData =
@@ -7050,7 +7090,8 @@ export async function submitSellerOnboarding(token, payload = {}) {
     console.warn('[Private Listings] seller onboarding RPC activity table missing; using client fallback', rpc.error)
   }
 
-  const context = await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: false })
+  const context = await fetchSellerOnboardingProgressFallbackContext(client, normalizedToken) ||
+    await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: false })
   if (!context?.onboarding?.id || !context?.listing?.id) {
     throw new Error('Seller onboarding link is invalid or inactive.')
   }
@@ -7228,7 +7269,11 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
     p_ownership_structure: normalizeNullableText(payload.ownershipStructure),
     p_marital_regime: normalizeNullableText(payload.maritalRegime),
   })
-  if (rpc.error && !isMissingRpcError(rpc.error, 'bridge_update_private_listing_seller_onboarding_progress')) {
+  if (
+    rpc.error &&
+    !isMissingRpcError(rpc.error, 'bridge_update_private_listing_seller_onboarding_progress') &&
+    !isStatementTimeoutError(rpc.error)
+  ) {
     throw rpc.error
   }
   if (!rpc.error) {
@@ -7310,6 +7355,12 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
   }
 
   const refreshedListing = await getPrivateListing(context.listing.id, { includeRequirementsAndDocuments: false })
+    .catch((listingError) => {
+      console.warn('[Private Listings] seller onboarding progress fallback listing refresh skipped', {
+        reason: buildSupabaseErrorSummary(listingError),
+      })
+      return null
+    })
   await persistCanonicalSellerFactPayload(client, {
     listingId: refreshedListing?.id || context.listing.id,
     onboardingId: updateQuery.data?.id,
