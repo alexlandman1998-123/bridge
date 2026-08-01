@@ -58,6 +58,9 @@ const BUYER_ENTITY_FIELD_CANDIDATES = [
   'purchaser_entity_type',
   'client_type',
   'buyer.entity_type',
+  'buyer.legal_type',
+  'buyer.purchaser_type',
+  'buyer.branch',
   'buyer.type',
   'buyer.profile_type',
 ]
@@ -67,6 +70,9 @@ const SELLER_ENTITY_FIELD_CANDIDATES = [
   'seller_type',
   'vendor_type',
   'seller.entity_type',
+  'seller.legal_type',
+  'seller.seller_type',
+  'seller.branch',
   'seller.type',
   'sellerLead.seller_type',
   'sellerLead.entity_type',
@@ -179,6 +185,17 @@ function firstProfileField(profile, candidates, rawFieldsUsed, canonicalName) {
     const value = readPath(profile, field)
     if (hasUsableValue(value)) {
       rawFieldsUsed[canonicalName] = `routing_profile_json.${field}`
+      return value
+    }
+  }
+  return undefined
+}
+
+function firstOnboardingField(onboardingFormData, candidates, rawFieldsUsed, canonicalName) {
+  for (const field of candidates) {
+    const value = readPath(onboardingFormData, field)
+    if (hasUsableValue(value)) {
+      rawFieldsUsed[canonicalName] = `onboarding_form_data.${field}`
       return value
     }
   }
@@ -324,12 +341,15 @@ export function resolveTransactionFacts(transaction = {}) {
   const onboardingFormData = extractOnboardingFormData(transaction)
 
   const financeRaw = firstProfileField(routingProfile, ['financeType', 'finance_type'], rawFieldsUsed, 'financeType') ??
+    firstOnboardingField(onboardingFormData, ['finance.finance_type', 'finance.purchase_finance_type', 'purchase_finance_type', 'finance_type'], rawFieldsUsed, 'financeType') ??
     firstField(transaction, FINANCE_FIELD_CANDIDATES, rawFieldsUsed, 'financeType')
   const transactionTypeRaw = firstProfileField(routingProfile, ['transactionType', 'transaction_type'], rawFieldsUsed, 'transactionType') ??
     firstField(transaction, TRANSACTION_TYPE_FIELD_CANDIDATES, rawFieldsUsed, 'transactionType')
   const buyerEntityRaw = firstProfileField(routingProfile, ['buyerEntityType', 'buyer_entity_type', 'purchaserType', 'purchaser_type'], rawFieldsUsed, 'buyerEntityType') ??
+    firstOnboardingField(onboardingFormData, BUYER_ENTITY_FIELD_CANDIDATES, rawFieldsUsed, 'buyerEntityType') ??
     firstField(transaction, BUYER_ENTITY_FIELD_CANDIDATES, rawFieldsUsed, 'buyerEntityType')
   const sellerEntityRaw = firstProfileField(routingProfile, ['sellerEntityType', 'seller_entity_type', 'sellerType', 'seller_type'], rawFieldsUsed, 'sellerEntityType') ??
+    firstOnboardingField(onboardingFormData, SELLER_ENTITY_FIELD_CANDIDATES, rawFieldsUsed, 'sellerEntityType') ??
     firstField(transaction, SELLER_ENTITY_FIELD_CANDIDATES, rawFieldsUsed, 'sellerEntityType')
   const sellerBondRaw = firstProfileField(routingProfile, ['sellerHasExistingBond', 'seller_has_existing_bond', 'existingBond', 'existing_bond'], rawFieldsUsed, 'sellerHasExistingBond') ??
     firstField(transaction, SELLER_BOND_FIELD_CANDIDATES, rawFieldsUsed, 'sellerHasExistingBond')
@@ -350,8 +370,21 @@ export function resolveTransactionFacts(transaction = {}) {
   const buyerFlowSnapshot = extractBuyerOnboardingFlowSnapshot(transaction, onboardingFormData) ||
     (Object.keys(onboardingFormData || {}).length
       ? resolveBuyerOnboardingFlow(onboardingFormData, transaction, {
-          purchaserType: onboardingFormData?.purchaser_type || buyerEntityType || transaction?.purchaser_type || 'individual',
-          financeType: financeType || onboardingFormData?.purchase_finance_type || transaction?.finance_type || 'cash',
+          purchaserType:
+            readPath(onboardingFormData, 'buyer.legal_type') ||
+            readPath(onboardingFormData, 'buyer.purchaser_type') ||
+            readPath(onboardingFormData, 'buyer.branch') ||
+            onboardingFormData?.purchaser_type ||
+            buyerEntityType ||
+            transaction?.purchaser_type ||
+            'individual',
+          financeType:
+            readPath(onboardingFormData, 'finance.finance_type') ||
+            readPath(onboardingFormData, 'finance.purchase_finance_type') ||
+            onboardingFormData?.purchase_finance_type ||
+            financeType ||
+            transaction?.finance_type ||
+            'cash',
         })
       : null)
 

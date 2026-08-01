@@ -197,4 +197,45 @@ function assertIncludes(values, expected, message) {
   assert.equal(facts.buyerOnboardingFlow?.buyer_branch, 'company')
 }
 
+{
+  const transaction = {
+    id: 'structured-onboarding-facts',
+    transaction_type: 'private_sale',
+    property_type: 'sectional title apartment',
+    onboarding_form_data: {
+      buyer: {
+        legal_type: 'company',
+        company: {
+          registration_number: '2024/123456/07',
+        },
+      },
+      seller: {
+        legal_type: 'trust',
+        trust: {
+          registration_number: 'IT1234/2024',
+        },
+      },
+      finance: {
+        finance_type: 'bond',
+        bond_amount: 2_250_000,
+      },
+    },
+  }
+  const facts = resolveTransactionFacts(transaction)
+  const legalRequirements = resolveLegalRequirements(transaction)
+  const documentRequirements = resolveLegalDocumentRequirements(transaction)
+  const workflowKeys = resolveWorkflowKeysForTransaction(transaction)
+
+  assert.equal(facts.financeType, 'bond')
+  assert.equal(facts.buyerEntityType, 'company')
+  assert.equal(facts.sellerEntityType, 'trust')
+  assert.equal(facts.rawFieldsUsed.financeType, 'onboarding_form_data.finance.finance_type')
+  assert.equal(facts.rawFieldsUsed.buyerEntityType, 'onboarding_form_data.buyer.legal_type')
+  assert.equal(facts.rawFieldsUsed.sellerEntityType, 'onboarding_form_data.seller.legal_type')
+  assertIncludes(legalRequirements.requiredAttorneyRoles, 'bond_attorney', 'Structured buyer finance should drive bond attorney routing.')
+  assertIncludes(ids(documentRequirements.requirements), 'buyer_company_registration_documents', 'Structured company buyer should drive company buyer requirements.')
+  assertIncludes(ids(documentRequirements.requirements), 'seller_trust_deed', 'Structured trust seller should drive trust seller requirements.')
+  assertIncludes(workflowKeys, 'finance_bond', 'Structured finance onboarding should initialize bond finance workflow.')
+}
+
 console.log('transaction-routing-workflow-adaptation tests passed')
