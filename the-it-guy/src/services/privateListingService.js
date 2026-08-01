@@ -3221,6 +3221,43 @@ async function fetchSellerClientPortalPayloadByToken(client, token, options = {}
   return mapSellerClientPortalPayload(rpc.data)
 }
 
+async function fetchSellerOnboardingCoreApiPayload(token, options = {}) {
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken || typeof fetch !== 'function') return null
+  const params = new URLSearchParams({ token: normalizedToken })
+  const onboardingId = normalizeUuid(options.onboardingId)
+  const listingId = normalizeUuid(options.listingId)
+  if (onboardingId) params.set('onboardingId', onboardingId)
+  if (listingId) params.set('listingId', listingId)
+
+  const controller = typeof AbortController === 'function' ? new AbortController() : null
+  const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null
+
+  const response = await fetch(`/api/public/seller-onboarding-core?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+    },
+    ...(controller ? { signal: controller.signal } : {}),
+  }).catch((error) => {
+    console.warn('[Private Listings] seller onboarding core API fallback request failed', error)
+    return null
+  }).finally(() => {
+    if (timeout) clearTimeout(timeout)
+  })
+  if (!response) return null
+  if (response.status === 404) return null
+  if (!response.ok) {
+    console.warn('[Private Listings] seller onboarding core API fallback returned an error', {
+      status: response.status,
+    })
+    return null
+  }
+
+  const payload = await response.json().catch(() => null)
+  return mapSellerClientPortalCorePayload(payload)
+}
+
 function getSellerClientPortalEmail(listing = {}, onboarding = {}, formData = {}) {
   const onboardingFormData = onboarding?.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {}
   const listingFormData =
@@ -6560,6 +6597,23 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     }
   }
 
+  const attachSellerOnboardingPayloadContext = async (apiPayload) => {
+    if (!apiPayload?.listing) return null
+    const [initialBranding, mediaByListingId] = await Promise.all([
+      fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(apiPayload.listing)),
+      fetchMediaRowsForListings(client, [apiPayload.listing.id]),
+    ])
+    const branding = initialBranding || await fetchSellerOnboardingPublicBrandingSnapshot(normalizedToken)
+    const listingWithMedia = attachDistributionMediaToListing(
+      apiPayload.listing,
+      mediaByListingId.get(String(apiPayload.listing.id)) || [],
+    )
+    return {
+      ...apiPayload,
+      listing: attachBrandingToListing(listingWithMedia, branding),
+    }
+  }
+
   // A seller workspace is an authenticated portal surface. Never use the
   // legacy table-by-token fallback here: it cannot prove the current seller
   // session and could otherwise reintroduce raw final-artifact fields when an
@@ -6577,7 +6631,18 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     if (isMissingTableError(query.error, 'private_listing_seller_onboarding')) return null
     throw query.error
   }
-  if (!query.data) return null
+  if (!query.data) {
+    const apiPayload = await fetchSellerOnboardingCoreApiPayload(normalizedToken)
+    const attachedApiPayload = await attachSellerOnboardingPayloadContext(apiPayload)
+    return attachedApiPayload?.listing ? attachedApiPayload : null
+  }
+  const apiPayload = await fetchSellerOnboardingCoreApiPayload(normalizedToken, {
+    onboardingId: query.data.id,
+    listingId: query.data.private_listing_id,
+  })
+  const attachedApiPayload = await attachSellerOnboardingPayloadContext(apiPayload)
+  if (attachedApiPayload?.listing) return attachedApiPayload
+
   const rawListing = await getPrivateListingById(query.data.private_listing_id, {
     includeRequirementsAndDocuments,
   })

@@ -13,6 +13,10 @@ const sellerOnboardingPage = await readFile(
   new URL('../src/pages/SellerOnboarding.jsx', import.meta.url),
   'utf8',
 )
+const sellerOnboardingCoreApi = await readFile(
+  new URL('../server/services/sellerOnboardingCoreApi.js', import.meta.url),
+  'utf8',
+)
 
 assert.match(
   migration,
@@ -68,6 +72,31 @@ assert.match(
   sellerOnboardingPage,
   /catch \(loadError\) \{[\s\S]*?isSellerOnboardingTimeoutError\(loadError\)[\s\S]*?setError\('The onboarding service took too long to load this link\. Please refresh in a moment\.'\)[\s\S]*?return/,
   'seller onboarding page should not convert load-time statement timeouts into invalid-link errors',
+)
+assert.match(
+  privateListingService,
+  /fetchSellerOnboardingCoreApiPayload\(normalizedToken, \{[\s\S]*?onboardingId: query\.data\.id[\s\S]*?listingId: query\.data\.private_listing_id/,
+  'seller onboarding should use the Vercel core API fallback with token-scoped onboarding identifiers',
+)
+assert.match(
+  privateListingService,
+  /\/api\/public\/seller-onboarding-core\?\$\{params\.toString\(\)\}/,
+  'seller onboarding core API fallback should call the token-scoped public endpoint with encoded query params',
+)
+assert.match(
+  sellerOnboardingCoreApi,
+  /seller_portal_password_hash[\s\S]*?seller_portal_access_token_hash[\s\S]*?seller_portal_invite_token_hash/,
+  'seller onboarding core API must strip portal secret hashes from the response',
+)
+assert.match(
+  sellerOnboardingCoreApi,
+  /resolveSellerOnboarding\(client, token, \{ onboardingId, listingId \}\)[\s\S]*?maybeSingle\(client, 'private_listings', '\*', 'id', onboarding\.private_listing_id\)/,
+  'seller onboarding core API must resolve the listing only after a valid token-scoped onboarding row',
+)
+assert.match(
+  sellerOnboardingCoreApi,
+  /tokenMatchesOnboarding\(onboarding, normalizedToken\)[\s\S]*?normalizedListingId && normalizeText\(onboarding\.private_listing_id\) !== normalizedListingId/,
+  'seller onboarding core API must verify provided onboarding/listing identifiers against the token',
 )
 
 console.log('seller onboarding submit fast-return contract ok')
