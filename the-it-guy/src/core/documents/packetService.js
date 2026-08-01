@@ -2923,8 +2923,12 @@ export async function validatePacket({ packetType, context = {}, template = null
     packetType: normalizedPacketType,
     placeholders,
   })
+  const mandateValidationAction = normalizeValidationAction(validationAction || context?.validationAction || 'preview')
+  const isTemplatePreview = mandateValidationAction === TEMPLATE_PREVIEW_VALIDATION_ACTION
+  const isCommercialPacket = COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalizedPacketType)
+  const allowMandateGenerationGaps = normalizedPacketType === 'mandate' && mandateValidationAction !== 'upload_signed'
   const legalScenarioIssues = buildLegalScenarioIssues(legalDocumentScenarioProfile)
-  const legalScenarioCanProceed = !supportsLegalScenario || legalScenarioIssues.length === 0
+  const legalScenarioCanProceed = !supportsLegalScenario || allowMandateGenerationGaps || legalScenarioIssues.length === 0
   const legalScenarioRequirements = supportsLegalScenario
     ? resolveLegalDocumentScenarioRequirements({
         scenarioProfile: legalDocumentScenarioProfile,
@@ -2942,7 +2946,7 @@ export async function validatePacket({ packetType, context = {}, template = null
         required: true,
       }))
     : []
-  const legalScenarioRequirementsCanProceed = !supportsLegalScenario || legalScenarioRequirementIssues.length === 0
+  const legalScenarioRequirementsCanProceed = !supportsLegalScenario || allowMandateGenerationGaps || legalScenarioRequirementIssues.length === 0
   const mandateScenarioProfile =
     normalizedPacketType === 'mandate'
       ? resolveMandateTemplateRoutingProfile({
@@ -2954,10 +2958,6 @@ export async function validatePacket({ packetType, context = {}, template = null
           context,
         })
       : null
-  const mandateValidationAction = normalizeValidationAction(validationAction || context?.validationAction || 'preview')
-  const isTemplatePreview = mandateValidationAction === TEMPLATE_PREVIEW_VALIDATION_ACTION
-  const isCommercialPacket = COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalizedPacketType)
-  const allowMandateGenerationGaps = normalizedPacketType === 'mandate' && mandateValidationAction !== 'upload_signed'
   const mandateValidation =
     normalizedPacketType === 'mandate'
       ? validateMandateGenerationData(
@@ -3010,6 +3010,9 @@ export async function validatePacket({ packetType, context = {}, template = null
   const sellerWarningIssues = sellerValidation.warnings || []
   const mandateBlockingIssues = (mandateValidation?.blockingErrors || []).map(mapMandateValidationIssue)
   const mandateWarningIssues = (mandateValidation?.warnings || []).map(mapMandateValidationIssue)
+  const mandateLegalScenarioWarningIssues = allowMandateGenerationGaps
+    ? [...legalScenarioIssues, ...legalScenarioRequirementIssues]
+    : []
   const previewDataRequirements = isTemplatePreview
     ? dedupeValidationRequirements([
         ...missingPlaceholderWarnings.map((issue) => ({
@@ -3046,8 +3049,6 @@ export async function validatePacket({ packetType, context = {}, template = null
       ? [
           ...sellerCriticalIssues,
           ...conditionalPackMissingPlaceholders,
-          ...legalScenarioIssues,
-          ...legalScenarioRequirementIssues,
         ]
       : [
           ...ruleCritical,
@@ -3059,7 +3060,12 @@ export async function validatePacket({ packetType, context = {}, template = null
         ]
   const warningIssues = isTemplatePreview
     ? [...structuralRuleWarnings]
-    : [...nonConditionalRuleWarnings, ...sellerWarningIssues, ...mandateWarningIssues]
+    : [
+        ...nonConditionalRuleWarnings,
+        ...sellerWarningIssues,
+        ...mandateWarningIssues,
+        ...mandateLegalScenarioWarningIssues,
+      ]
   const missingPlaceholders = dedupeValidationIssues([
     ...conditionalPackMissingPlaceholders,
     ...legalScenarioIssues,

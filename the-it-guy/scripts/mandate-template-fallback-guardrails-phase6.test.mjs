@@ -18,6 +18,8 @@ for (const token of [
   'selectScenarioTemplateResolution',
   'const platformDefaultFallback = scored.find((selection) => isDefaultTemplateRouteFallback(selection?.template))',
   'return platformDefaultFallback || scored[0] || null',
+  'const legalScenarioCanProceed = !supportsLegalScenario || allowMandateGenerationGaps || legalScenarioIssues.length === 0',
+  'const mandateLegalScenarioWarningIssues = allowMandateGenerationGaps',
   "templateResolution?.source) !== 'mandate_scenario_fallback'",
   'Publish the route-specific template before relying on this packet as final.',
 ]) {
@@ -30,6 +32,13 @@ const genericFallbackIndex = packetServiceSource.indexOf('return platformDefault
 assert.ok(routeSelectionIndex > -1, 'Scenario template resolution should first look for a route-specific match.')
 assert.ok(platformFallbackIndex > routeSelectionIndex, 'Scenario template resolution should look for the platform default after route-specific matches.')
 assert.ok(genericFallbackIndex > platformFallbackIndex, 'Scenario template resolution should prefer the platform default before a generic organisation fallback.')
+
+const allowMandateGapsIndex = packetServiceSource.indexOf("const allowMandateGenerationGaps = normalizedPacketType === 'mandate' && mandateValidationAction !== 'upload_signed'")
+const legalScenarioCanProceedIndex = packetServiceSource.indexOf('const legalScenarioCanProceed = !supportsLegalScenario || allowMandateGenerationGaps || legalScenarioIssues.length === 0')
+const mandateLegalScenarioWarningsIndex = packetServiceSource.indexOf('const mandateLegalScenarioWarningIssues = allowMandateGenerationGaps')
+assert.ok(allowMandateGapsIndex > -1, 'Mandate generation gap policy should be explicit.')
+assert.ok(legalScenarioCanProceedIndex > allowMandateGapsIndex, 'Mandate generation gaps should be evaluated before legal scenario proceed checks.')
+assert.ok(mandateLegalScenarioWarningsIndex > legalScenarioCanProceedIndex, 'Mandate legal scenario gaps should remain visible as warnings.')
 
 for (const token of [
   'const validation = withMandateTemplateRoutingWarnings(baseValidation, templateResolution)',
