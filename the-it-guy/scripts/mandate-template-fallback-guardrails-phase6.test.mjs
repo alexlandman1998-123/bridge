@@ -15,11 +15,21 @@ for (const token of [
   'withMandateTemplateRoutingWarnings',
   'MANDATE_TEMPLATE_ROUTE_FALLBACK',
   'mandate_template_routing',
+  'selectScenarioTemplateResolution',
+  'const platformDefaultFallback = scored.find((selection) => isDefaultTemplateRouteFallback(selection?.template))',
+  'return platformDefaultFallback || scored[0] || null',
   "templateResolution?.source) !== 'mandate_scenario_fallback'",
   'Publish the route-specific template before relying on this packet as final.',
 ]) {
   assert.ok(packetServiceSource.includes(token), `packetService should include ${token}.`)
 }
+
+const routeSelectionIndex = packetServiceSource.indexOf('const routeSelection = scored.find((selection) => matchedSpecificRoute(selection))')
+const platformFallbackIndex = packetServiceSource.indexOf('const platformDefaultFallback = scored.find((selection) => isDefaultTemplateRouteFallback(selection?.template))')
+const genericFallbackIndex = packetServiceSource.indexOf('return platformDefaultFallback || scored[0] || null')
+assert.ok(routeSelectionIndex > -1, 'Scenario template resolution should first look for a route-specific match.')
+assert.ok(platformFallbackIndex > routeSelectionIndex, 'Scenario template resolution should look for the platform default after route-specific matches.')
+assert.ok(genericFallbackIndex > platformFallbackIndex, 'Scenario template resolution should prefer the platform default before a generic organisation fallback.')
 
 for (const token of [
   'const validation = withMandateTemplateRoutingWarnings(baseValidation, templateResolution)',

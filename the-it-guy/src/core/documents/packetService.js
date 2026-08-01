@@ -894,6 +894,34 @@ function compareTemplateRoutingTie(left = {}, right = {}, { organisationId = '',
   return normalizeText(left?.id).localeCompare(normalizeText(right?.id))
 }
 
+const MANDATE_SPECIFIC_ROUTE_REASONS = Object.freeze([
+  'exact_variant_metadata',
+  'clause_profile_metadata',
+  'seller_profile_metadata',
+  'property_profile_metadata',
+  'template_name_variant_match',
+])
+
+function mandateSelectionMatchedSpecificRoute(selection = {}) {
+  return (selection.reasons || []).some((reason) => MANDATE_SPECIFIC_ROUTE_REASONS.includes(reason))
+}
+
+function legalSelectionMatchedSpecificRoute(selection = {}) {
+  return Boolean(selection?.metadata?.hasRoutingMetadata)
+}
+
+function selectScenarioTemplateResolution(scored = [], { packetType = '' } = {}) {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  const matchedSpecificRoute = normalizedPacketType === 'mandate'
+    ? mandateSelectionMatchedSpecificRoute
+    : legalSelectionMatchedSpecificRoute
+  const routeSelection = scored.find((selection) => matchedSpecificRoute(selection))
+  if (routeSelection) return routeSelection
+
+  const platformDefaultFallback = scored.find((selection) => isDefaultTemplateRouteFallback(selection?.template))
+  return platformDefaultFallback || scored[0] || null
+}
+
 async function resolveMandateScenarioTemplateForPacket({
   packetType,
   context = {},
@@ -962,7 +990,7 @@ async function resolveMandateScenarioTemplateForPacket({
       })
     })
 
-  const selection = scored[0] || null
+  const selection = selectScenarioTemplateResolution(scored, { packetType: normalizedPacketType })
   if (!selection?.template?.id) {
     return {
       template: null,
@@ -990,15 +1018,7 @@ async function resolveMandateScenarioTemplateForPacket({
     { ...selection, template: hydratedTemplate || selection.template },
     { profile: scenarioProfile },
   )
-  const matchedSpecificRoute = (selection.reasons || []).some((reason) =>
-    [
-      'exact_variant_metadata',
-      'clause_profile_metadata',
-      'seller_profile_metadata',
-      'property_profile_metadata',
-      'template_name_variant_match',
-    ].includes(reason),
-  )
+  const matchedSpecificRoute = mandateSelectionMatchedSpecificRoute(selection)
   const selectedTemplate = hydratedTemplate || selection.template
 
   return {
@@ -1097,7 +1117,7 @@ async function resolveOtpScenarioTemplateForPacket({
       })
     })
 
-  const selection = scored[0] || null
+  const selection = selectScenarioTemplateResolution(scored, { packetType: normalizedPacketType })
   if (!selection?.template?.id) {
     return {
       template: null,
