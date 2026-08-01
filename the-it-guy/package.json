@@ -819,6 +819,8 @@
     "test:portal-canonical-fields-phase4": "node scripts/portal-canonical-fields-phase4.test.mjs",
     "test:dashboard-canonical-fields-phase5": "node scripts/dashboard-canonical-fields-phase5.test.mjs",
     "test:notifications-exports-canonical-fields-phase6": "node scripts/notifications-exports-canonical-fields-phase6.test.mjs",
+    "test:canonical-field-legacy-guard": "node scripts/canonical-field-legacy-guard.test.mjs",
+    "verify:canonical-fields": "npm run test:canonical-field-resolver-phase2 && npm run test:document-generation-canonical-fields-phase3 && npm run test:portal-canonical-fields-phase4 && npm run test:dashboard-canonical-fields-phase5 && npm run test:notifications-exports-canonical-fields-phase6 && npm run test:canonical-field-legacy-guard",
     "verify:canonical-fields-phase6:staging": "node --env-file=.env --env-file=.env.staging.local scripts/notifications-exports-canonical-fields-phase6.test.mjs --live",
     "test:conditional-clause-packs-phase4": "node scripts/conditional-clause-packs-phase4.test.mjs",
     "test:conditional-clause-packs-phase5": "node scripts/conditional-clause-packs-phase5.test.mjs",
