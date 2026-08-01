@@ -429,6 +429,45 @@
       "rollbackOrNoResidue": "pass",
       "reviewedBy": "Codex production one-version promotion train",
       "productionEvidenceFile": "docs/production-evidence/202607310006-other.json"
+    },
+    {
+      "version": "202608010001",
+      "stream": "other",
+      "file": "202608010001_seller_onboarding_progress_fast_return.sql",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "codex",
+      "productionEvidenceFile": "docs/production-evidence/202608010001-other.json"
+    },
+    {
+      "version": "202608010002",
+      "stream": "other",
+      "file": "202608010002_fix_legal_document_agent_context_lead_lookup.sql",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "codex",
+      "productionEvidenceFile": "docs/production-evidence/202608010002-other.json"
+    },
+    {
+      "version": "202608010003",
+      "stream": "other",
+      "file": "202608010003_legal_document_job_stage_timings_phase7.sql",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "codex",
+      "productionEvidenceFile": "docs/production-evidence/202608010003-other.json"
     }
   ]
 }

@@ -1,0 +1,24 @@
+{
+  "version": "202608010003",
+  "stream": "other",
+  "file": "202608010003_legal_document_job_stage_timings_phase7.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "codex",
+  "capturedAt": "2026-08-01T21:06:41Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Applied to production with the phase 7 single-version runner.",
+    "Catalog check verified the legal_document_job_stage_timings table, RLS, indexes, service_role table privileges, and list function grants.",
+    "Behavior check verified bridge_legal_document_job_stage_timing_phase7_row formats a composite timing row without inserting data.",
+    "No-residue check verified legal_document_job_stage_timings remained empty after verification."
+  ]
+}

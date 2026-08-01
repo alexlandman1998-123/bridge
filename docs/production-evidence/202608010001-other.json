@@ -1,0 +1,23 @@
+{
+  "version": "202608010001",
+  "stream": "other",
+  "file": "202608010001_seller_onboarding_progress_fast_return.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "codex",
+  "capturedAt": "2026-08-01T21:06:41Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Applied to production with the phase 7 single-version runner.",
+    "Catalog check verified the bridge_update_private_listing_seller_onboarding_progress signature, anon/authenticated execute grants, and function comment.",
+    "Behavior check verified a no-match token returns null without creating residue."
+  ]
+}

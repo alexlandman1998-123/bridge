@@ -1,6 +1,6 @@
 # Supabase Push Phase 7 Closeout Report
 
-Generated: 2026-07-29T20:52:26.572Z
+Generated: 2026-08-01T21:14:39.392Z
 
 ## Decision
 
@@ -23,8 +23,8 @@ Phase 7 runs the closeout gate after syncing production evidence. It does not re
 
 | Check | Value |
 | --- | --- |
-| Manifest rows | 32 |
-| Complete production evidence rows | 32 |
+| Manifest rows | 36 |
+| Complete production evidence rows | 36 |
 | Incomplete production evidence rows | 0 |
 | Production recovery locked | Yes |
 | Production recovery blockers | 0 |
@@ -42,8 +42,8 @@ Phase 7 runs the closeout gate after syncing production evidence. It does not re
 | Divergent versions | 0 |
 | Unreviewed split versions | 0 |
 | Production PITR | Disabled |
-| Physical backups | 8 |
+| Physical backups | 7 |
 
 ## Result
 
-The closeout remains blocked until all manifest rows have reviewed production evidence, live ledger drift is resolved, and production recovery is available and tested. Keep the Phase 0 broad-push freeze active.
+The closeout gates are ready for reviewed Phase 0 freeze retirement. Keep the Phase 0 broad-push freeze active until a separate reviewed guard-removal change is approved.

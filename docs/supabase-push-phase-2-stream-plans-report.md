@@ -1,6 +1,6 @@
 # Supabase Push Phase 2 Stream Plans Report
 
-Generated: 2026-07-29T19:36:34.408Z
+Generated: 2026-08-01T20:40:04.780Z
 
 ## Scope
 
@@ -10,8 +10,8 @@ Phase 2 runs every staging stream plan from the current manifest. It is read-onl
 
 | Field | Value |
 | --- | --- |
-| Manifest rows | 33 |
-| Planned rows | 32 |
+| Manifest rows | 37 |
+| Planned rows | 36 |
 | Approved corrective substitutions | 1 |
 | Streams | 3 |
 
@@ -21,7 +21,7 @@ Phase 2 runs every staging stream plan from the current manifest. It is read-onl
 | --- | --- | --- |
 | `legal_document_runtime` | 1 | `repair_only_after_smoke`: 1 |
 | `bond_finance_runtime` | 14 | `apply_original_after_dependency_check`: 14 |
-| `other` | 17 | `repair_only_after_smoke`: 5<br>`apply_original_after_dependency_check`: 12 |
+| `other` | 21 | `repair_only_after_smoke`: 5<br>`apply_original_after_dependency_check`: 16 |
 
 ## Work Queue
 
@@ -59,6 +59,10 @@ Phase 2 runs every staging stream plan from the current manifest. It is read-onl
 | `202607280022` | `other` | `202607280021` | `apply_original_after_dependency_check` | `none_live` | `202607280022_originator_rollout_phase_r7_operational_hardening.sql` |
 | `202607280023` | `other` | `202607280022` | `apply_original_after_dependency_check` | `none_live` | `202607280023_originator_rollout_phase_r8_multi_originator_rollout.sql` |
 | `202607280024` | `other` | `202607280023` | `apply_original_after_dependency_check` | `none_live` | `202607280024_originator_rollout_phase_r9_optional_formal_integrations.sql` |
+| `202607310006` | `other` | `202607290005` | `apply_original_after_dependency_check` | `none_live` | `202607310006_legal_document_agent_notification_sequence.sql` |
+| `202608010001` | `other` | `202607310006` | `apply_original_after_dependency_check` | `none_live` | `202608010001_seller_onboarding_progress_fast_return.sql` |
+| `202608010002` | `other` | `202608010001` | `apply_original_after_dependency_check` | `none_live` | `202608010002_fix_legal_document_agent_context_lead_lookup.sql` |
+| `202608010003` | `other` | `202608010002` | `apply_original_after_dependency_check` | `none_live` | `202608010003_legal_document_job_stage_timings_phase7.sql` |
 
 ## Next Step
 

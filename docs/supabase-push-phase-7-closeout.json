@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-29T20:52:26.572Z",
+  "generatedAt": "2026-08-01T21:14:39.392Z",
   "status": "READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT",
   "closeoutReady": true,
   "phase6EvidenceSync": {
@@ -11,8 +11,8 @@
     "status": 0,
     "decision": "LOCAL_CLOSEOUT_NOT_READY",
     "counts": {
-      "manifestRows": 32,
-      "completeEvidenceRows": 32,
+      "manifestRows": 36,
+      "completeEvidenceRows": 36,
       "incompleteEvidenceRows": 0,
       "recoveryLocked": true,
       "recoveryBlockers": 0,
@@ -30,8 +30,8 @@
     "parsed": true,
     "error": "",
     "counts": {
-      "manifestRows": 32,
-      "completeEvidenceRows": 32,
+      "manifestRows": 36,
+      "completeEvidenceRows": 36,
       "incompleteEvidenceRows": 0,
       "recoveryLocked": true,
       "recoveryBlockers": 0,
@@ -48,7 +48,7 @@
     },
     "recovery": {
       "pitrEnabled": false,
-      "physicalBackupCount": 8,
+      "physicalBackupCount": 7,
       "recoverable": true
     }
   },

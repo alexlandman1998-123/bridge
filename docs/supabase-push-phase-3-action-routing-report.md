@@ -1,6 +1,6 @@
 # Supabase Push Phase 3 Action Routing Report
 
-Generated: 2026-07-29T19:37:20.952Z
+Generated: 2026-08-01T20:40:08.643Z
 
 ## Scope
 
@@ -10,24 +10,24 @@ Phase 3 handles rows by action. It converts the phase 2 stream plans into explic
 
 | Field | Value |
 | --- | --- |
-| Rows | 32 |
-| Runner-eligible rows | 32 |
+| Rows | 36 |
+| Runner-eligible rows | 36 |
 | Blocked rows | 0 |
-| SQL-allowed rows | 26 |
-| Ledger-allowed rows | 32 |
+| SQL-allowed rows | 30 |
+| Ledger-allowed rows | 36 |
 
 ## Actions
 
 | Action | Rows |
 | --- | --- |
-| `apply_original_after_dependency_check` | 26 |
+| `apply_original_after_dependency_check` | 30 |
 | `repair_only_after_smoke` | 6 |
 
 ## Routes
 
 | Route | Rows |
 | --- | --- |
-| `apply_original` | 26 |
+| `apply_original` | 30 |
 | `repair_only` | 6 |
 
 ## Work Queue
@@ -66,6 +66,10 @@ Phase 3 handles rows by action. It converts the phase 2 stream plans into explic
 | `202607280022` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280022_originator_rollout_phase_r7_operational_hardening.sql` |
 | `202607280023` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280023_originator_rollout_phase_r8_multi_originator_rollout.sql` |
 | `202607280024` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607280024_originator_rollout_phase_r9_optional_formal_integrations.sql` |
+| `202607310006` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202607310006_legal_document_agent_notification_sequence.sql` |
+| `202608010001` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202608010001_seller_onboarding_progress_fast_return.sql` |
+| `202608010002` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202608010002_fix_legal_document_agent_context_lead_lookup.sql` |
+| `202608010003` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `202608010003_legal_document_job_stage_timings_phase7.sql` |
 
 ## Commands
 
@@ -103,6 +107,10 @@ Phase 3 handles rows by action. It converts the phase 2 stream plans into explic
 | `202607280022` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280022 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280022 --evidence docs/staging-evidence/202607280022-other.json --confirm APPLY_TO_STAGING_ONLY` |
 | `202607280023` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280023 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280023 --evidence docs/staging-evidence/202607280023-other.json --confirm APPLY_TO_STAGING_ONLY` |
 | `202607280024` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607280024 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607280024 --evidence docs/staging-evidence/202607280024-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202607310006` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202607310006 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202607310006 --evidence docs/staging-evidence/202607310006-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202608010001` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608010001 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608010001 --evidence docs/staging-evidence/202608010001-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202608010002` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608010002 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608010002 --evidence docs/staging-evidence/202608010002-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `202608010003` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608010003 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608010003 --evidence docs/staging-evidence/202608010003-other.json --confirm APPLY_TO_STAGING_ONLY` |
 
 ## Next Step
 

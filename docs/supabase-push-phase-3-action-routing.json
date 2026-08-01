@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-07-29T19:37:20.952Z",
+  "generatedAt": "2026-08-01T20:40:08.643Z",
   "sourcePlan": "docs/supabase-push-phase-2-stream-plans.json",
-  "inputRows": 32,
+  "inputRows": 36,
   "dedupedRows": 0,
   "rows": [
     {
@@ -927,23 +927,107 @@
       ],
       "evidenceFile": "docs/staging-evidence/202607310006-other.json",
       "notes": [
-        "Staging catalog and behavior checks passed before production promotion.",
+        "Run dependency and catalog preflight before applying SQL.",
         "Apply only this file; do not run a broad db push.",
-        "Production target state and ledger were verified after the single-version promotion."
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202608010001",
+      "stream": "other",
+      "dependsOn": "202607310006",
+      "module": "seller_onboarding",
+      "file": "202608010001_seller_onboarding_progress_fast_return.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 1,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608010001 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608010001 --evidence docs/staging-evidence/202608010001-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202608010001-other.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202608010002",
+      "stream": "other",
+      "dependsOn": "202608010001",
+      "module": "legal_documents",
+      "file": "202608010002_fix_legal_document_agent_context_lead_lookup.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 1,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608010002 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608010002 --evidence docs/staging-evidence/202608010002-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202608010002-other.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
+      ]
+    },
+    {
+      "version": "202608010003",
+      "stream": "other",
+      "dependsOn": "202608010002",
+      "module": "legal_documents",
+      "file": "202608010003_legal_document_job_stage_timings_phase7.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 6,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
+      "evidenceRequired": true,
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608010003 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608010003 --evidence docs/staging-evidence/202608010003-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ],
+      "evidenceFile": "docs/staging-evidence/202608010003-other.json",
+      "notes": [
+        "Run dependency and catalog preflight before applying SQL.",
+        "Apply only this file; do not run a broad db push.",
+        "Record the staging ledger only after reviewed evidence exists."
       ]
     }
   ],
   "actionCounts": {
     "repair_only_after_smoke": 6,
-    "apply_original_after_dependency_check": 26
+    "apply_original_after_dependency_check": 30
   },
   "routeCounts": {
     "repair_only": 6,
-    "apply_original": 26
+    "apply_original": 30
   },
   "streamCounts": {
     "legal_document_runtime": 1,
     "bond_finance_runtime": 14,
-    "other": 17
+    "other": 21
   }
 }

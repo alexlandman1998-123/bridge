@@ -1,0 +1,27 @@
+{
+  "version": "202608010001",
+  "stream": "other",
+  "file": "202608010001_seller_onboarding_progress_fast_return.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "codex",
+  "approvedBy": "codex",
+  "capturedAt": "2026-08-01T21:00:12Z",
+  "notes": [
+    "Applied to staging with the phase 6 single-version runner.",
+    "Catalog check verified the bridge_update_private_listing_seller_onboarding_progress signature, anon/authenticated execute grants, and function comment.",
+    "Behavior check verified a no-match token returns null without creating residue."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608010001 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608010001 --evidence docs/staging-evidence/202608010001-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "ledgerRecordedAt": "2026-08-01T21:00:51.652Z"
+}

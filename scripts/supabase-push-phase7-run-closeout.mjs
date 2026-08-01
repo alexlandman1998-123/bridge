@@ -196,7 +196,9 @@ ${ledger || recovery ? markdownTable(['Check', 'Value'], [
 ${liveError}
 ## Result
 
-The closeout remains blocked until all manifest rows have reviewed production evidence, live ledger drift is resolved, and production recovery is available and tested. Keep the Phase 0 broad-push freeze active.
+${result.closeoutReady
+    ? 'The closeout gates are ready for reviewed Phase 0 freeze retirement. Keep the Phase 0 broad-push freeze active until a separate reviewed guard-removal change is approved.'
+    : 'The closeout remains blocked until all manifest rows have reviewed production evidence, live ledger drift is resolved, and production recovery is available and tested. Keep the Phase 0 broad-push freeze active.'}
 `
 }
 

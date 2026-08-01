@@ -1,6 +1,6 @@
 # Supabase Push Phase 5 Production Promotion Report
 
-Generated: 2026-07-31T17:48:44.511Z
+Generated: 2026-08-01T21:05:33.170Z
 
 ## Scope
 
@@ -10,8 +10,8 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 
 | Field | Value |
 | --- | --- |
-| Rows considered | 33 |
-| Ready for production | 33 |
+| Rows considered | 36 |
+| Ready for production | 36 |
 | Blocked | 0 |
 | Production env configured | No |
 | Production recovery locked | Yes |
@@ -20,7 +20,7 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 
 | Production Route | Rows |
 | --- | --- |
-| `production_apply_sql` | 27 |
+| `production_apply_sql` | 30 |
 | `production_no_sql_record_after_smoke` | 6 |
 
 ## Work Queue
@@ -60,6 +60,9 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 | `202607280023` | `other` | `production_apply_sql` | Yes | `docs/staging-evidence/202607280023-other.json` | None |
 | `202607280024` | `other` | `production_apply_sql` | Yes | `docs/staging-evidence/202607280024-other.json` | None |
 | `202607310006` | `other` | `production_apply_sql` | Yes | `docs/staging-evidence/202607310006-other.json` | None |
+| `202608010001` | `other` | `production_apply_sql` | Yes | `docs/staging-evidence/202608010001-other.json` | None |
+| `202608010002` | `other` | `production_apply_sql` | Yes | `docs/staging-evidence/202608010002-other.json` | None |
+| `202608010003` | `other` | `production_apply_sql` | Yes | `docs/staging-evidence/202608010003-other.json` | None |
 
 ## Commands
 
@@ -98,6 +101,9 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 | `202607280023` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607280023 --staging-evidence docs/staging-evidence/202607280023-other.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607280023 --staging-evidence docs/staging-evidence/202607280023-other.json --production-evidence docs/production-evidence/202607280023-other.json --confirm APPLY_TO_PRODUCTION` |
 | `202607280024` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607280024 --staging-evidence docs/staging-evidence/202607280024-other.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607280024 --staging-evidence docs/staging-evidence/202607280024-other.json --production-evidence docs/production-evidence/202607280024-other.json --confirm APPLY_TO_PRODUCTION` |
 | `202607310006` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202607310006 --staging-evidence docs/staging-evidence/202607310006-other.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202607310006 --staging-evidence docs/staging-evidence/202607310006-other.json --production-evidence docs/production-evidence/202607310006-other.json --confirm APPLY_TO_PRODUCTION` |
+| `202608010001` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202608010001 --staging-evidence docs/staging-evidence/202608010001-other.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202608010001 --staging-evidence docs/staging-evidence/202608010001-other.json --production-evidence docs/production-evidence/202608010001-other.json --confirm APPLY_TO_PRODUCTION` |
+| `202608010002` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202608010002 --staging-evidence docs/staging-evidence/202608010002-other.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202608010002 --staging-evidence docs/staging-evidence/202608010002-other.json --production-evidence docs/production-evidence/202608010002-other.json --confirm APPLY_TO_PRODUCTION` |
+| `202608010003` | `node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202608010003 --staging-evidence docs/staging-evidence/202608010003-other.json --confirm APPLY_TO_PRODUCTION`<br>`node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202608010003 --staging-evidence docs/staging-evidence/202608010003-other.json --production-evidence docs/production-evidence/202608010003-other.json --confirm APPLY_TO_PRODUCTION` |
 
 ## Required Environment Before Promotion
 

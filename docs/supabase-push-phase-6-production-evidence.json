@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-31T17:48:53.926Z",
+  "generatedAt": "2026-08-01T21:14:26.928Z",
   "productionProjectRef": "isdowlnollckzvltkasn",
   "sourcePromotion": "docs/supabase-push-phase-5-production-promotion.json",
   "productionEvidenceDir": "docs/production-evidence",
@@ -366,16 +366,49 @@
       "created": false,
       "complete": true,
       "blockers": []
+    },
+    {
+      "version": "202608010001",
+      "stream": "other",
+      "file": "202608010001_seller_onboarding_progress_fast_return.sql",
+      "productionRoute": "production_apply_sql",
+      "readyForProduction": true,
+      "productionEvidenceFile": "docs/production-evidence/202608010001-other.json",
+      "created": false,
+      "complete": true,
+      "blockers": []
+    },
+    {
+      "version": "202608010002",
+      "stream": "other",
+      "file": "202608010002_fix_legal_document_agent_context_lead_lookup.sql",
+      "productionRoute": "production_apply_sql",
+      "readyForProduction": true,
+      "productionEvidenceFile": "docs/production-evidence/202608010002-other.json",
+      "created": false,
+      "complete": true,
+      "blockers": []
+    },
+    {
+      "version": "202608010003",
+      "stream": "other",
+      "file": "202608010003_legal_document_job_stage_timings_phase7.sql",
+      "productionRoute": "production_apply_sql",
+      "readyForProduction": true,
+      "productionEvidenceFile": "docs/production-evidence/202608010003-other.json",
+      "created": false,
+      "complete": true,
+      "blockers": []
     }
   ],
   "routeCounts": {
     "production_no_sql_record_after_smoke": 6,
-    "production_apply_sql": 27
+    "production_apply_sql": 30
   },
-  "productionReadyCount": 33,
+  "productionReadyCount": 36,
   "createdCount": 0,
-  "existingCount": 33,
-  "completeCount": 33,
+  "existingCount": 36,
+  "completeCount": 36,
   "pendingCount": 0,
-  "closeoutRowsRecorded": 33
+  "closeoutRowsRecorded": 36
 }

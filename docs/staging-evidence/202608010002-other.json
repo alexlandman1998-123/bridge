@@ -1,0 +1,28 @@
+{
+  "version": "202608010002",
+  "stream": "other",
+  "file": "202608010002_fix_legal_document_agent_context_lead_lookup.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "codex",
+  "approvedBy": "codex",
+  "capturedAt": "2026-08-01T21:00:12Z",
+  "notes": [
+    "Applied to staging with the phase 6 single-version runner.",
+    "Catalog check verified the bridge_legal_document_agent_context_phase1 signature and function comment.",
+    "Behavior check verified a random packet returns no context rows without error.",
+    "Definition check verified the lead lookup uses the qualified lead_row.lead_id predicate."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608010002 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608010002 --evidence docs/staging-evidence/202608010002-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "ledgerRecordedAt": "2026-08-01T21:01:57.053Z"
+}

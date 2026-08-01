@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-07-29T19:36:34.408Z",
-  "manifestRowCount": 33,
-  "plannedRowCount": 32,
+  "generatedAt": "2026-08-01T20:40:04.780Z",
+  "manifestRowCount": 37,
+  "plannedRowCount": 36,
   "approvedCorrectiveSubstitutions": 1,
   "streams": [
     {
@@ -20,21 +20,21 @@
     },
     {
       "stream": "other",
-      "count": 17,
+      "count": 21,
       "actionCounts": {
         "repair_only_after_smoke": 5,
-        "apply_original_after_dependency_check": 12
+        "apply_original_after_dependency_check": 16
       }
     }
   ],
   "actionCounts": {
     "repair_only_after_smoke": 6,
-    "apply_original_after_dependency_check": 26
+    "apply_original_after_dependency_check": 30
   },
   "objectStatusCounts": {
     "all_live": 6,
     "no_static_objects": 2,
-    "none_live": 23,
+    "none_live": 27,
     "partial_live": 1
   },
   "rows": [
@@ -429,6 +429,54 @@
       "objectStatus": "none_live",
       "liveCount": 0,
       "objectCount": 11,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
+    },
+    {
+      "version": "202607310006",
+      "stream": "other",
+      "dependsOn": "202607290005",
+      "module": "notification_automation",
+      "file": "202607310006_legal_document_agent_notification_sequence.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 17,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
+    },
+    {
+      "version": "202608010001",
+      "stream": "other",
+      "dependsOn": "202607310006",
+      "module": "seller_onboarding",
+      "file": "202608010001_seller_onboarding_progress_fast_return.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 1,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
+    },
+    {
+      "version": "202608010002",
+      "stream": "other",
+      "dependsOn": "202608010001",
+      "module": "legal_documents",
+      "file": "202608010002_fix_legal_document_agent_context_lead_lookup.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 1,
+      "action": "apply_original_after_dependency_check",
+      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
+    },
+    {
+      "version": "202608010003",
+      "stream": "other",
+      "dependsOn": "202608010002",
+      "module": "legal_documents",
+      "file": "202608010003_legal_document_job_stage_timings_phase7.sql",
+      "objectStatus": "none_live",
+      "liveCount": 0,
+      "objectCount": 6,
       "action": "apply_original_after_dependency_check",
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
     }

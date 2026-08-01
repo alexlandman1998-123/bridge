@@ -1,0 +1,24 @@
+{
+  "version": "202608010002",
+  "stream": "other",
+  "file": "202608010002_fix_legal_document_agent_context_lead_lookup.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "codex",
+  "capturedAt": "2026-08-01T21:06:41Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Applied to production with the phase 7 single-version runner.",
+    "Catalog check verified the bridge_legal_document_agent_context_phase1 signature and function comment.",
+    "Behavior check verified a random packet returns no context rows without error.",
+    "Definition check verified the lead lookup uses the qualified lead_row.lead_id predicate."
+  ]
+}

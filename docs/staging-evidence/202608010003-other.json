@@ -1,0 +1,28 @@
+{
+  "version": "202608010003",
+  "stream": "other",
+  "file": "202608010003_legal_document_job_stage_timings_phase7.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "codex",
+  "approvedBy": "codex",
+  "capturedAt": "2026-08-01T21:00:12Z",
+  "notes": [
+    "Applied to staging with the phase 6 single-version runner after repairing staging-only dependency drift for 202607300001.",
+    "Catalog check verified the legal_document_job_stage_timings table, RLS, indexes, service_role table privileges, and list function grants.",
+    "Behavior check verified bridge_legal_document_job_stage_timing_phase7_row formats a composite timing row without inserting data.",
+    "No-residue check verified legal_document_job_stage_timings remained empty after verification."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608010003 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608010003 --evidence docs/staging-evidence/202608010003-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "ledgerRecordedAt": "2026-08-01T21:05:27.602Z"
+}
