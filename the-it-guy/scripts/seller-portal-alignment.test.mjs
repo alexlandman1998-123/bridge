@@ -20,6 +20,11 @@ assert.match(
   'seller portal payload loading should retry the legacy token-only RPC while production schema reconciliation is pending',
 )
 const sellerOnboardingLoader = privateListingServiceSource.match(/export async function getSellerOnboardingByToken[\s\S]*?\n}\n\nasync function maybeResolveCanonicalSellerRequirements/)?.[0] || ''
+assert.match(
+  sellerOnboardingLoader,
+  /const portalPayload = corePayload[\s\S]*?fetchSellerClientPortalCorePayloadByToken[\s\S]*?: await fetchSellerClientPortalPayloadByToken/,
+  'core seller onboarding loads must not fall back to the heavy portal payload RPC',
+)
 assert.match(sellerOnboardingLoader, /fetchOrganisationBrandingSnapshot\(client, resolveListingOrganisationId\(portalPayload\.listing\)\)/, 'seller onboarding portal should fetch latest organisation branding for RPC payloads')
 assert.match(sellerOnboardingLoader, /fetchOrganisationBrandingSnapshot\(client, resolveListingOrganisationId\(listing\)\)/, 'seller onboarding portal should fetch latest organisation branding for fallback listing payloads')
 assert.doesNotMatch(sellerOnboardingLoader, /branding\?\.logoUrl[\s\S]*\?\s*null[\s\S]*fetchOrganisationBrandingSnapshot/, 'seller onboarding portal must not skip latest branding when a stale logo snapshot exists')
@@ -50,6 +55,11 @@ assert.match(clientPortalSource, /sellerSaleProgressModel=\{sellerSaleProgressMo
 assert.match(clientPortalSource, /sellerStageMeta/)
 
 const sellerOnboardingSource = await fs.readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8')
+assert.match(
+  sellerOnboardingSource,
+  /getSellerOnboardingByToken\(token, \{[\s\S]*includeRequirementsAndDocuments: false,[\s\S]*corePayload: true,[\s\S]*\}\)/,
+  'seller onboarding first load should request the lightweight core payload',
+)
 assert.match(sellerOnboardingSource, /assignedAgentId/, 'seller onboarding submit notification should pass the assigned agent id when email is not on the listing payload')
 assert.match(sellerOnboardingSource, /!hasValidAssignedAgentEmail && !assignedAgentId && !leadId && !listingId/, 'seller onboarding submit notification should still run when ids can resolve the agent email server-side')
 

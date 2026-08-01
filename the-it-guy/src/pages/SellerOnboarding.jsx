@@ -2814,7 +2814,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
       if (useDbFirstSellerOnboarding) {
         try {
-          const context = await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: false })
+          const context = await getSellerOnboardingByToken(token, {
+            includeRequirementsAndDocuments: false,
+            corePayload: true,
+          })
           const found = context?.listing || null
           if (!found) {
             setError('Seller onboarding link is invalid or inactive.')
@@ -3584,10 +3587,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       return false
     }
 
-    if (!silent) {
-      setSaving(true)
-      setError('')
-    }
+    setSaving(true)
+    if (!silent) setError('')
     setDraftSyncStatus('saving')
 
     try {
@@ -3633,7 +3634,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       }
       return false
     } finally {
-      if (!silent) setSaving(false)
+      setSaving(false)
     }
   }
 

@@ -91,6 +91,8 @@ const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_SKIPPED_EVENT = 'seller_portal_i
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_FAILED_EVENT = 'seller_portal_invite_failed_after_mandate_signed'
 let sellerPortalPayloadRpcUnavailable = false
 let sellerPortalCorePayloadRpcUnavailable = false
+const sellerOnboardingProgressQueues = new Map()
+const sellerOnboardingProjectionQueues = new Map()
 const SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS = new Set([
   'active',
   'finalised',
@@ -112,6 +114,23 @@ function requireClient() {
     throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.')
   }
   return supabase
+}
+
+function enqueueKeyedOperation(queueMap, key, operation) {
+  const normalizedKey = normalizeText(key)
+  if (!normalizedKey) return Promise.resolve().then(operation)
+
+  const previous = queueMap.get(normalizedKey) || Promise.resolve()
+  const next = previous
+    .catch(() => null)
+    .then(operation)
+  queueMap.set(normalizedKey, next)
+
+  void next.finally(() => {
+    if (queueMap.get(normalizedKey) === next) queueMap.delete(normalizedKey)
+  }).catch(() => {})
+
+  return next
 }
 
 function requireSellerPortalStorageClient(token, accessToken = '') {
@@ -6499,13 +6518,15 @@ export async function getSellerOnboardingByToken(token, options = {}) {
   if (!normalizedToken) throw new Error('Onboarding token is required.')
 
   const corePayload = options?.corePayload === true
-  const portalPayload = (corePayload ? await fetchSellerClientPortalCorePayloadByToken(client, normalizedToken, {
-    accessToken: options?.sellerPortalAccessToken,
-    requirePortalAccess: options?.requirePortalAccess === true,
-  }) : null) || await fetchSellerClientPortalPayloadByToken(client, normalizedToken, {
-    accessToken: options?.sellerPortalAccessToken,
-    requirePortalAccess: options?.requirePortalAccess === true,
-  })
+  const portalPayload = corePayload
+    ? await fetchSellerClientPortalCorePayloadByToken(client, normalizedToken, {
+      accessToken: options?.sellerPortalAccessToken,
+      requirePortalAccess: options?.requirePortalAccess === true,
+    })
+    : await fetchSellerClientPortalPayloadByToken(client, normalizedToken, {
+      accessToken: options?.sellerPortalAccessToken,
+      requirePortalAccess: options?.requirePortalAccess === true,
+    })
   if (portalPayload?.portalAuth?.authRequired) {
     throw buildSellerPortalAuthRequiredError(portalPayload.portalAuth)
   }
@@ -6771,6 +6792,49 @@ async function ensureAcceptedPreferredTransferAttorneyAllocation(client, {
     throw allocationQuery.error
   }
   return allocationQuery.data || null
+}
+
+function enqueueSellerOnboardingProgressProjection(client, {
+  listing = null,
+  onboardingId = '',
+  formData = {},
+  draft = true,
+  reason = 'seller_onboarding_progress',
+} = {}) {
+  const listingId = normalizeText(listing?.id)
+  return enqueueKeyedOperation(sellerOnboardingProjectionQueues, listingId, async () => {
+    await persistCanonicalSellerFactPayload(client, {
+      listingId,
+      onboardingId,
+      formData,
+      listing,
+      draft,
+      source: reason,
+    }).catch((factError) => {
+      console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding progress update', factError)
+      return null
+    })
+
+    const requirementSync = await syncPrivateListingRequirements(listing, {
+      emitActivity: false,
+      reason,
+    }).catch((requirementsError) => {
+      console.warn('[Private Listings] seller requirement sync skipped after onboarding progress update', requirementsError)
+      return null
+    })
+
+    await maybeResolveCanonicalSellerRequirements({
+      listing: requirementSync?.listing || listing,
+      formData,
+      client,
+      reason,
+    }).catch((canonicalError) => {
+      console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding progress update', canonicalError)
+      return null
+    })
+
+    return { requirementSync }
+  })
 }
 
 export async function submitSellerOnboarding(token, payload = {}) {
@@ -7106,7 +7170,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
   }
 }
 
-export async function updateSellerOnboardingProgress(token, payload = {}) {
+async function updateSellerOnboardingProgressInternal(token, payload = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
@@ -7132,35 +7196,24 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
     }
     // The RPC has already persisted the raw draft. Canonical facts and
     // requirement reconciliation are secondary projections and must not
-    // hold up the Step 1 save/next transition.
-    void persistCanonicalSellerFactPayload(client, {
-      listingId: rpcContext.listing.id,
+    // hold up the Step 1 save/next transition. They are queued per listing
+    // so an older autosave cannot finish after and overwrite a newer one.
+    void enqueueSellerOnboardingProgressProjection(client, {
+      listing: rpcContext.listing,
       onboardingId: rpcContext.onboarding?.id,
       formData: payload.formData,
-      listing: rpcContext.listing,
       draft: true,
-    }).catch((factError) => {
-      console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding progress update', factError)
-      return null
-    })
-    void syncPrivateListingRequirements(rpcContext.listing, {
-      emitActivity: false,
       reason: 'seller_onboarding_progress',
-    }).catch((requirementsError) => {
-      console.warn('[Private Listings] seller requirement sync skipped after onboarding progress update', requirementsError)
-    })
-    void maybeResolveCanonicalSellerRequirements({
-      listing: rpcContext.listing,
-      formData: payload.formData,
-      client,
-      reason: 'seller_onboarding_progress',
-    }).catch((canonicalError) => {
-      console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding progress update', canonicalError)
+    }).catch((projectionError) => {
+      console.warn('[Private Listings] seller onboarding progress projection queue failed', projectionError)
     })
     return rpcContext
   }
 
-  const context = await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: false })
+  const context = await getSellerOnboardingByToken(token, {
+    includeRequirementsAndDocuments: false,
+    corePayload: true,
+  })
   if (!context?.onboarding?.id) {
     throw new Error('Seller onboarding link is invalid or inactive.')
   }
@@ -7200,37 +7253,31 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
   }
 
   const refreshedListing = await getPrivateListing(context.listing.id, { includeRequirementsAndDocuments: false })
-  await persistCanonicalSellerFactPayload(client, {
-    listingId: refreshedListing?.id || context.listing.id,
+  const listingForProgress = refreshedListing || context.listing
+  void enqueueSellerOnboardingProgressProjection(client, {
+    listing: listingForProgress,
     onboardingId: updateQuery.data?.id,
     formData: nextFormData,
-    listing: refreshedListing || context.listing,
     draft: true,
-  }).catch((factError) => {
-    console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding fallback progress update', factError)
-    return null
-  })
-  const requirementSync = await syncPrivateListingRequirements(refreshedListing || context.listing, {
-    emitActivity: false,
-    reason: 'seller_onboarding_progress',
-  }).catch((requirementsError) => {
-    console.warn('[Private Listings] seller requirement sync skipped after onboarding fallback progress update', requirementsError)
-    return null
-  })
-  const listingForProgress = requirementSync?.listing || refreshedListing || context.listing
-  void maybeResolveCanonicalSellerRequirements({
-    listing: listingForProgress,
-    formData: nextFormData,
-    client,
-    reason: 'seller_onboarding_progress',
-  }).catch((canonicalError) => {
-    console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding fallback progress update', canonicalError)
+    reason: 'seller_onboarding_progress_fallback',
+  }).catch((projectionError) => {
+    console.warn('[Private Listings] seller onboarding fallback progress projection queue failed', projectionError)
   })
 
   return {
     onboarding: updateQuery.data,
     listing: listingForProgress,
   }
+}
+
+export async function updateSellerOnboardingProgress(token, payload = {}) {
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Onboarding token is required.')
+  return enqueueKeyedOperation(
+    sellerOnboardingProgressQueues,
+    normalizedToken,
+    () => updateSellerOnboardingProgressInternal(normalizedToken, payload),
+  )
 }
 
 export async function validatePrivateListingTransition(listingId, targetStatus, options = {}) {

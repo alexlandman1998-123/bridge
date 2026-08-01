@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { resolveMandateReadiness } from '../src/core/documents/mandateReadiness.js'
+import {
+  resolveMandateReadiness,
+  resolveMandateSellerOnboardingFormData,
+} from '../src/core/documents/mandateReadiness.js'
 
 const migration = await readFile(
   new URL('../../supabase/migrations/202607310007_seller_onboarding_progress_fast_return.sql', import.meta.url),
@@ -57,6 +60,60 @@ assert.equal(readiness.rows.find((row) => row.key === 'property')?.ready, true)
 assert.equal(readiness.rows.find((row) => row.key === 'asking_price')?.ready, true)
 assert.equal(readiness.rows.find((row) => row.key === 'legal_route')?.ready, true)
 assert.deepEqual(readiness.blockers, [])
+
+const mergedFormData = resolveMandateSellerOnboardingFormData({
+  sellerCanonicalFacts: {
+    seller: {
+      first_name: 'Alexander',
+      email: 'old@example.com',
+    },
+    property: {
+      address: 'Old lead address',
+    },
+    transaction: {
+      asking_price: 1000000,
+    },
+  },
+  privateListing: {
+    sellerCanonicalFacts: {
+      seller: {
+        surname: 'Landman',
+        email: 'new@example.com',
+      },
+      property: {
+        address: '409 Queens Cres, Nr3',
+        property_title_type: 'sectional_title',
+      },
+      transaction: {
+        asking_price: 12000000,
+      },
+    },
+  },
+})
+
+assert.equal(mergedFormData.sellerFirstName, 'Alexander')
+assert.equal(mergedFormData.sellerSurname, 'Landman')
+assert.equal(mergedFormData.sellerEmail, 'new@example.com')
+assert.equal(mergedFormData.propertyAddress, '409 Queens Cres, Nr3')
+assert.equal(mergedFormData.propertyTitleType, 'sectional_title')
+assert.equal(mergedFormData.askingPrice, 12000000)
+
+const listingPriceReadiness = resolveMandateReadiness({
+  lead: {
+    estimatedValue: 1000000,
+    sellerOnboarding: {
+      status: 'completed',
+      formData: {},
+      canonicalFacts: {},
+    },
+  },
+  privateListing: {
+    askingPrice: 12000000,
+  },
+})
+
+assert.equal(listingPriceReadiness.facts.askingPrice, 12000000)
+assert.equal(listingPriceReadiness.rows.find((row) => row.key === 'asking_price')?.ready, true)
 
 assert.match(
   migration,

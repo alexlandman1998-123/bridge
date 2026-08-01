@@ -57,8 +57,8 @@ assert.doesNotMatch(
 )
 assert.match(
   privateListingService,
-  /void syncPrivateListingRequirements\(rpcContext\.listing,[\s\S]*?reason: 'seller_onboarding_progress'/,
-  'progress requirement enrichment should not block the save response',
+  /void enqueueSellerOnboardingProgressProjection\(client, \{[\s\S]*?reason: 'seller_onboarding_progress'/,
+  'progress requirement enrichment should be queued without blocking the save response',
 )
 
 console.log('seller onboarding submit fast-return contract ok')
