@@ -26,6 +26,10 @@ assert.throws(
   'A Vercel build must not allow its public release marker to be relabelled.',
 )
 assert.ok(headerSources.has('/index.html'), 'The app shell needs explicit cache control.')
+assert.ok(
+  [...headerSources].some((source) => String(source || '').includes('(?!api/|assets/')),
+  'Rewritten SPA routes need app-shell cache control.',
+)
 assert.ok(headerSources.has('/release-manifest.json'), 'The release manifest needs explicit cache control.')
 assert.ok(headerSources.has('/assets/:path*'), 'Hashed assets need immutable cache control.')
 assert.match(appSource, /scope="agent-listing-detail"/, 'Listing detail must remain isolated from the app-shell error boundary.')

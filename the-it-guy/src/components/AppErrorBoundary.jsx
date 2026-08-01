@@ -2,6 +2,9 @@ import { Component } from 'react'
 import { Link } from 'react-router-dom'
 import { reportError } from '../services/observability/errorTracking'
 
+const STALE_CHUNK_AUTO_RELOAD_LIMIT = 2
+const STALE_CHUNK_RELOAD_MARKER_TTL_MS = 10 * 60 * 1000
+
 function getErrorMessage(error) {
   const message = String(error?.message || '').trim()
   if (!message) return 'Something went wrong while loading this area.'
@@ -28,9 +31,14 @@ function isStaleChunkLoadError(error) {
     (normalizedText.includes('javascript mime type') && normalizedText.includes('text/html'))
 }
 
+function getLoadedReleaseId() {
+  if (typeof document === 'undefined') return ''
+  return String(document.querySelector('meta[name="arch9-release"]')?.getAttribute('content') || '').trim()
+}
+
 function getChunkReloadKey(scope) {
   if (typeof window === 'undefined') return ''
-  return `bridge:stale-chunk-reload:${scope || 'app'}:${window.location.pathname}`
+  return `bridge:stale-chunk-reload:${getLoadedReleaseId() || 'unknown'}:${scope || 'app'}:${window.location.pathname}`
 }
 
 function buildCacheBustedUrl() {
@@ -64,6 +72,7 @@ class AppErrorBoundary extends Component {
       hasError: false,
       error: null,
       recoveringFromStaleChunk: false,
+      staleChunkRecoveryExhausted: false,
     }
     this.clearReloadMarkerTimer = null
   }
@@ -86,7 +95,7 @@ class AppErrorBoundary extends Component {
       } catch {
         // Ignore storage access issues; stale chunk recovery still works manually.
       }
-    }, 5000)
+    }, STALE_CHUNK_RELOAD_MARKER_TTL_MS)
   }
 
   componentDidCatch(error, info) {
@@ -110,7 +119,7 @@ class AppErrorBoundary extends Component {
 
   componentDidUpdate(previousProps) {
     if (this.state.hasError && previousProps.resetKey !== this.props.resetKey) {
-      this.setState({ hasError: false, error: null, recoveringFromStaleChunk: false })
+      this.setState({ hasError: false, error: null, recoveringFromStaleChunk: false, staleChunkRecoveryExhausted: false })
     }
   }
 
@@ -120,24 +129,27 @@ class AppErrorBoundary extends Component {
     }
   }
 
-  recoverFromStaleChunk() {
+  recoverFromStaleChunk({ force = false } = {}) {
     if (typeof window === 'undefined') return
 
     const key = getChunkReloadKey(this.props.scope)
-    let hasAlreadyReloaded = false
+    let reloadCount = 0
 
     try {
-      hasAlreadyReloaded = key ? window.sessionStorage.getItem(key) === 'true' : false
-      if (key && !hasAlreadyReloaded) {
-        window.sessionStorage.setItem(key, 'true')
+      reloadCount = key ? Number(window.sessionStorage.getItem(key) || 0) : 0
+      if (!Number.isFinite(reloadCount) || reloadCount < 0) reloadCount = 0
+      if (!force && reloadCount >= STALE_CHUNK_AUTO_RELOAD_LIMIT) {
+        this.setState({ recoveringFromStaleChunk: false, staleChunkRecoveryExhausted: true })
+        return
+      }
+      if (key) {
+        window.sessionStorage.setItem(key, String(reloadCount + 1))
       }
     } catch {
-      hasAlreadyReloaded = false
+      reloadCount = 0
     }
 
-    if (hasAlreadyReloaded) return
-
-    this.setState({ recoveringFromStaleChunk: true })
+    this.setState({ recoveringFromStaleChunk: true, staleChunkRecoveryExhausted: false })
     window.setTimeout(() => {
       void clearClientAssetCaches().finally(() => {
         const url = buildCacheBustedUrl()
@@ -156,14 +168,21 @@ class AppErrorBoundary extends Component {
     }
 
     const staleChunkError = isStaleChunkLoadError(this.state.error)
+    const staleChunkExhausted = staleChunkError && this.state.staleChunkRecoveryExhausted
 
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
-          <h2>{staleChunkError ? 'Loading the latest app version' : this.props.title || 'We hit an unexpected error'}</h2>
+          <h2>
+            {staleChunkExhausted
+              ? 'App update is still reaching this browser'
+              : staleChunkError ? 'Loading the latest app version' : this.props.title || 'We hit an unexpected error'}
+          </h2>
           <p>
             {this.state.recoveringFromStaleChunk
               ? 'A newer version of Arch9 is available. Refreshing this page now.'
+              : staleChunkExhausted
+                ? 'One of the app files was temporarily unavailable. Refresh again in a moment, or open the dashboard while the route file catches up.'
               : staleChunkError
                 ? 'This page was opened with an older app file. Refresh to load the latest version.'
                 : getErrorMessage(this.state.error)}
@@ -180,17 +199,10 @@ class AppErrorBoundary extends Component {
               className="auth-primary-cta"
               onClick={() => {
                 if (staleChunkError) {
-                  void clearClientAssetCaches().finally(() => {
-                    const url = buildCacheBustedUrl()
-                    if (url) {
-                      window.location.replace(url)
-                      return
-                    }
-                    window.location.reload()
-                  })
+                  this.recoverFromStaleChunk({ force: true })
                   return
                 }
-                this.setState({ hasError: false, error: null, recoveringFromStaleChunk: false })
+                this.setState({ hasError: false, error: null, recoveringFromStaleChunk: false, staleChunkRecoveryExhausted: false })
               }}
             >
               {staleChunkError ? 'Refresh App' : 'Retry'}
