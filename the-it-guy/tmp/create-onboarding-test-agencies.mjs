@@ -95,6 +95,24 @@ const AGENCIES = [
     secondaryColour: '#243546',
     accentColour: '#d7c35e',
   },
+  {
+    key: 'dkrealestate',
+    agencyName: 'DK Real Estate',
+    tradingName: 'DK Real Estate',
+    principalEmail: 'alex.dkrealestate.training@arch9.test',
+    businessEmail: 'hello@dkrealestate-onboarding.test',
+    principalFullName: 'Alexander Landman',
+    principalPhone: '+27 82 000 0205',
+    province: 'Gauteng',
+    city: 'Johannesburg',
+    address: 'Onboarding Test Office, Johannesburg',
+    website: 'https://dkrealestate-onboarding.test',
+    registrationNumber: 'ONBOARDING-DKREALESTATE-2026-08-02',
+    ppraNumber: 'FFC-DKREALESTATE-TEST',
+    primaryColour: '#475f78',
+    secondaryColour: '#233141',
+    accentColour: '#c7a861',
+  },
 ]
 
 function normalizeText(value = '') {
@@ -125,6 +143,7 @@ function parseArgs(argv) {
     apply: false,
     reportPath: DEFAULT_REPORT_PATH,
     password: normalizeText(process.env.ONBOARDING_TEST_AGENCY_PASSWORD),
+    only: '',
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -143,6 +162,8 @@ function parseArgs(argv) {
       options.reportPath = path.resolve(process.cwd(), readValue('--report='))
     } else if (arg === '--password' || arg.startsWith('--password=')) {
       options.password = normalizeText(readValue('--password='))
+    } else if (arg === '--only' || arg.startsWith('--only=')) {
+      options.only = normalizeText(readValue('--only=')).toLowerCase()
     } else {
       throw new Error(`Unknown option: ${arg}`)
     }
@@ -879,8 +900,19 @@ async function main() {
     events: await getTableColumns(admin, 'onboarding_events'),
   }
 
+  const selectedAgencies = options.only
+    ? AGENCIES.filter((agency) =>
+      [agency.key, agency.agencyName, agency.tradingName, agency.principalEmail]
+        .map((value) => normalizeText(value).toLowerCase())
+        .includes(options.only),
+    )
+    : AGENCIES
+  if (!selectedAgencies.length) {
+    throw new Error(`No agency matched --only=${options.only}`)
+  }
+
   const results = []
-  for (const agency of AGENCIES) {
+  for (const agency of selectedAgencies) {
     const result = {
       key: agency.key,
       agencyName: agency.agencyName,
@@ -925,7 +957,7 @@ async function main() {
     generatedAt: new Date().toISOString(),
     supabaseHost: new URL(config.supabaseUrl).host,
     password: options.apply ? password : options.password ? '[provided]' : '[generated-on-apply]',
-    agencies: AGENCIES.map((agency) => ({
+    agencies: selectedAgencies.map((agency) => ({
       key: agency.key,
       agencyName: agency.agencyName,
       principalEmail: normalizeEmail(agency.principalEmail),

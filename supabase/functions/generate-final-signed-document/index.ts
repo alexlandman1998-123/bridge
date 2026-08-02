@@ -1565,6 +1565,21 @@ function normalizeNullableUuid(value: unknown) {
     : null;
 }
 
+function missingColumnName(error: Record<string, unknown> | null | undefined) {
+  const message = `${normalizeText(error?.message)} ${normalizeText(error?.details)}`;
+  return message.match(/column\s+"([^"]+)"/i)?.[1] || message.match(/'([a-z0-9_]+)'\s+column/i)?.[1] || "";
+}
+
+function isMissingRelationError(error: Record<string, unknown> | null | undefined, relation = "") {
+  const code = normalizeText(error?.code).toUpperCase();
+  const message = normalizeText(error?.message).toLowerCase();
+  const relationName = relation.toLowerCase();
+  return (
+    ["42P01", "PGRST202", "PGRST205"].includes(code) ||
+    (relationName && message.includes(relationName) && (message.includes("not exist") || message.includes("not find")))
+  );
+}
+
 function normalizeNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -1898,6 +1913,240 @@ function resolveSellerOnboardingSnapshot({
     maritalRegime: firstValue(generatedOnboarding.maritalRegime, generatedOnboarding.marriageRegime, formData.maritalRegime, formData.marriageRegime),
     propertyDisclosureAnnexure,
   };
+}
+
+function readAcceptedPreferredTransferAttorney(formData: Record<string, unknown>) {
+  const choice = firstValue(formData.transferAttorneyChoice, formData.transfer_attorney_choice, "preferred").toLowerCase();
+  if (["nominate_other", "nominate-other", "other"].includes(choice)) return null;
+
+  const preferred = asRecord(formData.preferredTransferAttorney || formData.preferred_transfer_attorney);
+  const acceptance = asRecord(formData.preferredTransferAttorneyAcceptance || formData.preferred_transfer_attorney_acceptance);
+  const preferredPartnerId = firstValue(
+    preferred.preferredPartnerId,
+    preferred.preferred_partner_id,
+    preferred.partnerId,
+    preferred.partner_id,
+    preferred.id,
+  );
+  const acceptedPartnerId = firstValue(
+    acceptance.preferredPartnerId,
+    acceptance.preferred_partner_id,
+    acceptance.partnerId,
+    acceptance.partner_id,
+    acceptance.id,
+    preferredPartnerId,
+  );
+  const accepted = ["true", "t", "1", "yes", "y"].includes(
+    firstValue(formData.preferredTransferAttorneyAccepted, formData.preferred_transfer_attorney_accepted).toLowerCase(),
+  );
+  const companyName = firstValue(preferred.companyName, preferred.company_name, preferred.name);
+
+  if (!preferredPartnerId || !accepted || acceptedPartnerId !== preferredPartnerId || !companyName) return null;
+
+  return {
+    preferredPartnerId,
+    preferredPartnerUuid: normalizeNullableUuid(preferredPartnerId),
+    partnerRelationshipId: normalizeNullableUuid(firstValue(
+      preferred.partnerRelationshipId,
+      preferred.partner_relationship_id,
+      preferred.relationshipId,
+      preferred.relationship_id,
+      preferredPartnerId,
+    )),
+    partnerOrganisationId: normalizeNullableUuid(firstValue(preferred.partnerOrganisationId, preferred.partner_organisation_id)),
+    companyName,
+    contactPerson: firstValue(preferred.contactPerson, preferred.contact_person, preferred.companyName, preferred.company_name),
+    email: firstValue(preferred.email, preferred.emailAddress, preferred.email_address).toLowerCase(),
+    phone: firstValue(preferred.phone, preferred.phoneNumber, preferred.phone_number),
+    acceptedAt: firstValue(acceptance.acceptedAt, acceptance.accepted_at),
+  };
+}
+
+async function resolvePartnerRoleConfigurationId({
+  supabase,
+  organisationId,
+  attorney,
+}: {
+  supabase: any;
+  organisationId: string;
+  attorney: ReturnType<typeof readAcceptedPreferredTransferAttorney>;
+}) {
+  if (!attorney) return null;
+  const result = await supabase.rpc("bridge_resolve_partner_role_configuration", {
+    p_organisation_id: organisationId,
+    p_role_type: "transfer_attorney",
+    p_preferred_partner_id: attorney.preferredPartnerUuid,
+    p_partner_relationship_id: attorney.partnerRelationshipId,
+    p_partner_organisation_id: attorney.partnerOrganisationId,
+  });
+  if (!result.error) return normalizeNullableUuid(result.data);
+  if (!isMissingRelationError(result.error, "bridge_resolve_partner_role_configuration")) {
+    console.error("[final-signed] partner role configuration resolution failed", result.error);
+  }
+  return null;
+}
+
+async function writePrivateListingRolePlayerWithFallback({
+  supabase,
+  id = "",
+  payload,
+}: {
+  supabase: any;
+  id?: string;
+  payload: Record<string, unknown>;
+}) {
+  let nextPayload = { ...payload };
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const result = id
+      ? await supabase
+        .from("private_listing_role_players")
+        .update(nextPayload)
+        .eq("id", id)
+        .select("id, private_listing_id, allocation_status")
+        .maybeSingle()
+      : await supabase
+        .from("private_listing_role_players")
+        .insert(nextPayload)
+        .select("id, private_listing_id, allocation_status")
+        .maybeSingle();
+    if (!result.error) return result.data as Record<string, unknown> | null;
+    const missingColumn = missingColumnName(result.error as Record<string, unknown>);
+    if (missingColumn && missingColumn in nextPayload) {
+      const { [missingColumn]: _removed, ...rest } = nextPayload;
+      nextPayload = rest;
+      continue;
+    }
+    if (isMissingRelationError(result.error, "private_listing_role_players")) return null;
+    throw result.error;
+  }
+  return null;
+}
+
+async function ensureSignedMandateTransferAttorneyAllocation({
+  supabase,
+  organisationId,
+  listingId,
+  packetId,
+  nowIso,
+  formData,
+}: {
+  supabase: any;
+  organisationId: string;
+  listingId: string;
+  packetId: string;
+  nowIso: string;
+  formData: Record<string, unknown>;
+}) {
+  const attorney = readAcceptedPreferredTransferAttorney(formData);
+  if (!attorney?.companyName || !attorney.partnerOrganisationId) return null;
+
+  const partnerRoleConfigurationId = await resolvePartnerRoleConfigurationId({ supabase, organisationId, attorney });
+  const metadata = {
+    source: "generate_final_signed_document",
+    preferredPartnerId: attorney.preferredPartnerId,
+    partnerRelationshipId: attorney.partnerRelationshipId,
+    partnerOrganisationId: attorney.partnerOrganisationId,
+    partnerRoleConfigurationId,
+  };
+  const payload: Record<string, unknown> = {
+    organisation_id: organisationId,
+    private_listing_id: listingId,
+    role_type: "transfer_attorney",
+    partner_role_configuration_id: partnerRoleConfigurationId,
+    partner_organisation_id: attorney.partnerOrganisationId,
+    company_name: attorney.companyName,
+    contact_person: attorney.contactPerson || attorney.companyName,
+    email_address: attorney.email || null,
+    phone_number: attorney.phone || null,
+    selection_source: "seller_mandate",
+    allocation_status: "awaiting_buyer",
+    mandate_packet_id: normalizeNullableUuid(packetId),
+    mandate_signed_at: attorney.acceptedAt || nowIso,
+    selected_by: null,
+    metadata,
+    updated_at: nowIso,
+  };
+  if (!partnerRoleConfigurationId && attorney.partnerRelationshipId) {
+    payload.partner_relationship_id = attorney.partnerRelationshipId;
+  }
+
+  let existing = await supabase
+    .from("private_listing_role_players")
+    .select("id, company_name, partner_organisation_id, partner_role_configuration_id, allocation_status")
+    .eq("private_listing_id", listingId)
+    .eq("role_type", "transfer_attorney")
+    .in("allocation_status", ["awaiting_buyer", "under_offer", "instructed"])
+    .order("selected_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existing.error && missingColumnName(existing.error as Record<string, unknown>)) {
+    existing = await supabase
+      .from("private_listing_role_players")
+      .select("id, company_name, partner_organisation_id, allocation_status")
+      .eq("private_listing_id", listingId)
+      .eq("role_type", "transfer_attorney")
+      .in("allocation_status", ["awaiting_buyer", "under_offer", "instructed"])
+      .order("selected_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+  }
+  if (existing.error) {
+    if (isMissingRelationError(existing.error, "private_listing_role_players")) return null;
+    throw existing.error;
+  }
+
+  const existingRow = existing.data as Record<string, unknown> | null;
+  const sameAttorney = existingRow &&
+    firstValue(existingRow.company_name).toLowerCase() === attorney.companyName.toLowerCase() &&
+    (!attorney.partnerOrganisationId || firstValue(existingRow.partner_organisation_id) === attorney.partnerOrganisationId);
+
+  if (existingRow?.id && sameAttorney) {
+    return writePrivateListingRolePlayerWithFallback({
+      supabase,
+      id: firstValue(existingRow.id),
+      payload: {
+        ...payload,
+        allocation_status: ["under_offer", "instructed"].includes(firstValue(existingRow.allocation_status))
+          ? existingRow.allocation_status
+          : "awaiting_buyer",
+      },
+    });
+  }
+
+  if (existingRow?.id) {
+    await writePrivateListingRolePlayerWithFallback({
+      supabase,
+      id: firstValue(existingRow.id),
+      payload: {
+        allocation_status: "replaced",
+        replaced_at: nowIso,
+        updated_at: nowIso,
+      },
+    });
+  }
+
+  try {
+    return await writePrivateListingRolePlayerWithFallback({
+      supabase,
+      payload: {
+        ...payload,
+        created_at: nowIso,
+      },
+    });
+  } catch (error) {
+    const code = normalizeText((error as Record<string, unknown>)?.code).toUpperCase();
+    if (code !== "23505") throw error;
+    const retry = await supabase
+      .from("private_listing_role_players")
+      .select("id")
+      .eq("private_listing_id", listingId)
+      .eq("role_type", "transfer_attorney")
+      .in("allocation_status", ["awaiting_buyer", "under_offer", "instructed"])
+      .limit(1)
+      .maybeSingle();
+    if (retry.error || !retry.data?.id) throw error;
+    return writePrivateListingRolePlayerWithFallback({ supabase, id: firstValue(retry.data.id), payload });
+  }
 }
 
 async function ensureSellerOnboardingSnapshotForListing({
@@ -2244,6 +2493,21 @@ async function ensureListingFromSignedMandate({
       finalArtifactPath: finalArtifactPath || null,
       lockedAt: new Date().toISOString(),
     },
+  });
+
+  await ensureSignedMandateTransferAttorneyAllocation({
+    supabase,
+    organisationId,
+    listingId,
+    packetId: normalizeText(packet.id),
+    nowIso: new Date().toISOString(),
+    formData: asRecord(sellerOnboardingSnapshot.formData),
+  }).catch((allocationError: unknown) => {
+    console.error("[final-signed] transfer attorney allocation sync failed", {
+      listingId,
+      packetId: packet.id,
+      error: String((allocationError as Error)?.message || allocationError),
+    });
   });
 
   await syncListingPublicationDraftFromSellerOnboarding({
