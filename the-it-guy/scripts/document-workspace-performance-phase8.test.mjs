@@ -37,6 +37,8 @@ assertIncludes(workspaceSource, 'fetchDocumentPacket(resolvedPacketId, { include
 assertIncludes(workspaceSource, 'refreshWorkspaceData({ force: true, includeEvents: false })', 'Phase 8 background refresh avoids audit event fetch')
 assertIncludes(workspaceSource, 'selectRichestMandateDataSnapshot(candidateSnapshots)', 'Phase 8 workspace keeps the richest mandate snapshot')
 assertIncludes(workspaceSource, "'seller unavailable'", 'Phase 8 workspace treats placeholder seller text as incomplete')
+assertIncludes(workspaceSource, 'visibleLoadError', 'Phase 8 workspace filters non-blocking generated timeout banners')
+assertIncludes(workspaceSource, '(?:template lookup|generated packet status)', 'Phase 8 generated documents ignore slow template/status lookup warnings')
 
 assertIncludes(packetServiceSource, 'resolveGeneratedDataSnapshotForPacket({ packet, context, sourceContextSnapshot })', 'Phase 8 packet service preserves rich generated snapshots')
 assertIncludes(packetServiceSource, 'scoreGeneratedDataSnapshotCompleteness(candidate)', 'Phase 8 packet service scores snapshot completeness')

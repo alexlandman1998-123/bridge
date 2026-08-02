@@ -4095,6 +4095,17 @@ export default function LegalDocumentWorkspace({
     () => Boolean(getGeneratedPacketVersionForSigning(statusState?.versions || [])?.id),
     [statusState?.versions],
   )
+  const visibleLoadError = useMemo(() => {
+    const message = normalizeText(loadError)
+    if (!message) return ''
+    const generatedStateAvailable =
+      hasGeneratedPacketVersion ||
+      ['pdf_generated', 'ready_to_send', 'sent', 'partially_signed', 'completed'].includes(normalizedLifecycleState)
+    const nonBlockingGeneratedTimeout =
+      generatedStateAvailable &&
+      /(?:template lookup|generated packet status).*(?:taking too long|timed out|timeout)/i.test(message)
+    return nonBlockingGeneratedTimeout ? '' : message
+  }, [hasGeneratedPacketVersion, loadError, normalizedLifecycleState])
 
   const editableSnapshot = useMemo(() => {
     if (editableVersion?.editable_content_json && typeof editableVersion.editable_content_json === 'object' && Array.isArray(editableVersion.editable_content_json.sections)) {
@@ -4289,9 +4300,9 @@ export default function LegalDocumentWorkspace({
     surface: 'workspace',
     role: workspaceRole,
     state: signingOperationalStatus.state,
-    issue: loadError,
+    issue: visibleLoadError,
     hasPreview: Boolean(generatedPreviewUrl || signedPreviewUrl),
-  }), [generatedPreviewUrl, loadError, signedPreviewUrl, signingOperationalStatus.state, workspaceRole])
+  }), [generatedPreviewUrl, signedPreviewUrl, signingOperationalStatus.state, visibleLoadError, workspaceRole])
   const outcomeFeedback = useMemo(() => buildDocumentOutcomeFeedback({
     surface: 'workspace',
     message: actionFeedback,
@@ -8155,7 +8166,7 @@ export default function LegalDocumentWorkspace({
       setActionBusy(false)
     }
   }
-  const activeGenerationRecovery = generationRecovery?.displayMessage === loadError ? generationRecovery : null
+  const activeGenerationRecovery = generationRecovery?.displayMessage === visibleLoadError ? generationRecovery : null
   async function ensureGenerationSupportHandoff(policy) {
     const supportReference = normalizeText(policy?.supportReference)
     if (!supportReference || recordedGenerationHandoffsRef.current.has(supportReference)) return false
@@ -8464,24 +8475,24 @@ export default function LegalDocumentWorkspace({
                 <p className="mt-1">{signingDeliveryUnavailableMessage}</p>
               </article>
             ) : null}
-            {loadError ? (
+            {visibleLoadError ? (
               <article className="mb-5 rounded-[20px] border border-[#f6ddd7] bg-[#fff6f3] px-4 py-4 text-sm text-[#973824]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-[220px] flex-1">
-                    {loadError.includes('\n') ? (
+                    {visibleLoadError.includes('\n') ? (
                       <>
-                        <p className="font-semibold">{loadError.split('\n')[0]}</p>
+                        <p className="font-semibold">{visibleLoadError.split('\n')[0]}</p>
                         <div className="mt-2 space-y-1 text-xs">
-                          {loadError.split('\n').slice(1, -1).map((line) => (
+                          {visibleLoadError.split('\n').slice(1, -1).map((line) => (
                             line.startsWith('- ')
                               ? <p key={line} className="pl-4">• {line.slice(2)}</p>
                               : <p key={line} className="pt-1 font-semibold">{line}</p>
                           ))}
                         </div>
-                        <p className="mt-2 text-xs font-semibold">{loadError.split('\n').at(-1)}</p>
+                        <p className="mt-2 text-xs font-semibold">{visibleLoadError.split('\n').at(-1)}</p>
                       </>
                     ) : (
-                      <span>{loadError}</span>
+                      <span>{visibleLoadError}</span>
                     )}
                   </div>
                   <Button
