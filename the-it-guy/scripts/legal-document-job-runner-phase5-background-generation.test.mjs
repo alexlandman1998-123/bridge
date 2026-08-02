@@ -21,6 +21,8 @@ for (const token of [
   'generate_ready_packet',
   'callGenerateMandateFunction',
   '/functions/v1/generate-mandate',
+  'createPacketVersionWithTransientRetry',
+  'PACKET_VERSION_PERSIST_RETRY_DELAYS_MS',
   'bridge_create_legal_document_job_phase1',
   'generate_packet_version',
   'bridge_create_document_packet_version_i1',
@@ -51,7 +53,7 @@ assertMatches(
 )
 assertMatches(
   source,
-  /callGenerateMandateFunction[\s\S]+bridge_create_document_packet_version_i1[\s\S]+bridge_certify_native_structured_legal_pdf[\s\S]+status: "succeeded"/,
+  /callGenerateMandateFunction[\s\S]+createPacketVersionWithTransientRetry[\s\S]+bridge_certify_native_structured_legal_pdf[\s\S]+status: "succeeded"/,
   'Generation must render, create a packet version, certify it, then mark the job succeeded',
 )
 assertMatches(

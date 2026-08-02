@@ -24,11 +24,15 @@ const WATCHDOG_RUNNING_STALE_MS = 180_000;
 const WATCHDOG_FAILED_RETRY_DELAY_MS = 60_000;
 const WATCHDOG_GENERATION_LEASE_TTL_SECONDS = 600;
 const RETRYABLE_GENERATION_ERROR_CODES = new Set([
+  "40001",
+  "55P03",
+  "57014",
   "EDGE_INVOCATION_FAILED",
   "GENERATION_LEASE_FENCE_REJECTED",
   "GENERATION_TIMEOUT",
   "LEGAL_DOCUMENT_JOB_GENERATION_FAILED",
 ]);
+const PACKET_VERSION_PERSIST_RETRY_DELAYS_MS = [750, 1500];
 const PRIVILEGED_PACKET_ROLES = new Set([
   "principal",
   "owner",
@@ -79,6 +83,10 @@ function timeoutSignal(ms: number) {
     signal: controller.signal,
     clear: () => clearTimeout(timeout),
   };
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function jsonResponse(status: number, body: JsonRecord) {
@@ -192,6 +200,99 @@ function assertGeneratedPdfArtifact(artifact: ReturnType<typeof buildGeneratedAr
   ) {
     throw new Error("Generated mandate artifact did not include a certified PDF candidate.");
   }
+}
+
+function isTransientPacketVersionPersistError(error: unknown) {
+  const code = normalizeErrorCode(error, "");
+  const message = normalizeErrorMessage(error, "").toLowerCase();
+  return code === "57014" ||
+    code === "55P03" ||
+    code === "40001" ||
+    message.includes("statement timeout") ||
+    message.includes("could not obtain lock") ||
+    message.includes("serialization");
+}
+
+function versionAttemptId(version: JsonRecord) {
+  const summary = asRecord(version.validation_summary_json);
+  const generationPayload = asRecord(summary.generationPayload || summary.generation_payload);
+  return normalizeText(
+    summary.generationAttemptId || summary.generation_attempt_id ||
+      generationPayload.generationAttemptId || generationPayload.generation_attempt_id,
+  );
+}
+
+async function findPersistedVersionForAttempt({
+  client,
+  packetId,
+  generationAttemptId,
+  artifact,
+}: {
+  client: any;
+  packetId: string;
+  generationAttemptId: string;
+  artifact: ReturnType<typeof buildGeneratedArtifact>;
+}) {
+  if (!UUID_PATTERN.test(packetId) || !UUID_PATTERN.test(generationAttemptId)) return null;
+  const result = await client
+    .from("document_packet_versions")
+    .select("*")
+    .eq("packet_id", packetId)
+    .eq("render_status", "generated")
+    .order("version_number", { ascending: false })
+    .limit(8);
+  if (result.error) return null;
+  const rows = Array.isArray(result.data) ? result.data.map(asRecord) : [];
+  return rows.find((row: JsonRecord) =>
+    versionAttemptId(row) === generationAttemptId &&
+    normalizeText(row.rendered_document_id) === artifact.renderedDocumentId &&
+    normalizeText(row.rendered_file_path) === artifact.renderedFilePath
+  ) || null;
+}
+
+async function createPacketVersionWithTransientRetry({
+  client,
+  packetId,
+  generationAttemptId,
+  artifact,
+  params,
+}: {
+  client: any;
+  packetId: string;
+  generationAttemptId: string;
+  artifact: ReturnType<typeof buildGeneratedArtifact>;
+  params: JsonRecord;
+}) {
+  let lastResult: { data?: unknown; error?: unknown } = { data: null, error: null };
+  const maxAttempts = PACKET_VERSION_PERSIST_RETRY_DELAYS_MS.length + 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    lastResult = await client.rpc("bridge_create_document_packet_version_i1", params);
+    if (!lastResult.error) return lastResult;
+
+    const recovered = await findPersistedVersionForAttempt({
+      client,
+      packetId,
+      generationAttemptId,
+      artifact,
+    });
+    if (recovered) {
+      return {
+        data: {
+          contract: "i1-v1",
+          dryRun: false,
+          recoveredAfterPersistTimeout: true,
+          version: recovered,
+        },
+        error: null,
+      };
+    }
+
+    if (!isTransientPacketVersionPersistError(lastResult.error) || attempt >= maxAttempts - 1) {
+      return lastResult;
+    }
+    await delay(PACKET_VERSION_PERSIST_RETRY_DELAYS_MS[attempt]);
+  }
+  return lastResult;
 }
 
 function extractSigningToken(portalLink: unknown) {
@@ -1546,30 +1647,36 @@ async function runGeneratePacketVersionJob({
       native_render_attestation: artifact.renderAttestation,
       native_pdf_layout: artifact.nativePdfLayout,
     };
-    const versionResult = await client.rpc("bridge_create_document_packet_version_i1", {
-      p_packet_id: packetId,
-      p_render_status: "generated",
-      p_rendered_document_id: artifact.renderedDocumentId,
-      p_rendered_file_path: artifact.renderedFilePath,
-      p_rendered_file_name: artifact.renderedFileName || null,
-      p_rendered_file_url: artifact.renderedFileUrl || null,
-      p_placeholders_resolved_json: asRecord(versionInput.placeholdersResolvedJson || versionInput.placeholders_resolved_json),
-      p_placeholders_missing_json: Array.isArray(versionInput.placeholdersMissingJson)
-        ? versionInput.placeholdersMissingJson
-        : Array.isArray(versionInput.placeholders_missing_json)
-        ? versionInput.placeholders_missing_json
-        : [],
-      p_section_manifest_json: Array.isArray(versionInput.sectionManifestJson)
-        ? versionInput.sectionManifestJson
-        : Array.isArray(versionInput.section_manifest_json)
-        ? versionInput.section_manifest_json
-        : [],
-      p_validation_summary_json: validationSummary,
-      p_generated_by: UUID_PATTERN.test(normalizeText(versionInput.generatedBy || versionInput.generated_by))
-        ? normalizeText(versionInput.generatedBy || versionInput.generated_by)
-        : null,
-      p_generated_at: normalizeText(versionInput.generatedAt || versionInput.generated_at) || new Date().toISOString(),
-      p_dry_run: false,
+    const versionResult = await createPacketVersionWithTransientRetry({
+      client,
+      packetId,
+      generationAttemptId,
+      artifact,
+      params: {
+        p_packet_id: packetId,
+        p_render_status: "generated",
+        p_rendered_document_id: artifact.renderedDocumentId,
+        p_rendered_file_path: artifact.renderedFilePath,
+        p_rendered_file_name: artifact.renderedFileName || null,
+        p_rendered_file_url: artifact.renderedFileUrl || null,
+        p_placeholders_resolved_json: asRecord(versionInput.placeholdersResolvedJson || versionInput.placeholders_resolved_json),
+        p_placeholders_missing_json: Array.isArray(versionInput.placeholdersMissingJson)
+          ? versionInput.placeholdersMissingJson
+          : Array.isArray(versionInput.placeholders_missing_json)
+          ? versionInput.placeholders_missing_json
+          : [],
+        p_section_manifest_json: Array.isArray(versionInput.sectionManifestJson)
+          ? versionInput.sectionManifestJson
+          : Array.isArray(versionInput.section_manifest_json)
+          ? versionInput.section_manifest_json
+          : [],
+        p_validation_summary_json: validationSummary,
+        p_generated_by: UUID_PATTERN.test(normalizeText(versionInput.generatedBy || versionInput.generated_by))
+          ? normalizeText(versionInput.generatedBy || versionInput.generated_by)
+          : null,
+        p_generated_at: normalizeText(versionInput.generatedAt || versionInput.generated_at) || new Date().toISOString(),
+        p_dry_run: false,
+      },
     });
     if (versionResult.error) throw versionResult.error;
     const version = asRecord(asRecord(versionResult.data).version);

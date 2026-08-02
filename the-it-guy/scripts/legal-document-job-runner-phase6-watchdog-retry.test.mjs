@@ -39,8 +39,8 @@ for (const token of [
 
 assertMatches(
   source,
-  /if \(action === "watchdog_retry"\) \{[\s\S]+bearerToken\(req\) !== serviceRoleKey[\s\S]+LEGAL_DOCUMENT_WATCHDOG_AUTH_REQUIRED/,
-  'Watchdog retry action must be service-role only',
+  /if \(action === "watchdog_retry"\) \{[\s\S]+authorizeServiceCredential\(supabaseUrl, token\)[\s\S]+LEGAL_DOCUMENT_WATCHDOG_AUTH_REQUIRED/,
+  'Watchdog retry action must require a verified service credential',
 )
 assertMatches(
   watchdogSource,

@@ -7915,6 +7915,12 @@ export default function LegalDocumentWorkspace({
         statusStateRef.current = generationResult.status
         setStatusState(generationResult.status)
       }
+      if (generationResult?.backgroundGenerationQueued) {
+        setBackgroundGenerationJob(generationResult.job || generationResult.status?.legalDocumentJob || null)
+        setActionFeedback(generationResult.actionFeedback || `${isOtpPacket ? 'OTP' : 'Mandate'} generation started.`)
+        generationFailureCountsRef.current.clear()
+        return
+      }
       const hasGeneratedVersion = Boolean(getGeneratedPacketVersionForSigning(generationResult?.status?.versions || []))
       const generatedVersion = getGeneratedPacketVersionForSigning(generationResult?.status?.versions || [])
       if (!isOtpPacket && renderFreeze?.freezeId && generatedVersion?.id) {

@@ -35,6 +35,8 @@ for (const token of [
   'Mandate PDF generated and ready to review.',
   'backgroundGenerationActive',
   '!backgroundGenerationActive',
+  'generationResult?.backgroundGenerationQueued',
+  'setBackgroundGenerationJob(generationResult.job || generationResult.status?.legalDocumentJob || null)',
 ]) {
   assertIncludes(workspace, token, 'Phase 7 workspace job-aware switch')
 }
@@ -53,6 +55,11 @@ assertMatches(
   workspace,
   /const showGeneratePdfButton =[\s\S]+!backgroundGenerationActive[\s\S]+\(!hasGeneratedMandateVersion/,
   'Workspace must block duplicate generate actions while background generation is active',
+)
+assertMatches(
+  workspace,
+  /generationResult\?\.backgroundGenerationQueued[\s\S]+setActionFeedback\(generationResult\.actionFeedback[\s\S]+return[\s\S]+const hasGeneratedVersion/,
+  'Workspace must return immediately after background generation is queued instead of refreshing a draft that cannot exist yet',
 )
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))

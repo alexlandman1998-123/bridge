@@ -58,6 +58,7 @@ for (const token of [
   'p_job_type: "generate_packet_version"',
   'runGeneratePacketVersionJob',
   'callGenerateMandateFunction',
+  'createPacketVersionWithTransientRetry',
   'bridge_certify_native_structured_legal_pdf',
 ]) {
   assertIncludes(runnerSource, token, 'Phase 3 job runner PDF generation')
@@ -71,7 +72,7 @@ assertMatches(
 
 assertMatches(
   runnerSource,
-  /callGenerateMandateFunction[\s\S]+bridge_create_document_packet_version_i1[\s\S]+bridge_certify_native_structured_legal_pdf[\s\S]+status: "succeeded"/,
+  /callGenerateMandateFunction[\s\S]+createPacketVersionWithTransientRetry[\s\S]+bridge_certify_native_structured_legal_pdf[\s\S]+status: "succeeded"/,
   'The job should render, persist, certify, and complete outside the modal',
 )
 
