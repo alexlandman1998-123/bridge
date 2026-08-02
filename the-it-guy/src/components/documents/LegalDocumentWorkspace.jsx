@@ -93,7 +93,11 @@ import { buildDocumentAccessibility } from '../../core/documents/documentAccessi
 import { buildDocumentCommitConfirmation } from '../../core/documents/documentCommitConfirmation'
 import { buildDocumentOutcomeFeedback } from '../../core/documents/documentOutcomeFeedback'
 import { recordDocumentExperienceEvent } from '../../services/documentExperienceTelemetryService'
-import { recordPerformanceMetric } from '../../services/observability/performanceMetrics'
+import {
+  buildLegalDocumentDiagnosticRunId,
+  recordLegalDocumentDiagnostic,
+  recordPerformanceMetric,
+} from '../../services/observability/performanceMetrics'
 import {
   DOCUMENT_LIFECYCLE_STATES,
   assertDocumentLifecycleTransition,
@@ -4686,21 +4690,64 @@ export default function LegalDocumentWorkspace({
 
     const runId = generationJobPollRunRef.current + 1
     generationJobPollRunRef.current = runId
+    const diagnosticRunId = buildLegalDocumentDiagnosticRunId('mandate-job-poll')
+    const diagnosticBase = {
+      diagnosticRunId,
+      pollRunId: runId,
+      packetType,
+      packetId: packetIdForJob,
+      jobId: currentJobId,
+      jobStatus: currentJobStatus,
+      lifecycleState: normalizeText(currentStatus?.state) || null,
+    }
+    const recordBackgroundPollDiagnostic = (eventName, metadata = {}, severity = 'info') => {
+      recordLegalDocumentDiagnostic({
+        eventName,
+        severity,
+        userId: workspaceProfile?.user_id || workspaceProfile?.userId || workspaceProfile?.id || '',
+        workspaceId: organisationId || workspaceProfile?.organisation_id || workspaceProfile?.organisationId || '',
+        route: '/legal-document-workspace',
+        metadata: {
+          ...diagnosticBase,
+          ...metadata,
+        },
+      })
+    }
     let stopped = false
     let timerId = null
     const isCurrent = () => !stopped && generationJobPollRunRef.current === runId
 
+    recordBackgroundPollDiagnostic('mandate_background_poll_started')
     setActionProgressMessage((message) => (
       normalizeText(message) || 'Mandate generation is running in the background…'
     ))
 
     const poll = async (attemptIndex = 0) => {
+      const pollStartedAt = getPerformanceNow()
       try {
         const jobs = await listLegalDocumentJobsForPacket({ packetId: packetIdForJob, limit: 5 })
         if (!isCurrent()) return
         const latestJob = jobs.find((row) => normalizeText(row?.jobId || row?.job_id) === currentJobId) ||
           jobs.find((row) => normalizeKey(row?.jobType || row?.job_type) === 'generate_packet_version') ||
           null
+        const durationMs = roundedDurationMs(pollStartedAt)
+        recordWorkspacePerformance('legal_document.generation.background_poll', pollStartedAt, {
+          diagnosticRunId,
+          attemptIndex,
+          jobId: currentJobId,
+          jobStatus: latestJob ? normalizeLegalDocumentJobStatus(latestJob) : null,
+          jobFound: Boolean(latestJob),
+          returnedJobCount: Array.isArray(jobs) ? jobs.length : 0,
+        })
+        recordBackgroundPollDiagnostic('mandate_background_poll_completed', {
+          attemptIndex,
+          durationMs,
+          jobFound: Boolean(latestJob),
+          returnedJobCount: Array.isArray(jobs) ? jobs.length : 0,
+          latestJobStatus: latestJob ? normalizeLegalDocumentJobStatus(latestJob) : null,
+          latestJobAttemptCount: Number(latestJob?.attemptCount || latestJob?.attempt_count || 0) || 0,
+          latestJobMaxAttempts: Number(latestJob?.maxAttempts || latestJob?.max_attempts || 0) || 0,
+        }, latestJob ? 'info' : 'warning')
         if (!latestJob) return
         setBackgroundGenerationJob(latestJob)
         setStatusState((previous) => (
@@ -4711,6 +4758,11 @@ export default function LegalDocumentWorkspace({
 
         const latestStatus = normalizeLegalDocumentJobStatus(latestJob)
         if (latestStatus === 'succeeded') {
+          recordBackgroundPollDiagnostic('mandate_background_poll_succeeded', {
+            attemptIndex,
+            durationMs,
+            latestJobStatus: latestStatus,
+          })
           setActionProgressMessage('Refreshing generated mandate…')
           const refreshed = await refreshWorkspaceData({ force: true })
           if (!isCurrent()) return
@@ -4726,6 +4778,14 @@ export default function LegalDocumentWorkspace({
         }
 
         if (latestStatus === 'cancelled' || (latestStatus === 'failed' && Number(latestJob?.attemptCount || latestJob?.attempt_count || 0) >= Number(latestJob?.maxAttempts || latestJob?.max_attempts || 1))) {
+          recordBackgroundPollDiagnostic('mandate_background_poll_terminal_failure', {
+            attemptIndex,
+            durationMs,
+            latestJobStatus: latestStatus,
+            latestJobAttemptCount: Number(latestJob?.attemptCount || latestJob?.attempt_count || 0) || 0,
+            latestJobMaxAttempts: Number(latestJob?.maxAttempts || latestJob?.max_attempts || 0) || 0,
+            errorMessage: normalizeText(latestJob?.error?.error || latestJob?.error?.message).slice(0, 240) || null,
+          }, 'warning')
           setBackgroundGenerationJob(null)
           setActionProgressMessage('')
           const errorText = normalizeText(latestJob?.error?.error || latestJob?.error?.message)
@@ -4737,6 +4797,20 @@ export default function LegalDocumentWorkspace({
         timerId = setTimeout(() => poll(attemptIndex + 1), nextDelay)
       } catch (error) {
         if (!isCurrent()) return
+        recordWorkspacePerformance('legal_document.generation.background_poll', pollStartedAt, {
+          diagnosticRunId,
+          attemptIndex,
+          jobId: currentJobId,
+          failed: true,
+          errorCode: normalizeText(error?.code) || null,
+          errorMessage: normalizeText(error?.message || error).slice(0, 240) || null,
+        })
+        recordBackgroundPollDiagnostic('mandate_background_poll_failed', {
+          attemptIndex,
+          durationMs: roundedDurationMs(pollStartedAt),
+          errorCode: normalizeText(error?.code) || null,
+          errorMessage: normalizeText(error?.message || error).slice(0, 240) || null,
+        }, 'warning')
         console.warn('[LegalDocumentWorkspace] background mandate generation job poll failed.', error)
         const nextDelay = LEGAL_DOCUMENT_JOB_POLL_DELAYS_MS[Math.min(attemptIndex + 1, LEGAL_DOCUMENT_JOB_POLL_DELAYS_MS.length - 1)]
         timerId = setTimeout(() => poll(attemptIndex + 1), nextDelay)
@@ -4753,9 +4827,17 @@ export default function LegalDocumentWorkspace({
     isMandatePacket,
     onRefreshContext,
     open,
+    organisationId,
     packetId,
+    packetType,
+    recordWorkspacePerformance,
     refreshWorkspaceData,
     statusState,
+    workspaceProfile?.id,
+    workspaceProfile?.organisationId,
+    workspaceProfile?.organisation_id,
+    workspaceProfile?.userId,
+    workspaceProfile?.user_id,
   ])
 
   const logMandateFailure = useCallback(async (failedAction, error) => {

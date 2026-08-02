@@ -8,7 +8,9 @@ export const PERFORMANCE_BUDGETS_MS = Object.freeze({
   'legal_document.generation.seller_onboarding': 3000,
   'legal_document.generation.template_lookup': 3000,
   'legal_document.generation.packet_prepare': 5000,
+  'legal_document.generation.packet_reset': 8000,
   'legal_document.generation.render_save': 45000,
+  'legal_document.generation.background_poll': 8000,
   'legal_document.generation.total': 65000,
   'legal_document.signing.signer_readiness': 8000,
   'legal_document.signing.email_delivery': 10000,
@@ -37,6 +39,53 @@ export function isPerformanceBudgetBreached({ metricName = '', durationMs = null
   const duration = Number(durationMs)
   const budget = getPerformanceBudgetMs(metricName, budgetMs)
   return Number.isFinite(duration) && Number.isFinite(budget) && duration > budget
+}
+
+export function buildLegalDocumentDiagnosticRunId(prefix = 'legal-doc') {
+  const safePrefix = normalizeText(prefix).replace(/[^a-z0-9_-]/gi, '').slice(0, 32) || 'legal-doc'
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${safePrefix}-${crypto.randomUUID()}`
+  }
+  const random = Math.random().toString(36).slice(2, 10)
+  return `${safePrefix}-${Date.now().toString(36)}-${random}`
+}
+
+export function recordLegalDocumentDiagnostic({
+  eventName = '',
+  userId = '',
+  workspaceId = '',
+  route = '/legal-document-workspace',
+  severity = 'info',
+  metadata = {},
+} = {}) {
+  const safeEventName = normalizeText(eventName)
+  if (!safeEventName) return { recorded: false, reason: 'missing_event_name' }
+  const safeSeverity = normalizeText(severity) || 'info'
+  const safeMetadata = metadata && typeof metadata === 'object' ? metadata : {}
+  const consoleMethod = safeSeverity === 'error'
+    ? 'error'
+    : safeSeverity === 'warning' || safeSeverity === 'warn'
+      ? 'warn'
+      : 'info'
+  const payload = {
+    eventName: safeEventName,
+    route,
+    severity: safeSeverity,
+    metadata: safeMetadata,
+  }
+  if (typeof console !== 'undefined' && typeof console[consoleMethod] === 'function') {
+    console[consoleMethod]('[LEGAL_DOCUMENT_DIAGNOSTIC]', payload)
+  }
+  void trackTelemetryEvent({
+    category: 'legal_document_diagnostic',
+    eventName: safeEventName,
+    severity: safeSeverity,
+    userId,
+    workspaceId,
+    route,
+    metadata: safeMetadata,
+  })
+  return { recorded: true }
 }
 
 export async function recordPerformanceMetric({

@@ -54,7 +54,11 @@ import {
 } from '../services/privateListingService'
 import { getMandateSignerRoleLabel, resolveMandateSecondarySignerConfig } from '../lib/mandateSignatureRules'
 import { allocatePrivateListingTransferAttorney } from '../services/privateListingAttorneyAllocationService'
-import { recordPerformanceMetric } from '../services/observability/performanceMetrics'
+import {
+  buildLegalDocumentDiagnosticRunId,
+  recordLegalDocumentDiagnostic,
+  recordPerformanceMetric,
+} from '../services/observability/performanceMetrics'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -69,6 +73,10 @@ function getPerformanceNow() {
 function roundedDurationMs(startedAt = 0) {
   const duration = getPerformanceNow() - Number(startedAt || 0)
   return Math.max(0, Math.round(duration))
+}
+
+function isPerformancePhaseFailed(metadata = {}) {
+  return Boolean(metadata?.failed || metadata?.timedOut || metadata?.recoveredFromTimeout)
 }
 
 const SELLER_PORTAL_INVITE_AFTER_MANDATE_SIGNED_EVENT = 'seller_portal_invite_ready_after_mandate_signed'
@@ -4016,25 +4024,65 @@ export default function LegalDocumentWorkspacePage() {
 
   const handleGenerate = useCallback(async ({ onProgress, persistForSend = false, resetExisting = false, editableSections = null, renderFreeze = null } = {}) => {
     const generationStartedAt = getPerformanceNow()
+    const diagnosticRunId = buildLegalDocumentDiagnosticRunId(`${packetType}-generation`)
     const documentLabel = packetType === 'otp' ? 'OTP' : 'mandate'
-    const recordGenerationMetric = (metricName, startedAt, metadata = {}) => {
-      void recordPerformanceMetric({
-        metricName,
-        durationMs: roundedDurationMs(startedAt),
+    const diagnosticRoute = '/legal-document-workspace'
+    const diagnosticBase = {
+      diagnosticRunId,
+      packetType,
+      documentLabel,
+      transactionId: transactionId || null,
+      leadId: normalizeLeadUuid(routeLeadId) || null,
+      listingId: normalizeText(routeListingId) || null,
+      routePacketId: normalizeText(routePacketId) || null,
+      initialPacketId: normalizeText(validatedRoutePacketId || initialStatus?.packet?.id || leadContext.lead?.mandatePacketId) || null,
+      persistForSend: persistForSend === true,
+      resetExisting: resetExisting === true,
+    }
+    const recordGenerationDiagnostic = (eventName, metadata = {}, severity = 'info') => {
+      recordLegalDocumentDiagnostic({
+        eventName,
+        severity,
         userId: actor.id,
         workspaceId: organisationId,
-        route: '/legal-document-workspace',
+        route: diagnosticRoute,
         metadata: {
+          ...diagnosticBase,
+          ...metadata,
+        },
+      })
+    }
+    const recordGenerationMetric = (metricName, startedAt, metadata = {}) => {
+      const durationMs = roundedDurationMs(startedAt)
+      void recordPerformanceMetric({
+        metricName,
+        durationMs,
+        userId: actor.id,
+        workspaceId: organisationId,
+        route: diagnosticRoute,
+        metadata: {
+          diagnosticRunId,
           packetType,
           documentLabel,
           transactionId: transactionId || null,
           leadId: normalizeLeadUuid(routeLeadId) || null,
+          listingId: normalizeText(routeListingId) || null,
+          routePacketId: normalizeText(routePacketId) || null,
           persistForSend: persistForSend === true,
           resetExisting: resetExisting === true,
           ...metadata,
         },
       })
+      recordGenerationDiagnostic('mandate_generation_phase_timed', {
+        metricName,
+        durationMs,
+        ...metadata,
+      }, isPerformancePhaseFailed(metadata) ? 'warning' : 'info')
     }
+    recordGenerationDiagnostic('mandate_generation_started', {
+      editableSectionCount: Array.isArray(editableSections) ? editableSections.length : 0,
+      renderFreezeId: normalizeText(renderFreeze?.freezeId) || null,
+    })
     onProgress?.(`Preparing ${documentLabel} data...`)
     const generationLookupTimeoutMs = 8000
     let template = null
@@ -4047,6 +4095,7 @@ export default function LegalDocumentWorkspacePage() {
     if (resetMandatePacket) {
       onProgress?.('Resetting failed mandate packet...')
       if (isUuidLike(existingPacketIdForReset)) {
+        const resetStartedAt = getPerformanceNow()
         await withLegalWorkspaceTimeout(
           archivePacket(existingPacketIdForReset, {
             reason: 'Reset failed mandate before regeneration.',
@@ -4054,6 +4103,12 @@ export default function LegalDocumentWorkspacePage() {
           'Failed mandate packet reset is taking too long.',
           generationLookupTimeoutMs,
         ).catch((resetError) => {
+          recordGenerationMetric('legal_document.generation.packet_reset', resetStartedAt, {
+            packetId: existingPacketIdForReset,
+            failed: true,
+            errorCode: normalizeText(resetError?.code) || null,
+            errorMessage: normalizeText(resetError?.message || resetError).slice(0, 240) || null,
+          })
           console.warn('[LegalDocumentWorkspacePage] failed mandate packet could not be archived; continuing with fresh packet generation.', resetError)
         })
       }
@@ -4082,6 +4137,11 @@ export default function LegalDocumentWorkspacePage() {
     const existingStatus = shouldResolveExistingStatus
       ? await resolveCurrentStatus().catch((statusError) => {
           if (!isLegalWorkspaceTimeoutError(statusError)) throw statusError
+          recordGenerationMetric('legal_document.generation.status_lookup', statusLookupStartedAt, {
+            packetId: normalizeText(validatedRoutePacketId || initialStatus?.packet?.id) || null,
+            timedOut: true,
+            errorMessage: normalizeText(statusError?.message || statusError).slice(0, 240) || null,
+          })
           console.warn('[LegalDocumentWorkspacePage] status lookup timed out before generation; continuing with current route state.', statusError)
           return initialStatus || buildFallbackPacketStatus(packetType)
         })
@@ -4110,6 +4170,11 @@ export default function LegalDocumentWorkspacePage() {
         'Seller onboarding lookup is taking too long.',
         generationLookupTimeoutMs,
       ).catch((onboardingError) => {
+        recordGenerationMetric('legal_document.generation.seller_onboarding', onboardingStartedAt, {
+          recoveredFromTimeout: true,
+          errorCode: normalizeText(onboardingError?.code) || null,
+          errorMessage: normalizeText(onboardingError?.message || onboardingError).slice(0, 240) || null,
+        })
         console.warn('[LegalDocumentWorkspacePage] seller onboarding refresh unavailable before generation; using loaded lead context.', onboardingError)
         return leadContext
       })
@@ -4334,30 +4399,51 @@ export default function LegalDocumentWorkspacePage() {
 
     onProgress?.(`Loading ${documentLabel} template...`)
     const templateLookupStartedAt = getPerformanceNow()
-    const templateResolution = await withLegalWorkspaceTimeout(
-      resolveActiveTemplate({
-        packetType,
-        moduleType: 'residential',
-        organisationId,
-        context: generationContext,
-      }),
-      'Template lookup is taking too long.',
-      generationLookupTimeoutMs,
-    )
-    template = templateResolution?.template || null
-    let templateFallbackUsed = false
-    if (!template?.id) {
-      templateFallbackUsed = true
-      const templates = await withLegalWorkspaceTimeout(
-        listPacketTemplates({
+    let templateResolution = null
+    try {
+      templateResolution = await withLegalWorkspaceTimeout(
+        resolveActiveTemplate({
           packetType,
-          moduleType: 'agency',
-          includeInactive: false,
+          moduleType: 'residential',
           organisationId,
+          context: generationContext,
         }),
         'Template lookup is taking too long.',
         generationLookupTimeoutMs,
       )
+    } catch (templateError) {
+      recordGenerationMetric('legal_document.generation.template_lookup', templateLookupStartedAt, {
+        failed: true,
+        errorCode: normalizeText(templateError?.code) || null,
+        errorMessage: normalizeText(templateError?.message || templateError).slice(0, 240) || null,
+      })
+      throw templateError
+    }
+    template = templateResolution?.template || null
+    let templateFallbackUsed = false
+    if (!template?.id) {
+      templateFallbackUsed = true
+      let templates = []
+      try {
+        templates = await withLegalWorkspaceTimeout(
+          listPacketTemplates({
+            packetType,
+            moduleType: 'agency',
+            includeInactive: false,
+            organisationId,
+          }),
+          'Template lookup is taking too long.',
+          generationLookupTimeoutMs,
+        )
+      } catch (fallbackTemplateError) {
+        recordGenerationMetric('legal_document.generation.template_lookup', templateLookupStartedAt, {
+          failed: true,
+          fallbackUsed: true,
+          errorCode: normalizeText(fallbackTemplateError?.code) || null,
+          errorMessage: normalizeText(fallbackTemplateError?.message || fallbackTemplateError).slice(0, 240) || null,
+        })
+        throw fallbackTemplateError
+      }
       template = getFirstTemplate(templates, packetType)
     }
     recordGenerationMetric('legal_document.generation.template_lookup', templateLookupStartedAt, {
@@ -4369,12 +4455,24 @@ export default function LegalDocumentWorkspacePage() {
 
     onProgress?.(`Preparing ${documentLabel} packet...`)
     const packetPrepStartedAt = getPerformanceNow()
-    const packet = await ensurePacket({
-      template,
-      allowRuntime: false,
-      forceNew: resetMandatePacket,
-      mandateDraftOverride: mandateDraftForGeneration,
-    })
+    let packet = null
+    try {
+      packet = await ensurePacket({
+        template,
+        allowRuntime: false,
+        forceNew: resetMandatePacket,
+        mandateDraftOverride: mandateDraftForGeneration,
+      })
+    } catch (packetPrepError) {
+      recordGenerationMetric('legal_document.generation.packet_prepare', packetPrepStartedAt, {
+        failed: true,
+        templateId: normalizeText(template?.id) || null,
+        templateKey: normalizeText(template?.template_key || template?.templateKey) || null,
+        errorCode: normalizeText(packetPrepError?.code) || null,
+        errorMessage: normalizeText(packetPrepError?.message || packetPrepError).slice(0, 240) || null,
+      })
+      throw packetPrepError
+    }
     recordGenerationMetric('legal_document.generation.packet_prepare', packetPrepStartedAt, {
       packetId: normalizeText(packet?.id) || null,
       runtimePacket: isRuntimePacketId(packet?.id),
@@ -4411,18 +4509,31 @@ export default function LegalDocumentWorkspacePage() {
 
     onProgress?.(`Rendering and saving ${documentLabel} PDF...`)
     const renderStartedAt = getPerformanceNow()
-    const generationResult = await withLegalWorkspaceTimeout(
-      generatePacketVersion({
-        packetId: packet.id,
-        packetType,
-        template,
-        allowWarnings: true,
-        forceGenerate: false,
-        context: generationContext,
-      }),
-      'Draft generation is taking too long.',
-      LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS,
-    )
+    let generationResult = null
+    try {
+      generationResult = await withLegalWorkspaceTimeout(
+        generatePacketVersion({
+          packetId: packet.id,
+          packetType,
+          template,
+          allowWarnings: true,
+          forceGenerate: false,
+          context: generationContext,
+        }),
+        'Draft generation is taking too long.',
+        LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS,
+      )
+    } catch (renderError) {
+      recordGenerationMetric('legal_document.generation.render_save', renderStartedAt, {
+        packetId: normalizeText(packet?.id) || null,
+        failed: true,
+        templateId: normalizeText(template?.id) || null,
+        templateKey: normalizeText(template?.template_key || template?.templateKey) || null,
+        errorCode: normalizeText(renderError?.code) || null,
+        errorMessage: normalizeText(renderError?.message || renderError).slice(0, 240) || null,
+      })
+      throw renderError
+    }
     recordGenerationMetric('legal_document.generation.render_save', renderStartedAt, {
       packetId: normalizeText(packet?.id) || null,
       versionId: normalizeText(generationResult?.version?.id) || null,
@@ -4432,6 +4543,14 @@ export default function LegalDocumentWorkspacePage() {
     })
 
     if (generationResult?.backgroundGenerationQueued) {
+      recordGenerationDiagnostic('mandate_generation_background_queued', {
+        packetId: normalizeText(packet?.id) || null,
+        jobId: normalizeText(generationResult?.job?.jobId || generationResult?.job?.job_id) || null,
+        jobStatus: normalizeText(generationResult?.job?.status || generationResult?.job?.job_status) || null,
+        templateId: normalizeText(template?.id) || null,
+        templateKey: normalizeText(template?.template_key || template?.templateKey) || null,
+        queuedAfterMs: roundedDurationMs(generationStartedAt),
+      })
       const queuedStatus = {
         packetType,
         state: 'GENERATION_QUEUED',
@@ -4562,6 +4681,7 @@ export default function LegalDocumentWorkspacePage() {
     routeLeadId,
     routeListingId,
     routeOfferId,
+    routePacketId,
     selectedTransferAttorney,
     syncLeadMandateState,
     transaction,
