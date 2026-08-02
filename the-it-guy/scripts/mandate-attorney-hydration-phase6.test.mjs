@@ -59,6 +59,8 @@ assert.match(pageSource, /immediateLeadContext = mergeRemoteLeadContext\(immedia
 assert.match(pageSource, /nextLeadContext = mergeRemoteLeadContext\(nextLeadContext, supabaseLeadContext\)/, 'Background mandate route hydration must merge live Supabase context into the settled draft.')
 assert.match(pageSource, /readLead\(false\)/, 'Lead lookup must retry without a stale organisation filter.')
 assert.match(pageSource, /originating_crm_lead_id\.eq/, 'Lead route must be able to find the linked private listing by originating CRM lead id.')
+assert.match(pageSource, /autoGenerateEnabled=\{routeContextSettled && contextHydrated && packetType === 'mandate'\}/, 'Mandate auto-generation must wait for route packet lookup to settle before creating a new packet.')
+assert.match(await readFile(resolve(root, 'src/core/documents/packetStatusResolver.js'), 'utf8'), /\['completed', 'partially_signed', 'sent', 'signing_prep'\][\s\S]+status === 'generated'[\s\S]+status === 'draft'/, 'Lead-scoped packet resolution must prefer generated packets over accidental draft duplicates.')
 assert.match(workspaceSource, /if \(!legalPermissions\.canGenerate \|\| typeof onGenerate !== 'function'\) return\n\s+if \(actionBusyRef\.current\) return\n\s+const autoGenerateKey/, 'Auto-generation rerenders must not invalidate an active generation run and leave the UI stuck on Working.')
 
 console.log('Mandate attorney hydration Phase 6 checks passed.')

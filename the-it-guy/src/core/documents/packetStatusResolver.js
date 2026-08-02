@@ -326,7 +326,16 @@ function selectLatestPacket(rows = [], preferredPacketId = '') {
     const matched = packetRows.find((row) => normalizeText(row?.id) === normalizedPreferred)
     if (matched) return matched
   }
-  return packetRows[0] || null
+  const priority = (packet = {}) => {
+    const status = normalizeKey(packet?.status)
+    if (['completed', 'partially_signed', 'sent', 'signing_prep'].includes(status)) return 0
+    if (status === 'generated') return 1
+    if (status === 'ready_for_generation') return 3
+    if (status === 'draft') return 4
+    if (['archived', 'voided'].includes(status)) return 9
+    return 2
+  }
+  return [...packetRows].sort((a, b) => priority(a) - priority(b))[0] || null
 }
 
 function resolvePacketStatusCacheKey({
