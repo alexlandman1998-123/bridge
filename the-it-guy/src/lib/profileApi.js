@@ -22,6 +22,7 @@ function isMissingTableError(error, tableName) {
   const status = Number(error.status || error.statusCode || 0)
   const code = String(error.code || '').toUpperCase()
   const message = String(error.message || '').toLowerCase()
+  if (isTransientSchemaCacheError(error)) return false
   if (message.includes('permission denied')) return false
   return (
     code === '42P01' ||
@@ -32,6 +33,19 @@ function isMissingTableError(error, tableName) {
     message.includes('schema cache') ||
     message.includes(`could not find the table '${String(tableName || '').toLowerCase()}'`) ||
     message.includes(`could not find the '${String(tableName || '').toLowerCase()}' table`)
+  )
+}
+
+function isTransientSchemaCacheError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toUpperCase()
+  const message = String(error.message || '').toLowerCase()
+  return (
+    code === 'PGRST002' ||
+    (
+      message.includes('could not query the database for the schema cache') &&
+      message.includes('retrying')
+    )
   )
 }
 

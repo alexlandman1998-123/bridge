@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 
 const source = await readFile(new URL('../src/context/AuthSessionContext.jsx', import.meta.url), 'utf8')
 const appSource = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+const profileSource = await readFile(new URL('../src/lib/profileApi.js', import.meta.url), 'utf8')
 
 assert.match(
   source,
@@ -57,6 +58,18 @@ assert.match(
   appSource,
   /<button[\s\S]*?className="auth-secondary-cta"[\s\S]*?onClick=\{restartSignIn\}[\s\S]*?>[\s\S]*?Go to Sign-in/,
   'account bootstrap error screen should use the restart sign-in escape hatch',
+)
+
+assert.match(
+  profileSource,
+  /function isTransientSchemaCacheError\(error\)[\s\S]*?code === 'PGRST002'[\s\S]*?could not query the database for the schema cache[\s\S]*?retrying/,
+  'profile bootstrap should preserve transient PostgREST schema-cache retries as retryable errors',
+)
+
+assert.match(
+  profileSource,
+  /function isMissingTableError\(error, tableName\)[\s\S]*?if \(isTransientSchemaCacheError\(error\)\) return false/,
+  'profile bootstrap must not misclassify PGRST002 as a missing profiles migration',
 )
 
 console.log('auth bridge bootstrap timeout contract ok')
