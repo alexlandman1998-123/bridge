@@ -4597,7 +4597,7 @@ export default function LegalDocumentWorkspace({
     throw error
   }, [isMandatePacket, latestVersion?.id, mandateDataSnapshot, packetId, transactionId])
 
-  const refreshWorkspaceData = useCallback(async ({ force = false, allowStale = false } = {}) => {
+  const refreshWorkspaceData = useCallback(async ({ force = false, allowStale = false, includeEvents = true } = {}) => {
     if (refreshWorkspacePromiseRef.current) {
       return refreshWorkspacePromiseRef.current
     }
@@ -4671,7 +4671,7 @@ export default function LegalDocumentWorkspace({
       if (isUuidLike(resolvedPacketId)) {
         try {
           const detail = await withWorkspaceTimeout(
-            fetchDocumentPacket(resolvedPacketId, { includeVersions: false, includeEvents: true }),
+            fetchDocumentPacket(resolvedPacketId, { includeVersions: false, includeEvents }),
             'Packet events are taking too long to load.',
           )
           setPacketDetail(detail || null)
@@ -4710,7 +4710,7 @@ export default function LegalDocumentWorkspace({
       const normalizedDelay = Math.max(0, Number(delayMs || 0))
       const timerId = setTimeout(() => {
         scheduledWorkspaceRefreshTimersRef.current.delete(timerId)
-        void refreshWorkspaceData({ force: true }).then((refreshed) => {
+        void refreshWorkspaceData({ force: true, includeEvents: false }).then((refreshed) => {
           if (refreshed?.resolved) {
             statusStateRef.current = refreshed.resolved
             setStatusState(refreshed.resolved)

@@ -336,6 +336,7 @@ function resolvePacketStatusCacheKey({
   leadId = '',
   organisationId = null,
   viewerRole = '',
+  includeActivity = true,
 } = {}) {
   return [
     normalizeKey(packetType),
@@ -344,6 +345,7 @@ function resolvePacketStatusCacheKey({
     normalizeLeadUuid(leadId),
     normalizeNullableUuid(organisationId) || '',
     normalizeKey(viewerRole),
+    includeActivity === false ? 'no_activity' : 'activity',
   ].join(':')
 }
 
@@ -404,6 +406,8 @@ export async function resolveDocumentPacketStatus({
   leadId = '',
   organisationId = null,
   viewerRole = '',
+  includeActivity = true,
+  activityLimit = 25,
 } = {}) {
   const cacheKey = resolvePacketStatusCacheKey({
     packetType,
@@ -412,6 +416,7 @@ export async function resolveDocumentPacketStatus({
     leadId,
     organisationId,
     viewerRole,
+    includeActivity,
   })
   const cached = cachedPacketStatuses.get(cacheKey)
   const now = Date.now()
@@ -462,8 +467,8 @@ export async function resolveDocumentPacketStatus({
           transactionId: normalizedTransactionId,
           leadId: normalizedLeadId,
           organisationId: scopedOrganisationId,
-          includeActivity: true,
-          activityLimit: 25,
+          includeActivity: includeActivity !== false,
+          activityLimit,
         })
         fastPathResolved = true
         packet = workspaceStatus.packet || null
@@ -492,7 +497,11 @@ export async function resolveDocumentPacketStatus({
     if (!fastPathResolved) {
       try {
         if (normalizedPacketId && isUuidLike(normalizedPacketId)) {
-          packet = await fetchDocumentPacket(normalizedPacketId, { includeVersions: false, includeEvents: true })
+          packet = await fetchDocumentPacket(normalizedPacketId, {
+            includeVersions: false,
+            includeEvents: includeActivity !== false,
+            eventLimit: activityLimit,
+          })
           if (packet?.id && normalizedLeadId && !documentPacketBelongsToLead(packet, normalizedLeadId)) {
             warnings.push('The packet in the link belongs to another lead, so it was ignored.')
             packet = null
@@ -531,9 +540,13 @@ export async function resolveDocumentPacketStatus({
       }
 
       if (packet?.id) {
-        if (!Array.isArray(packet.events)) {
+        if (includeActivity !== false && !Array.isArray(packet.events)) {
           try {
-            const packetWithEvents = await fetchDocumentPacket(packet.id, { includeVersions: false, includeEvents: true })
+            const packetWithEvents = await fetchDocumentPacket(packet.id, {
+              includeVersions: false,
+              includeEvents: true,
+              eventLimit: activityLimit,
+            })
             packet = packetWithEvents || packet
           } catch (error) {
             if (isPermissionDeniedError(error)) warnings.push('Signing activity is restricted by RLS for this role.')

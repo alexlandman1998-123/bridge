@@ -539,6 +539,7 @@
     "test:document-workspace-performance-phase5": "node scripts/document-workspace-performance-phase5.test.mjs",
     "test:document-workspace-performance-phase6": "node scripts/document-workspace-performance-phase6.test.mjs",
     "test:document-workspace-performance-phase7": "node scripts/document-workspace-performance-phase7.test.mjs",
+    "test:document-workspace-performance-phase8": "node scripts/document-workspace-performance-phase8.test.mjs",
     "verify:document-generator:phase-i3": "node --env-file=.env --env-file=.env.staging.local scripts/document-generator-phase-i3-backpressure.mjs",
     "test:document-generator-phase-i4": "node --test src/core/documents/__tests__/documentGeneratorAttemptObservabilityBoundary.test.js && node scripts/document-generator-phase-i4-attempt-observability.test.mjs",
     "verify:document-generator:phase-i4": "node --env-file=.env --env-file=.env.staging.local scripts/document-generator-phase-i4-attempt-observability.mjs",

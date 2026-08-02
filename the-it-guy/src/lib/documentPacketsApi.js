@@ -2090,7 +2090,7 @@ export async function listDocumentPackets({
   return data || []
 }
 
-export async function fetchDocumentPacket(packetId, { includeVersions = true, includeEvents = true } = {}) {
+export async function fetchDocumentPacket(packetId, { includeVersions = true, includeEvents = true, eventLimit = 100 } = {}) {
   const client = requireClient()
   if (!packetId) throw new Error('packetId is required.')
 
@@ -2127,11 +2127,14 @@ export async function fetchDocumentPacket(packetId, { includeVersions = true, in
   }
 
   if (includeEvents) {
-    const { data, error } = await client
+    const resolvedEventLimit = Math.max(0, Math.min(Number(eventLimit || 100), 250))
+    let eventsQuery = client
       .from('document_packet_events')
       .select('id, packet_id, organisation_id, version_id, event_type, event_payload_json, created_by, created_at')
       .eq('packet_id', packetId)
       .order('created_at', { ascending: false })
+    if (resolvedEventLimit > 0) eventsQuery = eventsQuery.limit(resolvedEventLimit)
+    const { data, error } = await eventsQuery
     if (error) throw error
     result.events = data || []
   }
