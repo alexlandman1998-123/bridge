@@ -614,6 +614,41 @@ async function hydratePacketVersionAccessUrls(client, version = {}, options = {}
   return hydrated
 }
 
+async function hydrateDocumentPacketPayloadAccessUrls(client, payload = {}, options = {}) {
+  if (!payload || typeof payload !== 'object') return payload
+  const hydrated = { ...payload }
+  const versionCache = new Map()
+
+  async function hydrateVersion(value) {
+    if (!value || typeof value !== 'object') return value
+    const cacheKey = normalizeText(value?.id) || JSON.stringify({
+      packet_id: value?.packet_id || null,
+      version_number: value?.version_number || null,
+      rendered_file_path: value?.rendered_file_path || null,
+      final_signed_file_path: value?.final_signed_file_path || null,
+    })
+    if (versionCache.has(cacheKey)) return versionCache.get(cacheKey)
+    const promise = hydratePacketVersionAccessUrls(client, value, options)
+    versionCache.set(cacheKey, promise)
+    return promise
+  }
+
+  if (Array.isArray(hydrated.versions)) {
+    hydrated.versions = await Promise.all(hydrated.versions.map((item) => hydrateVersion(item)))
+  }
+  if (Array.isArray(hydrated.packetVersions)) {
+    hydrated.packetVersions = await Promise.all(hydrated.packetVersions.map((item) => hydrateVersion(item)))
+  }
+  if (hydrated.version && typeof hydrated.version === 'object') {
+    hydrated.version = await hydrateVersion(hydrated.version)
+  }
+  if (hydrated.currentVersion && typeof hydrated.currentVersion === 'object') {
+    hydrated.currentVersion = await hydrateVersion(hydrated.currentVersion)
+  }
+
+  return hydrated
+}
+
 function generateSecureSigningToken() {
   const bytes = new Uint8Array(32)
   if (typeof crypto?.getRandomValues !== 'function') throw new Error('Secure random token generation is unavailable in this browser.')
@@ -1967,12 +2002,12 @@ export async function createEditableDocumentDraftFromTemplate(input = {}) {
     throw new Error('The editable document draft contract returned an invalid result.')
   }
 
-  return {
+  return hydrateDocumentPacketPayloadAccessUrls(client, {
     ...result.packet,
     editableDraft: result.editableContent || editableDraft,
     versions: [result.version],
     currentVersion: result.version,
-  }
+  })
 }
 
 export async function updateDocumentPacket(packetId, updates = {}) {
@@ -2317,7 +2352,7 @@ export async function updateDocumentPacketVersionFinalArtifact({
   const payload = {
     final_signed_file_path: normalizeNullableText(finalSignedFilePath),
     final_signed_file_name: normalizeNullableText(finalSignedFileName),
-    final_signed_file_url: normalizeNullableText(finalSignedFileUrl),
+    final_signed_file_url: normalizeDurableDocumentUrl(finalSignedFileUrl) || null,
     final_signed_file_bucket: normalizeNullableText(finalSignedFileBucket),
     final_signed_document_id: normalizeNullableUuid(finalSignedDocumentId),
     finalised_at: normalizeNullableText(finalisedAt) || new Date().toISOString(),
@@ -3212,7 +3247,7 @@ export async function createDocumentPacketVersion(input = {}) {
     p_rendered_document_id: normalizeNullableUuid(input.renderedDocumentId),
     p_rendered_file_path: normalizeNullableText(input.renderedFilePath),
     p_rendered_file_name: normalizeNullableText(input.renderedFileName),
-    p_rendered_file_url: normalizeNullableText(input.renderedFileUrl),
+    p_rendered_file_url: normalizeDurableDocumentUrl(input.renderedFileUrl) || null,
     p_placeholders_resolved_json: input.placeholdersResolvedJson && typeof input.placeholdersResolvedJson === 'object' ? input.placeholdersResolvedJson : {},
     p_placeholders_missing_json: Array.isArray(input.placeholdersMissingJson) ? input.placeholdersMissingJson : [],
     p_section_manifest_json: Array.isArray(input.sectionManifestJson) ? input.sectionManifestJson : [],

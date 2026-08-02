@@ -23,6 +23,10 @@ assert.match(packetApi, /PERSISTED_SIGNED_URL_IGNORED/, 'Persisted Supabase sign
 assert.match(packetApi, /hydrated\.rendered_file_access_url = renderedAccess\.accessUrl \|\| ''/, 'Hydration must expose fresh access URLs via rendered_file_access_url.')
 assert.match(packetApi, /hydrated\.rendered_file_url = normalizeDurableDocumentUrl\(version\?\.rendered_file_url\)/, 'Hydration must strip persisted signed URLs from rendered_file_url fallbacks.')
 assert.match(packetApi, /rendered_file_access_error/, 'Hydration must expose access failure details without restarting generation.')
+assert.match(packetApi, /async function hydrateDocumentPacketPayloadAccessUrls/, 'Packet payload hydration must normalize nested version shapes.')
+assert.match(packetApi, /versions: \[result\.version\],[\s\S]+currentVersion: result\.version,[\s\S]+\}\)/, 'Editable draft creation must return hydrated version data.')
+assert.match(packetApi, /p_rendered_file_url: normalizeDurableDocumentUrl\(input\.renderedFileUrl\) \|\| null/, 'Generated version writes must not persist signed rendered_file_url values.')
+assert.match(packetApi, /final_signed_file_url: normalizeDurableDocumentUrl\(finalSignedFileUrl\) \|\| null/, 'Final artifact writes must not persist signed final_signed_file_url values.')
 
 assert.match(workspace, /function normalizeDurablePreviewUrl/, 'Workspace UI must guard preview/download fallbacks.')
 assert.match(workspace, /normalizeText\(version\?\.rendered_file_access_url\) \|\| normalizeDurablePreviewUrl\(version\?\.rendered_file_url\)/, 'Workspace download URL must prefer fresh access URLs over persisted URLs.')
