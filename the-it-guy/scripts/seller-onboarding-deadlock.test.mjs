@@ -7,6 +7,7 @@ const privateListingSource = await fs.readFile(new URL('src/services/privateList
 const agencyPipelineSource = await fs.readFile(new URL('src/pages/agency/AgencyPipelinePage.jsx', appRoot), 'utf8')
 const sellerOnboardingSource = await fs.readFile(new URL('src/pages/SellerOnboarding.jsx', appRoot), 'utf8')
 const sellerOnboardingCoreApiSource = await fs.readFile(new URL('server/services/sellerOnboardingCoreApi.js', appRoot), 'utf8')
+const sellerOnboardingBrandingApiSource = await fs.readFile(new URL('server/services/sellerOnboardingBrandingApi.js', appRoot), 'utf8')
 
 const editSellerHandler = listingDetailSource.match(/function handleEditSellerProfile\(\) \{[\s\S]*?\n  }\n\n  async function handleSaveSellerContact/)?.[0] || ''
 const saveSellerHandler = listingDetailSource.match(/async function handleSaveSellerContact\(event\) \{[\s\S]*?\n  }\n\n  function handleDownloadSellerProfilePdf/)?.[0] || ''
@@ -34,5 +35,9 @@ assert.match(agencyPipelineSource, /partnerRelationshipId: relationshipId/, 'Con
 assert.match(sellerOnboardingSource, /existing\.preferred_transfer_attorney/, 'Seller onboarding must read legacy snake-case preferred transfer attorney payloads.')
 assert.match(sellerOnboardingCoreApiSource, /resolveTokenScopedPreferredTransferAttorney/, 'Public seller onboarding core API should recover missing preferred transfer attorney snapshots.')
 assert.match(sellerOnboardingCoreApiSource, /preferredTransferAttorney,[\s\S]*preferred_transfer_attorney: preferredTransferAttorney/, 'Recovered preferred transfer attorney should be exposed in camel-case and snake-case form data.')
+assert.match(sellerOnboardingCoreApiSource, /resolveDeliveredSellerOnboardingRecovery/, 'Public seller onboarding core API should recover previously delivered orphan onboarding links.')
+assert.match(sellerOnboardingBrandingApiSource, /resolveDeliveredSellerOnboardingRecovery/, 'Seller onboarding branding should use the same delivered-link recovery as the core payload.')
+assert.match(sellerOnboardingSource, /const effectiveToken = canonicalToken \|\| token/, 'Recovered seller onboarding pages should save with the canonical persisted token.')
+assert.match(sellerOnboardingSource, /submitSellerOnboarding\(effectiveToken/, 'Recovered seller onboarding submissions should use the canonical persisted token.')
 
 console.log('seller onboarding deadlock checks passed')

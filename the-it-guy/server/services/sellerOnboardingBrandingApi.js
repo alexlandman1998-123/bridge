@@ -5,6 +5,7 @@ import {
   getOrganisationOnboardingBrandingSources,
   resolveOnboardingBranding,
 } from '../../src/lib/onboardingBranding.js'
+import { resolveDeliveredSellerOnboardingRecovery } from './sellerOnboardingDeliveredLinkRecovery.js'
 
 let cachedRuntimeEnv = null
 
@@ -148,7 +149,11 @@ async function findOnboardingByPortalToken(client, token = '') {
     return data
   }
 
-  return null
+  const recovered = await resolveDeliveredSellerOnboardingRecovery(client, normalizedToken).catch((error) => {
+    if (['42P01', '42703'].includes(String(error?.code || ''))) return null
+    throw error
+  })
+  return recovered?.onboarding || null
 }
 
 async function resolveStorageAssetUrl(client, { bucket = '', path = '', fallbackUrl = '' } = {}) {

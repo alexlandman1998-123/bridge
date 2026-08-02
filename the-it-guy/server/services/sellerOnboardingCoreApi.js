@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
+import { resolveDeliveredSellerOnboardingRecovery } from './sellerOnboardingDeliveredLinkRecovery.js'
 
 let cachedRuntimeEnv = null
 const SUPABASE_FETCH_TIMEOUT_MS = 5000
@@ -369,6 +370,7 @@ function resolveTokenKind(onboarding = {}, token = '') {
 }
 
 function isTokenValid(onboarding = {}, tokenKind = 'unknown') {
+  if (tokenKind === 'delivered_recovery') return true
   if (tokenKind !== 'invite') return tokenKind === 'legacy' || tokenKind === 'stable'
   const inviteExpiresAt = Date.parse(normalizeText(onboarding.seller_portal_invite_expires_at))
   return !onboarding.seller_portal_invite_consumed_at && Number.isFinite(inviteExpiresAt) && inviteExpiresAt > Date.now()
@@ -407,7 +409,14 @@ async function resolveSellerOnboarding(client, token = '', { onboardingId = '', 
     'seller_portal_invite_token_hash',
     sha256Hex(normalizedToken),
   )
-  if (!invite) return null
+  if (!invite) {
+    return resolveDeliveredSellerOnboardingRecovery(client, normalizedToken, {
+      select: ONBOARDING_CORE_COLUMNS,
+    }).catch((error) => {
+      if (['42P01', '42703'].includes(String(error?.code || ''))) return null
+      throw error
+    })
+  }
 
   return { onboarding: invite, tokenKind: 'invite', tokenValid: isTokenValid(invite, 'invite') }
 }

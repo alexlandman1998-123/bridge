@@ -2814,6 +2814,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const token = String(tokenOverride || params?.token || '').trim()
   const isDemoOnboarding = isSellerOnboardingDemoToken(token)
   const useDbFirstSellerOnboarding = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED && !isDemoOnboarding)
+  const [canonicalTokenState, setCanonicalTokenState] = useState({ sourceToken: '', token: '' })
+  const canonicalToken = canonicalTokenState.sourceToken === token ? canonicalTokenState.token : ''
+  const effectiveToken = canonicalToken || token
   const [listing, setListing] = useState(null)
   const [form, setForm] = useState(null)
   const [currentStep, setCurrentStep] = useState(0)
@@ -2869,6 +2872,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             setLoading(false)
             return
           }
+          const resolvedToken = String(context?.onboarding?.token || found?.sellerOnboarding?.token || token).trim()
+          if (!isMounted) return
+          if (resolvedToken && resolvedToken !== canonicalToken) {
+            setCanonicalTokenState({ sourceToken: token, token: resolvedToken })
+          }
 
           const onboardingStatus = String(found?.sellerOnboarding?.status || context?.onboarding?.status || '')
             .trim()
@@ -2883,7 +2891,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
           let nextListing = found
           if (onboardingStatus === SELLER_ONBOARDING_STATUS.NOT_STARTED) {
-            const progressUpdate = await updateSellerOnboardingProgress(token, {
+            const progressUpdate = await updateSellerOnboardingProgress(resolvedToken || token, {
               status: SELLER_ONBOARDING_STATUS.IN_PROGRESS,
               currentStep: nextStep,
             })
@@ -2964,7 +2972,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     return () => {
       isMounted = false
     }
-  }, [embedded, isDemoOnboarding, token, useDbFirstSellerOnboarding])
+  }, [canonicalToken, embedded, isDemoOnboarding, token, useDbFirstSellerOnboarding])
 
   useEffect(() => {
     return () => {
@@ -3116,7 +3124,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const candidate = updater({ ...current })
       const nextStatus = String(candidate?.sellerOnboarding?.status || '').trim().toLowerCase() || SELLER_ONBOARDING_STATUS.IN_PROGRESS
       const nextStep = Number(candidate?.sellerOnboarding?.currentStep || currentStep || 0)
-      const progressUpdate = await updateSellerOnboardingProgress(token, {
+      const progressUpdate = await updateSellerOnboardingProgress(effectiveToken, {
         status: nextStatus,
         currentStep: nextStep,
         formData: (candidate?.sellerOnboarding?.formData && typeof candidate.sellerOnboarding.formData === 'object')
@@ -4273,7 +4281,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const submitFormData = { ...finalForm, ...canonicalPayload }
       let updated = null
       if (useDbFirstSellerOnboarding) {
-        const submitted = await submitSellerOnboarding(token, {
+        const submitted = await submitSellerOnboarding(effectiveToken, {
           status: 'completed',
           formData: submitFormData,
           sellerType: String(submissionForm?.ownerEntityType || submissionForm?.ownershipType || '').trim().toLowerCase() || null,
