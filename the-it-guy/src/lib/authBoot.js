@@ -20,6 +20,7 @@ const AUTO_CLAIMABLE_ONBOARDING_REASONS = new Set([
 
 const AUTH_BOOT_REQUIRED_STEP_TIMEOUT_MS = 20000
 const AUTH_BOOT_OPTIONAL_STEP_TIMEOUT_MS = 8000
+const AUTH_BOOT_TRANSIENT_SCHEMA_RETRY_DELAYS_MS = [750, 1750, 3500]
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -34,6 +35,13 @@ function getNowMs() {
 
 function roundDuration(durationMs) {
   return Math.round(Number(durationMs || 0))
+}
+
+function delay(ms = 0) {
+  const setTimer = typeof window !== 'undefined' && typeof window.setTimeout === 'function'
+    ? window.setTimeout.bind(window)
+    : setTimeout
+  return new Promise((resolve) => setTimer(resolve, Math.max(0, Number(ms) || 0)))
 }
 
 let authBootStepSequence = 0
@@ -93,6 +101,42 @@ function withStepTimeout(task, {
 
 function isAuthBootStepTimeout(error) {
   return error?.code === 'AUTH_BOOT_STEP_TIMEOUT' || String(error?.message || '').toLowerCase().includes('timed out')
+}
+
+function isTransientSchemaCacheError(error = null) {
+  const code = String(error?.code || '').toUpperCase()
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase()
+  return (
+    code === 'PGRST002' ||
+    code === 'PGRST003' ||
+    message.includes('could not query the database for the schema cache') ||
+    (message.includes('schema cache') && message.includes('retrying'))
+  )
+}
+
+async function withTransientSchemaRetry(task, {
+  label = 'auth boot query',
+  userId = '',
+  retryDelaysMs = AUTH_BOOT_TRANSIENT_SCHEMA_RETRY_DELAYS_MS,
+} = {}) {
+  let lastError = null
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    if (attempt > 0) await delay(retryDelaysMs[attempt - 1])
+    try {
+      return await task()
+    } catch (error) {
+      lastError = error
+      if (!isTransientSchemaCacheError(error) || attempt >= retryDelaysMs.length) throw error
+      console.warn('[AUTH] transient schema-cache boot query failed; retrying.', {
+        label,
+        userId: normalizeText(userId) || null,
+        attempt: attempt + 1,
+        retryInMs: retryDelaysMs[attempt],
+        errorCode: error?.code || null,
+      })
+    }
+  }
+  throw lastError || new Error(`${label} failed.`)
 }
 
 async function runAuthBootStep(label, task, metadata = {}) {
@@ -266,19 +310,23 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     'profile.getOrCreate',
     async () => {
       try {
-        return await withStepTimeout(getOrCreateUserProfile({ user }), {
-          label: 'profile.getOrCreate',
-          timeoutMs: AUTH_BOOT_REQUIRED_STEP_TIMEOUT_MS,
-        })
+        return await withTransientSchemaRetry(
+          () => withStepTimeout(getOrCreateUserProfile({ user }), {
+            label: 'profile.getOrCreate',
+            timeoutMs: AUTH_BOOT_REQUIRED_STEP_TIMEOUT_MS,
+          }),
+          { label: 'profile.getOrCreate', userId: user.id },
+        )
       } catch (error) {
-        if (!isAuthBootStepTimeout(error)) throw error
-        console.warn('[AUTH] profile load timed out; using session metadata fallback for this boot.', {
+        if (!isAuthBootStepTimeout(error) && !isTransientSchemaCacheError(error)) throw error
+        console.warn('[AUTH] profile load unavailable; using session metadata fallback for this boot.', {
           userId: user.id,
+          reason: isTransientSchemaCacheError(error) ? 'schema_cache_unavailable' : 'timeout',
         })
         return {
           ...buildDefaultProfileFromUser(user),
           bootFallback: true,
-          bootFallbackReason: 'profile_timeout',
+          bootFallbackReason: isTransientSchemaCacheError(error) ? 'profile_schema_cache_unavailable' : 'profile_timeout',
         }
       }
     },
@@ -288,14 +336,18 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     'signupIntent.load',
     async () => {
       try {
-        return await withStepTimeout(loadSignupIntentForUser({ user }), {
-          label: 'signupIntent.load',
-          timeoutMs: AUTH_BOOT_OPTIONAL_STEP_TIMEOUT_MS,
-        })
+        return await withTransientSchemaRetry(
+          () => withStepTimeout(loadSignupIntentForUser({ user }), {
+            label: 'signupIntent.load',
+            timeoutMs: AUTH_BOOT_OPTIONAL_STEP_TIMEOUT_MS,
+          }),
+          { label: 'signupIntent.load', userId: user.id },
+        )
       } catch (error) {
-        if (!isAuthBootStepTimeout(error)) throw error
-        console.warn('[AUTH] signup intent load timed out; continuing without signup intent for this boot.', {
+        if (!isAuthBootStepTimeout(error) && !isTransientSchemaCacheError(error)) throw error
+        console.warn('[AUTH] signup intent load unavailable; continuing without signup intent for this boot.', {
           userId: user.id,
+          reason: isTransientSchemaCacheError(error) ? 'schema_cache_unavailable' : 'timeout',
         })
         return null
       }
@@ -320,12 +372,15 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
 
   let workspaceResolution = await runAuthBootStep(
     'workspace.resolveCurrentWorkspace',
-    () => resolveCurrentWorkspace(user.id, {
-      client: supabase,
-      user,
-      profile,
-      requestedWorkspaceId: selectedWorkspaceId,
-    }),
+    () => withTransientSchemaRetry(
+      () => resolveCurrentWorkspace(user.id, {
+        client: supabase,
+        user,
+        profile,
+        requestedWorkspaceId: selectedWorkspaceId,
+      }),
+      { label: 'workspace.resolveCurrentWorkspace', userId: user.id },
+    ),
     {
       userId: user.id,
       requestedWorkspaceId: normalizeText(selectedWorkspaceId) || null,
@@ -376,12 +431,15 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     } else if (claimRepair.data?.success) {
       workspaceResolution = await runAuthBootStep(
         'workspace.resolveCurrentWorkspace.afterClaim',
-        () => resolveCurrentWorkspace(user.id, {
-          client: supabase,
-          user,
-          profile,
-          requestedWorkspaceId: claimRepair.data.workspace_id || claimRepair.data.organisation_id || selectedWorkspaceId,
-        }),
+        () => withTransientSchemaRetry(
+          () => resolveCurrentWorkspace(user.id, {
+            client: supabase,
+            user,
+            profile,
+            requestedWorkspaceId: claimRepair.data.workspace_id || claimRepair.data.organisation_id || selectedWorkspaceId,
+          }),
+          { label: 'workspace.resolveCurrentWorkspace.afterClaim', userId: user.id },
+        ),
         {
           userId: user.id,
           requestedWorkspaceId: claimRepair.data.workspace_id || claimRepair.data.organisation_id || normalizeText(selectedWorkspaceId) || null,
@@ -420,27 +478,30 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
   )
   let onboardingState = await runAuthBootStep(
     'onboarding.getOnboardingState',
-    () => getOnboardingState(user.id, {
-      session,
-      user,
-      profile,
-      signupIntent,
-      appRole,
-      memberships,
-      activeMemberships,
-      pendingMemberships,
-      suspendedMemberships,
-      currentMembership,
-      currentWorkspace,
-      workspaceType,
-      workspaceRole: workspaceResolution.workspaceRole,
-      permissions: workspaceResolution.permissions,
-      workspaceResolution,
-      workspaceDiagnostics: workspaceResolution.diagnostics,
-      onboardingComplete: onboarding.onboardingComplete,
-      onboardingRequiredReason: onboarding.onboardingRequiredReason,
-      forceValidate: shouldValidateResolvedWorkspace,
-    }),
+    () => withTransientSchemaRetry(
+      () => getOnboardingState(user.id, {
+        session,
+        user,
+        profile,
+        signupIntent,
+        appRole,
+        memberships,
+        activeMemberships,
+        pendingMemberships,
+        suspendedMemberships,
+        currentMembership,
+        currentWorkspace,
+        workspaceType,
+        workspaceRole: workspaceResolution.workspaceRole,
+        permissions: workspaceResolution.permissions,
+        workspaceResolution,
+        workspaceDiagnostics: workspaceResolution.diagnostics,
+        onboardingComplete: onboarding.onboardingComplete,
+        onboardingRequiredReason: onboarding.onboardingRequiredReason,
+        forceValidate: shouldValidateResolvedWorkspace,
+      }),
+      { label: 'onboarding.getOnboardingState', userId: user.id },
+    ),
     {
       userId: user.id,
       workspaceId: currentWorkspace?.id || null,
@@ -469,12 +530,15 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     } else if (repair.data?.success) {
       workspaceResolution = await runAuthBootStep(
         'workspace.resolveCurrentWorkspace.afterRepair',
-        () => resolveCurrentWorkspace(user.id, {
-          client: supabase,
-          user,
-          profile,
-          requestedWorkspaceId: repair.data.workspace_id || repair.data.organisation_id || currentWorkspace?.id,
-        }),
+        () => withTransientSchemaRetry(
+          () => resolveCurrentWorkspace(user.id, {
+            client: supabase,
+            user,
+            profile,
+            requestedWorkspaceId: repair.data.workspace_id || repair.data.organisation_id || currentWorkspace?.id,
+          }),
+          { label: 'workspace.resolveCurrentWorkspace.afterRepair', userId: user.id },
+        ),
         {
           userId: user.id,
           requestedWorkspaceId: repair.data.workspace_id || repair.data.organisation_id || currentWorkspace?.id || null,
@@ -503,27 +567,30 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       )
       onboardingState = await runAuthBootStep(
         'onboarding.getOnboardingState.afterRepair',
-        () => getOnboardingState(user.id, {
-          session,
-          user,
-          profile: { ...profile, onboardingCompleted: true },
-          signupIntent,
-          appRole,
-          memberships,
-          activeMemberships,
-          pendingMemberships,
-          suspendedMemberships,
-          currentMembership,
-          currentWorkspace,
-          workspaceType,
-          workspaceRole: workspaceResolution.workspaceRole,
-          permissions: workspaceResolution.permissions,
-          workspaceResolution,
-          workspaceDiagnostics: workspaceResolution.diagnostics,
-          onboardingComplete: onboarding.onboardingComplete,
-          onboardingRequiredReason: onboarding.onboardingRequiredReason,
-          forceValidate: shouldValidateResolvedWorkspace,
-        }),
+        () => withTransientSchemaRetry(
+          () => getOnboardingState(user.id, {
+            session,
+            user,
+            profile: { ...profile, onboardingCompleted: true },
+            signupIntent,
+            appRole,
+            memberships,
+            activeMemberships,
+            pendingMemberships,
+            suspendedMemberships,
+            currentMembership,
+            currentWorkspace,
+            workspaceType,
+            workspaceRole: workspaceResolution.workspaceRole,
+            permissions: workspaceResolution.permissions,
+            workspaceResolution,
+            workspaceDiagnostics: workspaceResolution.diagnostics,
+            onboardingComplete: onboarding.onboardingComplete,
+            onboardingRequiredReason: onboarding.onboardingRequiredReason,
+            forceValidate: shouldValidateResolvedWorkspace,
+          }),
+          { label: 'onboarding.getOnboardingState.afterRepair', userId: user.id },
+        ),
         {
           userId: user.id,
           workspaceId: currentWorkspace?.id || null,

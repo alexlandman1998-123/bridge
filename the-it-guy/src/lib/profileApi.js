@@ -61,6 +61,18 @@ function isPermissionDeniedError(error) {
   return error.code === '42501' || message.includes('permission denied')
 }
 
+function isTransientSchemaCacheError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toUpperCase()
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  return (
+    code === 'PGRST002' ||
+    code === 'PGRST003' ||
+    message.includes('could not query the database for the schema cache') ||
+    (message.includes('schema cache') && message.includes('retrying'))
+  )
+}
+
 function normalizeNullableText(value) {
   const text = String(value || '').trim()
   return text || null
@@ -252,6 +264,9 @@ export async function getOrCreateUserProfile({ user } = {}) {
   }
 
   if (profileQuery.error) {
+    if (isTransientSchemaCacheError(profileQuery.error)) {
+      throw profileQuery.error
+    }
     if (isMissingTableError(profileQuery.error, 'profiles') || isMissingColumnError(profileQuery.error, 'role')) {
       throw new Error('Profiles onboarding schema is not set up yet. Run sql/schema.sql first.')
     }
