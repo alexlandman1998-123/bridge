@@ -27,6 +27,9 @@ assert.match(packetApi, /rendered_file_access_error/, 'Hydration must expose acc
 assert.match(workspace, /function normalizeDurablePreviewUrl/, 'Workspace UI must guard preview/download fallbacks.')
 assert.match(workspace, /normalizeText\(version\?\.rendered_file_access_url\) \|\| normalizeDurablePreviewUrl\(version\?\.rendered_file_url\)/, 'Workspace download URL must prefer fresh access URLs over persisted URLs.')
 assert.match(workspace, /normalizeText\(latestVersion\?\.rendered_file_access_url\) \|\|\s+normalizeDurablePreviewUrl\(latestVersion\?\.rendered_file_url\)/, 'Workspace preview URL must ignore persisted signed URL fallbacks.')
+assert.match(workspace, /resolveRenderedPdfAccess\(\{\s*version: latestVersion,[\s\S]+retrySignedUrl: true/, 'Workspace must refresh generated draft PDF access from the canonical resolver.')
+assert.match(workspace, /latestVersion\?\.transaction_pdf_persisted === true[\s\S]+refreshCertifiedPdfAccess\('download'[\s\S]+refreshGeneratedPdfAccess\(\{ download: true \}\)/, 'Workspace download must use generated PDF access unless the version is certified/persisted.')
+assert.match(workspace, /PDF is stored, but its secure link needs refreshing\./, 'Workspace must show a recovery state when the PDF exists but access is missing.')
 
 assert.match(workspacePage, /function normalizeDurablePreviewUrl/, 'Workspace page actions must guard preview fallbacks.')
 assert.match(workspacePage, /normalizeText\(latestVersion\?\.rendered_file_access_url\) \|\|\s+normalizeDurablePreviewUrl\(latestVersion\?\.rendered_file_url\)/, 'Open latest document must not use persisted Supabase signed URLs.')

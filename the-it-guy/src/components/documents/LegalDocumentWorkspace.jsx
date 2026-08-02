@@ -38,6 +38,7 @@ import {
   replacePhysicalSignedPacketArtifact,
   listLegalDocumentJobsForPacket,
   retryFinalDocumentCompletion,
+  resolveRenderedPdfAccess,
   resolveWorkspaceFinalSignedDocumentAccess,
   restoreEditableDocumentDraftRevision,
   saveEditableDocumentDraftRevision,
@@ -3679,6 +3680,7 @@ export default function LegalDocumentWorkspace({
   const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false)
   const [activeSectionKey, setActiveSectionKey] = useState('')
   const [certifiedPdfAccessUrl, setCertifiedPdfAccessUrl] = useState('')
+  const [generatedPdfAccessError, setGeneratedPdfAccessError] = useState(null)
   const [pdfAccessBusy, setPdfAccessBusy] = useState(false)
   const [signingFieldLayout, setSigningFieldLayout] = useState([])
   const [signingFieldLayoutRevision, setSigningFieldLayoutRevision] = useState(0)
@@ -4104,10 +4106,24 @@ export default function LegalDocumentWorkspace({
   const hydratedGeneratedPreviewUrl =
     normalizeText(latestVersion?.rendered_file_access_url) ||
     normalizeDurablePreviewUrl(latestVersion?.rendered_file_url)
+  const hydratedGeneratedAccessError = latestVersion?.rendered_file_access_error || null
   useEffect(() => {
     setCertifiedPdfAccessUrl(hydratedGeneratedPreviewUrl)
-  }, [hydratedGeneratedPreviewUrl, latestVersion?.id])
+    setGeneratedPdfAccessError(hydratedGeneratedAccessError)
+  }, [hydratedGeneratedAccessError, hydratedGeneratedPreviewUrl, latestVersion?.id])
   const generatedPreviewUrl = certifiedPdfAccessUrl || hydratedGeneratedPreviewUrl
+  const generatedPdfStoredPath = normalizeText(latestVersion?.rendered_file_path)
+  const generatedPdfStoredUrl = normalizeDurablePreviewUrl(latestVersion?.rendered_file_url)
+  const generatedPdfStoredButAccessMissing = Boolean(
+    latestVersion?.id &&
+    (generatedPdfStoredPath || generatedPdfStoredUrl) &&
+    !generatedPreviewUrl,
+  )
+  const generatedPdfAccessMessage = normalizeText(
+    generatedPdfAccessError?.message ||
+      latestVersion?.rendered_file_access_error?.message ||
+      '',
+  )
   // Final signed URLs are never hydrated from packet version data. The only
   // route to a final copy is the server-owned F2/publication resolver below.
   const signedPreviewUrl = ''
@@ -7473,6 +7489,51 @@ export default function LegalDocumentWorkspace({
     }
   }
 
+  async function refreshGeneratedPdfAccess({ open = false, download = false } = {}) {
+    const resolvedVersionId = normalizeText(latestVersion?.id)
+    if (!resolvedVersionId) {
+      throw createWorkspaceError('DRAFT_PDF_VERSION_MISSING', 'Generate the document before trying to open the PDF.')
+    }
+
+    setPdfAccessBusy(true)
+    try {
+      const access = await resolveRenderedPdfAccess({
+        version: latestVersion,
+        retrySignedUrl: true,
+        retryDelaysMs: [300, 700, 1400],
+      })
+      setGeneratedPdfAccessError(access?.error || null)
+      const accessUrl = normalizeText(access?.accessUrl)
+      if (!accessUrl) {
+        throw createWorkspaceError(
+          access?.error?.code || 'DRAFT_PDF_ACCESS_UNAVAILABLE',
+          access?.error?.message || 'The generated PDF is stored, but its secure access link could not be prepared.',
+        )
+      }
+      setCertifiedPdfAccessUrl(accessUrl)
+      if (download) {
+        await triggerBrowserDownload(
+          accessUrl,
+          latestVersion?.rendered_file_name || `${isOtpPacket ? 'OTP' : 'Mandate'} draft.pdf`,
+        )
+      } else if (open && typeof window !== 'undefined') {
+        window.open(accessUrl, '_blank', 'noopener,noreferrer')
+      }
+      setLoadError('')
+      return access
+    } catch (error) {
+      const friendly = toFriendlyWorkspaceError(error, 'The generated PDF link could not be refreshed. Try again in a moment.')
+      setGeneratedPdfAccessError({
+        code: error?.code || 'DRAFT_PDF_ACCESS_UNAVAILABLE',
+        message: friendly,
+      })
+      setLoadError(friendly)
+      throw error
+    } finally {
+      setPdfAccessBusy(false)
+    }
+  }
+
   async function handleOpenFinalSignedDocument() {
     const resolvedPacketId = normalizeText(statusState?.packet?.id || packetId)
     const resolvedVersionId = normalizeText(latestVersion?.id)
@@ -7506,7 +7567,11 @@ export default function LegalDocumentWorkspace({
       })
       return
     }
-    void refreshCertifiedPdfAccess('download', { open: true }).catch(() => null)
+    if (latestVersion?.transaction_pdf_persisted === true) {
+      void refreshCertifiedPdfAccess('download', { open: true }).catch(() => null)
+      return
+    }
+    void refreshGeneratedPdfAccess({ download: true }).catch(() => null)
   }
 
   async function handlePhysicalDownload() {
@@ -8608,11 +8673,29 @@ export default function LegalDocumentWorkspace({
                     <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                       <AlertCircle size={24} className="text-[#9b6b1c]" />
                       <p className="mt-3 text-base font-semibold text-[#102033]">
-                        {latestVersion?.id
+                        {generatedPdfStoredButAccessMissing
+                          ? 'PDF is stored, but its secure link needs refreshing.'
+                          : latestVersion?.id
                           ? 'Draft exists, but preview is not available yet.'
                           : 'Arch9 could not generate this document. Check missing fields or template setup.'}
                       </p>
-                      <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Preview and final render controls still rely on the existing packet generation pipeline.</p>
+                      <p className="mt-1 max-w-md text-sm text-[#6b7c93]">
+                        {generatedPdfStoredButAccessMissing
+                          ? generatedPdfAccessMessage || 'The stored signed URL was not reused. Refreshing creates a new short-lived Storage link from the saved PDF path.'
+                          : 'Preview and final render controls still rely on the existing packet generation pipeline.'}
+                      </p>
+                      {generatedPdfStoredButAccessMissing ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={pdfAccessBusy}
+                          className="mt-5"
+                          onClick={() => void refreshGeneratedPdfAccess().catch(() => null)}
+                        >
+                          {pdfAccessBusy ? 'Refreshing PDF link…' : 'Refresh Secure PDF Link'}
+                        </Button>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -8640,13 +8723,28 @@ export default function LegalDocumentWorkspace({
                       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-[#e5edf7] bg-white px-4 py-3">
                         <div>
                           <p className="text-sm font-semibold text-[#102033]">{signedPreviewUrl ? 'Signed copy available' : generatedPreviewUrl ? 'Draft PDF available' : 'Live draft preview'}</p>
-                          <p className="mt-1 text-xs text-[#6b7c93]">Preview syncs with saved draft content while final PDF/DOCX generation stays on the existing workflow.</p>
+                          <p className="mt-1 text-xs text-[#6b7c93]">
+                            {generatedPreviewUrl && !signedPreviewUrl
+                              ? 'This PDF is opened through a fresh short-lived Storage link. Refresh it if the preview session expires.'
+                              : 'Preview syncs with saved draft content while final PDF/DOCX generation stays on the existing workflow.'}
+                          </p>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           {generatedPreviewUrl && typeof onView === 'function' ? (
                             <Button type="button" size="sm" variant="secondary" onClick={() => void onView?.()}>
                               <Eye size={14} />
                               Open Draft
+                            </Button>
+                          ) : null}
+                          {generatedPreviewUrl && generatedPdfStoredPath ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              disabled={pdfAccessBusy}
+                              onClick={() => void refreshGeneratedPdfAccess().catch(() => null)}
+                            >
+                              {pdfAccessBusy ? 'Refreshing…' : 'Refresh Link'}
                             </Button>
                           ) : null}
                           {previewDownloadUrl ? (
@@ -8903,6 +9001,19 @@ export default function LegalDocumentWorkspace({
                             }}
                           >
                             Download PDF
+                            <ChevronRight size={14} className="text-[#8a99ad]" />
+                          </button>
+                        ) : generatedPdfStoredButAccessMissing ? (
+                          <button
+                            type="button"
+                            disabled={pdfAccessBusy}
+                            className="flex w-full items-center justify-between rounded-[14px] px-3 py-2.5 text-left text-sm font-medium text-[#102033] transition hover:bg-[#f8fbff] disabled:opacity-60"
+                            onClick={() => {
+                              setBottomActionMenuOpen(false)
+                              void refreshGeneratedPdfAccess().catch(() => null)
+                            }}
+                          >
+                            {pdfAccessBusy ? 'Refreshing PDF link' : 'Refresh PDF link'}
                             <ChevronRight size={14} className="text-[#8a99ad]" />
                           </button>
                         ) : null}
