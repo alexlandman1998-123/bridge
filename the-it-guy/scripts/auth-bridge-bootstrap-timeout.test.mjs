@@ -44,6 +44,18 @@ assert.match(
 
 assert.match(
   source,
+  /function isPostgrestSchemaCacheBootstrapError\(error\)[\s\S]*?error\?\.code === 'PGRST002'[\s\S]*?could not query the database for the schema cache[\s\S]*?schema cache[\s\S]*?retrying/,
+  'bridge auth bootstrap should classify PostgREST schema-cache rebuild failures for user-safe messaging',
+)
+
+assert.match(
+  source,
+  /Arch9’s database API is temporarily rebuilding its schema cache\. Please retry in a moment\./,
+  'bridge auth bootstrap should not expose raw PGRST002 schema-cache text to users',
+)
+
+assert.match(
+  source,
   /trackAuthMetric\('auth_boot_transient_retry'/,
   'bridge auth bootstrap retries should emit telemetry for production diagnostics',
 )

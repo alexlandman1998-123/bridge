@@ -197,6 +197,22 @@ function isRecoverableBridgeBootstrapError(error) {
   )
 }
 
+function isPostgrestSchemaCacheBootstrapError(error) {
+  const text = getBootstrapErrorText(error)
+  return (
+    error?.code === 'PGRST002' ||
+    text.includes('could not query the database for the schema cache') ||
+    (text.includes('schema cache') && text.includes('retrying'))
+  )
+}
+
+function formatBridgeBootstrapError(error) {
+  if (isPostgrestSchemaCacheBootstrapError(error)) {
+    return 'Arch9’s database API is temporarily rebuilding its schema cache. Please retry in a moment. If this keeps happening, support must reload or restart the Supabase API service.'
+  }
+  return error?.message || 'Unable to load your Arch9 workspace.'
+}
+
 function delayBridgeBootstrapRetry(delayMs) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, delayMs)
@@ -520,7 +536,7 @@ export function AuthSessionProvider({ children }) {
           status: 'error',
           session,
           user: session.user,
-          bootError: error?.message || 'Unable to load your Arch9 workspace.',
+          bootError: formatBridgeBootstrapError(error),
         })
       } finally {
         if (slowTimerId) window.clearTimeout(slowTimerId)
