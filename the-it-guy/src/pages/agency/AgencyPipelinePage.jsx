@@ -3356,8 +3356,30 @@ function hasEditableMandateSections(version = null) {
   return Array.isArray(version?.editable_content_json?.sections) && version.editable_content_json.sections.length > 0
 }
 
+function buildRenderFreezeFromEditableVersion(version = null) {
+  const freezeId = normalizeText(version?.render_freeze_id)
+  const contentFingerprint = normalizeText(version?.render_content_fingerprint)
+  if (!freezeId || !contentFingerprint || normalizeText(version?.render_freeze_status).toLowerCase() !== 'frozen') return null
+  return {
+    contract: 'c4-v1',
+    packetId: normalizeText(version?.packet_id),
+    freezeId,
+    sourceVersionId: normalizeText(version?.id),
+    sourceVersionNumber: Number(version?.version_number || 0) || null,
+    editSequence: Number(version?.edit_sequence || 0),
+    contentFingerprint,
+    editableContent: version?.editable_content_json || {},
+    sectionManifest: Array.isArray(version?.section_manifest_json) ? version.section_manifest_json : [],
+    placeholders: version?.placeholders_resolved_json && typeof version.placeholders_resolved_json === 'object'
+      ? version.placeholders_resolved_json
+      : {},
+    frozenAt: normalizeText(version?.render_frozen_at) || null,
+  }
+}
+
 function findEditableMandateSourceVersion(versions = []) {
-  return (Array.isArray(versions) ? versions : []).find(hasEditableMandateSections) || null
+  const editableVersions = (Array.isArray(versions) ? versions : []).filter(hasEditableMandateSections)
+  return editableVersions.find((version) => buildRenderFreezeFromEditableVersion(version)) || editableVersions[0] || null
 }
 
 function getMandatePhase1DraftPrecreation(sourceContext = {}) {
@@ -11137,12 +11159,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           if (!renderSourceVersion?.id) {
             throw new Error('The mandate template draft could not be prepared for certified PDF generation.')
           }
-          onProgress?.('Freezing mandate wording…')
-          renderFreeze = await freezeEditableDocumentRevisionForRender({
-            packetId: packet.id,
-            versionId: renderSourceVersion.id,
-            expectedEditSequence: renderSourceVersion.edit_sequence || 0,
-          })
+          const existingRenderFreeze = buildRenderFreezeFromEditableVersion(renderSourceVersion)
+          if (existingRenderFreeze?.freezeId) {
+            onProgress?.('Reusing frozen mandate source…')
+            renderFreeze = existingRenderFreeze
+          } else {
+            onProgress?.('Freezing mandate wording…')
+            renderFreeze = await freezeEditableDocumentRevisionForRender({
+              packetId: packet.id,
+              versionId: renderSourceVersion.id,
+              expectedEditSequence: renderSourceVersion.edit_sequence || 0,
+            })
+          }
         }
         const renderEditableSections = Array.isArray(providedEditableSections) && providedEditableSections.length
           ? providedEditableSections

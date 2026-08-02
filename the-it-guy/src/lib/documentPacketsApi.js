@@ -2538,6 +2538,12 @@ export async function freezeEditableDocumentRevisionForRender({ packetId, versio
       conflict.cause = error
       throw conflict
     }
+    if (error?.code === '55P03' || normalizeText(error?.details).includes('LEGAL_DOCUMENT_RENDER_FREEZE_LOCK_BUSY')) {
+      const busy = new Error('Mandate wording is still being prepared by another request. Wait a few seconds, then retry Generate Mandate.')
+      busy.code = 'LEGAL_DOCUMENT_RENDER_FREEZE_LOCK_BUSY'
+      busy.cause = error
+      throw busy
+    }
     throw error
   }
   if (result?.contract !== 'c4-v1' || !result?.freezeId || !result?.sourceVersionId || !result?.contentFingerprint) {
