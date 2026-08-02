@@ -274,7 +274,7 @@ function classifyActivity(row = {}) {
 }
 
 function getActivityTimestamp(row = {}) {
-  return row.activityDate || row.activity_date || row.completedAt || row.completed_at || row.updatedAt || row.updated_at || row.dateTime || row.date_time || row.createdAt || row.created_at
+  return row.timestamp || row.activityDate || row.activity_date || row.completedAt || row.completed_at || row.updatedAt || row.updated_at || row.dateTime || row.date_time || row.createdAt || row.created_at
 }
 
 function percentage(numerator, denominator) {

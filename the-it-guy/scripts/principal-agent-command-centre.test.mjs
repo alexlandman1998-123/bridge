@@ -4,6 +4,7 @@ import {
   getPrincipalAgentCommandCentre,
   getPrincipalAgentDetailCommandCentre,
 } from '../src/modules/agency/agents/principalAgentCommandCentreService.js'
+import { buildAgentPerformanceModel } from '../src/modules/agency/agents/agentPerformanceUtils.js'
 
 const agentsPageSource = fs.readFileSync(new URL('../src/pages/Agents.jsx', import.meta.url), 'utf8')
 const organisationContextSource = fs.readFileSync(new URL('../src/context/OrganisationContext.jsx', import.meta.url), 'utf8')
@@ -42,6 +43,21 @@ assert.match(
   agentsPageSource,
   /computeAgentWorkspaceData\(\{[\s\S]*organisationUsers: performanceSources\.organisationUsers/,
   'Agent workspace data should include live organisation user identities before listing assignment bucketing.',
+)
+assert.match(
+  agentsPageSource,
+  /const \[canvassingActivities, setCanvassingActivities\] = useState\(\[\]\)/,
+  'Agents page should keep loaded residential canvassing activity rows for principal performance pull-through.',
+)
+assert.match(
+  agentsPageSource,
+  /setCanvassingActivities\(performanceSources\.canvassingActivities\)/,
+  'Agents page should store loaded residential canvassing activities after performance source hydration.',
+)
+assert.match(
+  agentsPageSource,
+  /getPrincipalAgentCommandCentre\(\{[\s\S]*activities: leadActivities,[\s\S]*canvassingActivities,/,
+  'Main principal command centre should receive residential canvassing activities in addition to CRM lead activities.',
 )
 assert.match(
   agentsPageSource,
@@ -395,6 +411,156 @@ function buildModel(overrides = {}) {
   assert.equal(detailMetrics.get('conversionRate')?.value, 50, 'detail performance conversion rate comes from assigned leads')
   assert.equal(detailMetrics.get('commissionGenerated')?.value, 60000, 'detail performance commission uses registered transaction commission')
   assert.equal(detailMetrics.get('avgDaysToRegistration')?.value, 10, 'detail performance exposes real average days to registration')
+}
+
+{
+  const pullThroughNow = new Date('2026-08-02T13:00:00.000Z')
+  const pullThroughAgent = {
+    id: 'pull-through-agent',
+    name: 'Pull Through Agent',
+    email: 'pull-through@test.com',
+    role: 'agent',
+    status: 'active',
+    organisationId: 'agency-a',
+    branchId: 'benoni',
+  }
+  const duplicateCanvassingCall = {
+    id: 'pull-through-call-1',
+    assignedAgentId: 'pull-through-agent',
+    agentId: 'pull-through-agent',
+    activityType: 'Call',
+    activityNote: 'Converted buyer call',
+    outcome: 'Connected',
+    activityDate: '2026-08-02T09:00:00.000Z',
+  }
+  const topLevelModel = getPrincipalAgentCommandCentre({
+    principalId: 'principal-a',
+    organisationId: 'agency-a',
+    branchId: 'all',
+    agents: [pullThroughAgent],
+    branches,
+    leads: [
+      {
+        leadId: 'converted-canvassing-lead',
+        assignedAgentId: 'pull-through-agent',
+        assignedUserId: 'pull-through-agent',
+        leadSource: 'Canvassing',
+        leadCategory: 'buyer',
+        leadDirection: 'Outbound',
+        status: 'Lead',
+        stage: 'Lead',
+        budget: 2100000,
+        canvassingProspectId: 'converted-prospect-1',
+        createdAt: '2026-08-02T08:00:00.000Z',
+      },
+    ],
+    activities: [
+      {
+        id: 'pull-through-lead-created',
+        leadId: 'converted-canvassing-lead',
+        assignedAgentId: 'pull-through-agent',
+        activityType: 'Lead Created',
+        activityNote: 'canvassing_prospect_converted',
+        outcome: 'Converted from canvassing prospect',
+        activityDate: '2026-08-02T08:30:00.000Z',
+      },
+      duplicateCanvassingCall,
+    ],
+    canvassingActivities: [
+      duplicateCanvassingCall,
+      {
+        id: 'pull-through-conversion-note',
+        prospectId: 'converted-prospect-1',
+        assignedAgentId: 'pull-through-agent',
+        agentId: 'pull-through-agent',
+        activityType: 'Note',
+        activityNote: 'Prospect converted to Buyer lead',
+        outcome: 'converted-canvassing-lead',
+        activityDate: '2026-08-02T10:00:00.000Z',
+      },
+    ],
+    filters: {
+      dateRange: 'last_7_days',
+      rankingMetric: 'activityVolume',
+      sortBy: 'recent',
+    },
+    now: pullThroughNow,
+  })
+  const pullThroughRow = topLevelModel.agentsTable[0]
+  assert.equal(topLevelModel.kpis.activeToday, 1, 'main command centre should count residential canvassing conversion work in active-today KPI')
+  assert.equal(pullThroughRow?.performance.totalLeads, 1, 'converted canvassing lead should pull through to principal performance lead count')
+  assert.equal(pullThroughRow?.performance.pipelineValue, 2100000, 'converted canvassing lead value should pull through to principal pipeline value')
+  assert.equal(pullThroughRow?.performance.activityVolume, 3, 'lead and canvassing conversion activities should pull through without double-counting duplicate rows')
+  assert.equal(topLevelModel.topPerformers[0]?.movement, 3, 'top performer movement should include residential canvassing activity')
+  assert.equal(topLevelModel.analytics.activityHeatmap.find((row) => row.type === 'calls')?.days.find((day) => day.day === 'Sun')?.value, 1, 'main command centre heatmap should include residential canvassing calls once')
+  assert.equal(topLevelModel.analytics.activityHeatmap.find((row) => row.type === 'notes')?.days.find((day) => day.day === 'Sun')?.value, 2, 'main command centre heatmap should include conversion notes and lead-created activity')
+  assert.equal(pullThroughRow?.performance.lastActivityAt, '2026-08-02T10:00:00.000Z', 'latest canvassing conversion activity should set last activity at principal level')
+}
+
+{
+  const detailNow = new Date('2026-08-02T10:00:00.000Z')
+  const performanceAgent = {
+    id: 'canvassing-performance-agent',
+    name: 'Canvassing Performance Agent',
+    email: 'canvassing-performance@test.com',
+    role: 'agent',
+    status: 'active',
+    organisationId: 'agency-a',
+    branchId: 'benoni',
+  }
+  const canvassingActivity = {
+    id: 'canvassing-activity-1',
+    assignedAgentId: 'canvassing-performance-agent',
+    activityType: 'Call',
+    outcome: 'Connected',
+    activityDate: '2026-08-02T09:00:00.000Z',
+  }
+  const performanceModel = buildAgentPerformanceModel({
+    agents: [performanceAgent],
+    branches,
+    activities: [canvassingActivity],
+    filters: {
+      branchId: 'all',
+      office: 'all',
+      role: 'all',
+      status: 'all',
+      search: '',
+      dateRange: 'last_7_days',
+    },
+    now: detailNow,
+  })
+  const modelAgent = performanceModel.agents[0]
+  assert.equal(modelAgent?.performance.activityVolume, 1, 'canvassing calls should contribute to agent performance activity volume')
+  assert.equal(modelAgent?.performance.activeToday, true, 'canvassing calls logged today should mark the agent active today')
+  assert.equal(modelAgent?.performance.lastActivityAt, '2026-08-02T09:00:00.000Z', 'canvassing calls should update agent performance last activity')
+  assert.equal(modelAgent?.performance.sparkline.some(Boolean), true, 'canvassing calls should contribute to the performance sparkline')
+  assert.equal(performanceModel.kpis.activeToday, 1, 'canvassing calls should contribute to active-today KPI')
+  assert.equal(
+    performanceModel.charts.activityHeatmap.find((row) => row.type === 'calls')?.days.find((day) => day.day === 'Sun')?.value,
+    1,
+    'canvassing calls should contribute to the calls heatmap',
+  )
+  assert.equal(performanceModel.intelligence.recentActivity[0]?.action, 'Call', 'canvassing calls should appear in recent performance activity')
+
+  const detailModel = getPrincipalAgentDetailCommandCentre({
+    agent: performanceAgent,
+    branches,
+    now: detailNow,
+    canvassingProspects: [
+      {
+        id: 'canvassing-prospect-1',
+        assignedAgentId: 'canvassing-performance-agent',
+        createdAt: '2026-08-01T08:00:00.000Z',
+      },
+    ],
+    canvassingActivities: [
+      canvassingActivity,
+    ],
+  })
+  const prospectingMetrics = new Map(detailModel.prospectingActivity.metrics.map((metric) => [metric.key, metric]))
+  assert.equal(prospectingMetrics.get('prospectsAdded')?.value, 1, 'agent detail should count assigned canvassing prospects')
+  assert.equal(prospectingMetrics.get('callsLogged')?.value, 1, 'agent detail should count assigned canvassing calls')
+  assert.equal(detailModel.agentIdentity.lastActivityAt, '2026-08-02T09:00:00.000Z', 'canvassing calls should pull through to agent last activity')
 }
 
 {

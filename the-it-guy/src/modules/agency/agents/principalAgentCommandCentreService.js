@@ -30,6 +30,32 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+function getActivityDedupKey(row = {}) {
+  const stableId = normalizeText(row.id || row.activityId || row.activity_id)
+  if (stableId) return `id:${stableId}`
+  return [
+    row.prospectId || row.prospect_id || row.leadId || row.lead_id || '',
+    row.agentId || row.agent_id || row.assignedAgentId || row.assigned_agent_id || row.assignedAgentEmail || row.assigned_agent_email || '',
+    row.activityType || row.activity_type || '',
+    row.activityDate || row.activity_date || row.timestamp || row.createdAt || row.created_at || '',
+    row.activityNote || row.activity_note || row.outcome || '',
+  ].map(normalizeText).join('::')
+}
+
+function mergeActivityRows(...groups) {
+  const rows = []
+  const seen = new Set()
+  for (const group of groups) {
+    for (const row of Array.isArray(group) ? group : []) {
+      const key = getActivityDedupKey(row)
+      if (key && seen.has(key)) continue
+      if (key) seen.add(key)
+      rows.push(row)
+    }
+  }
+  return rows
+}
+
 function getAgentOrganisationId(agent = {}) {
   return normalizeKey(agent.organisationId || agent.organisation_id || agent.agencyId || agent.agency_id || agent.organisation?.id)
 }
@@ -179,6 +205,7 @@ export function getPrincipalAgentCommandCentre({
   appointments = [],
   tasks = [],
   activities = [],
+  canvassingActivities = [],
   now = new Date(),
 } = {}) {
   const status = normalizeKey(filters.status || 'all')
@@ -205,7 +232,7 @@ export function getPrincipalAgentCommandCentre({
     listings,
     appointments,
     tasks,
-    activities,
+    activities: mergeActivityRows(activities, canvassingActivities),
     filters: {
       branchId: 'all',
       office: filters.office || 'all',
@@ -720,7 +747,7 @@ export function getPrincipalAgentDetailCommandCentre({
     listings,
     appointments,
     tasks,
-    activities: [...activities, ...canvassingActivities],
+    activities: mergeActivityRows(activities, canvassingActivities),
     filters: {
       branchId: 'all',
       office: 'all',

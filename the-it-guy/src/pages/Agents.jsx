@@ -5931,6 +5931,7 @@ export function AgentsPage() {
   const [branches, setBranches] = useState([])
   const [leadRows, setLeadRows] = useState([])
   const [leadActivities, setLeadActivities] = useState([])
+  const [canvassingActivities, setCanvassingActivities] = useState([])
   const [taskRows, setTaskRows] = useState([])
   const [appointmentRows, setAppointmentRows] = useState([])
   const [listingRows, setListingRows] = useState([])
@@ -6014,6 +6015,7 @@ export function AgentsPage() {
       setBranches([])
       setLeadRows([])
       setLeadActivities([])
+      setCanvassingActivities([])
       setTaskRows([])
       setAppointmentRows([])
       setListingRows([])
@@ -6169,6 +6171,7 @@ export function AgentsPage() {
       setBranches(performanceSources.branches)
       setLeadRows(pipelineRows)
       setLeadActivities(performanceSources.leadActivities)
+      setCanvassingActivities(performanceSources.canvassingActivities)
       setTaskRows(performanceSources.tasks)
       setAppointmentRows(performanceSources.appointments)
       setListingRows(privateListings)
@@ -6183,6 +6186,7 @@ export function AgentsPage() {
       setBranches([])
       setLeadRows([])
       setLeadActivities([])
+      setCanvassingActivities([])
       setTaskRows([])
       setAppointmentRows([])
       setListingRows([])
@@ -6362,6 +6366,7 @@ export function AgentsPage() {
       appointments: appointmentRows,
       tasks: taskRows,
       activities: leadActivities,
+      canvassingActivities,
       filters: {
         branchId: branchFilter,
         office: officeFilter,
@@ -6373,7 +6378,7 @@ export function AgentsPage() {
         sortBy,
       },
     }),
-    [agentDirectory?.agency?.id, agents, appointmentRows, branchFilter, branches, dateRange, effectiveStatusFilter, leadActivities, leadRows, leaderboardMetric, listingRows, officeFilter, organisationFilter, profile?.id, searchTerm, sortBy, taskRows, transactionRows, workspaceOrganisation?.id],
+    [agentDirectory?.agency?.id, agents, appointmentRows, branchFilter, branches, canvassingActivities, dateRange, effectiveStatusFilter, leadActivities, leadRows, leaderboardMetric, listingRows, officeFilter, organisationFilter, profile?.id, searchTerm, sortBy, taskRows, transactionRows, workspaceOrganisation?.id],
   )
 
   const invitedAgentRows = useMemo(() => {
