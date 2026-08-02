@@ -3709,12 +3709,12 @@ export default function LegalDocumentWorkspace({
       route: '/legal-document-workspace',
       metadata: {
         packetType,
-        state: normalizeText(statusStateRef.current?.state || statusState?.state) || null,
-        packetId: normalizeText(statusStateRef.current?.packet?.id || statusState?.packet?.id || packetId) || null,
+        state: normalizeText(statusStateRef.current?.state) || null,
+        packetId: normalizeText(statusStateRef.current?.packet?.id || packetId) || null,
         ...metadata,
       },
     })
-  }, [organisationId, packetId, packetType, statusState?.packet?.id, statusState?.state, workspaceProfile?.id, workspaceProfile?.organisationId, workspaceProfile?.organisation_id, workspaceProfile?.userId, workspaceProfile?.user_id])
+  }, [organisationId, packetId, packetType, workspaceProfile?.id, workspaceProfile?.organisationId, workspaceProfile?.organisation_id, workspaceProfile?.userId, workspaceProfile?.user_id])
 
   const applyPreparedSigningState = useCallback((prepared, fallbackStatus = statusStateRef.current || statusState) => {
     if (!prepared) return fallbackStatus
@@ -4674,19 +4674,26 @@ export default function LegalDocumentWorkspace({
     scheduledWorkspaceRefreshTimersRef.current.clear()
   }, [])
 
+  const backgroundPollStatus = statusStateRef.current || statusState
+  const backgroundPollJob = backgroundGenerationJob || backgroundPollStatus?.legalDocumentJob || null
+  const backgroundPollPacketId = normalizeText(backgroundPollStatus?.packet?.id || packetId)
+  const backgroundPollJobId = normalizeText(backgroundPollJob?.jobId || backgroundPollJob?.job_id)
+  const backgroundPollJobStatus = normalizeLegalDocumentJobStatus(backgroundPollJob)
+  const backgroundPollLifecycleState = normalizeText(backgroundPollStatus?.state) || null
+  const backgroundPollKey =
+    open &&
+    isMandatePacket &&
+    isUuidLike(backgroundPollPacketId) &&
+    backgroundPollJobId &&
+    ['queued', 'claimed', 'running', 'failed'].includes(backgroundPollJobStatus)
+      ? `${backgroundPollPacketId}:${backgroundPollJobId}:${backgroundPollJobStatus}`
+      : ''
+
   useEffect(() => {
-    const currentStatus = statusStateRef.current || statusState
-    const job = backgroundGenerationJob || currentStatus?.legalDocumentJob || null
-    const packetIdForJob = normalizeText(currentStatus?.packet?.id || packetId)
-    const currentJobId = normalizeText(job?.jobId || job?.job_id)
-    const currentJobStatus = normalizeLegalDocumentJobStatus(job)
-    const shouldPoll =
-      open &&
-      isMandatePacket &&
-      isUuidLike(packetIdForJob) &&
-      currentJobId &&
-      ['queued', 'claimed', 'running', 'failed'].includes(currentJobStatus)
-    if (!shouldPoll) return undefined
+    if (!backgroundPollKey) return undefined
+    const packetIdForJob = backgroundPollPacketId
+    const currentJobId = backgroundPollJobId
+    const currentJobStatus = backgroundPollJobStatus
 
     const runId = generationJobPollRunRef.current + 1
     generationJobPollRunRef.current = runId
@@ -4698,7 +4705,7 @@ export default function LegalDocumentWorkspace({
       packetId: packetIdForJob,
       jobId: currentJobId,
       jobStatus: currentJobStatus,
-      lifecycleState: normalizeText(currentStatus?.state) || null,
+      lifecycleState: backgroundPollLifecycleState,
     }
     const recordBackgroundPollDiagnostic = (eventName, metadata = {}, severity = 'info') => {
       recordLegalDocumentDiagnostic({
@@ -4823,16 +4830,17 @@ export default function LegalDocumentWorkspace({
       if (timerId) clearTimeout(timerId)
     }
   }, [
-    backgroundGenerationJob,
+    backgroundPollJobId,
+    backgroundPollJobStatus,
+    backgroundPollKey,
+    backgroundPollLifecycleState,
+    backgroundPollPacketId,
     isMandatePacket,
     onRefreshContext,
-    open,
     organisationId,
-    packetId,
     packetType,
     recordWorkspacePerformance,
     refreshWorkspaceData,
-    statusState,
     workspaceProfile?.id,
     workspaceProfile?.organisationId,
     workspaceProfile?.organisation_id,
