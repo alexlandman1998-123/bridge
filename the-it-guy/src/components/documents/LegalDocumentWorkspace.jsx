@@ -148,6 +148,60 @@ function hasLoadedWorkspaceSnapshot(status = null) {
   return false
 }
 
+function mergeWorkspaceContextSnapshot(previous = {}, next = {}) {
+  if (!previous || typeof previous !== 'object') return next && typeof next === 'object' ? next : {}
+  if (!next || typeof next !== 'object') return previous
+  const merged = { ...previous, ...next }
+  for (const [key, previousValue] of Object.entries(previous)) {
+    const nextValue = next[key]
+    if (
+      previousValue &&
+      typeof previousValue === 'object' &&
+      !Array.isArray(previousValue) &&
+      nextValue &&
+      typeof nextValue === 'object' &&
+      !Array.isArray(nextValue)
+    ) {
+      merged[key] = mergeWorkspaceContextSnapshot(previousValue, nextValue)
+    } else if (
+      (nextValue === null || nextValue === undefined || nextValue === '') &&
+      previousValue !== null &&
+      previousValue !== undefined &&
+      previousValue !== ''
+    ) {
+      merged[key] = previousValue
+    }
+  }
+  return merged
+}
+
+function mergeWorkspaceStatusWithPrevious(resolved = null, previous = null) {
+  if (!resolved?.packet || !previous?.packet) return resolved
+  const resolvedPacketId = normalizeText(resolved.packet.id)
+  const previousPacketId = normalizeText(previous.packet.id)
+  if (!resolvedPacketId || resolvedPacketId !== previousPacketId) return resolved
+
+  const previousContext = previous.packet.source_context_json && typeof previous.packet.source_context_json === 'object'
+    ? previous.packet.source_context_json
+    : {}
+  const resolvedContext = resolved.packet.source_context_json && typeof resolved.packet.source_context_json === 'object'
+    ? resolved.packet.source_context_json
+    : {}
+  if (!Object.keys(previousContext).length) return resolved
+
+  return {
+    ...resolved,
+    packet: {
+      ...resolved.packet,
+      lead_id: resolved.packet.lead_id || previous.packet.lead_id || null,
+      transaction_id: resolved.packet.transaction_id || previous.packet.transaction_id || null,
+      source_id: resolved.packet.source_id || previous.packet.source_id || null,
+      source_type: resolved.packet.source_type || previous.packet.source_type || null,
+      source_context_json: mergeWorkspaceContextSnapshot(previousContext, resolvedContext),
+    },
+  }
+}
+
 function hasUsablePacketVersionForSigning(version = null) {
   if (!normalizeText(version?.id)) return false
   if (isPilotDocumentFallbackVersion(version)) return false
@@ -4591,7 +4645,7 @@ export default function LegalDocumentWorkspace({
         organisationId,
         includeActivity: false,
       })
-      const resolved = await withWorkspaceTimeout(
+      const resolvedResponse = await withWorkspaceTimeout(
         statusRequest,
         'Packet status is taking too long to load.',
       ).catch((error) => {
@@ -4601,13 +4655,15 @@ export default function LegalDocumentWorkspace({
         // responds, instead of requiring the user to leave and reopen.
         void statusRequest.then((lateResolved) => {
           if (!lateResolved?.packet?.id) return
-          statusStateRef.current = lateResolved
-          setStatusState(lateResolved)
+          const mergedLateResolved = mergeWorkspaceStatusWithPrevious(lateResolved, statusStateRef.current)
+          statusStateRef.current = mergedLateResolved
+          setStatusState(mergedLateResolved)
         }).catch((lateStatusError) => {
           console.warn('[LegalDocumentWorkspace] delayed packet status refresh failed.', lateStatusError)
         })
         return statusStateRef.current || buildWorkspaceFallbackStatus(packetType, 'Packet status is still loading. You can continue preparing the draft.')
       })
+      const resolved = mergeWorkspaceStatusWithPrevious(resolvedResponse, currentStatus)
       setStatusState(resolved)
       lastWorkspaceRefreshAtRef.current = Date.now()
 
