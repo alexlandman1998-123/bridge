@@ -27,7 +27,10 @@ assert.match(migration, /abs\(mod\(hashtextextended/i)
 assert.match(migration, /staleClientVisible/i)
 assert.match(migration, /exhaustedEmailNotifications/i)
 
-assert.equal(vercel.crons, undefined)
+assert.ok(
+  !(vercel.crons || []).some((job) => job.path === '/api/cron/transaction-progress-notifications'),
+  'Transaction progress should still not be scheduled through Vercel cron.',
+)
 assert.match(schedulerMigration, /arch9-transaction-progress-recovery-5m/i)
 assert.match(schedulerMigration, /bridge_run_transaction_progress_schedule_phase8/i)
 assert.match(schedulerMigration, /supabase_cron_phase8/i)

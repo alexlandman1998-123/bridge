@@ -1,0 +1,111 @@
+{
+  "phase": "document_request_phase16_automation",
+  "generatedAt": "2026-08-02T13:15:13.079Z",
+  "dryRun": true,
+  "commitRequested": false,
+  "commitExecuted": false,
+  "confirmAutomation": false,
+  "mutatedData": false,
+  "schedulingEnabled": true,
+  "automation": {
+    "source": "phase18_single_check",
+    "limit": 1,
+    "explicitTransactionIds": false,
+    "transactionIds": [],
+    "timeoutMs": 240000,
+    "schedule": "30 1 * * *",
+    "dryRunDefault": true,
+    "requiresCommitFlag": true,
+    "requiresConfirmAutomation": true,
+    "blocksLegacyNonCanonicalKeysByDefault": true
+  },
+  "readiness": {
+    "rolloutGatePassed": true,
+    "commitEligible": false,
+    "readyForScheduledAutomation": false,
+    "allowLegacyKeys": false,
+    "legacyNonCanonicalKeyCount": 5,
+    "blockedReasons": [
+      "legacy_non_canonical_keys_present"
+    ],
+    "reviewReasons": []
+  },
+  "summary": {
+    "status": "dry_run_completed",
+    "source": "phase18_single_check",
+    "total": 1,
+    "completed": 1,
+    "failed": 0,
+    "warnings": 0,
+    "rowsCalculated": 6,
+    "synced": 0,
+    "requiredDocumentRowsDelta": 0,
+    "documentRequestsDelta": 0,
+    "documentRequestsCreated": false,
+    "preservedRowsChanged": 0,
+    "portalVerificationFailed": 0,
+    "portalMissingCommittedKeys": 0,
+    "legacyNonCanonicalKeyCount": 5,
+    "readyForScheduledAutomation": false,
+    "commitEligible": false,
+    "wroteRows": false,
+    "blockedReasons": [
+      "legacy_non_canonical_keys_present"
+    ],
+    "reviewReasons": []
+  },
+  "rollout": {
+    "output": "output/document-request-phase18-single-rollout-check.json",
+    "portalOutput": "output/document-request-phase18-single-portal-check.json",
+    "summary": {
+      "total": 1,
+      "completed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "warnings": 0,
+      "rowsCalculated": 6,
+      "synced": 0,
+      "requiredDocumentRowsDelta": 0,
+      "documentRequestsDelta": 0,
+      "documentRequestsCreated": false,
+      "preservedRowsChanged": 0,
+      "portalVerificationFailed": 0,
+      "portalMissingCommittedKeys": 0,
+      "portalDocumentRequestsCreated": false,
+      "gatePassed": true,
+      "wroteRows": false
+    },
+    "selection": {
+      "explicitTransactionIds": false,
+      "limit": 1,
+      "candidateCount": 1,
+      "candidates": [
+        {
+          "transactionId": "f9a71ea2-4e2d-46af-8fa9-3f58901f8220",
+          "sources": [
+            "active_buyer_portal_link"
+          ],
+          "updatedAt": "2026-07-23T05:17:05.148108+00:00"
+        }
+      ]
+    },
+    "transactionIds": [
+      "f9a71ea2-4e2d-46af-8fa9-3f58901f8220"
+    ],
+    "portalVerification": {
+      "output": "output/document-request-phase18-single-portal-check.json",
+      "summary": {
+        "total": 1,
+        "completed": 1,
+        "failed": 0,
+        "warnings": 0,
+        "requiredDocumentRows": 6,
+        "expectedPortalRequiredRows": 6,
+        "documentRequestsCreated": false,
+        "missingCommittedKeysFromSharedPortal": 0,
+        "nonCanonicalExistingKeys": 5
+      }
+    }
+  },
+  "preflight": null
+}

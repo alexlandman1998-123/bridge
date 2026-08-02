@@ -178,8 +178,11 @@ assertScenario({
       { name: 'Sam', surname: 'Director', email: 'sam@example.com', phone: '0820000002' },
     ],
     authorisedSignatoryName: 'Alex Principal',
+    authorisedSignatoryCapacity: 'Director',
     authorisedSignatoryEmail: 'alex@example.com',
     authorisedSignatoryPhone: '0820000001',
+    companyResolutionDate: '2026-07-20',
+    companyAuthorityBasis: 'Board resolution authorising the sale.',
   }),
   docKeys: ['company_registration', 'company_resolution_to_sell', 'director_member_ids', 'authorised_signatory_id', 'company_address_proof'],
   factsChecks: [
@@ -205,8 +208,10 @@ assertScenario({
       { name: 'Nadia', surname: 'Trustee', email: 'nadia@example.com', phone: '0840000002' },
     ],
     authorisedTrusteeName: 'Taylor Trustee',
+    authorisedTrusteeCapacity: 'Trustee',
     authorisedTrusteeEmail: 'taylor@example.com',
     authorisedTrusteePhone: '0840000001',
+    trustAuthorityBasis: 'Trustee resolution authorising the sale.',
   }),
   docKeys: ['seller_trust_deed', 'seller_letters_of_authority', 'trustee_ids', 'trust_resolution_to_sell', 'authorised_trustee_signatory_id'],
   factsChecks: [

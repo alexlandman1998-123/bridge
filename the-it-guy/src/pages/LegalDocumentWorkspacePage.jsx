@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft } from 'lucide-react'
+import { AlertCircle, ArrowLeft, CheckCircle2, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import LegalDocumentWorkspace from '../components/documents/LegalDocumentWorkspace'
@@ -44,7 +44,11 @@ import {
   updateDocumentPacket,
 } from '../lib/documentPacketsApi'
 import { createAgencyCrmLeadActivity, updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
-import { fetchTransactionById, finalizeCanonicalPhysicalSignedOtpWorkflow } from '../lib/api'
+import {
+  fetchTransactionById,
+  finalizeCanonicalPhysicalSignedOtpWorkflow,
+  runCanonicalDocumentRequestRequirementRecalculation,
+} from '../lib/api'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchAgencyOnboardingSettings, listOrganisationPreferredPartners } from '../lib/settingsApi'
@@ -2986,6 +2990,92 @@ function buildFallbackPacketStatus(packetType = 'mandate', warning = '') {
   }
 }
 
+function getCanonicalDocumentRequestRecalculationStats(result = null) {
+  const summary = result?.summary && typeof result.summary === 'object' ? result.summary : result || {}
+  return {
+    total: Number(summary.total || 0) || 0,
+    completed: Number(summary.completed || 0) || 0,
+    failed: Number(summary.failed || 0) || 0,
+    skipped: Number(summary.skipped || 0) || 0,
+    rows: Number(summary.rowsCalculated || summary.rows || 0) || 0,
+    synced: Number(summary.synced || 0) || 0,
+  }
+}
+
+function DocumentRequestRecalculationPanel({
+  transactionId = '',
+  transactionReference = '',
+  state,
+  canCommit = false,
+  onDryRun,
+  onCommit,
+} = {}) {
+  const dryRunStats = getCanonicalDocumentRequestRecalculationStats(state?.dryRunResult)
+  const commitStats = getCanonicalDocumentRequestRecalculationStats(state?.commitResult)
+  const hasDryRun = Boolean(state?.dryRunResult)
+  const hasCommit = Boolean(state?.commitResult)
+  const busy = state?.running || state?.committing
+
+  return (
+    <section className="mb-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#3b6f8f]">
+            <ShieldCheck size={15} />
+            Document requirements
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-[#142132]">Canonical recalculation</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758d]">
+            {transactionReference || transactionId}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" onClick={onDryRun} disabled={busy || !transactionId}>
+            <RefreshCw size={14} />
+            {state?.running ? 'Running...' : 'Dry run'}
+          </Button>
+          <Button type="button" onClick={onCommit} disabled={busy || !canCommit}>
+            <CheckCircle2 size={14} />
+            {state?.committing ? 'Committing...' : 'Commit'}
+          </Button>
+        </div>
+      </div>
+
+      {state?.error ? (
+        <div className="mt-3 rounded-[12px] border border-[#f1d8d0] bg-[#fff7f5] px-3 py-2 text-sm text-[#9d3b2b]">
+          {state.error}
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          ['Rows', dryRunStats.rows],
+          ['Completed', dryRunStats.completed],
+          ['Skipped', dryRunStats.skipped],
+          ['Failed', dryRunStats.failed],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-[12px] border border-[#e4edf7] bg-[#f8fbff] px-3 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">{label}</p>
+            <p className="mt-1 text-xl font-semibold text-[#142132]">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {hasDryRun ? (
+        <p className="mt-3 text-sm leading-6 text-[#60758d]">
+          Last dry run calculated {dryRunStats.rows} row{dryRunStats.rows === 1 ? '' : 's'} for {dryRunStats.total} transaction{dryRunStats.total === 1 ? '' : 's'}.
+        </p>
+      ) : null}
+
+      {hasCommit ? (
+        <p className="mt-2 text-sm font-semibold text-[#2f7d4b]">
+          Committed {commitStats.synced} synced row{commitStats.synced === 1 ? '' : 's'}.
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
 export default function LegalDocumentWorkspacePage() {
   const navigate = useNavigate()
   const params = useParams()
@@ -3009,6 +3099,13 @@ export default function LegalDocumentWorkspacePage() {
   const [preferredTransferAttorneysError, setPreferredTransferAttorneysError] = useState('')
   const [selectedTransferAttorneyId, setSelectedTransferAttorneyId] = useState('')
   const [transferAttorneySelectionDeferred, setTransferAttorneySelectionDeferred] = useState(false)
+  const [documentRequestRecalculation, setDocumentRequestRecalculation] = useState({
+    running: false,
+    committing: false,
+    error: '',
+    dryRunResult: null,
+    commitResult: null,
+  })
   const initialStatusRef = useRef(null)
   const hasRenderedContextRef = useRef(false)
   const hydratedRouteContextKeyRef = useRef('')
@@ -3711,6 +3808,93 @@ export default function LegalDocumentWorkspacePage() {
       normalizeText(leadContext.lead?.leadCategory),
     ].filter(Boolean).join(' · '),
   )
+  const canRunDocumentRequestRecalculation = [
+    'developer',
+    'internal_admin',
+    'admin',
+    'platform_admin',
+    'attorney',
+  ].includes(normalizeKey(role || profile?.role || profile?.app_role || profile?.appRole))
+  const documentRequestDryRunStats = getCanonicalDocumentRequestRecalculationStats(documentRequestRecalculation.dryRunResult)
+  const canCommitDocumentRequestRecalculation =
+    canRunDocumentRequestRecalculation &&
+    Boolean(transactionId) &&
+    Boolean(documentRequestRecalculation.dryRunResult) &&
+    documentRequestDryRunStats.failed === 0 &&
+    !documentRequestRecalculation.running &&
+    !documentRequestRecalculation.committing
+
+  const handleDocumentRequestDryRun = useCallback(async () => {
+    if (!transactionId) {
+      setDocumentRequestRecalculation((previous) => ({
+        ...previous,
+        error: 'A transaction is required before recalculating document requirements.',
+      }))
+      return
+    }
+
+    setDocumentRequestRecalculation((previous) => ({
+      ...previous,
+      running: true,
+      error: '',
+      commitResult: null,
+    }))
+    try {
+      const result = await runCanonicalDocumentRequestRequirementRecalculation({
+        transactionId,
+        audience: 'auto',
+        dryRun: true,
+      })
+      setDocumentRequestRecalculation((previous) => ({
+        ...previous,
+        running: false,
+        dryRunResult: result,
+        error: '',
+      }))
+    } catch (error) {
+      setDocumentRequestRecalculation((previous) => ({
+        ...previous,
+        running: false,
+        error: error?.message || 'Document requirement recalculation failed.',
+      }))
+    }
+  }, [transactionId])
+
+  const handleDocumentRequestCommit = useCallback(async () => {
+    if (!transactionId || !documentRequestRecalculation.dryRunResult) {
+      setDocumentRequestRecalculation((previous) => ({
+        ...previous,
+        error: 'Run a successful dry run before committing document requirements.',
+      }))
+      return
+    }
+
+    setDocumentRequestRecalculation((previous) => ({
+      ...previous,
+      committing: true,
+      error: '',
+    }))
+    try {
+      const result = await runCanonicalDocumentRequestRequirementRecalculation({
+        transactionId,
+        audience: 'auto',
+        commit: true,
+      })
+      setDocumentRequestRecalculation((previous) => ({
+        ...previous,
+        committing: false,
+        commitResult: result,
+        error: '',
+      }))
+      await loadRouteContext()
+    } catch (error) {
+      setDocumentRequestRecalculation((previous) => ({
+        ...previous,
+        committing: false,
+        error: error?.message || 'Document requirement commit failed.',
+      }))
+    }
+  }, [documentRequestRecalculation.dryRunResult, loadRouteContext, transactionId])
 
   const syncLeadMandateState = useCallback(async (patch = {}, { reason = 'update mandate state' } = {}) => {
     const scopedLeadId = normalizeText(leadContext?.lead?.leadId)
@@ -5350,6 +5534,17 @@ export default function LegalDocumentWorkspacePage() {
 	          onFieldChange={updateOtpDraftField}
 	          onReset={resetOtpDraftFields}
 	        />
+      ) : null}
+
+      {canRunDocumentRequestRecalculation && transactionId ? (
+        <DocumentRequestRecalculationPanel
+          transactionId={transactionId}
+          transactionReference={transactionReference}
+          state={documentRequestRecalculation}
+          canCommit={canCommitDocumentRequestRecalculation}
+          onDryRun={handleDocumentRequestDryRun}
+          onCommit={handleDocumentRequestCommit}
+        />
       ) : null}
 
       <div id={packetType === 'otp' ? 'otp-generation-workspace' : undefined} className="scroll-mt-28">

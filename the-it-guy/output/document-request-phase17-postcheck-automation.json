@@ -1,0 +1,178 @@
+{
+  "phase": "document_request_phase16_automation",
+  "generatedAt": "2026-08-02T13:07:54.059Z",
+  "dryRun": true,
+  "commitRequested": false,
+  "commitExecuted": false,
+  "confirmAutomation": false,
+  "mutatedData": false,
+  "schedulingEnabled": false,
+  "automation": {
+    "source": "phase17_postcheck",
+    "limit": 10,
+    "explicitTransactionIds": false,
+    "transactionIds": [],
+    "timeoutMs": 240000,
+    "dryRunDefault": true,
+    "requiresCommitFlag": true,
+    "requiresConfirmAutomation": true,
+    "blocksLegacyNonCanonicalKeysByDefault": true
+  },
+  "readiness": {
+    "rolloutGatePassed": true,
+    "commitEligible": true,
+    "readyForScheduledAutomation": true,
+    "allowLegacyKeys": false,
+    "legacyNonCanonicalKeyCount": 0,
+    "blockedReasons": [],
+    "reviewReasons": []
+  },
+  "summary": {
+    "status": "dry_run_completed",
+    "source": "phase17_postcheck",
+    "total": 10,
+    "completed": 10,
+    "failed": 0,
+    "warnings": 0,
+    "rowsCalculated": 68,
+    "synced": 0,
+    "requiredDocumentRowsDelta": 0,
+    "documentRequestsDelta": 0,
+    "documentRequestsCreated": false,
+    "preservedRowsChanged": 0,
+    "portalVerificationFailed": 0,
+    "portalMissingCommittedKeys": 0,
+    "legacyNonCanonicalKeyCount": 0,
+    "readyForScheduledAutomation": true,
+    "commitEligible": true,
+    "wroteRows": false,
+    "blockedReasons": [],
+    "reviewReasons": []
+  },
+  "rollout": {
+    "output": "output/document-request-phase17-postcheck-operational-rollout.json",
+    "portalOutput": "output/document-request-phase17-postcheck-portal-verification.json",
+    "summary": {
+      "total": 10,
+      "completed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "warnings": 0,
+      "rowsCalculated": 68,
+      "synced": 0,
+      "requiredDocumentRowsDelta": 0,
+      "documentRequestsDelta": 0,
+      "documentRequestsCreated": false,
+      "preservedRowsChanged": 0,
+      "portalVerificationFailed": 0,
+      "portalMissingCommittedKeys": 0,
+      "portalDocumentRequestsCreated": false,
+      "gatePassed": true,
+      "wroteRows": false
+    },
+    "selection": {
+      "explicitTransactionIds": false,
+      "limit": 10,
+      "candidateCount": 10,
+      "candidates": [
+        {
+          "transactionId": "711ec65a-c24c-4184-90e0-d1bddb01dcea",
+          "sources": [
+            "active_buyer_portal_link"
+          ],
+          "updatedAt": "2026-07-23T05:17:05.148108+00:00"
+        },
+        {
+          "transactionId": "4e639151-3bdb-4919-af34-d6bcbb55fec4",
+          "sources": [
+            "active_buyer_portal_link"
+          ],
+          "updatedAt": "2026-07-23T05:17:05.148108+00:00"
+        },
+        {
+          "transactionId": "9f46b2ba-1324-4419-b975-cb00818718f0",
+          "sources": [
+            "active_buyer_portal_link"
+          ],
+          "updatedAt": "2026-07-23T05:17:05.148108+00:00"
+        },
+        {
+          "transactionId": "51b80dff-4d0d-4fe7-80fc-5abebfc9e74f",
+          "sources": [
+            "active_buyer_portal_link"
+          ],
+          "updatedAt": "2026-07-23T05:17:05.148108+00:00"
+        },
+        {
+          "transactionId": "4a558d8c-4d0e-4d96-a3b1-e9f7e7313fb8",
+          "sources": [
+            "active_buyer_portal_link"
+          ],
+          "updatedAt": "2026-07-23T05:17:05.148108+00:00"
+        },
+        {
+          "transactionId": "3e611ebb-be0f-46b1-9495-9bf150cd967a",
+          "sources": [
+            "active_buyer_portal_link"
+          ],
+          "updatedAt": "2026-07-23T05:17:05.148108+00:00"
+        },
+        {
+          "transactionId": "63af1887-4277-4a8c-8dab-5fc4bf80089c",
+          "sources": [
+            "active_buyer_portal_link"
+          ],
+          "updatedAt": "2026-07-23T05:17:05.148108+00:00"
+        },
+        {
+          "transactionId": "f3de5516-a6c9-4f5d-88ca-d51114c5a84d",
+          "sources": [
+            "active_buyer_portal_link"
+          ],
+          "updatedAt": "2026-07-23T05:17:05.148108+00:00"
+        },
+        {
+          "transactionId": "88f73094-c2bd-4dd5-b51b-ac0425fe4689",
+          "sources": [
+            "active_buyer_portal_link"
+          ],
+          "updatedAt": "2026-07-23T05:17:05.148108+00:00"
+        },
+        {
+          "transactionId": "2c5ea588-71f5-4983-a6a5-b4591eecc16b",
+          "sources": [
+            "active_buyer_portal_link"
+          ],
+          "updatedAt": "2026-07-23T05:17:05.148108+00:00"
+        }
+      ]
+    },
+    "transactionIds": [
+      "711ec65a-c24c-4184-90e0-d1bddb01dcea",
+      "4e639151-3bdb-4919-af34-d6bcbb55fec4",
+      "9f46b2ba-1324-4419-b975-cb00818718f0",
+      "51b80dff-4d0d-4fe7-80fc-5abebfc9e74f",
+      "4a558d8c-4d0e-4d96-a3b1-e9f7e7313fb8",
+      "3e611ebb-be0f-46b1-9495-9bf150cd967a",
+      "63af1887-4277-4a8c-8dab-5fc4bf80089c",
+      "f3de5516-a6c9-4f5d-88ca-d51114c5a84d",
+      "88f73094-c2bd-4dd5-b51b-ac0425fe4689",
+      "2c5ea588-71f5-4983-a6a5-b4591eecc16b"
+    ],
+    "portalVerification": {
+      "output": "output/document-request-phase17-postcheck-portal-verification.json",
+      "summary": {
+        "total": 10,
+        "completed": 10,
+        "failed": 0,
+        "warnings": 0,
+        "requiredDocumentRows": 124,
+        "expectedPortalRequiredRows": 68,
+        "documentRequestsCreated": false,
+        "missingCommittedKeysFromSharedPortal": 0,
+        "nonCanonicalExistingKeys": 0
+      }
+    }
+  },
+  "preflight": null
+}

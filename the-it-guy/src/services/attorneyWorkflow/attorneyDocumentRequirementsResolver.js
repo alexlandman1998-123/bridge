@@ -1,4 +1,5 @@
 import { resolveTransactionFacts } from './transactionFactsResolver.js'
+import { withCanonicalDocumentRequestMetadata } from '../../core/documents/documentRequestCanonicalAdapter.js'
 
 // Phase 9 canonical document consolidation:
 // This attorney document resolver is retained as a compatibility fallback.
@@ -53,7 +54,7 @@ function requirement({
   reason = '',
 }) {
   const normalizedRole = String(attorneyRole || 'transfer_attorney').trim().toLowerCase()
-  return {
+  return withCanonicalDocumentRequestMetadata({
     id,
     label,
     description: description || reason || label,
@@ -70,7 +71,7 @@ function requirement({
     visibilityDefault,
     clientUploadAllowed,
     reason,
-  }
+  }, { context: normalizedRole })
 }
 
 function signingRequirement({

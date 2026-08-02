@@ -5,6 +5,7 @@ import {
 } from './purchaserPersonas.js'
 import { normalizeFinanceType } from '../core/transactions/financeType.js'
 import { resolveBuyerOnboardingFlow } from './buyerOnboardingFlow.js'
+import { withCanonicalDocumentRequestMetadata } from '../core/documents/documentRequestCanonicalAdapter.js'
 import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService.js'
 
 // Phase 9 canonical document consolidation:
@@ -76,7 +77,7 @@ function withCrossModuleDocumentMetadata(requirement = {}) {
     groupKey: requirement.groupKey || requirement.requirement_group,
   })
   return {
-    ...requirement,
+    ...withCanonicalDocumentRequestMetadata(requirement, { context: 'buyer' }),
     canonicalDocumentKey: reference.canonicalDocumentKey,
     crossModuleDocumentKey: reference.crossModuleDocumentKey,
     crossModuleDocumentMapVersion: reference.crossModuleDocumentMapVersion,

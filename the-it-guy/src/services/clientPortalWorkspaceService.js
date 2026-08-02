@@ -42,6 +42,9 @@ import {
   resolvePortalPropertyLabel,
   resolvePortalSellerName,
 } from './portalCanonicalFieldFallbacks.js'
+import {
+  buildCanonicalDocumentRequestAudiencePlan,
+} from '../core/documents/documentRequestCanonicalPlanner.js'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -1735,6 +1738,19 @@ function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsB
     dueDate: requirement?.dueDate || requirement?.due_date || null,
     requestedBy: requirement?.requestedBy || requirement?.requested_by_name || '',
     visibility: requirement?.visibility || requirement?.visibility_scope || 'client',
+    canonicalDocumentRequestKey:
+      requirement?.canonicalDocumentRequestKey ||
+      requirement?.documentRequestCanonicalKey ||
+      requirement?.canonical_document_request_key ||
+      '',
+    canonicalDocumentRequestLevel: requirement?.canonicalDocumentRequestLevel || requirement?.requirementLevel || '',
+    canonicalDocumentRequestVisibility:
+      requirement?.canonicalDocumentRequestVisibility || requirement?.visibility || requirement?.visibility_scope || '',
+    canonicalDocumentRequestBlocker: requirement?.canonicalDocumentRequestBlocker || '',
+    canonicalDocumentRequestOwnerRole:
+      requirement?.canonicalDocumentRequestOwnerRole || requirement?.ownerRole || requirement?.expectedFromRole || '',
+    canonicalDocumentRequestSource: requirement?.canonicalDocumentRequestSource || '',
+    canonicalDocumentRequestPlanVersion: requirement?.canonicalDocumentRequestPlanVersion || '',
     isCoreRequirement: true,
   }
 }
@@ -2404,6 +2420,352 @@ function resolveSellerPortalFormData(portalData = {}) {
                   : {}
 }
 
+function getPortalBuyingFormData(portalData = {}) {
+  return isPlainObject(portalData?.onboardingFormData?.formData)
+    ? portalData.onboardingFormData.formData
+    : isPlainObject(portalData?.onboardingFormData?.form_data)
+      ? portalData.onboardingFormData.form_data
+      : isPlainObject(portalData?.onboardingFormData)
+        ? portalData.onboardingFormData
+        : isPlainObject(portalData?.onboarding?.formData)
+          ? portalData.onboarding.formData
+          : isPlainObject(portalData?.onboarding?.form_data)
+            ? portalData.onboarding.form_data
+            : isPlainObject(portalData?.formData)
+              ? portalData.formData
+              : {}
+}
+
+function getCanonicalDocumentRequestScenarioSignal(portalData = {}) {
+  return isPlainObject(portalData?.canonicalDocumentRequestScenario)
+    ? portalData.canonicalDocumentRequestScenario
+    : isPlainObject(portalData?.documentRequestScenario)
+      ? portalData.documentRequestScenario
+      : isPlainObject(portalData?.canonicalDocumentPlanScenario)
+        ? portalData.canonicalDocumentPlanScenario
+        : null
+}
+
+function pickFirstValue(...values) {
+  return values.find((value) => String(value ?? '').trim()) ?? ''
+}
+
+function hasAnyValue(...values) {
+  return values.some((value) => {
+    if (value === true) return true
+    if (value === false) return false
+    return value !== undefined && value !== null && String(value).trim() !== ''
+  })
+}
+
+function normalizeBoolean(value) {
+  if (value === true || value === 1) return true
+  const normalized = normalizeValue(value)
+  return normalized === 'true' || normalized === 'yes' || normalized === 'y' || normalized === '1'
+}
+
+function resolveCanonicalDocumentRequestScenario(portalData = {}) {
+  const explicitScenario = getCanonicalDocumentRequestScenarioSignal(portalData)
+  const transaction = isPlainObject(portalData?.transaction) ? portalData.transaction : {}
+  const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
+  const activeSellingContext = isPlainObject(portalData?.activeSellingContext) ? portalData.activeSellingContext : {}
+  const buyingFormData = getPortalBuyingFormData(portalData)
+  const sellingFormData = resolveSellerPortalFormData(portalData)
+
+  if (!explicitScenario && !transaction?.id && !portalData?.enableCanonicalDocumentRequestPlan) return null
+
+  const hasBuyerSignal = hasAnyValue(
+    explicitScenario?.buyerEntityType,
+    explicitScenario?.buyer_entity_type,
+    explicitScenario?.buyerMaritalRegime,
+    explicitScenario?.buyer_marital_regime,
+    buyingFormData?.purchaser_entity_type,
+    buyingFormData?.purchaserType,
+    buyingFormData?.purchaser_type,
+    transaction?.buyer_entity_type,
+    transaction?.purchaser_type,
+  )
+  const hasSellerSignal = hasAnyValue(
+    explicitScenario?.sellerEntityType,
+    explicitScenario?.seller_entity_type,
+    explicitScenario?.sellerMaritalRegime,
+    explicitScenario?.seller_marital_regime,
+    explicitScenario?.sellerHasExistingBond,
+    explicitScenario?.seller_has_existing_bond,
+    sellingFormData?.ownershipType,
+    sellingFormData?.ownership_type,
+    sellingFormData?.sellerEntityType,
+    sellingFormData?.seller_entity_type,
+    activeSellingContext?.sellerEntityType,
+    activeSellingContext?.seller_entity_type,
+    listing?.sellerEntityType,
+    listing?.seller_entity_type,
+    transaction?.seller_entity_type,
+  )
+
+  const sellerExistingBond = normalizeBoolean(
+    pickFirstValue(
+      explicitScenario?.sellerHasExistingBond,
+      explicitScenario?.seller_has_existing_bond,
+      sellingFormData?.sellerHasExistingBond,
+      sellingFormData?.seller_has_existing_bond,
+      sellingFormData?.existingBond,
+      sellingFormData?.existing_bond,
+      listing?.sellerHasExistingBond,
+      listing?.seller_has_existing_bond,
+      transaction?.seller_has_existing_bond,
+      transaction?.requires_cancellation_attorney,
+    ),
+  )
+
+  return {
+    ...(explicitScenario || {}),
+    __includeBuyerCanonicalRequests: hasBuyerSignal,
+    __includeSellerCanonicalRequests: hasSellerSignal,
+    buyerEntityType: pickFirstValue(
+      explicitScenario?.buyerEntityType,
+      explicitScenario?.buyer_entity_type,
+      buyingFormData?.purchaser_entity_type,
+      buyingFormData?.purchaserType,
+      buyingFormData?.purchaser_type,
+      transaction?.buyer_entity_type,
+      transaction?.purchaser_type,
+    ),
+    buyerMaritalRegime: pickFirstValue(
+      explicitScenario?.buyerMaritalRegime,
+      explicitScenario?.buyer_marital_regime,
+      buyingFormData?.marital_regime,
+      buyingFormData?.maritalStatus,
+      buyingFormData?.marital_status,
+      transaction?.buyer_marital_regime,
+    ),
+    sellerEntityType: pickFirstValue(
+      explicitScenario?.sellerEntityType,
+      explicitScenario?.seller_entity_type,
+      sellingFormData?.ownershipType,
+      sellingFormData?.ownership_type,
+      sellingFormData?.sellerEntityType,
+      sellingFormData?.seller_entity_type,
+      activeSellingContext?.sellerEntityType,
+      activeSellingContext?.seller_entity_type,
+      listing?.sellerEntityType,
+      listing?.seller_entity_type,
+      transaction?.seller_entity_type,
+    ),
+    sellerMaritalRegime: pickFirstValue(
+      explicitScenario?.sellerMaritalRegime,
+      explicitScenario?.seller_marital_regime,
+      sellingFormData?.maritalRegime,
+      sellingFormData?.marital_regime,
+      sellingFormData?.sellerMaritalStatus,
+      sellingFormData?.seller_marital_status,
+      transaction?.seller_marital_regime,
+    ),
+    financeType: pickFirstValue(
+      explicitScenario?.financeType,
+      explicitScenario?.finance_type,
+      buyingFormData?.purchase_finance_type,
+      buyingFormData?.financeType,
+      buyingFormData?.finance_type,
+      transaction?.finance_type,
+    ),
+    sellerHasExistingBond: sellerExistingBond,
+    requiresCancellationAttorney: sellerExistingBond || normalizeBoolean(transaction?.requires_cancellation_attorney),
+    propertyType: pickFirstValue(
+      explicitScenario?.propertyType,
+      explicitScenario?.property_type,
+      sellingFormData?.propertyType,
+      sellingFormData?.property_type,
+      sellingFormData?.propertyStructureType,
+      sellingFormData?.property_structure_type,
+      listing?.propertyType,
+      listing?.property_type,
+      transaction?.property_type,
+    ),
+    propertyTriggers: [
+      explicitScenario?.propertyType,
+      explicitScenario?.property_type,
+      sellingFormData?.propertyCategory,
+      sellingFormData?.property_category,
+      sellingFormData?.propertyType,
+      sellingFormData?.property_type,
+      sellingFormData?.propertyStructureType,
+      sellingFormData?.property_structure_type,
+      listing?.propertyCategory,
+      listing?.property_category,
+      listing?.propertyType,
+      listing?.property_type,
+      transaction?.property_type,
+    ].filter(Boolean),
+    gasInstallation: normalizeBoolean(
+      pickFirstValue(
+        explicitScenario?.gasInstallation,
+        explicitScenario?.gas_installation,
+        sellingFormData?.gasInstallation,
+        sellingFormData?.gas_installation,
+        listing?.gasInstallation,
+        listing?.gas_installation,
+      ),
+    ),
+    electricFence: normalizeBoolean(
+      pickFirstValue(
+        explicitScenario?.electricFence,
+        explicitScenario?.electric_fence,
+        sellingFormData?.electricFence,
+        sellingFormData?.electric_fence,
+        listing?.electricFence,
+        listing?.electric_fence,
+      ),
+    ),
+    municipalWaterCocRequired: normalizeBoolean(
+      pickFirstValue(
+        explicitScenario?.municipalWaterCocRequired,
+        explicitScenario?.municipal_water_coc_required,
+        sellingFormData?.municipalWaterCocRequired,
+        sellingFormData?.municipal_water_coc_required,
+      ),
+    ),
+    beetleCertificateRequired: normalizeBoolean(
+      pickFirstValue(
+        explicitScenario?.beetleCertificateRequired,
+        explicitScenario?.beetle_certificate_required,
+        sellingFormData?.beetleCertificateRequired,
+        sellingFormData?.beetle_certificate_required,
+      ),
+    ),
+    solarInstallation: normalizeBoolean(
+      pickFirstValue(
+        explicitScenario?.solarInstallation,
+        explicitScenario?.solar_installation,
+        sellingFormData?.solarInstallation,
+        sellingFormData?.solar_installation,
+      ),
+    ),
+    alterations: normalizeBoolean(pickFirstValue(explicitScenario?.alterations, sellingFormData?.alterations, listing?.alterations)),
+    newBuilding: normalizeBoolean(pickFirstValue(explicitScenario?.newBuilding, explicitScenario?.new_building, sellingFormData?.newBuilding, sellingFormData?.new_building)),
+    developmentSale: normalizeBoolean(
+      pickFirstValue(
+        explicitScenario?.developmentSale,
+        explicitScenario?.development_sale,
+        sellingFormData?.developmentSale,
+        sellingFormData?.development_sale,
+        transaction?.development_id,
+      ),
+    ),
+    municipalRequirement: normalizeBoolean(
+      pickFirstValue(
+        explicitScenario?.municipalRequirement,
+        explicitScenario?.municipal_requirement,
+        sellingFormData?.municipalRequirement,
+        sellingFormData?.municipal_requirement,
+      ),
+    ),
+    vatTransaction: normalizeBoolean(
+      pickFirstValue(
+        explicitScenario?.vatTransaction,
+        explicitScenario?.vat_transaction,
+        sellingFormData?.vatTransaction,
+        sellingFormData?.vat_transaction,
+        transaction?.vat_transaction,
+      ),
+    ),
+  }
+}
+
+function canonicalPlannerAudienceForWorkspace(workspaceMode = 'buying') {
+  if (workspaceMode === 'selling') return 'seller'
+  if (workspaceMode === 'buying') return 'buyer'
+  return 'client'
+}
+
+function canonicalRequestToRequiredDocument(request = {}) {
+  return {
+    key: request.key,
+    requirement_key: request.key,
+    id: `canonical_${request.key}`,
+    label: request.label,
+    requirement_name: request.label,
+    name: request.label,
+    description: request.pendingPolicy
+      ? 'This document is tracked for legal review and may need attorney signoff before it is requested.'
+      : 'This document is needed before your transaction can move forward.',
+    requirement_description: request.pendingPolicy
+      ? 'This document is tracked for legal review and may need attorney signoff before it is requested.'
+      : 'This document is needed before your transaction can move forward.',
+    status: request.requestable ? 'required' : 'not_applicable',
+    requiredDocumentStatus: request.requestable ? 'required' : 'not_applicable',
+    requirementLevel: request.level,
+    expectedFromRole: request.requestedFrom,
+    required_from_role: request.requestedFrom,
+    visibility: request.visibility,
+    visibility_scope: request.clientVisible ? 'client' : request.visibility,
+    group: request.requestedFrom,
+    groupKey: request.requestedFrom,
+    groupLabel: request.requestedFrom === 'buyer'
+      ? 'Buyer Documents'
+      : request.requestedFrom === 'seller'
+        ? 'Seller Documents'
+        : 'Transaction Documents',
+    canonicalDocumentRequestKey: request.canonicalDocumentRequestKey,
+    canonicalDocumentRequestLevel: request.level,
+    canonicalDocumentRequestVisibility: request.visibility,
+    canonicalDocumentRequestBlocker: request.blocker,
+    canonicalDocumentRequestOwnerRole: request.ownerRole,
+    canonicalDocumentRequestSource: request.source,
+    canonicalDocumentRequestPlanVersion: request.matrixVersion,
+    canonicalRequestable: request.requestable,
+    pendingPolicy: request.pendingPolicy,
+    requiresAttorneySignoff: request.requiresAttorneySignoff,
+    blocksStage: request.blocksStage,
+    sortOrder: request.sortOrder,
+  }
+}
+
+function getRequirementDedupeKeys(requirement = {}) {
+  return [
+    requirement?.canonicalDocumentRequestKey,
+    requirement?.documentRequestCanonicalKey,
+    requirement?.canonical_document_request_key,
+    requirement?.key,
+    requirement?.requirement_key,
+    requirement?.document_key,
+    requirement?.id,
+  ].map((value) => normalizeDocumentMatchKey(value)).filter(Boolean)
+}
+
+function mergeCanonicalRequiredDocuments(requiredDocuments = [], canonicalDocuments = []) {
+  const seen = new Set()
+  const merged = []
+  for (const requirement of [...requiredDocuments, ...canonicalDocuments]) {
+    const dedupeKeys = getRequirementDedupeKeys(requirement)
+    if (dedupeKeys.some((key) => seen.has(key))) continue
+    dedupeKeys.forEach((key) => seen.add(key))
+    merged.push(requirement)
+  }
+  return merged
+}
+
+function buildCanonicalDocumentCenterPlan(portalData = {}, workspaceMode = 'buying') {
+  const scenario = resolveCanonicalDocumentRequestScenario(portalData)
+  if (!scenario) return null
+
+  const audience = canonicalPlannerAudienceForWorkspace(workspaceMode)
+  const plan = buildCanonicalDocumentRequestAudiencePlan(scenario, audience)
+  const requiredDocuments = plan.requests
+    .filter((request) => {
+      if (!request.clientVisible || !['buyer', 'seller'].includes(request.requestedFrom)) return false
+      if (request.requestedFrom === 'buyer') return scenario.__includeBuyerCanonicalRequests !== false
+      if (request.requestedFrom === 'seller') return scenario.__includeSellerCanonicalRequests === true
+      return false
+    })
+    .map(canonicalRequestToRequiredDocument)
+
+  return {
+    ...plan,
+    requiredDocuments,
+  }
+}
+
 function resolveSellerPortalRawRequirements(portalData = {}) {
   const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
   return Array.isArray(portalData?.requirements)
@@ -2510,6 +2872,7 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
   const sellerDocumentPack = workspaceMode === 'selling'
     ? resolveSellerPortalRequiredDocumentPack(portalData, workspaceMode)
     : null
+  const canonicalDocumentRequestPlan = buildCanonicalDocumentCenterPlan(portalData, workspaceMode)
   const requiredDocumentsRaw = sellerDocumentPack?.requiredDocuments ||
     (Array.isArray(portalData?.requiredDocuments) ? portalData.requiredDocuments : [])
   const signedMandateDocument = buildSignedMandateDocumentFromPacket(portalData, workspaceMode)
@@ -2522,7 +2885,10 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
   ]
   const uploadedDocumentsById = buildUploadedDocumentsLookup(uploadedDocuments)
   const downloadableDocumentsByKey = buildSellerDownloadableDocumentLookup(portalData, workspaceMode)
-  const requiredDocuments = filterRequiredDocumentsByWorkspace(requiredDocumentsRaw, workspaceMode)
+  const requiredDocuments = filterRequiredDocumentsByWorkspace(
+    mergeCanonicalRequiredDocuments(requiredDocumentsRaw, canonicalDocumentRequestPlan?.requiredDocuments || []),
+    workspaceMode,
+  )
     .map((requirement) => {
       const uploadedDocument = findUploadedDocumentForRequirement(uploadedDocuments, requirement)
       if (!uploadedDocument) return requirement
@@ -2629,6 +2995,7 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     items,
     summary,
     canonicalRequirements: Array.isArray(portalData?.canonicalRequirements) ? portalData.canonicalRequirements : [],
+    canonicalDocumentRequestPlan,
     sellerStructure: sellerDocumentPack?.sellerStructure || null,
     documentPackSource: sellerDocumentPack?.source || '',
     documentPackRequirementKeys: sellerDocumentPack?.requirementKeys || [],

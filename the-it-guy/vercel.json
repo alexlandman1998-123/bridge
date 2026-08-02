@@ -4,6 +4,12 @@
     "VITE_DOCUMENT_TITLE": "Arch9 | Platform",
     "VITE_MVP_PILOT_CREATION_PAUSED": "false"
   },
+  "crons": [
+    {
+      "path": "/api/cron/document-request-canonical-automation",
+      "schedule": "30 1 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/",

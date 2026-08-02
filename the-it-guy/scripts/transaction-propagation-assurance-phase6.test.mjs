@@ -21,7 +21,10 @@ assert.match(migration, /phase6_reconciliation/i)
 assert.match(migration, /Platform administrator access is required/i)
 assert.match(migration, /grant execute on function public\.bridge_reconcile_transaction_progress_phase6[\s\S]*authenticated, service_role/i)
 
-assert.equal(vercel.crons, undefined)
+assert.ok(
+  !(vercel.crons || []).some((job) => job.path === '/api/cron/transaction-progress-notifications'),
+  'Transaction progress should still not be scheduled through Vercel cron.',
+)
 assert.match(schedulerBaseMigration, /create extension if not exists pg_cron/i)
 assert.match(schedulerMigration, /arch9-transaction-progress-recovery-5m/i)
 assert.match(schedulerMigration, /'\*\/5 \* \* \* \*'/)

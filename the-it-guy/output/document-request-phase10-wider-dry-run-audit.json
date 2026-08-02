@@ -1,0 +1,675 @@
+{
+  "phase": "document_request_phase10_wider_dry_run_audit",
+  "generatedAt": "2026-08-02T12:26:50.714Z",
+  "dryRun": true,
+  "commit": false,
+  "mutatedData": false,
+  "scannedTransactions": 316,
+  "sampledTransactions": 10,
+  "cohortCoverage": [
+    {
+      "key": "buyer_individual",
+      "label": "Individual buyer",
+      "available": 293,
+      "sampled": [
+        "4b057a60-ff57-4ebb-82ac-77a4df4eff6c",
+        "99ebd7c3-2bb4-4b0f-99cc-d06dba32d141"
+      ],
+      "status": "covered"
+    },
+    {
+      "key": "buyer_company",
+      "label": "Company buyer",
+      "available": 11,
+      "sampled": [
+        "20fa54ed-9754-4d34-a33d-3158e2f95a2a",
+        "1a50def3-bbb9-48c7-bbe3-dc2c7a0bd7b3"
+      ],
+      "status": "covered"
+    },
+    {
+      "key": "buyer_trust",
+      "label": "Trust buyer",
+      "available": 11,
+      "sampled": [
+        "ce3cf878-2796-4193-a3d6-7fcc6ac07ca4",
+        "c3f59a5f-0bc6-4ea8-a223-62f00bcda267"
+      ],
+      "status": "covered"
+    },
+    {
+      "key": "seller_individual",
+      "label": "Individual seller",
+      "available": 2,
+      "sampled": [
+        "9fdb69f0-5fe2-475d-8615-a254aa4440e6",
+        "26f10c15-99f8-463a-8085-ee0ee9e830db"
+      ],
+      "status": "covered"
+    },
+    {
+      "key": "seller_company",
+      "label": "Company seller",
+      "available": 0,
+      "sampled": [],
+      "status": "not_found_in_live_sample"
+    },
+    {
+      "key": "seller_trust",
+      "label": "Trust seller",
+      "available": 0,
+      "sampled": [],
+      "status": "not_found_in_live_sample"
+    },
+    {
+      "key": "seller_deceased_estate",
+      "label": "Deceased estate seller",
+      "available": 0,
+      "sampled": [],
+      "status": "not_found_in_live_sample"
+    },
+    {
+      "key": "seller_power_of_attorney",
+      "label": "Power of attorney seller",
+      "available": 0,
+      "sampled": [],
+      "status": "not_found_in_live_sample"
+    },
+    {
+      "key": "buyer_married_cop",
+      "label": "Buyer married in community",
+      "available": 0,
+      "sampled": [],
+      "status": "not_found_in_live_sample"
+    },
+    {
+      "key": "buyer_married_anc",
+      "label": "Buyer married out of community / ANC",
+      "available": 2,
+      "sampled": [
+        "b2ca2c2f-21d6-487c-a39e-86e01ba9d902",
+        "db6c858c-7bf7-4d2c-a7cb-37cc93adadeb"
+      ],
+      "status": "covered"
+    },
+    {
+      "key": "seller_married_cop",
+      "label": "Seller married in community",
+      "available": 0,
+      "sampled": [],
+      "status": "not_found_in_live_sample"
+    },
+    {
+      "key": "seller_married_anc",
+      "label": "Seller married out of community / ANC",
+      "available": 0,
+      "sampled": [],
+      "status": "not_found_in_live_sample"
+    },
+    {
+      "key": "sectional_title",
+      "label": "Sectional title property",
+      "available": 24,
+      "sampled": [
+        "4b057a60-ff57-4ebb-82ac-77a4df4eff6c",
+        "99ebd7c3-2bb4-4b0f-99cc-d06dba32d141"
+      ],
+      "status": "covered"
+    },
+    {
+      "key": "estate_hoa",
+      "label": "Estate / HOA property",
+      "available": 0,
+      "sampled": [],
+      "status": "not_found_in_live_sample"
+    },
+    {
+      "key": "existing_bond",
+      "label": "Existing seller bond with seller structure",
+      "available": 0,
+      "sampled": [],
+      "status": "not_found_in_live_sample"
+    },
+    {
+      "key": "commercial_vat",
+      "label": "Commercial / VAT transaction",
+      "available": 1,
+      "sampled": [
+        "1a50def3-bbb9-48c7-bbe3-dc2c7a0bd7b3"
+      ],
+      "status": "covered"
+    }
+  ],
+  "missingCohorts": [
+    "seller_company",
+    "seller_trust",
+    "seller_deceased_estate",
+    "seller_power_of_attorney",
+    "buyer_married_cop",
+    "seller_married_cop",
+    "seller_married_anc",
+    "estate_hoa",
+    "existing_bond"
+  ],
+  "summary": {
+    "version": "document_request_phase8_admin_recalculation_v1",
+    "total": 10,
+    "completed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "rowsCalculated": 90,
+    "synced": 0,
+    "wroteRows": false
+  },
+  "results": [
+    {
+      "transactionId": "4b057a60-ff57-4ebb-82ac-77a4df4eff6c",
+      "createdAt": "2026-07-26T09:00:00+00:00",
+      "listingIdPresent": false,
+      "unitIdPresent": false,
+      "profile": {
+        "buyerEntityType": "individual",
+        "sellerEntityType": "",
+        "buyerMaritalRegime": "",
+        "sellerMaritalRegime": "",
+        "financeType": "bond",
+        "propertyType": "sectional_title",
+        "sellerHasExistingBond": false,
+        "vatTransaction": false,
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "tags": [
+          "buyer_individual",
+          "bond",
+          "sectional_title"
+        ]
+      },
+      "dryRun": true,
+      "skipped": false,
+      "reason": null,
+      "requestedAudience": "auto",
+      "derivedAudience": "buyer",
+      "coverage": {
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "financeKnown": true,
+        "propertyKnown": true
+      },
+      "rowCount": 7,
+      "synced": 0,
+      "includesSellerTaxNumber": false,
+      "includesSellerBankConfirmation": false,
+      "pendingPolicySkipped": [],
+      "keys": [
+        "bond_approval",
+        "buyer_fica_pack",
+        "buyer_id_document",
+        "buyer_marital_status_details",
+        "buyer_proof_of_address",
+        "grant_signed",
+        "income_affordability_documents"
+      ]
+    },
+    {
+      "transactionId": "99ebd7c3-2bb4-4b0f-99cc-d06dba32d141",
+      "createdAt": "2026-07-23T09:00:00+00:00",
+      "listingIdPresent": false,
+      "unitIdPresent": false,
+      "profile": {
+        "buyerEntityType": "individual",
+        "sellerEntityType": "",
+        "buyerMaritalRegime": "",
+        "sellerMaritalRegime": "",
+        "financeType": "bond",
+        "propertyType": "sectional_title",
+        "sellerHasExistingBond": false,
+        "vatTransaction": false,
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "tags": [
+          "buyer_individual",
+          "bond",
+          "sectional_title"
+        ]
+      },
+      "dryRun": true,
+      "skipped": false,
+      "reason": null,
+      "requestedAudience": "auto",
+      "derivedAudience": "buyer",
+      "coverage": {
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "financeKnown": true,
+        "propertyKnown": true
+      },
+      "rowCount": 7,
+      "synced": 0,
+      "includesSellerTaxNumber": false,
+      "includesSellerBankConfirmation": false,
+      "pendingPolicySkipped": [],
+      "keys": [
+        "bond_approval",
+        "buyer_fica_pack",
+        "buyer_id_document",
+        "buyer_marital_status_details",
+        "buyer_proof_of_address",
+        "grant_signed",
+        "income_affordability_documents"
+      ]
+    },
+    {
+      "transactionId": "9fdb69f0-5fe2-475d-8615-a254aa4440e6",
+      "createdAt": "2026-07-21T14:15:07.891579+00:00",
+      "listingIdPresent": true,
+      "unitIdPresent": false,
+      "profile": {
+        "buyerEntityType": "individual",
+        "sellerEntityType": "individual",
+        "buyerMaritalRegime": "",
+        "sellerMaritalRegime": "",
+        "financeType": "cash",
+        "propertyType": "house",
+        "sellerHasExistingBond": false,
+        "vatTransaction": false,
+        "buyerKnown": true,
+        "sellerKnown": true,
+        "tags": [
+          "buyer_individual",
+          "seller_individual",
+          "cash"
+        ]
+      },
+      "dryRun": true,
+      "skipped": false,
+      "reason": null,
+      "requestedAudience": "auto",
+      "derivedAudience": "client",
+      "coverage": {
+        "buyerKnown": true,
+        "sellerKnown": true,
+        "financeKnown": true,
+        "propertyKnown": true
+      },
+      "rowCount": 16,
+      "synced": 0,
+      "includesSellerTaxNumber": true,
+      "includesSellerBankConfirmation": true,
+      "pendingPolicySkipped": [],
+      "keys": [
+        "buyer_fica_pack",
+        "buyer_id_document",
+        "buyer_marital_status_details",
+        "buyer_proof_of_address",
+        "buyer_source_of_funds",
+        "electrical_compliance_certificate",
+        "proof_of_funds",
+        "property_condition_disclosure",
+        "rates_account",
+        "rates_clearance",
+        "seller_bank_account_confirmation",
+        "seller_fica_pack",
+        "seller_id_document",
+        "seller_proof_of_address",
+        "seller_tax_number",
+        "title_deed_copy"
+      ]
+    },
+    {
+      "transactionId": "26f10c15-99f8-463a-8085-ee0ee9e830db",
+      "createdAt": "2026-07-20T22:10:24.913775+00:00",
+      "listingIdPresent": true,
+      "unitIdPresent": false,
+      "profile": {
+        "buyerEntityType": "individual",
+        "sellerEntityType": "individual",
+        "buyerMaritalRegime": "",
+        "sellerMaritalRegime": "",
+        "financeType": "cash",
+        "propertyType": "house",
+        "sellerHasExistingBond": false,
+        "vatTransaction": false,
+        "buyerKnown": true,
+        "sellerKnown": true,
+        "tags": [
+          "buyer_individual",
+          "seller_individual",
+          "cash"
+        ]
+      },
+      "dryRun": true,
+      "skipped": false,
+      "reason": null,
+      "requestedAudience": "auto",
+      "derivedAudience": "client",
+      "coverage": {
+        "buyerKnown": true,
+        "sellerKnown": true,
+        "financeKnown": true,
+        "propertyKnown": true
+      },
+      "rowCount": 16,
+      "synced": 0,
+      "includesSellerTaxNumber": true,
+      "includesSellerBankConfirmation": true,
+      "pendingPolicySkipped": [],
+      "keys": [
+        "buyer_fica_pack",
+        "buyer_id_document",
+        "buyer_marital_status_details",
+        "buyer_proof_of_address",
+        "buyer_source_of_funds",
+        "electrical_compliance_certificate",
+        "proof_of_funds",
+        "property_condition_disclosure",
+        "rates_account",
+        "rates_clearance",
+        "seller_bank_account_confirmation",
+        "seller_fica_pack",
+        "seller_id_document",
+        "seller_proof_of_address",
+        "seller_tax_number",
+        "title_deed_copy"
+      ]
+    },
+    {
+      "transactionId": "20fa54ed-9754-4d34-a33d-3158e2f95a2a",
+      "createdAt": "2026-05-19T11:00:00+00:00",
+      "listingIdPresent": false,
+      "unitIdPresent": true,
+      "profile": {
+        "buyerEntityType": "company",
+        "sellerEntityType": "",
+        "buyerMaritalRegime": "",
+        "sellerMaritalRegime": "",
+        "financeType": "bond",
+        "propertyType": "developer_sale",
+        "sellerHasExistingBond": false,
+        "vatTransaction": false,
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "tags": [
+          "buyer_company",
+          "bond"
+        ]
+      },
+      "dryRun": true,
+      "skipped": false,
+      "reason": null,
+      "requestedAudience": "auto",
+      "derivedAudience": "buyer",
+      "coverage": {
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "financeKnown": true,
+        "propertyKnown": true
+      },
+      "rowCount": 7,
+      "synced": 0,
+      "includesSellerTaxNumber": false,
+      "includesSellerBankConfirmation": false,
+      "pendingPolicySkipped": [
+        "buyer_company_beneficial_ownership"
+      ],
+      "keys": [
+        "bond_approval",
+        "buyer_company_registration",
+        "buyer_company_resolution",
+        "buyer_director_fica",
+        "buyer_fica_pack",
+        "grant_signed",
+        "income_affordability_documents"
+      ]
+    },
+    {
+      "transactionId": "ce3cf878-2796-4193-a3d6-7fcc6ac07ca4",
+      "createdAt": "2026-05-13T06:00:00+00:00",
+      "listingIdPresent": false,
+      "unitIdPresent": true,
+      "profile": {
+        "buyerEntityType": "trust",
+        "sellerEntityType": "",
+        "buyerMaritalRegime": "",
+        "sellerMaritalRegime": "",
+        "financeType": "bond",
+        "propertyType": "developer_sale",
+        "sellerHasExistingBond": false,
+        "vatTransaction": false,
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "tags": [
+          "buyer_trust",
+          "bond"
+        ]
+      },
+      "dryRun": true,
+      "skipped": false,
+      "reason": null,
+      "requestedAudience": "auto",
+      "derivedAudience": "buyer",
+      "coverage": {
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "financeKnown": true,
+        "propertyKnown": true
+      },
+      "rowCount": 8,
+      "synced": 0,
+      "includesSellerTaxNumber": false,
+      "includesSellerBankConfirmation": false,
+      "pendingPolicySkipped": [
+        "buyer_trust_beneficial_ownership"
+      ],
+      "keys": [
+        "bond_approval",
+        "buyer_fica_pack",
+        "buyer_letters_of_authority",
+        "buyer_trust_deed",
+        "buyer_trustee_fica",
+        "buyer_trustee_resolution",
+        "grant_signed",
+        "income_affordability_documents"
+      ]
+    },
+    {
+      "transactionId": "1a50def3-bbb9-48c7-bbe3-dc2c7a0bd7b3",
+      "createdAt": "2026-05-12T08:00:00+00:00",
+      "listingIdPresent": false,
+      "unitIdPresent": false,
+      "profile": {
+        "buyerEntityType": "company",
+        "sellerEntityType": "",
+        "buyerMaritalRegime": "",
+        "sellerMaritalRegime": "",
+        "financeType": "cash",
+        "propertyType": "commercial",
+        "sellerHasExistingBond": false,
+        "vatTransaction": false,
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "tags": [
+          "buyer_company",
+          "cash",
+          "commercial_or_mixed_use"
+        ]
+      },
+      "dryRun": true,
+      "skipped": false,
+      "reason": null,
+      "requestedAudience": "auto",
+      "derivedAudience": "buyer",
+      "coverage": {
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "financeKnown": true,
+        "propertyKnown": true
+      },
+      "rowCount": 6,
+      "synced": 0,
+      "includesSellerTaxNumber": false,
+      "includesSellerBankConfirmation": false,
+      "pendingPolicySkipped": [
+        "buyer_company_beneficial_ownership"
+      ],
+      "keys": [
+        "buyer_company_registration",
+        "buyer_company_resolution",
+        "buyer_director_fica",
+        "buyer_fica_pack",
+        "buyer_source_of_funds",
+        "proof_of_funds"
+      ]
+    },
+    {
+      "transactionId": "b2ca2c2f-21d6-487c-a39e-86e01ba9d902",
+      "createdAt": "2026-05-12T05:00:00+00:00",
+      "listingIdPresent": false,
+      "unitIdPresent": true,
+      "profile": {
+        "buyerEntityType": "individual",
+        "sellerEntityType": "",
+        "buyerMaritalRegime": "married_anc",
+        "sellerMaritalRegime": "",
+        "financeType": "cash",
+        "propertyType": "developer_sale",
+        "sellerHasExistingBond": false,
+        "vatTransaction": false,
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "tags": [
+          "buyer_individual",
+          "buyer_married_anc",
+          "cash"
+        ]
+      },
+      "dryRun": true,
+      "skipped": false,
+      "reason": null,
+      "requestedAudience": "auto",
+      "derivedAudience": "buyer",
+      "coverage": {
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "financeKnown": true,
+        "propertyKnown": true
+      },
+      "rowCount": 7,
+      "synced": 0,
+      "includesSellerTaxNumber": false,
+      "includesSellerBankConfirmation": false,
+      "pendingPolicySkipped": [
+        "buyer_anc_document"
+      ],
+      "keys": [
+        "buyer_fica_pack",
+        "buyer_id_document",
+        "buyer_marital_status_details",
+        "buyer_marriage_certificate",
+        "buyer_proof_of_address",
+        "buyer_source_of_funds",
+        "proof_of_funds"
+      ]
+    },
+    {
+      "transactionId": "c3f59a5f-0bc6-4ea8-a223-62f00bcda267",
+      "createdAt": "2026-05-10T12:00:00+00:00",
+      "listingIdPresent": false,
+      "unitIdPresent": true,
+      "profile": {
+        "buyerEntityType": "trust",
+        "sellerEntityType": "",
+        "buyerMaritalRegime": "",
+        "sellerMaritalRegime": "",
+        "financeType": "bond",
+        "propertyType": "developer_sale",
+        "sellerHasExistingBond": false,
+        "vatTransaction": false,
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "tags": [
+          "buyer_trust",
+          "bond"
+        ]
+      },
+      "dryRun": true,
+      "skipped": false,
+      "reason": null,
+      "requestedAudience": "auto",
+      "derivedAudience": "buyer",
+      "coverage": {
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "financeKnown": true,
+        "propertyKnown": true
+      },
+      "rowCount": 8,
+      "synced": 0,
+      "includesSellerTaxNumber": false,
+      "includesSellerBankConfirmation": false,
+      "pendingPolicySkipped": [
+        "buyer_trust_beneficial_ownership"
+      ],
+      "keys": [
+        "bond_approval",
+        "buyer_fica_pack",
+        "buyer_letters_of_authority",
+        "buyer_trust_deed",
+        "buyer_trustee_fica",
+        "buyer_trustee_resolution",
+        "grant_signed",
+        "income_affordability_documents"
+      ]
+    },
+    {
+      "transactionId": "db6c858c-7bf7-4d2c-a7cb-37cc93adadeb",
+      "createdAt": "2026-05-07T06:08:23.126551+00:00",
+      "listingIdPresent": false,
+      "unitIdPresent": true,
+      "profile": {
+        "buyerEntityType": "individual",
+        "sellerEntityType": "",
+        "buyerMaritalRegime": "married_anc",
+        "sellerMaritalRegime": "",
+        "financeType": "bond",
+        "propertyType": "",
+        "sellerHasExistingBond": false,
+        "vatTransaction": false,
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "tags": [
+          "buyer_individual",
+          "buyer_married_anc",
+          "bond"
+        ]
+      },
+      "dryRun": true,
+      "skipped": false,
+      "reason": null,
+      "requestedAudience": "auto",
+      "derivedAudience": "buyer",
+      "coverage": {
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "financeKnown": true,
+        "propertyKnown": true
+      },
+      "rowCount": 8,
+      "synced": 0,
+      "includesSellerTaxNumber": false,
+      "includesSellerBankConfirmation": false,
+      "pendingPolicySkipped": [
+        "buyer_anc_document"
+      ],
+      "keys": [
+        "bond_approval",
+        "buyer_fica_pack",
+        "buyer_id_document",
+        "buyer_marital_status_details",
+        "buyer_marriage_certificate",
+        "buyer_proof_of_address",
+        "grant_signed",
+        "income_affordability_documents"
+      ]
+    }
+  ]
+}

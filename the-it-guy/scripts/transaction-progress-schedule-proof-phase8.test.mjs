@@ -18,7 +18,10 @@ assert.match(migration, /duplicate_tick/i)
 assert.match(migration, /current_setting\('bridge\.suppress_transaction_progress_notifications', true\)/i)
 assert.match(migration, /Full rollout requires zero propagation gaps and three clean canary runs/i)
 
-assert.equal(vercel.crons, undefined)
+assert.ok(
+  !(vercel.crons || []).some((job) => job.path === '/api/cron/transaction-progress-notifications'),
+  'Transaction progress should still not be scheduled through Vercel cron.',
+)
 assert.match(verifier, /bridge_transaction_progress_schedule_health_phase8/)
 assert.match(verifier, /expected exactly one active job/i)
 assert.match(verifier, /duplicate recovery invocations/i)

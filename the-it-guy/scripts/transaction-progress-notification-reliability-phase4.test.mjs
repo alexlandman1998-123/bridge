@@ -22,7 +22,10 @@ assert.match(migration, /bridge_transaction_progress_notification_health_phase4/
 assert.match(migration, /failedRetryable/)
 assert.match(migration, /failedExhausted/)
 
-assert.equal(vercel.crons, undefined)
+assert.ok(
+  !(vercel.crons || []).some((job) => job.path === '/api/cron/transaction-progress-notifications'),
+  'Transaction progress should still not be scheduled through Vercel cron.',
+)
 assert.match(schedulerMigration, /create extension if not exists pg_cron/i)
 assert.match(schedulerMigration, /create extension if not exists pg_net/i)
 assert.match(schedulerMigration, /arch9-transaction-progress-assurance-5m/)

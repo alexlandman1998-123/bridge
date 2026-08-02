@@ -1194,7 +1194,7 @@ function toDocument(definition, index) {
     groupKey: template.groupKey,
     groupLabel: template.groupLabel,
     description: template.description || '',
-    requirementLevel: template.requirementLevel || 'required',
+    requirementLevel: definition.requirementLevel || template.requirementLevel || 'required',
     expectedFromRole: template.expectedFromRole,
     defaultVisibility: template.defaultVisibility,
     allowMultiple: template.allowMultiple,
@@ -1324,6 +1324,13 @@ function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
           groupKey: 'buyer_fica',
           description: 'Required for every trustee involved in the purchase.',
         },
+        {
+          key: 'buyer_trust_beneficial_ownership',
+          label: 'Trust Beneficial Ownership / Control Information',
+          groupKey: 'buyer_fica',
+          description: 'Pending legal sign-off: supports beneficial ownership and control checks for trust purchasers.',
+          requirementLevel: 'pending_policy_required',
+        },
       ]
     }
     case 'company': {
@@ -1353,6 +1360,13 @@ function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
           label: directorCount > 1 ? 'Director Proofs of Address' : 'Director Proof of Address',
           groupKey: 'buyer_fica',
           description: 'Required for the directors involved in the purchase and signing process.',
+        },
+        {
+          key: 'buyer_company_beneficial_ownership',
+          label: 'Company Beneficial Ownership Information',
+          groupKey: 'buyer_fica',
+          description: 'Pending legal sign-off: supports beneficial ownership checks for company purchasers.',
+          requirementLevel: 'pending_policy_required',
         },
       ]
     }

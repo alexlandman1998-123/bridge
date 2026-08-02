@@ -218,6 +218,8 @@ import {
   fetchTransactionDocumentRequirementsByTransactionIds as fetchCanonicalTransactionDocumentRequirementsByTransactionIds,
   maybeResolveTransactionDocumentRequirements,
 } from '../services/documents/transactionCanonicalDocumentRequirementService'
+import { syncCanonicalRequiredDocumentsForTransactionContext } from '../services/documents/documentRequestCanonicalTransactionSyncService'
+import { runCanonicalDocumentRequestRecalculationBatch } from '../services/documents/documentRequestCanonicalAdminRecalculationService.js'
 import { getCanonicalDocumentRolloutMode } from '../services/documents/canonicalDocumentConsolidationService'
 import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService.js'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
@@ -32469,6 +32471,104 @@ export async function syncBuyerDocumentRequirements(transactionId) {
   }
 
   return requiredDocuments
+}
+
+export async function syncTransactionCanonicalDocumentRequestRequirements(transactionId, options = {}) {
+  if (!transactionId) {
+    throw new Error('Transaction id is required.')
+  }
+
+  const client = requireClient()
+  const activeProfile = await resolveActiveProfileContext(client)
+  const actorRole = normalizeRoleType(options.actorRole || activeProfile.role || 'developer')
+  if (!['developer', 'internal_admin', 'admin', 'platform_admin', 'attorney'].includes(actorRole)) {
+    throw new Error('You do not have permission to sync canonical document request requirements.')
+  }
+
+  const detail = await fetchTransactionById(transactionId)
+  if (!detail?.transaction) {
+    return {
+      skipped: true,
+      reason: 'transaction_not_found',
+      transactionId,
+      rows: [],
+      synced: 0,
+      persistedRows: [],
+    }
+  }
+
+  const onboardingFormData = detail.onboardingFormData?.formData || detail.onboardingFormData?.form_data || detail.onboardingFormData || {}
+  const result = await syncCanonicalRequiredDocumentsForTransactionContext({
+    client,
+    transactionId,
+    transaction: detail.transaction,
+    onboardingFormData,
+    sellerFormData:
+      options.sellerFormData ||
+      options.seller_form_data ||
+      detail.sellerOnboardingFormData ||
+      detail.seller_onboarding_form_data ||
+      {},
+    listing: options.listing || detail.listing || detail.unit?.listing || {},
+    unit: detail.unit || null,
+    explicitScenario: options.scenario || options.canonicalDocumentRequestScenario || null,
+    audience: options.audience || 'auto',
+    requestPendingPolicy: options.requestPendingPolicy === true,
+    includePendingPolicyRows: options.includePendingPolicyRows === true,
+    dryRun: options.dryRun === true,
+  })
+
+  if (options.dryRun !== true) {
+    try {
+      await logTransactionEventIfPossible(client, {
+        transactionId,
+        eventType: 'canonical_document_request_requirements_synced',
+        createdBy: activeProfile.userId || null,
+        createdByRole: actorRole,
+        eventData: {
+          source: 'document_request_phase7_required_document_sync',
+          synced: result.synced || 0,
+          rows: result.rows?.length || 0,
+          derivedAudience: result.derivedAudience || result.audience || '',
+          requestedAudience: result.requestedAudience || options.audience || 'auto',
+          skipped: result.skipped === true,
+          reason: result.reason || null,
+          pendingPolicySkipped: result.skippedPendingPolicyKeys || [],
+        },
+      })
+    } catch (eventError) {
+      console.warn('[document-request-canonical-sync] failed to log sync event', eventError)
+    }
+  }
+
+  return result
+}
+
+export async function runCanonicalDocumentRequestRequirementRecalculation({
+  transactionIds = [],
+  transactionId = '',
+  commit = false,
+  dryRun = undefined,
+  allowLargeBatch = false,
+  maxTransactions = undefined,
+  ...options
+} = {}) {
+  const requestedTransactionIds = Array.isArray(transactionIds)
+    ? [...transactionIds]
+    : [transactionIds]
+  if (transactionId) requestedTransactionIds.push(transactionId)
+
+  return runCanonicalDocumentRequestRecalculationBatch({
+    transactionIds: requestedTransactionIds,
+    syncTransaction: syncTransactionCanonicalDocumentRequestRequirements,
+    options: {
+      ...options,
+      commit,
+      dryRun,
+      allowLargeBatch,
+      ...(maxTransactions ? { maxTransactions } : {}),
+    },
+  })
 }
 
 export async function canProgressTransactionStage(transactionId, targetStage) {

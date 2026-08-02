@@ -1,0 +1,219 @@
+{
+  "phase": "document_request_phase14_portal_verification",
+  "generatedAt": "2026-08-02T13:15:19.685Z",
+  "dryRun": true,
+  "commit": false,
+  "mutatedData": false,
+  "transactionIds": [
+    "f9a71ea2-4e2d-46af-8fa9-3f58901f8220"
+  ],
+  "summary": {
+    "total": 1,
+    "completed": 1,
+    "failed": 0,
+    "warnings": 0,
+    "requiredDocumentRows": 6,
+    "expectedPortalRequiredRows": 6,
+    "documentRequestsCreated": false,
+    "missingCommittedKeysFromSharedPortal": 0,
+    "nonCanonicalExistingKeys": 5
+  },
+  "results": [
+    {
+      "transactionId": "f9a71ea2-4e2d-46af-8fa9-3f58901f8220",
+      "ok": true,
+      "reason": null,
+      "errors": [],
+      "warnings": [],
+      "coverage": {
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "financeKnown": true,
+        "propertyKnown": true
+      },
+      "requiredDocumentRows": 6,
+      "expectedPortalRequiredRows": 6,
+      "documentRequestsCount": 0,
+      "documentRequestsCreated": false,
+      "portalAccess": {
+        "buyerPortalLinks": 1,
+        "activeBuyerPortalLinks": 1,
+        "sellerPortalContexts": 0,
+        "activeSellerPortalContexts": 0,
+        "sellerWorkspaceTokenPresent": false,
+        "externalAccessRows": 0,
+        "activeExternalAccessRows": 0,
+        "externalRoles": []
+      },
+      "buying": {
+        "requiredCount": 11,
+        "itemCount": 11,
+        "summary": {
+          "total": 11,
+          "outstanding": 11,
+          "uploaded": 0,
+          "underReview": 0,
+          "approved": 0,
+          "rejected": 0,
+          "blocking": 11
+        },
+        "canonicalPlanAudience": "buyer",
+        "canonicalPlanRequestCount": 6,
+        "canonicalPlanRequiredKeys": [
+          "buyer_fica_pack",
+          "buyer_id_document",
+          "buyer_marital_status_details",
+          "buyer_proof_of_address",
+          "buyer_source_of_funds",
+          "proof_of_funds"
+        ],
+        "missingExpectedRequiredKeys": [],
+        "missingExpectedItemKeys": [],
+        "duplicateRequiredKeys": [],
+        "duplicateItemKeys": [],
+        "keys": [
+          "buyer_fica_pack",
+          "buyer_id_document",
+          "buyer_marital_status_details",
+          "buyer_proof_of_address",
+          "buyer_source_of_funds",
+          "id_document",
+          "information_sheet",
+          "otp",
+          "proof_of_address",
+          "proof_of_funds",
+          "transfer_documents"
+        ],
+        "identityKeys": [
+          "buyer_fica_pack",
+          "buyer_id_document",
+          "buyer_marital_status_details",
+          "buyer_proof_of_address",
+          "buyer_source_of_funds",
+          "id_document",
+          "information_sheet",
+          "otp",
+          "proof_of_address",
+          "proof_of_funds",
+          "transfer_documents"
+        ]
+      },
+      "selling": {
+        "requiredCount": 10,
+        "itemCount": 10,
+        "summary": {
+          "total": 10,
+          "outstanding": 10,
+          "uploaded": 0,
+          "underReview": 0,
+          "approved": 0,
+          "rejected": 0,
+          "blocking": 10
+        },
+        "canonicalPlanAudience": "seller",
+        "canonicalPlanRequestCount": 10,
+        "canonicalPlanRequiredKeys": [],
+        "missingExpectedRequiredKeys": [
+          "information_sheet",
+          "otp",
+          "transfer_documents"
+        ],
+        "missingExpectedItemKeys": [
+          "information_sheet",
+          "otp",
+          "transfer_documents"
+        ],
+        "duplicateRequiredKeys": [],
+        "duplicateItemKeys": [],
+        "keys": [
+          "capital_improvement_records",
+          "id_document",
+          "proof_of_address",
+          "property_acquisition_record",
+          "property_condition_disclosure",
+          "rates_account",
+          "seller_bank_account_confirmation",
+          "seller_tax_number",
+          "signed_mandate",
+          "title_deed_copy"
+        ],
+        "identityKeys": [
+          "capital_improvement_records",
+          "id_document",
+          "proof_of_address",
+          "property_acquisition_record",
+          "property_condition_disclosure",
+          "rates_account",
+          "seller_bank_account_confirmation",
+          "seller_fica_pack",
+          "seller_id_document",
+          "seller_proof_of_address",
+          "seller_tax_number",
+          "signed_mandate",
+          "title_deed_copy"
+        ]
+      },
+      "shared": {
+        "requiredCount": 11,
+        "itemCount": 11,
+        "summary": {
+          "total": 11,
+          "outstanding": 11,
+          "uploaded": 0,
+          "underReview": 0,
+          "approved": 0,
+          "rejected": 0,
+          "blocking": 11
+        },
+        "canonicalPlanAudience": "client",
+        "canonicalPlanRequestCount": 16,
+        "canonicalPlanRequiredKeys": [
+          "buyer_fica_pack",
+          "buyer_id_document",
+          "buyer_marital_status_details",
+          "buyer_proof_of_address",
+          "buyer_source_of_funds",
+          "proof_of_funds"
+        ],
+        "missingExpectedRequiredKeys": [],
+        "missingExpectedItemKeys": [],
+        "duplicateRequiredKeys": [],
+        "duplicateItemKeys": [],
+        "keys": [
+          "buyer_fica_pack",
+          "buyer_id_document",
+          "buyer_marital_status_details",
+          "buyer_proof_of_address",
+          "buyer_source_of_funds",
+          "id_document",
+          "information_sheet",
+          "otp",
+          "proof_of_address",
+          "proof_of_funds",
+          "transfer_documents"
+        ],
+        "identityKeys": [
+          "buyer_fica_pack",
+          "buyer_id_document",
+          "buyer_marital_status_details",
+          "buyer_proof_of_address",
+          "buyer_source_of_funds",
+          "id_document",
+          "information_sheet",
+          "otp",
+          "proof_of_address",
+          "proof_of_funds",
+          "transfer_documents"
+        ]
+      },
+      "missingCommittedKeysFromSharedPortal": [],
+      "nonCanonicalExistingKeys": [
+        "id_document",
+        "information_sheet",
+        "otp",
+        "proof_of_address",
+        "transfer_documents"
+      ]
+    }
+  ]
+}

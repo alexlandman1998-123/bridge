@@ -1,0 +1,110 @@
+{
+  "phase": "document_request_phase15_operational_rollout",
+  "generatedAt": "2026-08-02T13:15:19.697Z",
+  "dryRun": true,
+  "commit": false,
+  "confirmOperationalRollout": false,
+  "mutatedData": false,
+  "selection": {
+    "explicitTransactionIds": false,
+    "limit": 1,
+    "candidateCount": 1,
+    "candidates": [
+      {
+        "transactionId": "f9a71ea2-4e2d-46af-8fa9-3f58901f8220",
+        "sources": [
+          "active_buyer_portal_link"
+        ],
+        "updatedAt": "2026-07-23T05:17:05.148108+00:00"
+      }
+    ]
+  },
+  "transactionIds": [
+    "f9a71ea2-4e2d-46af-8fa9-3f58901f8220"
+  ],
+  "summary": {
+    "total": 1,
+    "completed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "warnings": 0,
+    "rowsCalculated": 6,
+    "synced": 0,
+    "requiredDocumentRowsDelta": 0,
+    "documentRequestsDelta": 0,
+    "documentRequestsCreated": false,
+    "preservedRowsChanged": 0,
+    "portalVerificationFailed": 0,
+    "portalMissingCommittedKeys": 0,
+    "portalDocumentRequestsCreated": false,
+    "gatePassed": true,
+    "wroteRows": false
+  },
+  "portalVerification": {
+    "output": "output/document-request-phase18-single-portal-check.json",
+    "summary": {
+      "total": 1,
+      "completed": 1,
+      "failed": 0,
+      "warnings": 0,
+      "requiredDocumentRows": 6,
+      "expectedPortalRequiredRows": 6,
+      "documentRequestsCreated": false,
+      "missingCommittedKeysFromSharedPortal": 0,
+      "nonCanonicalExistingKeys": 5
+    }
+  },
+  "results": [
+    {
+      "transactionId": "f9a71ea2-4e2d-46af-8fa9-3f58901f8220",
+      "ok": true,
+      "skipped": false,
+      "reason": null,
+      "sources": [
+        "active_buyer_portal_link"
+      ],
+      "warnings": [],
+      "dryRun": true,
+      "commit": false,
+      "mutatedData": false,
+      "requestedAudience": "auto",
+      "derivedAudience": "buyer",
+      "coverage": {
+        "buyerKnown": true,
+        "sellerKnown": false,
+        "financeKnown": true,
+        "propertyKnown": true
+      },
+      "synced": 0,
+      "rowCount": 6,
+      "beforeRequiredDocumentCount": 6,
+      "afterRequiredDocumentCount": 6,
+      "requiredDocumentRowsDelta": 0,
+      "beforeDocumentRequestsCount": 0,
+      "afterDocumentRequestsCount": 0,
+      "documentRequestsDelta": 0,
+      "documentRequestsChanged": false,
+      "preservedRowsChanged": [],
+      "portalAccess": {
+        "buyerPortalLinks": 1,
+        "activeBuyerPortalLinks": 1,
+        "sellerPortalContexts": 0,
+        "activeSellerPortalContexts": 0,
+        "sellerWorkspaceTokenPresent": false,
+        "externalAccessRows": 0,
+        "activeExternalAccessRows": 0,
+        "hasActivePortalAccess": true,
+        "externalRoles": []
+      },
+      "pendingPolicySkipped": [],
+      "keys": [
+        "buyer_fica_pack",
+        "buyer_id_document",
+        "buyer_marital_status_details",
+        "buyer_proof_of_address",
+        "buyer_source_of_funds",
+        "proof_of_funds"
+      ]
+    }
+  ]
+}

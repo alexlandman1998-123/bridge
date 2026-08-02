@@ -11,6 +11,7 @@ import {
   formatPropertyAddress,
   normalizePropertyAddress,
 } from './sellerPropertyAddress.js'
+import { withCanonicalDocumentRequestMetadata } from '../core/documents/documentRequestCanonicalAdapter.js'
 
 // Phase 9 canonical document consolidation:
 // This legacy seller requirement engine is retained as a compatibility fallback.
@@ -191,7 +192,7 @@ function buildRequirement({
   generatedFrom = {},
   appliesTo = 'seller',
 }) {
-  return {
+  return withCanonicalDocumentRequestMetadata({
     requirement_key: key,
     requirement_name: name,
     requirement_description: description,
@@ -205,7 +206,7 @@ function buildRequirement({
     key,
     label: name,
     required: Boolean(required),
-  }
+  }, { context: 'seller' })
 }
 
 function appendBondRequirements(docs, generatedFrom) {
