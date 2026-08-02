@@ -53,9 +53,9 @@ assert.match(pageSource, /resolveMandateTransferAttorneySnapshot\(/, 'Mandate wo
 assert.match(pageSource, /buildSavedMandateTransferAttorneyOption\(mandateDraftDefaults\)/, 'Mandate workspace must add the saved attorney snapshot to the selector options.')
 assert.match(pageSource, /leadSellerOnboarding\.form_data/, 'Mandate defaults must tolerate snake-case onboarding form_data.')
 assert.match(pageSource, /privateListingOnboarding\.form_data/, 'Mandate defaults must tolerate private listing onboarding form_data.')
-assert.match(pageSource, /function leadContextNeedsRemoteSellerContext/, 'Mandate route hydration must detect loose lead contexts that lack listing, token, and onboarding facts.')
-assert.match(pageSource, /leadContextNeedsRemoteSellerContext\(immediateLeadContext\)/, 'Initial mandate route hydration must refresh incomplete local lead contexts from Supabase.')
-assert.match(pageSource, /leadContextNeedsRemoteSellerContext\(nextLeadContext\)/, 'Background mandate route hydration must refresh incomplete local lead contexts from Supabase.')
+assert.match(pageSource, /function mergeRemoteLeadContext/, 'Mandate route hydration must prefer live Supabase lead context over stale local browser cache.')
+assert.match(pageSource, /immediateLeadContext = mergeRemoteLeadContext\(immediateLeadContext, supabaseLeadContext\)/, 'Initial mandate route hydration must merge live Supabase context into the rendered draft.')
+assert.match(pageSource, /nextLeadContext = mergeRemoteLeadContext\(nextLeadContext, supabaseLeadContext\)/, 'Background mandate route hydration must merge live Supabase context into the settled draft.')
 assert.match(pageSource, /readLead\(false\)/, 'Lead lookup must retry without a stale organisation filter.')
 assert.match(pageSource, /originating_crm_lead_id\.eq/, 'Lead route must be able to find the linked private listing by originating CRM lead id.')
 

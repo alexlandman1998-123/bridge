@@ -1038,6 +1038,23 @@ async function fetchListingContextFromSupabase({ organisationId = '', listingId 
 function mergeLeadContextWithListingContext(leadContext = {}, listingContext = {}) {
   if (!leadContext?.lead) return listingContext
   if (!listingContext?.lead) return leadContext
+  const leadSellerOnboarding = leadContext.lead?.sellerOnboarding || null
+  const listingSellerOnboarding = listingContext.lead?.sellerOnboarding || null
+  const leadSellerOnboardingFormData = leadSellerOnboarding?.formData && typeof leadSellerOnboarding.formData === 'object'
+    ? leadSellerOnboarding.formData
+    : leadSellerOnboarding?.form_data && typeof leadSellerOnboarding.form_data === 'object'
+      ? leadSellerOnboarding.form_data
+      : {}
+  const listingSellerOnboardingFormData = listingSellerOnboarding?.formData && typeof listingSellerOnboarding.formData === 'object'
+    ? listingSellerOnboarding.formData
+    : listingSellerOnboarding?.form_data && typeof listingSellerOnboarding.form_data === 'object'
+      ? listingSellerOnboarding.form_data
+      : {}
+  const preferredSellerOnboarding = Object.keys(leadSellerOnboardingFormData).length
+    ? leadSellerOnboarding
+    : Object.keys(listingSellerOnboardingFormData).length
+      ? listingSellerOnboarding
+      : leadSellerOnboarding || listingSellerOnboarding || null
   return {
     ...leadContext,
     privateListing: leadContext.privateListing || listingContext.privateListing || null,
@@ -1051,25 +1068,29 @@ function mergeLeadContextWithListingContext(leadContext = {}, listingContext = {
       sellerWorkflowLeadId: normalizeText(leadContext.lead?.sellerWorkflowLeadId || listingContext.lead?.sellerWorkflowLeadId),
       sellerOnboardingToken: normalizeText(leadContext.lead?.sellerOnboardingToken || listingContext.lead?.sellerOnboardingToken),
       sellerOnboardingStatus: normalizeText(leadContext.lead?.sellerOnboardingStatus || listingContext.lead?.sellerOnboardingStatus),
-      sellerOnboarding: leadContext.lead?.sellerOnboarding || listingContext.lead?.sellerOnboarding || null,
+      sellerOnboarding: preferredSellerOnboarding,
     },
   }
 }
 
-function leadContextNeedsRemoteSellerContext(leadContext = {}) {
-  const lead = leadContext?.lead || null
-  if (!lead) return true
-  const sellerOnboarding = lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object' ? lead.sellerOnboarding : {}
-  const formData = sellerOnboarding?.formData && typeof sellerOnboarding.formData === 'object'
-    ? sellerOnboarding.formData
-    : sellerOnboarding?.form_data && typeof sellerOnboarding.form_data === 'object'
-      ? sellerOnboarding.form_data
-      : {}
-  return !(
-    normalizeText(lead.listingId || lead.listing_id || leadContext?.privateListing?.id || leadContext?.listing?.id) ||
-    normalizeText(lead.sellerOnboardingToken || lead.seller_onboarding_token || sellerOnboarding.token) ||
-    Object.keys(formData).length
-  )
+function mergeRemoteLeadContext(localContext = {}, remoteContext = {}) {
+  if (!remoteContext?.lead) return localContext
+  if (!localContext?.lead) return remoteContext
+  return {
+    ...localContext,
+    ...remoteContext,
+    privateListing: remoteContext.privateListing || remoteContext.listing || localContext.privateListing || localContext.listing || null,
+    listing: remoteContext.listing || remoteContext.privateListing || localContext.listing || localContext.privateListing || null,
+    contact: remoteContext.contact || localContext.contact || null,
+    linkedTransaction: remoteContext.linkedTransaction || localContext.linkedTransaction || null,
+    lead: {
+      ...(localContext.lead || {}),
+      ...(remoteContext.lead || {}),
+      sellerOnboardingToken: normalizeText(remoteContext.lead?.sellerOnboardingToken || localContext.lead?.sellerOnboardingToken),
+      sellerOnboardingStatus: normalizeText(remoteContext.lead?.sellerOnboardingStatus || localContext.lead?.sellerOnboardingStatus),
+      sellerOnboarding: remoteContext.lead?.sellerOnboarding || localContext.lead?.sellerOnboarding || null,
+    },
+  }
 }
 
 function findLeadContextAcrossStores({ organisationId = '', leadId = '' } = {}) {
@@ -3274,7 +3295,7 @@ export default function LegalDocumentWorkspacePage() {
         organisationId: null,
         leadId: routeLeadId,
       })
-      if (routeLeadId && leadContextNeedsRemoteSellerContext(immediateLeadContext)) {
+      if (routeLeadId) {
         const supabaseLeadContext = await withLegalWorkspaceTimeout(
           fetchLeadContextFromSupabase({
             organisationId: resolvedOrganisationId,
@@ -3283,7 +3304,7 @@ export default function LegalDocumentWorkspacePage() {
           'Lead lookup is taking too long.',
           2500,
         ).catch(() => ({ lead: null, contact: null, linkedTransaction: null }))
-        if (supabaseLeadContext?.lead) immediateLeadContext = supabaseLeadContext
+        if (supabaseLeadContext?.lead) immediateLeadContext = mergeRemoteLeadContext(immediateLeadContext, supabaseLeadContext)
       }
       if (routeListingId && (!immediateLeadContext?.lead || !normalizeText(immediateLeadContext.privateListing?.id || immediateLeadContext.listing?.id))) {
         const listingLeadContext = await withLegalWorkspaceTimeout(
@@ -3462,7 +3483,7 @@ export default function LegalDocumentWorkspacePage() {
             organisationId: resolvedOrganisationId,
             leadId: routeLeadId,
           })
-      if (routeLeadId && leadContextNeedsRemoteSellerContext(nextLeadContext)) {
+      if (routeLeadId) {
         const supabaseLeadContext = await withLegalWorkspaceTimeout(
           fetchLeadContextFromSupabase({
             organisationId: resolvedOrganisationId,
@@ -3471,7 +3492,7 @@ export default function LegalDocumentWorkspacePage() {
           'Lead lookup is taking too long.',
           2500,
         ).catch(() => ({ lead: null, contact: null, linkedTransaction: null }))
-        if (supabaseLeadContext?.lead) nextLeadContext = supabaseLeadContext
+        if (supabaseLeadContext?.lead) nextLeadContext = mergeRemoteLeadContext(nextLeadContext, supabaseLeadContext)
       }
       if (routeListingId && (!nextLeadContext?.lead || !normalizeText(nextLeadContext.privateListing?.id || nextLeadContext.listing?.id))) {
         const listingLeadContext = await withLegalWorkspaceTimeout(
