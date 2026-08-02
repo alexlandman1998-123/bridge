@@ -3490,6 +3490,41 @@ function findLatestD3PersistedGeneratedVersion(versions = []) {
   return (Array.isArray(versions) ? versions : []).find(isD3PersistedSigningVersion) || null
 }
 
+async function findLatestLeadMandateStatusWithGeneratedVersion({
+  organisationId,
+  leadId,
+  excludePacketId = '',
+} = {}) {
+  const scopedOrganisationId = normalizeText(organisationId)
+  const scopedLeadId = normalizeLeadUuid(leadId)
+  if (!scopedOrganisationId || !scopedLeadId || !isSupabaseConfigured) return null
+  const packets = await listDocumentPackets({
+    organisationId: scopedOrganisationId,
+    packetType: 'mandate',
+    leadId: scopedLeadId,
+    limit: 8,
+  })
+  for (const row of Array.isArray(packets) ? packets : []) {
+    const packetId = normalizeText(row?.id)
+    if (!packetId || packetId === normalizeText(excludePacketId)) continue
+    const packet = await fetchDocumentPacket(packetId, {
+      includeVersions: true,
+      includeEvents: false,
+    }).catch(() => null)
+    if (!packet?.id || !documentPacketBelongsToLead(packet, scopedLeadId)) continue
+    const generatedVersion = findLatestD3PersistedGeneratedVersion(packet.versions || [])
+    if (generatedVersion?.id) {
+      return buildMandateGeneratedStatus({
+        packet,
+        versions: packet.versions || [],
+        warnings: [],
+        actionHint: 'Recovered the latest generated mandate packet for this lead.',
+      })
+    }
+  }
+  return null
+}
+
 function isActiveLegalDocumentGenerationJob(job = null) {
   const status = normalizeText(job?.status || job?.jobStatus || job?.job_status).toLowerCase()
   return ['queued', 'claimed', 'running'].includes(status)
@@ -3540,6 +3575,18 @@ function buildMandateDraftReadyStatus({ packet = null, version = null, warnings 
     state: 'draft',
     packet,
     versions: [version].filter(Boolean),
+    signingSummary: null,
+    warnings: Array.isArray(warnings) ? warnings : [],
+    actionHint,
+  }
+}
+
+function buildMandateGeneratedStatus({ packet = null, versions = [], warnings = [], actionHint = 'Generated mandate is ready to send.' } = {}) {
+  return {
+    packetType: 'mandate',
+    state: 'ready_to_send',
+    packet,
+    versions: Array.isArray(versions) ? versions : [],
     signingSummary: null,
     warnings: Array.isArray(warnings) ? warnings : [],
     actionHint,
@@ -12563,8 +12610,39 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const statusGeneratedVersionId = normalizeText(findLatestD3PersistedGeneratedVersion(mandatePacketStatus?.versions || [])?.id)
       let mandatePacketId = normalizeText(mandateQuickStartPacketId || statusPacketId || selectedLead?.mandatePacketId || selectedLead?.mandatePacket?.id)
       let mandatePacketVersionId = normalizeText(mandateQuickStartPacketVersionId || statusGeneratedVersionId)
-      const needsGeneration = (currentStep === 'details' && actionKey === 'generate') || !isUuidLike(mandatePacketId) || !isUuidLike(mandatePacketVersionId)
       let generationJob = mandatePacketStatus?.legalDocumentJob || null
+
+      if (isUuidLike(mandatePacketId) && !isUuidLike(mandatePacketVersionId)) {
+        const recoveredGeneratedStatus = await findLatestLeadMandateStatusWithGeneratedVersion({
+          organisationId,
+          leadId: selectedLead.leadId,
+          excludePacketId: mandatePacketId,
+        }).catch((recoveryError) => {
+          console.warn('[MANDATE] generated mandate packet recovery lookup failed before send', recoveryError)
+          return null
+        })
+        const recoveredPacketId = normalizeText(recoveredGeneratedStatus?.packet?.id)
+        const recoveredVersionId = normalizeText(findLatestD3PersistedGeneratedVersion(recoveredGeneratedStatus?.versions || [])?.id)
+        if (isUuidLike(recoveredPacketId) && isUuidLike(recoveredVersionId)) {
+          mandatePacketId = recoveredPacketId
+          mandatePacketVersionId = recoveredVersionId
+          setMandatePacketStatus(recoveredGeneratedStatus)
+          setMandateQuickStartPacketId(recoveredPacketId)
+          setMandateQuickStartPacketVersionId(recoveredVersionId)
+          void updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
+            mandatePacketId: recoveredPacketId,
+            mandateStatus: 'generated',
+          }).catch((syncError) => {
+            console.warn('[MANDATE] recovered generated packet lead sync skipped', syncError)
+          })
+          patchSelectedLeadRecord({
+            mandatePacketId: recoveredPacketId,
+            mandateStatus: 'generated',
+          }, selectedLead.leadId)
+        }
+      }
+
+      const needsGeneration = (currentStep === 'details' && actionKey === 'generate') || !isUuidLike(mandatePacketId) || !isUuidLike(mandatePacketVersionId)
 
       if (isUuidLike(mandatePacketId) && !isUuidLike(mandatePacketVersionId)) {
         const jobs = await listLegalDocumentJobsForPacket({ packetId: mandatePacketId, limit: 5 }).catch((jobError) => {
