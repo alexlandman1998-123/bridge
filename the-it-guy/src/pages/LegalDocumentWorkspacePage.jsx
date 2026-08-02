@@ -2068,6 +2068,35 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
   }
 }
 
+function applyMandateDraftSelectionOverrides({
+  draft = {},
+  selectedTransferAttorney = null,
+  transferAttorneySelectionDeferred = false,
+  documentStartLegalScenario = {},
+} = {}) {
+  const baseDraft = draft && typeof draft === 'object' ? draft : {}
+  return {
+    ...baseDraft,
+    transferAttorneyPreferredPartnerId: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.id || normalizeText(baseDraft.transferAttorneyPreferredPartnerId),
+    transferAttorneyPartnerOrganisationId: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.partnerOrganisationId || normalizeText(baseDraft.transferAttorneyPartnerOrganisationId),
+    transferAttorneyCompanyName: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.companyName || normalizeText(baseDraft.transferAttorneyCompanyName),
+    transferAttorneyContactPerson: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.contactPerson || normalizeText(baseDraft.transferAttorneyContactPerson),
+    transferAttorneyEmail: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.email || normalizeText(baseDraft.transferAttorneyEmail),
+    transferAttorneyPhone: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.phone || normalizeText(baseDraft.transferAttorneyPhone),
+    transferAttorneySelectionSource: normalizeText(baseDraft.transferAttorneySelectionSource) || 'seller_mandate',
+    transferAttorneySelectionDeferred,
+    ...(documentStartLegalScenario.sellerEntityType ? { sellerEntityType: documentStartLegalScenario.sellerEntityType } : {}),
+    ...(documentStartLegalScenario.sellerMaritalRegime ? {
+      sellerMaritalRegime: documentStartLegalScenario.sellerMaritalRegime,
+      sellerMaritalStatus: documentStartLegalScenario.sellerMaritalRegime,
+    } : {}),
+    ...(documentStartLegalScenario.propertyTitleType ? {
+      propertyTitleType: documentStartLegalScenario.propertyTitleType,
+      propertyStructureType: documentStartLegalScenario.propertyTitleType,
+    } : {}),
+  }
+}
+
 function buildOtpDraftDefaults({ transactionDetail = null, initialStatus = null, leadContext = {} } = {}) {
   const transaction = transactionDetail?.transaction && typeof transactionDetail.transaction === 'object' ? transactionDetail.transaction : {}
   const buyer = transactionDetail?.buyer && typeof transactionDetail.buyer === 'object' ? transactionDetail.buyer : {}
@@ -2990,25 +3019,11 @@ export default function LegalDocumentWorkspacePage() {
     () => preferredTransferAttorneys.find((partner) => String(partner.id) === String(selectedTransferAttorneyId)) || null,
     [preferredTransferAttorneys, selectedTransferAttorneyId],
   )
-  const effectiveMandateDraft = useMemo(() => ({
-    ...mandateDraftDefaults,
-    transferAttorneyPreferredPartnerId: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.id || normalizeText(mandateDraftDefaults.transferAttorneyPreferredPartnerId),
-    transferAttorneyPartnerOrganisationId: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.partnerOrganisationId || normalizeText(mandateDraftDefaults.transferAttorneyPartnerOrganisationId),
-    transferAttorneyCompanyName: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.companyName || normalizeText(mandateDraftDefaults.transferAttorneyCompanyName),
-    transferAttorneyContactPerson: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.contactPerson || normalizeText(mandateDraftDefaults.transferAttorneyContactPerson),
-    transferAttorneyEmail: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.email || normalizeText(mandateDraftDefaults.transferAttorneyEmail),
-    transferAttorneyPhone: transferAttorneySelectionDeferred ? '' : selectedTransferAttorney?.phone || normalizeText(mandateDraftDefaults.transferAttorneyPhone),
-    transferAttorneySelectionSource: normalizeText(mandateDraftDefaults.transferAttorneySelectionSource) || 'seller_mandate',
+  const effectiveMandateDraft = useMemo(() => applyMandateDraftSelectionOverrides({
+    draft: mandateDraftDefaults,
+    selectedTransferAttorney,
     transferAttorneySelectionDeferred,
-    ...(documentStartLegalScenario.sellerEntityType ? { sellerEntityType: documentStartLegalScenario.sellerEntityType } : {}),
-    ...(documentStartLegalScenario.sellerMaritalRegime ? {
-      sellerMaritalRegime: documentStartLegalScenario.sellerMaritalRegime,
-      sellerMaritalStatus: documentStartLegalScenario.sellerMaritalRegime,
-    } : {}),
-    ...(documentStartLegalScenario.propertyTitleType ? {
-      propertyTitleType: documentStartLegalScenario.propertyTitleType,
-      propertyStructureType: documentStartLegalScenario.propertyTitleType,
-    } : {}),
+    documentStartLegalScenario,
   }), [documentStartLegalScenario, mandateDraftDefaults, selectedTransferAttorney, transferAttorneySelectionDeferred])
   const showMandateDraftPanel =
     routeContextSettled &&
@@ -3642,7 +3657,7 @@ export default function LegalDocumentWorkspacePage() {
     return status
   }, [initialStatus, organisationId, packetType, routeLeadId, transactionId, validatedRoutePacketId])
 
-  const ensurePacket = useCallback(async ({ template, allowRuntime = true, forceNew = false } = {}) => {
+  const ensurePacket = useCallback(async ({ template, allowRuntime = true, forceNew = false, mandateDraftOverride = null } = {}) => {
     const routeListingUuid = normalizeLeadUuid(routeListingId)
     const routeLeadUuid = normalizeLeadUuid(routeLeadId)
     const contextLeadUuid = normalizeLeadUuid(leadContext.lead?.leadId)
@@ -3660,6 +3675,9 @@ export default function LegalDocumentWorkspacePage() {
           normalizeText(initialStatus?.packet?.id) ||
           normalizeText(packetType === 'mandate' ? leadContext.lead?.mandatePacketId : '')
         )
+    const packetMandateDraft = mandateDraftOverride && typeof mandateDraftOverride === 'object'
+      ? mandateDraftOverride
+      : effectiveMandateDraft
 
     if (allowRuntime && packetType === 'mandate' && routeLeadId && !packetHint) {
       return buildRuntimePacket({
@@ -3743,7 +3761,7 @@ export default function LegalDocumentWorkspacePage() {
           route: 'legal_document_workspace_page',
           sourceMode: documentStartSourceMode || null,
           documentStart: documentStartEntryPoint || null,
-          ...(packetType === 'mandate' ? { mandateDraft: effectiveMandateDraft } : {}),
+          ...(packetType === 'mandate' ? { mandateDraft: packetMandateDraft } : {}),
           ...(packetType === 'otp' ? { otpDraft: effectiveOtpDraft } : {}),
         },
       }
@@ -3962,9 +3980,6 @@ export default function LegalDocumentWorkspacePage() {
       })
     }
     onProgress?.(`Preparing ${documentLabel} data...`)
-    if (packetType === 'mandate' && !effectiveMandateDraft.transferAttorneyPreferredPartnerId && !effectiveMandateDraft.transferAttorneySelectionDeferred) {
-      throw new Error('Select the seller\'s transfer attorney or explicitly defer the nomination before generating the mandate.')
-    }
     const generationLookupTimeoutMs = 8000
     let template = null
     const resetMandatePacket = packetType === 'mandate' && resetExisting === true
@@ -4042,6 +4057,23 @@ export default function LegalDocumentWorkspacePage() {
         recoveredFromTimeout: effectiveLeadContext === leadContext,
       })
     }
+    const mandateDraftForGeneration = packetType === 'mandate'
+      ? applyMandateDraftSelectionOverrides({
+          draft: effectiveLeadContext === leadContext
+            ? effectiveMandateDraft
+            : buildMandateDraftDefaults({
+                leadContext: effectiveLeadContext,
+                initialStatus: existingStatus,
+                transactionDetail,
+              }),
+          selectedTransferAttorney,
+          transferAttorneySelectionDeferred,
+          documentStartLegalScenario,
+        })
+      : effectiveMandateDraft
+    if (packetType === 'mandate' && !mandateDraftForGeneration.transferAttorneyPreferredPartnerId && !mandateDraftForGeneration.transferAttorneySelectionDeferred) {
+      throw new Error('Select the seller\'s transfer attorney or explicitly defer the nomination before generating the mandate.')
+    }
 
     const generationContext = buildMandateGenerationContext({
       organisationId,
@@ -4049,7 +4081,7 @@ export default function LegalDocumentWorkspacePage() {
       transactionId,
       transactionDetail,
       leadContext: effectiveLeadContext,
-      mandateDraft: effectiveMandateDraft,
+      mandateDraft: mandateDraftForGeneration,
       actor,
       role,
       branding: workspaceBranding,
@@ -4277,7 +4309,12 @@ export default function LegalDocumentWorkspacePage() {
 
     onProgress?.(`Preparing ${documentLabel} packet...`)
     const packetPrepStartedAt = getPerformanceNow()
-    const packet = await ensurePacket({ template, allowRuntime: false, forceNew: resetMandatePacket })
+    const packet = await ensurePacket({
+      template,
+      allowRuntime: false,
+      forceNew: resetMandatePacket,
+      mandateDraftOverride: mandateDraftForGeneration,
+    })
     recordGenerationMetric('legal_document.generation.packet_prepare', packetPrepStartedAt, {
       packetId: normalizeText(packet?.id) || null,
       runtimePacket: isRuntimePacketId(packet?.id),
@@ -4449,6 +4486,7 @@ export default function LegalDocumentWorkspacePage() {
     actor,
     createListingFromGeneratedMandate,
     documentStartEntryPoint,
+    documentStartLegalScenario,
     documentStartSourceMode,
     ensurePacket,
     effectiveOtpDraft,
@@ -4464,10 +4502,12 @@ export default function LegalDocumentWorkspacePage() {
     routeLeadId,
     routeListingId,
     routeOfferId,
+    selectedTransferAttorney,
     syncLeadMandateState,
     transaction,
     transactionDetail,
     transactionId,
+    transferAttorneySelectionDeferred,
     validatedRoutePacketId,
     workspaceBranding,
     workspaceSettings,
