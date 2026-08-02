@@ -128,6 +128,7 @@ assert.match(files.sellerBrandingApi, /createSignedUrl\(normalizedPath, 60 \* 60
 assert.match(files.sellerBrandingApi, /resolveOnboardingBranding\(/, 'public seller branding API should use the shared onboarding branding resolver')
 assert.match(files.sellerBrandingApi, /getOrganisationOnboardingBrandingSources\(\{ organisation, settings \}\)/, 'public seller branding API should inspect organisation settings_json and organisation_settings branding sources')
 assert.match(files.sellerBrandingApi, /hasBrandColours/, 'public seller branding API should return colour-only branding snapshots')
+assert.doesNotMatch(files.sellerBrandingApi, /select\('id, organisation_id, listing_status, status, listing_visibility, seller_lead_id, deleted_at'\)/, 'public seller branding API should not select private_listings columns that are absent in production')
 assert.match(files.sellerBrandingRoute, /createSellerOnboardingBrandingResponse/, 'seller branding route should delegate to the token-scoped API service')
 
 assert.match(files.clientOnboarding, /primaryColour=\{onboardingBrand\.primaryColour\}/)

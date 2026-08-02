@@ -285,7 +285,7 @@ export async function createSellerOnboardingBrandingResponse({ method = 'GET', u
 
     const listingResult = await client
       .from('private_listings')
-      .select('id, organisation_id, listing_status, status, listing_visibility, seller_lead_id, deleted_at')
+      .select('id, organisation_id, listing_status, listing_visibility, seller_lead_id')
       .eq('id', onboarding.private_listing_id)
       .maybeSingle()
     if (listingResult.error) throw listingResult.error
