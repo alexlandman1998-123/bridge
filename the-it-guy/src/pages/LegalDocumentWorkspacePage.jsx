@@ -3822,7 +3822,13 @@ export default function LegalDocumentWorkspacePage() {
         'Packet lookup is taking too long.',
       ).catch((packetLookupError) => {
         if (!isLegalWorkspaceTimeoutError(packetLookupError)) throw packetLookupError
-        console.warn('[LegalDocumentWorkspacePage] packet lookup timed out while preparing packet; creating a draft packet.', packetLookupError)
+        if (packetType === 'mandate' && packetLeadId) {
+          console.warn('[LegalDocumentWorkspacePage] packet lookup timed out while preparing mandate; refusing to create a duplicate draft packet.', packetLookupError)
+          const retryError = new Error('Mandate packet lookup is taking too long. Refresh this workspace and try again before creating another mandate packet.')
+          retryError.code = 'MANDATE_PACKET_LOOKUP_TIMEOUT'
+          throw retryError
+        }
+        console.warn('[LegalDocumentWorkspacePage] packet lookup timed out while preparing packet; continuing without an existing packet match.', packetLookupError)
         return []
       })
       const existing = Array.isArray(scopedPackets) ? scopedPackets[0] : null

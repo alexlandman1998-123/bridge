@@ -60,6 +60,8 @@ assert.match(pageSource, /nextLeadContext = mergeRemoteLeadContext\(nextLeadCont
 assert.match(pageSource, /readLead\(false\)/, 'Lead lookup must retry without a stale organisation filter.')
 assert.match(pageSource, /originating_crm_lead_id\.eq/, 'Lead route must be able to find the linked private listing by originating CRM lead id.')
 assert.match(pageSource, /autoGenerateEnabled=\{routeContextSettled && contextHydrated && packetType === 'mandate'\}/, 'Mandate auto-generation must wait for route packet lookup to settle before creating a new packet.')
+assert.match(pageSource, /packet lookup timed out while preparing mandate; refusing to create a duplicate draft packet/, 'Mandate packet lookup timeouts must not create duplicate draft packets.')
+assert.match(pageSource, /MANDATE_PACKET_LOOKUP_TIMEOUT/, 'Mandate lookup timeout must surface as a retryable duplicate-prevention error.')
 assert.match(await readFile(resolve(root, 'src/core/documents/packetStatusResolver.js'), 'utf8'), /\['completed', 'partially_signed', 'sent', 'signing_prep'\][\s\S]+status === 'generated'[\s\S]+status === 'draft'/, 'Lead-scoped packet resolution must prefer generated packets over accidental draft duplicates.')
 assert.match(workspaceSource, /setBackgroundGenerationJob\(\s+isActiveLegalDocumentGenerationJob\(initialStatus\?\.legalDocumentJob\)[\s\S]+: null,\s+\)/, 'Generated mandate refreshes must clear stale background-generation jobs from UI state.')
 assert.match(workspaceSource, /function statusHasGeneratedPacketVersion/, 'Workspace must detect generated versions before trusting stale generation jobs.')
