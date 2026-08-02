@@ -2897,6 +2897,7 @@ function buildOtpDraftGenerationOverrides({
 
 const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 3500
 const LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS = 65000
+const LEGAL_WORKSPACE_MANDATE_BACKGROUND_ACCEPTANCE_TIMEOUT_MS = 12000
 const LEGAL_WORKSPACE_PACKET_SAVE_TIMEOUT_MS = 18000
 const LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS = 10000
 function readLegalWorkspaceBooleanFlag(value, fallback = false) {
@@ -3721,7 +3722,7 @@ export default function LegalDocumentWorkspacePage() {
     return status
   }, [initialStatus, organisationId, packetType, routeLeadId, transactionId, validatedRoutePacketId])
 
-  const ensurePacket = useCallback(async ({ template, allowRuntime = true, forceNew = false, mandateDraftOverride = null } = {}) => {
+  const ensurePacket = useCallback(async ({ template, allowRuntime = true, forceNew = false, mandateDraftOverride = null, statusHint = null } = {}) => {
     const routeListingUuid = normalizeLeadUuid(routeListingId)
     const routeLeadUuid = normalizeLeadUuid(routeLeadId)
     const contextLeadUuid = normalizeLeadUuid(leadContext.lead?.leadId)
@@ -3755,8 +3756,11 @@ export default function LegalDocumentWorkspacePage() {
       })
     }
 
+    const hintedStatus = statusHint?.packet?.id && normalizeText(statusHint.packet.id) === normalizeText(packetHint)
+      ? statusHint
+      : null
     const currentStatus = packetHint && !isRuntimePacketId(packetHint)
-      ? await resolveCurrentStatus().catch((statusError) => {
+      ? hintedStatus || await resolveCurrentStatus().catch((statusError) => {
           if (!isLegalWorkspaceTimeoutError(statusError)) throw statusError
           console.warn('[LegalDocumentWorkspacePage] status lookup timed out while preparing packet; using current route state.', statusError)
           return initialStatus || buildFallbackPacketStatus(packetType)
@@ -4462,6 +4466,7 @@ export default function LegalDocumentWorkspacePage() {
         allowRuntime: false,
         forceNew: resetMandatePacket,
         mandateDraftOverride: mandateDraftForGeneration,
+        statusHint: existingStatus,
       })
     } catch (packetPrepError) {
       recordGenerationMetric('legal_document.generation.packet_prepare', packetPrepStartedAt, {
@@ -4510,29 +4515,142 @@ export default function LegalDocumentWorkspacePage() {
     onProgress?.(`Rendering and saving ${documentLabel} PDF...`)
     const renderStartedAt = getPerformanceNow()
     let generationResult = null
+    const buildQueuedGenerationResult = ({
+      result = null,
+      acceptanceTimedOut = false,
+      error = null,
+    } = {}) => {
+      const job = result?.job || null
+      const jobId = normalizeText(job?.jobId || job?.job_id)
+      const queuedStatus = {
+        packetType,
+        state: 'GENERATION_QUEUED',
+        packet: result?.packet || packet,
+        versions: [],
+        legalDocumentJob: job || null,
+        signingSummary: null,
+        warnings: result?.validation?.warnings || [],
+        actionHint: acceptanceTimedOut
+          ? 'Mandate generation is still being accepted by the server. This screen will refresh while the PDF is prepared.'
+          : `${packetType === 'otp' ? 'OTP' : 'Mandate'} generation is running in the background.`,
+      }
+      recordGenerationDiagnostic(
+        acceptanceTimedOut ? 'mandate_generation_acceptance_timed_out' : 'mandate_generation_background_queued',
+        {
+          packetId: normalizeText(packet?.id) || null,
+          jobId: jobId || null,
+          jobStatus: normalizeText(job?.status || job?.job_status) || null,
+          templateId: normalizeText(template?.id) || null,
+          templateKey: normalizeText(template?.template_key || template?.templateKey) || null,
+          queuedAfterMs: roundedDurationMs(generationStartedAt),
+          errorCode: normalizeText(error?.code) || null,
+          errorMessage: normalizeText(error?.message || error).slice(0, 240) || null,
+        },
+        acceptanceTimedOut ? 'warning' : 'info',
+      )
+      setValidatedRoutePacketId(normalizeText(packet?.id))
+      setInitialStatus(queuedStatus)
+      if (packetType === 'mandate' && leadContext.lead?.leadId) {
+        void syncLeadMandateState({
+          mandatePacketId: normalizeText(packet?.id),
+          mandateRuntimeDraftId: '',
+          mandateStatus: 'generating',
+          mandateGeneratedAt: '',
+        }, { reason: acceptanceTimedOut ? 'persist the reconciling mandate generation state' : 'persist the background mandate generation job state' })
+        void recordLeadMandateActivity({
+          agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
+          activityType: 'Mandate Generation Started',
+          activityNote: acceptanceTimedOut
+            ? 'Mandate generation is still being accepted by the server.'
+            : 'Mandate generation is running in the background.',
+          outcome: acceptanceTimedOut ? 'Reconciling' : 'Queued',
+        })
+      }
+      onProgress?.(
+        acceptanceTimedOut
+          ? 'Mandate generation is still being accepted by the server.'
+          : `${packetType === 'otp' ? 'OTP' : 'Mandate'} generation started in the background.`,
+      )
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      recordGenerationMetric('legal_document.generation.total', generationStartedAt, {
+        packetId: normalizeText(packet?.id) || null,
+        generatedVersionId: null,
+        backgroundGenerationQueued: true,
+        generationAcceptanceTimedOut: acceptanceTimedOut,
+        jobId: jobId || null,
+      })
+      return {
+        ...(result || {}),
+        packet: result?.packet || packet,
+        version: result?.version || null,
+        validation: result?.validation || null,
+        backgroundGenerationQueued: true,
+        generationAcceptanceTimedOut: acceptanceTimedOut,
+        status: queuedStatus,
+        actionFeedback: acceptanceTimedOut
+          ? 'Mandate generation is still being accepted by the server. You can leave this screen while Arch9 reconciles the PDF.'
+          : 'Mandate generation started. You can leave this screen while the PDF is prepared.',
+      }
+    }
+    let generationPromise = null
+    const observeLateMandateGenerationResult = () => {
+      if (packetType !== 'mandate' || !generationPromise) return
+      generationPromise.then((lateResult) => {
+        recordGenerationDiagnostic('mandate_generation_late_result_observed', {
+          packetId: normalizeText(packet?.id) || null,
+          versionId: normalizeText(lateResult?.version?.id) || null,
+          renderStatus: normalizeText(lateResult?.version?.render_status) || null,
+          backgroundGenerationQueued: lateResult?.backgroundGenerationQueued === true,
+          jobId: normalizeText(lateResult?.job?.jobId || lateResult?.job?.job_id) || null,
+          observedAfterMs: roundedDurationMs(renderStartedAt),
+        })
+      }).catch((lateError) => {
+        recordGenerationDiagnostic('mandate_generation_late_result_failed', {
+          packetId: normalizeText(packet?.id) || null,
+          errorCode: normalizeText(lateError?.code) || null,
+          errorMessage: normalizeText(lateError?.message || lateError).slice(0, 240) || null,
+          observedAfterMs: roundedDurationMs(renderStartedAt),
+        }, 'warning')
+      })
+    }
     try {
+      generationPromise = generatePacketVersion({
+        packetId: packet.id,
+        packetType,
+        template,
+        allowWarnings: true,
+        forceGenerate: false,
+        context: generationContext,
+      })
       generationResult = await withLegalWorkspaceTimeout(
-        generatePacketVersion({
-          packetId: packet.id,
-          packetType,
-          template,
-          allowWarnings: true,
-          forceGenerate: false,
-          context: generationContext,
-        }),
+        generationPromise,
         'Draft generation is taking too long.',
-        LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS,
+        packetType === 'mandate'
+          ? LEGAL_WORKSPACE_MANDATE_BACKGROUND_ACCEPTANCE_TIMEOUT_MS
+          : LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS,
       )
     } catch (renderError) {
       recordGenerationMetric('legal_document.generation.render_save', renderStartedAt, {
         packetId: normalizeText(packet?.id) || null,
-        failed: true,
+        failed: packetType !== 'mandate' || !isLegalWorkspaceTimeoutError(renderError),
+        timedOut: isLegalWorkspaceTimeoutError(renderError),
         templateId: normalizeText(template?.id) || null,
         templateKey: normalizeText(template?.template_key || template?.templateKey) || null,
         errorCode: normalizeText(renderError?.code) || null,
         errorMessage: normalizeText(renderError?.message || renderError).slice(0, 240) || null,
       })
-      throw renderError
+      if (packetType === 'mandate' && isLegalWorkspaceTimeoutError(renderError)) {
+        observeLateMandateGenerationResult()
+        generationResult = buildQueuedGenerationResult({
+          acceptanceTimedOut: true,
+          error: renderError,
+        })
+      } else {
+        throw renderError
+      }
+    }
+    if (generationResult?.generationAcceptanceTimedOut) {
+      return generationResult
     }
     recordGenerationMetric('legal_document.generation.render_save', renderStartedAt, {
       packetId: normalizeText(packet?.id) || null,
@@ -4543,53 +4661,7 @@ export default function LegalDocumentWorkspacePage() {
     })
 
     if (generationResult?.backgroundGenerationQueued) {
-      recordGenerationDiagnostic('mandate_generation_background_queued', {
-        packetId: normalizeText(packet?.id) || null,
-        jobId: normalizeText(generationResult?.job?.jobId || generationResult?.job?.job_id) || null,
-        jobStatus: normalizeText(generationResult?.job?.status || generationResult?.job?.job_status) || null,
-        templateId: normalizeText(template?.id) || null,
-        templateKey: normalizeText(template?.template_key || template?.templateKey) || null,
-        queuedAfterMs: roundedDurationMs(generationStartedAt),
-      })
-      const queuedStatus = {
-        packetType,
-        state: 'GENERATION_QUEUED',
-        packet: generationResult.packet || packet,
-        versions: [],
-        legalDocumentJob: generationResult.job || null,
-        signingSummary: null,
-        warnings: generationResult.validation?.warnings || [],
-        actionHint: `${packetType === 'otp' ? 'OTP' : 'Mandate'} generation is running in the background.`,
-      }
-      setValidatedRoutePacketId(normalizeText(packet?.id))
-      setInitialStatus(queuedStatus)
-      if (packetType === 'mandate' && leadContext.lead?.leadId) {
-        void syncLeadMandateState({
-          mandatePacketId: normalizeText(packet?.id),
-          mandateRuntimeDraftId: '',
-          mandateStatus: 'generating',
-          mandateGeneratedAt: '',
-        }, { reason: 'persist the background mandate generation job state' })
-        void recordLeadMandateActivity({
-          agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
-          activityType: 'Mandate Generation Started',
-          activityNote: 'Mandate generation is running in the background.',
-          outcome: 'Queued',
-        })
-      }
-      onProgress?.(`${packetType === 'otp' ? 'OTP' : 'Mandate'} generation started in the background.`)
-      window.dispatchEvent(new Event('itg:transaction-updated'))
-      recordGenerationMetric('legal_document.generation.total', generationStartedAt, {
-        packetId: normalizeText(packet?.id) || null,
-        generatedVersionId: null,
-        backgroundGenerationQueued: true,
-        jobId: normalizeText(generationResult?.job?.jobId || generationResult?.job?.job_id) || null,
-      })
-      return {
-        ...generationResult,
-        status: queuedStatus,
-        actionFeedback: 'Mandate generation started. You can leave this screen while the PDF is prepared.',
-      }
+      return buildQueuedGenerationResult({ result: generationResult })
     }
 
     if (packetType === 'mandate' && leadContext.lead?.leadId) {

@@ -7252,6 +7252,14 @@ export default function LegalDocumentWorkspace({
           statusStateRef.current = generationResult.status
           setStatusState(generationResult.status)
         }
+        if (generationResult?.backgroundGenerationQueued || generationResult?.generationAcceptanceTimedOut) {
+          scheduleWorkspaceStatusRevalidation('background draft status')
+          setActionFeedback(
+            generationResult?.actionFeedback ||
+            'Mandate generation started in the background. The workspace will refresh when the PDF is ready.',
+          )
+          return
+        }
         const hasGeneratedVersion = Boolean(getGeneratedPacketVersionForSigning(generationResult?.status?.versions || []))
         if (hasGeneratedVersion) {
           void refreshWorkspaceData().then((refreshed) => {
@@ -7299,6 +7307,7 @@ export default function LegalDocumentWorkspace({
     packetId,
     packetType,
     refreshWorkspaceData,
+    scheduleWorkspaceStatusRevalidation,
     statusState?.packet?.id,
     statusState?.state,
     transactionId,
@@ -7862,6 +7871,15 @@ export default function LegalDocumentWorkspace({
       if (generationResult?.status) {
         statusStateRef.current = generationResult.status
         setStatusState(generationResult.status)
+      }
+      if (generationResult?.backgroundGenerationQueued || generationResult?.generationAcceptanceTimedOut) {
+        scheduleWorkspaceStatusRevalidation('background draft status')
+        setActionFeedback(
+          generationResult?.actionFeedback ||
+          'Mandate generation started in the background. The workspace will refresh when the PDF is ready.',
+        )
+        generationFailureCountsRef.current.clear()
+        return
       }
       const hasGeneratedVersion = Boolean(getGeneratedPacketVersionForSigning(generationResult?.status?.versions || []))
       const generatedVersion = getGeneratedPacketVersionForSigning(generationResult?.status?.versions || [])
