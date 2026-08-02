@@ -118,9 +118,9 @@ function createDevOnlyAuthState(devAuthRole) {
 }
 
 function buildBootstrapTimeoutMessage({ phase = '', diagnostics = [] } = {}) {
-  const labels = diagnostics
+  const labels = [...new Set(diagnostics
     .map((step) => String(step?.label || '').trim())
-    .filter(Boolean)
+    .filter(Boolean))]
   if (phase === 'bridge' && labels.length) {
     return `Authentication bootstrap timed out while loading ${labels.join(', ')}. Please retry.`
   }

@@ -83,7 +83,7 @@ function splitFullName(fullName) {
   }
 }
 
-function buildDefaultProfileFromUser(user) {
+export function buildDefaultProfileFromUser(user) {
   const metadata = user?.user_metadata || {}
   const metadataFullName = String(metadata.full_name || metadata.name || '').trim()
   const split = splitFullName(metadataFullName)

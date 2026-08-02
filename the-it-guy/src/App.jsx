@@ -887,7 +887,10 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
             <button
               type="button"
               className="auth-primary-cta"
-              onClick={() => retryWorkspaceBootstrap?.()}
+              onClick={() => {
+                onRetryBootstrap?.()
+                retryWorkspaceBootstrap?.()
+              }}
             >
               Retry
             </button>

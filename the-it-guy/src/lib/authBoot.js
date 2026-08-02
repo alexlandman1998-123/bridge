@@ -1,4 +1,4 @@
-import { getOrCreateUserProfile } from './profileApi'
+import { buildDefaultProfileFromUser, getOrCreateUserProfile } from './profileApi'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { normalizeCanonicalAppRole, isCanonicalAppRole } from '../constants/appRoles'
 import { ONBOARDING_REQUIRED_REASONS, ONBOARDING_STATUSES } from '../constants/onboardingStatuses'
@@ -17,6 +17,9 @@ const AUTO_CLAIMABLE_ONBOARDING_REASONS = new Set([
   ONBOARDING_REQUIRED_REASONS.noActiveMembership,
   ONBOARDING_REQUIRED_REASONS.onboardingIncomplete,
 ])
+
+const AUTH_BOOT_REQUIRED_STEP_TIMEOUT_MS = 20000
+const AUTH_BOOT_OPTIONAL_STEP_TIMEOUT_MS = 8000
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -57,6 +60,39 @@ export function getActiveAuthBootStepDiagnostics() {
     metadata: step.metadata,
     durationMs: roundDuration(getNowMs() - step.startedAt),
   }))
+}
+
+export function clearActiveAuthBootStepDiagnostics() {
+  activeAuthBootSteps.clear()
+}
+
+function withStepTimeout(task, {
+  label = 'auth boot step',
+  timeoutMs = AUTH_BOOT_REQUIRED_STEP_TIMEOUT_MS,
+} = {}) {
+  let timeoutId = null
+  const setTimer = typeof window !== 'undefined' && typeof window.setTimeout === 'function'
+    ? window.setTimeout.bind(window)
+    : setTimeout
+  const clearTimer = typeof window !== 'undefined' && typeof window.clearTimeout === 'function'
+    ? window.clearTimeout.bind(window)
+    : clearTimeout
+  return Promise.race([
+    task,
+    new Promise((_, reject) => {
+      timeoutId = setTimer(() => {
+        const error = new Error(`${label} timed out.`)
+        error.code = 'AUTH_BOOT_STEP_TIMEOUT'
+        reject(error)
+      }, timeoutMs)
+    }),
+  ]).finally(() => {
+    if (timeoutId) clearTimer(timeoutId)
+  })
+}
+
+function isAuthBootStepTimeout(error) {
+  return error?.code === 'AUTH_BOOT_STEP_TIMEOUT' || String(error?.message || '').toLowerCase().includes('timed out')
 }
 
 async function runAuthBootStep(label, task, metadata = {}) {
@@ -185,6 +221,7 @@ export function shouldIgnoreStaleMembershipRecovery({
 }
 
 export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } = {}) {
+  clearActiveAuthBootStepDiagnostics()
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase is not configured. Arch9 auth requires Supabase in this environment.')
   }
@@ -225,14 +262,46 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       ))?.data?.user
   if (!user?.id) throw new Error('Authenticated Supabase user could not be resolved.')
 
-  const [profile, loadedSignupIntent] = await Promise.all([
-    runAuthBootStep('profile.getOrCreate', () => getOrCreateUserProfile({ user }), {
-      userId: user.id,
-    }),
-    runAuthBootStep('signupIntent.load', () => loadSignupIntentForUser({ user }), {
-      userId: user.id,
-    }),
-  ])
+  const profile = await runAuthBootStep(
+    'profile.getOrCreate',
+    async () => {
+      try {
+        return await withStepTimeout(getOrCreateUserProfile({ user }), {
+          label: 'profile.getOrCreate',
+          timeoutMs: AUTH_BOOT_REQUIRED_STEP_TIMEOUT_MS,
+        })
+      } catch (error) {
+        if (!isAuthBootStepTimeout(error)) throw error
+        console.warn('[AUTH] profile load timed out; using session metadata fallback for this boot.', {
+          userId: user.id,
+        })
+        return {
+          ...buildDefaultProfileFromUser(user),
+          bootFallback: true,
+          bootFallbackReason: 'profile_timeout',
+        }
+      }
+    },
+    { userId: user.id },
+  )
+  const loadedSignupIntent = await runAuthBootStep(
+    'signupIntent.load',
+    async () => {
+      try {
+        return await withStepTimeout(loadSignupIntentForUser({ user }), {
+          label: 'signupIntent.load',
+          timeoutMs: AUTH_BOOT_OPTIONAL_STEP_TIMEOUT_MS,
+        })
+      } catch (error) {
+        if (!isAuthBootStepTimeout(error)) throw error
+        console.warn('[AUTH] signup intent load timed out; continuing without signup intent for this boot.', {
+          userId: user.id,
+        })
+        return null
+      }
+    },
+    { userId: user.id },
+  )
   const signupIntent = loadedSignupIntent && loadedSignupIntent.status !== SIGNUP_INTENT_STATUSES.readyForOnboarding
     ? await runAuthBootStep(
         'signupIntent.markReady',
