@@ -48,6 +48,7 @@
     "test:legal-document-job-runner-phase6-watchdog-retry": "node scripts/legal-document-job-runner-phase6-watchdog-retry.test.mjs",
     "test:legal-document-background-generation-phase7-ui-switch": "node scripts/legal-document-background-generation-phase7-ui-switch.test.mjs",
     "test:legal-document-background-generation-phase8-remove-app-fallback": "node scripts/legal-document-background-generation-phase8-remove-app-fallback.test.mjs",
+    "test:legal-document-generator-operational-health": "node scripts/legal-document-generator-operational-health.test.mjs",
     "test:lead-mandate-quick-start": "node scripts/lead-mandate-quick-start.test.mjs",
     "test:lead-mandate-background-generation-recovery": "node scripts/lead-mandate-background-generation-recovery.test.mjs",
     "test:seller-onboarding-mandate-draft-precreation-phase1": "node scripts/seller-onboarding-mandate-draft-precreation-phase1.test.mjs",

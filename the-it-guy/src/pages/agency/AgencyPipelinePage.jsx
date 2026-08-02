@@ -751,6 +751,74 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function resolveMandatePacketStateHintFromLead(lead = {}) {
+  const sourceContext =
+    lead?.sourceContext && typeof lead.sourceContext === 'object'
+      ? lead.sourceContext
+      : lead?.source_context_json && typeof lead.source_context_json === 'object'
+        ? lead.source_context_json
+        : {}
+  const mandatePacket = lead?.mandatePacket && typeof lead.mandatePacket === 'object' ? lead.mandatePacket : {}
+  const packetId = normalizeText(lead?.mandatePacketId || lead?.mandate_packet_id || mandatePacket?.id)
+  const values = [
+    lead?.mandateStatus,
+    lead?.mandate_status,
+    lead?.stage,
+    lead?.status,
+    sourceContext?.mandateStatus,
+    sourceContext?.mandate_status,
+    sourceContext?.signingStatus,
+    sourceContext?.signing_status,
+    mandatePacket?.status,
+    mandatePacket?.state,
+  ].map(normalizeKey)
+
+  if (values.some((value) => ['completed', 'complete', 'signed', 'mandate signed', 'mandate_signed'].includes(value))) return 'completed'
+  if (values.some((value) => ['finalising', 'finalizing'].includes(value))) return 'finalising'
+  if (values.some((value) => ['partially_signed', 'partially signed'].includes(value))) return 'partially_signed'
+  if (
+    normalizeText(lead?.mandateSentAt || lead?.mandate_sent_at || lead?.mandateSigningLink || lead?.mandateSignerLink) ||
+    values.some((value) =>
+      [
+        'sent',
+        'mandate sent',
+        'mandate_sent',
+        'sent for signature',
+        'sent_for_signature',
+        'sent to seller',
+        'sent_to_seller',
+        'ready for client signature',
+        'ready_for_client_signature',
+        'seller signature requested',
+        'seller_signature_requested',
+        'awaiting seller signature',
+        'awaiting_seller_signature',
+      ].includes(value),
+    )
+  ) {
+    return 'sent'
+  }
+  if (values.some((value) => ['ready_to_send', 'ready to send'].includes(value))) return 'ready_to_send'
+  if (values.some((value) => ['pdf_generated', 'generated', 'mandate generated', 'mandate_generated'].includes(value))) return 'pdf_generated'
+  if (
+    packetId ||
+    values.some((value) =>
+      [
+        'draft',
+        'mandate draft',
+        'mandate_draft',
+        'draft ready',
+        'draft_ready',
+        'mandate draft ready',
+        'mandate_draft_ready',
+      ].includes(value),
+    )
+  ) {
+    return 'draft'
+  }
+  return ''
+}
+
 function hasExplicitMandateSentEvidence({ lead = {}, mandatePacketStatus = null } = {}) {
   const packet = mandatePacketStatus?.packet && typeof mandatePacketStatus.packet === 'object'
     ? mandatePacketStatus.packet
@@ -6457,7 +6525,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedLeadIsSeller = resolveLeadCategoryView(selectedLead) === 'seller'
   const selectedLeadRecordId = normalizeText(selectedLead?.leadId)
-  const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId)
+  const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id || selectedLead?.mandatePacket?.id)
   const selectedLeadPropertyArea = normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest)
   const selectedLeadPropertyType = normalizeText(selectedLead?.propertyInterest)
 
@@ -6854,15 +6922,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return `${baseLink}/mandate`
   }, [selectedLead])
 
+  const selectedLeadMandateResolvedState = useMemo(() => {
+    const packetState = normalizeKey(mandatePacketStatus?.state)
+    if (packetState && !['no_packet', 'unknown'].includes(packetState)) return mandatePacketStatus?.state
+    return resolveMandatePacketStateHintFromLead(selectedLead) || mandatePacketStatus?.state
+  }, [mandatePacketStatus?.state, selectedLead])
   const selectedLeadMandateActionState = useMemo(
     () =>
       resolveDocumentPacketActionState({
         packetType: 'mandate',
-        state: mandatePacketStatus?.state,
+        state: selectedLeadMandateResolvedState,
         isBusy: isMandateGenerating || isMandateSending,
         warningCount: Array.isArray(mandatePacketStatus?.warnings) ? mandatePacketStatus.warnings.length : 0,
       }),
-    [isMandateGenerating, isMandateSending, mandatePacketStatus?.state, mandatePacketStatus?.warnings],
+    [isMandateGenerating, isMandateSending, mandatePacketStatus?.warnings, selectedLeadMandateResolvedState],
   )
   const selectedLeadMandateActionMeta = useMemo(() => {
     const stamp = formatPacketStatusMeta(mandatePacketStatus)
@@ -6892,7 +6965,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadMandateTemplateBlocking =
     isSupabaseConfigured &&
     selectedLeadMandateQuickStartActionKey === 'generate' &&
-    selectedLeadMandateTemplateReadiness?.ready !== true
+    selectedLeadMandateTemplateReadiness?.ready !== true &&
+    normalizeKey(selectedLeadMandateTemplateReadiness?.status) !== 'checking'
   useEffect(() => {
     if (
       !selectedLead ||
@@ -6909,6 +6983,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setSelectedLeadMandateTemplateReadiness({
       ready: false,
       status: 'checking',
+      optional: true,
       value: 'Checking published mandate template route...',
     })
 
@@ -11444,7 +11519,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         backgroundGenerationQueued
           ? 'Mandate generation is running in the background. Signing will unlock when the PDF is ready.'
           : draftReadyOnly
-            ? 'Mandate draft saved. Select Generate Mandate again to continue from the saved draft.'
+            ? 'Mandate source draft saved, but the signable PDF was not confirmed yet. Refresh status after the database hot path recovers.'
           : normalizeText(packet?.id)
             ? 'Mandate packet generated for this seller lead.'
           : 'Mandate generated. Packet tracking is running in fallback mode until packet schema/permissions are fully enabled.',
@@ -11517,6 +11592,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         version: generatedVersionResult?.version || null,
         status: generatedStatus,
         backgroundGenerationQueued,
+        draftReadyOnly,
+        generationErrorCode: generatedVersionResult?.generationErrorCode || null,
         job: generatedVersionResult?.job || null,
       }
     } catch (mandateError) {
@@ -12676,14 +12753,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           mandatePacketId,
         )
         mandatePacketVersionId = normalizeText(
-          generated?.version?.id ||
-          findLatestD3PersistedGeneratedVersion(generated?.status?.versions || [])?.id ||
-          mandatePacketVersionId,
+          generated?.draftReadyOnly === true
+            ? findLatestD3PersistedGeneratedVersion(generated?.status?.versions || [])?.id || mandatePacketVersionId
+            : generated?.version?.id ||
+              findLatestD3PersistedGeneratedVersion(generated?.status?.versions || [])?.id ||
+              mandatePacketVersionId,
         )
         generationJob = generated?.job || generated?.status?.legalDocumentJob || generationJob
         if (generated?.backgroundGenerationQueued || isActiveLegalDocumentGenerationJob(generationJob)) {
           setMandateQuickStartPacketId(mandatePacketId)
           setMandateQuickStartNotice('Mandate generation has started in the background. Signing will unlock automatically when the PDF is ready.')
+          return
+        }
+        if (generated?.draftReadyOnly === true) {
+          setMandateQuickStartPacketId(mandatePacketId)
+          setMandateQuickStartNotice('Mandate source draft is saved, but the signable PDF was not confirmed before the database timed out. Refresh after the database hot path recovers, then generate once.')
           return
         }
       }

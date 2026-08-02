@@ -125,9 +125,43 @@ try {
   assert.equal(sentOnlyRows[0].name, 'Seller lead - 409 Queens Cres, Menlo Park')
   assert.notEqual(sentOnlyRows[0].name, 'Unnamed Lead')
 
+  const mandatePacketRows = buildAgentLeadRows({
+    leads: [{
+      leadId: 'seller-with-duplicate-mandates',
+      leadSource: 'Manual Entry',
+      leadCategory: 'seller',
+      stage: 'Seller Onboarding Submitted',
+      status: 'Submitted',
+      name: 'Generated Packet Seller',
+      createdAt: '2026-08-02T18:00:00.000Z',
+    }],
+    documentPackets: [
+      {
+        id: 'draft-newer',
+        lead_id: 'seller-with-duplicate-mandates',
+        packet_type: 'mandate',
+        status: 'draft',
+        current_version_number: 1,
+        updated_at: '2026-08-02T18:48:24.000Z',
+      },
+      {
+        id: 'generated-older',
+        lead_id: 'seller-with-duplicate-mandates',
+        packet_type: 'mandate',
+        status: 'draft',
+        current_version_number: 2,
+        updated_at: '2026-08-02T13:46:19.000Z',
+      },
+    ],
+  })
+
+  assert.equal(mandatePacketRows[0].mandatePacket.id, 'generated-older')
+  assert.equal(mandatePacketRows[0].mandatePacketId, 'generated-older')
+
   const serviceSource = await readFile(new URL('../src/services/agentLeadWorkspaceService.js', import.meta.url), 'utf8')
   assert.match(serviceSource, /resolvedWorkspaceListingId = normalizeText\(workspace\?\.listingId/, 'lead workspace fetch should retain repository-resolved listing ids')
   assert.match(serviceSource, /listingId: getListingId\(lead\) \|\| resolvedWorkspaceListingId/, 'lead workspace context should use repository-resolved listing ids')
+  assert.match(serviceSource, /sortMandatePacketsForSigning/, 'lead workspace should prefer signable mandate packets over newer draft-only retries')
 
   const pageSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
   assert.match(pageSource, /lifecycle\.includes\('seller'\)/, 'seller lifecycle stages should force seller workspace rendering')

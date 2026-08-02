@@ -55,6 +55,8 @@ for (const reference of [
   'hasMandateSellerOnboardingSubmitted',
   'selectedLeadMandateTemplateReadiness',
   'selectedLeadMandateTemplateBlocking',
+  'resolveMandatePacketStateHintFromLead',
+  'selectedLeadMandateResolvedState',
   'resolveSignableTemplatePolicy',
   'describeMandateTemplateReadiness',
   'function resolveOtpQuickStartPrimaryLabel',
@@ -110,6 +112,8 @@ const quickStartBlock = getFunctionBlock('handleMandateQuickStartGenerateAndSend
 for (const reference of [
   'selectedLeadMandateQuickStartBlockers.length',
   'handleGenerateMandateFromSellerLead',
+  'generated?.draftReadyOnly === true',
+  'signable PDF was not confirmed before the database timed out',
   'handleSendMandateToSeller({',
   'packetVersionId: mandatePacketVersionId',
   'setMandateQuickStartOpen(false)',
@@ -136,6 +140,29 @@ assert.ok(
 assert.ok(
   source.includes('function hasExplicitMandateSentEvidence'),
   'Seller lead activity should use an explicit mandate sent evidence resolver.',
+)
+assert.ok(
+  source.includes("const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id || selectedLead?.mandatePacket?.id)"),
+  'Selected seller leads should recognise camelCase, snake_case, and nested mandate packet ids.',
+)
+assert.ok(
+  source.includes("if (packetState && !['no_packet', 'unknown'].includes(packetState)) return mandatePacketStatus?.state"),
+  'Mandate quick-start should trust resolved packet status once it is available.',
+)
+assert.ok(
+  source.includes('return resolveMandatePacketStateHintFromLead(selectedLead) || mandatePacketStatus?.state'),
+  'Mandate quick-start should use selected-lead mandate evidence while packet status is still stale.',
+)
+assert.ok(
+  source.includes("normalizeKey(selectedLeadMandateTemplateReadiness?.status) !== 'checking'") &&
+    source.includes("optional: true,\n      value: 'Checking published mandate template route...'"),
+  'Mandate quick-start should not hard-block while the template route check is still pending.',
+)
+assert.ok(
+  source.includes("'mandate draft ready'") &&
+    source.includes("'mandate generated'") &&
+    source.includes('lead?.mandate_packet_id'),
+  'Mandate packet state hints should cover draft/generated lead rows before template-route checking runs.',
 )
 assert.ok(
   source.includes('hasExplicitMandateSentEvidence({ lead: selectedLead, mandatePacketStatus })'),

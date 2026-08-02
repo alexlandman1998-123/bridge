@@ -482,9 +482,29 @@ function normalizeDocumentPacket(row = {}) {
     packetType: normalizeText(row?.packetType || row?.packet_type),
     status: normalizeText(row?.status),
     completedAt: row?.completedAt || row?.completed_at || null,
+    sentAt: row?.sentAt || row?.sent_at || null,
+    currentVersionNumber: Number(row?.currentVersionNumber ?? row?.current_version_number ?? 0) || 0,
     updatedAt: row?.updatedAt || row?.updated_at || row?.createdAt || row?.created_at || null,
     sourceContextJson: sourceContext,
   }
+}
+
+function scoreMandatePacketForSigning(packet = {}) {
+  const status = normalizeLower(packet?.status || packet?.state)
+  let score = 0
+  if (status.includes('complete') || status.includes('signed')) score += 50
+  if (packet?.completedAt) score += 40
+  if (packet?.sentAt || status.includes('sent')) score += 30
+  if (status.includes('generated') || status.includes('ready')) score += 20
+  if (Number(packet?.currentVersionNumber || 0) > 1) score += 15
+  if (status === 'draft') score -= 5
+  return score
+}
+
+function sortMandatePacketsForSigning(left = {}, right = {}) {
+  const scoreDelta = scoreMandatePacketForSigning(right) - scoreMandatePacketForSigning(left)
+  if (scoreDelta) return scoreDelta
+  return new Date(right.updatedAt || right.completedAt || 0).getTime() - new Date(left.updatedAt || left.completedAt || 0).getTime()
 }
 
 function packetMatchesLeadContext(packet = {}, context = {}) {
@@ -560,7 +580,9 @@ export function buildAgentLeadRows({
     const relatedDocumentPackets = normalizedDocumentPackets
       .filter((packet) => packetMatchesLeadContext(packet, expandedContext))
       .sort((left, right) => new Date(right.updatedAt || right.completedAt || 0).getTime() - new Date(left.updatedAt || left.completedAt || 0).getTime())
-    const mandatePacket = relatedDocumentPackets.find((packet) => normalizeLower(packet.packetType || packet.packet_type || packet.title).includes('mandate')) || null
+    const mandatePacket = relatedDocumentPackets
+      .filter((packet) => normalizeLower(packet.packetType || packet.packet_type || packet.title).includes('mandate'))
+      .sort(sortMandatePacketsForSigning)[0] || null
     const relatedAppointments = appointments.filter((appointment) => matchesLeadContext(appointment, expandedContext))
     const relatedOffers = normalizedOffers.filter((offer) => matchesLeadContext(offer, expandedContext) || relatedAppointments.some((appointment) => getAppointmentId(appointment) && getAppointmentId(appointment) === offer.appointmentId))
     const relatedTransactions = normalizedTransactions.filter((transaction) => matchesLeadContext(transaction, expandedContext))
@@ -713,7 +735,7 @@ export function buildAgentLeadRows({
       updatedAt: lead?.updatedAt || lead?.updated_at || null,
       listingId: listingId || expandedContext.listingId,
       privateListingId: listingId || expandedContext.listingId,
-      mandatePacketId: lead?.mandatePacketId || lead?.mandate_packet_id || sellerListing?.mandatePacketId || sellerListing?.mandate_packet_id,
+      mandatePacketId: lead?.mandatePacketId || lead?.mandate_packet_id || sellerListing?.mandatePacketId || sellerListing?.mandate_packet_id || mandatePacket?.id,
       sellerOnboarding,
       sellerOnboardingStatus,
       seller_onboarding_status: sellerOnboardingStatus,
@@ -895,6 +917,8 @@ async function safeReadPrivateListings(organisationId = '') {
 async function safeReadDocumentPackets(organisationId = '') {
   if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
   const selectVariants = [
+    'id, organisation_id, lead_id, packet_type, title, status, source_context_json, current_version_number, sent_at, completed_at, created_at, updated_at',
+    'id, organisation_id, lead_id, packet_type, title, status, source_context_json, current_version_number, completed_at, created_at, updated_at',
     'id, organisation_id, lead_id, packet_type, title, status, source_context_json, completed_at, created_at, updated_at',
     'id, organisation_id, lead_id, packet_type, title, status, source_context_json, created_at, updated_at',
     'id, organisation_id, lead_id, packet_type, title, status, created_at, updated_at',

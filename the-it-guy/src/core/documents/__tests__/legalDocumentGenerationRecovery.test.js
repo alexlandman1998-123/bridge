@@ -38,3 +38,14 @@ test('raw postgres permission failures do not fall back to generic generation co
   assert.match(recovery, /legal-document access/)
   assert.doesNotMatch(recovery, /could not confirm a usable mandate draft/i)
 })
+
+test('raw postgres statement timeouts report status hydration failure', () => {
+  const recovery = formatLegalDocumentGenerationRecovery({
+    code: '57014',
+    message: 'canceling statement due to statement timeout',
+  }, { packetType: 'mandate' })
+
+  assert.match(recovery, /database timed out/i)
+  assert.match(recovery, /do not start another duplicate generation/i)
+  assert.doesNotMatch(recovery, /could not confirm a usable mandate draft/i)
+})

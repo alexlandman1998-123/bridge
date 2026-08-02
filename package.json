@@ -46,6 +46,7 @@
     "test:supabase-resolve-ledger-drift": "node scripts/supabase-resolve-ledger-drift.test.mjs",
     "test:supabase-push-phase6": "node scripts/supabase-push-phase6-record-production-evidence.test.mjs",
     "test:supabase-push-phase7": "node scripts/supabase-push-phase7-run-closeout.test.mjs",
+    "test:legal-packet-rls-hot-path": "node scripts/legal-packet-rls-hot-path.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
   },
