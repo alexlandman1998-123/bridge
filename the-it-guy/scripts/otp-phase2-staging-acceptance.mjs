@@ -46,6 +46,16 @@ function normalize(value) {
   return String(value || '').trim()
 }
 
+function isPersistedSupabaseSignedUrl(value) {
+  const url = normalize(value)
+  return /\/storage\/v1\/object\/sign\//i.test(url)
+}
+
+function normalizeDurableDocumentUrl(value) {
+  const url = normalize(value)
+  return url && !isPersistedSupabaseSignedUrl(url) ? url : ''
+}
+
 function safeFileName(value) {
   return normalize(value).replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '')
 }
@@ -244,7 +254,7 @@ function validationResult(validation) {
 }
 
 async function downloadGeneratedDocument(version, scenario) {
-  const url = version?.rendered_file_access_url || version?.rendered_file_url || ''
+  const url = normalize(version?.rendered_file_access_url) || normalizeDurableDocumentUrl(version?.rendered_file_url)
   assert.ok(url, `${scenario}: generated version must expose a readable document URL.`)
   const response = await fetch(url)
   assert.equal(response.ok, true, `${scenario}: generated document download failed (${response.status}).`)

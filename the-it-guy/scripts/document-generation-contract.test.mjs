@@ -45,6 +45,20 @@ const normalized = normalizeDocumentGenerationResponseContract({
 }, { packetId })
 assert.equal(normalized.documentId, 'document-1')
 assert.equal(normalized.output.filePath, 'packets/test.pdf')
+assert.equal(normalized.output.signedUrl, undefined)
+
+const normalizedWithDurableUrl = normalizeDocumentGenerationResponseContract({
+  success: true,
+  packetId,
+  documentRecord: { data: { id: 'document-2', name: 'TEST mandate durable.pdf' } },
+  storage: { publicUrl: 'https://cdn.example.test/test.pdf' },
+  output: {
+    filePath: 'packets/test-durable.pdf',
+    bucket: 'documents',
+    signedUrl: 'https://project.supabase.co/storage/v1/object/sign/documents/packets/test-durable.pdf?token=expired',
+  },
+}, { packetId })
+assert.equal(normalizedWithDurableUrl.output.signedUrl, 'https://cdn.example.test/test.pdf')
 
 assert.throws(
   () => normalizeDocumentGenerationResponseContract({ success: true, documentId: 'document-1' }, { packetId }),

@@ -111,6 +111,16 @@ function normalizeNullableText(value) {
   return text || null
 }
 
+function isPersistedSupabaseSignedUrl(value) {
+  const url = normalizeText(value)
+  return /\/storage\/v1\/object\/sign\//i.test(url)
+}
+
+function normalizeDurableDocumentUrl(value) {
+  const url = normalizeNullableText(value)
+  return url && !isPersistedSupabaseSignedUrl(url) ? url : null
+}
+
 function readBooleanFlag(value, fallback = false) {
   const normalized = String(value || '').trim().toLowerCase()
   if (!normalized) return fallback
@@ -1585,14 +1595,12 @@ function extractGeneratedArtifact(result = {}) {
         result?.document?.name ||
         result?.fileName,
     ),
-    renderedFileUrl: normalizeNullableText(
-      result?.output?.signedUrl ||
-        result?.storage?.publicUrl ||
-        result?.documentRecord?.data?.url ||
-        result?.document?.url ||
-        result?.url ||
-        result?.renderedFileUrl,
-    ),
+    renderedFileUrl:
+      normalizeDurableDocumentUrl(result?.storage?.publicUrl) ||
+      normalizeDurableDocumentUrl(result?.documentRecord?.data?.url) ||
+      normalizeDurableDocumentUrl(result?.document?.url) ||
+      normalizeDurableDocumentUrl(result?.url) ||
+      normalizeDurableDocumentUrl(result?.renderedFileUrl),
     renderedFileBucket: normalizeNullableText(result?.output?.bucket || result?.storage?.bucket),
     renderedMediaType: normalizeNullableText(result?.output?.mediaType || result?.output?.contentType),
     renderedByteLength: Number(result?.output?.byteLength || 0),

@@ -9,6 +9,19 @@ function text(value) {
   return String(value ?? '').trim()
 }
 
+function isPersistedSupabaseSignedUrl(value) {
+  const url = text(value)
+  return /\/storage\/v1\/object\/sign\//i.test(url)
+}
+
+function durableUrl(...values) {
+  for (const value of values) {
+    const url = text(value)
+    if (url && !isPersistedSupabaseSignedUrl(url)) return url
+  }
+  return ''
+}
+
 function issue(code, message) {
   return { code, message }
 }
@@ -109,7 +122,7 @@ function artifactFromResponse(response = {}) {
     renderedDocumentId: text(documentRecord.id || document.id || response.documentId),
     renderedFilePath: text(output.filePath || storage.path || response.path || response.renderedFilePath),
     renderedFileName: text(output.fileName || storage.fileName || documentRecord.name || document.name || response.fileName),
-    renderedFileUrl: text(output.signedUrl || storage.publicUrl || documentRecord.url || document.url || response.url || response.renderedFileUrl),
+    renderedFileUrl: durableUrl(storage.publicUrl, documentRecord.url, document.url, response.url, response.renderedFileUrl),
     renderedFileBucket: text(output.bucket || storage.bucket),
     renderedMediaType: text(output.mediaType || output.contentType),
     renderedByteLength: Number(output.byteLength || 0) || 0,

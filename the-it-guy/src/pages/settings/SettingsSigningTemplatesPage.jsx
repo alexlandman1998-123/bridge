@@ -2937,6 +2937,16 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function isPersistedSupabaseSignedUrl(value) {
+  const url = normalizeText(value)
+  return /\/storage\/v1\/object\/sign\//i.test(url)
+}
+
+function normalizeDurableDocumentUrl(value) {
+  const url = normalizeText(value)
+  return url && !isPersistedSupabaseSignedUrl(url) ? url : ''
+}
+
 function createTemplateKeySegment(value = 'template') {
   return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'template'
 }
@@ -5451,17 +5461,15 @@ function buildDocumentRunContextFromPacket(packet = {}) {
 }
 
 function getPacketVersionArtifactUrl(version = {}) {
-  return normalizeText(
-    version?.final_signed_file_access_url ||
-      version?.final_signed_file_url ||
-      version?.rendered_file_access_url ||
-      version?.rendered_file_url,
-  )
+  return normalizeText(version?.final_signed_file_access_url) ||
+    normalizeDurableDocumentUrl(version?.final_signed_file_url) ||
+    normalizeText(version?.rendered_file_access_url) ||
+    normalizeDurableDocumentUrl(version?.rendered_file_url)
 }
 
 function getPacketVersionArtifactLabel(version = {}) {
-  if (normalizeText(version?.final_signed_file_access_url || version?.final_signed_file_url)) return 'Open final'
-  if (normalizeText(version?.rendered_file_access_url || version?.rendered_file_url)) return 'Open generated'
+  if (normalizeText(version?.final_signed_file_access_url) || normalizeDurableDocumentUrl(version?.final_signed_file_url)) return 'Open final'
+  if (normalizeText(version?.rendered_file_access_url) || normalizeDurableDocumentUrl(version?.rendered_file_url)) return 'Open generated'
   return 'No artifact'
 }
 

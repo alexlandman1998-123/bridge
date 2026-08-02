@@ -362,6 +362,16 @@ function normalizeText(value) {
   return String(value ?? '').trim()
 }
 
+function isPersistedSupabaseSignedUrl(value) {
+  const url = normalizeText(value)
+  return /\/storage\/v1\/object\/sign\//i.test(url)
+}
+
+function normalizeDurableDocumentUrl(value) {
+  const url = normalizeText(value)
+  return url && !isPersistedSupabaseSignedUrl(url) ? url : ''
+}
+
 function withActionTimeout(promise, message, timeoutMs) {
   let timeoutId = null
   return Promise.race([
@@ -19584,22 +19594,20 @@ function getSellerMandatePacketSummary({ row = {}, listing = null, journey = nul
     sourceContext?.version,
   ].find((version) => version && typeof version === 'object') || null
   const latestVersion = getSellerMandateLatestVersion(versions) || singleVersion
-  const draftUrl = normalizeText(
-    latestVersion?.rendered_file_access_url ||
-      latestVersion?.rendered_file_url ||
-      packet?.generatedPreviewUrl ||
-      packet?.generated_preview_url ||
-      packet?.generatedPreviewFileAccessUrl ||
-      packet?.generated_preview_file_access_url ||
-      packet?.renderedFileUrl ||
-      packet?.rendered_file_url ||
-      sourceContext?.generatedPreviewUrl ||
-      sourceContext?.generated_preview_url ||
-      sourceContext?.generatedPreviewFileAccessUrl ||
-      sourceContext?.generated_preview_file_access_url ||
-      sourceContext?.renderedFileUrl ||
-      sourceContext?.rendered_file_url,
-  )
+  const draftUrl = normalizeText(latestVersion?.rendered_file_access_url) ||
+    normalizeDurableDocumentUrl(latestVersion?.rendered_file_url) ||
+    normalizeText(packet?.generatedPreviewFileAccessUrl) ||
+    normalizeText(packet?.generated_preview_file_access_url) ||
+    normalizeDurableDocumentUrl(packet?.generatedPreviewUrl) ||
+    normalizeDurableDocumentUrl(packet?.generated_preview_url) ||
+    normalizeDurableDocumentUrl(packet?.renderedFileUrl) ||
+    normalizeDurableDocumentUrl(packet?.rendered_file_url) ||
+    normalizeText(sourceContext?.generatedPreviewFileAccessUrl) ||
+    normalizeText(sourceContext?.generated_preview_file_access_url) ||
+    normalizeDurableDocumentUrl(sourceContext?.generatedPreviewUrl) ||
+    normalizeDurableDocumentUrl(sourceContext?.generated_preview_url) ||
+    normalizeDurableDocumentUrl(sourceContext?.renderedFileUrl) ||
+    normalizeDurableDocumentUrl(sourceContext?.rendered_file_url)
   const signedUrl = normalizeText(
     latestVersion?.final_signed_file_access_url ||
       latestVersion?.final_signed_file_url ||

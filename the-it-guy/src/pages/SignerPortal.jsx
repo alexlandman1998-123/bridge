@@ -29,6 +29,16 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function isPersistedSupabaseSignedUrl(value) {
+  const url = normalizeText(value)
+  return /\/storage\/v1\/object\/sign\//i.test(url)
+}
+
+function normalizeDurablePreviewUrl(value) {
+  const url = normalizeText(value)
+  return url && !isPersistedSupabaseSignedUrl(url) ? url : ''
+}
+
 function normalizePreviewHtml(value) {
   const html = normalizeText(value)
   return html.includes('<') ? html : ''
@@ -49,8 +59,10 @@ function resolveSessionPreviewUrl(session = null) {
       session?.document_preview_url ||
       session?.previewUrl ||
       session?.preview_url ||
-      session?.previewVersion?.rendered_file_url ||
-      session?.version?.rendered_file_url,
+      normalizeDurablePreviewUrl(session?.previewVersion?.rendered_file_access_url) ||
+      normalizeDurablePreviewUrl(session?.previewVersion?.rendered_file_url) ||
+      normalizeDurablePreviewUrl(session?.version?.rendered_file_access_url) ||
+      normalizeDurablePreviewUrl(session?.version?.rendered_file_url),
   )
 }
 
