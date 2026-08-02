@@ -346,6 +346,106 @@ function firstNonEmptyText(...values) {
   return ''
 }
 
+const MANDATE_SNAPSHOT_PLACEHOLDER_TEXT = new Set([
+  'not captured',
+  'seller unavailable',
+  'route pending',
+  'not classified',
+])
+
+function isUsefulMandateSnapshotText(value) {
+  const text = normalizeText(value)
+  if (!text) return false
+  return !MANDATE_SNAPSHOT_PLACEHOLDER_TEXT.has(text.toLowerCase())
+}
+
+function scoreMandateDataSnapshot(snapshot = null, depth = 0) {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot) || depth > 4) return 0
+  const placeholders = snapshot.placeholders && typeof snapshot.placeholders === 'object' ? snapshot.placeholders : {}
+  const source = snapshot.sourceContext && typeof snapshot.sourceContext === 'object'
+    ? snapshot.sourceContext
+    : snapshot.source_context && typeof snapshot.source_context === 'object'
+      ? snapshot.source_context
+      : {}
+  const seller = snapshot.seller && typeof snapshot.seller === 'object' ? snapshot.seller : {}
+  const property = snapshot.property && typeof snapshot.property === 'object' ? snapshot.property : {}
+  const mandate = snapshot.mandate && typeof snapshot.mandate === 'object' ? snapshot.mandate : {}
+  const agency = snapshot.agency && typeof snapshot.agency === 'object' ? snapshot.agency : {}
+  const agent = snapshot.agent && typeof snapshot.agent === 'object' ? snapshot.agent : {}
+  const transferAttorney = snapshot.transferAttorney && typeof snapshot.transferAttorney === 'object'
+    ? snapshot.transferAttorney
+    : snapshot.transfer_attorney && typeof snapshot.transfer_attorney === 'object'
+      ? snapshot.transfer_attorney
+      : {}
+  const factValues = [
+    seller.fullName,
+    seller.legalName,
+    seller.name,
+    seller.email,
+    seller.phone,
+    seller.entityType,
+    seller.maritalRegime,
+    property.fullAddress,
+    property.displayAddress,
+    property.propertyType,
+    property.propertyTitleType,
+    property.titleType,
+    mandate.askingPrice,
+    mandate.asking_price,
+    mandate.type,
+    mandate.mandateType,
+    mandate.startDate,
+    mandate.expiryDate,
+    mandate.commissionRate,
+    transferAttorney.companyName,
+    transferAttorney.name,
+    transferAttorney.email,
+    agency.tradingName,
+    agency.legalName,
+    agency.name,
+    agent.fullName,
+    agent.name,
+    agent.email,
+    placeholders.seller_full_name,
+    placeholders.seller_email,
+    placeholders.seller_phone,
+    placeholders.property_address,
+    placeholders.property_type,
+    placeholders.property_title_type,
+    placeholders.asking_price,
+    placeholders.property_asking_price,
+    placeholders.mandate_type,
+    placeholders.mandate_start_date,
+    placeholders.mandate_expiry_date,
+    placeholders.commission_rate,
+    placeholders.transfer_attorney_company_name,
+    placeholders.agency_display_name,
+    placeholders.agency_name,
+    placeholders.agent_full_name,
+    source.sellerName,
+    source.sellerEmail,
+    source.sellerPhone,
+    source.transferAttorneyName,
+    source.transfer_attorney_name,
+  ]
+  const ownScore = factValues.filter(isUsefulMandateSnapshotText).length
+  const nestedSnapshot = source.generatedDataSnapshot && typeof source.generatedDataSnapshot === 'object'
+    ? source.generatedDataSnapshot
+    : null
+  return ownScore + scoreMandateDataSnapshot(nestedSnapshot, depth + 1)
+}
+
+function selectRichestMandateDataSnapshot(snapshots = []) {
+  return snapshots
+    .filter((snapshot) => snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot))
+    .reduce((best, candidate) => {
+      if (!best) return candidate
+      const candidateScore = scoreMandateDataSnapshot(candidate)
+      const bestScore = scoreMandateDataSnapshot(best)
+      return candidateScore > bestScore ? candidate : best
+    }, null)
+}
+
 function fullNameFromParts(...parts) {
   return parts.map(normalizeText).filter(Boolean).join(' ')
 }
@@ -4257,19 +4357,23 @@ export default function LegalDocumentWorkspace({
   }
   const mandateDataSnapshot = useMemo(() => {
     if (!isMandatePacket) return null
-    let snapshot = null
+    const candidateSnapshots = []
     if (sourceContext.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object') {
-      snapshot = sourceContext.generatedDataSnapshot
-    } else if (latestVersion?.validation_summary_json?.generatedDataSnapshot && typeof latestVersion.validation_summary_json.generatedDataSnapshot === 'object') {
-      snapshot = latestVersion.validation_summary_json.generatedDataSnapshot
-    } else if (latestVersion?.placeholders_resolved_json && typeof latestVersion.placeholders_resolved_json === 'object') {
-      snapshot = {
+      candidateSnapshots.push(sourceContext.generatedDataSnapshot)
+    }
+    if (latestVersion?.validation_summary_json?.generatedDataSnapshot && typeof latestVersion.validation_summary_json.generatedDataSnapshot === 'object') {
+      candidateSnapshots.push(latestVersion.validation_summary_json.generatedDataSnapshot)
+    }
+    if (latestVersion?.placeholders_resolved_json && typeof latestVersion.placeholders_resolved_json === 'object') {
+      candidateSnapshots.push({
         placeholders: latestVersion.placeholders_resolved_json,
         sourceContext: sourceContext.sourceContext || latestVersion?.validation_summary_json?.sourceContext || {},
-      }
-    } else if (initialMandateData && typeof initialMandateData === 'object') {
-      snapshot = initialMandateData
+      })
     }
+    if (initialMandateData && typeof initialMandateData === 'object') {
+      candidateSnapshots.push(initialMandateData)
+    }
+    const snapshot = selectRichestMandateDataSnapshot(candidateSnapshots)
     return applyMandateManualOverride(snapshot, sourceContext)
   }, [initialMandateData, isMandatePacket, latestVersion?.placeholders_resolved_json, latestVersion?.validation_summary_json, sourceContext])
   const mandateManualOverride = useMemo(() => getMandateManualOverride(sourceContext), [sourceContext])

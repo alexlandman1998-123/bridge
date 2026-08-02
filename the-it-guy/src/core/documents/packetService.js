@@ -121,6 +121,49 @@ function asPlainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
+const PLACEHOLDER_SNAPSHOT_TEXT = new Set([
+  'not captured',
+  'seller unavailable',
+  'route pending',
+  'not classified',
+])
+
+function isUsefulSnapshotText(value) {
+  const text = normalizeText(value)
+  if (!text) return false
+  return !PLACEHOLDER_SNAPSHOT_TEXT.has(text.toLowerCase())
+}
+
+function scoreGeneratedDataSnapshotCompleteness(value, depth = 0) {
+  if (!value || depth > 6) return 0
+  if (typeof value === 'string' || typeof value === 'number') {
+    return isUsefulSnapshotText(value) ? 1 : 0
+  }
+  if (Array.isArray(value)) {
+    return value.reduce((score, item) => score + scoreGeneratedDataSnapshotCompleteness(item, depth + 1), 0)
+  }
+  if (typeof value !== 'object') return 0
+  return Object.values(value).reduce((score, item) => score + scoreGeneratedDataSnapshotCompleteness(item, depth + 1), 0)
+}
+
+function resolveGeneratedDataSnapshotForPacket({ packet = null, context = null, sourceContextSnapshot = null } = {}) {
+  const packetSourceContext = asPlainObject(packet?.source_context_json)
+  const previousSnapshot = asPlainObject(packetSourceContext.generatedDataSnapshot)
+  const nestedSourceSnapshot = asPlainObject(sourceContextSnapshot?.generatedDataSnapshot)
+  const mandateDataSnapshot = asPlainObject(context?.mandateData)
+  const generatedDataSnapshot = asPlainObject(context?.generatedDataSnapshot)
+  const candidateSnapshot = Object.keys(mandateDataSnapshot).length ? mandateDataSnapshot : generatedDataSnapshot
+  const candidates = [candidateSnapshot, nestedSourceSnapshot, previousSnapshot].filter((snapshot) => Object.keys(snapshot).length)
+  if (!candidates.length) return null
+
+  return candidates.reduce((best, candidate) => {
+    if (!best) return candidate
+    const candidateScore = scoreGeneratedDataSnapshotCompleteness(candidate)
+    const bestScore = scoreGeneratedDataSnapshotCompleteness(best)
+    return candidateScore > bestScore ? candidate : best
+  }, null)
+}
+
 const LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED = readBooleanFlag(
   import.meta.env.VITE_LEGAL_DOCUMENT_BACKGROUND_GENERATION_ENABLED,
   true,
@@ -745,6 +788,7 @@ async function recordGenerationFailure({
     templateVersion,
     generatedAt,
   })
+  const generatedDataSnapshot = resolveGeneratedDataSnapshotForPacket({ packet, context, sourceContextSnapshot })
   const failedVersion = await createDocumentPacketVersionSafely({
     packetId: packet.id,
     renderStatus: 'failed',
@@ -765,7 +809,7 @@ async function recordGenerationFailure({
       templateResolution,
       generatedAt,
       render_provenance: renderProvenance,
-      generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+      generatedDataSnapshot,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
       warningsSnapshot: buildWarningsSnapshot(context, validation),
       sourceContext: sourceContextSnapshot,
@@ -810,7 +854,7 @@ async function recordGenerationFailure({
       templateResolution,
       generatedAt,
       renderProvenance,
-      generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+      generatedDataSnapshot,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
       warningsSnapshot: buildWarningsSnapshot(context, validation),
       sourceContext: sourceContextSnapshot,
@@ -3381,12 +3425,24 @@ export async function savePacketDraft({
   })
 
   const packetStatus = normalizeText(packet?.status).toLowerCase()
+  const sourceContextSnapshot = context?.mandateData?.sourceContext || context?.sourceContext || null
+  const generatedDataSnapshot = resolveGeneratedDataSnapshotForPacket({ packet, context, sourceContextSnapshot })
+  const preservePacketStatus = [
+    'generated',
+    'ready_to_send',
+    'signing_prep',
+    'sent',
+    'partially_signed',
+    'completed',
+    'voided',
+    'archived',
+  ].includes(packetStatus)
   const canUpdateTemplateSnapshot =
     resolvedTemplate?.id &&
     normalizeText(packet?.template_id) !== normalizeText(resolvedTemplate.id) &&
     !['sent', 'partially_signed', 'completed', 'voided', 'archived'].includes(packetStatus)
   const updated = await updatePacketFresh(packet.id, {
-    status: 'draft',
+    ...(preservePacketStatus ? {} : { status: 'draft' }),
     ...(canUpdateTemplateSnapshot
       ? {
           templateId: resolvedTemplate.id,
@@ -3412,10 +3468,10 @@ export async function savePacketDraft({
       legalDocumentTemplateFallbackWarning: rendered.legalDocumentTemplateFallbackWarning || null,
       mandateTemplateContentGate: rendered.mandateTemplateContentGate || null,
       mandateTemplateLaunchReadiness: rendered.mandateTemplateLaunchReadiness || null,
-      generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+      generatedDataSnapshot,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || rendered?.critical || [],
       warningsSnapshot: buildWarningsSnapshot(context, rendered),
-      sourceContext: context?.mandateData?.sourceContext || context?.sourceContext || null,
+      sourceContext: sourceContextSnapshot,
     },
     brandingSnapshotJson: rendered.branding || {},
   })
@@ -3566,6 +3622,7 @@ export async function generatePacketVersion({
     const pdfPlaceholders = sanitizeTemplatePlaceholders(validation.placeholders || {})
     const templateVersion = resolveTemplateVersion(effectiveTemplate)
     const sourceContextSnapshot = context?.mandateData?.sourceContext || context?.sourceContext || null
+    const generatedDataSnapshot = resolveGeneratedDataSnapshotForPacket({ packet, context, sourceContextSnapshot })
     const readOnlyAnnexures = resolveReadOnlyAnnexures(sourceContextSnapshot)
     await addPacketEvent({
       packetId: packet.id,
@@ -3726,7 +3783,7 @@ export async function generatePacketVersion({
             legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
             mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
             mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
-            generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+            generatedDataSnapshot,
             missingFieldsSnapshot:
               context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
             warningsSnapshot: buildWarningsSnapshot(context, validation),
@@ -3785,7 +3842,7 @@ export async function generatePacketVersion({
                     generatedAt,
                     generationAttemptId,
                     render_provenance: renderProvenance,
-                    generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+                    generatedDataSnapshot,
                     missingFieldsSnapshot:
                       context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
                     warningsSnapshot: buildWarningsSnapshot(context, validation),
@@ -4146,7 +4203,7 @@ export async function generatePacketVersion({
           artifact_provenance: artifactProvenance,
           native_render_attestation: artifact.renderAttestation,
           native_pdf_layout: artifact.nativePdfLayout,
-          generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+          generatedDataSnapshot,
           missingFieldsSnapshot:
             context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
           warningsSnapshot: buildWarningsSnapshot(context, validation),
@@ -4205,7 +4262,7 @@ export async function generatePacketVersion({
       legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
       mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
       mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
-      generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
+      generatedDataSnapshot,
       missingFieldsSnapshot:
         context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
       warningsSnapshot: buildWarningsSnapshot(context, validation),
