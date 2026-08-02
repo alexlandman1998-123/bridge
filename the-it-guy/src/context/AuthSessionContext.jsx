@@ -20,6 +20,7 @@ import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCa
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 15000
 const BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS = 45000
 const BRIDGE_AUTH_BOOTSTRAP_SLOW_MS = 15000
+const BRIDGE_AUTH_BOOTSTRAP_RETRY_MS = 3000
 
 const EMPTY_AUTH_STATE = Object.freeze({
   status: 'loading',
@@ -128,6 +129,16 @@ function buildBootstrapTimeoutMessage({ phase = '', diagnostics = [] } = {}) {
     return 'Authentication bootstrap timed out while restoring your session. Please retry.'
   }
   return 'Authentication bootstrap timed out. Please retry.'
+}
+
+function isRetryableBridgeBootstrapError(error) {
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    error?.code === 'AUTH_BOOT_STEP_TIMEOUT' ||
+    message.includes('authentication bootstrap timed out') ||
+    (message.includes('workspace.resolvecurrentworkspace') && message.includes('timed out')) ||
+    (message.includes('schema cache') && message.includes('retry'))
+  )
 }
 
 function getMembershipWorkspaceId(membership = null) {
@@ -335,6 +346,7 @@ export function AuthSessionProvider({ children }) {
       let bridgeOutcome = 'success'
       let resolvedBridgeState = null
       let slowTimerId = null
+      let retryTimerId = null
       setAuthState((previous) => ({
         ...previous,
         status: 'loading',
@@ -415,6 +427,27 @@ export function AuthSessionProvider({ children }) {
           operation: 'bridge_auth_boot',
           category: 'auth_error',
         })
+        if (isRetryableBridgeBootstrapError(error)) {
+          bridgeOutcome = 'retrying'
+          setAuthState((previous) => ({
+            ...previous,
+            status: 'loading',
+            session,
+            user: session.user,
+            bootError: error?.message || 'Workspace bootstrap is taking longer than expected.',
+          }))
+          retryTimerId = window.setTimeout(() => {
+            if (!active) return
+            console.warn('[AUTH] bridge-boot:retrying', {
+              userId: session.user.id,
+              selectedWorkspaceId: selectedWorkspaceId || null,
+              retryInMs: BRIDGE_AUTH_BOOTSTRAP_RETRY_MS,
+              previousError: error?.message || null,
+            })
+            setBootAttempt((previous) => previous + 1)
+          }, BRIDGE_AUTH_BOOTSTRAP_RETRY_MS)
+          return
+        }
         setAuthState({
           ...EMPTY_AUTH_STATE,
           status: 'error',
@@ -424,6 +457,7 @@ export function AuthSessionProvider({ children }) {
         })
       } finally {
         if (slowTimerId) window.clearTimeout(slowTimerId)
+        if (!active && retryTimerId) window.clearTimeout(retryTimerId)
         const bridgeWorkspaceId =
           resolvedBridgeState?.workspaceType === WORKSPACE_TYPES.agency ||
           resolvedBridgeState?.currentWorkspace?.type === WORKSPACE_TYPES.agency

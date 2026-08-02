@@ -1827,12 +1827,25 @@ async function resolveSellerPortalInviteOnboarding({
 }) {
   const { sourceContext, sourceLead, sellerOnboarding } = resolveSellerPortalSourceContext(packet);
   const listingId = normalizeText(listing?.id);
-  if (listingId) {
-    const byListing = await supabase
+  const currentColumns = "id, private_listing_id, token, seller_portal_token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at";
+  const legacyColumns = "id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at";
+  const fetchOnboarding = async (columnName: string, value: string) => {
+    const current = await supabase
       .from("private_listing_seller_onboarding")
-      .select("id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at")
-      .eq("private_listing_id", listingId)
+      .select(currentColumns)
+      .eq(columnName, value)
       .maybeSingle();
+    if (current.error && missingColumnName(current.error as Record<string, unknown>) === "seller_portal_token") {
+      return await supabase
+        .from("private_listing_seller_onboarding")
+        .select(legacyColumns)
+        .eq(columnName, value)
+        .maybeSingle();
+    }
+    return current;
+  };
+  if (listingId) {
+    const byListing = await fetchOnboarding("private_listing_id", listingId);
     if (!byListing.error && byListing.data?.id) return byListing.data as Record<string, unknown>;
     if (byListing.error) console.error("[mandate-signing] seller portal invite onboarding lookup by listing failed", byListing.error);
   }
@@ -1849,11 +1862,7 @@ async function resolveSellerPortalInviteOnboarding({
   );
   if (!token) return null;
 
-  const byToken = await supabase
-    .from("private_listing_seller_onboarding")
-    .select("id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at")
-    .eq("token", token)
-    .maybeSingle();
+  const byToken = await fetchOnboarding("token", token);
   if (!byToken.error && byToken.data?.id) return byToken.data as Record<string, unknown>;
   if (byToken.error) console.error("[mandate-signing] seller portal invite onboarding lookup by token failed", byToken.error);
   return null;
@@ -2107,9 +2116,13 @@ function buildSellerPortalInviteEmailPayload({
   const sellerStructureLabel = resolveSellerStructureLabel(onboarding, onboardingFormData);
   const sellerSigner = (allSigners || []).find((item) => isMandateSeller(item.signer_role)) || {};
   const token = firstText(
+    onboarding.seller_portal_token,
+    onboarding.sellerPortalToken,
     onboarding.token,
     sourceContext.sellerWorkspaceToken,
     sourceContext.seller_workspace_token,
+    sourceContext.sellerPortalToken,
+    sourceContext.seller_portal_token,
     sourceContext.sellerOnboardingToken,
     sourceContext.seller_onboarding_token,
   );

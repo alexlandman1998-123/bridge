@@ -20,6 +20,7 @@ const AUTO_CLAIMABLE_ONBOARDING_REASONS = new Set([
 
 const AUTH_BOOT_REQUIRED_STEP_TIMEOUT_MS = 20000
 const AUTH_BOOT_OPTIONAL_STEP_TIMEOUT_MS = 8000
+const AUTH_BOOT_WORKSPACE_STEP_TIMEOUT_MS = 18000
 const AUTH_BOOT_TRANSIENT_SCHEMA_RETRY_DELAYS_MS = [750, 1750, 3500]
 
 function normalizeText(value) {
@@ -373,12 +374,18 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
   let workspaceResolution = await runAuthBootStep(
     'workspace.resolveCurrentWorkspace',
     () => withTransientSchemaRetry(
-      () => resolveCurrentWorkspace(user.id, {
-        client: supabase,
-        user,
-        profile,
-        requestedWorkspaceId: selectedWorkspaceId,
-      }),
+      () => withStepTimeout(
+        resolveCurrentWorkspace(user.id, {
+          client: supabase,
+          user,
+          profile,
+          requestedWorkspaceId: selectedWorkspaceId,
+        }),
+        {
+          label: 'workspace.resolveCurrentWorkspace',
+          timeoutMs: AUTH_BOOT_WORKSPACE_STEP_TIMEOUT_MS,
+        },
+      ),
       { label: 'workspace.resolveCurrentWorkspace', userId: user.id },
     ),
     {
@@ -432,12 +439,18 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       workspaceResolution = await runAuthBootStep(
         'workspace.resolveCurrentWorkspace.afterClaim',
         () => withTransientSchemaRetry(
-          () => resolveCurrentWorkspace(user.id, {
-            client: supabase,
-            user,
-            profile,
-            requestedWorkspaceId: claimRepair.data.workspace_id || claimRepair.data.organisation_id || selectedWorkspaceId,
-          }),
+          () => withStepTimeout(
+            resolveCurrentWorkspace(user.id, {
+              client: supabase,
+              user,
+              profile,
+              requestedWorkspaceId: claimRepair.data.workspace_id || claimRepair.data.organisation_id || selectedWorkspaceId,
+            }),
+            {
+              label: 'workspace.resolveCurrentWorkspace.afterClaim',
+              timeoutMs: AUTH_BOOT_WORKSPACE_STEP_TIMEOUT_MS,
+            },
+          ),
           { label: 'workspace.resolveCurrentWorkspace.afterClaim', userId: user.id },
         ),
         {
@@ -531,12 +544,18 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       workspaceResolution = await runAuthBootStep(
         'workspace.resolveCurrentWorkspace.afterRepair',
         () => withTransientSchemaRetry(
-          () => resolveCurrentWorkspace(user.id, {
-            client: supabase,
-            user,
-            profile,
-            requestedWorkspaceId: repair.data.workspace_id || repair.data.organisation_id || currentWorkspace?.id,
-          }),
+          () => withStepTimeout(
+            resolveCurrentWorkspace(user.id, {
+              client: supabase,
+              user,
+              profile,
+              requestedWorkspaceId: repair.data.workspace_id || repair.data.organisation_id || currentWorkspace?.id,
+            }),
+            {
+              label: 'workspace.resolveCurrentWorkspace.afterRepair',
+              timeoutMs: AUTH_BOOT_WORKSPACE_STEP_TIMEOUT_MS,
+            },
+          ),
           { label: 'workspace.resolveCurrentWorkspace.afterRepair', userId: user.id },
         ),
         {

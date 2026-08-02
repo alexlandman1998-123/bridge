@@ -380,8 +380,8 @@ async function resolveSenderOrganisationBranding(
       normalizeText(brandingQuery.data?.organisation_display_name) ||
       senderOrganisationName;
     senderOrganisationLogoUrl =
-      normalizeText(brandingQuery.data?.logo_dark_url) ||
       normalizeText(brandingQuery.data?.logo_light_url) ||
+      normalizeText(brandingQuery.data?.logo_dark_url) ||
       senderOrganisationLogoUrl;
   } else if (brandingQuery.error) {
     console.error(
@@ -411,14 +411,14 @@ async function resolveSenderOrganisationBranding(
       branding.brandColours || branding.brand_colours ||
         branding.brandColors || branding.brand_colors,
     );
-    senderOrganisationLogoUrl = normalizeText(branding.logoDark) ||
-      normalizeText(branding.logoDarkUrl) ||
+    senderOrganisationLogoUrl = normalizeText(branding.logoLight) ||
+      normalizeText(branding.logoLightUrl) ||
       normalizeText(branding.logoHighContrast) ||
       normalizeText(branding.logoHighContrastUrl) ||
       normalizeText(branding.logo_url) ||
       normalizeText(branding.logoUrl) ||
-      normalizeText(branding.logoLight) ||
-      normalizeText(branding.logoLightUrl) ||
+      normalizeText(branding.logoDark) ||
+      normalizeText(branding.logoDarkUrl) ||
       senderOrganisationLogoUrl;
     senderBrandPrimaryColor = normalizeText(brandColours.primary) ||
       normalizeText(branding.primaryColor) ||
@@ -610,7 +610,7 @@ export async function handleSellerOnboardingEmail(
     },
   });
   senderOrganisationName = branding.organisationName;
-  senderOrganisationLogoUrl = branding.logoUrl || branding.logoIconUrl ||
+  senderOrganisationLogoUrl = branding.logoLightUrl || branding.logoUrl || branding.logoIconUrl ||
     senderOrganisationLogoUrl;
   supportEmail = branding.supportEmail || supportEmail;
   supportPhone = branding.supportPhone || supportPhone;

@@ -76,6 +76,7 @@ import {
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { activateSellerPortalForListing, SELLER_PORTAL_ACTIVATION_SOURCES } from '../../services/sellerPortalActivationService'
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { buildSellerDocumentSourceOfTruth } from '../../services/sellerDocumentRequirementsService'
@@ -760,11 +761,13 @@ function resolveMandatePacketStateHintFromLead(lead = {}) {
         : {}
   const mandatePacket = lead?.mandatePacket && typeof lead.mandatePacket === 'object' ? lead.mandatePacket : {}
   const packetId = normalizeText(lead?.mandatePacketId || lead?.mandate_packet_id || mandatePacket?.id)
-  const values = [
-    lead?.mandateStatus,
-    lead?.mandate_status,
+  const leadLifecycleValues = [
     lead?.stage,
     lead?.status,
+  ].map(normalizeKey)
+  const mandateScopedValues = [
+    lead?.mandateStatus,
+    lead?.mandate_status,
     sourceContext?.mandateStatus,
     sourceContext?.mandate_status,
     sourceContext?.signingStatus,
@@ -772,13 +775,28 @@ function resolveMandatePacketStateHintFromLead(lead = {}) {
     mandatePacket?.status,
     mandatePacket?.state,
   ].map(normalizeKey)
+  const values = [...mandateScopedValues, ...leadLifecycleValues]
 
-  if (values.some((value) => ['completed', 'complete', 'signed', 'mandate signed', 'mandate_signed'].includes(value))) return 'completed'
+  if (
+    mandateScopedValues.some((value) => ['completed', 'complete', 'signed', 'mandate signed', 'mandate_signed'].includes(value)) ||
+    leadLifecycleValues.some((value) =>
+      [
+        'mandate complete',
+        'mandate_complete',
+        'mandate signed',
+        'mandate_signed',
+        'listing live',
+        'listing_live',
+        'listing active',
+        'listing_active',
+      ].includes(value),
+    )
+  ) return 'completed'
   if (values.some((value) => ['finalising', 'finalizing'].includes(value))) return 'finalising'
   if (values.some((value) => ['partially_signed', 'partially signed'].includes(value))) return 'partially_signed'
   if (
     normalizeText(lead?.mandateSentAt || lead?.mandate_sent_at || lead?.mandateSigningLink || lead?.mandateSignerLink) ||
-    values.some((value) =>
+    mandateScopedValues.some((value) =>
       [
         'sent',
         'mandate sent',
@@ -789,6 +807,20 @@ function resolveMandatePacketStateHintFromLead(lead = {}) {
         'sent_to_seller',
         'ready for client signature',
         'ready_for_client_signature',
+        'seller signature requested',
+        'seller_signature_requested',
+        'awaiting seller signature',
+        'awaiting_seller_signature',
+      ].includes(value),
+    ) ||
+    leadLifecycleValues.some((value) =>
+      [
+        'mandate sent',
+        'mandate_sent',
+        'sent for signature',
+        'sent_for_signature',
+        'sent to seller',
+        'sent_to_seller',
         'seller signature requested',
         'seller_signature_requested',
         'awaiting seller signature',
@@ -819,16 +851,57 @@ function resolveMandatePacketStateHintFromLead(lead = {}) {
   return ''
 }
 
+function getMandateStatePriority(value) {
+  const state = normalizeKey(value)
+  if (['completed', 'complete', 'signed', 'mandate complete', 'mandate_complete', 'mandate signed', 'mandate_signed', 'fully_signed', 'uploaded_signed', 'listing live', 'listing_live', 'listing active', 'listing_active'].includes(state)) return 60
+  if (['publishing', 'finalising', 'finalizing'].includes(state)) return 55
+  if (['partially_signed', 'partially signed', 'agent_signed', 'seller_signed'].includes(state)) return 50
+  if (
+    [
+      'sent',
+      'mandate sent',
+      'mandate_sent',
+      'sent for signature',
+      'sent_for_signature',
+      'sent to seller',
+      'sent_to_seller',
+      'ready for client signature',
+      'ready_for_client_signature',
+      'seller signature requested',
+      'seller_signature_requested',
+      'awaiting seller signature',
+      'awaiting_seller_signature',
+    ].includes(state)
+  ) return 40
+  if (['ready_to_send', 'ready to send', 'signing_prep', 'signing prepared'].includes(state)) return 30
+  if (['pdf_generated', 'generated', 'mandate generated', 'mandate_generated'].includes(state)) return 20
+  if (['draft', 'mandate draft', 'mandate_draft', 'draft ready', 'draft_ready', 'mandate draft ready', 'mandate_draft_ready'].includes(state)) return 10
+  if (['no_packet', 'unknown'].includes(state)) return 0
+  return state ? 5 : 0
+}
+
 function hasExplicitMandateSentEvidence({ lead = {}, mandatePacketStatus = null } = {}) {
   const packet = mandatePacketStatus?.packet && typeof mandatePacketStatus.packet === 'object'
     ? mandatePacketStatus.packet
     : {}
+  const leadMandatePacket = lead?.mandatePacket && typeof lead.mandatePacket === 'object' ? lead.mandatePacket : {}
+  const leadSourceContext = lead?.sourceContext && typeof lead.sourceContext === 'object'
+    ? lead.sourceContext
+    : lead?.source_context_json && typeof lead.source_context_json === 'object'
+      ? lead.source_context_json
+      : {}
   const sourceContext = packet.source_context_json && typeof packet.source_context_json === 'object'
     ? packet.source_context_json
     : {}
-  const values = [
+  const mandateScopedValues = [
     lead?.mandateStatus,
     lead?.mandate_status,
+    leadSourceContext?.mandateStatus,
+    leadSourceContext?.mandate_status,
+    leadSourceContext?.signingStatus,
+    leadSourceContext?.signing_status,
+    leadMandatePacket?.status,
+    leadMandatePacket?.state,
     sourceContext?.mandateStatus,
     sourceContext?.mandate_status,
     sourceContext?.signingStatus,
@@ -837,6 +910,10 @@ function hasExplicitMandateSentEvidence({ lead = {}, mandatePacketStatus = null 
     mandatePacketStatus?.state,
     packet?.status,
     packet?.state,
+  ].map(normalizeKey)
+  const leadLifecycleValues = [
+    lead?.stage,
+    lead?.status,
   ].map(normalizeKey)
   const sentStates = new Set([
     'mandate sent',
@@ -852,11 +929,59 @@ function hasExplicitMandateSentEvidence({ lead = {}, mandatePacketStatus = null 
     'seller_signature_requested',
     'awaiting seller signature',
     'awaiting_seller_signature',
+    'partially_signed',
+    'partially signed',
+    'agent_signed',
+    'seller_signed',
+    'completed',
+    'complete',
+    'signed',
+    'mandate signed',
+    'mandate_signed',
+    'fully_signed',
+    'uploaded_signed',
+  ])
+  const leadLifecycleSentStates = new Set([
+    'mandate sent',
+    'mandate_sent',
+    'sent for signature',
+    'sent_for_signature',
+    'sent to seller',
+    'sent_to_seller',
+    'seller signature requested',
+    'seller_signature_requested',
+    'awaiting seller signature',
+    'awaiting_seller_signature',
+    'mandate signed',
+    'mandate_signed',
+    'mandate complete',
+    'mandate_complete',
+    'listing live',
+    'listing_live',
+    'listing active',
+    'listing_active',
   ])
   return Boolean(
-    normalizeText(lead?.mandateSentAt || lead?.mandate_sent_at || sourceContext?.mandateSentAt || sourceContext?.mandate_sent_at) ||
-      values.some((value) => sentStates.has(value)),
+    normalizeText(lead?.mandateSentAt || lead?.mandate_sent_at || leadSourceContext?.mandateSentAt || leadSourceContext?.mandate_sent_at || sourceContext?.mandateSentAt || sourceContext?.mandate_sent_at) ||
+      mandateScopedValues.some((value) => sentStates.has(value)) ||
+      leadLifecycleValues.some((value) => leadLifecycleSentStates.has(value)),
   )
+}
+
+function hasMandateDeliveredOrSignedEvidence({ lead = {}, mandatePacketStatus = null } = {}) {
+  const leadHint = resolveMandatePacketStateHintFromLead(lead)
+  const packet = mandatePacketStatus?.packet && typeof mandatePacketStatus.packet === 'object'
+    ? mandatePacketStatus.packet
+    : {}
+  const values = [
+    leadHint,
+    mandatePacketStatus?.state,
+    mandatePacketStatus?.signingStatus,
+    packet?.status,
+    packet?.state,
+  ]
+  return values.some((value) => getMandateStatePriority(value) >= 40) ||
+    hasExplicitMandateSentEvidence({ lead, mandatePacketStatus })
 }
 
 const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity', 'listing_journey'])
@@ -6160,6 +6285,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLead = selectedLeadId
     ? (allLeadById.get(selectedLeadId) || leadById.get(selectedLeadId) || allLeadById.get(selectedLeadKey) || leadById.get(selectedLeadKey) || null)
     : null
+  const selectedLeadWorkspaceRouteHydrating = Boolean(isLeadWorkspaceRoute && routeLeadId && routeLeadHydrationStatus === 'loading')
 
   const selectedLeadContact = useMemo(() => {
     if (!selectedLead) return null
@@ -6924,8 +7050,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedLeadMandateResolvedState = useMemo(() => {
     const packetState = normalizeKey(mandatePacketStatus?.state)
+    const leadState = resolveMandatePacketStateHintFromLead(selectedLead)
+    if (leadState && getMandateStatePriority(leadState) > getMandateStatePriority(packetState)) return leadState
     if (packetState && !['no_packet', 'unknown'].includes(packetState)) return mandatePacketStatus?.state
-    return resolveMandatePacketStateHintFromLead(selectedLead) || mandatePacketStatus?.state
+    return leadState || mandatePacketStatus?.state
   }, [mandatePacketStatus?.state, selectedLead])
   const selectedLeadMandateActionState = useMemo(
     () =>
@@ -11238,7 +11366,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       const existingPacket = await loadExistingPacket()
-      if (['sent', 'partially_signed', 'signed', 'archived'].includes(normalizeText(existingPacket?.status).toLowerCase())) {
+      if (['sent', 'partially_signed', 'signed', 'completed', 'archived'].includes(normalizeText(existingPacket?.status).toLowerCase())) {
         const blocker = 'This mandate is already sent or signed. Open the current packet instead of generating a new draft.'
         setError(blocker)
         throw new Error(blocker)
@@ -11479,6 +11607,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       const backgroundGenerationQueued = generatedVersionResult?.backgroundGenerationQueued === true
       const draftReadyOnly = generatedVersionResult?.draftReadyOnly === true
+      const mandateAlreadyDeliveredOrSigned = hasMandateDeliveredOrSignedEvidence({ lead: selectedLead, mandatePacketStatus })
+      if (mandateAlreadyDeliveredOrSigned) {
+        const deliveredState = selectedLeadMandateResolvedState || resolveMandatePacketStateHintFromLead(selectedLead)
+        setError('')
+        setMessage(
+          getMandateStatePriority(deliveredState) >= 60
+            ? 'This mandate is already signed. Open the signed mandate instead of generating another draft.'
+            : 'This mandate is already sent for signature. Open the current mandate instead of generating another draft.',
+        )
+        onProgress?.(getMandateStatePriority(deliveredState) >= 60 ? 'Mandate already signed.' : 'Mandate already sent.')
+        return {
+          packet,
+          version: generatedVersionResult?.version || null,
+          status: mandatePacketStatus,
+          backgroundGenerationQueued,
+          draftReadyOnly,
+          alreadyDeliveredOrSigned: true,
+          generationErrorCode: generatedVersionResult?.generationErrorCode || null,
+          job: generatedVersionResult?.job || null,
+        }
+      }
       const nextLeadMandateStatus = backgroundGenerationQueued
         ? 'Mandate Generating'
         : draftReadyOnly
@@ -11597,7 +11746,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         job: generatedVersionResult?.job || null,
       }
     } catch (mandateError) {
-      if (selectedLead?.leadId && mandateError?.code !== 'MANDATE_PREFLIGHT_BLOCKED') {
+      const mandateAlreadyDeliveredOrSigned = hasMandateDeliveredOrSignedEvidence({ lead: selectedLead, mandatePacketStatus })
+      if (selectedLead?.leadId && mandateError?.code !== 'MANDATE_PREFLIGHT_BLOCKED' && !mandateAlreadyDeliveredOrSigned) {
         await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
           agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
           activityType: 'Note',
@@ -11607,7 +11757,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           console.warn('[MANDATE] failure activity write skipped.', activityError)
         })
       }
-      if (!isAmbiguousLegalDocumentGenerationFailure(mandateError)) {
+      if (mandateAlreadyDeliveredOrSigned) {
+        setError('')
+        setMessage('This mandate is already sent or signed. Open the current mandate instead of generating another draft.')
+      } else if (!isAmbiguousLegalDocumentGenerationFailure(mandateError)) {
         setError(formatLegalDocumentGenerationRecovery(mandateError, { packetType: 'mandate' }))
       }
       throw mandateError
@@ -11899,7 +12052,68 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       openSellerContactFeedbackModal()
       return
     }
+    if (selectedLeadOnboardingCompleted) {
+      void handleSendSellerPortalLink()
+      return
+    }
     void handleSendSellerOnboarding()
+  }
+
+  async function handleSendSellerPortalLink() {
+    if (!selectedLead || !selectedLeadIsSeller) return
+    if (isSellerOnboardingSending) return
+    const listingId = normalizeText(
+      selectedLeadLinkedListing?.id ||
+        selectedLead?.listingId ||
+        selectedLead?.listing_id ||
+        selectedLead?.privateListingId ||
+        selectedLead?.private_listing_id,
+    )
+    if (!listingId) {
+      setError('Seller Portal link can only be resent after this seller lead is linked to a listing.')
+      return
+    }
+    const sellerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email)
+    if (!isValidEmail(sellerEmail)) {
+      setError('Seller email is required to resend the Seller Portal link.')
+      return
+    }
+
+    setIsSellerOnboardingSending(true)
+    setError('')
+    setMessage('Preparing Seller Portal link...')
+    try {
+      await activateSellerPortalForListing({
+        listingId,
+        activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
+        sellerContactEmail: sellerEmail,
+        sellerContactPhone: normalizeText(selectedLeadContact?.phone || selectedLead?.sellerPhone || selectedLead?.phone),
+        sellerFirstName: normalizeText(selectedLeadContact?.firstName || selectedLead?.sellerName),
+        sellerSurname: normalizeText(selectedLeadContact?.lastName || selectedLead?.sellerSurname),
+        performedBy: normalizeText(currentAgent?.id || profile?.id),
+        agentName: normalizeText(currentAgent?.fullName || currentAgent?.name || currentAgent?.email),
+        agentEmail: normalizeText(currentAgent?.email),
+        agentPhone: normalizeText(currentAgent?.phone || currentAgent?.mobile || currentAgent?.contactNumber || currentAgent?.contact_number),
+        organisationId,
+        agencyName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+        propertyAddress: normalizeText(selectedLeadLinkedListing?.propertyAddress || selectedLeadLinkedListing?.formattedAddress || selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea || selectedLead?.propertyInterest),
+      })
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Seller Portal Link Sent',
+        activityNote: `Seller Portal link was sent to ${sellerEmail}.`,
+        outcome: 'Seller Portal link sent',
+        activityDate: new Date().toISOString(),
+      }, { actor: currentAgent }).catch((activityError) => {
+        console.warn('[Seller Portal] lead activity write skipped after portal resend.', activityError)
+      })
+      setMessage(`Seller Portal link sent to ${sellerEmail}.`)
+      scheduleRecordsReload(organisationId, 850)
+    } catch (portalError) {
+      setError(portalError?.message || 'Unable to resend the Seller Portal link right now.')
+    } finally {
+      setIsSellerOnboardingSending(false)
+    }
   }
 
   function handleSellerJourneyAction(actionId) {
@@ -11926,6 +12140,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (id === 'send_seller_onboarding') {
+      if (selectedLeadOnboardingCompleted) {
+        void handleSendSellerPortalLink()
+        return
+      }
       void handleSendSellerOnboarding()
       return
     }
@@ -12669,6 +12887,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMandateQuickStartNotice('')
       return
     }
+    if (hasMandateDeliveredOrSignedEvidence({ lead: selectedLead, mandatePacketStatus })) {
+      const deliveredState = normalizeKey(selectedLeadMandateResolvedState || resolveMandatePacketStateHintFromLead(selectedLead))
+      const viewAction = getMandateStatePriority(deliveredState) >= 60 ? 'view_signed' : 'view'
+      setMandateQuickStartOpen(false)
+      setMandateQuickStartStep('details')
+      setMandateQuickStartSigningMethod('')
+      setMandateQuickStartPacketId('')
+      setMandateQuickStartPacketVersionId('')
+      setMandateQuickStartEmailDraft({ agent: '', seller: '' })
+      setMandateQuickStartError('')
+      setMandateQuickStartNotice('')
+      setMandateQuickStartProgress('')
+      setError('')
+      setMessage(
+        viewAction === 'view_signed'
+          ? 'This mandate is already signed. Open the signed mandate instead of generating another draft.'
+          : 'This mandate is already sent for signature. Open the current mandate instead of generating another draft.',
+      )
+      openSelectedLeadMandateWorkspace(viewAction)
+      return
+    }
     if (selectedLeadMandateQuickStartBlockers.length) {
       setMandateQuickStartError(selectedLeadMandateQuickStartBlockers[0])
       setMandateQuickStartNotice('')
@@ -12809,6 +13048,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setMandateQuickStartProgress('')
     } catch (quickStartError) {
       setMandateQuickStartNotice('')
+      const mandateAlreadyDeliveredOrSigned = hasMandateDeliveredOrSignedEvidence({ lead: selectedLead, mandatePacketStatus })
+      if (mandateAlreadyDeliveredOrSigned) {
+        setMandateQuickStartOpen(false)
+        setMandateQuickStartError('')
+        setError('')
+        setMessage('This mandate is already sent or signed. Open the current mandate instead of generating another draft.')
+        openSelectedLeadMandateWorkspace(getMandateStatePriority(selectedLeadMandateResolvedState) >= 60 ? 'view_signed' : 'view')
+        return
+      }
       const recoveryMessage = quickStartError?.code || quickStartError?.details || quickStartError?.validation
         ? formatLegalDocumentGenerationRecovery(quickStartError, { packetType: 'mandate' })
         : ''
@@ -16657,7 +16905,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </Button>
                 </section>
               ) : null}
-              {selectedLead ? (
+              {selectedLead && !selectedLeadWorkspaceRouteHydrating ? (
                 <div className={`mt-6 grid min-w-0 gap-6 ${!selectedLeadIsSeller && (leadWorkspaceTab === 'overview' || leadWorkspaceTab === 'activity') ? 'xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
                   <div className="min-w-0 space-y-6">
                   {leadWorkspaceTab === 'overview' && selectedLeadIsSeller ? (

@@ -146,12 +146,32 @@ assert.ok(
   'Selected seller leads should recognise camelCase, snake_case, and nested mandate packet ids.',
 )
 assert.ok(
-  source.includes("if (packetState && !['no_packet', 'unknown'].includes(packetState)) return mandatePacketStatus?.state"),
-  'Mandate quick-start should trust resolved packet status once it is available.',
+  source.includes('if (leadState && getMandateStatePriority(leadState) > getMandateStatePriority(packetState)) return leadState'),
+  'Mandate quick-start should let sent/signed lead evidence outrank stale packet draft state.',
 )
 assert.ok(
-  source.includes('return resolveMandatePacketStateHintFromLead(selectedLead) || mandatePacketStatus?.state'),
+  source.includes('return leadState || mandatePacketStatus?.state'),
   'Mandate quick-start should use selected-lead mandate evidence while packet status is still stale.',
+)
+assert.ok(
+  source.includes('hasMandateDeliveredOrSignedEvidence({ lead: selectedLead, mandatePacketStatus })'),
+  'Mandate quick-start should not offer regeneration after sent or signed mandate evidence exists.',
+)
+assert.ok(
+  source.includes('alreadyDeliveredOrSigned: true') &&
+    source.includes('This mandate is already signed. Open the signed mandate instead of generating another draft.'),
+  'Draft-only generation success should not overwrite already sent or signed mandate state.',
+)
+assert.ok(
+  source.includes('selectedLeadWorkspaceRouteHydrating') &&
+    source.includes('selectedLead && !selectedLeadWorkspaceRouteHydrating'),
+  'Direct lead routes should not render seller journey cards from partial CRM data while route hydration is loading.',
+)
+assert.ok(
+  source.includes('activateSellerPortalForListing') &&
+    source.includes('SELLER_PORTAL_ACTIVATION_SOURCES.existingListing') &&
+    source.includes('void handleSendSellerPortalLink()'),
+  'Completed seller onboarding portal resends should use the Seller Portal invite flow instead of seller onboarding attorney selection.',
 )
 assert.ok(
   source.includes("normalizeKey(selectedLeadMandateTemplateReadiness?.status) !== 'checking'") &&

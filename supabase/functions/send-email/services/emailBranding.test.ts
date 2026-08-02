@@ -59,6 +59,7 @@ Deno.test("normalizeEmailBranding accepts canonical and legacy payload aliases",
   const branding = normalizeEmailBranding({
     organisation_id: "org-1",
     organisation_name: "Kingstons",
+    logo_light_url: "https://cdn.example.test/logo-light.png",
     logo_dark_url: "https://cdn.example.test/logo-dark.png",
     organisation_brand_primary_color: "#123abc",
     organisation_brand_secondary_color: "#fedcba",
@@ -68,7 +69,9 @@ Deno.test("normalizeEmailBranding accepts canonical and legacy payload aliases",
 
   assertEquals(branding.organisationId, "org-1");
   assertEquals(branding.organisationName, "Kingstons");
-  assertEquals(branding.logoUrl, "https://cdn.example.test/logo-dark.png");
+  assertEquals(branding.logoUrl, "https://cdn.example.test/logo-light.png");
+  assertEquals(branding.logoLightUrl, "https://cdn.example.test/logo-light.png");
+  assertEquals(branding.logoDarkUrl, "https://cdn.example.test/logo-dark.png");
   assertEquals(branding.primaryColor, "#123abc");
   assertEquals(branding.secondaryColor, "#fedcba");
   assertEquals(branding.supportEmail, "hello@example.test");
@@ -174,6 +177,8 @@ Deno.test("resolveEmailBranding merges database sources and lets payload fields 
   assertEquals(branding.organisationId, "org-1");
   assertEquals(branding.organisationName, "Payload Organisation");
   assertEquals(branding.logoUrl, "https://cdn.example.test/branding-logo.png");
+  assertEquals(branding.logoLightUrl, "https://cdn.example.test/settings-logo.png");
+  assertEquals(branding.logoDarkUrl, "https://cdn.example.test/branding-logo.png");
   assertEquals(branding.primaryColor, "#444444");
   assertEquals(branding.secondaryColor, "#333333");
   assertEquals(branding.supportEmail, "org@example.test");
