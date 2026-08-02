@@ -68,6 +68,7 @@
     "test:workspace-branding-integrity-phase6": "node scripts/workspace-branding-integrity-phase6.test.mjs",
     "test:workspace-branding-rollout-phase7": "node scripts/workspace-branding-rollout-phase7.test.mjs",
     "test:workspace-branding-release-phase8": "node scripts/workspace-branding-release-phase8.test.mjs",
+    "test:auth-bridge-bootstrap-timeout": "node scripts/auth-bridge-bootstrap-timeout.test.mjs",
     "audit:workspace-branding-integrity": "node --env-file=.env --env-file=.env.staging.local scripts/workspace-branding-integrity-audit.mjs",
     "verify:workspace-branding-rollout:staging": "npm run test:workspace-branding-rollout-phase7 && npm run audit:workspace-branding-integrity -- --strict",
     "verify:workspace-branding-browser:staging": "node --env-file=.env --env-file=.env.staging.local scripts/workspace-branding-browser-staging-smoke.mjs",

@@ -20,6 +20,7 @@ import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCa
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 15000
 const BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS = 45000
 const BRIDGE_AUTH_BOOTSTRAP_SLOW_MS = 15000
+const BRIDGE_AUTH_BOOTSTRAP_TRANSIENT_RETRY_DELAYS_MS = Object.freeze([1200, 3200])
 
 const EMPTY_AUTH_STATE = Object.freeze({
   status: 'loading',
@@ -162,6 +163,73 @@ async function withBootstrapTimeout(task, {
   } finally {
     if (timeoutId) window.clearTimeout(timeoutId)
   }
+}
+
+function getBootstrapErrorText(error) {
+  return [
+    error?.code,
+    error?.name,
+    error?.message,
+    error?.details,
+    error?.hint,
+    error?.status,
+    error?.statusCode,
+  ]
+    .filter((value) => value !== null && value !== undefined && value !== '')
+    .join(' ')
+    .toLowerCase()
+}
+
+function isRecoverableBridgeBootstrapError(error) {
+  const status = Number(error?.status || error?.statusCode || 0)
+  const text = getBootstrapErrorText(error)
+  return (
+    error?.code === 'PGRST002' ||
+    [408, 429, 500, 502, 503, 504].includes(status) ||
+    text.includes('failed to fetch') ||
+    text.includes('networkerror') ||
+    text.includes('network request failed') ||
+    text.includes('load failed') ||
+    text.includes('schema cache') ||
+    text.includes('retrying') ||
+    text.includes('temporarily unavailable') ||
+    text.includes('timeout')
+  )
+}
+
+function delayBridgeBootstrapRetry(delayMs) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, delayMs)
+  })
+}
+
+async function loadBridgeAuthStateWithTransientRetry({
+  session,
+  selectedWorkspaceId = '',
+  onTransientRetry = null,
+} = {}) {
+  let lastError = null
+  const maxAttempts = BRIDGE_AUTH_BOOTSTRAP_TRANSIENT_RETRY_DELAYS_MS.length + 1
+  for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex += 1) {
+    try {
+      return await loadBridgeAuthState({ session, selectedWorkspaceId })
+    } catch (error) {
+      lastError = error
+      const retryDelayMs = BRIDGE_AUTH_BOOTSTRAP_TRANSIENT_RETRY_DELAYS_MS[attemptIndex]
+      if (retryDelayMs === undefined || !isRecoverableBridgeBootstrapError(error)) {
+        throw error
+      }
+      onTransientRetry?.({
+        error,
+        attempt: attemptIndex + 1,
+        nextAttempt: attemptIndex + 2,
+        maxAttempts,
+        retryDelayMs,
+      })
+      await delayBridgeBootstrapRetry(retryDelayMs)
+    }
+  }
+  throw lastError || new Error('Unable to load your Arch9 workspace.')
 }
 
 export function AuthSessionProvider({ children }) {
@@ -370,7 +438,39 @@ export function AuthSessionProvider({ children }) {
             },
           })
         }, BRIDGE_AUTH_BOOTSTRAP_SLOW_MS)
-        const nextState = await withBootstrapTimeout(loadBridgeAuthState({ session, selectedWorkspaceId }), {
+        const nextState = await withBootstrapTimeout(loadBridgeAuthStateWithTransientRetry({
+          session,
+          selectedWorkspaceId,
+          onTransientRetry: ({ error, attempt, nextAttempt, maxAttempts, retryDelayMs }) => {
+            const diagnostics = getActiveAuthBootStepDiagnostics()
+            console.warn('[AUTH] bridge-boot:transient-retry', {
+              userId: session.user.id,
+              selectedWorkspaceId: selectedWorkspaceId || null,
+              attempt,
+              nextAttempt,
+              maxAttempts,
+              retryDelayMs,
+              error,
+              activeSteps: diagnostics,
+            })
+            void trackAuthMetric('auth_boot_transient_retry', {
+              userId: session.user.id,
+              metadata: {
+                selectedWorkspaceId: selectedWorkspaceId || null,
+                attempt,
+                nextAttempt,
+                maxAttempts,
+                retryDelayMs,
+                errorCode: error?.code || '',
+                errorMessage: error?.message || '',
+                activeSteps: diagnostics.map((step) => ({
+                  label: step.label,
+                  durationMs: step.durationMs,
+                })),
+              },
+            })
+          },
+        }), {
           timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
           phase: 'bridge',
           getDiagnostics: getActiveAuthBootStepDiagnostics,
@@ -449,7 +549,7 @@ export function AuthSessionProvider({ children }) {
     return () => {
       active = false
     }
-  }, [bootAttempt, devAuthRole, productionSafetyViolation, selectedWorkspaceId, sessionLoading, sessionUserId])
+  }, [bootAttempt, devAuthRole, productionSafetyViolation, selectedWorkspaceId, session, sessionLoading, sessionUserId])
 
   const refreshAuthState = useCallback(() => {
     setBootAttempt((previous) => previous + 1)

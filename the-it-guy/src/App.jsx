@@ -32,7 +32,7 @@ import {
   isCommercialBrokerMember,
   isCommercialProfessionalMember,
 } from './lib/commercialAccess'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
 const INACTIVITY_TIMEOUT_MINUTES = 15
 const WARNING_BEFORE_LOGOUT_MINUTES = 1
@@ -814,6 +814,11 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   const sessionOutOfSync =
     normalizedProfileError.includes('user from sub claim in jwt does not exist')
     || normalizedProfileError.includes('session is out of sync')
+  const restartSignIn = useCallback(() => {
+    void Promise.resolve(onLogout?.()).finally(() => {
+      window.location.assign('/auth')
+    })
+  }, [onLogout])
 
   useEffect(() => {
     if (!sessionOutOfSync || didHandleSessionMismatchRef.current) {
@@ -821,10 +826,8 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
     }
     didHandleSessionMismatchRef.current = true
     console.debug('[REDIRECT] auth:session-out-of-sync', { target: '/auth' })
-    void Promise.resolve(onLogout?.()).finally(() => {
-      window.location.assign('/auth')
-    })
-  }, [onLogout, sessionOutOfSync])
+    restartSignIn()
+  }, [restartSignIn, sessionOutOfSync])
 
   if (waitingOnWorkspace) {
     if (loadingSlow) {
@@ -848,10 +851,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
               <button
                 type="button"
                 className="auth-secondary-cta"
-                onClick={() => {
-                  onLogout?.()
-                  window.location.assign('/auth')
-                }}
+                onClick={restartSignIn}
               >
                 Restart Sign-in
               </button>
@@ -894,7 +894,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
             <button
               type="button"
               className="auth-secondary-cta"
-              onClick={() => window.location.assign('/auth')}
+              onClick={restartSignIn}
             >
               Go to Sign-in
             </button>
