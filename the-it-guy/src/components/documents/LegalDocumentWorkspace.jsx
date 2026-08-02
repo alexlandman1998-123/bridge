@@ -3734,12 +3734,20 @@ export default function LegalDocumentWorkspace({
     if (!initialStatus) return
     statusStateRef.current = initialStatus
     setStatusState(initialStatus)
-    if (initialStatus?.legalDocumentJob) setBackgroundGenerationJob(initialStatus.legalDocumentJob)
+    setBackgroundGenerationJob(
+      isActiveLegalDocumentGenerationJob(initialStatus?.legalDocumentJob)
+        ? initialStatus.legalDocumentJob
+        : null,
+    )
   }, [initialStatus])
 
   useEffect(() => {
     statusStateRef.current = statusState
-    if (statusState?.legalDocumentJob) setBackgroundGenerationJob(statusState.legalDocumentJob)
+    setBackgroundGenerationJob(
+      isActiveLegalDocumentGenerationJob(statusState?.legalDocumentJob)
+        ? statusState.legalDocumentJob
+        : null,
+    )
   }, [statusState])
 
   useEffect(() => {
