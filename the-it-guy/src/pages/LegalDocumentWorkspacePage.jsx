@@ -4028,9 +4028,13 @@ export default function LegalDocumentWorkspacePage() {
     if (resetMandatePacket) {
       onProgress?.('Resetting failed mandate packet...')
       if (isUuidLike(existingPacketIdForReset)) {
-        await archivePacket(existingPacketIdForReset, {
-          reason: 'Reset failed mandate before regeneration.',
-        }).catch((resetError) => {
+        await withLegalWorkspaceTimeout(
+          archivePacket(existingPacketIdForReset, {
+            reason: 'Reset failed mandate before regeneration.',
+          }),
+          'Failed mandate packet reset is taking too long.',
+          generationLookupTimeoutMs,
+        ).catch((resetError) => {
           console.warn('[LegalDocumentWorkspacePage] failed mandate packet could not be archived; continuing with fresh packet generation.', resetError)
         })
       }
