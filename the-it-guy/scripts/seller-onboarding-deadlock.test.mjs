@@ -6,6 +6,7 @@ const listingDetailSource = await fs.readFile(new URL('src/pages/AgentListingDet
 const privateListingSource = await fs.readFile(new URL('src/services/privateListingService.js', appRoot), 'utf8')
 const agencyPipelineSource = await fs.readFile(new URL('src/pages/agency/AgencyPipelinePage.jsx', appRoot), 'utf8')
 const sellerOnboardingSource = await fs.readFile(new URL('src/pages/SellerOnboarding.jsx', appRoot), 'utf8')
+const sellerOnboardingCoreApiSource = await fs.readFile(new URL('server/services/sellerOnboardingCoreApi.js', appRoot), 'utf8')
 
 const editSellerHandler = listingDetailSource.match(/function handleEditSellerProfile\(\) \{[\s\S]*?\n  }\n\n  async function handleSaveSellerContact/)?.[0] || ''
 const saveSellerHandler = listingDetailSource.match(/async function handleSaveSellerContact\(event\) \{[\s\S]*?\n  }\n\n  function handleDownloadSellerProfilePdf/)?.[0] || ''
@@ -31,5 +32,7 @@ assert.match(sendOnboarding, /preferredTransferAttorney = requestedPreferredAtto
 assert.match(agencyPipelineSource, /transferAttorneyPreferredSelection: preferredAttorney/, 'Agency seller onboarding must pass the selected transfer attorney object.')
 assert.match(agencyPipelineSource, /partnerRelationshipId: relationshipId/, 'Connected transfer attorney options must preserve the relationship id.')
 assert.match(sellerOnboardingSource, /existing\.preferred_transfer_attorney/, 'Seller onboarding must read legacy snake-case preferred transfer attorney payloads.')
+assert.match(sellerOnboardingCoreApiSource, /resolveTokenScopedPreferredTransferAttorney/, 'Public seller onboarding core API should recover missing preferred transfer attorney snapshots.')
+assert.match(sellerOnboardingCoreApiSource, /preferredTransferAttorney,[\s\S]*preferred_transfer_attorney: preferredTransferAttorney/, 'Recovered preferred transfer attorney should be exposed in camel-case and snake-case form data.')
 
 console.log('seller onboarding deadlock checks passed')

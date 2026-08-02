@@ -181,6 +181,167 @@ function publicOnboardingRow(row = null) {
   return safeRow
 }
 
+function hasPreferredTransferAttorney(formData = {}) {
+  const source = formData && typeof formData === 'object' ? formData : {}
+  const attorney = source.preferredTransferAttorney && typeof source.preferredTransferAttorney === 'object'
+    ? source.preferredTransferAttorney
+    : source.preferred_transfer_attorney && typeof source.preferred_transfer_attorney === 'object'
+      ? source.preferred_transfer_attorney
+      : null
+  if (!attorney) return false
+  return Boolean(
+    normalizeText(attorney.preferredPartnerId || attorney.preferred_partner_id || attorney.partnerRelationshipId || attorney.partner_relationship_id || attorney.id) ||
+      normalizeText(attorney.companyName || attorney.company_name || attorney.name),
+  )
+}
+
+function getOrganisationContactEmail(organisation = {}) {
+  const settings = organisation.settings_json && typeof organisation.settings_json === 'object' ? organisation.settings_json : {}
+  return normalizeText(
+    organisation.contact_email ||
+      organisation.contactEmail ||
+      settings.contactEmail ||
+      settings.contact_email ||
+      settings.email ||
+      settings.inviteEmail,
+  ).toLowerCase()
+}
+
+function mapPreferredPartnerAttorney(row = null) {
+  if (!row?.id) return null
+  const companyName = normalizeText(row.company_name || row.companyName || row.name)
+  if (!companyName) return null
+  return {
+    preferredPartnerId: normalizeText(row.id),
+    preferred_partner_id: normalizeText(row.id),
+    partnerRelationshipId: normalizeText(row.partner_relationship_id || row.partnerRelationshipId || row.id),
+    partner_relationship_id: normalizeText(row.partner_relationship_id || row.partnerRelationshipId || row.id),
+    partnerOrganisationId: normalizeText(row.partner_organisation_id || row.partnerOrganisationId),
+    partner_organisation_id: normalizeText(row.partner_organisation_id || row.partnerOrganisationId),
+    companyName,
+    company_name: companyName,
+    contactPerson: normalizeText(row.contact_person || row.contactPerson || companyName),
+    contact_person: normalizeText(row.contact_person || row.contactPerson || companyName),
+    email: normalizeText(row.email_address || row.emailAddress || row.email).toLowerCase(),
+    phone: normalizeText(row.phone_number || row.phoneNumber || row.phone),
+    selectionSource: 'agency_recommended',
+    selection_source: 'agency_recommended',
+  }
+}
+
+function relationshipIsAccepted(row = {}) {
+  const statuses = [row.relationship_status, row.status, row.relationship_type].map((value) => normalizeText(value).toLowerCase())
+  return statuses.includes('accepted') || statuses.includes('approved') || statuses.includes('connected')
+}
+
+function relationshipLooksLikeTransferAttorney(row = {}) {
+  const tokens = [row.partner_type, row.relationship_type, row.role_type, row.role].map((value) => normalizeText(value).toLowerCase())
+  if (!tokens.some(Boolean)) return true
+  return tokens.some((token) => token.includes('attorney') || token.includes('convey') || token.includes('transfer'))
+}
+
+async function resolveConnectedTransferAttorney(client, organisationId = '') {
+  const scopedOrganisationId = normalizeText(organisationId)
+  if (!scopedOrganisationId) return null
+
+  const relationships = await client
+    .from('organisation_partners')
+    .select('id, organisation_id, partner_organisation_id, partner_type, status, relationship_status, relationship_type, preferred')
+    .or(`organisation_id.eq.${scopedOrganisationId},partner_organisation_id.eq.${scopedOrganisationId}`)
+    .limit(20)
+
+  if (relationships.error) {
+    if (['42P01', '42703'].includes(String(relationships.error.code || ''))) return null
+    throw relationships.error
+  }
+
+  const relationship = (relationships.data || [])
+    .filter((row) => relationshipIsAccepted(row) && relationshipLooksLikeTransferAttorney(row))
+    .sort((left, right) => Number(Boolean(right.preferred)) - Number(Boolean(left.preferred)))[0]
+  if (!relationship?.id) return null
+
+  const ownerOrganisationId = normalizeText(relationship.organisation_id)
+  const partnerOrganisationId = normalizeText(relationship.partner_organisation_id)
+  const attorneyOrganisationId = ownerOrganisationId === scopedOrganisationId ? partnerOrganisationId : ownerOrganisationId
+  if (!attorneyOrganisationId || attorneyOrganisationId === scopedOrganisationId) return null
+
+  const organisation = await maybeSingle(
+    client,
+    'organisations',
+    'id, name, display_name, legal_name, settings_json',
+    'id',
+    attorneyOrganisationId,
+  ).catch((error) => {
+    if (['42P01', '42703'].includes(String(error?.code || ''))) return null
+    throw error
+  })
+  const companyName = normalizeText(organisation?.display_name || organisation?.name || organisation?.legal_name)
+  if (!companyName) return null
+
+  return {
+    preferredPartnerId: normalizeText(relationship.id),
+    preferred_partner_id: normalizeText(relationship.id),
+    partnerRelationshipId: normalizeText(relationship.id),
+    partner_relationship_id: normalizeText(relationship.id),
+    partnerOrganisationId: attorneyOrganisationId,
+    partner_organisation_id: attorneyOrganisationId,
+    companyName,
+    company_name: companyName,
+    contactPerson: companyName,
+    contact_person: companyName,
+    email: getOrganisationContactEmail(organisation),
+    phone: '',
+    selectionSource: 'connected_partner',
+    selection_source: 'connected_partner',
+  }
+}
+
+async function resolveTokenScopedPreferredTransferAttorney(client, listing = {}) {
+  const organisationId = normalizeText(listing.organisation_id || listing.organisationId)
+  if (!organisationId) return null
+
+  const preferred = await client
+    .from('organisation_preferred_partners')
+    .select('id, partner_organisation_id, company_name, contact_person, email_address, phone_number, is_preferred_default')
+    .eq('organisation_id', organisationId)
+    .eq('partner_type', 'transfer_attorney')
+    .eq('is_active', true)
+    .order('is_preferred_default', { ascending: false })
+    .order('company_name', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (preferred.error && !['42P01', '42703', 'PGRST116'].includes(String(preferred.error.code || ''))) {
+    throw preferred.error
+  }
+  const preferredPartnerAttorney = mapPreferredPartnerAttorney(preferred.data)
+  if (preferredPartnerAttorney) return preferredPartnerAttorney
+
+  return resolveConnectedTransferAttorney(client, organisationId)
+}
+
+async function enrichOnboardingPreferredTransferAttorney(client, onboarding = {}, listing = {}) {
+  if (!onboarding?.id) return onboarding
+  const formData = onboarding.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {}
+  if (hasPreferredTransferAttorney(formData)) return onboarding
+
+  const preferredTransferAttorney = await resolveTokenScopedPreferredTransferAttorney(client, listing)
+  if (!preferredTransferAttorney) return onboarding
+
+  return {
+    ...onboarding,
+    form_data: {
+      ...formData,
+      transferAttorneyChoice: normalizeText(formData.transferAttorneyChoice || formData.transfer_attorney_choice || 'preferred') || 'preferred',
+      transfer_attorney_choice: normalizeText(formData.transfer_attorney_choice || formData.transferAttorneyChoice || 'preferred') || 'preferred',
+      preferredTransferAttorney,
+      preferred_transfer_attorney: preferredTransferAttorney,
+      preferredTransferAttorneyAccepted: false,
+      preferredTransferAttorneyAcceptance: null,
+    },
+  }
+}
+
 async function maybeSingle(client, table, select, column, value) {
   const normalizedValue = normalizeText(value)
   if (!normalizedValue) return null
@@ -329,10 +490,11 @@ export async function createSellerOnboardingCoreResponse({ method = 'GET', url =
       })
     }
 
+    const enrichedOnboarding = await enrichOnboardingPreferredTransferAttorney(client, onboarding, listing)
     const transaction = await resolveTransaction(client, listing)
     const body = {
       listing,
-      onboarding: publicOnboardingRow(onboarding),
+      onboarding: publicOnboardingRow(enrichedOnboarding),
       transaction,
       requirements: [],
       documents: [],
@@ -340,16 +502,16 @@ export async function createSellerOnboardingCoreResponse({ method = 'GET', url =
       mandatePacket: null,
       corePayload: true,
       tokenKind: resolution.tokenKind,
-      stablePortalToken: onboarding.seller_portal_token || null,
-      stablePortalPath: onboarding.seller_portal_token ? `/client/${onboarding.seller_portal_token}/selling` : null,
+      stablePortalToken: enrichedOnboarding.seller_portal_token || null,
+      stablePortalPath: enrichedOnboarding.seller_portal_token ? `/client/${enrichedOnboarding.seller_portal_token}/selling` : null,
       portalAccess: {
-        passwordSet: Boolean(onboarding.seller_portal_password_hash),
+        passwordSet: Boolean(enrichedOnboarding.seller_portal_password_hash),
         accessGranted: true,
-        expiresAt: onboarding.seller_portal_access_token_expires_at || null,
-        portalLinkExpiresAt: onboarding.seller_portal_link_expires_at || null,
+        expiresAt: enrichedOnboarding.seller_portal_access_token_expires_at || null,
+        portalLinkExpiresAt: enrichedOnboarding.seller_portal_link_expires_at || null,
         tokenKind: resolution.tokenKind,
-        stablePortalToken: onboarding.seller_portal_token || null,
-        stablePortalPath: onboarding.seller_portal_token ? `/client/${onboarding.seller_portal_token}/selling` : null,
+        stablePortalToken: enrichedOnboarding.seller_portal_token || null,
+        stablePortalPath: enrichedOnboarding.seller_portal_token ? `/client/${enrichedOnboarding.seller_portal_token}/selling` : null,
       },
     }
 
