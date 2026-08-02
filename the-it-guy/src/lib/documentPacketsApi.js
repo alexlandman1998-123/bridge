@@ -470,6 +470,99 @@ async function createSignedUrlAcrossBuckets(
   return null
 }
 
+export function isPersistedSupabaseSignedUrl(value = '') {
+  const url = normalizeText(value)
+  if (!url) return false
+  try {
+    return new URL(url).pathname.includes('/storage/v1/object/sign/')
+  } catch {
+    return url.includes('/storage/v1/object/sign/')
+  }
+}
+
+function normalizeDurableDocumentUrl(value = '') {
+  const url = normalizeNullableText(value)
+  if (!url || isPersistedSupabaseSignedUrl(url)) return ''
+  return url
+}
+
+export async function resolveRenderedPdfAccess({
+  client = null,
+  version = {},
+  expiresInSeconds = 60 * 60,
+  retrySignedUrl = false,
+  retryDelaysMs = [],
+} = {}) {
+  const storageClient = client || requireClient()
+  const renderedPath = normalizeText(version?.rendered_file_path)
+  const renderedBucketHint = normalizeText(version?.rendered_file_bucket)
+  const persistedRenderedUrl = normalizeNullableText(version?.rendered_file_url)
+  const persistedSignedUrlIgnored = isPersistedSupabaseSignedUrl(persistedRenderedUrl)
+  const durableRenderedUrl = normalizeDurableDocumentUrl(persistedRenderedUrl)
+  const bucketCandidates = renderedBucketHint
+    ? [renderedBucketHint, ...DOCUMENTS_BUCKET_CANDIDATES]
+    : DOCUMENTS_BUCKET_CANDIDATES
+
+  if (!renderedPath) {
+    return {
+      contract: 'rendered-pdf-access-v1',
+      accessUrl: durableRenderedUrl,
+      bucket: renderedBucketHint || null,
+      path: '',
+      source: durableRenderedUrl ? 'durable_url' : 'unavailable',
+      expiresInSeconds: durableRenderedUrl ? null : 0,
+      expiresAt: null,
+      persistedSignedUrlIgnored,
+      error: durableRenderedUrl
+        ? null
+        : {
+            code: persistedSignedUrlIgnored ? 'PERSISTED_SIGNED_URL_IGNORED' : 'RENDERED_PDF_PATH_MISSING',
+            message: persistedSignedUrlIgnored
+              ? 'The persisted PDF URL is a signed Supabase URL and must be regenerated from a storage path.'
+              : 'The generated PDF has no storage path.',
+          },
+    }
+  }
+
+  const signedUrlResult = await createSignedUrlAcrossBuckets(
+    storageClient,
+    renderedPath,
+    bucketCandidates,
+    expiresInSeconds,
+    { retryDelaysMs: retrySignedUrl ? retryDelaysMs : [] },
+  )
+  if (signedUrlResult?.signedUrl) {
+    return {
+      contract: 'rendered-pdf-access-v1',
+      accessUrl: signedUrlResult.signedUrl,
+      bucket: signedUrlResult.bucket,
+      path: renderedPath,
+      source: 'fresh_signed_url',
+      expiresInSeconds,
+      expiresAt: new Date(Date.now() + expiresInSeconds * 1000).toISOString(),
+      persistedSignedUrlIgnored,
+      error: null,
+    }
+  }
+
+  return {
+    contract: 'rendered-pdf-access-v1',
+    accessUrl: durableRenderedUrl,
+    bucket: renderedBucketHint || null,
+    path: renderedPath,
+    source: durableRenderedUrl ? 'durable_url_fallback' : 'unavailable',
+    expiresInSeconds: durableRenderedUrl ? null : 0,
+    expiresAt: null,
+    persistedSignedUrlIgnored,
+    error: durableRenderedUrl
+      ? null
+      : {
+          code: 'RENDERED_PDF_SIGNED_URL_CREATE_FAILED',
+          message: 'The PDF is stored, but a fresh access link could not be created.',
+        },
+  }
+}
+
 function packetVersionWasJustGenerated(version = {}) {
   const candidates = [version?.generated_at, version?.created_at, version?.updated_at]
   return candidates.some((value) => {
@@ -484,24 +577,27 @@ async function hydratePacketVersionAccessUrls(client, version = {}, options = {}
   const finalPath = normalizeText(version?.final_signed_file_path)
 
   if (renderedPath) {
-    const renderedBucketHint = normalizeText(version?.rendered_file_bucket)
-    const renderedCandidates = renderedBucketHint
-      ? [renderedBucketHint, ...DOCUMENTS_BUCKET_CANDIDATES]
-      : DOCUMENTS_BUCKET_CANDIDATES
     const shouldRetryAccess =
       options.retrySignedUrl === true ||
       (options.retrySignedUrl !== false && packetVersionWasJustGenerated(version))
-    const renderedSignedUrl = await createSignedUrlAcrossBuckets(
+    const renderedAccess = await resolveRenderedPdfAccess({
       client,
-      renderedPath,
-      renderedCandidates,
-      60 * 60,
-      { retryDelaysMs: shouldRetryAccess ? [300, 700, 1400] : [] },
-    )
-    hydrated.rendered_file_access_url = renderedSignedUrl?.signedUrl || normalizeNullableText(version?.rendered_file_url)
-    hydrated.rendered_file_bucket = renderedSignedUrl?.bucket || renderedBucketHint || null
+      version,
+      expiresInSeconds: 60 * 60,
+      retrySignedUrl: shouldRetryAccess,
+      retryDelaysMs: [300, 700, 1400],
+    })
+    hydrated.rendered_file_access_url = renderedAccess.accessUrl || ''
+    hydrated.rendered_file_access_error = renderedAccess.error || null
+    hydrated.rendered_file_access_expires_at = renderedAccess.expiresAt || null
+    hydrated.rendered_file_bucket = renderedAccess.bucket || normalizeText(version?.rendered_file_bucket) || null
+    hydrated.rendered_file_url = normalizeDurableDocumentUrl(version?.rendered_file_url)
   } else {
-    hydrated.rendered_file_access_url = normalizeNullableText(version?.rendered_file_url)
+    const renderedAccess = await resolveRenderedPdfAccess({ client, version })
+    hydrated.rendered_file_access_url = renderedAccess.accessUrl || ''
+    hydrated.rendered_file_access_error = renderedAccess.error || null
+    hydrated.rendered_file_access_expires_at = renderedAccess.expiresAt || null
+    hydrated.rendered_file_url = normalizeDurableDocumentUrl(version?.rendered_file_url)
   }
 
   if (finalPath) {

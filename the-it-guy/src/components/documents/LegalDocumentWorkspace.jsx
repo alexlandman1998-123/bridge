@@ -394,9 +394,25 @@ function resolveDocumentLabel(packetType) {
   return normalizeKey(packetType) === 'otp' ? 'Offer to Purchase' : 'Mandate Agreement'
 }
 
+function isPersistedSupabaseSignedUrl(value = '') {
+  const url = normalizeText(value)
+  if (!url) return false
+  try {
+    return new URL(url).pathname.includes('/storage/v1/object/sign/')
+  } catch {
+    return url.includes('/storage/v1/object/sign/')
+  }
+}
+
+function normalizeDurablePreviewUrl(value = '') {
+  const url = normalizeText(value)
+  if (!url || isPersistedSupabaseSignedUrl(url)) return ''
+  return url
+}
+
 function resolveVersionDownloadUrl(version = null, { preferSigned = false } = {}) {
-  const signedUrl = normalizeText(version?.final_signed_file_access_url || version?.final_signed_file_url || '')
-  const generatedUrl = normalizeText(version?.rendered_file_access_url || version?.rendered_file_url || '')
+  const signedUrl = normalizeText(version?.final_signed_file_access_url) || normalizeDurablePreviewUrl(version?.final_signed_file_url)
+  const generatedUrl = normalizeText(version?.rendered_file_access_url) || normalizeDurablePreviewUrl(version?.rendered_file_url)
   return preferSigned ? signedUrl || generatedUrl : generatedUrl || signedUrl
 }
 
@@ -4085,7 +4101,9 @@ export default function LegalDocumentWorkspace({
     }
   }, [editableSectionsValidation])
 
-  const hydratedGeneratedPreviewUrl = normalizeText(latestVersion?.rendered_file_access_url || latestVersion?.rendered_file_url || '')
+  const hydratedGeneratedPreviewUrl =
+    normalizeText(latestVersion?.rendered_file_access_url) ||
+    normalizeDurablePreviewUrl(latestVersion?.rendered_file_url)
   useEffect(() => {
     setCertifiedPdfAccessUrl(hydratedGeneratedPreviewUrl)
   }, [hydratedGeneratedPreviewUrl, latestVersion?.id])

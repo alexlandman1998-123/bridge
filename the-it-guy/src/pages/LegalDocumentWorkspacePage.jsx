@@ -1403,6 +1403,22 @@ function isLegalWorkspaceTimeoutError(error = null) {
   return message.includes('taking too long') || message.includes('timeout')
 }
 
+function isPersistedSupabaseSignedUrl(value = '') {
+  const url = normalizeText(value)
+  if (!url) return false
+  try {
+    return new URL(url).pathname.includes('/storage/v1/object/sign/')
+  } catch {
+    return url.includes('/storage/v1/object/sign/')
+  }
+}
+
+function normalizeDurablePreviewUrl(value = '') {
+  const url = normalizeText(value)
+  if (!url || isPersistedSupabaseSignedUrl(url)) return ''
+  return url
+}
+
 function getLatestVersion(status = null) {
   const versions = Array.isArray(status?.versions) ? status.versions : []
   const generatedVersion = versions.find((row) => normalizeKey(row?.render_status) === 'generated')
@@ -5257,7 +5273,9 @@ export default function LegalDocumentWorkspacePage() {
   const openLatestDocument = useCallback(async () => {
     const status = await resolveCurrentStatus()
     const latestVersion = getLatestVersion(status)
-    const url = normalizeText(latestVersion?.rendered_file_access_url || latestVersion?.rendered_file_url)
+    const url =
+      normalizeText(latestVersion?.rendered_file_access_url) ||
+      normalizeDurablePreviewUrl(latestVersion?.rendered_file_url)
     if (!url) {
       throw new Error('Document preview is not available yet.')
     }

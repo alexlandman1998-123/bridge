@@ -850,6 +850,7 @@
     "test:mandate-template-runtime-launch-lock-phase14": "node scripts/mandate-template-runtime-launch-lock-phase14.test.mjs",
     "test:mandate-attorney-allocation-phase1": "node scripts/mandate-attorney-allocation-phase1.test.mjs",
     "test:mandate-attorney-hydration-phase6": "node scripts/mandate-attorney-hydration-phase6.test.mjs",
+    "test:rendered-pdf-access-resolver": "node scripts/rendered-pdf-access-resolver.test.mjs",
     "test:buyer-onboarding-originator-handoff-phase3": "node scripts/buyer-onboarding-originator-handoff-phase3.test.mjs",
     "test:signed-otp-transfer-instruction-phase4": "node scripts/signed-otp-transfer-instruction-phase4.test.mjs",
     "test:attorney-instruction-response-phase5": "node scripts/attorney-instruction-response-phase5.test.mjs",
