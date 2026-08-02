@@ -3053,8 +3053,27 @@ export default function LegalDocumentWorkspacePage() {
     }
   }, [mandateDraftDefaults, organisationId, packetType, routeLeadId, routeListingId, routePacketId])
   const selectedTransferAttorney = useMemo(
-    () => preferredTransferAttorneys.find((partner) => String(partner.id) === String(selectedTransferAttorneyId)) || null,
-    [preferredTransferAttorneys, selectedTransferAttorneyId],
+    () => {
+      const selectedId = normalizeText(selectedTransferAttorneyId)
+      const preferredAttorney = preferredTransferAttorneys.find((partner) => String(partner.id) === String(selectedId))
+      if (preferredAttorney) return preferredAttorney
+      const savedAttorneyId = normalizeText(mandateDraftDefaults.transferAttorneyPreferredPartnerId)
+      if (!selectedId || selectedId !== savedAttorneyId) return null
+      const savedCompanyName = normalizeText(mandateDraftDefaults.transferAttorneyCompanyName)
+      if (!savedAttorneyId || !savedCompanyName) return null
+      return {
+        id: savedAttorneyId,
+        partnerOrganisationId: normalizeText(mandateDraftDefaults.transferAttorneyPartnerOrganisationId),
+        companyName: savedCompanyName,
+        contactPerson: normalizeText(mandateDraftDefaults.transferAttorneyContactPerson),
+        email: normalizeText(mandateDraftDefaults.transferAttorneyEmail),
+        phone: normalizeText(mandateDraftDefaults.transferAttorneyPhone),
+        isActive: true,
+        partnerType: 'transfer_attorney',
+        source: 'saved_mandate_transfer_attorney',
+      }
+    },
+    [mandateDraftDefaults, preferredTransferAttorneys, selectedTransferAttorneyId],
   )
   const effectiveMandateDraft = useMemo(() => applyMandateDraftSelectionOverrides({
     draft: mandateDraftDefaults,

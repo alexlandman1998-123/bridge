@@ -184,9 +184,28 @@ export default function MandateDraftIntakePanel({
     scenarioProfile,
     draft: { ...draft, propertyTitleType },
   })
-  const selectedAttorney = attorneySelectionDeferred
+  const selectedAttorneyIdText = normalizeText(selectedAttorneyId)
+  const selectedPreferredAttorney = attorneySelectionDeferred
     ? null
-    : preferredAttorneys.find((attorney) => String(attorney.id) === String(selectedAttorneyId)) || null
+    : preferredAttorneys.find((attorney) => String(attorney.id) === String(selectedAttorneyIdText)) || null
+  const savedAttorneyId = normalizeText(draft.transferAttorneyPreferredPartnerId)
+  const savedAttorneyCompanyName = normalizeText(draft.transferAttorneyCompanyName)
+  const selectedAttorney = selectedPreferredAttorney || (
+    !attorneySelectionDeferred &&
+    selectedAttorneyIdText &&
+    selectedAttorneyIdText === savedAttorneyId &&
+    savedAttorneyCompanyName
+      ? {
+          id: savedAttorneyId,
+          companyName: savedAttorneyCompanyName,
+          contactPerson: normalizeText(draft.transferAttorneyContactPerson),
+          email: normalizeText(draft.transferAttorneyEmail),
+          phone: normalizeText(draft.transferAttorneyPhone),
+          isPreferredDefault: false,
+          source: 'saved_mandate_transfer_attorney',
+        }
+      : null
+  )
   const attorneyReady = Boolean(selectedAttorneyId || attorneySelectionDeferred)
 
   useEffect(() => {
@@ -205,9 +224,7 @@ export default function MandateDraftIntakePanel({
     }
   }, [attorneyMenuOpen])
 
-  useEffect(() => {
-    if (preferredAttorneysLoading || attorneySelectionDeferred) setAttorneyMenuOpen(false)
-  }, [attorneySelectionDeferred, preferredAttorneysLoading])
+  const attorneyMenuVisible = attorneyMenuOpen && !preferredAttorneysLoading && !attorneySelectionDeferred
 
   return (
     <section className="mb-5 rounded-[24px] border border-[#dbe7f4] bg-white p-4 shadow-[0_14px_34px_rgba(16,32,51,0.05)] sm:p-5">
@@ -300,7 +317,7 @@ export default function MandateDraftIntakePanel({
                 className="flex min-h-[58px] w-full items-center gap-3 rounded-[14px] border border-[#d7e1ec] bg-white px-3 py-2 text-left outline-none transition hover:border-[#b8cee5] focus:border-[#2f6fed] focus:ring-2 focus:ring-[#2f6fed]/15 disabled:cursor-not-allowed disabled:bg-[#f4f7fa] disabled:opacity-70"
                 disabled={preferredAttorneysLoading || attorneySelectionDeferred}
                 aria-haspopup="listbox"
-                aria-expanded={attorneyMenuOpen}
+                aria-expanded={attorneyMenuVisible}
                 onClick={() => setAttorneyMenuOpen((open) => !open)}
               >
                 {selectedAttorney ? <AttorneyAvatar attorney={selectedAttorney} /> : (
@@ -325,10 +342,10 @@ export default function MandateDraftIntakePanel({
                       : 'View the agency’s approved attorney partners'}
                   </span>
                 </span>
-                <ChevronDown size={18} className={`shrink-0 text-[#6b7d93] transition-transform ${attorneyMenuOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown size={18} className={`shrink-0 text-[#6b7d93] transition-transform ${attorneyMenuVisible ? 'rotate-180' : ''}`} />
               </button>
 
-              {attorneyMenuOpen ? (
+              {attorneyMenuVisible ? (
                 <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-[16px] border border-[#d7e1ec] bg-white p-1.5 shadow-[0_18px_45px_rgba(29,55,82,0.18)]" role="listbox" aria-label="Preferred transfer attorneys">
                   <div className="border-b border-[#edf2f7] px-3 py-2">
                     <p className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[#7b8ca2]">Approved attorney partners</p>
