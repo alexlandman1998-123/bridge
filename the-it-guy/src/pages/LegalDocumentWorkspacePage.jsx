@@ -18,6 +18,10 @@ import {
 } from '../core/documents/legalDocumentScenarioProfile'
 import { resolveLegalDocumentScenarioRequirements } from '../core/documents/legalDocumentScenarioRequirements'
 import {
+  buildSavedMandateTransferAttorneyOption,
+  resolveMandateTransferAttorneySnapshot,
+} from '../core/documents/mandateTransferAttorneyDefaults'
+import {
   buildPacketSectionManifest,
   renderPacketPreviewHtml,
   resolveMandatePacketPlaceholders,
@@ -712,23 +716,53 @@ async function fetchLeadContextFromSupabase({ organisationId = '', leadId = '' }
   const scopedLeadId = normalizeLeadUuid(leadId)
   if (!scopedLeadId) return { lead: null, contact: null, linkedTransaction: null }
 
-  let leadQuery = supabase
-    .from('leads')
-    .select('lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, seller_onboarding_token, seller_onboarding_status, mandate_packet_id, listing_id, converted_transaction_id, created_at, updated_at')
-    .eq('lead_id', scopedLeadId)
+  const leadSelect = 'lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, seller_onboarding_token, seller_onboarding_status, mandate_packet_id, listing_id, converted_transaction_id, created_at, updated_at'
+  const readLead = (scopeByOrganisation = true) => {
+    let query = supabase
+      .from('leads')
+      .select(leadSelect)
+      .eq('lead_id', scopedLeadId)
 
-  if (isUuidLike(organisationId)) {
-    leadQuery = leadQuery.eq('organisation_id', organisationId)
+    if (scopeByOrganisation && isUuidLike(organisationId)) {
+      query = query.eq('organisation_id', organisationId)
+    }
+
+    return query.maybeSingle()
   }
 
-  const leadResult = await leadQuery.maybeSingle()
+  let leadResult = await readLead(true)
+  if (isUuidLike(organisationId) && (leadResult.error || !leadResult.data)) {
+    leadResult = await readLead(false)
+  }
   if (leadResult.error || !leadResult.data) {
     return { lead: null, contact: null, linkedTransaction: null }
   }
 
   const row = leadResult.data
   const contactId = normalizeText(row?.contact_id)
-  const listingId = normalizeText(row?.listing_id)
+  let listingId = normalizeText(row?.listing_id)
+  let linkedListingSeed = null
+  if (!listingId) {
+    const readLinkedListing = (scopeByOrganisation = true) => {
+      let query = supabase
+        .from('private_listings')
+        .select('id, organisation_id, seller_lead_id, title, asking_price, estimated_value, address_line_1, address_line_2, suburb, city, province, postal_code, property_type, mandate_type, updated_at')
+        .or(`seller_lead_id.eq.${scopedLeadId},originating_crm_lead_id.eq.${scopedLeadId}`)
+
+      if (scopeByOrganisation && isUuidLike(organisationId)) {
+        query = query.eq('organisation_id', organisationId)
+      }
+
+      return query.limit(1).maybeSingle()
+    }
+
+    let linkedListingResult = await readLinkedListing(true)
+    if (isUuidLike(organisationId) && (linkedListingResult.error || !linkedListingResult.data)) {
+      linkedListingResult = await readLinkedListing(false)
+    }
+    linkedListingSeed = linkedListingResult?.data || null
+    listingId = normalizeText(linkedListingSeed?.id)
+  }
   const [contactResult, onboardingResult, listingResult] = await Promise.all([
     contactId
       ? supabase
@@ -752,7 +786,7 @@ async function fetchLeadContextFromSupabase({ organisationId = '', leadId = '' }
         .select('id, organisation_id, seller_lead_id, title, asking_price, estimated_value, address_line_1, address_line_2, suburb, city, province, postal_code, property_type, mandate_type, updated_at')
         .eq('id', listingId)
         .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
+      : Promise.resolve({ data: linkedListingSeed, error: null }),
   ])
 
   const onboarding = onboardingResult?.data
@@ -767,23 +801,24 @@ async function fetchLeadContextFromSupabase({ organisationId = '', leadId = '' }
       }
     : null
 
-  const listing = listingResult?.data
+  const listingRow = listingResult?.data || linkedListingSeed
+  const listing = listingRow
     ? {
-        id: normalizeText(listingResult.data.id),
-        organisationId: normalizeText(listingResult.data.organisation_id),
-        sellerLeadId: normalizeText(listingResult.data.seller_lead_id),
-        listingTitle: normalizeText(listingResult.data.title),
-        propertyAddress: [listingResult.data.address_line_1, listingResult.data.address_line_2].map(normalizeText).filter(Boolean).join(', '),
-        addressLine1: normalizeText(listingResult.data.address_line_1),
-        addressLine2: normalizeText(listingResult.data.address_line_2),
-        suburb: normalizeText(listingResult.data.suburb),
-        city: normalizeText(listingResult.data.city),
-        province: normalizeText(listingResult.data.province),
-        postalCode: normalizeText(listingResult.data.postal_code),
-        propertyType: normalizeText(listingResult.data.property_type),
-        mandateType: normalizeText(listingResult.data.mandate_type),
-        askingPrice: Number(listingResult.data.asking_price || 0) || 0,
-        estimatedValue: Number(listingResult.data.estimated_value || 0) || 0,
+        id: normalizeText(listingRow.id),
+        organisationId: normalizeText(listingRow.organisation_id),
+        sellerLeadId: normalizeText(listingRow.seller_lead_id),
+        listingTitle: normalizeText(listingRow.title),
+        propertyAddress: [listingRow.address_line_1, listingRow.address_line_2].map(normalizeText).filter(Boolean).join(', '),
+        addressLine1: normalizeText(listingRow.address_line_1),
+        addressLine2: normalizeText(listingRow.address_line_2),
+        suburb: normalizeText(listingRow.suburb),
+        city: normalizeText(listingRow.city),
+        province: normalizeText(listingRow.province),
+        postalCode: normalizeText(listingRow.postal_code),
+        propertyType: normalizeText(listingRow.property_type),
+        mandateType: normalizeText(listingRow.mandate_type),
+        askingPrice: Number(listingRow.asking_price || 0) || 0,
+        estimatedValue: Number(listingRow.estimated_value || 0) || 0,
         sellerOnboardingStatus: normalizeText(onboarding?.status || row?.seller_onboarding_status),
         sellerOnboarding: onboarding ? { ...onboarding } : null,
       }
@@ -960,17 +995,25 @@ async function fetchListingContextFromSupabase({ organisationId = '', listingId 
   const scopedListingId = normalizeText(listingId)
   if (!isUuidLike(scopedListingId)) return { lead: null, contact: null, linkedTransaction: null }
 
-  let listingQuery = supabase
-    .from('private_listings')
-    .select('id, organisation_id, seller_lead_id, title, asking_price, estimated_value, address_line_1, address_line_2, suburb, city, province, postal_code, property_type, mandate_type, created_at, updated_at')
-    .eq('id', scopedListingId)
+  const readListing = (scopeByOrganisation = true) => {
+    let query = supabase
+      .from('private_listings')
+      .select('id, organisation_id, seller_lead_id, title, asking_price, estimated_value, address_line_1, address_line_2, suburb, city, province, postal_code, property_type, mandate_type, created_at, updated_at')
+      .eq('id', scopedListingId)
 
-  if (isUuidLike(organisationId)) {
-    listingQuery = listingQuery.eq('organisation_id', organisationId)
+    if (scopeByOrganisation && isUuidLike(organisationId)) {
+      query = query.eq('organisation_id', organisationId)
+    }
+
+    return query.maybeSingle()
   }
 
-  const [listingResult, onboardingResult] = await Promise.all([
-    listingQuery.maybeSingle(),
+  let listingResult = await readListing(true)
+  if (isUuidLike(organisationId) && (listingResult.error || !listingResult.data)) {
+    listingResult = await readListing(false)
+  }
+
+  const [onboardingResult] = await Promise.all([
     supabase
       .from('private_listing_seller_onboarding')
       .select('id, private_listing_id, token, status, submitted_at, updated_at, form_data')
@@ -1011,6 +1054,22 @@ function mergeLeadContextWithListingContext(leadContext = {}, listingContext = {
       sellerOnboarding: leadContext.lead?.sellerOnboarding || listingContext.lead?.sellerOnboarding || null,
     },
   }
+}
+
+function leadContextNeedsRemoteSellerContext(leadContext = {}) {
+  const lead = leadContext?.lead || null
+  if (!lead) return true
+  const sellerOnboarding = lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object' ? lead.sellerOnboarding : {}
+  const formData = sellerOnboarding?.formData && typeof sellerOnboarding.formData === 'object'
+    ? sellerOnboarding.formData
+    : sellerOnboarding?.form_data && typeof sellerOnboarding.form_data === 'object'
+      ? sellerOnboarding.form_data
+      : {}
+  return !(
+    normalizeText(lead.listingId || lead.listing_id || leadContext?.privateListing?.id || leadContext?.listing?.id) ||
+    normalizeText(lead.sellerOnboardingToken || lead.seller_onboarding_token || sellerOnboarding.token) ||
+    Object.keys(formData).length
+  )
 }
 
 function findLeadContextAcrossStores({ organisationId = '', leadId = '' } = {}) {
@@ -1055,12 +1114,45 @@ function findLeadContextAcrossStores({ organisationId = '', leadId = '' } = {}) 
 
 async function hydrateLeadContextWithSellerOnboarding(leadContext = {}) {
   const localOnboarding = leadContext?.lead?.sellerOnboarding || null
+  const localFormData = localOnboarding?.formData && typeof localOnboarding.formData === 'object'
+    ? localOnboarding.formData
+    : localOnboarding?.form_data && typeof localOnboarding.form_data === 'object'
+      ? localOnboarding.form_data
+      : {}
   if (
-    localOnboarding?.formData &&
-    typeof localOnboarding.formData === 'object' &&
-    Object.keys(localOnboarding.formData).length
+    Object.keys(localFormData).length
   ) {
-    return leadContext
+    return {
+      ...leadContext,
+      lead: {
+        ...(leadContext.lead || {}),
+        sellerOnboarding: {
+          ...(localOnboarding || {}),
+          formData: localFormData,
+        },
+      },
+    }
+  }
+  const listingOnboarding = leadContext?.privateListing?.sellerOnboarding || leadContext?.listing?.sellerOnboarding || null
+  const listingFormData = listingOnboarding?.formData && typeof listingOnboarding.formData === 'object'
+    ? listingOnboarding.formData
+    : listingOnboarding?.form_data && typeof listingOnboarding.form_data === 'object'
+      ? listingOnboarding.form_data
+      : {}
+  if (Object.keys(listingFormData).length) {
+    return {
+      ...leadContext,
+      lead: {
+        ...(leadContext.lead || {}),
+        sellerOnboardingToken: normalizeText(listingOnboarding?.token || leadContext?.lead?.sellerOnboardingToken),
+        sellerOnboardingStatus: normalizeText(listingOnboarding?.status || leadContext?.lead?.sellerOnboardingStatus),
+        sellerOnboarding: {
+          ...(leadContext?.lead?.sellerOnboarding || {}),
+          ...(listingOnboarding || {}),
+          formData: listingFormData,
+        },
+      },
+    }
   }
   const token = normalizeText(leadContext?.lead?.sellerOnboardingToken || leadContext?.lead?.sellerOnboarding?.token)
   if (!token) {
@@ -1561,7 +1653,9 @@ function buildMandateGenerationContext({
   const leadOnboardingFormData =
     leadOnboarding?.formData && typeof leadOnboarding.formData === 'object'
       ? leadOnboarding.formData
-      : {}
+      : leadOnboarding?.form_data && typeof leadOnboarding.form_data === 'object'
+        ? leadOnboarding.form_data
+        : {}
   const onboardingFormData =
     transactionDetail?.onboardingFormData?.formData ||
     transactionDetail?.onboardingFormData ||
@@ -1672,7 +1766,7 @@ function buildMandateGenerationContext({
           sellerOnboarding: {
             ...leadOnboarding,
             status: normalizeText(leadOnboarding?.status || leadContext.lead?.sellerOnboardingStatus),
-            formData: leadOnboarding?.formData && typeof leadOnboarding.formData === 'object' ? leadOnboarding.formData : {},
+            formData: leadOnboardingFormData,
           },
         }
       : null,
@@ -1721,15 +1815,29 @@ function buildRuntimeMandateStatusForLead({
 
 function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, transactionDetail = null } = {}) {
   const lead = leadContext?.lead && typeof leadContext.lead === 'object' ? leadContext.lead : {}
-  const onboarding = lead?.sellerOnboarding?.formData && typeof lead.sellerOnboarding.formData === 'object'
-    ? lead.sellerOnboarding.formData
-    : {}
+  const leadSellerOnboarding = lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object' ? lead.sellerOnboarding : {}
+  const onboarding = leadSellerOnboarding?.formData && typeof leadSellerOnboarding.formData === 'object'
+    ? leadSellerOnboarding.formData
+    : leadSellerOnboarding?.form_data && typeof leadSellerOnboarding.form_data === 'object'
+      ? leadSellerOnboarding.form_data
+      : {}
   const privateListing = leadContext?.privateListing && typeof leadContext.privateListing === 'object'
     ? leadContext.privateListing
     : leadContext?.listing && typeof leadContext.listing === 'object'
       ? leadContext.listing
       : lead?.sellerOnboarding?.listing && typeof lead.sellerOnboarding.listing === 'object'
         ? lead.sellerOnboarding.listing
+        : {}
+  const privateListingOnboarding = privateListing?.sellerOnboarding && typeof privateListing.sellerOnboarding === 'object'
+    ? privateListing.sellerOnboarding
+    : privateListing?.seller_onboarding && typeof privateListing.seller_onboarding === 'object'
+      ? privateListing.seller_onboarding
+      : {}
+  const privateListingOnboardingFormData =
+    privateListingOnboarding?.formData && typeof privateListingOnboarding.formData === 'object'
+      ? privateListingOnboarding.formData
+      : privateListingOnboarding?.form_data && typeof privateListingOnboarding.form_data === 'object'
+        ? privateListingOnboarding.form_data
         : {}
   const transactionOnboarding =
     transactionDetail?.onboardingFormData?.formData ||
@@ -1754,9 +1862,15 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
   const snapshotTransferAttorney = generatedSnapshot?.transferAttorney && typeof generatedSnapshot.transferAttorney === 'object'
     ? generatedSnapshot.transferAttorney
     : {}
-  const onboardingTransferAttorney = onboarding?.preferredTransferAttorney && typeof onboarding.preferredTransferAttorney === 'object'
-    ? onboarding.preferredTransferAttorney
-    : {}
+  const mandateTransferAttorney = resolveMandateTransferAttorneySnapshot(
+    packetDraft,
+    snapshotTransferAttorney,
+    onboarding,
+    leadSellerOnboarding,
+    privateListingOnboardingFormData,
+    privateListingOnboarding,
+    transactionOnboarding,
+  )
   const snapshotSeller = generatedSnapshot?.seller && typeof generatedSnapshot.seller === 'object' ? generatedSnapshot.seller : {}
   const snapshotProperty = generatedSnapshot?.property && typeof generatedSnapshot.property === 'object' ? generatedSnapshot.property : {}
   const sellerFirstName = firstText(
@@ -2026,44 +2140,15 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
       transactionOnboarding.specialConditions,
       lead.specialConditions,
     ),
-    transferAttorneyPreferredPartnerId: firstText(
-      packetDraft.transferAttorneyPreferredPartnerId,
-      snapshotTransferAttorney.preferredPartnerId,
-      onboardingTransferAttorney.preferredPartnerId,
-    ),
-    transferAttorneyPartnerOrganisationId: firstText(
-      packetDraft.transferAttorneyPartnerOrganisationId,
-      snapshotTransferAttorney.partnerOrganisationId,
-      onboardingTransferAttorney.partnerOrganisationId,
-    ),
-    transferAttorneyCompanyName: firstText(
-      packetDraft.transferAttorneyCompanyName,
-      snapshotTransferAttorney.companyName,
-      onboardingTransferAttorney.companyName,
-    ),
-    transferAttorneyContactPerson: firstText(
-      packetDraft.transferAttorneyContactPerson,
-      snapshotTransferAttorney.contactPerson,
-      onboardingTransferAttorney.contactPerson,
-    ),
-    transferAttorneyEmail: firstText(
-      packetDraft.transferAttorneyEmail,
-      snapshotTransferAttorney.email,
-      onboardingTransferAttorney.email,
-    ),
-    transferAttorneyPhone: firstText(
-      packetDraft.transferAttorneyPhone,
-      snapshotTransferAttorney.phone,
-      onboardingTransferAttorney.phone,
-    ),
-    transferAttorneySelectionSource: firstText(
-      packetDraft.transferAttorneySelectionSource,
-      snapshotTransferAttorney.selectionSource,
-      onboardingTransferAttorney.selectionSource,
-      'seller_mandate',
-    ),
+    transferAttorneyPreferredPartnerId: mandateTransferAttorney.preferredPartnerId,
+    transferAttorneyPartnerOrganisationId: mandateTransferAttorney.partnerOrganisationId,
+    transferAttorneyCompanyName: mandateTransferAttorney.companyName,
+    transferAttorneyContactPerson: mandateTransferAttorney.contactPerson,
+    transferAttorneyEmail: mandateTransferAttorney.email,
+    transferAttorneyPhone: mandateTransferAttorney.phone,
+    transferAttorneySelectionSource: mandateTransferAttorney.selectionSource || 'seller_mandate',
     transferAttorneySelectionDeferred: Boolean(
-      packetDraft.transferAttorneySelectionDeferred || snapshotTransferAttorney.selectionDeferred,
+      mandateTransferAttorney.selectionDeferred,
     ),
   }
 }
@@ -2964,11 +3049,15 @@ export default function LegalDocumentWorkspacePage() {
       .then((partners) => {
         if (!active) return
         const attorneys = (partners || []).filter((partner) => partner?.isActive && partner?.partnerType === 'transfer_attorney')
-        setPreferredTransferAttorneys(attorneys)
         const savedAttorneyId = normalizeText(mandateDraftDefaults.transferAttorneyPreferredPartnerId)
-        const defaultAttorney = attorneys.find((partner) => String(partner.id) === savedAttorneyId)
-          || attorneys.find((partner) => partner.isPreferredDefault)
-          || attorneys[0]
+        const savedAttorney = buildSavedMandateTransferAttorneyOption(mandateDraftDefaults)
+        const attorneysWithSaved = savedAttorney && !attorneys.some((partner) => String(partner.id) === savedAttorneyId)
+          ? [savedAttorney, ...attorneys]
+          : attorneys
+        setPreferredTransferAttorneys(attorneysWithSaved)
+        const defaultAttorney = attorneysWithSaved.find((partner) => String(partner.id) === savedAttorneyId)
+          || attorneysWithSaved.find((partner) => partner.isPreferredDefault)
+          || attorneysWithSaved[0]
           || null
         setSelectedTransferAttorneyId(defaultAttorney?.id || savedAttorneyId || '')
         setTransferAttorneySelectionDeferred(Boolean(mandateDraftDefaults.transferAttorneySelectionDeferred))
@@ -2987,8 +3076,15 @@ export default function LegalDocumentWorkspacePage() {
     }
   }, [mandateDraftDefaults, organisationId, packetType, routeLeadId, routeListingId, routePacketId])
   const selectedTransferAttorney = useMemo(
-    () => preferredTransferAttorneys.find((partner) => String(partner.id) === String(selectedTransferAttorneyId)) || null,
-    [preferredTransferAttorneys, selectedTransferAttorneyId],
+    () => {
+      const selectedId = normalizeText(selectedTransferAttorneyId)
+      const preferredAttorney = preferredTransferAttorneys.find((partner) => String(partner.id) === String(selectedId))
+      if (preferredAttorney) return preferredAttorney
+      const savedAttorneyId = normalizeText(mandateDraftDefaults.transferAttorneyPreferredPartnerId)
+      if (!selectedId || selectedId !== savedAttorneyId) return null
+      return buildSavedMandateTransferAttorneyOption(mandateDraftDefaults)
+    },
+    [mandateDraftDefaults, preferredTransferAttorneys, selectedTransferAttorneyId],
   )
   const effectiveMandateDraft = useMemo(() => ({
     ...mandateDraftDefaults,
@@ -3178,7 +3274,7 @@ export default function LegalDocumentWorkspacePage() {
         organisationId: null,
         leadId: routeLeadId,
       })
-      if (!immediateLeadContext?.lead && routeLeadId) {
+      if (routeLeadId && leadContextNeedsRemoteSellerContext(immediateLeadContext)) {
         const supabaseLeadContext = await withLegalWorkspaceTimeout(
           fetchLeadContextFromSupabase({
             organisationId: resolvedOrganisationId,
@@ -3366,7 +3462,7 @@ export default function LegalDocumentWorkspacePage() {
             organisationId: resolvedOrganisationId,
             leadId: routeLeadId,
           })
-      if (!nextLeadContext?.lead && routeLeadId) {
+      if (routeLeadId && leadContextNeedsRemoteSellerContext(nextLeadContext)) {
         const supabaseLeadContext = await withLegalWorkspaceTimeout(
           fetchLeadContextFromSupabase({
             organisationId: resolvedOrganisationId,

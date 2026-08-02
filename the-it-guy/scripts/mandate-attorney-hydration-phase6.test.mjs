@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
+import {
+  buildSavedMandateTransferAttorneyOption,
+  resolveMandateTransferAttorneySnapshot,
+} from '../src/core/documents/mandateTransferAttorneyDefaults.js'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const root = resolve(here, '..')
+
+const onboardingFormData = {
+  transferAttorneyChoice: 'preferred',
+  preferredTransferAttorneyAccepted: true,
+  preferredTransferAttorney: {
+    preferredPartnerId: '10c216af-129f-4cae-9a56-131a7eca9ce9',
+    preferred_partner_id: '10c216af-129f-4cae-9a56-131a7eca9ce9',
+    partnerOrganisationId: 'c44ec08e-dc04-4f7b-9bdd-db5252f62f25',
+    partner_organisation_id: 'c44ec08e-dc04-4f7b-9bdd-db5252f62f25',
+    partnerRelationshipId: '10c216af-129f-4cae-9a56-131a7eca9ce9',
+    companyName: 'Young Law Inc',
+    company_name: 'Young Law Inc',
+    contactPerson: 'Young Law Inc',
+    email: '',
+    phone: '',
+    selectionSource: 'connected_partner',
+  },
+}
+
+const attorney = resolveMandateTransferAttorneySnapshot(onboardingFormData)
+assert.equal(attorney.preferredPartnerId, '10c216af-129f-4cae-9a56-131a7eca9ce9')
+assert.equal(attorney.partnerOrganisationId, 'c44ec08e-dc04-4f7b-9bdd-db5252f62f25')
+assert.equal(attorney.companyName, 'Young Law Inc')
+assert.equal(attorney.contactPerson, 'Young Law Inc')
+assert.equal(attorney.selectionSource, 'connected_partner')
+assert.equal(attorney.selectionDeferred, false)
+
+const savedOption = buildSavedMandateTransferAttorneyOption({
+  transferAttorneyPreferredPartnerId: attorney.preferredPartnerId,
+  transferAttorneyPartnerOrganisationId: attorney.partnerOrganisationId,
+  transferAttorneyCompanyName: attorney.companyName,
+  transferAttorneyContactPerson: attorney.contactPerson,
+  transferAttorneySelectionSource: attorney.selectionSource,
+})
+assert.equal(savedOption.id, attorney.preferredPartnerId)
+assert.equal(savedOption.companyName, 'Young Law Inc')
+assert.equal(savedOption.partnerType, 'transfer_attorney')
+assert.equal(savedOption.source, 'connected_partner')
+
+const pageSource = await readFile(resolve(root, 'src/pages/LegalDocumentWorkspacePage.jsx'), 'utf8')
+assert.match(pageSource, /resolveMandateTransferAttorneySnapshot\(/, 'Mandate workspace must normalize attorney snapshots from saved onboarding data.')
+assert.match(pageSource, /buildSavedMandateTransferAttorneyOption\(mandateDraftDefaults\)/, 'Mandate workspace must add the saved attorney snapshot to the selector options.')
+assert.match(pageSource, /leadSellerOnboarding\.form_data/, 'Mandate defaults must tolerate snake-case onboarding form_data.')
+assert.match(pageSource, /privateListingOnboarding\.form_data/, 'Mandate defaults must tolerate private listing onboarding form_data.')
+assert.match(pageSource, /function leadContextNeedsRemoteSellerContext/, 'Mandate route hydration must detect loose lead contexts that lack listing, token, and onboarding facts.')
+assert.match(pageSource, /leadContextNeedsRemoteSellerContext\(immediateLeadContext\)/, 'Initial mandate route hydration must refresh incomplete local lead contexts from Supabase.')
+assert.match(pageSource, /leadContextNeedsRemoteSellerContext\(nextLeadContext\)/, 'Background mandate route hydration must refresh incomplete local lead contexts from Supabase.')
+assert.match(pageSource, /readLead\(false\)/, 'Lead lookup must retry without a stale organisation filter.')
+assert.match(pageSource, /originating_crm_lead_id\.eq/, 'Lead route must be able to find the linked private listing by originating CRM lead id.')
+
+console.log('Mandate attorney hydration Phase 6 checks passed.')
