@@ -6,6 +6,7 @@ on:
       - 'supabase/migrations/**'
       - 'scripts/supabase-phase8-closeout.mjs'
       - 'scripts/supabase-phase8-closeout.test.mjs'
+      - 'scripts/supabase-phase0-retirement.test.mjs'
       - 'docs/supabase-phase-5-application-manifest.json'
       - 'docs/supabase-phase-8-closeout-evidence.json'
       - 'docs/supabase-phase-8-closeout-report.md'
@@ -20,6 +21,7 @@ on:
       - 'supabase/migrations/**'
       - 'scripts/supabase-phase8-closeout.mjs'
       - 'scripts/supabase-phase8-closeout.test.mjs'
+      - 'scripts/supabase-phase0-retirement.test.mjs'
       - 'docs/supabase-phase-5-application-manifest.json'
       - 'docs/supabase-phase-8-closeout-evidence.json'
       - 'docs/supabase-phase-8-closeout-report.md'
@@ -47,6 +49,9 @@ jobs:
 
       - name: Test Phase 8 closeout gate
         run: node scripts/supabase-phase8-closeout.test.mjs
+
+      - name: Test Phase 0 guard retirement
+        run: node scripts/supabase-phase0-retirement.test.mjs
 
       - name: Print local closeout plan
         run: node scripts/supabase-phase8-closeout.mjs --plan

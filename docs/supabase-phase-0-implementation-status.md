@@ -1,24 +1,22 @@
 # Supabase Phase 0 Implementation Status
 
-Generated: 2026-07-18
+Generated: 2026-07-31
 Linked project: `isdowlnollckzvltkasn` (`Arch9 SaaS`)
 
 ## Decision
 
-**Status: REPOSITORY_GUARD_ACTIVE — DATABASE_WRITES_BLOCKED**
+**Status: REPOSITORY_GUARD_RETIRED — CLOSEOUT_COMPLETE**
 
-The Phase 0 repository freeze is implemented and regression-tested. Database migration application must remain blocked because recoverability and staging prerequisites are not currently satisfied.
+The Phase 0 broad-push guard has been retired through a separate reviewed change after the live closeout reported `READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT`.
 
 ## Implemented Controls
 
-- `supabase db push`, `supabase db reset`, and `supabase migration repair` are blocked by `scripts/supabase-phase0-guard.mjs` unless the documented explicit override is present.
-- The guard correctly distinguishes its own `--status` command from Supabase's `migration repair --status ...` option. This closes a bypass found during Phase 0 verification.
-- `scripts/supabase-phase0-guard.test.mjs` verifies blocked commands, allowed read-only diagnostics, and explicit override behavior.
-- `.github/workflows/supabase-phase0-guard.yml` runs the regression test for migration- and guard-related pull requests and pushes to `main`.
-- Pull requests that add migration files are rejected during the freeze. A release owner can use the `database-reconciliation` label only for reviewed history restoration or a corrective migration.
-- No linked database writes were performed during implementation.
+- The retired guard scripts and Phase 0 workflow were removed.
+- The existing Phase 8 closeout workflow now runs a regression test that prevents the retired guard and package wiring from being reintroduced.
+- The closeout evidence records 33/33 complete production rows, zero live ledger drift, locked recovery evidence, and seven physical backups.
+- This retirement change performed no linked database writes.
 
-## Current Operational Evidence
+## Historical Pre-Closeout Evidence
 
 | Check | Result | Decision |
 | --- | --- | --- |
@@ -33,12 +31,10 @@ The Phase 0 repository freeze is implemented and regression-tested. Database mig
 
 The only other accessible project, `Yakstack MVP v2`, is inactive and is not identified as an Arch9 staging environment.
 
-## Required Release-Owner Actions
+## Post-Retirement Release Rules
 
-1. Enable PITR or establish and test an equivalent recoverable production backup.
-2. Provision or identify a dedicated Arch9 staging Supabase project.
-3. Restore staging from a production-safe snapshot or reproducible schema/data fixture.
-4. Record the recovery test and staging project reference without committing credentials.
-5. Keep the Phase 0 guard active until duplicate timestamps and migration ledger drift are reconciled.
+1. Apply migrations to staging first.
+2. Require reviewed approval before production promotion.
+3. Verify the production ledger and recovery evidence before dependent production deployment.
 
-Do not use the Phase 0 override to compensate for missing recovery or staging controls.
+The former Phase 0 override is retired with the guard and must not be reintroduced as a migration release mechanism.

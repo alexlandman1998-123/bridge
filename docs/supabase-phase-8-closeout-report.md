@@ -1,13 +1,13 @@
 # Supabase Phase 8 Closeout Report
 
-Generated: 2026-07-31T17:49:22.504Z
+Generated: 2026-07-31T18:55:11.768Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
 
-**Status: LOCAL_CLOSEOUT_NOT_READY**
+**Status: READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT**
 
-The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT`. Even a ready report authorizes a reviewed guard-removal change; it does not remove the guard automatically.
+The Phase 0 broad-push freeze was retired through a separate reviewed change after this report recorded `READY_FOR_REVIEWED_PHASE0_FREEZE_RETIREMENT`.
 
 ## Gate Summary
 
@@ -26,14 +26,14 @@ The Phase 0 broad-push freeze remains active unless this report says `READY_FOR_
 | Ledger drift resolution loaded | Yes |
 | Ledger drift resolution status | LEDGER_DRIFT_RESOLVED |
 | Ledger drift resolution blockers | 0 |
-| Live verification performed | No |
-| Pure local-only versions | Not checked |
-| Pure remote-only versions | Not checked |
-| Divergent versions | Not checked |
-| Unreviewed split versions | Not checked |
-| Production PITR | Not checked |
-| Physical backups | Not checked |
-| Ready for reviewed freeze retirement | No |
+| Live verification performed | Yes |
+| Pure local-only versions | 0 |
+| Pure remote-only versions | 0 |
+| Divergent versions | 0 |
+| Unreviewed split versions | 0 |
+| Production PITR | Disabled |
+| Physical backups | 7 |
+| Ready for reviewed freeze retirement | Yes |
 
 ## Incomplete Evidence Versions
 
@@ -57,4 +57,4 @@ No rows.
 
 ## Closeout Rule
 
-Do not remove `scripts/supabase-phase0-guard.mjs`, its CI enforcement, or the broad-push freeze until all local and live checks pass, all 33 manifest versions have reviewed closeout evidence, and production recovery is available and tested.
+The closeout gates passed before the separate guard-retirement change: all 33 manifest versions have reviewed production evidence, live ledger drift is resolved, and production recovery is available and tested.

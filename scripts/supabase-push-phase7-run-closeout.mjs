@@ -156,7 +156,7 @@ Generated: ${result.generatedAt}
 
 **Status: ${result.status}**
 
-Phase 7 runs the closeout gate after syncing production evidence. It does not remove the Phase 0 broad-push freeze; it only records whether the closeout gates are ready for reviewed freeze retirement.
+Phase 7 runs the closeout gate after syncing production evidence. It does not mutate production; it records whether the closeout gates are ready for the separate reviewed Phase 0 guard-retirement change.
 
 ## Summary
 
@@ -196,7 +196,7 @@ ${ledger || recovery ? markdownTable(['Check', 'Value'], [
 ${liveError}
 ## Result
 
-The closeout remains blocked until all manifest rows have reviewed production evidence, live ledger drift is resolved, and production recovery is available and tested. Keep the Phase 0 broad-push freeze active.
+The closeout is ready for a separate reviewed Phase 0 guard-retirement change only when all manifest rows have reviewed production evidence, live ledger drift is resolved, and production recovery is available and tested.
 `
 }
 
