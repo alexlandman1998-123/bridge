@@ -221,7 +221,8 @@ async function resolveSellerBranding(client, organisationId = '') {
       organisation.name,
   )
 
-  if (!organisationName && !logoUrl) return null
+  const hasBrandColours = Boolean(resolved.primaryColour || resolved.secondaryColour || resolved.accentColour)
+  if (!organisationName && !logoUrl && !hasBrandColours) return null
 
   return {
     organisationId: normalizedOrganisationId,

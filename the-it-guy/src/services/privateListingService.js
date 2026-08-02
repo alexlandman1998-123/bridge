@@ -2666,7 +2666,9 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
           : {}
   const portalBranding = onboardingFormData.portalBranding && typeof onboardingFormData.portalBranding === 'object'
     ? onboardingFormData.portalBranding
-    : {}
+    : onboardingFormData.portal_branding && typeof onboardingFormData.portal_branding === 'object'
+      ? onboardingFormData.portal_branding
+      : {}
   const resolvedPortalBranding = resolveOnboardingBranding(portalBranding)
   const listingImageGallery = normalizeMediaItems(
     row.galleryImages ||
@@ -2832,6 +2834,9 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     organisationLogoUrl: pickFirstText(resolvedPortalBranding.logoDarkUrl, resolvedPortalBranding.logoLightUrl, resolvedPortalBranding.logoIconUrl),
     organisationLogoDarkUrl: resolvedPortalBranding.logoDarkUrl,
     organisationLogoLightUrl: resolvedPortalBranding.logoLightUrl,
+    primaryColour: resolvedPortalBranding.primaryColour,
+    secondaryColour: resolvedPortalBranding.secondaryColour,
+    accentColour: resolvedPortalBranding.accentColour,
     branding: {
       ...portalBranding,
       organisationName: resolvedPortalBranding.organisationName,
@@ -2999,7 +3004,17 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
           submittedAt: onboarding.submitted_at || null,
           completedAt: onboarding.submitted_at || null,
           currentStep: Number(onboarding?.form_data?.currentStep || 0),
-          formData: onboarding.form_data || {},
+          formData: {
+            ...(onboarding.form_data || {}),
+            ...(Object.keys(portalBranding).length
+              ? {
+                  portalBranding,
+                  portal_branding: portalBranding,
+                }
+              : {}),
+          },
+          portalBranding,
+          portal_branding: portalBranding,
           canonicalFacts: canonicalSellerFacts,
           canonicalFactReadiness: canonicalSellerFactReadiness,
         }
@@ -3027,7 +3042,14 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
           submittedAt: null,
           completedAt: null,
           currentStep: 0,
-          formData: {},
+          formData: Object.keys(portalBranding).length
+            ? {
+                portalBranding,
+                portal_branding: portalBranding,
+              }
+            : {},
+          portalBranding,
+          portal_branding: portalBranding,
           canonicalFacts: canonicalSellerFacts,
           canonicalFactReadiness: canonicalSellerFactReadiness,
         },
@@ -3216,7 +3238,8 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
     const logoIconUrl = resolvedBranding.logoIconUrl
     const logoUrl = pickFirstText(logoDarkUrl, logoLightUrl, logoIconUrl)
 
-    if (!organisationName && !logoUrl) return null
+    const hasBrandColours = Boolean(resolvedBranding.primaryColour || resolvedBranding.secondaryColour || resolvedBranding.accentColour)
+    if (!organisationName && !logoUrl && !hasBrandColours) return null
     return {
       organisationId: normalizedOrganisationId,
       organisationName,
