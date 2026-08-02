@@ -218,6 +218,10 @@ function isActiveLegalDocumentGenerationJob(job = null) {
   return jobType === 'generate_packet_version' && ['queued', 'claimed', 'running', 'failed'].includes(status)
 }
 
+function statusHasGeneratedPacketVersion(status = null) {
+  return Boolean(getGeneratedPacketVersionForSigning(status?.versions || [])?.id)
+}
+
 function slugifySectionKey(value) {
   return normalizeText(value)
     .toLowerCase()
@@ -3735,7 +3739,8 @@ export default function LegalDocumentWorkspace({
     statusStateRef.current = initialStatus
     setStatusState(initialStatus)
     setBackgroundGenerationJob(
-      isActiveLegalDocumentGenerationJob(initialStatus?.legalDocumentJob)
+      isActiveLegalDocumentGenerationJob(initialStatus?.legalDocumentJob) &&
+        !statusHasGeneratedPacketVersion(initialStatus)
         ? initialStatus.legalDocumentJob
         : null,
     )
@@ -3744,7 +3749,8 @@ export default function LegalDocumentWorkspace({
   useEffect(() => {
     statusStateRef.current = statusState
     setBackgroundGenerationJob(
-      isActiveLegalDocumentGenerationJob(statusState?.legalDocumentJob)
+      isActiveLegalDocumentGenerationJob(statusState?.legalDocumentJob) &&
+        !statusHasGeneratedPacketVersion(statusState)
         ? statusState.legalDocumentJob
         : null,
     )
@@ -3945,6 +3951,49 @@ export default function LegalDocumentWorkspace({
     () => Boolean(getGeneratedPacketVersionForSigning(statusState?.versions || [])?.id),
     [statusState?.versions],
   )
+
+  useEffect(() => {
+    if (!isMandatePacket || !hasGeneratedPacketVersion) return
+    const staleJobActive =
+      isActiveLegalDocumentGenerationJob(backgroundGenerationJob) ||
+      isActiveLegalDocumentGenerationJob(statusState?.legalDocumentJob) ||
+      normalizeKey(statusState?.state) === 'generation_queued'
+    const progressMessage = normalizeKey(actionProgressMessage)
+    const staleGenerationMessage =
+      progressMessage.includes('generat') ||
+      progressMessage.includes('rendering') ||
+      progressMessage.includes('saving mandate') ||
+      progressMessage.includes('refreshing generated')
+
+    if (staleJobActive) {
+      setBackgroundGenerationJob(null)
+      setStatusState((previous) => {
+        if (!previous) return previous
+        const previousJobActive = isActiveLegalDocumentGenerationJob(previous.legalDocumentJob)
+        const previousStateQueued = normalizeKey(previous.state) === 'generation_queued'
+        if (!previousJobActive && !previousStateQueued) return previous
+        return {
+          ...previous,
+          legalDocumentJob: null,
+          state: previousStateQueued ? 'PDF_GENERATED' : previous.state,
+        }
+      })
+    }
+
+    if (actionBusy || staleGenerationMessage) {
+      actionBusyRef.current = false
+      setActionBusy(false)
+      if (staleGenerationMessage) setActionProgressMessage('')
+    }
+  }, [
+    actionBusy,
+    actionProgressMessage,
+    backgroundGenerationJob,
+    hasGeneratedPacketVersion,
+    isMandatePacket,
+    statusState?.legalDocumentJob,
+    statusState?.state,
+  ])
 
   const editableSnapshot = useMemo(() => {
     if (editableVersion?.editable_content_json && typeof editableVersion.editable_content_json === 'object' && Array.isArray(editableVersion.editable_content_json.sections)) {
@@ -4687,6 +4736,7 @@ export default function LegalDocumentWorkspace({
     const shouldPoll =
       open &&
       isMandatePacket &&
+      !statusHasGeneratedPacketVersion(currentStatus) &&
       isUuidLike(packetIdForJob) &&
       currentJobId &&
       ['queued', 'claimed', 'running', 'failed'].includes(currentJobStatus)

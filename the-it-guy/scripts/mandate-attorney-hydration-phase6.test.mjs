@@ -62,6 +62,10 @@ assert.match(pageSource, /originating_crm_lead_id\.eq/, 'Lead route must be able
 assert.match(pageSource, /autoGenerateEnabled=\{routeContextSettled && contextHydrated && packetType === 'mandate'\}/, 'Mandate auto-generation must wait for route packet lookup to settle before creating a new packet.')
 assert.match(await readFile(resolve(root, 'src/core/documents/packetStatusResolver.js'), 'utf8'), /\['completed', 'partially_signed', 'sent', 'signing_prep'\][\s\S]+status === 'generated'[\s\S]+status === 'draft'/, 'Lead-scoped packet resolution must prefer generated packets over accidental draft duplicates.')
 assert.match(workspaceSource, /setBackgroundGenerationJob\(\s+isActiveLegalDocumentGenerationJob\(initialStatus\?\.legalDocumentJob\)[\s\S]+: null,\s+\)/, 'Generated mandate refreshes must clear stale background-generation jobs from UI state.')
+assert.match(workspaceSource, /function statusHasGeneratedPacketVersion/, 'Workspace must detect generated versions before trusting stale generation jobs.')
+assert.match(workspaceSource, /isActiveLegalDocumentGenerationJob\(initialStatus\?\.legalDocumentJob\) &&\s+!statusHasGeneratedPacketVersion\(initialStatus\)/, 'Initial generated mandates must not adopt stale active generation jobs.')
+assert.match(workspaceSource, /isMandatePacket &&\s+!statusHasGeneratedPacketVersion\(currentStatus\)/, 'Generated mandates must not continue polling stale background jobs.')
+assert.match(workspaceSource, /if \(actionBusy \|\| staleGenerationMessage\)[\s\S]+setActionBusy\(false\)[\s\S]+setActionProgressMessage\(''\)/, 'Generated mandates must clear stale Working banners and busy buttons.')
 assert.match(workspaceSource, /if \(!legalPermissions\.canGenerate \|\| typeof onGenerate !== 'function'\) return\n\s+if \(actionBusyRef\.current\) return\n\s+const autoGenerateKey/, 'Auto-generation rerenders must not invalidate an active generation run and leave the UI stuck on Working.')
 
 console.log('Mandate attorney hydration Phase 6 checks passed.')
