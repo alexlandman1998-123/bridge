@@ -7132,6 +7132,7 @@ export default function LegalDocumentWorkspace({
     if (!open || !isMandatePacket || effectiveMode !== 'generate' || statusState?.packet?.id || actionBusy || loading) return
     if (!autoGenerateEnabled) return
     if (!legalPermissions.canGenerate || typeof onGenerate !== 'function') return
+    if (actionBusyRef.current) return
     const autoGenerateKey = [
       packetType,
       normalizeText(packetId),
