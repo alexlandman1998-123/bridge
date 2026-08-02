@@ -81,6 +81,15 @@ function firstText(...values) {
   return ''
 }
 
+function firstNonPlaceholderMandateText(...values) {
+  const placeholders = new Set(['seller', 'seller unavailable', 'property', 'not captured', 'route pending'])
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text && !placeholders.has(normalizeKey(text))) return text
+  }
+  return ''
+}
+
 function readPath(source = {}, path = '') {
   const record = source && typeof source === 'object' && !Array.isArray(source) ? source : {}
   const key = normalizeText(path)
@@ -398,6 +407,28 @@ function splitDisplayName(fullName = '') {
     firstName: parts.slice(0, -1).join(' '),
     lastName: parts[parts.length - 1],
   }
+}
+
+function resolveOnboardingPropertyAddress(formData = {}) {
+  const addressParts = [
+    formData.propertyAddressLine1 || formData.property_address_line_1 || formData.addressLine1,
+    formData.propertyAddressLine2 || formData.property_address_line_2 || formData.addressLine2,
+    formData.suburb || formData.propertySuburb || formData.property_suburb,
+    formData.city || formData.propertyCity || formData.property_city,
+    formData.province || formData.propertyProvince || formData.property_province,
+    formData.postalCode || formData.postal_code,
+  ].map(normalizeText).filter(Boolean).join(', ')
+
+  return firstText(
+    formData.propertyAddress,
+    formData.property_address,
+    formData.formattedAddress,
+    formData.formatted_address,
+    formData.streetAddress,
+    formData.street_address,
+    formData.address,
+    addressParts,
+  )
 }
 
 function buildMandateFirstListingTitle({ property = {}, mandateDraft = {} } = {}) {
@@ -766,6 +797,8 @@ async function fetchLeadContextFromSupabase({ organisationId = '', leadId = '' }
             : {},
       }
     : null
+  const onboardingFormData = onboarding?.formData || {}
+  const onboardingPropertyAddress = resolveOnboardingPropertyAddress(onboardingFormData)
 
   const listing = listingResult?.data
     ? {
@@ -773,17 +806,20 @@ async function fetchLeadContextFromSupabase({ organisationId = '', leadId = '' }
         organisationId: normalizeText(listingResult.data.organisation_id),
         sellerLeadId: normalizeText(listingResult.data.seller_lead_id),
         listingTitle: normalizeText(listingResult.data.title),
-        propertyAddress: [listingResult.data.address_line_1, listingResult.data.address_line_2].map(normalizeText).filter(Boolean).join(', '),
-        addressLine1: normalizeText(listingResult.data.address_line_1),
+        propertyAddress: firstText(
+          [listingResult.data.address_line_1, listingResult.data.address_line_2].map(normalizeText).filter(Boolean).join(', '),
+          onboardingPropertyAddress,
+        ),
+        addressLine1: firstText(listingResult.data.address_line_1, onboardingPropertyAddress),
         addressLine2: normalizeText(listingResult.data.address_line_2),
-        suburb: normalizeText(listingResult.data.suburb),
-        city: normalizeText(listingResult.data.city),
-        province: normalizeText(listingResult.data.province),
-        postalCode: normalizeText(listingResult.data.postal_code),
-        propertyType: normalizeText(listingResult.data.property_type),
-        mandateType: normalizeText(listingResult.data.mandate_type),
-        askingPrice: Number(listingResult.data.asking_price || 0) || 0,
-        estimatedValue: Number(listingResult.data.estimated_value || 0) || 0,
+        suburb: firstText(listingResult.data.suburb, onboardingFormData.suburb, onboardingFormData.propertySuburb),
+        city: firstText(listingResult.data.city, onboardingFormData.city, onboardingFormData.propertyCity),
+        province: firstText(listingResult.data.province, onboardingFormData.province, onboardingFormData.propertyProvince),
+        postalCode: firstText(listingResult.data.postal_code, onboardingFormData.postalCode, onboardingFormData.postal_code),
+        propertyType: firstText(listingResult.data.property_type, onboardingFormData.propertyType, onboardingFormData.propertyStructureType),
+        mandateType: firstText(listingResult.data.mandate_type, onboardingFormData.mandateType),
+        askingPrice: Number(listingResult.data.asking_price || onboardingFormData.askingPrice || 0) || 0,
+        estimatedValue: Number(listingResult.data.estimated_value || listingResult.data.asking_price || onboardingFormData.askingPrice || 0) || 0,
         sellerOnboardingStatus: normalizeText(onboarding?.status || row?.seller_onboarding_status),
         sellerOnboarding: onboarding ? { ...onboarding } : null,
       }
@@ -819,10 +855,10 @@ async function fetchLeadContextFromSupabase({ organisationId = '', leadId = '' }
     status: normalizeText(row?.status) || normalizeText(row?.stage) || 'New Lead',
     priority: normalizeText(row?.priority) || 'Medium',
     budget: Number(row?.budget || 0) || 0,
-    areaInterest: normalizeText(row?.area_interest),
-    propertyInterest: normalizeText(row?.property_interest),
-    sellerPropertyAddress: normalizeText(row?.seller_property_address),
-    estimatedValue: Number(row?.estimated_value || 0) || 0,
+    areaInterest: firstText(row?.area_interest, listing?.suburb, onboardingFormData.suburb),
+    propertyInterest: firstText(row?.property_interest, listing?.propertyType, listing?.listingTitle, onboardingPropertyAddress),
+    sellerPropertyAddress: firstText(row?.seller_property_address, listing?.propertyAddress, onboardingPropertyAddress),
+    estimatedValue: Number(row?.estimated_value || listing?.estimatedValue || 0) || 0,
     notes: normalizeText(row?.notes),
     sellerOnboardingToken: normalizeText(row?.seller_onboarding_token || onboarding?.token),
     sellerOnboardingLink: '',
@@ -867,10 +903,11 @@ function mapPrivateListingToLeadContext({ listingRow = {}, onboardingRow = null,
   const sellerLeadId = normalizeText(listingRow?.seller_lead_id || listingRow?.sellerLeadId)
   const incomingLeadId = normalizeText(leadId)
   const safeIncomingLeadId = incomingLeadId && incomingLeadId !== listingId ? incomingLeadId : ''
-  const propertyAddress = [
+  const listingPropertyAddress = [
     listingRow?.address_line_1 || listingRow?.addressLine1,
     listingRow?.address_line_2 || listingRow?.addressLine2,
   ].map(normalizeText).filter(Boolean).join(', ')
+  const propertyAddress = firstText(listingPropertyAddress, resolveOnboardingPropertyAddress(formData))
   const sellerFirstName = firstText(formData.sellerFirstName, formData.firstName)
   const sellerSurname = firstText(formData.sellerSurname, formData.lastName, formData.surname)
   const sellerFullName = firstText(
@@ -887,16 +924,16 @@ function mapPrivateListingToLeadContext({ listingRow = {}, onboardingRow = null,
     sellerLeadId,
     listingTitle: normalizeText(listingRow?.title || listingRow?.listingTitle),
     propertyAddress,
-    addressLine1: normalizeText(listingRow?.address_line_1 || listingRow?.addressLine1),
+    addressLine1: firstText(listingRow?.address_line_1 || listingRow?.addressLine1, propertyAddress),
     addressLine2: normalizeText(listingRow?.address_line_2 || listingRow?.addressLine2),
-    suburb: normalizeText(listingRow?.suburb),
-    city: normalizeText(listingRow?.city),
-    province: normalizeText(listingRow?.province),
-    postalCode: normalizeText(listingRow?.postal_code || listingRow?.postalCode),
-    propertyType: normalizeText(listingRow?.property_type || listingRow?.propertyType),
-    mandateType: normalizeText(listingRow?.mandate_type || listingRow?.mandateType),
-    askingPrice: Number(listingRow?.asking_price || listingRow?.askingPrice || 0) || 0,
-    estimatedValue: Number(listingRow?.estimated_value || listingRow?.estimatedValue || listingRow?.asking_price || 0) || 0,
+    suburb: firstText(listingRow?.suburb, formData.suburb, formData.propertySuburb),
+    city: firstText(listingRow?.city, formData.city, formData.propertyCity),
+    province: firstText(listingRow?.province, formData.province, formData.propertyProvince),
+    postalCode: firstText(listingRow?.postal_code || listingRow?.postalCode, formData.postalCode, formData.postal_code),
+    propertyType: firstText(listingRow?.property_type || listingRow?.propertyType, formData.propertyType, formData.propertyStructureType),
+    mandateType: firstText(listingRow?.mandate_type || listingRow?.mandateType, formData.mandateType),
+    askingPrice: Number(listingRow?.asking_price || listingRow?.askingPrice || formData.askingPrice || 0) || 0,
+    estimatedValue: Number(listingRow?.estimated_value || listingRow?.estimatedValue || listingRow?.asking_price || formData.askingPrice || 0) || 0,
     sellerOnboardingStatus: normalizeText(onboarding?.status),
     sellerOnboarding: onboarding ? { ...onboarding } : null,
   }
@@ -1773,7 +1810,7 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
     lead.sellerSurname,
     lead.contact?.lastName,
   )
-  const sellerFullName = firstText(
+  const sellerFullName = firstNonPlaceholderMandateText(
     packetDraft.sellerFullName,
     snapshotSeller.fullName,
     onboarding.seller_full_name,
@@ -1861,7 +1898,7 @@ function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, tra
     sellerTrusteeNames: firstText(packetDraft.sellerTrusteeNames, snapshotSeller.trusteeNames, onboarding.trusteeNames),
     sellerResolutionDate: toIsoDate(firstText(packetDraft.sellerResolutionDate, snapshotSeller.resolutionDate, onboarding.resolutionDate)),
     sellerAuthorityBasis: firstText(packetDraft.sellerAuthorityBasis, snapshotSeller.authorityBasis, onboarding.authorityBasis),
-    propertyAddress: firstText(
+    propertyAddress: firstNonPlaceholderMandateText(
       packetDraft.propertyAddress,
       snapshotProperty.fullAddress,
       snapshotProperty.address,
