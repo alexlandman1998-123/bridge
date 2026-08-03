@@ -51,7 +51,7 @@ assert.equal(report.phase, 'document-generator-simple-signing-ui-phase-4')
 assert.equal(report.status, 'browser_smoke_passed')
 assert.equal(report.mutatedData, false)
 assert.equal(report.sentRealEmails, false)
-assert.equal(report.evidence.length, 2)
+assert.ok(report.evidence.length >= 2, 'Phase 5 requires at least the mandate and OTP browser evidence.')
 
 const evidenceById = new Map(report.evidence.map((item) => [item.id, item]))
 const mandateEvidence = evidenceById.get('mandate-seller-mobile')

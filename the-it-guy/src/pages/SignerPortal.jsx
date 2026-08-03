@@ -117,6 +117,30 @@ function isSignerCompletedRetryableError(error = null) {
   return error?.signerCompleted === true || error?.details?.signerCompleted === true || error?.details?.signer_completed === true
 }
 
+const INITIAL_SESSION_RETRY_DELAYS_MS = [700, 1400, 2600]
+const RETRYABLE_INITIAL_SESSION_CODES = new Set([
+  'INVALID_SIGNING_TOKEN',
+  'SIGNER_SESSION_REQUEST_FAILED',
+  'SIGNER_SESSION_FAILED',
+  'SIGNER_SESSION_INACTIVE',
+  'SIGNER_SESSION_BINDING_INVALID',
+  'F1_SESSION_NOT_AUTHORIZED',
+  'LOCKED_SIGNING_PREVIEW_UNAVAILABLE',
+  'SIGNER_FIELDS_NOT_PREPARED',
+])
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function isInitialSessionResolveRetryableError(error = null) {
+  const code = normalizeText(error?.code).toUpperCase()
+  if (code === 'SIGNING_TOKEN_EXPIRED' || code === 'SELLER_WAITING_FOR_AGENT') return false
+  if (RETRYABLE_INITIAL_SESSION_CODES.has(code)) return true
+  const status = Number(error?.status || error?.details?.status || 0)
+  return [404, 409, 425, 429, 500, 502, 503, 504].includes(status)
+}
+
 function fieldTypeLabel(fieldType = '') {
   const normalized = normalizeKey(fieldType)
   if (normalized === 'initial') return 'Initial'
@@ -559,6 +583,21 @@ export default function SignerPortal() {
     return result?.session || null
   }
 
+  async function resolveInitialPortalSession() {
+    let lastError = null
+    for (let attemptIndex = 0; attemptIndex <= INITIAL_SESSION_RETRY_DELAYS_MS.length; attemptIndex += 1) {
+      try {
+        return await resolvePortalSession()
+      } catch (error) {
+        lastError = error
+        const canRetry = attemptIndex < INITIAL_SESSION_RETRY_DELAYS_MS.length && isInitialSessionResolveRetryableError(error)
+        if (!canRetry) throw error
+        await sleep(INITIAL_SESSION_RETRY_DELAYS_MS[attemptIndex])
+      }
+    }
+    throw lastError
+  }
+
   async function refreshSession({ preloadPreview = false } = {}) {
     const nextSession = await resolvePortalSession()
     if (preloadPreview) preloadPreviewResource(nextSession)
@@ -572,7 +611,7 @@ export default function SignerPortal() {
       try {
         setLoading(true)
         setErrorMessage('')
-        const result = await resolvePortalSession()
+        const result = await resolveInitialPortalSession()
         if (!active) return
         setSession(result)
       } catch (error) {

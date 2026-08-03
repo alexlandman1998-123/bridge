@@ -46,6 +46,8 @@ export async function resolveExternalSignerSession({ token } = {}) {
   if (error) {
     const requestError = new Error(error.message || 'Unable to load signer session.')
     requestError.code = String(error.code || 'SIGNER_SESSION_REQUEST_FAILED')
+    requestError.details = error.details || null
+    requestError.status = error.status || null
     throw requestError
   }
 
@@ -53,6 +55,7 @@ export async function resolveExternalSignerSession({ token } = {}) {
     const edgeError = new Error(String(data?.error || data?.message || 'Unable to load signer session.'))
     edgeError.code = String(data?.errorCode || data?.error_code || 'SIGNER_SESSION_FAILED')
     edgeError.details = data || null
+    edgeError.status = data?.status || null
     throw edgeError
   }
 

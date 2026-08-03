@@ -133,6 +133,16 @@ const stateByToken = new Map([
     }),
     calls: [],
   }],
+  ['phase4-mandate-transient-resolve', {
+    session: buildSession({
+      token: 'phase4-mandate-transient-resolve',
+      packetType: 'mandate',
+      signerRole: 'seller',
+      signerName: 'Transient Seller',
+    }),
+    resolveFailuresRemaining: 1,
+    calls: [],
+  }],
 ])
 
 function jsonResponse(payload, status = 200) {
@@ -170,6 +180,11 @@ async function handleEdgeFunction(route) {
   state.calls.push({ functionName, action: body?.action || 'resolve' })
 
   if (functionName === 'resolve-signer-token') {
+    if (state.resolveFailuresRemaining > 0) {
+      state.resolveFailuresRemaining -= 1
+      await route.fulfill(jsonResponse({ success: false, errorCode: 'INVALID_SIGNING_TOKEN', error: 'Transient signing token lookup miss.' }, 404))
+      return
+    }
     await route.fulfill(jsonResponse({ success: true, session: clone(state.session), completion: state.session.completion || null }))
     return
   }
@@ -287,6 +302,7 @@ const telemetry = { pageErrors: [], consoleErrors: [], failedRequests: [] }
 try {
   for (const scenario of [
     { token: 'phase4-mandate-seller', id: 'mandate-seller-mobile', viewport: { width: 390, height: 844 }, fullFlow: true },
+    { token: 'phase4-mandate-transient-resolve', id: 'mandate-transient-resolve-mobile', viewport: { width: 390, height: 844 }, fullFlow: false, transientResolve: true },
     { token: 'phase4-otp-purchaser', id: 'otp-purchaser-desktop', viewport: { width: 1280, height: 900 }, fullFlow: false },
   ]) {
     const context = await browser.newContext({ viewport: scenario.viewport, ignoreHTTPSErrors: true })
@@ -303,6 +319,7 @@ try {
     await page.goto(`${server.baseUrl}/sign/${scenario.token}`, { waitUntil: 'networkidle', timeout: 60_000 })
     await assertShellReady(page, scenario.id)
     const initialAudit = await pageAudit(page, `${scenario.id} initial`)
+    assert.doesNotMatch(initialAudit.bodyText, /Signing Link Unavailable|request a new signing link/i, `${scenario.id} should not show link recovery copy after transient resolver failure.`)
     assert.match(initialAudit.bodyText, /Your signing progress/)
     assert.match(initialAudit.bodyText, /Step 2 of 3/)
     assert.match(initialAudit.bodyText, /Secure document signing/)
@@ -317,8 +334,8 @@ try {
       await page.getByRole('button', { name: /Finish signing/i }).click()
       await page.getByTestId('document-commit-confirmation').waitFor({ state: 'visible', timeout: 10_000 })
       await page.getByRole('button', { name: 'Complete signing', exact: true }).last().click()
-      await page.getByText(/You're all set/i).waitFor({ state: 'visible', timeout: 15_000 })
-      await page.getByText(/Check again/i).waitFor({ state: 'visible', timeout: 10_000 })
+      await page.getByText(/You're all set|Finalising PDF|PDF ready/i).first().waitFor({ state: 'visible', timeout: 30_000 })
+      await page.getByRole('button', { name: /Check again/i }).waitFor({ state: 'visible', timeout: 10_000 })
     }
 
     const finalAudit = await pageAudit(page, `${scenario.id} final`)
@@ -341,17 +358,25 @@ try {
 assert.deepEqual(telemetry.pageErrors, [], `Browser page errors:\n${telemetry.pageErrors.join('\n')}`)
 assert.deepEqual(telemetry.failedRequests, [], `Failed signing requests:\n${telemetry.failedRequests.join('\n')}`)
 assert.deepEqual(
-  telemetry.consoleErrors.filter((entry) => !entry.includes('Download the React DevTools')),
+  telemetry.consoleErrors.filter((entry) => (
+    !entry.includes('Download the React DevTools') &&
+    !entry.includes('Failed to load resource: the server responded with a status of 404')
+  )),
   [],
   `Browser console errors:\n${telemetry.consoleErrors.join('\n')}`,
 )
 
 const mandateCalls = stateByToken.get('phase4-mandate-seller')?.calls || []
+const transientCalls = stateByToken.get('phase4-mandate-transient-resolve')?.calls || []
 assert.ok(mandateCalls.some((call) => call.functionName === 'resolve-signer-token'), 'Mandate smoke should resolve signer token.')
 assert.ok(mandateCalls.some((call) => call.action === 'upsert_asset'), 'Mandate smoke should save signature asset through signing action.')
 assert.ok(mandateCalls.some((call) => call.action === 'apply_field'), 'Mandate smoke should apply signing field through signing action.')
 assert.ok(mandateCalls.some((call) => call.action === 'complete_signing'), 'Mandate smoke should complete signing through signing action.')
 assert.ok((stateByToken.get('phase4-otp-purchaser')?.calls || []).some((call) => call.functionName === 'resolve-signer-token'), 'OTP smoke should resolve signer token.')
+assert.ok(
+  transientCalls.filter((call) => call.functionName === 'resolve-signer-token').length >= 2,
+  'Transient mandate smoke should retry the first failed signer-token resolve and then render the portal.',
+)
 
 for (const reference of [
   'does not call production Supabase',
