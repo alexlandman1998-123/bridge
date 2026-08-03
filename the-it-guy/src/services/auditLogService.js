@@ -13,29 +13,46 @@ function isWorkspaceForeignKeyError(error) {
   )
 }
 
-export async function recordSecurityAuditEvent({
-  userId = '',
-  workspaceId = '',
-  action = '',
-  targetType = '',
-  targetId = '',
-  metadata = {},
-} = {}) {
-  if (!isSupabaseConfigured || !supabase) return { persisted: false, reason: 'supabase_not_configured' }
+function isMissingAuditRpcError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toUpperCase()
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    message.includes('bridge_record_security_audit_event') ||
+    (message.includes('function') && message.includes('not found'))
+  )
+}
 
-  const safeAction = normalizeText(action)
-  if (!safeAction) return { persisted: false, reason: 'missing_action' }
-  const normalizedWorkspaceId = normalizeText(workspaceId)
+function isMissingSecurityAuditTableError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toUpperCase()
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  return (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    message.includes('could not find the table') ||
+    message.includes('relation "security_audit_events" does not exist')
+  )
+}
 
-  const payload = {
-    user_id: normalizeText(userId) || null,
-    workspace_id: normalizedWorkspaceId || null,
-    action: safeAction,
-    target_type: normalizeText(targetType) || null,
-    target_id: normalizeText(targetId) || null,
-    metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {},
-  }
+function isSecurityAuditPermissionError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toUpperCase()
+  const status = Number(error.status || 0)
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  return (
+    code === '42501' ||
+    status === 401 ||
+    status === 403 ||
+    message.includes('permission denied') ||
+    message.includes('row-level security') ||
+    message.includes('violates row-level security')
+  )
+}
 
+async function recordSecurityAuditEventDirect(payload, { safeAction, normalizedWorkspaceId }) {
   let result = await supabase
     .from('security_audit_events')
     .insert(payload)
@@ -63,18 +80,78 @@ export async function recordSecurityAuditEvent({
   }
 
   if (result.error) {
-    const message = `${result.error.message || ''} ${result.error.details || ''}`.toLowerCase()
-    if (result.error.code === '42P01' || result.error.code === 'PGRST205' || message.includes('security_audit_events')) {
+    if (isMissingSecurityAuditTableError(result.error)) {
       console.warn('[AUDIT] security_audit_events table is not installed; event was not persisted.', {
         action: safeAction,
         targetType: payload.target_type,
       })
       return { persisted: false, reason: 'table_missing' }
     }
+    if (isSecurityAuditPermissionError(result.error)) {
+      console.warn('[AUDIT] security_audit_events write was denied; event was not persisted.', {
+        action: safeAction,
+        targetType: payload.target_type,
+      })
+      return { persisted: false, reason: 'permission_denied' }
+    }
     throw result.error
   }
 
   return { persisted: true, id: result.data?.id || null }
+}
+
+export async function recordSecurityAuditEvent({
+  userId = '',
+  workspaceId = '',
+  action = '',
+  targetType = '',
+  targetId = '',
+  metadata = {},
+} = {}) {
+  if (!isSupabaseConfigured || !supabase) return { persisted: false, reason: 'supabase_not_configured' }
+
+  const safeAction = normalizeText(action)
+  if (!safeAction) return { persisted: false, reason: 'missing_action' }
+  const normalizedWorkspaceId = normalizeText(workspaceId)
+
+  const payload = {
+    user_id: normalizeText(userId) || null,
+    workspace_id: normalizedWorkspaceId || null,
+    action: safeAction,
+    target_type: normalizeText(targetType) || null,
+    target_id: normalizeText(targetId) || null,
+    metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {},
+  }
+
+  const rpcResult = await supabase.rpc('bridge_record_security_audit_event', {
+    p_user_id: payload.user_id,
+    p_workspace_id: payload.workspace_id,
+    p_action: payload.action,
+    p_target_type: payload.target_type,
+    p_target_id: payload.target_id,
+    p_metadata: payload.metadata,
+  })
+
+  if (!rpcResult.error) {
+    return {
+      persisted: Boolean(rpcResult.data?.persisted),
+      id: rpcResult.data?.id || null,
+      reason: rpcResult.data?.persisted ? undefined : rpcResult.data?.code || 'not_persisted',
+    }
+  }
+
+  if (!isMissingAuditRpcError(rpcResult.error)) {
+    if (isSecurityAuditPermissionError(rpcResult.error)) {
+      console.warn('[AUDIT] security audit RPC was denied; event was not persisted.', {
+        action: safeAction,
+        targetType: payload.target_type,
+      })
+      return { persisted: false, reason: 'permission_denied' }
+    }
+    throw rpcResult.error
+  }
+
+  return recordSecurityAuditEventDirect(payload, { safeAction, normalizedWorkspaceId })
 }
 
 export function recordAuthAuditEvent(action, context = {}) {

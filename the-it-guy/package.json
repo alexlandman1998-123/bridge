@@ -230,6 +230,7 @@
     "test:communication-provider-health": "node scripts/communication-provider-health.test.mjs",
     "test:communication-retry": "node scripts/communication-retry.test.mjs",
     "test:atomic-onboarding": "node scripts/atomic-onboarding.test.mjs",
+    "test:audit-log-service-rpc": "node scripts/audit-log-service-rpc.test.mjs",
     "test:bond-intake-notifications": "node src/services/__tests__/bondIntakeNotificationService.test.js",
     "test:bond-application-classification": "node src/services/__tests__/bondApplicationClassification.test.js",
     "test:bond-consultants-management": "node src/services/__tests__/bondConsultantsManagementService.test.js",

@@ -3594,6 +3594,92 @@ function mapSellerClientPortalCorePayload(payload) {
   }
 }
 
+function getSellerOnboardingFormData(onboarding = {}) {
+  if (onboarding?.form_data && typeof onboarding.form_data === 'object') return onboarding.form_data
+  if (onboarding?.formData && typeof onboarding.formData === 'object') return onboarding.formData
+  return {}
+}
+
+async function fetchSellerPortalOnboardingRowByToken(client, token = '', listingId = '') {
+  const normalizedToken = normalizeText(token)
+  const normalizedListingId = normalizeUuid(listingId)
+  if (!normalizedToken && !normalizedListingId) return null
+
+  const columns = 'id, private_listing_id, token, token_expires_at, seller_portal_token, seller_portal_invite_created_at, seller_portal_invite_expires_at, seller_portal_invite_consumed_at, seller_portal_activation_source, seller_portal_status, seller_portal_invitation_sent_at, seller_portal_invitation_last_sent_at, seller_portal_invitation_cancelled_at, seller_portal_activated_at, seller_portal_terms_accepted_at, seller_portal_terms_version, seller_portal_terms_acceptance_id, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at'
+  const legacyColumns = 'id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at'
+  const lookups = [
+    normalizedToken ? ['seller_portal_token', normalizedToken] : null,
+    normalizedToken ? ['token', normalizedToken] : null,
+    normalizedListingId ? ['private_listing_id', normalizedListingId] : null,
+  ].filter(Boolean)
+
+  for (const [column, value] of lookups) {
+    let result = await client
+      .from('private_listing_seller_onboarding')
+      .select(columns)
+      .eq(column, value)
+      .maybeSingle()
+    if (result.error && isMissingSchemaError(result.error)) {
+      if (column === 'seller_portal_token') continue
+      result = await client
+        .from('private_listing_seller_onboarding')
+        .select(legacyColumns)
+        .eq(column, value)
+        .maybeSingle()
+    }
+    if (result.error) {
+      if (isMissingTableError(result.error, 'private_listing_seller_onboarding')) return null
+      throw result.error
+    }
+    if (result.data?.id) return result.data
+  }
+
+  return null
+}
+
+function mergeSellerPortalOnboardingFormData(context = null, persistedOnboarding = null) {
+  if (!context?.listing || !persistedOnboarding?.id) return context
+  const persistedFormData = getSellerOnboardingFormData(persistedOnboarding)
+  if (!Object.keys(persistedFormData).length) return context
+
+  const contextOnboarding = context.onboarding && typeof context.onboarding === 'object' ? context.onboarding : {}
+  const listingOnboarding = context.listing?.sellerOnboarding && typeof context.listing.sellerOnboarding === 'object'
+    ? context.listing.sellerOnboarding
+    : {}
+  const mergedFormData = {
+    ...persistedFormData,
+    ...getSellerOnboardingFormData(contextOnboarding),
+    ...getSellerOnboardingFormData(listingOnboarding),
+  }
+  const mergedOnboarding = {
+    ...persistedOnboarding,
+    ...contextOnboarding,
+    form_data: mergedFormData,
+    formData: mergedFormData,
+  }
+  const mergedListingOnboarding = {
+    ...listingOnboarding,
+    token: mergedOnboarding.token || listingOnboarding.token || '',
+    sellerPortalToken: mergedOnboarding.seller_portal_token || listingOnboarding.sellerPortalToken || '',
+    status: mergedOnboarding.status || listingOnboarding.status || '',
+    currentStep: Number(mergedFormData.currentStep || listingOnboarding.currentStep || 0),
+    formData: mergedFormData,
+  }
+
+  return {
+    ...context,
+    onboarding: mergedOnboarding,
+    listing: {
+      ...context.listing,
+      sellerOnboarding: mergedListingOnboarding,
+      seller_onboarding: {
+        ...(context.listing.seller_onboarding || {}),
+        ...mergedOnboarding,
+      },
+    },
+  }
+}
+
 async function fetchSellerClientPortalCorePayloadByToken(client, token, options = {}) {
   const normalizedToken = normalizeText(token)
   if (!normalizedToken || sellerPortalCorePayloadRpcUnavailable) return null
@@ -7078,16 +7164,20 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     throw buildSellerPortalAuthRequiredError(portalPayload.portalAuth)
   }
   if (portalPayload?.listing) {
+    const persistedOnboarding = options?.requirePortalAccess === true
+      ? null
+      : await fetchSellerPortalOnboardingRowByToken(client, normalizedToken, portalPayload.listing.id)
+    const hydratedPortalPayload = mergeSellerPortalOnboardingFormData(portalPayload, persistedOnboarding)
     const [branding, mediaByListingId] = await Promise.all([
-      resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, portalPayload.listing),
-      fetchMediaRowsForListings(client, [portalPayload.listing.id]),
+      resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, hydratedPortalPayload.listing),
+      fetchMediaRowsForListings(client, [hydratedPortalPayload.listing.id]),
     ])
     const listingWithMedia = attachDistributionMediaToListing(
-      portalPayload.listing,
-      mediaByListingId.get(String(portalPayload.listing.id)) || [],
+      hydratedPortalPayload.listing,
+      mediaByListingId.get(String(hydratedPortalPayload.listing.id)) || [],
     )
     return {
-      ...portalPayload,
+      ...hydratedPortalPayload,
       listing: attachBrandingToListing(listingWithMedia, branding),
     }
   }
