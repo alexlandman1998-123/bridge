@@ -1868,17 +1868,20 @@ function normalizeFormData(listing) {
   }
 }
 
-function AgencyMark({ brand, tone = 'dark' }) {
+function AgencyMark({ brand, tone = 'dark', size = 'default' }) {
   const logoUrl = tone === 'light'
     ? brand?.logoLightUrl || brand?.logoUrl || brand?.logoDarkUrl
     : brand?.logoDarkUrl || brand?.logoUrl || brand?.logoLightUrl
+  const logoSizeClass = size === 'compact'
+    ? 'h-12 w-auto max-w-[175px] sm:h-14 sm:max-w-[210px]'
+    : 'h-16 w-[64vw] max-w-[260px] sm:h-20 sm:w-[320px] sm:max-w-[320px]'
 
   if (logoUrl) {
     return (
       <img
         src={logoUrl}
         alt={`${brand?.name || 'Agency'} logo`}
-        className={`h-11 w-auto max-w-[190px] object-contain sm:h-16 sm:max-w-[260px] ${tone === 'dark' ? 'drop-shadow-[0_14px_28px_rgba(0,0,0,0.24)]' : ''}`}
+        className={`${logoSizeClass} object-contain object-left ${tone === 'dark' ? 'drop-shadow-[0_14px_28px_rgba(0,0,0,0.24)]' : ''}`}
       />
     )
   }
@@ -2706,7 +2709,7 @@ function SellerCompletedState({ listing, form, brand, onDownloadDisclosure }) {
 
           <div className="mt-5 rounded-[20px] border border-[#cfe8da] bg-white/80 p-4 text-left">
             <div className="flex items-start gap-3">
-              <AgencyMark brand={brand} tone="light" />
+              <AgencyMark brand={brand} tone="light" size="compact" />
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-[#172334]">{brand?.name || 'Arch9'}</p>
                 <p className="mt-1 text-sm leading-5 text-[#60748b]">{propertyAddress}</p>

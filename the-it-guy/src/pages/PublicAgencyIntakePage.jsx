@@ -393,7 +393,7 @@ function BrandMark({ agency = {} }) {
       <img
         src={agency.logoUrl}
         alt={`${name} logo`}
-        className="block h-20 max-w-[240px] object-contain drop-shadow-[0_10px_26px_rgba(0,0,0,0.3)] sm:h-24 sm:max-w-[280px]"
+        className="block h-28 w-[68vw] max-w-[300px] object-contain object-left drop-shadow-[0_10px_26px_rgba(0,0,0,0.3)] sm:h-32 sm:w-[340px] sm:max-w-[340px]"
         onError={() => setLogoFailed(true)}
       />
     )

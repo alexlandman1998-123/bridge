@@ -20,8 +20,10 @@ assert.match(
   'seller portal payload loading should retry the legacy token-only RPC while production schema reconciliation is pending',
 )
 const sellerOnboardingLoader = privateListingServiceSource.match(/export async function getSellerOnboardingByToken[\s\S]*?\n}\n\nasync function maybeResolveCanonicalSellerRequirements/)?.[0] || ''
-assert.match(sellerOnboardingLoader, /fetchOrganisationBrandingSnapshot\(client, resolveListingOrganisationId\(portalPayload\.listing\)\)/, 'seller onboarding portal should fetch latest organisation branding for RPC payloads')
-assert.match(sellerOnboardingLoader, /fetchOrganisationBrandingSnapshot\(client, resolveListingOrganisationId\(listing\)\)/, 'seller onboarding portal should fetch latest organisation branding for fallback listing payloads')
+const sellerBrandingResolver = privateListingServiceSource.match(/async function resolveSellerOnboardingBrandingSnapshot[\s\S]*?\n}\n\nfunction attachBrandingToListing/)?.[0] || ''
+assert.match(sellerBrandingResolver, /fetchOrganisationBrandingSnapshot\(client, resolveListingOrganisationId\(listing\)\)/, 'seller onboarding portal should fetch latest organisation branding through the shared resolver')
+assert.match(sellerOnboardingLoader, /resolveSellerOnboardingBrandingSnapshot\(client, normalizedToken, hydratedPortalPayload\.listing\)/, 'seller onboarding portal should hydrate latest branding for RPC payloads')
+assert.match(sellerOnboardingLoader, /resolveSellerOnboardingBrandingSnapshot\(client, normalizedToken, listing\)/, 'seller onboarding portal should hydrate latest branding for fallback listing payloads')
 assert.doesNotMatch(sellerOnboardingLoader, /branding\?\.logoUrl[\s\S]*\?\s*null[\s\S]*fetchOrganisationBrandingSnapshot/, 'seller onboarding portal must not skip latest branding when a stale logo snapshot exists')
 
 const clientPortalSource = await fs.readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
@@ -48,6 +50,23 @@ assert.match(
 assert.match(clientPortalSource, /sellerListingProgressModel=\{sellerListingProgressModel\}/)
 assert.match(clientPortalSource, /sellerSaleProgressModel=\{sellerSaleProgressModel\}/)
 assert.match(clientPortalSource, /sellerStageMeta/)
+assert.match(clientPortalSource, /function getPortalSectionFromRoute/)
+assert.match(clientPortalSource, /const \{ token = '', section: routeSection = '' \} = useParams\(\)/)
+assert.match(
+  clientPortalSource,
+  /const activeWorkspace = requestedWorkspace \|\| 'buyer'/,
+  'unscoped /client/:token routes should render the buyer workspace instead of sticking to the first available seller context',
+)
+
+const sidebarSource = await fs.readFile(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
+assert.match(sidebarSource, /function isSellerPortalShellRoute/)
+assert.match(sidebarSource, /\^\\\/client\\\/\[\^\/\]\+\\\/selling/)
+assert.match(sidebarSource, /const usesPlatformPortalBranding = isSellerPortalShellRoute\(location\.pathname\)/)
+assert.match(
+  sidebarSource,
+  /const showOrganisationBranding = !usesPlatformPortalBranding && Boolean\(branding\.logoUrl\) && !logoLoadFailed/,
+  'desktop seller portal shell should keep Arch9 platform branding instead of replacing it with agency logos',
+)
 
 const sellerOnboardingSource = await fs.readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8')
 assert.match(sellerOnboardingSource, /assignedAgentId/, 'seller onboarding submit notification should pass the assigned agent id when email is not on the listing payload')
@@ -125,7 +144,7 @@ try {
   assert.equal(portalView.currentStage.key, 'listing_live')
   assert.equal(portalView.stageMeta.currentStage.key, 'listing_live')
   assert.equal(portalView.stageMeta.currentStage.message.includes('listing is live'), true)
-  assert.equal(portalView.progressPercent, 88)
+  assert.equal(portalView.progressPercent, 89)
   assert.equal(portalView.stages.find((step) => step.key === 'mandate_signed').state, 'completed')
   assert.equal(portalView.statusCards.find((card) => card.key === 'mandate').value, 'Signed')
   assert.equal(portalView.statusCards.find((card) => card.key === 'listing').value, 'Live')

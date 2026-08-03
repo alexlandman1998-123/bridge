@@ -213,6 +213,11 @@ function routeMatches(pathname, target = '') {
   return pathname === target || pathname.startsWith(`${target}/`)
 }
 
+function isSellerPortalShellRoute(pathname = '') {
+  const normalizedPath = String(pathname || '')
+  return /^\/seller(?:\/|$)/.test(normalizedPath) || /^\/client\/[^/]+\/selling(?:\/|$)/.test(normalizedPath)
+}
+
 function normalizeQuery(search = '') {
   const params = new URLSearchParams(String(search || '').replace(/^\?/, ''))
   return [...params.entries()]
@@ -454,8 +459,9 @@ function Sidebar() {
   const currentLogoLoadStatus = logoLoadState.url === branding.logoUrl ? logoLoadState.status : 'loading'
   const logoLoadFailed = currentLogoLoadStatus === 'failed'
   const logoLoaded = currentLogoLoadStatus === 'loaded'
-  const showOrganisationBranding = Boolean(branding.logoUrl) && !logoLoadFailed
-  const showBrandPlaceholder = organisationLoading && !logoLoadFailed
+  const usesPlatformPortalBranding = isSellerPortalShellRoute(location.pathname)
+  const showOrganisationBranding = !usesPlatformPortalBranding && Boolean(branding.logoUrl) && !logoLoadFailed
+  const showBrandPlaceholder = !usesPlatformPortalBranding && organisationLoading && !logoLoadFailed
   const handleLogoLoadFailure = () => {
     setLogoLoadState({ url: branding.logoUrl, status: 'failed' })
     void trackWorkspaceBrandingMetric('workspace_branding_image_failed', {

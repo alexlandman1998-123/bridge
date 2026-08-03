@@ -1742,6 +1742,29 @@ function getPortalWorkspaceFromPath(pathname = '') {
   return ''
 }
 
+function getPortalSectionFromRoute(pathname = '', routeSection = '') {
+  const normalizedRouteSection = String(routeSection || '').trim().toLowerCase()
+  const normalizedPath = String(pathname || '').split('?')[0]
+  const sectionFromPath = normalizedPath.split('/').filter(Boolean).at(-1) || ''
+  const section = normalizedRouteSection || sectionFromPath
+  const normalizedSection = String(section || '').trim().toLowerCase()
+
+  if (normalizedSection === 'progress') return 'progress'
+  if (normalizedSection === 'bond-application') return 'bond_application'
+  if (normalizedSection === 'appointments') return 'appointments'
+  if (normalizedSection === 'offers') return 'offers'
+  if (normalizedSection === 'account') return 'account'
+  if (normalizedSection === 'documents' || /\/forms\/trust-investment$/.test(normalizedPath)) return 'documents'
+  if (normalizedSection === 'details' || normalizedSection === 'onboarding') return 'details'
+  if (normalizedSection === 'handover' || normalizedSection === 'homeowner') return 'handover'
+  if (normalizedSection === 'snags' || normalizedSection === 'issues') return 'snags'
+  if (normalizedSection === 'settings') return 'settings'
+  if (normalizedSection === 'team') return 'team'
+  if (normalizedSection === 'alterations') return 'alterations'
+  if (normalizedSection === 'review') return 'review'
+  return 'overview'
+}
+
 function normalizePortalContextType(value = '') {
   const normalized = String(value || '').trim().toLowerCase()
   if (normalized === 'selling' || normalized === 'seller') return 'selling'
@@ -7903,7 +7926,7 @@ function SellerPortalPasswordGate({
 }
 
 function ClientPortal() {
-  const { token = '' } = useParams()
+  const { token = '', section: routeSection = '' } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
   const [portal, setPortal] = useState(null)
@@ -7998,23 +8021,10 @@ function ClientPortal() {
   const requestedWorkspace = useMemo(() => getPortalWorkspaceFromPath(location.pathname), [location.pathname])
   const isSellerPortalToken = useMemo(() => String(token || '').trim().toLowerCase().startsWith('seller-'), [token])
 
-  const requestedSection = useMemo(() => {
-    if (location.pathname.endsWith('/progress')) return 'progress'
-    if (location.pathname.endsWith('/bond-application')) return 'bond_application'
-    if (location.pathname.endsWith('/appointments')) return 'appointments'
-    if (location.pathname.endsWith('/offers')) return 'offers'
-    if (location.pathname.endsWith('/account')) return 'account'
-    if (location.pathname.endsWith('/documents') || location.pathname.endsWith('/forms/trust-investment')) return 'documents'
-    if (location.pathname.endsWith('/details') || location.pathname.endsWith('/onboarding')) return 'details'
-    if (location.pathname.endsWith('/handover')) return 'handover'
-    if (location.pathname.endsWith('/homeowner')) return 'handover'
-    if (location.pathname.endsWith('/snags') || location.pathname.endsWith('/issues')) return 'snags'
-    if (location.pathname.endsWith('/settings')) return 'settings'
-    if (location.pathname.endsWith('/team')) return 'team'
-    if (location.pathname.endsWith('/alterations')) return 'alterations'
-    if (location.pathname.endsWith('/review')) return 'review'
-    return 'overview'
-  }, [location.pathname])
+  const requestedSection = useMemo(
+    () => getPortalSectionFromRoute(location.pathname, routeSection),
+    [location.pathname, routeSection],
+  )
 
   useEffect(() => {
     setSellerPortalAccessToken(getStoredSellerPortalAccessToken(token))
@@ -9301,7 +9311,7 @@ function ClientPortal() {
   const availableWorkspaces = Array.isArray(portal?.__workspaceRoles) && portal.__workspaceRoles.length
     ? portal.__workspaceRoles
     : ['buyer']
-  const activeWorkspace = requestedWorkspace || availableWorkspaces[0] || 'buyer'
+  const activeWorkspace = requestedWorkspace || 'buyer'
   const activeSection = sectionEnabled[requestedSection] ? requestedSection : 'overview'
   const hasSellingContext = Boolean(portal?.__hasSellingContext || availableWorkspaces.includes('seller'))
   const sellerContexts = Array.isArray(portal?.__portalContexts)

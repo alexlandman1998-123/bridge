@@ -109,7 +109,7 @@ function AgencyLogo({ logoUrl = '', agencyName = '' }) {
       <img
         src={logoUrl}
         alt={`${safeName} logo`}
-        className="h-20 w-auto max-w-[320px] object-contain drop-shadow-[0_18px_34px_rgba(0,0,0,0.38)] sm:h-24 sm:max-w-[420px]"
+        className="h-28 w-[70vw] max-w-[340px] object-contain object-left drop-shadow-[0_18px_34px_rgba(0,0,0,0.38)] sm:h-32 sm:w-[420px] sm:max-w-[420px]"
       />
     )
   }
