@@ -3199,8 +3199,8 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
       logoIconUrl,
       logoDark: logoDarkUrl,
       logoLight: logoLightUrl,
-      primaryColour: pickFirstText(resolvedBranding.primaryColour, '#274C69'),
-      secondaryColour: pickFirstText(resolvedBranding.secondaryColour, '#10273A'),
+      primaryColour: resolvedBranding.primaryColour,
+      secondaryColour: resolvedBranding.secondaryColour,
       accentColour: resolvedBranding.accentColour,
     }
   } catch (error) {

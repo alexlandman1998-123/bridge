@@ -110,6 +110,45 @@ function sellerPortalLinkIsActive(onboarding = {}, listing = {}) {
   return true
 }
 
+function isMissingColumnError(error, columnName = '') {
+  if (!error) return false
+  const message = normalizeText(error.message).toLowerCase()
+  return (
+    error.code === '42703' ||
+    error.code === 'PGRST204' ||
+    (message.includes('column') && message.includes(normalizeText(columnName).toLowerCase()))
+  )
+}
+
+async function fetchSellerBrandingListing(client, listingId = '') {
+  const normalizedListingId = normalizeText(listingId)
+  if (!normalizedListingId) return null
+
+  const selectAttempts = [
+    'id, organisation_id, listing_status, status, listing_visibility, seller_lead_id, deleted_at',
+    'id, organisation_id, listing_status, listing_visibility, seller_lead_id, deleted_at',
+    'id, organisation_id, listing_status, listing_visibility, seller_lead_id',
+  ]
+
+  let lastError = null
+  for (const select of selectAttempts) {
+    const { data, error } = await client
+      .from('private_listings')
+      .select(select)
+      .eq('id', normalizedListingId)
+      .maybeSingle()
+
+    if (!error) return data || null
+    lastError = error
+    if (!isMissingColumnError(error, 'status') && !isMissingColumnError(error, 'deleted_at')) {
+      throw error
+    }
+  }
+
+  if (lastError) throw lastError
+  return null
+}
+
 async function findOnboardingByPortalToken(client, token = '') {
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) return null
@@ -285,20 +324,15 @@ export async function createSellerOnboardingBrandingResponse({ method = 'GET', u
       })
     }
 
-    const listingResult = await client
-      .from('private_listings')
-      .select('id, organisation_id, listing_status, status, listing_visibility, seller_lead_id, deleted_at')
-      .eq('id', onboarding.private_listing_id)
-      .maybeSingle()
-    if (listingResult.error) throw listingResult.error
-    if (!listingResult.data || !sellerPortalLinkIsActive(onboarding, listingResult.data)) {
+    const listing = await fetchSellerBrandingListing(client, onboarding.private_listing_id)
+    if (!listing || !sellerPortalLinkIsActive(onboarding, listing)) {
       return buildJsonResponse(404, {
         error: 'seller_onboarding_not_found',
         message: 'Seller onboarding link is invalid or inactive.',
       })
     }
 
-    const branding = await resolveSellerBranding(client, listingResult.data.organisation_id)
+    const branding = await resolveSellerBranding(client, listing.organisation_id)
     if (!branding) {
       return buildJsonResponse(404, {
         error: 'seller_onboarding_branding_not_found',
