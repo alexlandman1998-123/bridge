@@ -5347,7 +5347,10 @@ const SELLER_MOBILE_DOCUMENT_CATEGORY_CONFIG = {
 function uniqueSellerMobileDocuments(items = []) {
   const seen = new Set()
   return items.filter((item, index) => {
-    const key = String(item?.id || item?.sourceId || item?.uploadKey || item?.title || `document-${index}`).trim()
+    const haystack = `${item?.sourceType || ''} ${item?.sellerCategoryKey || ''} ${item?.group || ''} ${item?.sourceId || ''} ${item?.title || ''} ${item?.description || ''} ${item?.linkedDocument?.document_type || ''} ${item?.linkedDocument?.category || ''}`.toLowerCase()
+    const key = /mandate|mandate_signature|signed_mandate/.test(haystack)
+      ? 'seller_mandate'
+      : String(item?.id || item?.sourceId || item?.uploadKey || item?.title || `document-${index}`).trim()
     if (!key || seen.has(key)) return false
     seen.add(key)
     return true
@@ -5361,9 +5364,10 @@ function getSellerMobileDocumentCategoryKey(item = {}) {
     return explicitCategoryKey
   }
   const haystack = `${item?.sellerCategoryKey || ''} ${item?.group || ''} ${item?.sourceId || ''} ${item?.title || ''} ${item?.description || ''}`.toLowerCase()
-  if (/sale_document|mandate|otp|offer to purchase|sale agreement|agreement of sale|seller instruction|seller declaration/.test(haystack)) return 'sale'
   if (/additional/.test(haystack)) return 'additional'
-  if (/rates|levy|hoa|body corporate|property|bond statement|occupancy|lease|tenant|electrical|plumbing|beetle|coc|certificate|title deed|disclosure|defects|bank account|account confirmation|sale proceeds/.test(haystack)) return 'property'
+  if (/disclosure|defects|capital improvement|cgt|capital-gains|acquisition|alteration|building plan|occupation certificate|rates|levy|hoa|body corporate|property|bond statement|occupancy|lease|tenant|electrical|plumbing|beetle|coc|certificate|title deed|bank account|account confirmation|sale proceeds/.test(haystack)) return 'property'
+  if (/sale_document|mandate|otp|offer to purchase|sale agreement|agreement of sale|seller instruction/.test(haystack)) return 'sale'
+  if (/identity|id document|passport|proof of residential address|proof of address|residential address|fica|kyc|tax number|income tax|sars|marital|spouse|director|trustee|company|cipc|registration/.test(haystack)) return 'fica'
   return 'fica'
 }
 
@@ -5395,13 +5399,13 @@ function getSellerMobileDocumentUploadedLabel(item = {}) {
 function buildSellerMobileDocumentDashboardModel(documentCenter = {}) {
   const sections = buildDocumentCentreSections(documentCenter, 'selling')
   const allDocuments = uniqueSellerMobileDocuments([
+    ...(Array.isArray(documentCenter?.saleDocuments) ? documentCenter.saleDocuments : []),
     ...sections.allRequired,
     ...sections.additionalRequests,
     ...sections.uploadedUnderReview,
     ...sections.rejectedNeedsAttention,
     ...sections.approvedCompleted,
     ...sections.signedDocuments,
-    ...(Array.isArray(documentCenter?.saleDocuments) ? documentCenter.saleDocuments : []),
   ]).map((item) => ({
     ...item,
     categoryKey: getSellerMobileDocumentCategoryKey(item),
@@ -5751,7 +5755,7 @@ function SellerMobileDocumentsPage({
             <ChevronRight size={15} />
           </button>
         </div>
-        <div className="mt-8 grid flex-1 content-start grid-cols-2 gap-x-3 gap-y-8">
+        <div className="mt-5 grid flex-1 content-start grid-cols-2 gap-3">
           {model.categories.map((category) => {
             const Icon = category.icon
             const tone = sellerMobileToneClasses(category.tone)
@@ -5765,16 +5769,16 @@ function SellerMobileDocumentsPage({
                 key={category.key}
                 type="button"
                 onClick={() => onSelectCategory?.(category.key)}
-                className="relative min-h-[150px] rounded-[14px] border border-[#edf0f3] bg-white px-3 pb-3 pt-10 text-left shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
+                className="relative min-h-[174px] overflow-hidden rounded-[14px] border border-[#edf0f3] bg-white px-3 pb-3 pt-3 text-left shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
               >
-                <span className="absolute right-3 top-0 -translate-y-1/2">
+                <span className="absolute right-3 top-3">
                   <SellerMobileDocumentCategoryRing progress={category.progress} tone={category.tone} />
                 </span>
-                <div className="flex items-start justify-between gap-2 pr-16">
+                <div className="flex items-start justify-between gap-2 pr-[82px]">
                   <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[12px] ${tone.icon}`}><Icon size={20} /></span>
                   <ChevronRight size={18} className="mt-2 text-[#98a2b3]" />
                 </div>
-                <h3 className="mt-2 text-sm font-semibold text-[#101823]">{category.label}</h3>
+                <h3 className="mt-8 text-sm font-semibold text-[#101823]">{category.label}</h3>
                 <p className="mt-0.5 text-[0.68rem] font-medium text-[#667085]">{category.completed} of {category.total} complete</p>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e7eaef]">
                   <span className={`block h-full rounded-full ${tone.progress}`} style={{ width: `${category.progress}%` }} />
@@ -10978,21 +10982,6 @@ function ClientPortal() {
     'Arch9',
   )
   const sellerAgencyLogoUrl = pickFirstText(
-    portal?.listing?.agencyLogoDarkUrl,
-    portal?.listing?.agency_logo_dark_url,
-    portal?.listing?.organisationLogoDarkUrl,
-    portal?.listing?.organisation_logo_dark_url,
-    portal?.listing?.branding?.logoDarkUrl,
-    portal?.listing?.branding?.logoDark,
-    portal?.listing?.branding?.logo_dark_url,
-    activeSellingContext?.agencyLogoDarkUrl,
-    activeSellingContext?.agency_logo_dark_url,
-    activeSellingContext?.branding?.logoDarkUrl,
-    activeSellingContext?.branding?.logoDark,
-    activeSellingContext?.branding?.logo_dark_url,
-    portal?.branding?.logoDarkUrl,
-    portal?.branding?.logoDark,
-    portal?.branding?.logo_dark_url,
     portal?.listing?.agencyLogoLightUrl,
     portal?.listing?.agency_logo_light_url,
     portal?.listing?.organisationLogoLightUrl,
@@ -11020,6 +11009,21 @@ function ClientPortal() {
     portal?.branding?.logo_url,
     portal?.branding?.logoIconUrl,
     portal?.branding?.logo_icon_url,
+    portal?.listing?.agencyLogoDarkUrl,
+    portal?.listing?.agency_logo_dark_url,
+    portal?.listing?.organisationLogoDarkUrl,
+    portal?.listing?.organisation_logo_dark_url,
+    portal?.listing?.branding?.logoDarkUrl,
+    portal?.listing?.branding?.logoDark,
+    portal?.listing?.branding?.logo_dark_url,
+    activeSellingContext?.agencyLogoDarkUrl,
+    activeSellingContext?.agency_logo_dark_url,
+    activeSellingContext?.branding?.logoDarkUrl,
+    activeSellingContext?.branding?.logoDark,
+    activeSellingContext?.branding?.logo_dark_url,
+    portal?.branding?.logoDarkUrl,
+    portal?.branding?.logoDark,
+    portal?.branding?.logo_dark_url,
     portal?.listing?.agencyLogoUrl,
     portal?.listing?.agency_logo_url,
     portal?.listing?.organisationLogoUrl,

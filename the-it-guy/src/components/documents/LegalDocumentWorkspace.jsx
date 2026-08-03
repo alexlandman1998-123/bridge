@@ -3588,6 +3588,179 @@ function MandateRoutePanel({ routing = null, className = '' }) {
   )
 }
 
+function MandateWorkspaceInfoTile({ label = '', value = '', Icon = FileText, tone = 'blue' }) {
+  const IconComponent = Icon
+  const toneClassName = tone === 'green'
+    ? 'bg-[#effaf4] text-[#1f8a5d]'
+    : tone === 'amber'
+      ? 'bg-[#fff8ed] text-[#9b6b1c]'
+      : 'bg-[#eef5ff] text-[#0a66ff]'
+
+  if (!normalizeText(value)) return null
+
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[16px] ${toneClassName}`}>
+        <IconComponent size={17} />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">{label}</span>
+        <span className="mt-1 block truncate text-sm font-semibold text-[#102033]" title={value}>{value}</span>
+      </span>
+    </div>
+  )
+}
+
+function MandateWorkspaceSummaryStrip({ items = [] }) {
+  const visibleItems = items.filter((item) => normalizeText(item.value))
+  if (!visibleItems.length) return null
+
+  return (
+    <section className="rounded-[22px] border border-[#e5edf7] bg-white px-5 py-4 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-5">
+        {visibleItems.map((item) => (
+          <MandateWorkspaceInfoTile key={item.key} {...item} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function MandateWorkspaceTabs({ tabs = [], onSelect = null }) {
+  const visibleTabs = tabs.filter((tab) => normalizeText(tab.id) && normalizeText(tab.label))
+  if (!visibleTabs.length) return null
+
+  return (
+    <nav className="rounded-[22px] border border-[#e5edf7] bg-white px-4 shadow-[0_16px_40px_rgba(16,32,51,0.05)]" aria-label="Mandate workspace sections">
+      <div className="flex gap-5 overflow-x-auto">
+        {visibleTabs.map((tab, index) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onSelect?.(tab.id)}
+            className={`shrink-0 border-b-2 px-1 py-4 text-sm font-semibold transition ${
+              index === 0
+                ? 'border-[#00614f] text-[#00614f]'
+                : 'border-transparent text-[#526b84] hover:border-[#c9d8e7] hover:text-[#102033]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    </nav>
+  )
+}
+
+function MandateSignerProgressCard({ signerProgressMeta = {}, onOpen = null }) {
+  const signed = Number(signerProgressMeta.signedRequired || 0)
+  const total = Number(signerProgressMeta.totalRequired || 0)
+  const percent = total > 0 ? Math.round((signed / total) * 100) : 0
+
+  return (
+    <section id="mandate-workspace-signing" className="rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-[1rem] font-semibold text-[#102033]">Signer Progress</h4>
+          <p className="mt-1 text-sm text-[#6b7c93]">Track signer completion status.</p>
+        </div>
+        <span className="rounded-full border border-[#dce6f2] bg-[#f7fbff] px-3 py-1 text-[0.68rem] font-semibold text-[#526b84]">
+          {percent}%
+        </span>
+      </div>
+      <div className="mt-6 grid gap-5 sm:grid-cols-[132px_minmax(0,1fr)] sm:items-center">
+        <div
+          className="grid h-32 w-32 place-items-center rounded-full"
+          style={{ background: `conic-gradient(#00614f ${percent}%, #e5e9ef 0)` }}
+          aria-label={`${signed} of ${total || 0} signers complete`}
+        >
+          <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center">
+            <span>
+              <span className="block text-2xl font-semibold text-[#102033]">{signed}/{total || 0}</span>
+              <span className="block text-xs font-medium text-[#607387]">Completed</span>
+            </span>
+          </div>
+        </div>
+        <div className="space-y-2">
+          {(signerProgressMeta.rows || []).map((row) => (
+            <article key={row.role || row.label} className="flex items-center justify-between gap-3 rounded-[16px] border border-[#edf3fa] bg-[#fbfdff] px-4 py-3">
+              <span className="min-w-0 truncate text-sm font-semibold text-[#102033]">{row.label || row.role || 'Signer'}</span>
+              <span className="shrink-0 rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#526b84]">
+                {resolveSignerStatusLabel(row.statusRaw || row.status)}
+              </span>
+            </article>
+          ))}
+          {!signerProgressMeta.rows?.length ? (
+            <article className="rounded-[16px] border border-dashed border-[#dbe5f0] bg-[#fbfdff] px-4 py-3 text-sm text-[#6b7c93]">
+              Signer status will appear after the signing packet is prepared.
+            </article>
+          ) : null}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => onOpen?.()}
+        className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#00614f]"
+      >
+        View signer details
+        <ChevronRight size={14} />
+      </button>
+    </section>
+  )
+}
+
+function MandateQuickActions({ actions = [] }) {
+  const visibleActions = actions.filter(Boolean)
+  if (!visibleActions.length) return null
+
+  return (
+    <section className="rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+      <h4 className="text-[1rem] font-semibold text-[#102033]">Quick Actions</h4>
+      <div className="mt-4 space-y-2">
+        {visibleActions.map(({ key, label, Icon = ChevronRight, onClick, disabled = false }) => {
+          const IconComponent = Icon
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={onClick}
+              disabled={disabled}
+              className="flex h-10 w-full items-center justify-between gap-3 rounded-[12px] border border-[#e1e9f3] bg-white px-3 text-sm font-semibold text-[#102033] transition hover:border-[#c7d8eb] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              <span className="truncate">{label}</span>
+              <IconComponent size={15} className="shrink-0 text-[#526b84]" />
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function MandateMetadataFooter({ items = [] }) {
+  const visibleItems = items.filter((item) => normalizeText(item.value))
+  if (!visibleItems.length) return null
+
+  return (
+    <footer className="grid gap-3 rounded-[24px] border border-[#e5edf7] bg-white p-4 shadow-[0_16px_40px_rgba(16,32,51,0.05)] sm:grid-cols-2 xl:grid-cols-4">
+      {visibleItems.map(({ key, label, value, Icon = FileText }) => {
+        const IconComponent = Icon
+        return (
+          <div key={key} className="flex min-w-0 items-center gap-3 rounded-[16px] border border-[#edf3fa] bg-[#fbfdff] px-3 py-3">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] bg-[#eef5ff] text-[#0a66ff]">
+              <IconComponent size={15} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ea4]">{label}</span>
+              <span className="mt-1 block truncate text-xs font-semibold text-[#102033]" title={value}>{value}</span>
+            </span>
+          </div>
+        )
+      })}
+    </footer>
+  )
+}
+
 export default function LegalDocumentWorkspace({
   open = true,
   onClose,
@@ -4417,6 +4590,7 @@ export default function LegalDocumentWorkspace({
       signedRequired,
       totalRequired,
       percent,
+      rows: requiredRows,
     }
   }, [signerRoster])
 
@@ -7840,9 +8014,10 @@ export default function LegalDocumentWorkspace({
     normalizeKey(statusState?.state) === 'generation_queued'
   const pilotFallbackVersion = findLatestPilotDocumentFallback(statusState?.versions || [])
   const showGeneratePdfButton =
+    !isMandatePacket &&
     legalPermissions.canGenerate &&
     typeof onGenerate === 'function' &&
-    (isMandatePacket || isOtpPacket) &&
+    isOtpPacket &&
     !backgroundGenerationActive &&
     (!hasGeneratedMandateVersion || (editableAllowed && editableSections.length > 0))
   const handleSendForSignatureIntent = () => {
@@ -8177,6 +8352,92 @@ export default function LegalDocumentWorkspace({
     signerCount: signerValidation.isReady && !sendRecipientEmailMissing ? sendSignatureRecipients.length : 0,
     recipients: sendSignatureRecipients,
   })
+  const mandateReceivedAt = firstNonEmptyText(
+    statusState?.packet?.created_at,
+    latestVersion?.created_at,
+    workspaceSummary.savedAt,
+  )
+  const mandateUpdatedAt = firstNonEmptyText(
+    latestVersion?.updated_at,
+    statusState?.packet?.updated_at,
+    workspaceSummary.savedAt,
+  )
+  const mandateDocumentReference = firstNonEmptyText(
+    statusState?.packet?.title,
+    transactionReference,
+    statusState?.packet?.id,
+  )
+  const mandateSummaryItems = [
+    { key: 'reference', label: statusState?.packet?.title ? 'Document Reference' : 'Matter Reference', value: mandateDocumentReference, Icon: FileText },
+    { key: 'route', label: 'Route', value: mandateRoutingSnapshot?.routeLabel, Icon: ShieldCheck, tone: mandateRoutingSnapshot?.fallback ? 'amber' : 'green' },
+    { key: 'seller', label: 'Seller', value: workspaceSummary.seller, Icon: UsersRound },
+    { key: 'property', label: 'Property', value: workspaceSummary.property, Icon: FileCheck2 },
+    { key: 'status', label: 'Status', value: mandateRoutingSnapshot?.statusLabel || workspaceSummary.status, Icon: CheckCircle2, tone: 'green' },
+  ]
+  const mandateTabs = [
+    { id: 'mandate-workspace-overview', label: 'Overview' },
+    { id: 'mandate-workspace-details', label: 'Mandate Details' },
+    ...(mandateRoutingSnapshot?.hasSignal ? [{ id: 'mandate-workspace-route', label: 'Route' }] : []),
+    { id: 'mandate-workspace-signing', label: 'Signing' },
+    ...(previewDownloadUrl || hasGeneratedMandateVersion || finalSignedAvailable ? [{ id: 'mandate-workspace-documents', label: 'Documents' }] : []),
+    { id: 'mandate-workspace-activity', label: 'Activity' },
+  ]
+  const handleMandateTabSelect = (targetId) => {
+    if (typeof document === 'undefined') return
+    document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  const handleOpenPhysicalUpload = () => {
+    if (signingMethod !== 'physical' && canChangeSigningMethod) {
+      void handleSelectSigningMethod('physical')
+    }
+    if (typeof document === 'undefined') return
+    window.requestAnimationFrame(() => {
+      document.getElementById('mandate-workspace-physical-upload')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+  const mandateQuickActions = [
+    {
+      key: 'download_mandate',
+      label: finalSignedAvailable ? 'Download Signed Mandate' : 'Download Mandate',
+      Icon: Download,
+      onClick: finalSignedAvailable ? () => void handleOpenFinalSignedDocument().catch((error) => setLoadError(toFriendlyWorkspaceError(error, 'The final signed document could not be opened.'))) : () => void handlePhysicalDownload(),
+      disabled: actionBusy || loading || pdfAccessBusy || finalSignedAccessBusy,
+    },
+    legalPermissions.canFinalize ? {
+      key: 'upload_signed',
+      label: 'Upload Signed Mandate',
+      Icon: Printer,
+      onClick: handleOpenPhysicalUpload,
+      disabled: actionBusy || loading || (signingMethod !== 'physical' && !canChangeSigningMethod),
+    } : null,
+    legalPermissions.canSend ? {
+      key: 'email_seller',
+      label: canResendSignatureLinks ? 'Resend Signing Link' : 'Email Seller',
+      Icon: Link2,
+      onClick: handleSendForSignatureIntent,
+      disabled: actionBusy || loading || signingDeliveryDisabled,
+    } : null,
+    {
+      key: 'signer_details',
+      label: 'Signer Details',
+      Icon: UsersRound,
+      onClick: () => setSignerPrepOpen(true),
+      disabled: actionBusy || loading,
+    },
+    {
+      key: 'merge_fields',
+      label: 'Merge Field Details',
+      Icon: FileText,
+      onClick: () => setMergeDetailsOpen(true),
+      disabled: loading,
+    },
+  ]
+  const mandateMetadataItems = [
+    { key: 'received', label: 'Matter Received', value: mandateReceivedAt ? formatDateTime(mandateReceivedAt) : '', Icon: FileText },
+    { key: 'updated', label: 'Last Updated', value: mandateUpdatedAt ? formatDateTime(mandateUpdatedAt) : '', Icon: Download },
+    { key: 'created_by', label: 'Created By', value: firstNonEmptyText(statusState?.packet?.created_by, sourceContext.generatedByName, 'System'), Icon: UsersRound },
+    { key: 'locked', label: 'Record State', value: isFullySignedLifecycle || hasFinalArtifact ? 'This legal record is locked' : lifecycleCopy.current, Icon: ShieldCheck },
+  ]
 
   async function handleConfirmedSend() {
     recordWorkspaceExperience('commit_confirmed', { state: signingOperationalStatus.state, actionId: 'send_signature' })
@@ -8193,6 +8454,16 @@ export default function LegalDocumentWorkspace({
     <>
       <div className={rootClassName}>
         <DocumentAccessibilityNavigation model={workspaceAccessibility} />
+        {isPageMode ? (
+          <button
+            type="button"
+            onClick={() => void handleWorkspaceClose()}
+            className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-[#0b3558] transition hover:text-[#00614f]"
+          >
+            <ArrowLeft size={14} />
+            Back to Incoming Matters
+          </button>
+        ) : null}
         <div className={shellClassName}>
           <header className="border-b border-[#e5edf7] bg-white/95 px-4 py-4 backdrop-blur sm:px-6 sm:py-5">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -8216,10 +8487,10 @@ export default function LegalDocumentWorkspace({
                     </span>
                   </div>
                   <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-[#607387]">
-                    {isFullySignedLifecycle || hasFinalArtifact
+                    {isMandatePacket
+                      ? `Incoming Matter${mandateReceivedAt ? ` • Received ${formatDateTime(mandateReceivedAt)}` : ''}`
+                      : isFullySignedLifecycle || hasFinalArtifact
                       ? `Review and download the final signed ${isOtpPacket ? 'OTP' : 'mandate'}. This legal record is locked and cannot be edited.`
-                      : isMandatePacket
-                        ? 'Generate, preview and send the seller mandate. Seller and property details stay managed from the Seller workspace.'
                         : 'Generate, preview and send this legal document from the existing packet workflow.'}
                   </p>
                 </div>
@@ -8322,6 +8593,12 @@ export default function LegalDocumentWorkspace({
           </header>
 
           <div id="document-workspace-content" tabIndex={-1} className={`${contentClassName} focus:outline-none`}>
+            {isMandatePacket ? (
+              <div id="mandate-workspace-overview" className="mb-5 space-y-4 scroll-mt-24">
+                <MandateWorkspaceSummaryStrip items={mandateSummaryItems} />
+                <MandateWorkspaceTabs tabs={mandateTabs} onSelect={handleMandateTabSelect} />
+              </div>
+            ) : null}
             {actionProgressMessage ? (
               <article className="mb-5 rounded-[18px] border border-[#dbe6f2] bg-[#f7fbff] px-4 py-3 text-sm font-semibold text-[#35546c]">
                 {actionProgressMessage}
@@ -8775,54 +9052,118 @@ export default function LegalDocumentWorkspace({
             ) : null}
 
             {isMandatePacket ? (
-            <div className="mt-6 space-y-5 scroll-mt-24">
-              <MandateReviewPanel
-                summary={workspaceSummary}
-                data={mandateDataSnapshot}
-                routing={mandateRoutingSnapshot}
-                validation={mandatePreviewValidation}
-                templateLabel={normalizeText(templateDetail?.template_label || statusState?.packet?.template_label_snapshot)}
-                templateKey={normalizeText(templateDetail?.template_key || statusState?.packet?.template_key_snapshot)}
-                savedLabel={workspaceSummary.savedLabel}
-                manualOverride={mandateManualOverride}
-                onSaveManualOverride={handleSaveMandateManualOverride}
-                savingManualOverride={mandateOverrideSaving}
-              />
-              <MandateRoutePanel routing={mandateRoutingSnapshot} />
-              <SigningMethodPanel
-                method={signingMethod}
-                packetType={packetType}
-                canChange={canChangeSigningMethod}
-                lockedReason={signingMethodLockedReason}
-                onSelect={handleSelectSigningMethod}
-                canResend={canResendSignatureLinks}
-                onResend={() => runReviewAction('resend_signature')}
-                resendSummary={resendSignatureSummary}
-                busy={actionBusy || loading}
-                className="min-h-[360px]"
-              />
-
-              {signingMethod === 'physical' ? (
-                <div className="mt-5">
-                  <PhysicalSignedUploadPanel
-                    packetType={packetType}
-                    uploaded={manualSignedUploaded || isFullySignedLifecycle}
-                    uploadedAt={manualSignedUploadedAt || statusState?.packet?.completed_at || latestVersion?.finalised_at}
-                    signedUrl={signedPreviewUrl}
-                    busy={actionBusy || loading || physicalUploadBusy}
-                    file={physicalUploadFile}
-                    signedAt={physicalSignedAt}
-                    note={physicalUploadNote}
-                    attestation={physicalUploadAttestation}
-                    onFileChange={setPhysicalUploadFile}
-                    onSignedAtChange={setPhysicalSignedAt}
-                    onNoteChange={setPhysicalUploadNote}
-                    onAttestationChange={(key, value) => setPhysicalUploadAttestation((current) => ({ ...current, [key]: value }))}
-                    onUpload={handlePhysicalSignedUpload}
-                    onDownload={handlePhysicalDownload}
+            <div className="grid gap-5 scroll-mt-24 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start 2xl:grid-cols-[minmax(0,1fr)_390px]">
+              <main className="min-w-0 space-y-5">
+                <div id="mandate-workspace-details" className="scroll-mt-24">
+                  <MandateReviewPanel
+                    summary={workspaceSummary}
+                    data={mandateDataSnapshot}
+                    routing={mandateRoutingSnapshot}
+                    validation={mandatePreviewValidation}
+                    templateLabel={normalizeText(templateDetail?.template_label || statusState?.packet?.template_label_snapshot)}
+                    templateKey={normalizeText(templateDetail?.template_key || statusState?.packet?.template_key_snapshot)}
+                    savedLabel={workspaceSummary.savedLabel}
+                    manualOverride={mandateManualOverride}
+                    onSaveManualOverride={handleSaveMandateManualOverride}
+                    savingManualOverride={mandateOverrideSaving}
                   />
                 </div>
-              ) : null}
+                <div className="grid gap-5 2xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                  <MandateSignerProgressCard
+                    signerProgressMeta={signerProgressMeta}
+                    onOpen={() => setSignerPrepOpen(true)}
+                  />
+                  <SigningMethodPanel
+                    method={signingMethod}
+                    packetType={packetType}
+                    canChange={canChangeSigningMethod}
+                    lockedReason={signingMethodLockedReason}
+                    onSelect={handleSelectSigningMethod}
+                    canResend={canResendSignatureLinks}
+                    onResend={() => runReviewAction('resend_signature')}
+                    resendSummary={resendSignatureSummary}
+                    busy={actionBusy || loading}
+                    className="min-h-[320px]"
+                  />
+                </div>
+
+                {signingMethod === 'physical' ? (
+                  <div id="mandate-workspace-physical-upload" className="scroll-mt-24">
+                    <PhysicalSignedUploadPanel
+                      packetType={packetType}
+                      uploaded={manualSignedUploaded || isFullySignedLifecycle}
+                      uploadedAt={manualSignedUploadedAt || statusState?.packet?.completed_at || latestVersion?.finalised_at}
+                      signedUrl={signedPreviewUrl}
+                      busy={actionBusy || loading || physicalUploadBusy}
+                      file={physicalUploadFile}
+                      signedAt={physicalSignedAt}
+                      note={physicalUploadNote}
+                      attestation={physicalUploadAttestation}
+                      onFileChange={setPhysicalUploadFile}
+                      onSignedAtChange={setPhysicalSignedAt}
+                      onNoteChange={setPhysicalUploadNote}
+                      onAttestationChange={(key, value) => setPhysicalUploadAttestation((current) => ({ ...current, [key]: value }))}
+                      onUpload={handlePhysicalSignedUpload}
+                      onDownload={handlePhysicalDownload}
+                    />
+                  </div>
+                ) : null}
+
+                {previewDownloadUrl || hasGeneratedMandateVersion || finalSignedAvailable ? (
+                  <section id="mandate-workspace-documents" className="rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-[1rem] font-semibold text-[#102033]">Documents</h4>
+                        <p className="mt-1 text-sm text-[#6b7c93]">Generated and final signed mandate artifacts.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleWorkspacePdfDownload}
+                        disabled={pdfAccessBusy || finalSignedAccessBusy}
+                        className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#d7e4f3] bg-white px-4 text-sm font-semibold text-[#102033] transition hover:bg-[#f7fbff] disabled:cursor-wait disabled:opacity-60"
+                      >
+                        <Download size={14} />
+                        {finalSignedAvailable ? 'Download Signed Mandate' : 'Download PDF'}
+                      </button>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <article className="rounded-[16px] border border-[#edf3fa] bg-[#fbfdff] px-4 py-3">
+                        <p className="text-sm font-semibold text-[#102033]">Generated mandate</p>
+                        <p className="mt-1 text-xs text-[#6b7c93]">{hasGeneratedMandateVersion ? 'Available from the current packet version.' : 'Not generated yet.'}</p>
+                      </article>
+                      <article className="rounded-[16px] border border-[#edf3fa] bg-[#fbfdff] px-4 py-3">
+                        <p className="text-sm font-semibold text-[#102033]">Signed mandate</p>
+                        <p className="mt-1 text-xs text-[#6b7c93]">{finalSignedAvailable ? 'Final signed artifact is available.' : 'No final signed artifact yet.'}</p>
+                      </article>
+                    </div>
+                  </section>
+                ) : null}
+
+                <MandateMetadataFooter items={mandateMetadataItems} />
+              </main>
+
+              <aside className="min-w-0 space-y-5 xl:sticky xl:top-24">
+                <div id="mandate-workspace-route" className="scroll-mt-24">
+                  <MandateRoutePanel routing={mandateRoutingSnapshot} />
+                </div>
+                <MandateQuickActions actions={mandateQuickActions} />
+                <div id="mandate-workspace-activity" className="scroll-mt-24">
+                  <ActivityPanel
+                    activeTab={activityTab}
+                    onTabChange={setActivityTab}
+                    versions={statusState?.versions || []}
+                    events={eventHistory}
+                    templateLabel={normalizeText(templateDetail?.template_label || statusState?.packet?.template_label_snapshot)}
+                    templateKey={normalizeText(templateDetail?.template_key || statusState?.packet?.template_key_snapshot)}
+                    templateStoragePath={normalizeText(templateDetail?.template_storage_path)}
+                    currentEditableVersionId={editableVersion?.id || ''}
+                    canRestoreVersions={editableAllowed && legalPermissions.canEditDraft && !editableDirty}
+                    restoreBusyVersionId={restoreBusyVersionId}
+                    onRestoreVersion={handleRestoreEditableVersion}
+                    className="max-h-[560px]"
+                  />
+                </div>
+              </aside>
             </div>
             ) : (
             <div className={secondaryGridClassName}>

@@ -744,9 +744,10 @@ export async function orchestrateSellerPostMandateDocumentRequest({
       evaluation: plan.evaluation,
       portalToken,
     })
+    const stablePortalToken = firstText(invitation?.stablePortalToken, invitation?.stable_portal_token, portalToken)
     const inviteToken = firstText(invitation?.inviteToken, invitation?.invite_token, invitation?.token)
     portalLink = firstText(invitation?.portalLink, invitation?.portal_link, invitation?.invitationLink, invitation?.invitation_link) ||
-      (inviteToken ? buildSellerPortalLink(inviteToken, baseUrl) : portalLink)
+      (stablePortalToken ? buildSellerPortalLink(stablePortalToken, baseUrl) : inviteToken ? buildSellerPortalLink(inviteToken, baseUrl) : portalLink)
   }
 
   const emailPayload = buildSellerPostMandateDocumentEmailPayload({

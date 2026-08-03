@@ -283,6 +283,6 @@ export function resolveOfferOnboardingLinkExperience() {
     label: 'Offer + Onboarding Link',
     buyerFacingTitle: 'Make an Offer',
     buyerFacingSubtitle: 'Complete your buyer profile, finance readiness and residential offer terms in one secure flow.',
-    dataBuckets: ['buyer_onboarding', 'residential_offer_terms', 'condition_requests'],
+    dataBuckets: ['otp_route', 'buyer_onboarding', 'residential_offer_terms', 'condition_requests'],
   }
 }

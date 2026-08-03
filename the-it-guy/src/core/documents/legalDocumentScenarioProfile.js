@@ -4,6 +4,7 @@ import {
   normalizeDocumentMaritalRegime,
   normalizeDocumentPartyEntityType,
 } from './documentPartyClassification.js'
+import { resolveOtpDocumentVariant } from './otpRouteUniverse.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -248,6 +249,9 @@ export function resolveLegalDocumentScenarioProfile(options = {}) {
     : ''
   const propertyClauseProfile = resolvePropertyClauseProfile(propertyTitleType)
   const financeClauseProfile = packetType === 'otp' ? resolveFinanceClauseProfile(financeType) : ''
+  const otpDocumentVariant = packetType === 'otp'
+    ? resolveOtpDocumentVariant({ ...options, placeholders, seller, buyer, property, transaction, flow, facts, sourceContext })
+    : ''
   const missingRoutingFacts = getRoutingFacts({
     packetType,
     sellerEntitySignal,
@@ -287,6 +291,7 @@ export function resolveLegalDocumentScenarioProfile(options = {}) {
     propertyClauseProfile,
     financeType,
     financeClauseProfile,
+    otpDocumentVariant,
     activeClausePacks,
     missingRoutingFacts,
     complete: missingRoutingFacts.length === 0,
@@ -301,6 +306,7 @@ export function buildLegalDocumentScenarioPlaceholders(profile = {}) {
     buyer_clause_profile: normalizeText(profile.buyerClauseProfile),
     property_clause_profile: normalizeText(profile.propertyClauseProfile),
     finance_clause_profile: normalizeText(profile.financeClauseProfile),
+    otp_document_variant: normalizeText(profile.otpDocumentVariant),
     property_title_type: normalizeText(profile.propertyTitleType),
     'property.title_type_raw': normalizeText(profile.propertyTitleType),
     legal_active_clause_packs: activeClausePacks.join(', '),

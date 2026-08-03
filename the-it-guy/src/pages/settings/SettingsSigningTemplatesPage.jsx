@@ -58,6 +58,14 @@ import {
   buildMandateTemplateLaunchReadiness,
 } from '../../core/documents/mandateTemplateLaunchReadiness'
 import {
+  buildOtpContentPublishGateReport,
+  serializeOtpContentPublishGateScan,
+} from '../../core/documents/otpContentPublishGate'
+import {
+  buildOtpTemplateLaunchReadiness,
+  resolveOtpTemplateLaunchRouteKey,
+} from '../../core/documents/otpTemplateLaunchReadiness'
+import {
   archiveDocumentPacket,
   archiveDocumentPacketTemplate,
   appendDocumentPacketEvent,
@@ -3917,6 +3925,25 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
     delete nextMetadata.lastMandateContentScan
     delete nextMetadata.mandate_content_publish_gate_version
 
+    if (packetType === 'otp') {
+      const otpContentScan = serializeOtpContentPublishGateScan(form.otpContentScan)
+      if (otpContentScan) {
+        nextMetadata.last_otp_content_scan = otpContentScan
+        nextMetadata.lastOtpContentScan = otpContentScan
+        nextMetadata.otp_content_publish_gate_version = otpContentScan.gateVersion
+      } else {
+        delete nextMetadata.last_otp_content_scan
+        delete nextMetadata.lastOtpContentScan
+        delete nextMetadata.otp_content_publish_scan
+        delete nextMetadata.otp_content_publish_gate_version
+      }
+    } else {
+      delete nextMetadata.last_otp_content_scan
+      delete nextMetadata.lastOtpContentScan
+      delete nextMetadata.otp_content_publish_scan
+      delete nextMetadata.otp_content_publish_gate_version
+    }
+
     const legalTargets = [
       ['seller_clause_profile', 'sellerClauseProfile', normalizeLegalRouteTarget(form.legalSellerClauseProfile, LEGAL_PARTY_ROUTE_OPTIONS)],
       ['buyer_clause_profile', 'buyerClauseProfile', normalizeLegalRouteTarget(form.legalBuyerClauseProfile, LEGAL_PARTY_ROUTE_OPTIONS)],
@@ -6545,6 +6572,49 @@ export default function SettingsSigningTemplatesPage({
       routeKey: mandateTemplateVariant,
     })
   }, [form, packetType, selectedTemplate, templateDetail])
+  const otpPublishGateReport = useMemo(() => {
+    if (packetType !== 'otp') return null
+    const metadataJson = {
+      ...(form.metadataJson && typeof form.metadataJson === 'object' ? form.metadataJson : {}),
+    }
+    const currentTemplate = {
+      ...(selectedTemplate || templateDetail || {}),
+      packet_type: 'otp',
+      packetType: 'otp',
+      template_label: form.templateLabel || selectedTemplate?.template_label || selectedTemplate?.templateLabel || '',
+      metadata_json: metadataJson,
+      metadataJson,
+      sections: (form.sections || []).map((section, index) => mapSectionForPreview(section, index, 'otp')),
+    }
+    const routeKey = resolveOtpTemplateLaunchRouteKey(currentTemplate)
+    return buildOtpContentPublishGateReport(currentTemplate, {
+      packetType: 'otp',
+      routeKey,
+    })
+  }, [form, packetType, selectedTemplate, templateDetail])
+  const otpLaunchReadiness = useMemo(() => {
+    if (packetType !== 'otp') return null
+    const effectiveTemplates = selectedList.map((template) => {
+      if (normalizeText(template.id) !== normalizeText(selectedTemplateId)) return template
+      const metadataJson = buildTemplateMetadata({
+        ...form,
+        packetType: 'otp',
+        otpContentScan: otpPublishGateReport,
+      }, form.metadataJson || {}, null)
+      return {
+        ...template,
+        packet_type: 'otp',
+        packetType: 'otp',
+        template_status: form.templateStatus,
+        is_active: Boolean(form.isActive),
+        is_default: Boolean(form.isDefault),
+        metadata_json: metadataJson,
+        metadataJson,
+        sections: (form.sections || []).map((section, index) => mapSectionForPreview(section, index, 'otp')),
+      }
+    })
+    return buildOtpTemplateLaunchReadiness(effectiveTemplates)
+  }, [form, otpPublishGateReport, packetType, selectedList, selectedTemplateId])
   const variableGroups = useMemo(
     () => getVariableGroups(canonicalFields),
     [canonicalFields],
@@ -6706,6 +6776,8 @@ export default function SettingsSigningTemplatesPage({
     + validationSummary.warnings.length
     + (mandatePublishGateReport?.blockingCount || 0)
     + (mandatePublishGateReport?.warningCount || 0)
+    + (otpPublishGateReport?.blockingCount || 0)
+    + (otpPublishGateReport?.warningCount || 0)
   const liveTemplate = useMemo(
     () => migrationReport.defaultTemplate?.template || selectedList.find((row) => row?.is_default) || null,
     [migrationReport.defaultTemplate, selectedList],
@@ -6745,8 +6817,14 @@ export default function SettingsSigningTemplatesPage({
       'legalPropertyClauseProfile',
       'legalFinanceClauseProfile',
     ].some((key) => stableStringify(form[key]) !== stableStringify(baselineForm[key])) : Boolean(selectedTemplate)
-    const contentScanBlockers = mandatePublishGateReport?.blockingMessages || []
-    const contentScanWarnings = mandatePublishGateReport?.warningMessages || []
+    const contentScanReport = packetType === 'mandate'
+      ? mandatePublishGateReport
+      : packetType === 'otp'
+        ? otpPublishGateReport
+        : null
+    const contentScanLabel = packetType === 'otp' ? 'OTP content gate' : 'Mandate content gate'
+    const contentScanBlockers = contentScanReport?.blockingMessages || []
+    const contentScanWarnings = contentScanReport?.warningMessages || []
     const standardBlockers = [
       ...validationSummary.blockers,
       ...(!selectedIsOrgOwned ? ['Save your agency version before publishing.'] : []),
@@ -6770,7 +6848,8 @@ export default function SettingsSigningTemplatesPage({
       lockedSectionCount: lockedSections.length,
       signingFieldCount,
       conditionCount,
-      contentScan: mandatePublishGateReport,
+      contentScan: contentScanReport,
+      contentScanLabel,
       contentScanBlockers,
       contentScanWarnings,
       standardBlockers,
@@ -6779,7 +6858,7 @@ export default function SettingsSigningTemplatesPage({
       liveTemplateLabel: liveTemplate?.template_label || liveTemplate?.template_key || 'No live template',
       currentTemplateLabel: form.templateLabel || selectedTemplate?.template_label || selectedTemplate?.template_key || 'Current draft',
     }
-  }, [administratorLabel, baselineForm, canPublishTemplate, form, hasUnsavedChanges, liveTemplate, mandatePublishGateReport, selectedIsOrgOwned, selectedTemplate, validationSummary.blockers, validationSummary.renderable, validationSummary.warnings])
+  }, [administratorLabel, baselineForm, canPublishTemplate, form, hasUnsavedChanges, liveTemplate, mandatePublishGateReport, otpPublishGateReport, packetType, selectedIsOrgOwned, selectedTemplate, validationSummary.blockers, validationSummary.renderable, validationSummary.warnings])
   const studioHealthChecks = useMemo(() => {
     const docxReady = normalizeText(form.renderMode) === TEMPLATE_RENDER_MODES.LEGACY_DOCX
       ? Boolean(normalizeText(form.templateStoragePath))
@@ -7796,13 +7875,21 @@ export default function SettingsSigningTemplatesPage({
       setError('Mandate content scanner found blockers. Resolve the route wording before activating this mandate template.')
       return
     }
+    const isActivatingOtpTemplate = packetType === 'otp' && (
+      Boolean(form.isDefault) ||
+      isLiveTemplateStatus(form.templateStatus)
+    )
+    if (isActivatingOtpTemplate && otpPublishGateReport?.isValidForPublish === false) {
+      setError('OTP content scanner found blockers. Resolve the route wording before activating this OTP template.')
+      return
+    }
 
     try {
       setSaving(true)
       setError('')
       setMessage('')
 
-      const metadataJson = buildTemplateMetadata({ ...form, packetType, validationSummary, mandateContentScan: mandatePublishGateReport }, form.metadataJson || {}, null)
+      const metadataJson = buildTemplateMetadata({ ...form, packetType, validationSummary, mandateContentScan: mandatePublishGateReport, otpContentScan: otpPublishGateReport }, form.metadataJson || {}, null)
       const saveUpdates = {
         templateLabel: form.templateLabel,
         description: form.description,
@@ -7846,13 +7933,17 @@ export default function SettingsSigningTemplatesPage({
       setError('Mandate content scanner found blockers. Resolve the route wording before publishing this mandate template.')
       return
     }
+    if (packetType === 'otp' && otpPublishGateReport?.isValidForPublish === false) {
+      setError('OTP content scanner found blockers. Resolve the route wording before publishing this OTP template.')
+      return
+    }
 
     try {
       setSaving(true)
       setError('')
       setMessage('')
 
-      const metadataJson = buildTemplateMetadata({ ...form, packetType, validationSummary, mandateContentScan: mandatePublishGateReport }, form.metadataJson || {}, null)
+      const metadataJson = buildTemplateMetadata({ ...form, packetType, validationSummary, mandateContentScan: mandatePublishGateReport, otpContentScan: otpPublishGateReport }, form.metadataJson || {}, null)
       const publishedTemplate = await publishDocumentPacketTemplateRevision(selectedTemplateId, {
         templateLabel: form.templateLabel,
         description: form.description,
@@ -8748,6 +8839,11 @@ export default function SettingsSigningTemplatesPage({
   async function confirmPublishTemplate() {
     if (packetType === 'mandate' && mandatePublishGateReport?.isValidForPublish === false) {
       setError('Mandate content scanner found blockers. Resolve the route wording before publishing this mandate template.')
+      setShowPublishConfirm(false)
+      return
+    }
+    if (packetType === 'otp' && otpPublishGateReport?.isValidForPublish === false) {
+      setError('OTP content scanner found blockers. Resolve the route wording before publishing this OTP template.')
       setShowPublishConfirm(false)
       return
     }
@@ -11168,6 +11264,100 @@ export default function SettingsSigningTemplatesPage({
                 </div>
               ) : null}
 
+              {packetType === 'otp' && otpLaunchReadiness ? (
+                <div className={[
+                  'mt-5 rounded-[22px] border p-4',
+                  otpLaunchReadiness.status === 'blocked'
+                    ? 'border-[#f3d1ce] bg-[#fff4f3]'
+                    : otpLaunchReadiness.status === 'attention'
+                      ? 'border-[#f6e4bf] bg-[#fffaf1]'
+                      : 'border-[#cdebd8] bg-[#eef9f1]',
+                ].join(' ')}
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8da6]">Launch Readiness</p>
+                      <h3 className="mt-2 text-base font-semibold text-[#102033]">
+                        {otpLaunchReadiness.status === 'blocked'
+                          ? 'OTP automation is locked'
+                          : otpLaunchReadiness.status === 'attention'
+                            ? 'OTP automation needs sign-off'
+                            : 'OTP automation is ready'}
+                      </h3>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7c93]">
+                        {otpLaunchReadiness.summary.readyRouteCount}/{otpLaunchReadiness.summary.requiredRouteCount} OTP routes have verified live templates.
+                      </p>
+                    </div>
+                    <span className={[
+                      'rounded-full border px-3 py-1.5 text-xs font-semibold',
+                      otpLaunchReadiness.canEnableOtpAutomation
+                        ? 'border-[#b8e5c7] bg-white text-[#128642]'
+                        : 'border-[#e9b7b2] bg-white text-[#8e1f15]',
+                    ].join(' ')}
+                    >
+                      {otpLaunchReadiness.canEnableOtpAutomation ? 'Ready' : 'Locked'}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid gap-2 md:grid-cols-4">
+                    {[
+                      { label: 'Ready routes', value: otpLaunchReadiness.summary.readyRouteCount },
+                      { label: 'Launch blockers', value: otpLaunchReadiness.summary.blockerCount },
+                      { label: 'Unsafe fallback', value: otpLaunchReadiness.summary.unsafeFallbackCount },
+                      { label: 'Source gaps', value: otpLaunchReadiness.summary.sourceOwnerGapCount },
+                    ].map((item) => (
+                      <div key={`otp-launch-${item.label}`} className="rounded-[14px] border border-[#dbe7f3] bg-white px-3 py-2">
+                        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">{item.label}</p>
+                        <p className="mt-1 text-xl font-semibold text-[#102033]">{item.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 grid gap-2 md:grid-cols-2">
+                    {otpLaunchReadiness.routeRows.map((route) => {
+                      const routeReady = route.safeLiveCount > 0
+                      return (
+                        <div key={`otp-launch-route-${route.routeKey}`} className="rounded-[16px] border border-[#dbe7f3] bg-white px-4 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-[#102033]">{route.routeLabel}</p>
+                              <p className="mt-1 font-mono text-[11px] text-[#6b7c93]">{route.routeKey}</p>
+                            </div>
+                            <span className={[
+                              'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                              routeReady
+                                ? 'border-[#b8e5c7] bg-[#eef9f1] text-[#128642]'
+                                : 'border-[#e9b7b2] bg-[#fff4f3] text-[#8e1f15]',
+                            ].join(' ')}
+                            >
+                              {routeReady ? 'Verified' : 'Blocked'}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-[#6b7c93]">
+                            {route.preferredTemplate?.templateLabel || 'No live route template selected.'}
+                          </p>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {otpLaunchReadiness.blockers.length ? (
+                    <div className="mt-3 space-y-2">
+                      {otpLaunchReadiness.blockers.slice(0, 4).map((issue) => (
+                        <p key={`${issue.code}-${issue.routeKey}-${issue.templateId}-${issue.sectionKey}`} className="rounded-[14px] border border-[#f3d1ce] bg-white px-3 py-2 text-xs leading-5 text-[#8e1f15]">
+                          <span className="font-semibold">{issue.message}</span> {issue.remediation}
+                        </p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 flex items-center gap-2 rounded-[14px] border border-[#cdebd8] bg-white px-3 py-2 text-xs font-semibold text-[#128642]">
+                      <CheckCircle2 size={15} />
+                      No OTP launch blockers detected.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
               {packetType === 'mandate' ? (
                 <div className="mt-5 rounded-[22px] border border-[#dbe7f3] bg-[#fbfdff] p-4">
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -11436,6 +11626,45 @@ export default function SettingsSigningTemplatesPage({
                     ) : (
                       <p className="mt-2 text-sm leading-6 text-[#52667d]">
                         No route-content blockers detected for this mandate template.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+
+                {packetType === 'otp' && otpPublishGateReport ? (
+                  <div className={[
+                    'mt-4 rounded-[18px] border px-4 py-3',
+                    otpPublishGateReport.isValidForPublish
+                      ? 'border-[#cdebd8] bg-[#eef9f1]'
+                      : 'border-[#f3d1ce] bg-[#fff4f3]',
+                  ].join(' ')}
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7a8da6]">OTP Content Gate</p>
+                        <p className="mt-1 text-sm font-semibold text-[#102033]">
+                          {otpPublishGateReport.routeLabel}: {otpPublishGateReport.isValidForPublish ? 'Ready for publish review' : `${otpPublishGateReport.blockingCount} blocker${otpPublishGateReport.blockingCount === 1 ? '' : 's'}`}
+                        </p>
+                      </div>
+                      <span className={[
+                        'rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold',
+                        otpPublishGateReport.isValidForPublish
+                          ? 'border-[#b8e5c7] bg-white text-[#128642]'
+                          : 'border-[#e9b7b2] bg-white text-[#8e1f15]',
+                      ].join(' ')}
+                      >
+                        {otpPublishGateReport.gateVersion}
+                      </span>
+                    </div>
+                    {otpPublishGateReport.blockingMessages.length ? (
+                      <div className="mt-3 space-y-2">
+                        {otpPublishGateReport.blockingMessages.slice(0, 3).map((item) => (
+                          <p key={`otp-content-gate-${item}`} className="text-sm leading-6 text-[#8e1f15]">{item}</p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm leading-6 text-[#52667d]">
+                        No route-content blockers detected for this OTP template.
                       </p>
                     )}
                   </div>
@@ -12754,7 +12983,7 @@ export default function SettingsSigningTemplatesPage({
               >
                 <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <p className="text-sm font-semibold text-[#102033]">Mandate content gate</p>
+                    <p className="text-sm font-semibold text-[#102033]">{publishReview.contentScanLabel}</p>
                     <p className="mt-2 text-sm leading-6 text-[#52667d]">
                       {publishReview.contentScan.routeLabel} checked with {publishReview.contentScan.scannerVersion}.
                     </p>
@@ -12772,7 +13001,7 @@ export default function SettingsSigningTemplatesPage({
                 {publishReview.contentScanBlockers.length ? (
                   <div className="mt-3 max-h-[240px] space-y-2 overflow-y-auto pr-1">
                     {publishReview.contentScanBlockers.map((item) => (
-                      <ValidationIssueCard key={`publish-content-scan-blocker-${item}`} issue={item} tone="error" label="Mandate Scan" />
+                      <ValidationIssueCard key={`publish-content-scan-blocker-${item}`} issue={item} tone="error" label={packetType === 'otp' ? 'OTP Scan' : 'Mandate Scan'} />
                     ))}
                   </div>
                 ) : (

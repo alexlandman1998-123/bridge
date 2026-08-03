@@ -80,6 +80,21 @@ test('formalizes seller onboarding v2 aliases and resolver models', () => {
   assert.equal(propertyModel.branch, 'estate_hoa')
 })
 
+test('does not request alteration approvals from plan uncertainty alone', () => {
+  const flow = resolveSellerOnboardingFlowContract({
+    recentAlterations: false,
+    propertyDisclosure: {
+      responses: {
+        improvements_on_plans: { answer: 'no' },
+        approved_plans_possession: { answer: 'unsure' },
+      },
+    },
+  }, listing)
+  assert.equal(flow.document_triggers.includes('alteration_approvals'), false)
+  assert.equal(flow.document_triggers.includes('approved_building_plans'), false)
+  assert.equal(flow.document_triggers.includes('occupation_certificate'), false)
+})
+
 test('resolves the married sectional title branch contract', () => {
   const flow = resolveSellerOnboardingFlowContract(
     {

@@ -48,6 +48,10 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function invokeFinalSignedDocumentGenerator({
   SUPABASE_URL,
   FINALISER_SERVICE_ROLE_KEY,
@@ -2067,6 +2071,8 @@ async function resolveSellerPortalInviteListing({
 }) {
   const { sourceContext, nestedSource } = resolveSellerPortalSourceContext(packet);
   const listingConversion = asRecord(finalBody.listingConversion);
+  const listingColumns =
+    "id, organisation_id, assigned_agent_id, assigned_agent_email, seller_lead_id, originating_crm_lead_id, listing_reference, title, address_line_1, address_line_2, property_type, mandate_packet_id";
   const candidateIds = [
     listingConversion.listingId,
     listingConversion.listing_id,
@@ -2079,28 +2085,66 @@ async function resolveSellerPortalInviteListing({
     nestedSource.listingId,
     nestedSource.listing_id,
   ].map(uuidOrNull).filter(Boolean) as string[];
+  const seenListingIds = new Set<string>();
 
-  for (const listingId of [...new Set(candidateIds)]) {
+  const fetchListingById = async (listingId: string) => {
+    const normalizedListingId = uuidOrNull(listingId);
+    if (!normalizedListingId || seenListingIds.has(normalizedListingId)) return null;
+    seenListingIds.add(normalizedListingId);
     const byId = await supabase
       .from("private_listings")
-      .select("id, organisation_id, assigned_agent_id, assigned_agent_email, seller_lead_id, originating_crm_lead_id, listing_reference, title, address_line_1, address_line_2, property_type, mandate_packet_id")
+      .select(listingColumns)
       .eq("organisation_id", organisationId)
-      .eq("id", listingId)
+      .eq("id", normalizedListingId)
       .maybeSingle();
     if (!byId.error && byId.data?.id) return byId.data as Record<string, unknown>;
     if (byId.error) console.error("[mandate-signing] seller portal invite listing lookup by id failed", byId.error);
+    return null;
+  };
+
+  const fetchListingByPacket = async () => {
+    const byPacket = await supabase
+      .from("private_listings")
+      .select(listingColumns)
+      .eq("organisation_id", organisationId)
+      .eq("mandate_packet_id", packetId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!byPacket.error && byPacket.data?.id) return byPacket.data as Record<string, unknown>;
+    if (byPacket.error) console.error("[mandate-signing] seller portal invite listing lookup by packet failed", byPacket.error);
+    return null;
+  };
+
+  const fetchListingByLeadPacketBridge = async () => {
+    const byLead = await supabase
+      .from("leads")
+      .select("lead_id, listing_id, mandate_packet_id")
+      .eq("organisation_id", organisationId)
+      .eq("mandate_packet_id", packetId)
+      .not("listing_id", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (byLead.error) {
+      console.error("[mandate-signing] seller portal invite lead bridge lookup failed", byLead.error);
+      return null;
+    }
+    return await fetchListingById(normalizeText(byLead.data?.listing_id));
+  };
+
+  for (const listingId of [...new Set(candidateIds)]) {
+    const listing = await fetchListingById(listingId);
+    if (listing?.id) return listing;
   }
 
-  const byPacket = await supabase
-    .from("private_listings")
-    .select("id, organisation_id, assigned_agent_id, assigned_agent_email, seller_lead_id, originating_crm_lead_id, listing_reference, title, address_line_1, address_line_2, property_type, mandate_packet_id")
-    .eq("organisation_id", organisationId)
-    .eq("mandate_packet_id", packetId)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!byPacket.error && byPacket.data?.id) return byPacket.data as Record<string, unknown>;
-  if (byPacket.error) console.error("[mandate-signing] seller portal invite listing lookup by packet failed", byPacket.error);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const byPacket = await fetchListingByPacket();
+    if (byPacket?.id) return byPacket;
+    const byLead = await fetchListingByLeadPacketBridge();
+    if (byLead?.id) return byLead;
+    if (attempt < 2) await delay(750 * (attempt + 1));
+  }
   return null;
 }
 

@@ -40,6 +40,7 @@ export function buildAgentAssistedOfferEntry({ buyer = {}, draft = {}, now = new
       source: 'agent_assisted_offer_entry',
       captureMethod: 'agent_assisted',
       capturedAt: now,
+      sourceContext: draft,
     },
   )
 

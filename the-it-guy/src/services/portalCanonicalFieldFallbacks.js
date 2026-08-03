@@ -182,6 +182,8 @@ export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pend
     row?.property?.displayAddress,
     row?.property?.address,
     row?.property,
+    row?.propertyLabel,
+    row?.property_label,
     row?.propertyAddress,
     row?.property_address,
     row?.address,

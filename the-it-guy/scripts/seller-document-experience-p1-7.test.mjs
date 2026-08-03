@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { buildSellerDocumentExperienceModel } from '../src/lib/sellerDocumentExperienceModel.js'
+import { getSellerRequiredDocuments } from '../src/services/sellerDocumentRequirementsService.js'
 
 const requirements = [
   {
@@ -84,6 +85,34 @@ const handoff = buildSellerDocumentExperienceModel({
 })
 assert.equal(handoff.summary.handoffBlocked, 1)
 assert.match(handoff.items[0].message, /Shared document write failed/)
+
+const filteredSellerRequirements = getSellerRequiredDocuments({
+  id: 'listing-with-stale-generated-rows',
+  status: 'onboarding_completed',
+  sellerOnboarding: {
+    status: 'completed',
+    formData: {
+      sellerFirstName: 'Thabo',
+      sellerSurname: 'Seller',
+      recentAlterations: false,
+      propertyDisclosure: {
+        responses: {
+          improvements_on_plans: { answer: 'no' },
+          approved_plans_possession: { answer: 'unsure' },
+        },
+      },
+    },
+  },
+  documentRequirements: [
+    { id: 'stale-capital', requirement_key: 'capital_improvement_records', requirement_name: 'Capital Improvement Invoices / CGT Records', status: 'required', is_required: true },
+    { id: 'stale-alterations', requirement_key: 'alteration_approvals', requirement_name: 'Alteration Approvals / Consents', status: 'required', is_required: true },
+    { id: 'current-id', requirement_key: 'id_document', requirement_name: 'ID Document / Passport', status: 'required', is_required: true },
+  ],
+})
+const filteredRequirementKeys = filteredSellerRequirements.map((item) => item.requirement_key)
+assert.equal(filteredRequirementKeys.includes('capital_improvement_records'), false, 'stale generated CGT rows should not remain active without a current trigger')
+assert.equal(filteredRequirementKeys.includes('alteration_approvals'), false, 'stale generated alteration rows should not remain active without a current alteration trigger')
+assert.equal(filteredRequirementKeys.includes('id_document'), true, 'current identity requirements should remain visible')
 
 const clientPortal = await readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
 assert.match(clientPortal, /buildSellerDocumentExperienceModel/)

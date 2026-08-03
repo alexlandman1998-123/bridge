@@ -9,6 +9,10 @@ const privateListingService = await fs.readFile(new URL('../src/services/private
 const clientPortalPage = await fs.readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
 const listingDetail = await fs.readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 const leadsPage = await fs.readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
+const sellerPostMandateOrchestration = await fs.readFile(
+  new URL('../src/services/sellerPostMandateDocumentOrchestrationService.js', import.meta.url),
+  'utf8',
+)
 
 assert.match(migration, /seller_portal_token text/, 'seller portals need a stable identifier independent of onboarding')
 assert.match(migration, /seller_portal_invite_token_hash text/, 'one-time invite tokens must be stored as hashes')
@@ -25,6 +29,14 @@ assert.match(privateListingService, /legacyFallback: true/, 'the application mus
 assert.match(privateListingService, /storeSellerPortalAccessToken\(stablePortalToken, data\)/, 'the authenticated session must migrate to the stable URL')
 assert.match(clientPortalPage, /navigate\(stablePortalPath, \{ replace: true \}\)/, 'invitation and legacy URLs must redirect to the stable portal URL after authentication')
 assert.match(listingDetail, /issueSellerPortalInvite\(token\)/, 'listing-level resends must rotate the one-time invitation')
+assert.match(listingDetail, /const stablePortalToken = toCleanText\(invitation\?\.stablePortalToken \|\| invitation\?\.stable_portal_token \|\| savedStablePortalToken \|\| token\)/, 'listing-level seller portal resends should derive a stable portal token after rotating invites')
+assert.match(listingDetail, /buildSellerClientPortalLink\(stablePortalToken \|\| invitation\?\.inviteToken\)/, 'listing-level seller portal resends should email the stable URL before falling back to a fresh invite token')
+assert.doesNotMatch(listingDetail, /buildSellerClientPortalLink\(invitation\?\.inviteToken\)/, 'listing-level seller portal resends should not email a newly rotated invite token as the first choice')
 assert.match(leadsPage, /issueSellerPortalInvite\(sellerPortalToken\)/, 'lead-level resends must rotate the one-time invitation')
+assert.match(leadsPage, /const stablePortalToken = normalizeText\(invitation\?\.stablePortalToken \|\| invitation\?\.stable_portal_token \|\| sellerPortalToken\)/, 'lead-level seller portal resends should derive a stable portal token')
+assert.match(leadsPage, /buildSellerClientPortalLink\(stablePortalToken \|\| invitation\?\.inviteToken\)/, 'lead-level seller portal resends should email the stable URL before falling back to a fresh invite token')
+assert.doesNotMatch(leadsPage, /buildSellerClientPortalLink\(invitation\?\.inviteToken\)/, 'lead-level seller portal resends should not email a newly rotated invite token as the first choice')
+assert.match(sellerPostMandateOrchestration, /const stablePortalToken = firstText\(invitation\?\.stablePortalToken, invitation\?\.stable_portal_token, portalToken\)/, 'post-mandate orchestration should prefer the stable portal token returned by invite rotation')
+assert.match(sellerPostMandateOrchestration, /stablePortalToken \? buildSellerPortalLink\(stablePortalToken, baseUrl\) : inviteToken \? buildSellerPortalLink\(inviteToken, baseUrl\)/, 'post-mandate orchestration should email stable seller portal links before invite-token fallbacks')
 
 console.log('Client portal Phase 2 stable link and invitation checks passed.')

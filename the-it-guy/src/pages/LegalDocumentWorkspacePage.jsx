@@ -3151,11 +3151,12 @@ export default function LegalDocumentWorkspacePage() {
 
   const backPath = useMemo(() => {
     if (returnTo) return returnTo
+    if (normalizeKey(role) === 'attorney') return '/attorney/matters/active'
     if (routeTransactionId) return `/transactions/${routeTransactionId}`
     if (routeListingId) return `/agent/listings/${routeListingId}`
     if (routeLeadId) return `/pipeline/leads/${routeLeadId}`
     return '/transactions'
-  }, [returnTo, routeLeadId, routeListingId, routeTransactionId])
+  }, [returnTo, role, routeLeadId, routeListingId, routeTransactionId])
 
   const handleBack = useCallback(() => {
     navigate(backPath)
@@ -3451,7 +3452,7 @@ export default function LegalDocumentWorkspacePage() {
       const immediateTransactionId = normalizeText(
         immediateLeadContext.linkedTransaction?.transactionId || immediateLeadContext.linkedTransaction?.dealId,
       )
-      if (!hasRenderedContextRef.current) {
+      if (!hasRenderedContextRef.current && !effectiveRoutePacketId) {
         setTransactionDetail(null)
         setOrganisationId(immediateOrganisationId)
         setWorkspaceBranding(null)
@@ -5553,7 +5554,7 @@ export default function LegalDocumentWorkspacePage() {
           open
           onBack={handleBack}
           onClose={handleBack}
-          backLabel={routeListingId && !transactionId ? 'Back to Listing' : routeLeadId && !transactionId ? 'Back to Lead' : 'Back to Transaction'}
+          backLabel={normalizeKey(role) === 'attorney' ? 'Back to Incoming Matters' : routeListingId && !transactionId ? 'Back to Listing' : routeLeadId && !transactionId ? 'Back to Lead' : 'Back to Transaction'}
           transactionId={transactionId}
           transactionReference={transactionReference}
           packetType={packetType}

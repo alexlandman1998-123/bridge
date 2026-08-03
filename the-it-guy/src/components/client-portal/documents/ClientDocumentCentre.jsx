@@ -426,9 +426,27 @@ export function buildDocumentCentreSections(documentCenter = {}, workspace = 'bu
 function sellerRequirementGroup(item = {}) {
   const haystack = `${item?.group || ''} ${item?.sourceId || ''} ${item?.title || ''} ${item?.description || ''}`.toLowerCase()
   if (/additional/.test(haystack)) return 'additional'
-  if (/sale_document|mandate|otp|offer to purchase|sale agreement|agreement of sale|seller instruction|seller declaration/.test(haystack)) return 'sales'
-  if (/rates|levy|hoa|body corporate|property|bond statement|occupancy|lease|tenant|electrical|plumbing|beetle|coc|certificate|title deed|disclosure|defects|bank account|account confirmation|sale proceeds/.test(haystack)) return 'property'
+  if (/disclosure|defects|capital improvement|cgt|capital-gains|acquisition|alteration|building plan|occupation certificate|rates|levy|hoa|body corporate|property|bond statement|occupancy|lease|tenant|electrical|plumbing|beetle|coc|certificate|title deed|bank account|account confirmation|sale proceeds/.test(haystack)) return 'property'
+  if (/sale_document|mandate|otp|offer to purchase|sale agreement|agreement of sale|seller instruction/.test(haystack)) return 'sales'
+  if (/identity|id document|passport|proof of residential address|proof of address|residential address|fica|kyc|tax number|income tax|sars|marital|spouse|director|trustee|company|cipc|registration/.test(haystack)) return 'fica'
   return 'fica'
+}
+
+function isSellerMandateItem(item = {}) {
+  const haystack = `${item?.sourceType || ''} ${item?.group || ''} ${item?.sourceId || ''} ${item?.title || ''} ${item?.description || ''} ${item?.linkedDocument?.document_type || ''} ${item?.linkedDocument?.category || ''}`.toLowerCase()
+  return /mandate|mandate_signature|signed_mandate/.test(haystack)
+}
+
+function uniqueSellerPortalDocumentItems(items = []) {
+  const seen = new Set()
+  return items.filter((item, index) => {
+    const key = isSellerMandateItem(item)
+      ? 'seller_mandate'
+      : String(item?.id || item?.sourceId || item?.uploadKey || item?.title || `seller-document-${index}`).trim()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function buyerRequirementGroup(item = {}) {
@@ -484,16 +502,16 @@ function ClientDocumentCentre({
   const sellerPropertyDocuments = sections.allRequired
     .filter((item) => sellerRequirementGroup(item) === 'property')
     .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'property'))
-  const sellerSalesDocuments = [
+  const sellerSalesDocuments = uniqueSellerPortalDocumentItems([
+    ...(Array.isArray(documentCenter?.saleDocuments) ? documentCenter.saleDocuments : [])
+      .map((item) => decoratePortalDocumentItem(item, 'sales')),
     ...sections.allRequired
       .filter((item) => sellerRequirementGroup(item) === 'sales')
       .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'sales')),
     ...sections.signedDocuments
       .filter((item) => /mandate|transfer|sale agreement|agreement of sale|otp|seller instruction/i.test(`${item?.title || ''} ${item?.description || ''}`))
       .map((item) => decoratePortalDocumentItem(item, 'sales')),
-    ...(Array.isArray(documentCenter?.saleDocuments) ? documentCenter.saleDocuments : [])
-      .map((item) => decoratePortalDocumentItem(item, 'sales')),
-  ]
+  ])
   const sellerAdditionalDocuments = sections.additionalRequests.map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'additional'))
   const sellerDocumentTabs = [
     {
@@ -507,7 +525,7 @@ function ClientDocumentCentre({
       key: 'sales',
       title: 'Sales Documents',
       subtitle: 'Mandates, OTPs, seller instructions, and sale-related paperwork.',
-      items: uniqueById(sellerSalesDocuments),
+      items: sellerSalesDocuments,
       emptyState: 'No sales documents required in this category.',
     },
     {

@@ -1036,10 +1036,14 @@ function buildOfferInsert(payload = {}) {
       cashContribution: payload?.cashComponent,
       bondAmount: payload?.bondComponent,
       expiryDate: payload?.expiryDate,
+      otpDocumentVariant: payload?.otpDocumentVariant || payload?.conditionsJson?.otpDocumentVariant || payload?.conditions?.otpDocumentVariant,
+      transactionType: payload?.transactionType || payload?.transaction_type,
+      developmentId: payload?.developmentId || payload?.development_id,
     },
     {
       source: payload?.conditionsJson?.source || payload?.conditions?.source || 'canonical_offer',
       captureMethod: payload?.conditionsJson?.capturedByAgent || payload?.conditions?.capturedByAgent ? 'agent_assisted' : 'agent_preparation',
+      sourceContext: payload,
     },
   )
   return {
@@ -1089,6 +1093,8 @@ function mapListingDbRow(row = {}) {
     suburb: row.suburb || propertyDetails.suburb || '',
     city: row.city || propertyDetails.city || '',
     askingPrice: row.asking_price || row.price || propertyDetails.askingPrice || 0,
+    transactionType: row.transaction_type || row.transactionType || propertyDetails.transactionType || '',
+    developmentId: row.development_id || row.developmentId || propertyDetails.developmentId || '',
   }
 }
 
@@ -1157,6 +1163,7 @@ export async function getCanonicalOfferInviteContext(token = '') {
       expiresAt: offer.expiryDate,
       agentName,
       agentEmail: normalizeText(offer?.conditions?.agentEmail).toLowerCase(),
+      otpDocumentVariant: normalizeText(offer?.conditions?.otpDocumentVariant),
       status: offer.status,
     },
     listing,
@@ -1211,12 +1218,16 @@ export async function submitCanonicalBuyerOffer({ token = '', submission = {} } 
       phone,
       offerAmount,
       financeType: normalizedFinanceType,
+      otpDocumentVariant: submission?.otpDocumentVariant || context?.canonicalOffer?.conditions?.otpDocumentVariant || context?.invite?.otpDocumentVariant,
+      transactionType: context?.listing?.transactionType,
+      developmentId: context?.listing?.developmentId,
       buyerSubmittedAt,
     },
     {
       source: 'canonical_buyer_offer_link',
       captureMethod: 'buyer_self_service',
       capturedAt: buyerSubmittedAt,
+      sourceContext: { offer: context.canonicalOffer, listing: context.listing, invite: context.invite },
     },
   )
   return updateCanonicalOfferStatus(context.canonicalOffer.id, 'submitted', {

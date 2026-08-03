@@ -22,10 +22,14 @@ assert.match(marketingBuilder, /const channels = new Map\(\)/, 'marketing cards 
 assert.match(source, /const sellerAgencyLogoUrl = pickFirstText\(/, 'seller portal should resolve the agent entity logo from listing branding')
 assert.match(source, /src=\{sellerAgencyLogoUrl\}/, 'seller sidebar should render the agent entity logo')
 assert.ok(
-  sellerLogoResolver.indexOf('agencyLogoDarkUrl') < sellerLogoResolver.indexOf('agencyLogoLightUrl'),
-  'seller sidebar should prefer the organisation dark logo before light-logo fallbacks',
+  sellerLogoResolver.indexOf('agencyLogoLightUrl') < sellerLogoResolver.indexOf('agencyLogoDarkUrl'),
+  'seller sidebar should prefer light-background logos before white/dark-background logo fallbacks',
 )
 assert.match(sellerLogoResolver, /organisation_logo_light_url/, 'seller logo resolution should support legacy organisation light-logo fields')
+assert.match(source, /mt-5 grid flex-1 content-start grid-cols-2 gap-3/, 'seller mobile document categories should use compact same-row spacing')
+assert.match(source, /min-h-\[174px\] overflow-hidden/, 'seller mobile category cards should contain progress rings without row overlap')
+assert.match(source, /absolute right-3 top-3/, 'seller mobile category progress rings should sit inside the card')
+assert.doesNotMatch(source, /top-0 -translate-y-1\/2/, 'seller mobile category progress rings should not float outside cards')
 assert.doesNotMatch(source, /return `Seller Onboarding \$\{label\}`/, 'seller sidebar should not render the redundant onboarding completion badge')
 assert.match(source, /Your property is live and everything is on track\./, 'seller hero should lead with the listing status message')
 assert.doesNotMatch(source, /Property Performance/, 'seller dashboard should not render the removed property performance panel')
@@ -60,9 +64,13 @@ assert.doesNotMatch(sellerDashboard, /SellerNextMilestoneCard/, 'seller dashboar
 assert.match(source, /title="Document Tracker"/, 'document tracker should replace the important-document list')
 assert.match(clientDocumentCentreSource, /title: 'Sales Documents'/, 'seller document centre should expose a Sales Documents tab')
 assert.match(clientDocumentCentreSource, /sellerRequirementGroup\(item\) === 'sales'/, 'seller sale documents should use the shared sales grouping')
-assert.match(clientDocumentCentreSource, /title deed\|disclosure\|defects\|bank account/, 'seller disclosure, defects, and sale-proceeds bank requirements should group under property documents')
-assert.match(clientDocumentCentreSource, /sale_document\|mandate\|otp\|offer to purchase\|sale agreement\|agreement of sale\|seller instruction\|seller declaration/, 'seller sale grouping should be limited to actual sale documents')
-assert.match(workspaceServiceSource, /seller-declaration-disclosure/, 'seller disclosure should be exposed as a downloadable Sales document')
+assert.match(clientDocumentCentreSource, /disclosure\|defects\|capital improvement\|cgt\|capital-gains\|acquisition\|alteration\|building plan\|occupation certificate/, 'seller disclosure, CGT, acquisition, and alteration requirements should group under property documents')
+assert.match(clientDocumentCentreSource, /sale_document\|mandate\|otp\|offer to purchase\|sale agreement\|agreement of sale\|seller instruction/, 'seller sale grouping should be limited to actual sale documents')
+assert.doesNotMatch(clientDocumentCentreSource, /seller declaration\/\.test\(haystack\)\) return 'sales'/, 'seller declaration/disclosure should not be classified as a Sales document')
+assert.doesNotMatch(workspaceServiceSource, /title: 'Seller Declaration \/ Disclosure'[\s\S]*?buildSellerSaleDocumentCenterItem/, 'seller disclosure should not be injected into Sales downloadable documents')
+assert.match(source, /disclosure\|defects\|capital improvement\|cgt\|capital-gains\|acquisition\|alteration\|building plan\|occupation certificate/, 'seller mobile documents should classify disclosure, CGT, acquisition, and alteration records as Property')
+assert.doesNotMatch(source, /seller declaration\/\.test\(haystack\)\) return 'sale'/, 'seller mobile documents should not classify seller declaration/disclosure as Sales')
+assert.match(source, /seller_mandate/, 'seller mobile documents should deduplicate raw signed mandate files against the friendly mandate document')
 assert.match(source, /\['sale', 'sales', 'mandate', 'transfer'\]\.includes\(explicitCategoryKey\)/, 'seller mobile documents should remap old mandate and transfer categories into Sales')
 assert.match(source, /category\.total > 0 \|\| category\.key === 'sale'/, 'seller mobile documents should keep the Sales category visible even when only generated sale documents are pending')
 assert.match(source, /Choose document type/, 'seller mobile upload should open a document-type picker before camera or file actions')

@@ -3650,9 +3650,10 @@ function AgentListingDetail() {
         await handleSendSellerOnboardingFollowUp()
         return
       }
-      const { token, sellerEmail, sellerName } = await resolveSellerClientPortalInviteContext()
+      const { token, stablePortalToken: savedStablePortalToken, sellerEmail, sellerName } = await resolveSellerClientPortalInviteContext()
       const invitation = await issueSellerPortalInvite(token)
-      const portalLink = buildSellerClientPortalLink(invitation?.inviteToken)
+      const stablePortalToken = toCleanText(invitation?.stablePortalToken || invitation?.stable_portal_token || savedStablePortalToken || token)
+      const portalLink = buildSellerClientPortalLink(stablePortalToken || invitation?.inviteToken)
       if (!portalLink) throw new Error('Seller portal invitation could not be created.')
       const agent = getCanonicalOfferActor()
       const emailResponse = await invokeEdgeFunction('send-email', {

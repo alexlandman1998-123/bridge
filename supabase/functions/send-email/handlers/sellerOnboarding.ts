@@ -237,7 +237,7 @@ async function verifySellerPortalInviteAfterSignedMandate(
   const query = await supabase
     .from("private_listings")
     .select(
-      "id, organisation_id, mandate_status, listing_status, status, mandate_packet_id",
+      "id, organisation_id, mandate_status, listing_status, mandate_packet_id",
     )
     .eq("id", listingId)
     .maybeSingle();

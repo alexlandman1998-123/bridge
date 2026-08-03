@@ -27,6 +27,7 @@ import {
   normalizeOfferWorkflowStatus,
   submitBuyerOffer,
 } from '../lib/listingOffersService'
+import { resolveOtpDocumentVariant } from '../core/documents/otpRouteUniverse'
 
 const ARCH_GREEN = '#0F7A5A'
 const WARM_WHITE = '#FAFAF8'
@@ -171,6 +172,21 @@ function SelectInput({ label, value, onChange, children }) {
   )
 }
 
+function TextAreaInput({ label, value, onChange, placeholder = '' }) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-[0.78rem] font-semibold text-[#4B5563]">{label}</span>
+      <textarea
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        rows={3}
+        className="min-h-[96px] rounded-[16px] border border-[#E5E7EB] bg-white px-4 py-3 text-base font-semibold text-[#111827] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
+      />
+    </label>
+  )
+}
+
 function PropertyFeature({ icon, label, value }) {
   if (!value) return null
   return (
@@ -231,20 +247,33 @@ function BuyerOfferSubmission() {
     offerAmount: '',
     depositAmount: '',
     financeType: 'bond',
+    otpDocumentVariant: '',
     bondAmount: '',
     cashContribution: '',
     needsBondAssistance: false,
     proofOfFundsUrl: '',
+    depositDueDate: '',
+    bondApprovalDeadline: '',
+    cashProofDeadline: '',
+    guaranteeDeliveryDeadline: '',
+    guaranteeDeliveryPeriod: '',
     suspensiveConditions: '',
     subjectToSale: false,
     subjectSaleProperty: '',
     subjectSaleTimeline: '',
+    subjectSaleMinimumPrice: '',
+    subjectSaleFulfilmentDate: '',
     subjectSaleAgentInvolved: false,
     occupationDate: '',
     occupationalRent: false,
+    occupationalRentAmount: '',
     includedFixtures: '',
     excludedFixtures: '',
     specialConditions: '',
+    acknowledgeDevelopmentRules: false,
+    acknowledgeNhbrcWarranty: false,
+    acknowledgeBodyCorporateRules: false,
+    acknowledgeUtilityConnectionCharges: false,
     expiryDate: '',
     acknowledgeSellerReview: true,
     acknowledgeLegalDisclaimer: true,
@@ -292,6 +321,15 @@ function BuyerOfferSubmission() {
   const latestStatus = normalizeOfferWorkflowStatus(latestOffer?.status || '')
   const counterPendingBuyer = canonicalLifecycle?.effectiveStatus === 'countered' || latestStatus === OFFER_WORKFLOW_STATUS.BUYER_REVIEW_COUNTER || latestStatus === OFFER_WORKFLOW_STATUS.COUNTERED
   const canSubmitCanonicalOffer = !canonicalLifecycle || canonicalLifecycle.buyerCanResubmit
+  const otpDocumentVariant = form.otpDocumentVariant || resolveOtpDocumentVariant({
+    placeholders: {
+      otpDocumentVariant: invite?.otpDocumentVariant || canonicalOffer?.conditions?.otpDocumentVariant,
+      transactionType: invite?.transactionType || canonicalOffer?.conditions?.transactionType,
+    },
+    property: listing || {},
+    transaction: canonicalOffer || {},
+  })
+  const isDevelopmentOffer = otpDocumentVariant === 'new_development'
   const financeType = String(form.financeType || '').toLowerCase()
   const askingPrice = getListingPrice(listing)
   const offerAmount = moneyNumber(form.offerAmount)
@@ -348,8 +386,9 @@ function BuyerOfferSubmission() {
       fullName: previous.fullName || conditions.buyerName || invite?.buyerLeadName || '',
       email: previous.email || conditions.buyerEmail || '',
       phone: previous.phone || conditions.buyerPhone || '',
+      otpDocumentVariant: previous.otpDocumentVariant || conditions.otpDocumentVariant || invite?.otpDocumentVariant || resolveOtpDocumentVariant({ property: listing || {}, transaction: canonicalOffer || {} }),
     }))
-  }, [context?.canonicalOffer?.conditions, context?.ok, invite?.buyerLeadName])
+  }, [canonicalOffer, context?.canonicalOffer?.conditions, context?.ok, invite?.buyerLeadName, invite?.otpDocumentVariant, listing])
 
   useEffect(() => {
     if (!canonicalLifecycle?.counterTerms || !counterPendingBuyer) return
@@ -417,12 +456,13 @@ function BuyerOfferSubmission() {
       if (!confirmedAccuracy) {
         throw new Error('Please confirm the information is accurate before submitting.')
       }
+      const submission = { ...form, otpDocumentVariant }
       setSubmitting(true)
       let submittedOffer = null
       if (context?.source === 'canonical') {
-        submittedOffer = await submitCanonicalBuyerOffer({ token, submission: form })
+        submittedOffer = await submitCanonicalBuyerOffer({ token, submission })
       } else {
-        submittedOffer = await submitBuyerOffer({ token, mode: counterPendingBuyer ? 'counter_response' : 'new', submission: form })
+        submittedOffer = await submitBuyerOffer({ token, mode: counterPendingBuyer ? 'counter_response' : 'new', submission })
       }
       await sendAgentOfferSubmittedNotification(submittedOffer).catch((notificationError) => {
         console.warn('[BUYER OFFER] agent offer submission notification failed', notificationError)
@@ -538,8 +578,8 @@ function BuyerOfferSubmission() {
         {[
           ['Deposit Amount', formatCurrency(depositAmount)],
           ['Finance Type', financeType === 'cash' ? 'Cash' : financeType === 'hybrid' ? 'Hybrid' : 'Bond'],
+          ['OTP Route', isDevelopmentOffer ? 'New Development' : 'Normal Sale'],
           ['Expiry Date', expiryLabel],
-          ['Offer Validity', form.expiryDate ? 'Time Limited' : 'Pending'],
         ].map(([label, value]) => (
           <div key={label} className="rounded-[18px] bg-white/8 p-4">
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-white/45">{label}</p>
@@ -568,13 +608,67 @@ function BuyerOfferSubmission() {
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <TextInput label="Offer Amount" value={form.offerAmount} onChange={(event) => updateForm('offerAmount', event.target.value)} placeholder="2500000" inputMode="decimal" />
         <TextInput label="Deposit Amount" value={form.depositAmount} onChange={(event) => updateForm('depositAmount', event.target.value)} placeholder="250000" inputMode="decimal" />
+        <TextInput label="Deposit Due Date" type="date" value={form.depositDueDate} onChange={(event) => updateForm('depositDueDate', event.target.value)} />
         <SelectInput label="Finance Type" value={form.financeType} onChange={(event) => updateFinanceType(event.target.value)}>
           <option value="cash">Cash</option>
           <option value="bond">Bond</option>
           <option value="hybrid">Hybrid</option>
         </SelectInput>
+        {financeType !== 'cash' ? (
+          <>
+            <TextInput label="Bond Amount" value={form.bondAmount} onChange={(event) => updateForm('bondAmount', event.target.value)} placeholder="2250000" inputMode="decimal" />
+            <TextInput label="Bond Approval Deadline" type="date" value={form.bondApprovalDeadline} onChange={(event) => updateForm('bondApprovalDeadline', event.target.value)} />
+          </>
+        ) : null}
+        {financeType !== 'bond' ? (
+          <TextInput label="Cash Proof Deadline" type="date" value={form.cashProofDeadline} onChange={(event) => updateForm('cashProofDeadline', event.target.value)} />
+        ) : null}
+        <TextInput label="Guarantee Delivery Deadline" type="date" value={form.guaranteeDeliveryDeadline} onChange={(event) => updateForm('guaranteeDeliveryDeadline', event.target.value)} />
+        <TextInput label="Occupation Date" type="date" value={form.occupationDate} onChange={(event) => updateForm('occupationDate', event.target.value)} />
         <TextInput label="Expiry Date" type="date" value={form.expiryDate} onChange={(event) => updateForm('expiryDate', event.target.value)} />
       </div>
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <label className="flex min-h-12 items-center gap-3 rounded-[16px] border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#374151]">
+          <input type="checkbox" checked={form.occupationalRent} onChange={(event) => updateForm('occupationalRent', event.target.checked)} />
+          <span>Occupational rent applies</span>
+        </label>
+        {form.occupationalRent ? (
+          <TextInput label="Occupational Rent Amount" value={form.occupationalRentAmount} onChange={(event) => updateForm('occupationalRentAmount', event.target.value)} placeholder="18000" inputMode="decimal" />
+        ) : null}
+        <label className="flex min-h-12 items-center gap-3 rounded-[16px] border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#374151]">
+          <input type="checkbox" checked={form.subjectToSale} onChange={(event) => updateForm('subjectToSale', event.target.checked)} />
+          <span>Subject to sale of another property</span>
+        </label>
+      </div>
+      {form.subjectToSale ? (
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <TextInput label="Property To Be Sold" value={form.subjectSaleProperty} onChange={(event) => updateForm('subjectSaleProperty', event.target.value)} placeholder="Address or property description" />
+          <TextInput label="Minimum Sale Price" value={form.subjectSaleMinimumPrice} onChange={(event) => updateForm('subjectSaleMinimumPrice', event.target.value)} placeholder="2000000" inputMode="decimal" />
+          <TextInput label="Fulfilment Date" type="date" value={form.subjectSaleFulfilmentDate} onChange={(event) => updateForm('subjectSaleFulfilmentDate', event.target.value)} />
+          <TextInput label="Timeline Note" value={form.subjectSaleTimeline} onChange={(event) => updateForm('subjectSaleTimeline', event.target.value)} placeholder="For example, within 90 days" />
+        </div>
+      ) : null}
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <TextAreaInput label="Included Fixtures" value={form.includedFixtures} onChange={(event) => updateForm('includedFixtures', event.target.value)} placeholder="Fixtures the buyer wants included" />
+        <TextAreaInput label="Excluded Fixtures" value={form.excludedFixtures} onChange={(event) => updateForm('excludedFixtures', event.target.value)} placeholder="Fixtures the seller may remove" />
+        <TextAreaInput label="Other Suspensive Conditions" value={form.suspensiveConditions} onChange={(event) => updateForm('suspensiveConditions', event.target.value)} placeholder="Only add deal-specific conditions that need agent review" />
+        <TextAreaInput label="Special Conditions" value={form.specialConditions} onChange={(event) => updateForm('specialConditions', event.target.value)} placeholder="Only add deal-specific special conditions" />
+      </div>
+      {isDevelopmentOffer ? (
+        <div className="mt-5 grid gap-3 rounded-[22px] bg-[#F7F7F4] p-5">
+          {[
+            ['acknowledgeDevelopmentRules', 'I acknowledge this is a new-development offer route.'],
+            ['acknowledgeNhbrcWarranty', 'I acknowledge NHBRC/building warranty information may form part of the agreement.'],
+            ['acknowledgeBodyCorporateRules', 'I acknowledge body corporate or scheme rules may apply.'],
+            ['acknowledgeUtilityConnectionCharges', 'I acknowledge levies, rates, deposits or connection charges may apply.'],
+          ].map(([key, label]) => (
+            <label key={key} className="flex items-start gap-3 text-sm font-semibold text-[#374151]">
+              <input type="checkbox" checked={Boolean(form[key])} onChange={(event) => updateForm(key, event.target.checked)} className="mt-1" />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+      ) : null}
       <div className="mt-5 rounded-[22px] bg-[#F7F7F4] p-5">
         <p className="text-sm font-bold text-[#111827]">Financial Insights</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-4">
@@ -631,6 +725,10 @@ function BuyerOfferSubmission() {
           ['Offer Amount', formatCurrency(offerAmount)],
           ['Deposit', formatCurrency(depositAmount)],
           ['Finance', financeType === 'cash' ? 'Cash' : financeType === 'hybrid' ? 'Hybrid' : 'Bond'],
+          ['OTP Route', isDevelopmentOffer ? 'New Development' : 'Normal Sale'],
+          ['Bond Deadline', form.bondApprovalDeadline ? formatDate(form.bondApprovalDeadline) : 'Not set'],
+          ['Guarantee Deadline', form.guaranteeDeliveryDeadline ? formatDate(form.guaranteeDeliveryDeadline) : 'Not set'],
+          ['Occupation', form.occupationDate ? formatDate(form.occupationDate) : 'Not set'],
           ['Buyer', form.fullName || 'Not captured'],
           ['Email', form.email || 'Not captured'],
         ].map(([label, value]) => (

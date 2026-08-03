@@ -227,6 +227,20 @@ const STALE_PRE_ONBOARDING_REQUIREMENT_KEYS = new Set([
   'seller_onboarding_submission',
 ])
 
+const STALE_GENERATED_SELLER_REQUIREMENT_KEYS = new Set([
+  'alteration_approvals',
+  'approved_building_plans',
+  'occupation_certificate',
+  'property_acquisition_record',
+  'capital_improvement_records',
+])
+
+const CONDITIONALLY_TRIGGERED_SELLER_REQUIREMENT_KEYS = new Set([
+  'alteration_approvals',
+  'approved_building_plans',
+  'occupation_certificate',
+])
+
 function hasSubmittedSellerOnboarding(status = '') {
   return ['completed', 'complete', 'submitted', 'under_review', 'onboarding_completed', 'seller_onboarding_completed'].includes(normalizeKey(status))
 }
@@ -279,6 +293,18 @@ function filterStalePersistedRequirements(requirements = [], listing = {}, formD
   })
 }
 
+function filterStaleGeneratedRequirementsAgainstDerived(persisted = [], derived = []) {
+  const activeDerived = mergeSellerRequiredDocuments(derived)
+  const derivedKeys = new Set((Array.isArray(derived) ? derived : []).map((requirement) => requirementIdentity(requirement)).filter(Boolean))
+  const activeDerivedKeys = new Set(activeDerived.map((requirement) => requirementIdentity(requirement)).filter(Boolean))
+  return (Array.isArray(persisted) ? persisted : []).filter((requirement) => {
+    const key = requirementIdentity(requirement)
+    if (!STALE_GENERATED_SELLER_REQUIREMENT_KEYS.has(key)) return true
+    if (CONDITIONALLY_TRIGGERED_SELLER_REQUIREMENT_KEYS.has(key)) return derivedKeys.has(key)
+    return activeDerivedKeys.has(key)
+  })
+}
+
 export function getSellerRequiredDocuments(listing = {}, formData = {}) {
   const resolvedFormData = isPlainObject(formData) && Object.keys(formData).length
     ? formData
@@ -303,7 +329,7 @@ export function getSellerRequiredDocuments(listing = {}, formData = {}) {
           },
         })
       : []
-    return mergeSellerRequiredDocuments(persisted, derived)
+    return mergeSellerRequiredDocuments(filterStaleGeneratedRequirementsAgainstDerived(persisted, derived), derived)
   } catch (error) {
     console.warn('[seller-document-requirements] Failed to derive seller document requirements', {
       listingId: listing?.id || null,

@@ -1031,8 +1031,6 @@ function collectDynamicTriggers(form = {}, source = {}) {
   const property = form?.property || source?.property || {}
   const occupancy = form?.occupancy || source?.occupancy || {}
   const finance = form?.finance || source?.finance || {}
-  const disclosureResponses = form?.propertyDisclosure?.responses || form?.property_disclosure?.responses || source?.property_disclosure?.responses || {}
-  const disclosureAnswer = (key) => normalizeKey(disclosureResponses?.[key]?.answer || disclosureResponses?.[key] || '')
   const hasBond = normalizeBoolean(
     form?.existingBond ??
       form?.sellerHasExistingBond ??
@@ -1167,8 +1165,6 @@ function collectDynamicTriggers(form = {}, source = {}) {
       form?.recentAlterations ||
         property?.alterations?.recent ||
         source?.property?.alterations?.recent ||
-        ['no', 'unsure'].includes(disclosureAnswer('improvements_on_plans')) ||
-        ['no', 'unsure'].includes(disclosureAnswer('approved_plans_possession')) ||
         false,
     )
   ) {

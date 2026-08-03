@@ -4,6 +4,7 @@ import { isUnsafeFallbackAllowed } from './envValidation'
 import { createTransactionFromAcceptedOffer } from './transactionLifecycleService'
 import { buildResidentialOfferTermsSnapshot, mergeResidentialOfferTermsIntoConditions } from '../core/offers/residentialOfferTerms.js'
 import { buildResidentialOfferConditionReviewPatch } from '../core/offers/residentialOfferConditionReview.js'
+import { resolveOtpDocumentVariant } from '../core/documents/otpRouteUniverse.js'
 
 const KEY_OFFER_INVITES = 'itg:listing-offer-invites:v1'
 const KEY_OFFER_RECORDS = 'itg:listing-offer-records:v1'
@@ -267,6 +268,8 @@ export function createOfferInvite({
   viewingId = '',
   organisationId = '',
   canonicalOfferId = '',
+  otpDocumentVariant = '',
+  transactionType = '',
   expiresInDays = 7,
 } = {}) {
   if (!String(listingId || '').trim()) {
@@ -282,6 +285,11 @@ export function createOfferInvite({
   }
 
   const token = createOfferToken()
+  const resolvedOtpDocumentVariant = resolveOtpDocumentVariant({
+    placeholders: { otp_document_variant: otpDocumentVariant, transaction_type: transactionType },
+    property: listing,
+    transaction: { transaction_type: transactionType },
+  })
   const invite = {
     id: generateId('offer_invite'),
     token,
@@ -296,6 +304,9 @@ export function createOfferInvite({
     viewingId: String(viewingId || '').trim(),
     organisationId: String(organisationId || listing?.organisationId || listing?.organisation_id || '').trim(),
     canonicalOfferId: String(canonicalOfferId || '').trim(),
+    otpDocumentVariant: resolvedOtpDocumentVariant,
+    transactionType: String(transactionType || listing?.transactionType || listing?.transaction_type || '').trim(),
+    developmentId: String(listing?.developmentId || listing?.development_id || '').trim(),
     status: OFFER_WORKFLOW_STATUS.DRAFT,
     createdAt: new Date().toISOString(),
     expiresAt: expiryIso(expiresInDays),
@@ -379,6 +390,7 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
   const residentialOfferTerms = buildResidentialOfferTermsSnapshot(submission, {
     source: mode === 'counter_response' ? 'buyer_counter_response' : 'buyer_offer_link',
     captureMethod: 'buyer_self_service',
+    sourceContext: { invite, listing },
   })
 
   const nextRecord = {
@@ -413,15 +425,24 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
       financeType: String(submission?.financeType || 'unknown').trim().toLowerCase(),
       bondAmount: money(submission?.bondAmount),
       cashContribution: money(submission?.cashContribution),
+      otpDocumentVariant: residentialOfferTerms.otpDocumentVariant,
       needsBondAssistance: Boolean(submission?.needsBondAssistance),
       proofOfFundsUrl: String(submission?.proofOfFundsUrl || '').trim(),
+      depositDueDate: String(submission?.depositDueDate || '').trim(),
+      bondApprovalDeadline: String(submission?.bondApprovalDeadline || '').trim(),
+      cashProofDeadline: String(submission?.cashProofDeadline || '').trim(),
+      guaranteeDeliveryDeadline: String(submission?.guaranteeDeliveryDeadline || '').trim(),
+      guaranteeDeliveryPeriod: String(submission?.guaranteeDeliveryPeriod || '').trim(),
       suspensiveConditions: String(submission?.suspensiveConditions || '').trim(),
       subjectToSale: Boolean(submission?.subjectToSale),
       subjectSaleProperty: String(submission?.subjectSaleProperty || '').trim(),
       subjectSaleTimeline: String(submission?.subjectSaleTimeline || '').trim(),
+      subjectSaleMinimumPrice: money(submission?.subjectSaleMinimumPrice),
+      subjectSaleFulfilmentDate: String(submission?.subjectSaleFulfilmentDate || '').trim(),
       subjectSaleAgentInvolved: Boolean(submission?.subjectSaleAgentInvolved),
       occupationDate: String(submission?.occupationDate || '').trim(),
       occupationalRent: Boolean(submission?.occupationalRent),
+      occupationalRentAmount: money(submission?.occupationalRentAmount),
       includedFixtures: String(submission?.includedFixtures || '').trim(),
       excludedFixtures: String(submission?.excludedFixtures || '').trim(),
       specialConditions: String(submission?.specialConditions || '').trim(),
@@ -476,6 +497,7 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
           source: nextRecord.source,
           captureMethod: 'buyer_self_service',
           capturedAt: nextRecord.submittedAt,
+          sourceContext: { invite, listing },
         }),
         expiry_date: nextRecord.offer.expiryDate || null,
       },

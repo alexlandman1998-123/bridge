@@ -235,24 +235,28 @@ function resolveAssignedBySource({
   organisationsById = {},
 } = {}) {
   const sourceOrganisationId = compact([
+    allocation.agency_organisation_id,
+    allocation.agencyOrganisationId,
+    allocation.source_organisation_id,
+    allocation.sourceOrganisationId,
     transaction.originating_partner_organisation_id,
     transaction.referral_source_organisation_id,
-    transaction.organisation_id,
-    allocation.source_organisation_id,
     allocation.organisation_id,
-    allocation.agency_organisation_id,
+    allocation.organisationId,
+    transaction.organisation_id,
   ])[0] || ''
   const sourceOrganisation = organisationsById[sourceOrganisationId] || null
   const sourceName = compact([
+    allocation.source_organisation_name,
+    allocation.sourceOrganisationName,
+    allocation.organisation_name,
+    allocation.organisationName,
+    allocation.agency_name,
+    allocation.agencyName,
+    getOrganisationName(sourceOrganisation),
     transaction.originating_partner_organisation_name,
     transaction.referral_source_organisation_name,
     transaction.source_organisation_name,
-    getOrganisationName(sourceOrganisation),
-    allocation.source_organisation_name,
-    allocation.organisation_name,
-    allocation.agency_name,
-    allocation.company_name,
-    allocation.companyName,
     allocation.sender_name,
     allocation.senderName,
     allocation.assigned_agent_name,
@@ -279,7 +283,7 @@ function resolveAssignedBySource({
       logoUrl: getOrganisationLogo(sourceOrganisation) || '/brand/produktive-realty-logo-white.svg',
     }
   }
-  if (allocation.private_listing_id || allocation.privateListingId || normalizedSource.includes('private')) {
+  if (!sourceOrganisationId && !sourceName && (allocation.private_listing_id || allocation.privateListingId || normalizedSource.includes('private'))) {
     return {
       key: 'private',
       label: 'Private',
@@ -533,7 +537,7 @@ function buildSearchText(row = {}) {
   ].map((value) => normalizeKey(value)).join(' ')
 }
 
-export function buildAttorneyPreInstructionRow(allocation = {}, firm = null) {
+export function buildAttorneyPreInstructionRow(allocation = {}, firm = null, organisationsById = {}) {
   const allocationId = allocation.allocation_id || allocation.allocationId || allocation.id || ''
   const listingId = allocation.private_listing_id || allocation.privateListingId || ''
   const mandatePacketId = allocation.mandate_packet_id || allocation.mandatePacketId || ''
@@ -591,7 +595,7 @@ export function buildAttorneyPreInstructionRow(allocation = {}, firm = null) {
     assignedSecretary: { id: '', name: '', initials: '', email: '' },
     assignedAdminHandler: { id: '', name: '', initials: '', email: '' },
     agent,
-    assignedBySource: resolveAssignedBySource({ allocation }),
+    assignedBySource: resolveAssignedBySource({ allocation, organisationsById }),
     actionHref: mandatePacketId ? `/legal-documents/${encodeURIComponent(mandatePacketId)}` : '',
     raw: { allocation },
   }
@@ -825,7 +829,7 @@ export function buildAttorneyIncomingMatterQueueFromSources({
     .filter(Boolean)
 
   const preInstructionRows = (preInstructionAllocations || []).map((allocation) =>
-    buildAttorneyPreInstructionRow(allocation, firm),
+    buildAttorneyPreInstructionRow(allocation, firm, organisationsById),
   )
   const allRows = [...preInstructionRows, ...instructionRows]
 
@@ -1043,7 +1047,12 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
     transaction.originating_partner_organisation_id,
     transaction.referral_source_organisation_id,
     transaction.organisation_id,
-  ]))
+  ]).concat((preInstructionAllocations || []).flatMap((allocation) => [
+    allocation.agency_organisation_id,
+    allocation.agencyOrganisationId,
+    allocation.source_organisation_id,
+    allocation.sourceOrganisationId,
+  ])))
   const unitIds = unique(transactions.map((transaction) => transaction.unit_id))
   const units = await fetchRowsByIds(client, 'units', UNIT_COLUMNS, unitIds)
   const developmentIds = unique([

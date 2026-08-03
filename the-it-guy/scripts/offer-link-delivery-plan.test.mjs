@@ -9,7 +9,7 @@ try {
   assert.equal(email.deliversLink, true)
   assert.deepEqual(email.channels, ['email'])
   assert.equal(email.experience.label, 'Offer + Onboarding Link')
-  assert.deepEqual(email.experience.dataBuckets, ['buyer_onboarding', 'residential_offer_terms', 'condition_requests'])
+  assert.deepEqual(email.experience.dataBuckets, ['otp_route', 'buyer_onboarding', 'residential_offer_terms', 'condition_requests'])
 
   const whatsapp = resolveOfferLinkDeliveryPlan({ clientIntakePreference: 'digital_portal', notificationMode: 'whatsapp', phone: '27820000000' })
   assert.equal(whatsapp.deliversLink, true)

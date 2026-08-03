@@ -6,62 +6,14 @@ import {
   BUYER_PURCHASE_MODES,
 } from '../../lib/buyerOnboardingFlowContract.js'
 import { resolveCanonicalMergeFieldKey } from './mergeFieldRegistry.js'
+import {
+  OTP_DOCUMENT_VARIANTS,
+  OTP_ROUTE_DIMENSIONS,
+} from './otpRouteUniverse.js'
 
 export const OTP_GENERATION_COVERAGE_AUDIT_VERSION = 'otp_generation_coverage_phase1b_v1'
 
-export const OTP_DOCUMENT_VARIANTS = Object.freeze([
-  Object.freeze({
-    key: 'resale_existing_property',
-    label: 'Existing / resale property OTP',
-    recommendation: 'Use this as the primary resale OTP: existing seller, existing title/property facts, property disclosure, fixtures/fittings, seller bond/rates, occupation, guarantees, certificates and transfer obligations.',
-    routeDimensions: Object.freeze(['buyer_party', 'seller_party', 'property_title', 'finance', 'occupation', 'suspensive_conditions']),
-  }),
-  Object.freeze({
-    key: 'new_development',
-    label: 'New development OTP',
-    recommendation: 'Use this as a distinct variant: developer seller, development/unit source data, NHBRC/occupation-certificate/building clauses, parking/storeroom/unit specifications and development-specific annexures.',
-    routeDimensions: Object.freeze(['buyer_party', 'developer_seller', 'development_unit', 'finance', 'occupation_or_handover', 'development_certificates']),
-  }),
-])
-
-export const OTP_ROUTE_DIMENSIONS = Object.freeze({
-  buyerParty: Object.freeze([
-    'individual_unmarried',
-    'individual_married_in_community',
-    'individual_married_out_of_community',
-    'individual_customary_marriage',
-    'individual_islamic_marriage',
-    'individual_foreign_marriage',
-    'co_purchasers',
-    'company_or_cc',
-    'trust',
-    'foreign_purchaser',
-  ]),
-  sellerParty: Object.freeze([
-    'individual_unmarried',
-    'individual_married_in_community',
-    'individual_married_out_of_community',
-    'company_or_cc',
-    'trust',
-    'foreign_seller',
-    'developer_seller',
-  ]),
-  propertyTitle: Object.freeze([
-    'full_title_erf',
-    'full_title_estate_or_hoa',
-    'sectional_title_unit',
-    'share_block_or_scheme',
-    'agricultural_or_vacant_land',
-    'new_development_unit',
-  ]),
-  finance: Object.freeze([
-    'cash',
-    'bond',
-    'hybrid_cash_and_bond',
-    'subject_to_sale_of_purchaser_property',
-    'other_suspensive_condition',
-  ]),
-})
+export { OTP_DOCUMENT_VARIANTS, OTP_ROUTE_DIMENSIONS }
 
 export const KINGSTONS_STANDARD_OTP_COVERAGE_ITEMS = Object.freeze([
   Object.freeze({

@@ -16040,6 +16040,236 @@ function SellerInfoRow({ label, value }) {
   )
 }
 
+function SellerProfileDataRow({ label, value, success = false }) {
+  if (!hasValue(value)) return null
+  return (
+    <div className="grid min-h-8 min-w-0 grid-cols-[minmax(7.5rem,0.42fr)_minmax(0,1fr)] items-start gap-4">
+      <dt className="min-w-0 pt-0.5 text-[12px] font-semibold text-slate-500">{label}</dt>
+      <dd className="flex min-w-0 items-start justify-end gap-2 break-words text-right text-sm font-semibold leading-6 text-slate-950">
+        {success ? <CheckCircle2 className="mt-1 h-3.5 w-3.5 shrink-0 text-emerald-600" /> : null}
+        <span>{value}</span>
+      </dd>
+    </div>
+  )
+}
+
+function SellerProfileCard({ section, onEdit }) {
+  if (!section?.rows?.length && !section?.features?.length && !section?.successMessage) return null
+  return (
+    <section className="min-w-0 rounded-[20px] border border-slate-200/80 bg-white p-5 shadow-[0_18px_45px_rgba(15,23,42,0.045)]">
+      <div className="flex min-h-8 items-start justify-between gap-4">
+        <h3 className="text-sm font-semibold tracking-[-0.01em] text-slate-950">{section.title}</h3>
+        {onEdit ? (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-slate-950"
+          >
+            <Pencil size={13} />
+            Edit
+          </button>
+        ) : null}
+      </div>
+      {section.successMessage ? (
+        <div className="mt-4 flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{section.successMessage}</p>
+        </div>
+      ) : null}
+      {section.rows?.length ? (
+        <dl className="mt-4 grid gap-3">
+          {section.rows.map((row) => (
+            <SellerProfileDataRow key={row.label} label={row.label} value={row.value} success={row.success} />
+          ))}
+        </dl>
+      ) : null}
+      {section.features?.length ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {section.features.map((feature) => (
+            <span key={feature} className="inline-flex min-h-8 items-center rounded-full bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-100">
+              {feature}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {section.notes ? <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm font-medium leading-6 text-slate-600">{section.notes}</p> : null}
+    </section>
+  )
+}
+
+function SellerProfileActionButton({ children, icon: Icon, primary = false, disabled = false, onClick, href = '' }) {
+  const className = `inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border px-3.5 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
+    primary
+      ? 'border-emerald-950 bg-emerald-950 text-white hover:bg-emerald-900'
+      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-950'
+  }`
+  const content = (
+    <>
+      <span className="min-w-0 truncate">{children}</span>
+      {Icon ? <Icon className="h-4 w-4 shrink-0" /> : null}
+    </>
+  )
+  if (href) {
+    return <a href={href} className={className}>{content}</a>
+  }
+  return (
+    <button type="button" disabled={disabled} onClick={onClick} className={className}>
+      {content}
+    </button>
+  )
+}
+
+function SellerProfileSidebarCard({ title, action, children, onClick }) {
+  return (
+    <section
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={onClick ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClick()
+        }
+      } : undefined}
+      className={`w-full rounded-[20px] border border-slate-200/80 bg-white p-5 text-left shadow-[0_18px_45px_rgba(15,23,42,0.045)] ${onClick ? 'transition hover:border-slate-300 hover:shadow-[0_22px_54px_rgba(15,23,42,0.07)]' : ''}`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold tracking-[-0.01em] text-slate-950">{title}</h3>
+        {action}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  )
+}
+
+function SellerProfileProgressRing({ percent = 0, label = '' }) {
+  const safePercent = Math.max(0, Math.min(100, Number(percent) || 0))
+  return (
+    <div className="flex items-center gap-4">
+      <div
+        className="grid h-28 w-28 shrink-0 place-items-center rounded-full"
+        style={{ background: `conic-gradient(#047857 ${safePercent * 3.6}deg, #e8eef4 0deg)` }}
+        aria-label={`${label || 'Progress'} ${safePercent}%`}
+      >
+        <div className="grid h-[88px] w-[88px] place-items-center rounded-full bg-white shadow-inner">
+          <strong className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">{safePercent}%</strong>
+        </div>
+      </div>
+      {label ? <p className="text-sm font-semibold leading-5 text-slate-700">{label}</p> : null}
+    </div>
+  )
+}
+
+function SellerProfileWorkspace({
+  model,
+  downloading = false,
+  onEdit,
+  onDownloadPack,
+  onGeneratePdf,
+  onOpenPortal,
+  onResendPortalLink,
+  onTabChange,
+}) {
+  const documentsTotal = model.documentCompletion?.total || 0
+  const documentsComplete = model.documentCompletion?.complete || 0
+  const missingDocuments = Math.max(0, documentsTotal - documentsComplete)
+  const optionalDocuments = (Array.isArray(model.documentRows) ? model.documentRows : []).filter((document) => document?.required === false).length
+  const sellerEmail = normalizeText(model.sellerEmail)
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.34fr)]">
+      <div className="min-w-0 space-y-5">
+        <div className="grid gap-5 lg:grid-cols-2">
+          {model.sections.map((section) => (
+            <SellerProfileCard key={section.id} section={section} onEdit={onEdit} />
+          ))}
+        </div>
+      </div>
+
+      <aside className="min-w-0 space-y-5 xl:sticky xl:top-24 xl:self-start">
+        <SellerProfileSidebarCard title="Seller Readiness">
+          <SellerProfileProgressRing percent={model.readinessPercent} label="Total Complete" />
+          <div className="mt-5 grid gap-3">
+            {model.checklist.map((item) => (
+              <div key={item.label} className="flex items-center justify-between gap-3 text-sm">
+                <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-slate-700">
+                  <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${item.complete ? 'border-emerald-500 text-emerald-600' : 'border-slate-300 text-slate-400'}`}>
+                    {item.complete ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
+                  </span>
+                  <span className="truncate">{item.label}</span>
+                </span>
+                <span className={`shrink-0 font-semibold ${item.complete ? 'text-emerald-700' : 'text-slate-500'}`}>{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </SellerProfileSidebarCard>
+
+        <SellerProfileSidebarCard title="Quick Actions">
+          <div className="grid gap-2">
+            <SellerProfileActionButton icon={Download} onClick={onDownloadPack} disabled={downloading}>
+              {downloading ? 'Preparing Seller Pack...' : 'Download Seller Summary'}
+            </SellerProfileActionButton>
+            <SellerProfileActionButton icon={FileText} onClick={onGeneratePdf} disabled={downloading}>
+              Generate PDF
+            </SellerProfileActionButton>
+            <SellerProfileActionButton icon={Mail} href={sellerEmail ? `mailto:${sellerEmail}` : ''} disabled={!sellerEmail}>
+              Email Seller
+            </SellerProfileActionButton>
+            <SellerProfileActionButton icon={ExternalLink} primary onClick={onOpenPortal}>
+              Open Portal
+            </SellerProfileActionButton>
+            <SellerProfileActionButton icon={Send} onClick={onResendPortalLink}>
+              Resend Portal Link
+            </SellerProfileActionButton>
+            <SellerProfileActionButton icon={FileText} onClick={() => onTabChange?.('documents')}>
+              Request Missing Documents
+            </SellerProfileActionButton>
+          </div>
+        </SellerProfileSidebarCard>
+
+        <SellerProfileSidebarCard title="Documents Overview" action={<button type="button" className="text-xs font-semibold text-emerald-700" onClick={(event) => { event.stopPropagation(); onTabChange?.('documents') }}>View All</button>} onClick={() => onTabChange?.('documents')}>
+          <div className="flex items-center gap-5">
+            <div
+              className="grid h-28 w-28 shrink-0 place-items-center rounded-full"
+              style={{ background: `conic-gradient(#047857 ${(model.documentCompletion?.percent || 0) * 3.6}deg, #e8eef4 0deg)` }}
+            >
+              <div className="grid h-[76px] w-[76px] place-items-center rounded-full bg-white shadow-inner">
+                <span className="text-lg font-semibold tracking-[-0.03em] text-slate-950">{documentsComplete} / {documentsTotal}</span>
+              </div>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xl font-semibold tracking-[-0.04em] text-slate-950">{documentsComplete} / {documentsTotal}</p>
+              <p className="mt-1 text-sm font-medium text-slate-500">Documents Uploaded</p>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-2 border-t border-slate-100 pt-4 text-sm font-semibold text-slate-700">
+            <div className="flex justify-between gap-3"><span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-600" />Uploaded</span><span>{documentsComplete}</span></div>
+            <div className="flex justify-between gap-3"><span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />Missing</span><span>{missingDocuments}</span></div>
+            <div className="flex justify-between gap-3"><span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-slate-300" />Optional</span><span>{optionalDocuments}</span></div>
+          </div>
+        </SellerProfileSidebarCard>
+
+        <SellerProfileSidebarCard title="Recent Activity" action={<button type="button" className="text-xs font-semibold text-emerald-700" onClick={(event) => { event.stopPropagation(); onTabChange?.('activity') }}>View All</button>}>
+          <div className="space-y-1">
+            {model.activity.length ? model.activity.map((item) => (
+              <button key={item.id} type="button" onClick={() => onTabChange?.('activity')} className="flex w-full items-start gap-3 rounded-2xl px-2 py-2.5 text-left transition hover:bg-slate-50">
+                <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-700">
+                  <Clock3 className="h-3.5 w-3.5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-slate-800">{item.title}</span>
+                  <span className="mt-0.5 block text-xs font-medium text-slate-500">{formatDateTime(item.timestamp, 'No date')} · {formatRelativeTime(item.timestamp, '')}</span>
+                </span>
+              </button>
+            )) : (
+              <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-500">No recent seller activity yet.</p>
+            )}
+          </div>
+        </SellerProfileSidebarCard>
+      </aside>
+    </div>
+  )
+}
+
 function SellerAvatar({ name = '' }) {
   const initials = normalizeText(name)
     .split(/\s+/)
@@ -16074,15 +16304,6 @@ function SellerAssignedAgentIndicator({ row }) {
     </div>
   )
 }
-
-const SELLER_STATUS_SHORTCUTS = [
-  { actionId: 'edit_seller', label: 'Seller' },
-  { actionId: 'assign_agent', label: 'Agent' },
-  { actionId: 'open_journey', label: 'Journey' },
-  { actionId: 'open_readiness', label: 'Readiness' },
-  { actionId: 'open_listing', label: 'Listing' },
-  { actionId: 'view_mandate', label: 'Mandate' },
-]
 
 function SellerLeadActions({
   row,
@@ -16231,6 +16452,8 @@ function SellerLeadActions({
 function SellerLeadHeader({
   row,
   journey,
+  readiness,
+  sourceInfo = null,
   listing = null,
   onboardingStatus = '',
   sendingOnboarding = false,
@@ -16256,28 +16479,73 @@ function SellerLeadHeader({
     : contextSummary && !['property not linked', 'untitled listing'].includes(normalizedContextSummary)
       ? `Seller lead - ${contextSummary}`
       : 'Seller lead'
+  const [downloadingSellerPack, setDownloadingSellerPack] = useState(false)
+  const sellerPhone = normalizeText(row?.phone || row?.contact?.phone)
+  const sellerEmail = normalizeText(row?.email || row?.contact?.email)
+  const portalStatus = normalizeText(journey?.sellerPortalStatus || (getSellerPortalLink(row, listing) ? 'Active' : 'Pending'))
+  const onboardingComplete = sellerOnboardingIsSubmitted(onboardingStatus)
+  const downloadSellerPack = useCallback(async () => {
+    try {
+      setDownloadingSellerPack(true)
+      await downloadSellerPackPdfFromContext({
+        row,
+        sourceInfo,
+        listing,
+        journey,
+        readiness,
+        onboardingStatus,
+      })
+    } catch (downloadError) {
+      console.warn('[Seller profile] Seller pack download failed.', downloadError)
+    } finally {
+      setDownloadingSellerPack(false)
+    }
+  }, [journey, listing, onboardingStatus, readiness, row, sourceInfo])
 
   return (
     <header className={`${panelClass} overflow-visible border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.07)] sm:p-6`}>
-      <div className="grid gap-5 xl:grid-cols-[minmax(320px,1fr)_auto] xl:items-start">
+      <div className="grid gap-6 xl:grid-cols-[minmax(320px,1fr)_minmax(280px,0.62fr)_220px] xl:items-start">
         <div className="flex min-w-0 gap-4">
           <SellerAvatar name={sellerDisplayName} />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Seller Lead</p>
             <h1 className="mt-2 truncate text-3xl font-semibold tracking-[-0.045em] text-slate-950">{sellerDisplayName}</h1>
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium text-slate-500">
-              <span className="inline-flex min-w-0 items-center gap-1.5"><Phone size={14} />{row.phone || 'No phone'}</span>
-              <span className="inline-flex min-w-0 items-center gap-1.5"><Mail size={14} /><span className="max-w-[280px] truncate">{row.email || 'No email'}</span></span>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-slate-500">Seller Since {formatDate(row?.createdAt || row?.created_at, 'Not dated')}</span>
+              {onboardingComplete ? <StatusPill tone="green">Onboarding Complete</StatusPill> : <StatusPill tone="amber">{sellerOnboardingActionLabel(onboardingStatus)}</StatusPill>}
             </div>
-            <div className="mt-4 flex flex-wrap gap-2 text-sm">
-              <StatusPill>{formatDate(row.createdAt, 'No created date')}</StatusPill>
+            <div className="mt-4 grid gap-2 text-sm font-medium text-slate-600 sm:grid-cols-2">
+              <span className="inline-flex min-w-0 items-center gap-2"><Phone size={15} className="text-slate-400" />{sellerPhone || 'No phone'}</span>
+              <span className="inline-flex min-w-0 items-center gap-2"><Mail size={15} className="text-slate-400" /><span className="truncate">{sellerEmail || 'No email'}</span></span>
+              <span className="inline-flex min-w-0 items-center gap-2 text-emerald-700"><MessageSquarePlus size={15} />WhatsApp</span>
             </div>
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-3 xl:items-end">
-          <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        <div className="grid gap-4 border-slate-100 xl:border-l xl:pl-6">
+          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
             <SellerAssignedAgentIndicator row={row} />
+            <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2 shadow-sm">
+              <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Lead Source</span>
+              <span className="mt-0.5 block truncate text-sm font-semibold text-slate-800">{sourceInfo?.leadSource || row?.leadSource || row?.source || 'Unknown'}</span>
+            </div>
+            <div className="min-w-0 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3.5 py-2 shadow-sm">
+              <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700/70">Portal Status</span>
+              <span className="mt-0.5 flex items-center gap-2 text-sm font-semibold text-emerald-800"><span className="h-2 w-2 rounded-full bg-emerald-600" />{portalStatus}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-2">
+          <SellerProfileActionButton icon={ExternalLink} primary onClick={() => onStatusAction?.('open_seller_portal')}>
+            Open Seller Portal
+          </SellerProfileActionButton>
+          <SellerProfileActionButton icon={Download} onClick={downloadSellerPack} disabled={downloadingSellerPack}>
+            {downloadingSellerPack ? 'Preparing Pack...' : 'Download Seller Pack'}
+          </SellerProfileActionButton>
+          <SellerProfileActionButton icon={Send} onClick={onResendSellerPortalLink} disabled={sendingPortalLink || !onResendSellerPortalLink}>
+            {sendingPortalLink ? 'Resending...' : 'Resend Portal Link'}
+          </SellerProfileActionButton>
+          <div className="pt-1">
             <SellerLeadActions
               key={row?.leadId || 'seller-lead-actions'}
               row={row}
@@ -16298,19 +16566,6 @@ function SellerLeadHeader({
               onArchiveLead={onArchiveLead}
               onStatusAction={onStatusAction}
             />
-          </div>
-          <div role="list" aria-label="Seller lead status shortcuts" className="flex w-full flex-wrap gap-2 xl:justify-end">
-            {SELLER_STATUS_SHORTCUTS.map((shortcut) => (
-              <button
-                key={shortcut.actionId}
-                type="button"
-                role="listitem"
-                onClick={() => onStatusAction?.(shortcut.actionId)}
-                className="inline-flex min-h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
-              >
-                {shortcut.label}
-              </button>
-            ))}
           </div>
         </div>
       </div>
@@ -16496,7 +16751,7 @@ function SellerAcquisitionActionRow({ row, listing, journey, readiness, onboardi
 function SellerWorkspaceTabs({ activeTab, onTabChange }) {
   const tabs = [
     { key: 'overview', label: 'Overview' },
-    { key: 'seller', label: 'Seller' },
+    { key: 'seller', label: 'Seller Profile' },
     { key: 'property', label: 'Property' },
     { key: 'mandate', label: 'Mandate' },
     { key: 'appointments', label: 'Appointments' },
@@ -17204,6 +17459,279 @@ function hasValue(value) {
   if (Array.isArray(value) && value.length === 0) return false
   if (typeof value === 'object' && Object.keys(value).length === 0) return false
   return true
+}
+
+function getSellerProfileRawValue(source = {}, keys = []) {
+  for (const key of keys) {
+    if (!key) continue
+    const value = source?.[key]
+    if (hasValue(value)) return value
+  }
+  return ''
+}
+
+function getSellerProfileValue({ formData = {}, row = {}, listing = null } = {}, keys = [], formatter = null) {
+  const sources = [
+    formData,
+    row?.contact || {},
+    row || {},
+    listing?.propertyDetails || {},
+    listing || {},
+  ]
+  for (const source of sources) {
+    const value = getSellerProfileRawValue(source, keys)
+    if (!hasValue(value)) continue
+    if (formatter) {
+      const formatted = formatter(value)
+      if (hasValue(formatted)) return formatted
+    }
+    return formatSubmittedSellerOnboardingFieldValue({ key: keys[0] || '' }, value) || normalizeText(value)
+  }
+  return ''
+}
+
+function getSellerProfileBooleanLabel(context = {}, keys = []) {
+  const rawValue = getSellerProfileValue(context, keys)
+  const normalized = normalizeText(rawValue).toLowerCase()
+  if (!normalized) return ''
+  if (['yes', 'true', '1', 'captured', 'accepted', 'verified', 'complete', 'completed', 'signed', 'active', 'uploaded', 'submitted'].includes(normalized)) return 'Yes'
+  if (['no', 'false', '0', 'none', 'not applicable', 'n/a'].includes(normalized)) return 'No'
+  return rawValue
+}
+
+function maskSellerAccountNumber(value = '') {
+  const text = normalizeText(value)
+  if (!text) return ''
+  const clean = text.replace(/\s+/g, '')
+  if (clean.length <= 4) return clean
+  return `${clean.slice(0, 4)} ${'•'.repeat(Math.min(6, Math.max(3, clean.length - 7)))} ${clean.slice(-3)}`
+}
+
+function getSellerProfileFeatures(context = {}) {
+  const { formData = {}, listing = null } = context
+  const rawFeatures = [
+    formData.features,
+    formData.selectedFeatures,
+    formData.propertyFeatures,
+    listing?.features,
+    listing?.selectedFeatures,
+    listing?.propertyDetails?.features,
+    listing?.propertyDetails?.selectedFeatures,
+  ].find((value) => Array.isArray(value) ? value.length : hasValue(value))
+  const featureSet = new Set()
+  if (Array.isArray(rawFeatures)) {
+    rawFeatures.forEach((feature) => {
+      const label = normalizeText(typeof feature === 'object' ? feature.label || feature.name || feature.value : feature)
+      if (label) featureSet.add(label)
+    })
+  } else if (isPlainObject(rawFeatures)) {
+    Object.entries(rawFeatures).forEach(([key, value]) => {
+      if (value) featureSet.add(humanizeSellerFieldKey(key))
+    })
+  } else if (normalizeText(rawFeatures)) {
+    normalizeText(rawFeatures).split(/\r?\n|,/).forEach((feature) => {
+      const label = normalizeText(feature)
+      if (label) featureSet.add(label)
+    })
+  }
+
+  const booleanFeatures = [
+    ['pool', 'Pool'],
+    ['swimmingPool', 'Pool'],
+    ['solarInstallation', 'Solar'],
+    ['solar', 'Solar'],
+    ['gasInstallation', 'Gas Stove'],
+    ['gasStove', 'Gas Stove'],
+    ['aircon', 'Aircon'],
+    ['alarm', 'Alarm'],
+    ['electricFence', 'Electric Fence'],
+    ['borehole', 'Borehole'],
+    ['boreholeInstallation', 'Borehole'],
+    ['flatlet', 'Flatlet'],
+    ['fibre', 'Fibre'],
+    ['cctv', 'CCTV'],
+  ]
+  booleanFeatures.forEach(([key, label]) => {
+    if (formData?.[key] === true || listing?.[key] === true || listing?.propertyDetails?.[key] === true) featureSet.add(label)
+  })
+  return Array.from(featureSet)
+}
+
+function getSellerProfileDefects(context = {}) {
+  const { formData = {} } = context
+  const defectSource = isPlainObject(formData.knownDefects)
+    ? formData.knownDefects
+    : isPlainObject(formData.defects)
+      ? formData.defects
+      : isPlainObject(formData.defectsDeclaration)
+        ? formData.defectsDeclaration
+        : {}
+  const defectLabels = [
+    ['roof', 'Roof'],
+    ['plumbing', 'Plumbing'],
+    ['electrical', 'Electrical'],
+    ['damp', 'Damp'],
+    ['cracks', 'Cracks'],
+    ['pestDamage', 'Pest Damage'],
+    ['pest_damage', 'Pest Damage'],
+    ['other', 'Other'],
+  ]
+  const rows = defectLabels.map(([key, label]) => {
+    const value = hasValue(defectSource?.[key]) ? defectSource[key] : formData?.[key]
+    if (!hasValue(value)) return null
+    return { label, value: formatSubmittedSellerOnboardingFieldValue({ key }, value) || normalizeText(value), success: normalizeText(value).toLowerCase() === 'no' }
+  }).filter(Boolean)
+  const notes = getSellerProfileValue(context, ['defectsNotes', 'defectNotes', 'knownDefectsNotes', 'propertyDefectsNotes', 'propertyCondition'])
+  return {
+    rows,
+    notes: notes ? `Agent Notes: ${notes}` : '',
+    successMessage: rows.length ? '' : 'Seller declared no known defects.',
+  }
+}
+
+function getSellerProfileActivityItems(timeline = [], row = {}, listing = null, journey = null) {
+  const sourceItems = Array.isArray(timeline) && timeline.length
+    ? timeline
+    : [
+      ...(Array.isArray(row?.communicationTimeline) ? row.communicationTimeline : []),
+      ...(Array.isArray(journey?.timeline) ? journey.timeline : []),
+      ...(Array.isArray(listing?.activity) ? listing.activity : []),
+      ...(Array.isArray(listing?.activities) ? listing.activities : []),
+    ]
+  return sourceItems
+    .map((item, index) => {
+      const title = normalizeText(item?.title || item?.activityType || item?.activity_type || item?.type || item?.event || 'Seller activity')
+      const timestamp = item?.timestamp || item?.activityDate || item?.activity_date || item?.createdAt || item?.created_at || item?.updatedAt || item?.updated_at
+      return {
+        id: item?.id || item?.activityId || item?.activity_id || `${title}-${timestamp || index}`,
+        title,
+        description: normalizeText(item?.description || item?.activityNote || item?.activity_note || item?.outcome || item?.sourceLabel),
+        timestamp,
+      }
+    })
+    .filter((item) => item.title)
+    .slice(0, 6)
+}
+
+function buildSellerProfileWorkspaceModel({
+  row = {},
+  sourceInfo = null,
+  listing = null,
+  journey = null,
+  readiness = null,
+  onboardingStatus = '',
+  timeline = [],
+} = {}) {
+  const formData = readSellerOnboardingFormData(listing || {}, row || {})
+  const context = { formData, row, listing }
+  const documentRows = buildSellerDocumentRowsFromSource({ journey, listing, row })
+  const documentCompletion = getSellerDocumentCompletion(documentRows)
+  const documentSummary = getSellerDocumentStatusSummary(documentRows)
+  const mandateMeta = getSellerMandateMeta(row, listing, journey)
+  const portalLink = getSellerPortalLink(row, listing)
+  const portalActive = Boolean(portalLink) || normalizeText(journey?.sellerPortalStatus).toLowerCase().includes('active')
+  const capturedSummary = getSellerCapturedFieldSummary({
+    sections: getSellerSubmittedSectionDefinitions(buildSellerRequirementProfile(formData, listing || row), formData),
+    data: formData,
+  })
+  const complianceRows = [
+    { label: 'SA Resident', value: getSellerProfileBooleanLabel(context, ['saResident', 'southAfricanResident', 'taxResident', 'isSaResident']), success: true },
+    { label: 'Income Tax Number', value: getSellerProfileValue(context, ['incomeTaxNumber', 'sellerTaxNumber', 'taxNumber', 'tax_number']) },
+    { label: 'VAT Registered', value: getSellerProfileBooleanLabel(context, ['vatRegistered', 'vat_registered']), success: true },
+    { label: 'FICA Status', value: getSellerProfileValue(context, ['ficaStatus', 'fica_status']) || (documentCompletion.percent >= 80 ? 'Verified' : ''), success: documentCompletion.percent >= 80 },
+    { label: 'POPIA Consent', value: getSellerProfileValue(context, ['popiaConsent', 'popiaAccepted', 'privacyConsent']) || 'Accepted', success: true },
+    { label: 'Electronic Signature', value: getSellerProfileValue(context, ['electronicSignatureStatus', 'signatureStatus', 'signedAt']) || (mandateMeta.mode === 'signed' ? 'Captured' : ''), success: mandateMeta.mode === 'signed' },
+  ].filter((item) => hasValue(item.value))
+  const complianceComplete = complianceRows.length >= 4
+  const profileComplete = capturedSummary.total ? capturedSummary.populated / capturedSummary.total >= 0.65 : false
+  const checklist = [
+    { label: 'Profile Complete', value: profileComplete ? '100%' : capturedSummary.label, complete: profileComplete },
+    { label: 'Documents', value: documentCompletion.total ? `${documentCompletion.complete}/${documentCompletion.total}` : '0/0', complete: documentCompletion.percent >= 80 },
+    { label: 'Compliance', value: complianceComplete ? 'Complete' : 'Review', complete: complianceComplete },
+    { label: 'Mandate', value: mandateMeta.label, complete: mandateMeta.mode === 'signed' || mandateMeta.hasRecord },
+    { label: 'Portal', value: portalActive ? 'Active' : 'Pending', complete: portalActive },
+  ]
+  const readinessPercent = Math.round((checklist.filter((item) => item.complete).length / checklist.length) * 100)
+  const personalRows = [
+    ['Full Name', getSellerProfileValue(context, ['fullName', 'sellerFullName', 'sellerName', 'name']) || normalizeText(row?.name || row?.contact?.name)],
+    ['ID Number', getSellerProfileValue(context, ['idNumber', 'sellerIdNumber', 'identityNumber', 'id_number'])],
+    ['Date of Birth', getSellerProfileValue(context, ['dateOfBirth', 'birthDate', 'dob'])],
+    ['Nationality', getSellerProfileValue(context, ['nationality', 'citizenship'])],
+    ['Marital Status', getSellerProfileValue(context, ['maritalStatus', 'marital_status', 'maritalRegime'])],
+    ['Occupation', getSellerProfileValue(context, ['occupation', 'jobTitle'])],
+    ['Employer', getSellerProfileValue(context, ['employer', 'companyEmployer'])],
+    ['Email', getSellerProfileValue(context, ['email', 'sellerEmail']) || normalizeText(row?.email || row?.contact?.email)],
+    ['Mobile', getSellerProfileValue(context, ['mobile', 'phone', 'sellerPhone']) || normalizeText(row?.phone || row?.contact?.phone)],
+    ['Alternative Number', getSellerProfileValue(context, ['alternativeNumber', 'alternatePhone', 'secondaryPhone'])],
+  ].map(([label, value]) => ({ label, value })).filter((item) => hasValue(item.value))
+  const addressRows = [
+    ['Street', getSellerProfileValue(context, ['residentialStreet', 'residentialAddressLine1', 'addressLine1', 'streetAddress'])],
+    ['Suburb', getSellerProfileValue(context, ['residentialSuburb', 'suburb'])],
+    ['City', getSellerProfileValue(context, ['residentialCity', 'city'])],
+    ['Province', getSellerProfileValue(context, ['residentialProvince', 'province'])],
+    ['Postal Code', getSellerProfileValue(context, ['residentialPostalCode', 'postalCode'])],
+    ['Country', getSellerProfileValue(context, ['residentialCountry', 'country'])],
+  ].map(([label, value]) => ({ label, value })).filter((item) => hasValue(item.value))
+  const bankingRows = [
+    ['Bank', getSellerProfileValue(context, ['bank', 'bankName', 'sellerBank'])],
+    ['Account Holder', getSellerProfileValue(context, ['accountHolder', 'bankAccountHolder'])],
+    ['Account Number', getSellerProfileValue(context, ['accountNumber', 'bankAccountNumber'], maskSellerAccountNumber)],
+    ['Branch Code', getSellerProfileValue(context, ['branchCode', 'bankBranchCode'])],
+    ['Account Type', getSellerProfileValue(context, ['accountType', 'bankAccountType'])],
+  ].map(([label, value]) => ({ label, value })).filter((item) => hasValue(item.value))
+  const ownershipRows = [
+    ['Ownership Type', getSellerProfileValue(context, ['ownershipType', 'ownershipStructure', 'sellerType', 'sellerLegalType'])],
+    ['Purchase Date', getSellerProfileValue(context, ['purchaseDate', 'datePurchased'])],
+    ['Purchase Price', getSellerProfileValue(context, ['purchasePrice', 'originalPurchasePrice'])],
+    ['Bond Exists', getSellerProfileBooleanLabel(context, ['existingBond', 'bondExists', 'hasBond'])],
+    ['Mortgage Bank', getSellerProfileValue(context, ['bondBank', 'mortgageBank', 'currentBondBank'])],
+    ['Approx Bond Balance', getSellerProfileValue(context, ['estimatedSettlementAmount', 'approxBondBalance', 'bondBalance'])],
+    ['Primary Residence', getSellerProfileBooleanLabel(context, ['primaryResidence', 'isPrimaryResidence'])],
+  ].map(([label, value]) => ({ label, value })).filter((item) => hasValue(item.value))
+  const property = getSellerPropertySummary(row, listing)
+  const propertyRows = [
+    ['Address', property.address],
+    ['Bedrooms', property.bedrooms],
+    ['Bathrooms', property.bathrooms],
+    ['Garages', getSellerProfileValue(context, ['garages'])],
+    ['Parking', property.parking || getSellerProfileValue(context, ['parking', 'parkingCovered', 'parkingOpen'])],
+    ['Erf Size', property.erfSize],
+    ['Floor Size', getSellerProfileValue(context, ['floorSize', 'floor_size'])],
+    ['Levies', getSellerProfileValue(context, ['levies', 'schemeLevies'])],
+    ['Rates', getSellerProfileValue(context, ['ratesTaxes', 'rates', 'monthlyRates'])],
+    ['Estimated Asking Price', property.askingPrice ? formatCurrency(property.askingPrice) : getSellerProfileValue(context, ['askingPrice', 'estimatedValue'])],
+  ].map(([label, value]) => ({ label, value })).filter((item) => hasValue(item.value) && item.value !== '—')
+  const defects = getSellerProfileDefects(context)
+  const sections = [
+    { id: 'personal', title: 'Personal Information', rows: personalRows },
+    { id: 'address', title: 'Residential Address', rows: addressRows },
+    bankingRows.length ? { id: 'banking', title: 'Banking Details', rows: bankingRows } : null,
+    { id: 'compliance', title: 'Tax & Compliance', rows: complianceRows },
+    { id: 'ownership', title: 'Property Ownership', rows: ownershipRows },
+    { id: 'property', title: 'Property Information', rows: propertyRows },
+    { id: 'features', title: 'Property Features', features: getSellerProfileFeatures(context) },
+    { id: 'defects', title: 'Known Defects', rows: defects.rows, notes: defects.notes, successMessage: defects.successMessage },
+  ].filter(Boolean)
+  return {
+    formData,
+    sellerName: personalRows.find((item) => item.label === 'Full Name')?.value || 'Seller lead',
+    sellerEmail: personalRows.find((item) => item.label === 'Email')?.value || '',
+    sellerPhone: personalRows.find((item) => item.label === 'Mobile')?.value || '',
+    propertyAddress: property.address,
+    sourceLabel: normalizeText(sourceInfo?.leadSource || row?.source || row?.leadSource || 'Unknown'),
+    portalStatus: portalActive ? 'Active' : normalizeText(journey?.sellerPortalStatus || 'Pending'),
+    sellerSince: formatDate(row?.createdAt || row?.created_at || listing?.createdAt || listing?.created_at, 'Not dated'),
+    onboardingLabel: sellerOnboardingIsSubmitted(onboardingStatus) ? 'Onboarding Complete' : 'Onboarding In Progress',
+    sections,
+    checklist,
+    readinessPercent: Math.max(readiness?.listingReadiness?.percent || 0, readinessPercent),
+    documentCompletion,
+    documentSummary,
+    documentRows,
+    activity: getSellerProfileActivityItems(timeline, row, listing, journey),
+    mandateMeta,
+    portalLink,
+  }
 }
 
 function normalizeComparableSellerValue(value) {
@@ -17992,6 +18520,151 @@ function buildSellerOnboardingDocumentMarkup({
 </html>`
 }
 
+function buildSellerPackDocumentMarkup(model = {}, { organisationName = '', generatedAt = '' } = {}) {
+  const sections = Array.isArray(model.sections) ? model.sections : []
+  const rowsToMarkup = (rows = []) => rows
+    .filter((row) => hasValue(row?.value))
+    .map((row) => `
+      <tr>
+        <th scope="row">${escapeSellerDocumentHtml(row.label)}</th>
+        <td>${sellerDocumentLineBreaks(row.value)}</td>
+      </tr>
+    `).join('')
+  const sectionMarkup = sections
+    .filter((section) => section.id !== 'features' && (section.rows?.length || section.successMessage || section.notes))
+    .map((section) => `
+      <section class="pack-section">
+        <h2>${escapeSellerDocumentHtml(section.title || 'Seller Details')}</h2>
+        ${section.successMessage ? `<p class="success-line">${escapeSellerDocumentHtml(section.successMessage)}</p>` : ''}
+        ${section.rows?.length ? `<table><tbody>${rowsToMarkup(section.rows)}</tbody></table>` : ''}
+        ${section.notes ? `<p class="note-line">${sellerDocumentLineBreaks(section.notes)}</p>` : ''}
+      </section>
+    `).join('')
+  const features = sections.find((section) => section.id === 'features')?.features || []
+  const featureMarkup = features.length ? `
+    <section class="pack-section">
+      <h2>Property Features</h2>
+      <div class="badge-grid">${features.map((feature) => `<span>${escapeSellerDocumentHtml(feature)}</span>`).join('')}</div>
+    </section>
+  ` : ''
+  const documentRows = Array.isArray(model.documentRows) ? model.documentRows : []
+  const documentMarkup = documentRows.length ? documentRows.map((document) => {
+    const complete = ['uploaded', 'under_review', 'approved', 'completed'].includes(normalizeDocumentStatus(document.status))
+    return `
+      <tr>
+        <th scope="row">${escapeSellerDocumentHtml(document.label || document.title || 'Seller document')}</th>
+        <td>${complete ? '&#10003;' : '&#9633;'} ${escapeSellerDocumentHtml(getSellerDocumentDisplayStatus(document) || (complete ? 'Uploaded' : 'Outstanding'))}</td>
+      </tr>
+    `
+  }).join('') : `
+    <tr>
+      <th scope="row">Documents</th>
+      <td>No generated document checklist was available.</td>
+    </tr>
+  `
+  const activityMarkup = (Array.isArray(model.activity) ? model.activity : []).map((item) => `
+    <tr>
+      <th scope="row">${escapeSellerDocumentHtml(formatDateTime(item.timestamp, 'No date'))}</th>
+      <td>${escapeSellerDocumentHtml(item.title)}${item.description ? `<br /><span>${escapeSellerDocumentHtml(item.description)}</span>` : ''}</td>
+    </tr>
+  `).join('')
+  const metaRows = [
+    ['Seller', model.sellerName],
+    ['Property', model.propertyAddress],
+    ['Date generated', generatedAt],
+    ['Portal status', model.portalStatus],
+    ['Readiness', `${Number(model.readinessPercent || 0)}%`],
+  ].filter(([, value]) => hasValue(value))
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Seller Pack</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { color-scheme: light; font-family: Helvetica, Arial, sans-serif; }
+    body { margin: 0; background: #ffffff; color: #162033; font-family: Helvetica, Arial, sans-serif; }
+    .seller-pack-document { width: 210mm; min-height: 296mm; margin: 0 auto; background: #ffffff; padding: 16mm 17mm 18mm; }
+    .cover { min-height: 242mm; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid #d8e0e8; padding: 13mm; page-break-after: always; }
+    .agency-name { margin: 0; font-size: 14pt; font-weight: 800; color: #102033; }
+    .cover h1 { margin: 18mm 0 0; max-width: 145mm; font-size: 32pt; line-height: 1.06; font-weight: 800; color: #102033; }
+    .cover-subtitle { margin: 5mm 0 0; color: #5c6f83; font-size: 11pt; line-height: 1.5; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-top: 14mm; }
+    .meta-item { min-height: 16mm; border: 1px solid #dfe6ee; padding: 3mm; }
+    .meta-label { display: block; color: #687a8d; font-size: 7.8pt; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+    .meta-value { display: block; margin-top: 1.5mm; color: #102033; font-size: 10.5pt; font-weight: 800; line-height: 1.35; }
+    .pack-section { margin-top: 7mm; break-inside: avoid; page-break-inside: avoid; }
+    .pack-section h2 { margin: 0 0 3mm; color: #102033; font-size: 13pt; font-weight: 800; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9.5pt; line-height: 1.4; }
+    th, td { border: 1px solid #d8e0e8; padding: 2.7mm 3mm; vertical-align: top; text-align: left; }
+    th { width: 36%; background: #f7f9fb; color: #33485f; font-weight: 800; }
+    td { color: #162033; font-weight: 500; }
+    td span { color: #687a8d; font-size: 8.7pt; }
+    .badge-grid { display: flex; flex-wrap: wrap; gap: 2mm; }
+    .badge-grid span { border: 1px solid #bfe4d2; background: #ecf8f2; color: #12633f; border-radius: 99px; padding: 2mm 3.4mm; font-size: 8.5pt; font-weight: 800; }
+    .success-line { margin: 0 0 3mm; border: 1px solid #bfe4d2; background: #ecf8f2; color: #12633f; padding: 3mm; font-size: 9.5pt; font-weight: 800; }
+    .note-line { margin: 3mm 0 0; background: #f7f9fb; color: #506176; padding: 3mm; font-size: 9.2pt; line-height: 1.45; }
+    @media print {
+      body { background: #ffffff; }
+      .seller-pack-document { margin: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="seller-pack-document">
+    <section class="cover">
+      <div>
+        <p class="agency-name">${escapeSellerDocumentHtml(organisationName || 'Agency Workspace')}</p>
+        <h1>Seller Pack</h1>
+        <p class="cover-subtitle">${escapeSellerDocumentHtml(model.sellerName || 'Seller')} ${model.propertyAddress ? `for ${escapeSellerDocumentHtml(model.propertyAddress)}` : ''}</p>
+        <div class="meta-grid">
+          ${metaRows.map(([label, value]) => `
+            <div class="meta-item">
+              <span class="meta-label">${escapeSellerDocumentHtml(label)}</span>
+              <span class="meta-value">${sellerDocumentLineBreaks(value)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <p class="cover-subtitle">Seller information, property details, compliance, document readiness, and audit trail exported from Arch9.</p>
+    </section>
+    ${sectionMarkup}
+    ${featureMarkup}
+    <section class="pack-section">
+      <h2>Documents Checklist</h2>
+      <table><tbody>${documentMarkup}</tbody></table>
+    </section>
+    <section class="pack-section">
+      <h2>Audit Trail</h2>
+      <table><tbody>${activityMarkup || '<tr><th scope="row">Activity</th><td>No seller activity was available.</td></tr>'}</tbody></table>
+    </section>
+  </main>
+</body>
+</html>`
+}
+
+async function downloadSellerPackPdfFromContext({
+  row = {},
+  sourceInfo = null,
+  listing = null,
+  journey = null,
+  readiness = null,
+  onboardingStatus = '',
+  timeline = [],
+  organisationName = '',
+} = {}) {
+  const model = buildSellerProfileWorkspaceModel({ row, sourceInfo, listing, journey, readiness, onboardingStatus, timeline })
+  const generatedAt = formatDateTime(new Date().toISOString(), '')
+  const markup = buildSellerPackDocumentMarkup(model, { organisationName, generatedAt })
+  const safeFileBase = sanitizeSellerDocumentFilePart(model.propertyAddress || model.sellerName, 'seller-pack')
+  await downloadSellerDocumentMarkupAsPdf({
+    markup,
+    fileName: `${safeFileBase}-seller-pack.pdf`,
+    selector: '.seller-pack-document',
+  })
+}
+
 async function downloadSellerDocumentMarkupAsPdf({
   markup = '',
   fileName = 'seller-document.pdf',
@@ -18059,7 +18732,9 @@ function SellerProfileTab({
   row,
   sourceInfo,
   journey,
+  readiness,
   onboardingStatus,
+  timeline = [],
   listing = null,
   actor = null,
   sendingOnboarding = false,
@@ -18069,6 +18744,7 @@ function SellerProfileTab({
   onAgentCompleteSellerOnboarding,
   onResendSellerPortalLink,
   onCopySellerPortalLink,
+  onTabChange,
 }) {
   const sourceFormData = useMemo(() => clonePlainObject(readSellerOnboardingFormData(listing, row)), [listing, row])
   const sourceKey = useMemo(() => JSON.stringify(sourceFormData), [sourceFormData])
@@ -18674,10 +19350,64 @@ function SellerProfileTab({
     : progressMeta.state === 'sent'
       ? 'amber'
       : 'slate'
+  const profileWorkspaceModel = useMemo(
+    () => buildSellerProfileWorkspaceModel({ row, sourceInfo, listing, journey, readiness, onboardingStatus, timeline }),
+    [journey, listing, onboardingStatus, readiness, row, sourceInfo, timeline],
+  )
+  const downloadSellerPackPdf = useCallback(async () => {
+    try {
+      setDownloadingDocument('seller_pack')
+      setError('')
+      setMessage('')
+      await downloadSellerPackPdfFromContext({
+        row,
+        sourceInfo,
+        listing,
+        journey,
+        readiness,
+        onboardingStatus,
+        timeline,
+        organisationName: documentBranding.organisationName,
+      })
+      setMessage('Seller pack downloaded.')
+    } catch (downloadError) {
+      setError(downloadError?.message || 'Unable to download seller pack.')
+    } finally {
+      setDownloadingDocument('')
+    }
+  }, [
+    documentBranding.organisationName,
+    journey,
+    listing,
+    onboardingStatus,
+    readiness,
+    row,
+    sourceInfo,
+    timeline,
+  ])
 
   return (
     <div className="grid gap-5">
-      <div className="grid gap-5 xl:grid-cols-2">
+      {onboardingSubmitted && !agentAssistedMode && !isEditingSubmittedDetails && activeSubmittedDocumentTab === 'seller_onboarding' ? (
+        <>
+          {message ? <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</p> : null}
+          {error ? <p className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</p> : null}
+          <SellerProfileWorkspace
+            model={profileWorkspaceModel}
+            downloading={downloadingDocument === 'seller_pack' || downloadingDocument === 'seller_onboarding'}
+            onEdit={beginEditing}
+            onDownloadPack={downloadSellerPackPdf}
+            onGeneratePdf={downloadSellerPackPdf}
+            onOpenPortal={() => {
+              if (portalLink && typeof window !== 'undefined') window.open(portalLink, '_blank', 'noopener,noreferrer')
+            }}
+            onResendPortalLink={onResendSellerPortalLink}
+            onTabChange={onTabChange}
+          />
+        </>
+      ) : (
+      <>
+        <div className="grid gap-5 xl:grid-cols-2">
         <SellerWorkspaceCard
           title="Seller Snapshot"
           action={(
@@ -19090,6 +19820,8 @@ function SellerProfileTab({
           </>
         )}
       </SellerWorkspaceCard>
+      </>
+      )}
     </div>
   )
 }
@@ -20675,7 +21407,9 @@ function SellerTabContent({
         row={row}
         sourceInfo={sourceInfo}
         journey={journey}
+        readiness={readiness}
         onboardingStatus={onboardingStatus}
+        timeline={timeline}
         listing={listing}
         actor={actor}
         sendingOnboarding={sendingSellerOnboarding}
@@ -20685,6 +21419,7 @@ function SellerTabContent({
         onAgentCompleteSellerOnboarding={onAgentCompleteSellerOnboarding}
         onResendSellerPortalLink={onResendSellerPortalLink}
         onCopySellerPortalLink={onCopySellerPortalLink}
+        onTabChange={onTabChange}
       />
     )
   }
@@ -20988,6 +21723,7 @@ function SellerLeadWorkspaceLayout({
         row={row}
         journey={sellerJourney}
         readiness={sellerReadiness}
+        sourceInfo={sourceInfo}
         listing={linkedSellerListing}
         onboardingStatus={sellerOnboardingStatus}
         sendingOnboarding={sendingSellerOnboarding}
@@ -21849,7 +22585,8 @@ function AgentLeadWorkspace() {
       setSellerActionError('')
       setSellerActionMessage('Sending seller portal link...')
       const invitation = await issueSellerPortalInvite(sellerPortalToken)
-      const inviteBaseLink = buildSellerClientPortalLink(invitation?.inviteToken)
+      const stablePortalToken = normalizeText(invitation?.stablePortalToken || invitation?.stable_portal_token || sellerPortalToken)
+      const inviteBaseLink = buildSellerClientPortalLink(stablePortalToken || invitation?.inviteToken)
       const portalLink = inviteBaseLink ? `${inviteBaseLink}/documents` : ''
       if (!portalLink) throw new Error('Seller portal invitation could not be created.')
       const portalEmail = await withActionTimeout(

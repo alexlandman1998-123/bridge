@@ -58,6 +58,14 @@ import {
   formatMandateTemplateLaunchReadinessIssue,
 } from './mandateTemplateLaunchReadiness'
 import {
+  buildOtpContentPublishGateReport,
+  formatOtpContentPublishGateIssue,
+} from './otpContentPublishGate'
+import {
+  buildOtpTemplateRuntimeLaunchReadiness,
+  formatOtpTemplateLaunchReadinessIssue,
+} from './otpTemplateLaunchReadiness'
+import {
   NATIVE_RENDERER_VERSION,
   normalizeTemplateRenderMode,
   resolveTemplateStorageConfig as resolveStructuredTemplateStorageConfig,
@@ -478,6 +486,8 @@ function buildGenerationPayload({
     legalDocumentTemplateFallbackWarning: validation?.legalDocumentTemplateFallbackWarning || null,
     mandateTemplateContentGate: validation?.mandateTemplateContentGate || null,
     mandateTemplateLaunchReadiness: validation?.mandateTemplateLaunchReadiness || null,
+    otpTemplateContentGate: validation?.otpTemplateContentGate || null,
+    otpTemplateLaunchReadiness: validation?.otpTemplateLaunchReadiness || null,
     validation: mandateValidation || buildValidationSummary(validation),
     template: template
       ? {
@@ -684,6 +694,8 @@ function buildRenderProvenance({
     legalDocumentTemplateFallback: Boolean(generationPayload?.legalDocumentTemplateFallback),
     mandateTemplateLaunchReadinessStatus:
       normalizeText(launchReadiness?.status) || null,
+    otpTemplateLaunchReadinessStatus:
+      normalizeText(generationPayload?.otpTemplateLaunchReadiness?.status || validation?.otpTemplateLaunchReadiness?.status) || null,
     legalDocumentScenarioKey:
       normalizeText(legalDocumentScenarioProfile?.scenarioKey || pdfPlaceholders?.legal_document_scenario) || null,
     legalDocumentScenarioComplete: Boolean(legalDocumentScenarioProfile?.complete),
@@ -2606,6 +2618,8 @@ function buildValidationSummary(validation = {}) {
     legalDocumentTemplateFallbackWarning: validation?.legalDocumentTemplateFallbackWarning || null,
     mandateTemplateContentGate: validation?.mandateTemplateContentGate || null,
     mandateTemplateLaunchReadiness: validation?.mandateTemplateLaunchReadiness || null,
+    otpTemplateContentGate: validation?.otpTemplateContentGate || null,
+    otpTemplateLaunchReadiness: validation?.otpTemplateLaunchReadiness || null,
     legalDocumentScenarioKey: validation?.legalDocumentScenarioKey || null,
     legalDocumentScenarioComplete: Boolean(validation?.legalDocumentScenarioComplete),
     legalDocumentMissingRoutingFacts: validation?.legalDocumentMissingRoutingFacts || [],
@@ -2782,6 +2796,87 @@ function buildMandateTemplateRuntimeContentGate(validation = {}, templateResolut
   }
 }
 
+function resolveOtpTemplateRuntimeRouteKey(validation = {}, templateResolution = null) {
+  return normalizeText(
+    validation?.otpDocumentVariant ||
+      validation?.placeholders?.otp_document_variant ||
+      validation?.placeholders?.document_variant ||
+      validation?.legalDocumentScenarioProfile?.otpDocumentVariant ||
+      templateResolution?.legalDocumentScenarioProfile?.otpDocumentVariant ||
+      templateResolution?.legalDocumentTemplateRouting?.otpDocumentVariant ||
+      '',
+  ) || 'resale_existing_property'
+}
+
+function mapOtpTemplateContentGateIssue(issue = {}, gate = {}, { required = true } = {}) {
+  const signalKey = normalizeText(
+    issue.signalGroupKey || issue.conditionalSectionKey || issue.code || 'otp_template_content',
+  )
+  const signalLabel = normalizeText(issue.signalGroupLabel || issue.conditionalSectionKey || 'OTP template content')
+  return {
+    source: 'otp_template_content_gate',
+    sectionKey: normalizeText(issue.sectionKey) || 'otp_template_content',
+    sectionLabel: normalizeText(issue.sectionLabel) || 'OTP template content',
+    placeholderKey: signalKey,
+    placeholderLabel: signalLabel,
+    message: formatOtpContentPublishGateIssue(issue),
+    required,
+    warningCode: normalizeText(issue.code) || 'OTP_TEMPLATE_CONTENT_GATE',
+    otpDocumentVariant: normalizeText(gate.routeKey),
+    otpTemplateRouteLabel: normalizeText(gate.routeLabel),
+    selectedTemplateId: normalizeText(gate.selectedTemplateId) || null,
+    selectedTemplateKey: normalizeText(gate.selectedTemplateKey) || null,
+  }
+}
+
+function mapOtpTemplateLaunchReadinessIssue(issue = {}, readiness = {}, { required = true } = {}) {
+  const routeKey = normalizeText(issue.routeKey || readiness.routeKey || 'otp_document_variant')
+  const routeLabel = normalizeText(issue.routeLabel || readiness.routeLabel || 'OTP route')
+  return {
+    source: 'otp_template_launch_readiness',
+    sectionKey: 'otp_template_launch_readiness',
+    sectionLabel: 'OTP launch readiness',
+    placeholderKey: routeKey,
+    placeholderLabel: routeLabel,
+    message: formatOtpTemplateLaunchReadinessIssue(issue),
+    required,
+    warningCode: normalizeText(issue.code) || 'OTP_TEMPLATE_LAUNCH_READINESS',
+    otpDocumentVariant: routeKey,
+    otpTemplateRouteLabel: routeLabel,
+    selectedTemplateId: normalizeText(issue.templateId || readiness.selectedTemplateId) || null,
+    selectedTemplateKey: normalizeText(issue.templateKey || readiness.selectedTemplateKey) || null,
+  }
+}
+
+function buildOtpTemplateRuntimeContentGate(validation = {}, templateResolution = null) {
+  if (normalizeText(validation?.packetType).toLowerCase() !== 'otp') return null
+  const template = templateResolution?.template || null
+  if (!template?.id) return null
+
+  const routeKey = resolveOtpTemplateRuntimeRouteKey(validation, templateResolution)
+  const gate = buildOtpContentPublishGateReport(
+    {
+      ...template,
+      packet_type: 'otp',
+      packetType: 'otp',
+    },
+    {
+      packetType: 'otp',
+      routeKey,
+    },
+  )
+
+  return {
+    ...gate,
+    source: 'otp_template_runtime_content_gate',
+    selectedTemplateId: normalizeText(template.id) || null,
+    selectedTemplateKey: normalizeText(template.template_key || template.key) || null,
+    selectedTemplateLabel: normalizeText(template.template_label || template.label) || null,
+    templateResolutionSource: normalizeText(templateResolution?.source) || null,
+    legalDocumentTemplateRouting: templateResolution?.legalDocumentTemplateRouting || null,
+  }
+}
+
 function withMandateTemplateRoutingWarnings(validation = {}, templateResolution = null) {
   const templateResolutionSource =
     normalizeText(templateResolution?.source || validation?.templateResolutionSource) || null
@@ -2796,11 +2891,18 @@ function withMandateTemplateRoutingWarnings(validation = {}, templateResolution 
     templateResolution,
   })
   const contentGate = buildMandateTemplateRuntimeContentGate(validation, templateResolution)
+  const otpContentGate = buildOtpTemplateRuntimeContentGate(validation, templateResolution)
   const launchReadiness = isConditionalMaster
     ? buildMandateTemplateRuntimeLaunchReadiness(validation, templateResolution, {
         action: validation?.validationAction,
       })
     : null
+  const otpLaunchReadiness =
+    normalizeText(validation?.packetType).toLowerCase() === 'otp'
+      ? buildOtpTemplateRuntimeLaunchReadiness(validation, templateResolution, {
+          action: validation?.validationAction,
+        })
+      : null
   const contentGateBlockers = (contentGate?.blockers || []).map((issue) =>
     mapMandateTemplateContentGateIssue(issue, contentGate, { required: true }),
   )
@@ -2816,6 +2918,24 @@ function withMandateTemplateRoutingWarnings(validation = {}, templateResolution 
   const launchReadinessWarnings = (!launchReadiness?.shouldBlockGeneration ? launchReadiness?.warnings || [] : []).map(
     (issue) =>
       mapMandateTemplateLaunchReadinessIssue(issue, launchReadiness, {
+        required: false,
+      }),
+  )
+  const otpContentGateBlockers = (otpContentGate?.blockers || []).map((issue) =>
+    mapOtpTemplateContentGateIssue(issue, otpContentGate, { required: true }),
+  )
+  const otpContentGateWarnings = (otpContentGate?.warnings || []).map((issue) =>
+    mapOtpTemplateContentGateIssue(issue, otpContentGate, { required: false }),
+  )
+  const otpLaunchReadinessBlockers = (otpLaunchReadiness?.shouldBlockGeneration ? otpLaunchReadiness.blockers : []).map(
+    (issue) =>
+      mapOtpTemplateLaunchReadinessIssue(issue, otpLaunchReadiness, {
+        required: true,
+      }),
+  )
+  const otpLaunchReadinessWarnings = (!otpLaunchReadiness?.shouldBlockGeneration ? otpLaunchReadiness?.warnings || [] : []).map(
+    (issue) =>
+      mapOtpTemplateLaunchReadinessIssue(issue, otpLaunchReadiness, {
         required: false,
       }),
   )
@@ -2867,10 +2987,52 @@ function withMandateTemplateRoutingWarnings(validation = {}, templateResolution 
           scannedAt: contentGate.metadata?.scannedAt || new Date().toISOString(),
         }
       : validation?.mandateTemplateContentGate || null,
+    otpTemplateLaunchReadiness: otpLaunchReadiness
+      ? {
+          readinessVersion: otpLaunchReadiness.readinessVersion,
+          launchReadinessVersion: otpLaunchReadiness.launchReadinessVersion,
+          status: otpLaunchReadiness.status,
+          action: otpLaunchReadiness.action,
+          shouldBlockGeneration: Boolean(otpLaunchReadiness.shouldBlockGeneration),
+          canGenerateWithoutFallback: Boolean(otpLaunchReadiness.canGenerateWithoutFallback),
+          routeKey: otpLaunchReadiness.routeKey,
+          routeLabel: otpLaunchReadiness.routeLabel,
+          templateResolutionSource: otpLaunchReadiness.templateResolutionSource,
+          selectedTemplateId: otpLaunchReadiness.selectedTemplateId,
+          selectedTemplateKey: otpLaunchReadiness.selectedTemplateKey,
+          selectedTemplateLabel: otpLaunchReadiness.selectedTemplateLabel,
+          blockerCodes: otpLaunchReadiness.blockerCodes || [],
+          warningCodes: otpLaunchReadiness.warningCodes || [],
+        }
+      : validation?.otpTemplateLaunchReadiness || null,
+    otpTemplateContentGate: otpContentGate
+      ? {
+          gateVersion: otpContentGate.gateVersion,
+          scannerVersion: otpContentGate.scannerVersion,
+          ruleVersion: otpContentGate.ruleVersion,
+          routeKey: otpContentGate.routeKey,
+          routeLabel: otpContentGate.routeLabel,
+          isValidForGeneration: otpContentGate.isValidForPublish,
+          blockingCount: otpContentGate.blockingCount,
+          warningCount: otpContentGate.warningCount,
+          selectedTemplateId: otpContentGate.selectedTemplateId,
+          selectedTemplateKey: otpContentGate.selectedTemplateKey,
+          selectedTemplateLabel: otpContentGate.selectedTemplateLabel,
+          templateResolutionSource: otpContentGate.templateResolutionSource,
+          blockerCodes: otpContentGate.metadata?.blockerCodes || [],
+          warningCodes: otpContentGate.metadata?.warningCodes || [],
+          presentSignalGroupKeys: otpContentGate.metadata?.presentSignalGroupKeys || [],
+          presentSectionKeys: otpContentGate.metadata?.presentSectionKeys || [],
+          missingRecommendedSectionKeys: otpContentGate.metadata?.missingRecommendedSectionKeys || [],
+          scannedAt: otpContentGate.metadata?.scannedAt || new Date().toISOString(),
+        }
+      : validation?.otpTemplateContentGate || null,
     critical: dedupeValidationIssues([
       ...(validation?.critical || []),
       ...contentGateBlockers,
       ...launchReadinessBlockers,
+      ...otpContentGateBlockers,
+      ...otpLaunchReadinessBlockers,
     ]),
     mandateTemplateFallback: Boolean(fallbackWarning || validation?.mandateTemplateFallback),
     mandateTemplateFallbackWarning: fallbackWarning || validation?.mandateTemplateFallbackWarning || null,
@@ -2883,9 +3045,11 @@ function withMandateTemplateRoutingWarnings(validation = {}, templateResolution 
       ...(legalFallbackWarning ? [legalFallbackWarning] : []),
       ...contentGateWarnings,
       ...launchReadinessWarnings,
+      ...otpContentGateWarnings,
+      ...otpLaunchReadinessWarnings,
     ]),
     isValidForGeneration:
-      contentGateBlockers.length || launchReadinessBlockers.length ? false : validation?.isValidForGeneration,
+      contentGateBlockers.length || launchReadinessBlockers.length || otpContentGateBlockers.length || otpLaunchReadinessBlockers.length ? false : validation?.isValidForGeneration,
   }
 }
 
@@ -3420,6 +3584,8 @@ export async function savePacketDraft({
       legalDocumentTemplateFallbackWarning: rendered.legalDocumentTemplateFallbackWarning || null,
       mandateTemplateContentGate: rendered.mandateTemplateContentGate || null,
       mandateTemplateLaunchReadiness: rendered.mandateTemplateLaunchReadiness || null,
+      otpTemplateContentGate: rendered.otpTemplateContentGate || null,
+      otpTemplateLaunchReadiness: rendered.otpTemplateLaunchReadiness || null,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || rendered?.critical || [],
       warningsSnapshot: buildWarningsSnapshot(context, rendered),
@@ -3533,18 +3699,32 @@ export async function generatePacketVersion({
     const hasMandateTemplateLaunchReadinessBlockingIssues = (validation.critical || []).some(
       (issue) => issue?.source === 'mandate_template_launch_readiness',
     )
+    const hasOtpTemplateContentGateBlockingIssues = (validation.critical || []).some(
+      (issue) => issue?.source === 'otp_template_content_gate',
+    )
+    const hasOtpTemplateLaunchReadinessBlockingIssues = (validation.critical || []).some(
+      (issue) => issue?.source === 'otp_template_launch_readiness',
+    )
     if (!validation.isValidForGeneration) {
       const error = createPacketError(
         hasMandateTemplateLaunchReadinessBlockingIssues
           ? 'MANDATE_TEMPLATE_LAUNCH_READINESS_BLOCKED'
           : hasMandateTemplateContentGateBlockingIssues
             ? 'MANDATE_TEMPLATE_CONTENT_GATE_BLOCKED'
-            : 'VALIDATION_BLOCKED',
+            : hasOtpTemplateLaunchReadinessBlockingIssues
+              ? 'OTP_TEMPLATE_LAUNCH_READINESS_BLOCKED'
+              : hasOtpTemplateContentGateBlockingIssues
+                ? 'OTP_TEMPLATE_CONTENT_GATE_BLOCKED'
+                : 'VALIDATION_BLOCKED',
         hasMandateTemplateLaunchReadinessBlockingIssues
           ? 'Mandate template launch readiness is blocked. Publish the correct route template before generation.'
           : hasMandateTemplateContentGateBlockingIssues
             ? 'Mandate template wording does not match the selected route. Fix the template content before generation.'
-            : 'Critical packet data is missing. Fix validation issues before generation.',
+            : hasOtpTemplateLaunchReadinessBlockingIssues
+              ? 'OTP template launch readiness is blocked. Publish the verified resale or new-development route template before generation.'
+              : hasOtpTemplateContentGateBlockingIssues
+                ? 'OTP template wording does not match the selected route. Fix the template content before generation.'
+                : 'Critical packet data is missing. Fix validation issues before generation.',
       )
       error.validation = validation
       throw error
@@ -3599,6 +3779,8 @@ export async function generatePacketVersion({
         legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
         mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
         mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
+        otpTemplateContentGate: generationPayload.otpTemplateContentGate || null,
+        otpTemplateLaunchReadiness: generationPayload.otpTemplateLaunchReadiness || null,
         generatedAt,
         generationAttemptId,
         message:
@@ -3734,6 +3916,8 @@ export async function generatePacketVersion({
             legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
             mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
             mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
+            otpTemplateContentGate: generationPayload.otpTemplateContentGate || null,
+            otpTemplateLaunchReadiness: generationPayload.otpTemplateLaunchReadiness || null,
             generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
             missingFieldsSnapshot:
               context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
@@ -3828,6 +4012,8 @@ export async function generatePacketVersion({
                   legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
                   mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
                   mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
+                  otpTemplateContentGate: generationPayload.otpTemplateContentGate || null,
+                  otpTemplateLaunchReadiness: generationPayload.otpTemplateLaunchReadiness || null,
                 },
                 pdfCreatedEventPayload: {
                   leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
@@ -4213,6 +4399,8 @@ export async function generatePacketVersion({
       legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
       mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
       mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
+      otpTemplateContentGate: generationPayload.otpTemplateContentGate || null,
+      otpTemplateLaunchReadiness: generationPayload.otpTemplateLaunchReadiness || null,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot:
         context?.mandateValidation?.missingRequiredFields || validation.missingPlaceholders || [],
@@ -4269,6 +4457,8 @@ export async function generatePacketVersion({
         legalDocumentTemplateFallbackWarning: generationPayload.legalDocumentTemplateFallbackWarning || null,
         mandateTemplateContentGate: generationPayload.mandateTemplateContentGate || null,
         mandateTemplateLaunchReadiness: generationPayload.mandateTemplateLaunchReadiness || null,
+        otpTemplateContentGate: generationPayload.otpTemplateContentGate || null,
+        otpTemplateLaunchReadiness: generationPayload.otpTemplateLaunchReadiness || null,
         message: COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
           ? 'Commercial document was generated successfully.'
           : 'Mandate was generated successfully.',

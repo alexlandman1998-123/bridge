@@ -45,7 +45,7 @@ assert.deepEqual(
 const experience = resolveOfferOnboardingLinkExperience()
 assert.equal(experience.label, 'Offer + Onboarding Link')
 assert.equal(experience.buyerFacingTitle, 'Make an Offer')
-assert.deepEqual(experience.dataBuckets, ['buyer_onboarding', 'residential_offer_terms', 'condition_requests'])
+assert.deepEqual(experience.dataBuckets, ['otp_route', 'buyer_onboarding', 'residential_offer_terms', 'condition_requests'])
 
 const server = await createServer({ root: process.cwd(), logLevel: 'silent', server: { middlewareMode: true } })
 try {

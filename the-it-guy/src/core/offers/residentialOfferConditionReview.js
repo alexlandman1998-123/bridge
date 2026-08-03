@@ -154,12 +154,22 @@ function buildTermsInputFromApproved(source = {}, approvedFields = {}) {
     preApprovalReference: terms?.finance?.preApprovalReference || conditions.preApprovalReference,
     depositDueDate: terms?.finance?.depositDueDate || conditions.depositDueDate,
     bondApprovalDeadline: terms?.finance?.bondApprovalDeadline || conditions.bondApprovalDeadline,
+    cashProofDeadline: terms?.finance?.cashProofDeadline || conditions.cashProofDeadline,
+    guaranteeDeliveryDeadline: terms?.finance?.guaranteeDeliveryDeadline || conditions.guaranteeDeliveryDeadline,
+    guaranteeDeliveryPeriod: terms?.finance?.guaranteeDeliveryPeriod || conditions.guaranteeDeliveryPeriod,
     expiryDate: terms?.terms?.expiryDate || source.expiryDate || source.expiry_date || offer.expiryDate,
     expiryTime: terms?.terms?.expiryTime || conditions.expiryTime,
+    otpDocumentVariant: terms?.otpDocumentVariant || conditions.otpDocumentVariant,
+    subjectSaleMinimumPrice: terms?.terms?.subjectSaleMinimumPrice || conditions.subjectSaleMinimumPrice,
+    subjectSaleFulfilmentDate: terms?.terms?.subjectSaleFulfilmentDate || conditions.subjectSaleFulfilmentDate,
     ...approvedFields,
     acknowledgeSellerReview: terms?.acknowledgements?.sellerReview || conditions.acknowledgeSellerReview,
     acknowledgeLegalDisclaimer: terms?.acknowledgements?.legalDisclaimer || conditions.acknowledgeLegalDisclaimer,
     acknowledgeInfoAccuracy: terms?.acknowledgements?.infoAccuracy || conditions.acknowledgeInfoAccuracy,
+    acknowledgeDevelopmentRules: terms?.acknowledgements?.developmentRules || conditions.acknowledgeDevelopmentRules,
+    acknowledgeNhbrcWarranty: terms?.acknowledgements?.nhbrcWarranty || conditions.acknowledgeNhbrcWarranty,
+    acknowledgeBodyCorporateRules: terms?.acknowledgements?.bodyCorporateRules || conditions.acknowledgeBodyCorporateRules,
+    acknowledgeUtilityConnectionCharges: terms?.acknowledgements?.utilityConnectionCharges || conditions.acknowledgeUtilityConnectionCharges,
   }
 }
 

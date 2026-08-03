@@ -24,6 +24,7 @@ try {
       {
         allocation_id: 'allocation-awaiting-buyer',
         private_listing_id: 'listing-1',
+        agency_organisation_id: 'org-achiever',
         listing_reference: 'PL-MANDATE',
         property_label: '9 Mandate Avenue',
         seller_name: 'Mandate Seller',
@@ -265,6 +266,7 @@ try {
     ],
     organisations: [
       { id: 'org-kingstons', name: 'Kingstons Real Estate' },
+      { id: 'org-achiever', name: 'Achiever Real Estate', logo_url: '/brand/achiever-logo.png' },
     ],
   }
 
@@ -303,7 +305,9 @@ try {
     assert.equal(queue.rows[0].transactionId, '')
     assert.deepEqual(queue.rows[1].waitingOn, ['signed_otp', 'documents'])
     assert.equal(queue.rows[2].documents.reviewCount, 1)
-    assert.equal(queue.rows[0].assignedBySource.label, 'Private')
+    assert.equal(queue.rows[0].assignedBySource.label, 'Achiever Real Estate')
+    assert.equal(queue.rows[0].assignedBySource.logoUrl, '/brand/achiever-logo.png')
+    assert.equal(queue.rows[0].property, '9 Mandate Avenue')
     assert.equal(queue.rows[2].assignedBySource.label, 'Kingstons')
     assert.equal(queue.rows[3].matterType, 'Bond Registration')
     assert.equal(queue.rows[3].nextAction, 'Accept the bond attorney instruction.')
