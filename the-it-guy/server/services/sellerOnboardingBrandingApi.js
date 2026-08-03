@@ -193,6 +193,7 @@ async function resolveSellerBranding(client, organisationId = '') {
   const resolved = resolveOnboardingBranding(
     branding,
     settingsBranding,
+    settings,
     {
       organisationName: normalizeText(agencyInformation.tradingName || agencyInformation.agencyName),
     },
@@ -314,4 +315,3 @@ export async function createSellerOnboardingBrandingResponse({ method = 'GET', u
     })
   }
 }
-

@@ -3173,6 +3173,7 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
     const resolvedBranding = resolveOnboardingBranding(
       branding,
       settingsBranding,
+      settings,
       {
         organisationName: pickFirstText(
           agencyInformation.tradingName,
@@ -3226,6 +3227,48 @@ async function fetchSellerOnboardingPublicBrandingSnapshot(token) {
     console.warn('[Private Listings] public seller onboarding branding snapshot unavailable.', error)
     return null
   }
+}
+
+function mergeSellerOnboardingBrandingSnapshots(primary = null, secondary = null) {
+  if (!primary && !secondary) return null
+  if (!primary) return secondary
+  if (!secondary) return primary
+
+  const logoDarkUrl = pickFirstText(secondary.logoDarkUrl, secondary.logoDark, primary.logoDarkUrl, primary.logoDark)
+  const logoLightUrl = pickFirstText(secondary.logoLightUrl, secondary.logoLight, primary.logoLightUrl, primary.logoLight)
+  const logoIconUrl = pickFirstText(secondary.logoIconUrl, primary.logoIconUrl)
+  const logoUrl = pickFirstText(secondary.logoUrl, logoDarkUrl, primary.logoUrl, logoLightUrl, logoIconUrl)
+  const organisationName = pickFirstText(
+    primary.organisationName,
+    primary.agencyName,
+    secondary.organisationName,
+    secondary.agencyName,
+  )
+
+  return {
+    ...primary,
+    ...secondary,
+    organisationName,
+    agencyName: pickFirstText(primary.agencyName, organisationName, secondary.agencyName),
+    logoUrl,
+    logoDarkUrl,
+    logoLightUrl,
+    logoIconUrl,
+    logoDark: logoDarkUrl,
+    logoLight: logoLightUrl,
+    primaryColour: pickFirstText(secondary.primaryColour, primary.primaryColour),
+    secondaryColour: pickFirstText(secondary.secondaryColour, primary.secondaryColour),
+    accentColour: pickFirstText(secondary.accentColour, primary.accentColour),
+  }
+}
+
+async function resolveSellerOnboardingBrandingSnapshot(client, token, listing = {}) {
+  const [initialBranding, publicBranding] = await Promise.all([
+    fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(listing)),
+    fetchSellerOnboardingPublicBrandingSnapshot(token),
+  ])
+
+  return mergeSellerOnboardingBrandingSnapshots(initialBranding, publicBranding)
 }
 
 function attachBrandingToListing(listing = null, branding = null) {
@@ -7035,11 +7078,10 @@ export async function getSellerOnboardingByToken(token, options = {}) {
     throw buildSellerPortalAuthRequiredError(portalPayload.portalAuth)
   }
   if (portalPayload?.listing) {
-    const [initialBranding, mediaByListingId] = await Promise.all([
-      fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(portalPayload.listing)),
+    const [branding, mediaByListingId] = await Promise.all([
+      resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, portalPayload.listing),
       fetchMediaRowsForListings(client, [portalPayload.listing.id]),
     ])
-    const branding = initialBranding || await fetchSellerOnboardingPublicBrandingSnapshot(normalizedToken)
     const listingWithMedia = attachDistributionMediaToListing(
       portalPayload.listing,
       mediaByListingId.get(String(portalPayload.listing.id)) || [],
@@ -7052,11 +7094,10 @@ export async function getSellerOnboardingByToken(token, options = {}) {
 
   const attachSellerOnboardingPayloadContext = async (apiPayload) => {
     if (!apiPayload?.listing) return null
-    const [initialBranding, mediaByListingId] = await Promise.all([
-      fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(apiPayload.listing)),
+    const [branding, mediaByListingId] = await Promise.all([
+      resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, apiPayload.listing),
       fetchMediaRowsForListings(client, [apiPayload.listing.id]),
     ])
-    const branding = initialBranding || await fetchSellerOnboardingPublicBrandingSnapshot(normalizedToken)
     const listingWithMedia = attachDistributionMediaToListing(
       apiPayload.listing,
       mediaByListingId.get(String(apiPayload.listing.id)) || [],
@@ -7105,9 +7146,7 @@ export async function getSellerOnboardingByToken(token, options = {}) {
       ? rawListing.mandate_packet
       : null
   const listing = sanitizeSellerPortalListingFinalArtifacts(rawListing, rawMandatePacket)
-  const branding =
-    await fetchOrganisationBrandingSnapshot(client, resolveListingOrganisationId(listing)) ||
-    await fetchSellerOnboardingPublicBrandingSnapshot(normalizedToken)
+  const branding = await resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, listing)
   return {
     onboarding: query.data,
     listing: attachBrandingToListing(listing, branding),

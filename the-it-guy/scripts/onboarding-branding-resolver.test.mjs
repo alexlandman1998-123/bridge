@@ -105,14 +105,44 @@ import {
   assert.equal(branding.accentColour, '#333333')
 }
 
+{
+  const branding = resolveOnboardingBranding({
+    corporateIdentity: {
+      organisationName: 'CI Sand Realty',
+      logos: {
+        logoLight: '/ci/sand-light.svg',
+        logoDark: '/ci/sand-dark.svg',
+        logoIcon: '/ci/sand-icon.svg',
+      },
+      colourPalette: {
+        primary: '#494B8A',
+        secondary: '#101421',
+        accent: '#CEAC69',
+      },
+    },
+  })
+
+  assert.equal(branding.organisationName, 'CI Sand Realty')
+  assert.equal(branding.logoLightUrl, '/ci/sand-light.svg')
+  assert.equal(branding.logoDarkUrl, '/ci/sand-dark.svg')
+  assert.equal(branding.logoIconUrl, '/ci/sand-icon.svg')
+  assert.equal(branding.primaryColour, '#494B8A')
+  assert.equal(branding.secondaryColour, '#101421')
+  assert.equal(branding.accentColour, '#CEAC69')
+}
+
 const files = {
   buyerApi: await readFile(new URL('../src/lib/api.js', import.meta.url), 'utf8'),
   sellerService: await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8'),
+  sellerBrandingApi: await readFile(new URL('../server/services/sellerOnboardingBrandingApi.js', import.meta.url), 'utf8'),
 }
 
 assert.match(files.buyerApi, /\.from\('organisation_settings'\)[\s\S]*\.select\('settings_json'\)/)
-assert.match(files.buyerApi, /resolveOnboardingBranding\(\s*agencyBranding,\s*settingsBranding,\s*organisation,\s*transaction,\s*development\s*\)/)
-assert.match(files.sellerService, /resolveOnboardingBranding\(\s*branding,\s*settingsBranding,\s*\{/)
+assert.match(files.buyerApi, /resolveOnboardingBranding\([\s\S]*agencyBranding,[\s\S]*settingsBranding,[\s\S]*settingsJson,[\s\S]*organisation,[\s\S]*transaction,[\s\S]*development,[\s\S]*\)/)
+assert.match(files.sellerService, /resolveOnboardingBranding\(\s*branding,\s*settingsBranding,\s*settings,\s*\{/)
+assert.match(files.sellerService, /resolveSellerOnboardingBrandingSnapshot\(client, normalizedToken, portalPayload\.listing\)/)
+assert.match(files.sellerService, /mergeSellerOnboardingBrandingSnapshots\(initialBranding, publicBranding\)/)
+assert.match(files.sellerBrandingApi, /resolveOnboardingBranding\(\s*branding,\s*settingsBranding,\s*settings,\s*\{/)
 
 assert.equal(getOnboardingBrandInitials('Kingstons Real Estate'), 'KR')
 assert.equal(getOnboardingBrandInitials(''), 'B9')

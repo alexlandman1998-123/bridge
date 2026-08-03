@@ -38598,16 +38598,17 @@ function getOrganisationOnboardingBrandingSources(organisation = null) {
   )
   const settingsBranding = normalizeOnboardingBrandingRecord(settingsJson.branding)
 
-  return [agencyBranding, settingsBranding]
+  return [agencyBranding, settingsBranding, settingsJson]
 }
 
 function normalizeBuyerOnboardingBranding({ organisation = null, transaction = null, unit = null } = {}) {
   const development = Array.isArray(unit?.development) ? unit.development[0] : unit?.development
-  const [agencyBranding, settingsBranding] = getOrganisationOnboardingBrandingSources(organisation)
-  const organisationBranding = resolveOnboardingBranding(agencyBranding, settingsBranding, organisation)
+  const [agencyBranding, settingsBranding, settingsJson] = getOrganisationOnboardingBrandingSources(organisation)
+  const organisationBranding = resolveOnboardingBranding(agencyBranding, settingsBranding, settingsJson, organisation)
   const contextBranding = resolveOnboardingBranding(
     agencyBranding,
     settingsBranding,
+    settingsJson,
     organisation,
     transaction,
     development,
