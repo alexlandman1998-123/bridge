@@ -338,7 +338,7 @@ export function getNextSellerAction(args = {}) {
   if (stageKey === 'seller_onboarding_sent') return action('open_seller_portal', 'Track Seller Onboarding', true, '', { blocker: openPortalBlocker })
   if (stageKey === 'seller_onboarding_submitted') return action('generate_mandate', 'Generate Mandate', true, '', { blocker: blocking })
   if (stageKey === 'mandate_sent') {
-    if (journey.mandateStatus === 'draft') return action('send_mandate', 'Send Mandate', canSendMandate({ ...args, journey }), blocking?.label || '', { blocker: blocking })
+    if (journey.mandateStatus === 'draft') return action('send_mandate', 'Send for Signature', canSendMandate({ ...args, journey }), blocking?.label || '', { blocker: blocking })
     if (journey.mandateStatus === 'not_started') return action('generate_mandate', 'Generate Mandate', true, '', { blocker: blocking })
     return action('check_signature_status', 'Track Signature', true, '', { blocker: signatureBlocker })
   }
@@ -355,7 +355,7 @@ export function getNextSellerAction(args = {}) {
   if (journey.mandateStatus === 'sent') return action('check_signature_status', 'Track Signature', true, '', { blocker: blockers.find((item) => item.id === 'mandate_signature_outstanding') || null })
   if (!onboardingSent(journey)) return action('send_seller_onboarding', 'Send Seller Onboarding')
   if (!onboardingSubmitted(journey) && !hasProgressedPastOnboarding(journey)) return action('open_seller_portal', 'Track Seller Onboarding')
-  if (journey.mandateStatus === 'draft') return action('send_mandate', 'Send Mandate', canSendMandate({ ...args, journey }), blocking?.label || '', { blocker: blocking })
+  if (journey.mandateStatus === 'draft') return action('send_mandate', 'Send for Signature', canSendMandate({ ...args, journey }), blocking?.label || '', { blocker: blocking })
   if (onboardingSubmitted(journey)) return action('generate_mandate', 'Generate Mandate')
   if (hasProgressedPastOnboarding(journey)) return action('generate_mandate', 'Generate Mandate', true, '', { blocker: blocking })
   return action('open_seller_portal', 'Send Seller Onboarding', true, blocking?.label || '', { blocker: blocking })
@@ -421,13 +421,13 @@ export function getStageAwareSellerActions({ lead = {}, contact = {}, appointmen
           ? [
             make('open_seller_portal', 'Open Seller Portal', true),
             make('generate_mandate', 'Generate Mandate', true),
-            make('send_mandate', 'Send Mandate', canSendMandate({ lead, contact, appointments, listing, mandatePacketStatus, mandatePacket, documents, journey: resolvedJourney })),
+            make('send_mandate', 'Send for Signature', canSendMandate({ lead, contact, appointments, listing, mandatePacketStatus, mandatePacket, documents, journey: resolvedJourney })),
           ]
       : stageKey === 'mandate_sent'
         ? resolvedJourney.mandateStatus === 'draft'
           ? [
             make('view_mandate', 'View Mandate', true),
-            make('send_mandate', 'Send Mandate', canSendMandate({ lead, contact, appointments, listing, mandatePacketStatus, mandatePacket, documents, journey: resolvedJourney })),
+            make('send_mandate', 'Send for Signature', canSendMandate({ lead, contact, appointments, listing, mandatePacketStatus, mandatePacket, documents, journey: resolvedJourney })),
             make('open_seller_portal', 'Open Seller Portal', Boolean(firstPresent(lead?.sellerOnboardingToken, lead?.seller_onboarding_token, listing?.sellerOnboarding?.token))),
           ]
           : [

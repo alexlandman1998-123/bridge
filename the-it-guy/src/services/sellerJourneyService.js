@@ -220,6 +220,57 @@ function firstPresent(...values) {
   return values.map(normalizeText).find(Boolean) || ''
 }
 
+function isPreSendMandateState(value = '') {
+  const state = normalizeKey(value)
+  return [
+    'draft',
+    'mandate_draft',
+    'draft_ready',
+    'mandate_draft_ready',
+    'generated',
+    'pdf_generated',
+    'mandate_generated',
+    'ready',
+    'ready_to_send',
+    'ready_for_generation',
+    'signing_prep',
+    'signing_prepared',
+  ].includes(state)
+}
+
+function hasConfirmedMandateSendJob(job = null) {
+  if (!job || typeof job !== 'object') return false
+  const jobType = normalizeKey(job?.jobType || job?.job_type || job?.type)
+  if (jobType !== 'send_for_signature') return false
+  const status = normalizeKey(job?.status || job?.jobStatus || job?.job_status)
+  const result = job?.result && typeof job.result === 'object' ? job.result : {}
+  const metadata = job?.metadata && typeof job.metadata === 'object' ? job.metadata : {}
+  const delivery = result?.delivery && typeof result.delivery === 'object'
+    ? result.delivery
+    : metadata?.delivery && typeof metadata.delivery === 'object'
+      ? metadata.delivery
+      : {}
+  const deliveryStatus = normalizeKey(delivery?.status || result?.deliveryStatus || metadata?.deliveryStatus)
+  return Boolean(
+    ['succeeded', 'success', 'completed', 'complete', 'sent', 'delivered'].includes(status) &&
+      (
+        result?.emailConfirmed === true ||
+        metadata?.emailConfirmed === true ||
+        normalizeText(result?.emailId || result?.deliveryId || metadata?.emailId || metadata?.deliveryId || delivery?.id || delivery?.providerMessageId || delivery?.provider_message_id) ||
+        ['sent', 'delivered', 'accepted', 'queued'].includes(deliveryStatus)
+      ),
+  )
+}
+
+function hasMandateSignerDeliveryEvidence(signer = null) {
+  if (!signer || typeof signer !== 'object') return false
+  const status = normalizeKey(signer?.status || signer?.statusRaw)
+  return Boolean(
+    ['sent', 'viewed', 'signed', 'completed', 'complete'].includes(status) ||
+      normalizeText(signer?.sent_at || signer?.sentAt || signer?.viewed_at || signer?.viewedAt || signer?.signed_at || signer?.signedAt || signer?.token_used_at || signer?.tokenUsedAt),
+  )
+}
+
 function hasSellerOnboardingDurableSubmissionEvidence({ lead = {}, listing = {} } = {}) {
   const onboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
     ? listing.sellerOnboarding
@@ -332,7 +383,7 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
   const leadMandateStageSignals = [lead?.stage, lead?.status]
     .map(normalizeKey)
     .filter((status) => status.includes('mandate') || status.includes('signing') || status.includes('signature'))
-  const statuses = [
+  const mandateScopedStatuses = [
     listing?.mandateStatus,
     listing?.mandate_status,
     listing?.mandate?.status,
@@ -345,8 +396,11 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
     sourceContext?.mandate_status,
     sourceContext?.signingStatus,
     sourceContext?.signing_status,
-    ...leadMandateStageSignals,
   ].map(normalizeKey)
+  const statuses = [
+    ...mandateScopedStatuses,
+    ...leadMandateStageSignals,
+  ]
   const onboardingStatus = normalizeKey(
     lead?.sellerOnboardingStatus ||
       lead?.seller_onboarding_status ||
@@ -368,6 +422,28 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
   const mandatePacketRef = firstPresent(lead?.mandatePacketId, lead?.mandate_packet_id, listing?.mandatePacketId, listing?.mandate_packet_id, packet?.id)
   const allowStatusOnlyMandate = !onboardingStatusBlocksStatusOnlyMandate || Boolean(mandatePacketRef)
   const convertedToListing = statuses.some((status) => status.includes('converted_to_listing'))
+  const hasExplicitSentEvidence = Boolean(
+    firstPresent(
+      lead?.mandateSentAt,
+      lead?.mandate_sent_at,
+      lead?.mandateSigningLink,
+      lead?.mandateSignerLink,
+      sourceContext?.emailDeliveryId,
+      sourceContext?.email_delivery_id,
+      sourceContext?.deliveryId,
+      sourceContext?.delivery_id,
+      sourceContext?.mandateSentAt,
+      sourceContext?.mandate_sent_at,
+      sourceContext?.mandateSigningLink,
+      sourceContext?.mandate_signing_link,
+      packet?.sentAt,
+      packet?.sent_at,
+      packet?.completedAt,
+      packet?.completed_at,
+    ) ||
+      hasConfirmedMandateSendJob(mandatePacketStatus?.legalDocumentJob) ||
+      (Array.isArray(signers) && signers.some(hasMandateSignerDeliveryEvidence)),
+  )
   if (
     allSignersSigned ||
     hasFinalArtifact ||
@@ -380,7 +456,12 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
     mandatePacketRef ||
     (allowStatusOnlyMandate && statuses.some((status) => ['sent', 'generated', 'ready', 'ready_for_generation', 'partially_signed', 'sent_to_seller', 'sent_to_agent'].includes(status) || status.includes('mandate_sent')))
   ) {
-    return statuses.some((status) => status.includes('sent') || status.includes('partially_signed')) ? 'sent' : 'draft'
+    if (
+      mandatePacketRef &&
+      mandateScopedStatuses.some(isPreSendMandateState) &&
+      !hasExplicitSentEvidence
+    ) return 'draft'
+    return hasExplicitSentEvidence ? 'sent' : 'draft'
   }
   return 'not_started'
 }
@@ -657,7 +738,7 @@ export function getSellerJourneyActions({ lead = {}, contact = {}, listing = nul
     { id: 'contact_seller', label: 'Contact Seller', enabled: canContact },
     { id: 'send_onboarding', label: 'Send Seller Onboarding', enabled: !onboardingSignals.sent },
     { id: 'generate_mandate', label: 'Generate Mandate', enabled: onboardingSubmittedForProgress && (mandateStatus === 'not_started' || mandateStatus === 'draft') },
-    { id: 'send_mandate', label: 'Send Mandate', enabled: onboardingSubmittedForProgress && mandateStatus === 'draft' },
+    { id: 'send_mandate', label: 'Send for Signature', enabled: onboardingSubmittedForProgress && mandateStatus === 'draft' },
     { id: 'view_signing_status', label: 'Track Signature', enabled: mandateStatus !== 'not_started' },
     { id: 'create_listing', label: 'Create Listing', enabled: !listingCreated },
     { id: 'open_listing', label: 'Open Listing', enabled: listingCreated },

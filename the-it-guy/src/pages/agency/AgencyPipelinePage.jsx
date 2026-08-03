@@ -880,11 +880,60 @@ function getMandateStatePriority(value) {
   return state ? 5 : 0
 }
 
+function isMandatePreSendPacketState(value = '') {
+  const state = normalizeKey(value)
+  return [
+    'draft',
+    'mandate_draft',
+    'draft_ready',
+    'mandate_draft_ready',
+    'generated',
+    'pdf_generated',
+    'mandate_generated',
+    'ready_to_send',
+    'ready',
+    'signing_prep',
+    'signing_prepared',
+  ].includes(state)
+}
+
+function hasConfirmedMandateSendJob(job = null) {
+  if (!job || typeof job !== 'object') return false
+  const jobType = normalizeKey(job?.jobType || job?.job_type || job?.type)
+  if (jobType !== 'send_for_signature') return false
+  const status = normalizeKey(job?.status || job?.jobStatus || job?.job_status)
+  const result = job?.result && typeof job.result === 'object' ? job.result : {}
+  const metadata = job?.metadata && typeof job.metadata === 'object' ? job.metadata : {}
+  const delivery = result?.delivery && typeof result.delivery === 'object'
+    ? result.delivery
+    : metadata?.delivery && typeof metadata.delivery === 'object'
+      ? metadata.delivery
+      : {}
+  const deliveryStatus = normalizeKey(delivery?.status || result?.deliveryStatus || metadata?.deliveryStatus)
+  return Boolean(
+    ['succeeded', 'success', 'completed', 'complete', 'sent', 'delivered'].includes(status) &&
+      (
+        result?.emailConfirmed === true ||
+        metadata?.emailConfirmed === true ||
+        normalizeText(result?.emailId || result?.deliveryId || metadata?.emailId || metadata?.deliveryId || delivery?.id || delivery?.providerMessageId || delivery?.provider_message_id) ||
+        ['sent', 'delivered', 'accepted', 'queued'].includes(deliveryStatus)
+      ),
+  )
+}
+
+function hasMandateSignerDeliveryEvidence(signer = null) {
+  if (!signer || typeof signer !== 'object') return false
+  const status = normalizeKey(signer?.status || signer?.statusRaw)
+  return Boolean(
+    ['sent', 'viewed', 'signed', 'completed', 'complete'].includes(status) ||
+      normalizeText(signer?.sent_at || signer?.sentAt || signer?.viewed_at || signer?.viewedAt || signer?.signed_at || signer?.signedAt || signer?.token_used_at || signer?.tokenUsedAt),
+  )
+}
+
 function hasExplicitMandateSentEvidence({ lead = {}, mandatePacketStatus = null } = {}) {
   const packet = mandatePacketStatus?.packet && typeof mandatePacketStatus.packet === 'object'
     ? mandatePacketStatus.packet
     : {}
-  const leadMandatePacket = lead?.mandatePacket && typeof lead.mandatePacket === 'object' ? lead.mandatePacket : {}
   const leadSourceContext = lead?.sourceContext && typeof lead.sourceContext === 'object'
     ? lead.sourceContext
     : lead?.source_context_json && typeof lead.source_context_json === 'object'
@@ -893,78 +942,40 @@ function hasExplicitMandateSentEvidence({ lead = {}, mandatePacketStatus = null 
   const sourceContext = packet.source_context_json && typeof packet.source_context_json === 'object'
     ? packet.source_context_json
     : {}
-  const mandateScopedValues = [
-    lead?.mandateStatus,
-    lead?.mandate_status,
-    leadSourceContext?.mandateStatus,
-    leadSourceContext?.mandate_status,
-    leadSourceContext?.signingStatus,
-    leadSourceContext?.signing_status,
-    leadMandatePacket?.status,
-    leadMandatePacket?.state,
-    sourceContext?.mandateStatus,
-    sourceContext?.mandate_status,
-    sourceContext?.signingStatus,
-    sourceContext?.signing_status,
-    mandatePacketStatus?.signingStatus,
-    mandatePacketStatus?.state,
-    packet?.status,
-    packet?.state,
-  ].map(normalizeKey)
-  const leadLifecycleValues = [
-    lead?.stage,
-    lead?.status,
-  ].map(normalizeKey)
-  const sentStates = new Set([
-    'mandate sent',
-    'mandate_sent',
-    'sent',
-    'sent for signature',
-    'sent_for_signature',
-    'sent to seller',
-    'sent_to_seller',
-    'ready for client signature',
-    'ready_for_client_signature',
-    'seller signature requested',
-    'seller_signature_requested',
-    'awaiting seller signature',
-    'awaiting_seller_signature',
-    'partially_signed',
-    'partially signed',
-    'agent_signed',
-    'seller_signed',
-    'completed',
-    'complete',
-    'signed',
-    'mandate signed',
-    'mandate_signed',
-    'fully_signed',
-    'uploaded_signed',
-  ])
-  const leadLifecycleSentStates = new Set([
-    'mandate sent',
-    'mandate_sent',
-    'sent for signature',
-    'sent_for_signature',
-    'sent to seller',
-    'sent_to_seller',
-    'seller signature requested',
-    'seller_signature_requested',
-    'awaiting seller signature',
-    'awaiting_seller_signature',
-    'mandate signed',
-    'mandate_signed',
-    'mandate complete',
-    'mandate_complete',
-    'listing live',
-    'listing_live',
-    'listing active',
-    'listing_active',
-  ])
+  const signers = Array.isArray(mandatePacketStatus?.signingSummary?.signers)
+    ? mandatePacketStatus.signingSummary.signers
+    : Array.isArray(mandatePacketStatus?.signers)
+      ? mandatePacketStatus.signers
+      : []
   return Boolean(
-    normalizeText(lead?.mandateSentAt || lead?.mandate_sent_at || leadSourceContext?.mandateSentAt || leadSourceContext?.mandate_sent_at || sourceContext?.mandateSentAt || sourceContext?.mandate_sent_at) ||
-      mandateScopedValues.some((value) => sentStates.has(value)) ||
-      leadLifecycleValues.some((value) => leadLifecycleSentStates.has(value)),
+    normalizeText(
+      lead?.mandateSentAt ||
+        lead?.mandate_sent_at ||
+        lead?.mandateSigningLink ||
+        lead?.mandateSignerLink ||
+        leadSourceContext?.emailDeliveryId ||
+        leadSourceContext?.email_delivery_id ||
+        leadSourceContext?.deliveryId ||
+        leadSourceContext?.delivery_id ||
+        leadSourceContext?.mandateSentAt ||
+        leadSourceContext?.mandate_sent_at ||
+        leadSourceContext?.mandateSigningLink ||
+        leadSourceContext?.mandate_signing_link ||
+        sourceContext?.emailDeliveryId ||
+        sourceContext?.email_delivery_id ||
+        sourceContext?.deliveryId ||
+        sourceContext?.delivery_id ||
+        sourceContext?.mandateSentAt ||
+        sourceContext?.mandate_sent_at ||
+        sourceContext?.mandateSigningLink ||
+        sourceContext?.mandate_signing_link ||
+        packet?.sentAt ||
+        packet?.sent_at ||
+        packet?.completedAt ||
+        packet?.completed_at,
+    ) ||
+      hasConfirmedMandateSendJob(mandatePacketStatus?.legalDocumentJob) ||
+      signers.some(hasMandateSignerDeliveryEvidence),
   )
 }
 
@@ -973,6 +984,8 @@ function hasMandateDeliveredOrSignedEvidence({ lead = {}, mandatePacketStatus = 
   const packet = mandatePacketStatus?.packet && typeof mandatePacketStatus.packet === 'object'
     ? mandatePacketStatus.packet
     : {}
+  const explicitSentEvidence = hasExplicitMandateSentEvidence({ lead, mandatePacketStatus })
+  if (isMandatePreSendPacketState(mandatePacketStatus?.state || packet?.status) && !explicitSentEvidence) return false
   const values = [
     leadHint,
     mandatePacketStatus?.state,
@@ -980,8 +993,19 @@ function hasMandateDeliveredOrSignedEvidence({ lead = {}, mandatePacketStatus = 
     packet?.status,
     packet?.state,
   ]
-  return values.some((value) => getMandateStatePriority(value) >= 40) ||
-    hasExplicitMandateSentEvidence({ lead, mandatePacketStatus })
+  return values.some((value) => getMandateStatePriority(value) >= 50) ||
+    explicitSentEvidence
+}
+
+function isStaleMandateGenerationRecoveryMessage(value = '') {
+  const message = normalizeText(value).toLowerCase()
+  if (!message) return false
+  return (
+    message.includes('could not confirm a usable mandate draft') ||
+    message.includes('select generate once more') ||
+    message.includes('mandate generation failed') ||
+    message.includes('mandate pdf was not saved as a generated packet version')
+  )
 }
 
 const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity', 'listing_journey'])
@@ -7051,10 +7075,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadMandateResolvedState = useMemo(() => {
     const packetState = normalizeKey(mandatePacketStatus?.state)
     const leadState = resolveMandatePacketStateHintFromLead(selectedLead)
+    const hasPacketRef = Boolean(normalizeText(
+      selectedLead?.mandatePacketId ||
+        selectedLead?.mandate_packet_id ||
+        selectedLead?.mandatePacket?.id ||
+        mandatePacketStatus?.packet?.id,
+    ))
+    const explicitSentEvidence = hasExplicitMandateSentEvidence({ lead: selectedLead, mandatePacketStatus })
+    if (
+      isMandatePreSendPacketState(packetState) &&
+      !explicitSentEvidence
+    ) return mandatePacketStatus?.state
+    const packetStatePriority = getMandateStatePriority(packetState)
+    const leadStatePriority = getMandateStatePriority(leadState)
+    if (!explicitSentEvidence && packetStatePriority >= 40 && packetStatePriority < 50) return 'ready_to_send'
+    if (!explicitSentEvidence && leadStatePriority >= 40 && leadStatePriority < 50) {
+      if (packetState && !['no_packet', 'unknown'].includes(packetState)) return mandatePacketStatus?.state
+      return hasPacketRef ? 'ready_to_send' : 'no_packet'
+    }
     if (leadState && getMandateStatePriority(leadState) > getMandateStatePriority(packetState)) return leadState
     if (packetState && !['no_packet', 'unknown'].includes(packetState)) return mandatePacketStatus?.state
     return leadState || mandatePacketStatus?.state
-  }, [mandatePacketStatus?.state, selectedLead])
+  }, [mandatePacketStatus, selectedLead])
   const selectedLeadMandateActionState = useMemo(
     () =>
       resolveDocumentPacketActionState({
@@ -7087,9 +7129,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ? 'Review missing seller/property details before generating.'
       : selectedLeadMandateActionMeta
   const selectedLeadMandateQuickStartActionKey = normalizeText(selectedLeadMandateActionState?.actionKey).toLowerCase()
-  const selectedLeadMandatePrimaryLabel = ['generate', 'edit', 'send'].includes(selectedLeadMandateQuickStartActionKey)
-    ? resolveMandateQuickStartPrimaryLabel(selectedLeadMandateQuickStartActionKey, 'details', '')
+  const selectedLeadMandatePrimaryLabel = ['edit', 'send'].includes(selectedLeadMandateQuickStartActionKey)
+    ? 'Send for Signature'
+    : selectedLeadMandateQuickStartActionKey === 'generate'
+      ? resolveMandateQuickStartPrimaryLabel(selectedLeadMandateQuickStartActionKey, 'details', '')
     : selectedLeadMandateActionState.label
+  useEffect(() => {
+    if (!selectedLead || !selectedLeadIsSeller || !isStaleMandateGenerationRecoveryMessage(error)) return
+    if (!hasMandateDeliveredOrSignedEvidence({ lead: selectedLead, mandatePacketStatus })) return
+    const mandateStatePriority = getMandateStatePriority(selectedLeadMandateResolvedState)
+    setError('')
+    setMessage(
+      mandateStatePriority >= 60
+        ? 'Mandate is signed. Open the current mandate to view the signed record.'
+        : 'Mandate has already been sent for signature. Open the current mandate to review status.',
+    )
+  }, [
+    error,
+    mandatePacketStatus,
+    selectedLead,
+    selectedLeadIsSeller,
+    selectedLeadMandateResolvedState,
+  ])
   const selectedLeadMandateTemplateBlocking =
     isSupabaseConfigured &&
     selectedLeadMandateQuickStartActionKey === 'generate' &&
@@ -8222,6 +8283,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [selectedSellerDocumentCategories])
 
+  const selectedSellerDocumentOverview = useMemo(() => {
+    const rows = selectedSellerDocumentCategories.flatMap((category) => category.items || [])
+    const uploaded = rows.filter((documentRow) => {
+      const state = getSellerLeadDocumentStatusMeta(documentRow).state
+      return state === 'complete' || state === 'review'
+    }).length
+    const optional = rows.filter((documentRow) => documentRow?.required === false).length
+    return {
+      uploaded,
+      missing: Math.max(rows.length - uploaded, 0),
+      optional,
+    }
+  }, [selectedSellerDocumentCategories])
+
   const selectedSellerDocumentAttentionItems = useMemo(
     () => selectedSellerDocumentCategories
       .flatMap((category) => category.items.map((documentRow) => ({
@@ -8281,13 +8356,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.attorneyName ||
       selectedLead?.attorney_name,
     )
+    const mandateStatePriority = getMandateStatePriority(selectedLeadMandateResolvedState)
+    const mandateComplete = mandateStatePriority >= 50 || selectedSellerJourney.mandateStatus === 'signed'
+    const mandateStatus = mandateStatePriority >= 60 || selectedSellerJourney.mandateStatus === 'signed'
+      ? 'Complete'
+      : mandateStatePriority >= 50
+        ? 'Signing complete'
+        : mandateStatePriority >= 40 || selectedSellerJourney.mandateStatus === 'sent'
+          ? 'Sent'
+          : mandateStatePriority >= 10
+            ? 'In progress'
+            : 'Missing'
 
     return [
       {
         key: 'mandate',
         label: 'Mandate',
-        complete: selectedSellerJourney.mandateStatus === 'signed',
-        status: selectedSellerJourney.mandateStatus === 'signed' ? 'Complete' : selectedSellerJourney.mandateStatus === 'sent' ? 'Sent' : 'Missing',
+        complete: mandateComplete,
+        status: mandateStatus,
       },
       {
         key: 'seller_documents',
@@ -8317,6 +8403,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [
     selectedLead,
     selectedLeadLinkedListing,
+    selectedLeadMandateResolvedState,
     selectedSellerJourney.documentsOutstanding,
     selectedSellerJourney.documentsSubmitted,
     selectedSellerJourney.mandateStatus,
@@ -8375,6 +8462,189 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedSellerDocumentSummary,
     selectedSellerJourney,
     selectedSellerReadiness,
+  ])
+
+  const selectedSellerProfileWorkspace = useMemo(() => {
+    const lead = selectedLead || {}
+    const listing = selectedLeadLinkedListing?.sourceListing && isPlainObject(selectedLeadLinkedListing.sourceListing)
+      ? selectedLeadLinkedListing.sourceListing
+      : (selectedLeadLinkedListing || {})
+    const onboarding = getWorkspaceSellerOnboarding(lead, listing)
+    const propertyDetails = {
+      ...(isPlainObject(listing?.propertyDetails) ? listing.propertyDetails : {}),
+      ...(isPlainObject(listing?.property_details) ? listing.property_details : {}),
+      ...(isPlainObject(lead?.propertyDetails) ? lead.propertyDetails : {}),
+      ...(isPlainObject(lead?.property_details) ? lead.property_details : {}),
+    }
+    const field = (...values) => formatCapturedValue(firstWorkspaceValue(...values))
+    const currencyField = (...values) => {
+      const value = firstWorkspaceValue(...values)
+      return value ? formatMaybeCurrency(value) : 'Not captured'
+    }
+    const dateField = (...values) => {
+      const value = firstWorkspaceText(...values)
+      return value ? formatDate(value) : 'Not captured'
+    }
+    const accountNumber = firstWorkspaceText(onboarding?.accountNumber, onboarding?.account_number, lead?.accountNumber, lead?.bankAccountNumber)
+    const maskedAccountNumber = accountNumber.length > 7
+      ? `${accountNumber.slice(0, 4)} **** **** ${accountNumber.slice(-3)}`
+      : accountNumber
+    const sellerFullName = selectedLeadDisplayName || field(onboarding?.fullName, onboarding?.sellerFullName, lead?.name)
+    const propertyRows = [
+      ['Address', selectedLeadPropertyWorkspace.profile.address],
+      ...selectedLeadPropertyWorkspace.characteristics.metrics.map((metric) => [
+        metric.label,
+        formatMetricValue(metric.value, metric.suffix),
+      ]),
+      ['Levies', currencyField(onboarding?.levies, onboarding?.monthlyLevies)],
+      ['Rates', currencyField(onboarding?.ratesAndTaxes, onboarding?.ratesTaxes, onboarding?.monthlyRates)],
+      ['Estimated Asking Price', currencyField(listing?.askingPrice, listing?.asking_price, lead?.estimatedValue, onboarding?.askingPrice)],
+    ]
+    return {
+      cards: [
+        {
+          key: 'personal',
+          title: 'Personal Information',
+          rows: [
+            ['Full Name', sellerFullName],
+            ['ID Number', field(onboarding?.idNumber, onboarding?.id_number, onboarding?.sellerIdNumber, lead?.sellerIdNumber, lead?.idNumber)],
+            ['Date of Birth', dateField(onboarding?.dateOfBirth, onboarding?.date_of_birth, onboarding?.birthDate)],
+            ['Nationality', field(onboarding?.nationality, lead?.nationality)],
+            ['Marital Status', field(onboarding?.maritalStatus, onboarding?.marital_status, lead?.maritalStatus)],
+            ['Occupation', field(onboarding?.occupation, lead?.occupation)],
+            ['Employer', field(onboarding?.employer, lead?.employer)],
+            ['Email', field(selectedLeadContact?.email, lead?.sellerEmail, lead?.email)],
+            ['Mobile', field(selectedLeadContact?.phone, lead?.sellerPhone, lead?.phone)],
+            ['Alternative Number', field(onboarding?.alternativeNumber, onboarding?.alternative_number, onboarding?.alternatePhone)],
+          ],
+        },
+        {
+          key: 'address',
+          title: 'Residential Address',
+          rows: [
+            ['Street', field(onboarding?.residentialStreet, onboarding?.streetAddress, lead?.streetAddress, propertyDetails?.streetAddress)],
+            ['Suburb', field(onboarding?.residentialSuburb, onboarding?.suburb, lead?.suburb, propertyDetails?.suburb)],
+            ['City', field(onboarding?.residentialCity, onboarding?.city, lead?.city, propertyDetails?.city)],
+            ['Province', field(onboarding?.residentialProvince, onboarding?.province, lead?.province, propertyDetails?.province)],
+            ['Postal Code', field(onboarding?.residentialPostalCode, onboarding?.postalCode, lead?.postalCode, propertyDetails?.postalCode)],
+            ['Country', field(onboarding?.residentialCountry, onboarding?.country, lead?.country, propertyDetails?.country, 'South Africa')],
+          ],
+        },
+        {
+          key: 'banking',
+          title: 'Banking Details',
+          rows: [
+            ['Bank', field(onboarding?.bankName, onboarding?.bank, lead?.bankName)],
+            ['Account Holder', field(onboarding?.accountHolder, onboarding?.account_holder, sellerFullName)],
+            ['Account Number', field(maskedAccountNumber)],
+            ['Branch Code', field(onboarding?.branchCode, onboarding?.branch_code, lead?.branchCode)],
+            ['Account Type', field(onboarding?.accountType, onboarding?.account_type, lead?.accountType)],
+          ],
+        },
+        {
+          key: 'tax',
+          title: 'Tax & Compliance',
+          rows: [
+            ['SA Resident', field(onboarding?.saResident, onboarding?.sa_resident, onboarding?.taxResident)],
+            ['Income Tax Number', field(onboarding?.incomeTaxNumber, onboarding?.income_tax_number, onboarding?.taxNumber)],
+            ['VAT Registered', field(onboarding?.vatRegistered, onboarding?.vat_registered)],
+            ['FICA Status', field(onboarding?.ficaStatus, onboarding?.fica_status, selectedLeadOnboardingCompleted ? 'Verified' : '')],
+            ['POPI Consent', field(onboarding?.popiConsent, onboarding?.popi_consent, selectedLeadOnboardingCompleted ? 'Accepted' : '')],
+            ['Electronic Signature', field(onboarding?.electronicSignature, onboarding?.electronic_signature, selectedSellerJourney.mandateStatus === 'signed' ? 'Captured' : '')],
+          ],
+        },
+        {
+          key: 'ownership',
+          title: 'Property Ownership',
+          rows: [
+            ['Ownership Type', field(onboarding?.ownershipType, onboarding?.ownership_type, lead?.ownershipType)],
+            ['Purchase Date', dateField(onboarding?.purchaseDate, onboarding?.purchase_date)],
+            ['Purchase Price', currencyField(onboarding?.purchasePrice, onboarding?.purchase_price)],
+            ['Bond Exists', field(onboarding?.bondExists, onboarding?.bond_exists, onboarding?.hasBond)],
+            ['Mortgage Bank', field(onboarding?.mortgageBank, onboarding?.mortgage_bank)],
+            ['Approx Bond Balance', currencyField(onboarding?.bondBalance, onboarding?.bond_balance, onboarding?.approxBondBalance)],
+            ['Primary Residence', field(onboarding?.primaryResidence, onboarding?.primary_residence)],
+          ],
+        },
+        {
+          key: 'property',
+          title: 'Property Information',
+          rows: propertyRows,
+        },
+      ],
+      features: selectedLeadPropertyWorkspace.characteristics.features,
+      defects: [
+        ['Roof', field(onboarding?.roofDefect, onboarding?.roof_defect, onboarding?.roofCondition)],
+        ['Plumbing', field(onboarding?.plumbingDefect, onboarding?.plumbing_defect, onboarding?.plumbingCondition)],
+        ['Electrical', field(onboarding?.electricalDefect, onboarding?.electrical_defect, onboarding?.electricalCondition)],
+        ['Damp', field(onboarding?.dampDefect, onboarding?.damp_defect, onboarding?.damp)],
+        ['Cracks', field(onboarding?.cracks, onboarding?.structuralCracks)],
+        ['Pest Damage', field(onboarding?.pestDamage, onboarding?.pest_damage)],
+        ['Other', field(onboarding?.otherDefects, onboarding?.knownDefects, onboarding?.known_defects)],
+      ],
+      agentNotes: field(onboarding?.agentNotes, onboarding?.agent_notes, lead?.notes),
+    }
+  }, [
+    selectedLead,
+    selectedLeadContact,
+    selectedLeadDisplayName,
+    selectedLeadLinkedListing,
+    selectedLeadOnboardingCompleted,
+    selectedLeadPropertyWorkspace,
+    selectedSellerJourney.mandateStatus,
+  ])
+
+  const selectedSellerProfileReadiness = useMemo(() => {
+    const portalActive = Boolean(
+      selectedLead?.sellerOnboardingToken ||
+        selectedLead?.seller_onboarding_token ||
+        selectedLeadLinkedListing?.sellerOnboarding?.token,
+    )
+    const items = [
+      {
+        key: 'profile',
+        label: 'Profile Complete',
+        complete: selectedLeadOnboardingCompleted,
+        status: selectedLeadOnboardingCompleted ? '100%' : 'Pending',
+      },
+      {
+        key: 'documents',
+        label: 'Documents',
+        complete: selectedSellerDocumentSummary.total > 0 && selectedSellerDocumentSummary.outstanding === 0,
+        status: selectedSellerDocumentSummary.total ? `${selectedSellerDocumentSummary.completed} / ${selectedSellerDocumentSummary.total}` : 'Pending',
+      },
+      {
+        key: 'compliance',
+        label: 'Compliance',
+        complete: selectedLeadOnboardingCompleted,
+        status: selectedLeadOnboardingCompleted ? 'Complete' : 'Pending',
+      },
+      {
+        key: 'mandate',
+        label: 'Mandate',
+        complete: selectedSellerJourney.mandateStatus === 'signed',
+        status: selectedSellerJourney.mandateStatus === 'signed' ? 'Signed' : titleCaseWorkspaceValue(selectedSellerJourney.mandateStatus || 'Pending'),
+      },
+      {
+        key: 'portal',
+        label: 'Portal',
+        complete: portalActive,
+        status: portalActive ? 'Active' : 'Pending',
+      },
+    ]
+    const completeCount = items.filter((item) => item.complete).length
+    return {
+      items,
+      percent: items.length ? Math.round((completeCount / items.length) * 100) : 0,
+    }
+  }, [
+    selectedLead,
+    selectedLeadLinkedListing,
+    selectedLeadOnboardingCompleted,
+    selectedSellerDocumentSummary.completed,
+    selectedSellerDocumentSummary.outstanding,
+    selectedSellerDocumentSummary.total,
+    selectedSellerJourney.mandateStatus,
   ])
 
   const resolveAppointmentListingLabel = useCallback(
@@ -16531,7 +16801,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <div className="grid min-w-[860px] grid-cols-7 gap-2">
                           {[
                             { key: 'overview', label: 'Overview', meta: '' },
-                            { key: 'seller', label: 'Seller', meta: '' },
+                            { key: 'seller', label: 'Seller Profile', meta: '' },
                             { key: 'property', label: 'Property', meta: '' },
                             { key: 'mandate', label: 'Mandate', meta: '' },
                             { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
@@ -19181,36 +19451,225 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'seller' && selectedLeadIsSeller ? (
-                  <div className="space-y-4">
-                    <section className="rounded-[26px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] sm:p-6">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8aa0b7]">Seller Details</p>
-                          <h4 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102033]">{selectedLeadDisplayName}</h4>
-                          <p className="mt-1 text-sm leading-6 text-[#60758b]">Seller contact, source, ownership, and onboarding status.</p>
-                        </div>
-	                        <Button type="button" size="sm" variant="secondary" onClick={handleSellerOnboardingCommand} disabled={isSellerOnboardingSending}>
-	                          {selectedLeadSellerOnboardingCommandLabel}
-	                        </Button>
-                      </div>
-                      <div className="mt-6 grid gap-x-10 gap-y-6 md:grid-cols-2">
-                        {[
-                          ['Name', selectedLeadDisplayName],
-                          ['Phone', selectedLeadContact?.phone || selectedLead?.phone || 'No phone'],
-                          ['Email', selectedLeadContact?.email || selectedLead?.email || 'No email'],
-                          ['Lead Source', selectedLead.leadSource || 'Not captured'],
-                          ['Assigned Agent', selectedLeadAssignedAgentLabel],
-                          ['Onboarding Status', selectedLeadOnboardingStatusKey.replace(/_/g, ' ') || 'Not started'],
-                          ['Created', formatDate(selectedLead.createdAt)],
-                          ['Last Updated', formatDateTime(selectedLead.updatedAt || selectedLead.createdAt)],
-                        ].map(([label, value]) => (
-                          <div key={label} className="border-b border-[#eef3f7] pb-4">
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{label}</p>
-                            <p className="mt-2 truncate text-[1rem] font-semibold text-[#20364c]" title={String(value)}>{value}</p>
+                  <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
+                    <div className="min-w-0 space-y-5">
+                      <section className="rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#18324b]">Seller Profile</p>
+                            <h3 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#102033]">Submitted seller information</h3>
                           </div>
-                        ))}
-                      </div>
-                    </section>
+                          <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={handleSellerOnboardingCommand} disabled={isSellerOnboardingSending}>
+                            <Send className="h-4 w-4" />
+                            {selectedLeadSellerOnboardingCommandLabel}
+                          </Button>
+                        </div>
+
+                        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                          {selectedSellerProfileWorkspace.cards.map((card) => (
+                            <section key={card.key} className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                              <div className="flex items-center justify-between gap-3">
+                                <h4 className="text-sm font-semibold text-[#102033]">{card.title}</h4>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75] transition hover:border-[#bfd0e2] hover:bg-[#f8fbfe]"
+                                  onClick={() => setLeadWorkspaceTab(card.key === 'property' ? 'property' : 'overview')}
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                              <dl className="mt-4 space-y-2.5">
+                                {card.rows.map(([label, value]) => {
+                                  const displayValue = value || 'Not captured'
+                                  const isEmpty = displayValue === 'Not captured'
+                                  return (
+                                    <div key={label} className="grid grid-cols-[minmax(96px,0.5fr)_minmax(0,1fr)] gap-3 text-sm">
+                                      <dt className="text-[#60758b]">{label}</dt>
+                                      <dd className={`min-w-0 truncate font-semibold ${isEmpty ? 'text-[#8aa0b7]' : 'text-[#20364c]'}`} title={String(displayValue)}>{displayValue}</dd>
+                                    </div>
+                                  )
+                                })}
+                              </dl>
+                            </section>
+                          ))}
+
+                          <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                            <div className="flex items-center justify-between gap-3">
+                              <h4 className="text-sm font-semibold text-[#102033]">Property Features</h4>
+                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => setLeadWorkspaceTab('property')}>Edit</button>
+                            </div>
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {selectedSellerProfileWorkspace.features.length ? selectedSellerProfileWorkspace.features.map((feature) => (
+                                <span key={feature} className="rounded-full bg-[#dff2e8] px-3 py-1 text-xs font-semibold text-[#17643a]">{feature}</span>
+                              )) : (
+                                <span className="rounded-full bg-[#eef3f7] px-3 py-1 text-xs font-semibold text-[#7890a8]">No property features captured</span>
+                              )}
+                            </div>
+                          </section>
+
+                          <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                            <div className="flex items-center justify-between gap-3">
+                              <h4 className="text-sm font-semibold text-[#102033]">Known Defects</h4>
+                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => setLeadWorkspaceTab('property')}>Edit</button>
+                            </div>
+                            <dl className="mt-4 grid gap-x-5 gap-y-2.5 sm:grid-cols-2">
+                              {selectedSellerProfileWorkspace.defects.map(([label, value]) => {
+                                const displayValue = value || 'Not captured'
+                                const isClear = ['No', 'None', 'False'].includes(displayValue)
+                                return (
+                                  <div key={label} className="flex items-center justify-between gap-3 text-sm">
+                                    <dt className="text-[#60758b]">{label}</dt>
+                                    <dd className={`inline-flex min-w-0 items-center gap-1.5 truncate font-semibold ${isClear ? 'text-[#17643a]' : displayValue === 'Not captured' ? 'text-[#8aa0b7]' : 'text-[#20364c]'}`}>
+                                      {isClear ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : null}
+                                      {displayValue}
+                                    </dd>
+                                  </div>
+                                )
+                              })}
+                            </dl>
+                            <div className="mt-4 rounded-[12px] border border-[#d7eadf] bg-[#f4fbf6] px-3 py-2 text-sm font-semibold text-[#25764a]">
+                              {selectedSellerProfileWorkspace.agentNotes === 'Not captured'
+                                ? 'No agent notes captured for this seller profile.'
+                                : selectedSellerProfileWorkspace.agentNotes}
+                            </div>
+                          </section>
+                        </div>
+                      </section>
+
+                      <section className="rounded-[22px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Seller Journey</p>
+                            <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">{selectedSellerJourney.status?.summary || selectedSellerJourney.stage?.label || 'Lead progress'}</h3>
+                          </div>
+                          <button type="button" className="text-xs font-semibold text-[#0f7b4e]" onClick={() => setLeadWorkspaceTab('overview')}>View Full Timeline</button>
+                        </div>
+                        <div className="mt-6 overflow-x-auto pb-1">
+                          <ol className="grid min-w-[920px] gap-0" style={{ gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(120px, 1fr))` }}>
+                            {selectedSellerJourney.steps.map((step, index) => {
+                              const isCompleted = step.state === 'completed'
+                              const isCurrent = step.state === 'current'
+                              return (
+                                <li key={step.key} className="relative px-2 text-center">
+                                  {index < selectedSellerJourney.steps.length - 1 ? (
+                                    <span className={`absolute left-1/2 right-[-50%] top-[17px] h-px ${isCompleted || isCurrent ? 'bg-[#9bd6b7]' : 'bg-[#dce6f1]'}`} aria-hidden="true" />
+                                  ) : null}
+                                  <span className={`relative z-10 mx-auto grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${isCompleted ? 'border-[#0f8f59] bg-[#0f8f59] text-white' : isCurrent ? 'border-[#0f8f59] bg-white text-[#0f7b4e] ring-4 ring-[#e1f4ea]' : 'border-[#cbd8e6] bg-white text-[#91a2b5]'}`}>
+                                    {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                                  </span>
+                                  <p className="mt-3 line-clamp-2 min-h-[2.25rem] text-xs font-semibold leading-4 text-[#20364c]">{step.label}</p>
+                                  <p className="mt-1 truncate text-[0.68rem] font-semibold text-[#6d839b]">{step.status || (isCurrent ? 'Current' : isCompleted ? 'Complete' : 'Upcoming')}</p>
+                                </li>
+                              )
+                            })}
+                          </ol>
+                        </div>
+                      </section>
+                    </div>
+
+                    <aside className="space-y-4">
+                      <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                        <h3 className="text-base font-semibold text-[#102033]">Seller Readiness</h3>
+                        <div className="mt-5 flex items-center gap-5">
+                          <div className="grid h-28 w-28 shrink-0 place-items-center rounded-full p-2" style={{ background: `conic-gradient(#0f7b4e ${selectedSellerProfileReadiness.percent * 3.6}deg, #e6edf4 0deg)` }}>
+                            <div className="grid h-full w-full place-items-center rounded-full bg-white shadow-inner">
+                              <span className="text-2xl font-semibold tracking-[-0.04em] text-[#102033]">{selectedSellerProfileReadiness.percent}%</span>
+                            </div>
+                          </div>
+                          <p className="text-sm font-semibold text-[#20364c]">
+                            {selectedSellerProfileReadiness.percent >= 100 ? 'Total Complete' : selectedSellerProfileReadiness.percent >= 60 ? 'Almost Complete' : 'Needs Attention'}
+                          </p>
+                        </div>
+                        <div className="mt-5 divide-y divide-[#edf3f8]">
+                          {selectedSellerProfileReadiness.items.map((item) => (
+                            <div key={item.key} className="flex items-center justify-between gap-3 py-3 text-sm first:pt-0 last:pb-0">
+                              <span className="inline-flex min-w-0 items-center gap-2 font-medium text-[#20364c]">
+                                {item.complete ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0f8f59]" /> : <Clock3 className="h-4 w-4 shrink-0 text-[#f5a400]" />}
+                                <span className="truncate">{item.label}</span>
+                              </span>
+                              <span className={`shrink-0 text-xs font-semibold ${item.complete ? 'text-[#0f7b4e]' : 'text-[#9a6416]'}`}>{item.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+
+                      <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                        <h3 className="text-base font-semibold text-[#102033]">Quick Actions</h3>
+                        <div className="mt-4 space-y-2">
+                          {[
+                            ['Download Seller Summary', FileText, () => setLeadWorkspaceTab('documents')],
+                            ['Generate PDF', FileText, () => handleSellerJourneyAction('view_mandate')],
+                            ['Email Seller', Mail, () => {
+                              const email = normalizeText(selectedLeadContact?.email || selectedLead?.email)
+                              if (email && typeof window !== 'undefined') window.location.href = `mailto:${email}`
+                            }],
+                            ['Open Portal', ExternalLink, () => handleSellerJourneyAction('open_seller_portal')],
+                            ['Resend Portal Link', Send, handleSellerOnboardingCommand],
+                            ['Request Missing Documents', FileText, () => setLeadWorkspaceTab('documents')],
+                          ].map(([label, Icon, onClick]) => (
+                            <button
+                              key={label}
+                              type="button"
+                              className="flex min-h-10 w-full items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-white px-3 text-left text-sm font-semibold text-[#20364c] transition hover:border-[#b9cade] hover:bg-[#fbfdff]"
+                              onClick={onClick}
+                            >
+                              <span className="min-w-0 flex-1 truncate">{label}</span>
+                              {createElement(Icon, { className: 'h-4 w-4 shrink-0 text-[#315b7a]' })}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+
+                      <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-base font-semibold text-[#102033]">Documents Overview</h3>
+                          <button type="button" className="text-xs font-semibold text-[#0f7b4e]" onClick={() => setLeadWorkspaceTab('documents')}>View All</button>
+                        </div>
+                        <div className="mt-5 flex items-center gap-5">
+                          <div className="grid h-24 w-24 shrink-0 place-items-center rounded-full p-3" style={{ background: `conic-gradient(#0f8f59 ${selectedSellerDocumentSummary.progress * 3.6}deg, #edf1f5 0deg)` }}>
+                            <div className="h-full w-full rounded-full bg-white" />
+                          </div>
+                          <div>
+                            <p className="text-2xl font-semibold tracking-[-0.04em] text-[#102033]">{selectedSellerDocumentSummary.completed} / {selectedSellerDocumentSummary.total || 0}</p>
+                            <p className="text-sm font-medium text-[#60758b]">Documents Uploaded</p>
+                          </div>
+                        </div>
+                        <div className="mt-5 space-y-2 border-t border-[#edf3f8] pt-4">
+                          {[
+                            ['Uploaded', selectedSellerDocumentOverview.uploaded, '#0f8f59'],
+                            ['Missing', selectedSellerDocumentOverview.missing, '#d92d20'],
+                            ['Optional', selectedSellerDocumentOverview.optional, '#94a3b8'],
+                          ].map(([label, value, color]) => (
+                            <div key={label} className="flex items-center justify-between gap-3 text-sm">
+                              <span className="inline-flex items-center gap-2 text-[#60758b]"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />{label}</span>
+                              <span className="font-semibold text-[#20364c]">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+
+                      <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-base font-semibold text-[#102033]">Recent Activity</h3>
+                          <button type="button" className="text-xs font-semibold text-[#0f7b4e]" onClick={() => setLeadWorkspaceTab('activity')}>View All</button>
+                        </div>
+                        <div className="mt-4 space-y-1">
+                          {selectedLeadUnifiedTimeline.slice(0, 5).length ? selectedLeadUnifiedTimeline.slice(0, 5).map((row) => (
+                            <button key={row.id} type="button" className="grid w-full grid-cols-[30px_minmax(0,1fr)] gap-3 rounded-[12px] px-2 py-2.5 text-left transition hover:bg-[#f8fbff]" onClick={() => setLeadWorkspaceTab('activity')}>
+                              <span className="grid h-7 w-7 place-items-center rounded-full bg-[#eef5fb] text-[#285b7d]">
+                                {row.sourceType === 'appointment' ? <CalendarDays className="h-3.5 w-3.5" /> : row.sourceType === 'call' ? <Phone className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-semibold text-[#20364c]">{row.title || row.sourceLabel || 'Lead updated'}</span>
+                                <span className="mt-0.5 block truncate text-xs text-[#60758b]">{formatDate(row.timestamp || row.dueDate)}</span>
+                              </span>
+                            </button>
+                          )) : (
+                            <p className="rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-5 text-center text-sm text-[#6f839c]">No recent activity yet.</p>
+                          )}
+                        </div>
+                      </section>
+                    </aside>
                   </div>
                   ) : null}
 

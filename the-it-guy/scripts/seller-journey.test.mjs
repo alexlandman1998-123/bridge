@@ -86,6 +86,83 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
 }
 
 {
+  const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
+      stage: 'Mandate Sent',
+      status: 'Draft',
+      mandatePacketId: 'packet-generated',
+      sellerOnboardingStatus: 'completed',
+    },
+    mandatePacketStatus: {
+      state: 'pdf_generated',
+      packet: {
+        id: 'packet-generated',
+        status: 'generated',
+        sent_at: null,
+        completed_at: null,
+      },
+      signingSummary: { signers: [] },
+    },
+  })
+  assert.equal(journey.mandateStatus, 'draft')
+  assert.equal(journey.stage.key, 'mandate_sent')
+  assert.equal(journey.stage.status, 'Draft')
+  assert.equal(journey.actions.find((item) => item.id === 'send_mandate')?.label, 'Send for Signature')
+}
+
+{
+  const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
+      stage: 'Mandate Sent',
+      status: 'Mandate Sent',
+      mandatePacketId: 'packet-status-only-sent',
+      sellerOnboardingStatus: 'completed',
+    },
+    mandatePacketStatus: {
+      state: 'sent',
+      packet: {
+        id: 'packet-status-only-sent',
+        status: 'sent',
+        sent_at: null,
+        completed_at: null,
+      },
+      signingSummary: {
+        signers: [{ signer_role: 'seller', status: 'pending', signing_token: 'prepared-token' }],
+      },
+    },
+  })
+  assert.equal(journey.mandateStatus, 'draft')
+  assert.equal(journey.stage.key, 'mandate_sent')
+  assert.equal(journey.actions.find((item) => item.id === 'send_mandate')?.label, 'Send for Signature')
+}
+
+{
+  const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
+      mandatePacketId: 'packet-sent-at',
+      sellerOnboardingStatus: 'completed',
+    },
+    mandatePacketStatus: {
+      state: 'sent',
+      packet: {
+        id: 'packet-sent-at',
+        status: 'sent',
+        sent_at: '2026-08-03T08:05:00Z',
+        completed_at: null,
+      },
+      signingSummary: {
+        signers: [{ signer_role: 'seller', status: 'pending', signing_token: 'prepared-token' }],
+      },
+    },
+  })
+  assert.equal(journey.mandateStatus, 'sent')
+  assert.equal(journey.actions.find((item) => item.id === 'view_signing_status')?.enabled, true)
+}
+
+{
   const stage = getSellerJourneyStage({
     lead: { ...baseLead, mandatePacketId: 'packet-1' },
     mandatePacketStatus: { packet: { id: 'packet-1', status: 'completed' }, signingSummary: { allSignersSigned: true } },
@@ -154,9 +231,9 @@ function assertJourneyStepStates(journey, currentKey, completedKeys = []) {
   })
   assert.equal(journey.onboardingSent, true)
   assert.equal(journey.onboardingSubmitted, true)
-  assert.equal(journey.stage.key, 'seller_onboarding_submitted')
-  assertJourneyStepStates(journey, 'seller_onboarding_submitted', ['new_lead', 'contacted', 'seller_onboarding_sent'])
-  assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_submitted').state, 'current')
+  assert.equal(journey.stage.key, 'seller_onboarding_sent')
+  assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_sent').state, 'current')
+  assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_submitted').state, 'completed')
   assert.equal(journey.actions.find((item) => item.id === 'generate_mandate').enabled, true)
 }
 

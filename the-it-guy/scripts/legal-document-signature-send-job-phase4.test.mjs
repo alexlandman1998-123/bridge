@@ -60,6 +60,9 @@ for (const token of [
   'phase4-signature-prepare-send',
   'jobDisplayType',
   'phase4SignatureSendJob',
+  'LEGAL_DOCUMENT_JOB_SEND_UNCONFIRMED',
+  'phase4SendConfirmationGuard',
+  'No sent status was recorded.',
 ]) {
   assert.ok(runner.includes(token), `Runner must include Phase 4 server-send token: ${token}`)
 }
@@ -73,6 +76,16 @@ assert.match(
   runner,
   /p_job_type: "send_for_signature"[\s\S]+p_metadata_json: \{[\s\S]+\.\.\.jobMetadata[\s\S]+phase4SignatureSendJob: true[\s\S]+jobDisplayType/,
   'Runner should create a send_for_signature job with Phase 4 metadata.',
+)
+assert.match(
+  runner,
+  /const emailConfirmed = emailResult\.body\.emailConfirmed === true \|\| Boolean\(normalizeText\(emailResult\.body\.emailId\)\);[\s\S]+if \(!emailConfirmed\) \{[\s\S]+status: "failed"[\s\S]+LEGAL_DOCUMENT_JOB_SEND_UNCONFIRMED[\s\S]+noSentStatusRecorded: true[\s\S]+return \{[\s\S]+ok: false[\s\S]+status: 502/,
+  'Runner must fail unconfirmed provider delivery before any sent-state promotion can be accepted.',
+)
+assert.ok(
+  runner.indexOf('if (!emailConfirmed) {') > runner.indexOf('const emailConfirmed = emailResult.body.emailConfirmed === true') &&
+    runner.indexOf('if (!emailConfirmed) {') < runner.indexOf('const result = await updateJobStatus({', runner.indexOf('if (!emailConfirmed) {') + 1),
+  'Runner should guard unconfirmed delivery before recording the send job as succeeded.',
 )
 
 assert.equal(

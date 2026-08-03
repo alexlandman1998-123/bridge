@@ -2221,6 +2221,85 @@ async function runSendForSignatureJob({
 
   const delivery = asRecord(emailResult.body.delivery);
   const emailConfirmed = emailResult.body.emailConfirmed === true || Boolean(normalizeText(emailResult.body.emailId));
+  if (!emailConfirmed) {
+    await recordJobStageTiming({
+      client,
+      job,
+      packet,
+      packetVersionId: normalizeText(version.id),
+      stage: "record_delivery",
+      startedAt: Date.now(),
+      status: "failed",
+      errorCode: "LEGAL_DOCUMENT_JOB_SEND_UNCONFIRMED",
+      errorMessage: "Signing email delivery was not confirmed by the provider.",
+      metadata: {
+        requestId,
+        jobDisplayType,
+        phase4SignatureSendJob: true,
+        emailConfirmed: false,
+        emailId: null,
+        dispatchId: normalizeText(delivery.dispatchId || delivery.dispatch_id) || null,
+      },
+    });
+    await updateJobStatus({
+      client,
+      jobId,
+      status: "failed",
+      error: {
+        errorCode: "LEGAL_DOCUMENT_JOB_SEND_UNCONFIRMED",
+        error: "Signing email delivery was prepared, but provider delivery was not confirmed. No sent status was recorded.",
+        status: emailResult.status,
+        retryable: true,
+        phase3SendOnly: true,
+        phase4SignatureSendJob: true,
+        jobDisplayType,
+      },
+      result: {
+        contract: "legal-document-job-runner-phase4-send-confirmation-guard-v1",
+        sendOnly: true,
+        phase4SignatureSendJob: true,
+        jobDisplayType,
+        preparedSigningEnvelope: Boolean(preparedSigningEnvelope),
+        preparedSigningEnvelopeDetails: preparedSigningEnvelope,
+        preparedSigningLink: Boolean(preparedSigningLink),
+        jobId,
+        packetId: normalizeText(packet.id),
+        packetVersionId: normalizeText(version.id),
+        delivery,
+        emailConfirmed: false,
+        emailId: null,
+        emailSent: false,
+        documentGenerated: false,
+        noSentStatusRecorded: true,
+        durationMs: Date.now() - startedAt,
+      },
+      packetVersionId: normalizeText(version.id),
+      dispatchId: normalizeText(emailPayload.dispatchId || emailPayload.dispatch_id) ||
+        normalizeText(delivery.dispatchId || delivery.dispatch_id) ||
+        null,
+      metadata: {
+        phase3FailedAt: new Date().toISOString(),
+        phase3RequestId: requestId,
+        phase3SendOnly: true,
+        phase4SignatureSendJob: true,
+        phase4SendConfirmationGuard: true,
+        jobDisplayType,
+        phase7BackgroundPrepareSend: Boolean(preparedSigningLink),
+      },
+    });
+    return {
+      ok: false,
+      status: 502,
+      body: {
+        success: false,
+        error: "Signing email delivery was prepared, but provider delivery was not confirmed. No sent status was recorded.",
+        errorCode: "LEGAL_DOCUMENT_JOB_SEND_UNCONFIRMED",
+        requestId,
+        jobId,
+        retryable: true,
+      },
+    };
+  }
   await recordJobStageTiming({
     client,
     job,

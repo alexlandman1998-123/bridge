@@ -89,7 +89,7 @@ const baseLead = {
   }
   assert.equal(canSendMandate(args), false)
   assert.equal(getNextSellerAction(args).id, 'send_mandate')
-  assert.equal(getNextSellerAction(args).label, 'Send Mandate')
+  assert.equal(getNextSellerAction(args).label, 'Send for Signature')
   assert.equal(getSellerReadiness(args).actions.some((item) => item.id === 'mark_valuation_complete'), false)
 }
 
@@ -118,16 +118,77 @@ const baseLead = {
   }
   const journey = buildSellerJourney({ lead })
   const readiness = getSellerReadiness({ lead, journey })
-  assert.equal(journey.stage.key, 'mandate_sent')
+  assert.equal(journey.stage.key, 'seller_onboarding_sent')
   assert.equal(readiness.blockers.some((item) => item.id === 'seller_onboarding_not_submitted'), false)
-  assert.equal(readiness.nextAction.id, 'generate_mandate')
+  assert.equal(readiness.nextAction.id, 'open_seller_portal')
+}
+
+{
+  const args = {
+    lead: {
+      ...baseLead,
+      stage: 'Mandate Sent',
+      status: 'Draft',
+      mandatePacketId: 'packet-generated',
+      sellerOnboardingToken: 'seller-token-generated',
+      sellerOnboardingStatus: 'completed',
+    },
+    mandatePacketStatus: {
+      state: 'pdf_generated',
+      packet: {
+        id: 'packet-generated',
+        status: 'generated',
+        sent_at: null,
+        completed_at: null,
+      },
+      signingSummary: { signers: [] },
+    },
+  }
+  const journey = buildSellerJourney(args)
+  const readiness = getSellerReadiness({ ...args, journey })
+  assert.equal(journey.mandateStatus, 'draft')
+  assert.equal(journey.stage.key, 'mandate_sent')
+  assert.equal(journey.stage.status, 'Draft')
+  assert.equal(readiness.nextAction.id, 'send_mandate')
+  assert.equal(readiness.nextAction.label, 'Send for Signature')
+  assert.equal(readiness.blockers.some((item) => item.id === 'mandate_signature_outstanding'), false)
+}
+
+{
+  const args = {
+    lead: {
+      ...baseLead,
+      stage: 'Mandate Sent',
+      status: 'Mandate Sent',
+      mandatePacketId: 'packet-status-only-sent',
+      sellerOnboardingStatus: 'completed',
+    },
+    mandatePacketStatus: {
+      state: 'sent',
+      packet: {
+        id: 'packet-status-only-sent',
+        status: 'sent',
+        sent_at: null,
+        completed_at: null,
+      },
+      signingSummary: {
+        signers: [{ signer_role: 'seller', status: 'pending', signing_token: 'prepared-token' }],
+      },
+    },
+  }
+  const journey = buildSellerJourney(args)
+  const readiness = getSellerReadiness({ ...args, journey })
+  assert.equal(journey.mandateStatus, 'draft')
+  assert.equal(readiness.nextAction.id, 'send_mandate')
+  assert.equal(readiness.nextAction.label, 'Send for Signature')
+  assert.equal(readiness.blockers.some((item) => item.id === 'mandate_signature_outstanding'), false)
 }
 
 {
   const args = {
     lead: { ...baseLead, mandatePacketId: 'packet-1' },
     appointments: [{ appointmentType: 'seller_valuation', status: 'completed', completedAt: '2026-06-03T10:00:00Z' }],
-    mandatePacketStatus: { packet: { id: 'packet-1', status: 'sent' } },
+    mandatePacketStatus: { packet: { id: 'packet-1', status: 'sent', sent_at: '2026-08-03T08:05:00Z' } },
   }
   const readiness = getSellerReadiness(args)
   assert.equal(readiness.readinessStatus, 'action_required')

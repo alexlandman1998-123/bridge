@@ -82,7 +82,6 @@ for (const reference of [
   'sellerAttorneyPickerOpen',
   'transferAttorneyPreferredPartnerId: preferredAttorneyId',
   'Listing Readiness',
-  "{ key: 'seller', label: 'Seller', meta: '' }",
   "{ key: 'property', label: 'Property', meta: '' }",
   "{ key: 'mandate', label: 'Mandate', meta: '' }",
   "{ key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length }",
@@ -93,6 +92,11 @@ for (const reference of [
 ]) {
   assert.ok(source.includes(reference), `AgencyPipelinePage should keep ${reference}.`)
 }
+assert.ok(
+  source.includes("{ key: 'seller', label: 'Seller', meta: '' }") ||
+    source.includes("{ key: 'seller', label: 'Seller Profile', meta: '' }"),
+  'AgencyPipelinePage should keep the seller workspace tab.',
+)
 
 const primaryActionBlock = getFunctionBlock('handleSelectedLeadMandatePrimaryAction')
 assert.ok(
@@ -146,16 +150,51 @@ assert.ok(
   'Selected seller leads should recognise camelCase, snake_case, and nested mandate packet ids.',
 )
 assert.ok(
-  source.includes('if (leadState && getMandateStatePriority(leadState) > getMandateStatePriority(packetState)) return leadState'),
-  'Mandate quick-start should let sent/signed lead evidence outrank stale packet draft state.',
+  source.includes('isMandatePreSendPacketState(packetState)') &&
+    source.includes('!explicitSentEvidence') &&
+    source.includes('return mandatePacketStatus?.state'),
+  'Mandate quick-start should prefer draft/generated/ready packet state over stale lead sent stage without explicit send evidence.',
+)
+assert.ok(
+  source.includes('function hasConfirmedMandateSendJob') &&
+    source.includes('function hasMandateSignerDeliveryEvidence') &&
+    !source.includes('const sentStates = new Set'),
+  'Mandate quick-start should require durable delivery evidence instead of status-only sent labels.',
+)
+assert.ok(
+  source.includes('packetStatePriority >= 40 && packetStatePriority < 50') &&
+    source.includes("return 'ready_to_send'"),
+  'Mandate quick-start should downgrade status-only sent packet state back to a sendable state.',
 )
 assert.ok(
   source.includes('return leadState || mandatePacketStatus?.state'),
   'Mandate quick-start should use selected-lead mandate evidence while packet status is still stale.',
 )
 assert.ok(
+  source.includes("? 'Send for Signature'"),
+  'Sendable generated mandates should label the primary action as Send for Signature.',
+)
+assert.ok(
   source.includes('hasMandateDeliveredOrSignedEvidence({ lead: selectedLead, mandatePacketStatus })'),
   'Mandate quick-start should not offer regeneration after sent or signed mandate evidence exists.',
+)
+assert.ok(
+  source.includes('function isStaleMandateGenerationRecoveryMessage') &&
+    source.includes("message.includes('could not confirm a usable mandate draft')") &&
+    source.includes("message.includes('select generate once more')"),
+  'Mandate quick-start should identify stale generation recovery banners.',
+)
+assert.ok(
+  source.includes('isStaleMandateGenerationRecoveryMessage(error)') &&
+    source.includes('hasMandateDeliveredOrSignedEvidence({ lead: selectedLead, mandatePacketStatus })') &&
+    source.includes("setMessage(\n      mandateStatePriority >= 60"),
+  'Sent or signed mandate evidence should clear stale generation recovery banners.',
+)
+assert.ok(
+  source.includes('const mandateStatePriority = getMandateStatePriority(selectedLeadMandateResolvedState)') &&
+    source.includes('const mandateComplete = mandateStatePriority >= 50') &&
+    source.includes("mandateStatePriority >= 40 || selectedSellerJourney.mandateStatus === 'sent'"),
+  'Listing readiness should use resolved packet mandate state instead of stale journey-only mandate status.',
 )
 assert.ok(
   source.includes('alreadyDeliveredOrSigned: true') &&
