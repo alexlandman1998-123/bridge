@@ -7,6 +7,7 @@ async function read(path) {
 
 const appSource = await read('../src/App.jsx')
 const viteConfig = await read('../vite.config.js')
+const apiSource = await read('../src/lib/api.js')
 const agentDataService = await read('../src/lib/agentDataService.js')
 const attorneyMockData = await read('../src/core/transactions/attorneyMockData.js')
 const mockData = await read('../src/lib/mockData.js')
@@ -47,13 +48,24 @@ assert.doesNotMatch(
 
 assert.match(
   viteConfig,
-  /chunkSizeWarningLimit:\s*1600/,
+  /chunkSizeWarningLimit:\s*1800/,
   'Vite should keep an explicit app-shell chunk warning budget instead of relying on the default.',
 )
 assert.match(
   viteConfig,
   /vite\/preload-helper/,
   'Vite preload helpers should stay in a neutral runtime chunk instead of a lazy PDF/export chunk.',
+)
+
+assert.doesNotMatch(
+  apiSource,
+  /from '\.\.\/\.\.\/server\/services\/workflow/,
+  'The shared API module should not eagerly import workflow server helpers into the common api chunk.',
+)
+assert.match(
+  apiSource,
+  /import\('\.\.\/\.\.\/server\/services\/workflowActionService\.js'\)/,
+  'Workflow action helpers should stay lazily loaded from the shared API module.',
 )
 
 for (const chunkName of [

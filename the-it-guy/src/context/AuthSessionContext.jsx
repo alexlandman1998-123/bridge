@@ -21,6 +21,7 @@ const SESSION_BOOTSTRAP_TIMEOUT_MS = 15000
 const BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS = 45000
 const BRIDGE_AUTH_BOOTSTRAP_SLOW_MS = 15000
 const BRIDGE_AUTH_BOOTSTRAP_RETRY_MS = 3000
+const MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS = 2
 
 const EMPTY_AUTH_STATE = Object.freeze({
   status: 'loading',
@@ -427,7 +428,7 @@ export function AuthSessionProvider({ children }) {
           operation: 'bridge_auth_boot',
           category: 'auth_error',
         })
-        if (isRetryableBridgeBootstrapError(error)) {
+        if (isRetryableBridgeBootstrapError(error) && bootAttempt < MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS) {
           bridgeOutcome = 'retrying'
           setAuthState((previous) => ({
             ...previous,

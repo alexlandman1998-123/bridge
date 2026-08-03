@@ -1104,16 +1104,32 @@ export async function resolveCurrentWorkspace(userId, options = {}) {
       preference.workspaceId !== resolution.currentWorkspace.id
 
     if (shouldPersist) {
-      await client
-        .from('user_workspace_preferences')
-        .upsert(
-          {
-            user_id: safeUserId,
-            active_workspace_id: resolution.currentWorkspace.id,
-            active_workspace_source: normalizeText(options.requestedWorkspaceId) ? 'user_selected' : 'auth_boot',
-          },
-          { onConflict: 'user_id' },
-        )
+      void Promise.resolve(
+        client
+          .from('user_workspace_preferences')
+          .upsert(
+            {
+              user_id: safeUserId,
+              active_workspace_id: resolution.currentWorkspace.id,
+              active_workspace_source: normalizeText(options.requestedWorkspaceId) ? 'user_selected' : 'auth_boot',
+            },
+            { onConflict: 'user_id' },
+          ),
+      ).then(({ error } = {}) => {
+        if (error) {
+          console.warn('[WORKSPACE] active workspace preference persist failed after resolution', {
+            userId: safeUserId,
+            workspaceId: resolution.currentWorkspace.id,
+            error,
+          })
+        }
+      }).catch((error) => {
+        console.warn('[WORKSPACE] active workspace preference persist failed after resolution', {
+          userId: safeUserId,
+          workspaceId: resolution.currentWorkspace.id,
+          error,
+        })
+      })
     }
   }
 

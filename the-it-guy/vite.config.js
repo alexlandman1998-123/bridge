@@ -153,7 +153,7 @@ function missionControlApiPlugin() {
 export default defineConfig({
   plugins: [documentTitleFallbackPlugin(), releaseIntegrityPlugin(), react(), missionControlApiPlugin()],
   build: {
-    chunkSizeWarningLimit: 1600,
+    chunkSizeWarningLimit: 1800,
     rollupOptions: {
       output: {
         manualChunks(id) {

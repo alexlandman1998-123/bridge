@@ -189,18 +189,6 @@ import {
   syncOperationalChecklistForTransaction as syncOperationalChecklistForTransactionService,
 } from '../services/transactionOperationalChecklistService'
 import { bondPerfLog, createPerfTimer } from './performanceTrace'
-import {
-  runWorkflowAction as runCanonicalWorkflowAction,
-  workflowActionErrorMessage,
-} from '../../server/services/workflowActionService.js'
-import { processWorkflowEvidence } from '../../server/services/workflowEvidenceMapper.js'
-import { applyWorkflowOverride as applyCanonicalWorkflowOverride } from '../../server/services/workflowOverrideService.js'
-import { publishWorkflowChanged } from '../../server/services/workflowRecomputeService.js'
-import { fetchTransactionRollupAudit } from '../../server/services/transactionRollupAuditService.js'
-import { fetchTransactionRollupValidationReport } from '../../server/services/transactionRollupValidationService.js'
-import { runTransactionWorkflowMigration } from '../../server/services/transactionWorkflowMigrationService.js'
-import { getWorkflowEngineHealthSnapshot } from '../../server/services/workflowEngineHealthService.js'
-import { resolveTransactionRollup } from '../../server/services/transactionWorkflowRollup.js'
 import { resolveLegalDocumentRequirements } from '../services/attorneyWorkflow/attorneyDocumentRequirementsResolver'
 import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxonomy'
 import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
@@ -241,6 +229,42 @@ import {
   shouldActivateAttorneyRoleplayerAtSignedOtp,
   shouldCreateAttorneyAssignmentForSelection,
 } from '../core/transactions/attorneyInstructionActivation'
+
+async function loadWorkflowActionService() {
+  return import('../../server/services/workflowActionService.js')
+}
+
+async function loadWorkflowEvidenceMapper() {
+  return import('../../server/services/workflowEvidenceMapper.js')
+}
+
+async function loadWorkflowOverrideService() {
+  return import('../../server/services/workflowOverrideService.js')
+}
+
+async function loadWorkflowRecomputeService() {
+  return import('../../server/services/workflowRecomputeService.js')
+}
+
+async function loadTransactionRollupAuditService() {
+  return import('../../server/services/transactionRollupAuditService.js')
+}
+
+async function loadTransactionRollupValidationService() {
+  return import('../../server/services/transactionRollupValidationService.js')
+}
+
+async function loadTransactionWorkflowMigrationService() {
+  return import('../../server/services/transactionWorkflowMigrationService.js')
+}
+
+async function loadWorkflowEngineHealthService() {
+  return import('../../server/services/workflowEngineHealthService.js')
+}
+
+async function loadTransactionWorkflowRollup() {
+  return import('../../server/services/transactionWorkflowRollup.js')
+}
 
 const CANONICAL_PILOT_BUILD_MARKER = 'CANONICAL_PILOT_BUILD_MARKER_20260525'
 const CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH_FLAG = 'VITE_CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH'
@@ -10120,6 +10144,7 @@ async function processWorkflowEvidenceIfPossible(client, payload = {}) {
   }
 
   try {
+    const { processWorkflowEvidence } = await loadWorkflowEvidenceMapper()
     return await processWorkflowEvidence({
       ...payload,
       client,
@@ -10150,6 +10175,7 @@ async function publishWorkflowChangedIfPossible(client, payload = {}) {
   }
 
   try {
+    const { publishWorkflowChanged } = await loadWorkflowRecomputeService()
     return await publishWorkflowChanged({
       ...payload,
       client,
@@ -15111,6 +15137,10 @@ export async function markTransactionRegistered({
   )
   const normalizedTitleDeedNumber = normalizeTextValue(titleDeedNumber || context.transaction.title_deed_number)
 
+  const {
+    runWorkflowAction: runCanonicalWorkflowAction,
+    workflowActionErrorMessage,
+  } = await loadWorkflowActionService()
   const workflowResult = await runCanonicalWorkflowAction({
     transactionId,
     actionKey: 'MARK_REGISTERED',
@@ -31820,6 +31850,7 @@ export async function getTransactionRollup(transactionId, options = {}) {
   const client = requireClient()
   const activeProfile = await resolveActiveProfileContext(client)
   const actorRole = normalizeRoleType(options.actorRole || activeProfile.role || 'developer')
+  const { resolveTransactionRollup } = await loadTransactionWorkflowRollup()
   const rollup = await resolveTransactionRollup(transactionId, {
     client,
     actorRole,
@@ -31847,6 +31878,7 @@ export async function getTransactionRollupAudit(transactionId, options = {}) {
     throw new Error('You do not have permission to inspect roll-up audit history.')
   }
 
+  const { fetchTransactionRollupAudit } = await loadTransactionRollupAuditService()
   return fetchTransactionRollupAudit(transactionId, {
     client,
     limit: options.limit || 100,
@@ -31861,6 +31893,7 @@ export async function getTransactionWorkflowMigrationValidation(options = {}) {
     throw new Error('You do not have permission to inspect workflow migration validation.')
   }
 
+  const { fetchTransactionRollupValidationReport } = await loadTransactionRollupValidationService()
   return fetchTransactionRollupValidationReport({
     client,
     transactionId: options.transactionId || '',
@@ -31878,6 +31911,7 @@ export async function runTransactionWorkflowMigrationBackfill(options = {}) {
     throw new Error('You do not have permission to run workflow migration backfills.')
   }
 
+  const { runTransactionWorkflowMigration } = await loadTransactionWorkflowMigrationService()
   return runTransactionWorkflowMigration({
     client,
     transactionId: options.transactionId || '',
@@ -31899,6 +31933,7 @@ export async function getWorkflowEngineHealth(options = {}) {
     throw new Error('You do not have permission to inspect workflow engine health.')
   }
 
+  const { getWorkflowEngineHealthSnapshot } = await loadWorkflowEngineHealthService()
   return getWorkflowEngineHealthSnapshot({
     client,
     staleThresholdMinutes: options.staleThresholdMinutes || 30,
@@ -34231,6 +34266,7 @@ export async function updateTransactionMainStage({ transactionId, unitId = null,
 export async function runWorkflowAction({ transactionId, actionKey, payload = {}, actorRole = null } = {}) {
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
+  const { runWorkflowAction: runCanonicalWorkflowAction } = await loadWorkflowActionService()
 
   return runCanonicalWorkflowAction({
     transactionId,
@@ -34253,6 +34289,7 @@ export async function applyWorkflowOverride({
 } = {}) {
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
+  const { applyWorkflowOverride: applyCanonicalWorkflowOverride } = await loadWorkflowOverrideService()
 
   return applyCanonicalWorkflowOverride({
     transactionId,
