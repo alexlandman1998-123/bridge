@@ -625,7 +625,7 @@ export async function handleSellerOnboardingSubmittedEmail(
     },
   });
   senderOrganisationName = branding.organisationName;
-  senderOrganisationLogoUrl = branding.logoUrl || branding.logoIconUrl ||
+  senderOrganisationLogoUrl = branding.logoDarkUrl || branding.logoUrl || branding.logoLightUrl || branding.logoIconUrl ||
     senderOrganisationLogoUrl;
   supportEmail = branding.supportEmail || supportEmail;
   supportPhone = branding.supportPhone || supportPhone;

@@ -575,7 +575,7 @@ function ListingSelectionCard({ listing = {}, selected = false, onToggle }) {
           <img
             src={listing.coverImageUrl}
             alt=""
-            className="h-full w-full object-cover opacity-80 transition duration-500 group-hover:scale-105 group-hover:opacity-90"
+            className="h-full w-full object-cover opacity-[0.65] transition duration-500 group-hover:scale-105 group-hover:opacity-75"
             loading="lazy"
           />
         ) : (
@@ -583,7 +583,7 @@ function ListingSelectionCard({ listing = {}, selected = false, onToggle }) {
             <Home size={28} aria-hidden="true" />
           </span>
         )}
-        <span className="absolute inset-0 bg-gradient-to-t from-black/78 via-black/36 to-black/10" />
+        <span className="absolute inset-0 bg-gradient-to-t from-black/88 via-black/48 to-black/18" />
         <span className={`absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border text-white shadow-lg ${selected ? 'border-[var(--intake-accent)] bg-[var(--intake-primary)]' : 'border-white/50 bg-black/35 backdrop-blur'}`}>
           <CheckCircle2 size={18} aria-hidden="true" />
         </span>

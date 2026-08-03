@@ -82,6 +82,25 @@ Deno.test("seller onboarding invitation template renders company branding while 
   assertNotIncludes(html, ">ARCH9<");
 });
 
+Deno.test("seller onboarding invitation uses dark-header logo variant", () => {
+  const html = buildSellerOnboardingEmailHtml({
+    sellerName: "Seller One",
+    propertyTitle: "12 Ocean Road",
+    onboardingLink: "https://app.example.test/seller",
+    branding: {
+      organisationName: "Kingstons Property",
+      logoUrl: "https://cdn.example.test/logo-generic.png",
+      logoLightUrl: "https://cdn.example.test/logo-light-background.png",
+      logoDarkUrl: "https://cdn.example.test/logo-dark-header.png",
+      primaryColor: "#123abc",
+      secondaryColor: "#fedcba",
+    },
+  });
+
+  assertIncludes(html, "https://cdn.example.test/logo-dark-header.png");
+  assertNotIncludes(html, "https://cdn.example.test/logo-light-background.png");
+});
+
 Deno.test("seller submitted confirmation template renders branded seller portal CTA", () => {
   const html = buildSellerOnboardingSubmittedSellerEmailHtml({
     sellerName: "Seller One",

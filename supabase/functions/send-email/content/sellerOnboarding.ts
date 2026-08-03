@@ -466,8 +466,9 @@ function buildPremiumSellerOnboardingInvitationHtml({
     "#006B4D",
   );
   const logoUrl = agencyLogoUrl ||
-    branding?.logoLightUrl ||
+    branding?.logoDarkUrl ||
     branding?.logoUrl ||
+    branding?.logoLightUrl ||
     branding?.logoIconUrl;
   const expiryCopy = formatExpiryCopy(expiryDays);
   const questionContact = [agentEmail, agentPhone].map((item) =>
