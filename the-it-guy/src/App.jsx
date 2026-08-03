@@ -441,7 +441,14 @@ function HeaderSkeleton() {
 }
 
 function AppLayout({ onLogout, session = null, user }) {
-  const { workspace, role, profile } = useWorkspace()
+  const {
+    workspace,
+    role,
+    profile,
+    retryWorkspaceBootstrap,
+    workspaceAccessDegraded,
+    workspaceDegradedMessage,
+  } = useWorkspace()
   const location = useLocation()
   const navigate = useNavigate()
   const mainScrollRef = useRef(null)
@@ -660,11 +667,28 @@ function AppLayout({ onLogout, session = null, user }) {
       </div>
     </div>
   ) : null
+  const degradedWorkspaceBanner = workspaceAccessDegraded ? (
+    <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-950">
+      <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-2">
+        <p className="font-medium">
+          {workspaceDegradedMessage || 'Workspace data is refreshing from your last successful session.'}
+        </p>
+        <button
+          type="button"
+          className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 shadow-sm transition hover:bg-amber-100"
+          onClick={() => retryWorkspaceBootstrap?.()}
+        >
+          Retry
+        </button>
+      </div>
+    </div>
+  ) : null
 
   if (isCommercialRoute) {
     return (
       <div className="h-screen overflow-hidden bg-[#f6f8fb] text-textStrong">
         {sessionTimeoutWarning}
+        {degradedWorkspaceBanner}
         <Suspense fallback={<PageSkeleton />}>
           <Outlet />
         </Suspense>
@@ -690,6 +714,7 @@ function AppLayout({ onLogout, session = null, user }) {
             />
           </Suspense>
         ) : null}
+        {degradedWorkspaceBanner}
 
         <main ref={mainScrollRef} className={`ui-main-content ui-page-scroll ${hideSharedHeader ? 'pt-6' : ''}`.trim()}>
           <div

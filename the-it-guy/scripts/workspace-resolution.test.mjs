@@ -14,7 +14,9 @@ try {
     requireResolvedWorkspaceContext,
     WorkspaceContextError,
     WORKSPACE_RESOLUTION_STATUSES,
+    __workspaceResolutionTestUtils,
   } = await server.ssrLoadModule('/src/services/workspaceResolutionService.js')
+  const { normalizeWorkspaceResolutionRpcContext } = __workspaceResolutionTestUtils
 
   const user = { id: 'user-1', email: 'agent@example.test' }
   const profile = {
@@ -50,6 +52,40 @@ try {
   assert.equal(normal.currentWorkspace.id, organisation.id)
   assert.equal(normal.workspaceRole, 'principal')
   assert.ok(normal.permissions.view_dashboard)
+
+  const rpcContext = normalizeWorkspaceResolutionRpcContext({
+    profile,
+    preference: {
+      active_workspace_id: organisation.id,
+      active_workspace_source: 'auth_boot',
+      updated_at: '2026-08-03T08:00:00.000Z',
+    },
+    organisationMembershipRows: [{
+      id: 'membership-rpc',
+      organisation_id: organisation.id,
+      user_id: user.id,
+      role: 'principal',
+      status: 'active',
+      source_table: 'organisation_users',
+    }],
+    organisationRows: [organisation],
+    attorneyMembershipRows: [],
+    attorneyFirmRows: [],
+  }, { user })
+  const rpcResolution = buildWorkspaceResolution({
+    user: rpcContext.user,
+    profile: rpcContext.profile,
+    organisationRows: rpcContext.organisationRows,
+    organisationMembershipRows: rpcContext.organisationMembershipRows,
+    attorneyMembershipRows: rpcContext.attorneyMembershipRows,
+    attorneyFirmRows: rpcContext.attorneyFirmRows,
+    storedWorkspaceId: rpcContext.preference.workspaceId,
+  })
+
+  assert.equal(rpcResolution.ok, true)
+  assert.equal(rpcResolution.currentWorkspace.id, organisation.id)
+  assert.equal(rpcResolution.currentMembership.id, 'membership-rpc')
+  assert.equal(rpcContext.preference.source, 'auth_boot')
 
   const joinedWorkspaceOnly = buildWorkspaceResolution({
     user,

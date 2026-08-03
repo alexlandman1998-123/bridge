@@ -34,7 +34,7 @@ const DASHBOARD_LIFECYCLES = new Set([
   'background',
   'unknown',
 ])
-const DASHBOARD_OUTCOMES = new Set(['success', 'failed', 'cancelled', 'skipped', 'deduplicated', 'unknown'])
+const DASHBOARD_OUTCOMES = new Set(['success', 'failed', 'retrying', 'degraded', 'cancelled', 'skipped', 'deduplicated', 'unknown'])
 const DASHBOARD_PRESETS = new Set([
   'this_week',
   'last_7_days',
@@ -64,6 +64,11 @@ const SAFE_COUNT_KEYS = Object.freeze([
   'schemaFallbackCount',
   'sourceUnavailableCount',
   'activeMembershipCount',
+  'breadcrumbCount',
+])
+const SAFE_TEXT_KEYS = Object.freeze([
+  'bootHealthStatus',
+  'retryReason',
 ])
 const EXCLUDED_RESOURCE_PATH_PREFIXES = Object.freeze([
   '/rest/v1/performance_metrics',
@@ -330,6 +335,11 @@ function buildSafeMetadata(trace, context = {}, network = {}) {
   for (const key of SAFE_COUNT_KEYS) {
     const count = toSafeCount(context[key])
     if (count !== null) metadata[key] = count
+  }
+
+  for (const key of SAFE_TEXT_KEYS) {
+    const text = normalizeKey(context[key])
+    if (text) metadata[key] = text.slice(0, 80)
   }
 
   const requestCount = toSafeCount(network.requestCount)

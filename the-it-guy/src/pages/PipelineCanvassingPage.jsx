@@ -1,6 +1,7 @@
 import {
   Archive,
   CalendarDays,
+  Check,
   ChevronDown,
   CheckCircle2,
   ClipboardList,
@@ -286,6 +287,7 @@ const CANVASSING_IMPORT_TEMPLATE_COLUMNS = [
   'Last Name',
   'Phone',
   'Email',
+  'Assigned Agent Email',
   'Source',
   'Area',
   'Street Address',
@@ -305,12 +307,46 @@ const CANVASSING_IMPORT_TEMPLATE_COLUMNS = [
 ]
 const CANVASSING_IMPORT_TEMPLATE_ROWS = {
   buyer: [
-    ['Lerato', 'Mokoena', '082 555 0181', 'lerato@example.com', 'Website', 'Waterkloof Glen', '', 'Apartment', 'R1m - R2m', '2', '1', 'Needs Bond', 'Medium', 'No', 'Renting', '', '', '', '2026-07-10', 'Looking for a secure apartment close to schools.'],
+    ['Lerato', 'Mokoena', '082 555 0181', 'lerato@example.com', 'agent@example.com', 'Website', 'Waterkloof Glen', '', 'Apartment', 'R1m - R2m', '2', '1', 'Needs Bond', 'Medium', 'No', 'Renting', '', '', '', '2026-07-10', 'Looking for a secure apartment close to schools.'],
   ],
   seller: [
-    ['Pieter', 'Botha', '083 555 0182', 'pieter@example.com', 'Cold Call', 'Boksburg', '12 Park Street, Boksburg', 'House', '', '', '', '', '', '', '', 'Ready For Valuation', 'Interested', '2200000', '2026-07-12', 'Owner requested a valuation follow-up.'],
+    ['Pieter', 'Botha', '083 555 0182', 'pieter@example.com', 'agent@example.com', 'Cold Call', 'Boksburg', '12 Park Street, Boksburg', 'House', '', '', 'Existing Bond', '', '', '', 'Ready For Valuation', 'Interested', '2200000', '2026-07-12', 'Owner requested a valuation follow-up.'],
   ],
 }
+const CANVASSING_IMPORT_ASSIGNEE_COLUMNS = [
+  'Assigned Agent Email',
+  'assignedAgentEmail',
+  'Agent Email',
+  'agentEmail',
+  'Assigned Agent',
+  'assignedAgent',
+  'Agent',
+  'agent',
+  'Allocated Agent',
+  'allocatedAgent',
+  'Allocated Agent Email',
+  'allocatedAgentEmail',
+  'Assigned To',
+  'assignedTo',
+]
+const CANVASSING_IMPORT_DATA_COLUMNS = [
+  ...CANVASSING_IMPORT_TEMPLATE_COLUMNS.filter((column) => !CANVASSING_IMPORT_ASSIGNEE_COLUMNS.includes(column)),
+  'Name',
+  'Full Name',
+  'Address',
+  'Property Address',
+  'Budget',
+  'Budget Min',
+  'Budget Max',
+  'Value',
+  'Status',
+  'Buyer Status',
+  'Follow Up Date',
+  'Priority',
+  'Follow Up Note',
+  'Message',
+  'Property Occupancy',
+]
 
 const CANVASSING_SOURCE_TONE_STYLES = {
   slate: 'border-slate-200 bg-slate-50 text-slate-600',
@@ -412,6 +448,39 @@ function downloadTextFile(fileName, text) {
   URL.revokeObjectURL(link.href)
 }
 
+function getCanvassingImportAssigneeValue(row = {}) {
+  return pickImportValue(row, CANVASSING_IMPORT_ASSIGNEE_COLUMNS)
+}
+
+function hasCanvassingImportData(row = {}) {
+  return CANVASSING_IMPORT_DATA_COLUMNS.some((column) => Boolean(pickImportValue(row, [column])))
+}
+
+function resolveImportedAssignedAgent(row = {}, agents = [], fallbackAgent = {}) {
+  const rawAssignee = getCanvassingImportAssigneeValue(row)
+  const key = normalizeKey(rawAssignee)
+  const normalizedAgents = Array.isArray(agents) ? agents : []
+
+  if (!key) return fallbackAgent
+
+  const directMatch = normalizedAgents.find((agent) => {
+    const values = [
+      agent?.email,
+      agent?.id,
+      agent?.userId,
+      agent?.name,
+      agent?.fullName,
+    ]
+    return values.some((value) => normalizeKey(value) === key)
+  })
+
+  if (directMatch) return directMatch
+
+  if (rawAssignee.includes('@')) return fallbackAgent
+
+  return normalizedAgents.find((agent) => normalizeKey(agent?.name || agent?.fullName).includes(key)) || fallbackAgent
+}
+
 function splitImportName(row = {}) {
   const explicitFirst = pickImportValue(row, ['First Name', 'first_name', 'firstName'])
   const explicitLast = pickImportValue(row, ['Last Name', 'last_name', 'lastName', 'Surname', 'surname'])
@@ -432,6 +501,10 @@ function getImportPreviewName(row = {}) {
     .filter(Boolean)
     .join(' ') ||
     pickImportValue(row, ['Name', 'name', 'Full Name', 'fullName']) ||
+    pickImportValue(row, ['Street Address', 'streetAddress', 'Address', 'address', 'Property Address', 'propertyAddress']) ||
+    pickImportValue(row, ['Phone', 'phone', 'Mobile', 'mobile']) ||
+    pickImportValue(row, ['Email', 'email']) ||
+    pickImportValue(row, ['Area', 'area', 'Suburb', 'suburb']) ||
     '—'
 }
 
@@ -449,20 +522,23 @@ function buildCanvassingImportPayload(row = {}, { audience = 'seller', assignedA
       pickImportValue(row, ['Budget Min', 'budgetMin', 'Minimum Budget', 'minimumBudget']),
       pickImportValue(row, ['Budget Max', 'budgetMax', 'Maximum Budget', 'maximumBudget']),
     )
+  const bedrooms = pickImportValue(row, ['Bedrooms', 'bedrooms'])
+  const financeStatus = pickImportValue(row, ['Finance Status', 'financeStatus'])
+  const timeframe = pickImportValue(row, ['Urgency', 'urgency', 'Timeframe', 'timeframe'])
+  const subjectToSale = pickImportValue(row, ['Needs To Sell', 'Needs to Sell', 'needsToSell', 'Subject To Sale', 'subjectToSale'])
   const estimatedValue = Number(pickImportValue(row, ['Estimated Value', 'estimatedValue', 'Value', 'value']) || 0) || 0
+  const estimatedPropertyValue = pickImportValue(row, ['Estimated Property Value', 'estimatedPropertyValue', 'Estimated Value', 'estimatedValue'])
   const nextFollowUpDate = pickImportValue(row, ['Next Follow Up', 'nextFollowUpDate', 'Follow Up Date', 'followUpDate'])
   const notes = pickImportValue(row, ['Notes', 'notes', 'Message', 'message'])
-  const buyerNotes = normalizedAudience === 'buyer'
-    ? writeCanvassingQualificationNoteValue(
-        writeCanvassingQualificationNoteValue(
-          notes,
-          'Bathrooms',
-          pickImportValue(row, ['Bathrooms', 'bathrooms', 'Bathrooms Min', 'bathroomsMin', 'bathrooms_min']),
-        ),
-        'Current property',
-        pickImportValue(row, ['Current Property', 'currentProperty', 'Current Property Status', 'currentPropertyStatus']),
-      )
-    : notes
+  const importNotes = writeCanvassingQualificationNoteValue(
+    writeCanvassingQualificationNoteValue(
+      notes,
+      'Bathrooms',
+      pickImportValue(row, ['Bathrooms', 'bathrooms', 'Bathrooms Min', 'bathroomsMin', 'bathrooms_min']),
+    ),
+    'Current property',
+    pickImportValue(row, ['Current Property', 'currentProperty', 'Current Property Status', 'currentPropertyStatus']),
+  )
 
   return {
     organisationId,
@@ -478,17 +554,17 @@ function buildCanvassingImportPayload(row = {}, { audience = 'seller', assignedA
     prospectType: normalizedAudience === 'buyer' ? 'Buyer Prospect' : 'Seller Prospect',
     area,
     areaSuburb: area,
-    streetAddress: normalizedAudience === 'seller' ? streetAddress : '',
-    formattedAddress: normalizedAudience === 'seller' ? streetAddress : '',
+    streetAddress,
+    formattedAddress: streetAddress,
     propertyType,
     buyerStatus: normalizedAudience === 'buyer' ? pickImportValue(row, ['Buyer Status', 'buyerStatus', 'Status', 'status']) || 'New' : '',
     areaOfInterest: normalizedAudience === 'buyer' ? area : '',
     preferredPropertyType: normalizedAudience === 'buyer' ? propertyType : '',
-    budgetRange: normalizedAudience === 'buyer' ? budgetRange : '',
-    bedrooms: normalizedAudience === 'buyer' ? pickImportValue(row, ['Bedrooms', 'bedrooms']) : '',
-    financeStatus: normalizedAudience === 'buyer' ? pickImportValue(row, ['Finance Status', 'financeStatus']) : '',
-    timeframe: normalizedAudience === 'buyer' ? pickImportValue(row, ['Urgency', 'urgency', 'Timeframe', 'timeframe']) : '',
-    subjectToSale: normalizedAudience === 'buyer' ? pickImportValue(row, ['Needs To Sell', 'Needs to Sell', 'needsToSell', 'Subject To Sale', 'subjectToSale']) : '',
+    budgetRange,
+    bedrooms,
+    financeStatus,
+    timeframe,
+    subjectToSale,
     source,
     canvassingMethod: source,
     status: normalizedAudience === 'buyer'
@@ -500,11 +576,11 @@ function buildCanvassingImportPayload(row = {}, { audience = 'seller', assignedA
     estimatedValue,
     estimatedPropertyValue: normalizedAudience === 'buyer'
       ? budgetRange
-      : pickImportValue(row, ['Estimated Property Value', 'estimatedPropertyValue', 'Estimated Value', 'estimatedValue']),
+      : estimatedPropertyValue || budgetRange,
     sellingIntent: normalizedAudience === 'seller' ? pickImportValue(row, ['Selling Intent', 'sellingIntent']) : '',
     lastContactOutcome: normalizedAudience === 'seller' ? pickImportValue(row, ['Last Contact Outcome', 'lastContactOutcome']) : '',
     propertyOccupancy: normalizedAudience === 'seller' ? pickImportValue(row, ['Property Occupancy', 'propertyOccupancy']) : '',
-    notes: buyerNotes,
+    notes: importNotes,
     convertedLeadId: null,
     createdBy: currentAgentForWrites.id || currentAgentForWrites.label,
     createdAt: new Date().toISOString(),
@@ -639,6 +715,74 @@ function ProspectOwnerCell({ agent }) {
       </span>
       <span className="truncate text-sm font-semibold text-[#142132]">{resolved.name || 'Unassigned'}</span>
     </span>
+  )
+}
+
+function ProspectAssignmentAgentDropdown({
+  agents = [],
+  selectedCount = 0,
+  assigning = false,
+  onAssign,
+}) {
+  const [open, setOpen] = useState(false)
+  const disabled = assigning || selectedCount < 1 || !agents.length
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-55 lg:w-auto"
+        onClick={() => setOpen((previous) => !previous)}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <UserPlus size={15} />
+        {assigning ? 'Assigning...' : selectedCount ? `Assign ${selectedCount}` : 'Assign selected'}
+        <ChevronDown size={14} className={`transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open ? (
+        <div
+          className="absolute right-0 z-[65] mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-[16px] border border-[#d8e3ef] bg-white p-2 text-left shadow-[0_22px_55px_rgba(15,39,66,0.18)]"
+          role="listbox"
+        >
+          <div className="border-b border-slate-100 px-2 pb-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Send follow-up to</p>
+            <p className="mt-0.5 text-xs text-slate-500">{selectedCount} prospect{selectedCount === 1 ? '' : 's'} selected</p>
+          </div>
+          <div className="mt-2 max-h-[286px] overflow-y-auto">
+            {agents.map((agent) => {
+              const avatarUrl = getAgentAvatarUrl(agent)
+              return (
+                <button
+                  key={agent.id || agent.email}
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition hover:bg-[#f7fafc]"
+                  role="option"
+                  aria-selected="false"
+                  onClick={() => {
+                    setOpen(false)
+                    onAssign?.(agent)
+                  }}
+                >
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#dce9f4] text-xs font-bold text-[#26445c] ring-2 ring-white">
+                    {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : getAgentInitials(agent)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-[#162334]">{agent.name || agent.email || 'Agent'}</span>
+                    <span className="mt-0.5 block truncate text-xs font-medium text-[#6b7d93]">{agent.email || 'No email on profile'}</span>
+                  </span>
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#eef4fb] text-[#8aa0b4]">
+                    <Check size={14} />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -1230,7 +1374,7 @@ function CanvassingImportModal({ open, audience = 'seller', importing = false, r
                 <table className="min-w-full text-left text-sm">
                   <thead className="bg-white text-xs uppercase tracking-[0.08em] text-slate-400">
                     <tr>
-                      {['Row', 'Name', 'Phone', 'Email', 'Source', normalizedAudience === 'buyer' ? 'Area Interest' : 'Property / Area', normalizedAudience === 'buyer' ? 'Budget' : 'Selling Intent'].map((header) => (
+                      {['Row', 'Name', 'Phone', 'Email', 'Assigned', 'Source', normalizedAudience === 'buyer' ? 'Area Interest' : 'Property / Area', normalizedAudience === 'buyer' ? 'Budget' : 'Selling Intent'].map((header) => (
                         <th key={header} className="px-4 py-3 font-semibold">{header}</th>
                       ))}
                     </tr>
@@ -1242,6 +1386,7 @@ function CanvassingImportModal({ open, audience = 'seller', importing = false, r
                         <td className="px-4 py-3 font-semibold text-slate-950">{getImportPreviewName(row)}</td>
                         <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Phone', 'phone', 'Mobile', 'mobile']) || '—'}</td>
                         <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Email', 'email']) || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{getCanvassingImportAssigneeValue(row) || 'Current agent'}</td>
                         <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Source', 'source']) || (normalizedAudience === 'buyer' ? 'Website' : 'Cold Call')}</td>
                         <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Area', 'area', 'Street Address', 'streetAddress']) || '—'}</td>
                         <td className="px-4 py-3 text-slate-600">{normalizedAudience === 'buyer' ? pickImportValue(row, ['Budget Range', 'budgetRange', 'Budget', 'budget']) || '—' : pickImportValue(row, ['Selling Intent', 'sellingIntent']) || '—'}</td>
@@ -1305,6 +1450,8 @@ function PipelineCanvassingPage() {
   const [importingProspects, setImportingProspects] = useState(false)
   const [importResult, setImportResult] = useState(null)
   const [selectedProspectId, setSelectedProspectId] = useState('')
+  const [selectedProspectIds, setSelectedProspectIds] = useState([])
+  const [assigningProspects, setAssigningProspects] = useState(false)
   const [prospectView, setProspectView] = useState(() => {
     if (typeof window === 'undefined') return 'seller'
     const stored = normalizeKey(window.sessionStorage.getItem(CANVASSING_PROSPECT_VIEW_STORAGE_KEY))
@@ -1780,7 +1927,7 @@ function PipelineCanvassingPage() {
     }
   }), [agentOptions, scopedProspects])
 
-  const filteredProspects = useMemo(() => {
+	  const filteredProspects = useMemo(() => {
     const rows = prospectRows.filter((prospect) => {
       const audienceMatch = resolveProspectAudience(prospect) === prospectView
       const searchMatch = filters.search
@@ -1846,10 +1993,33 @@ function PipelineCanvassingPage() {
       const leftTime = new Date(left?.createdAt || 0).getTime()
       const rightTime = new Date(right?.createdAt || 0).getTime()
       return rightTime - leftTime
-    })
-    }, [filters.area, filters.assigned, filters.financeStatus, filters.method, filters.search, filters.sellingIntent, filters.sort, filters.status, prospectView, prospectRows])
+	    })
+	    }, [filters.area, filters.assigned, filters.financeStatus, filters.method, filters.search, filters.sellingIntent, filters.sort, filters.status, prospectView, prospectRows])
 
-  const availableSourceOptions = useMemo(() => {
+  const selectedProspectIdSet = useMemo(
+    () => new Set(selectedProspectIds.map((id) => normalizeText(id)).filter(Boolean)),
+    [selectedProspectIds],
+  )
+
+  const visibleProspectIds = useMemo(
+    () => filteredProspects.map((prospect) => normalizeText(prospect?.id)).filter(Boolean),
+    [filteredProspects],
+  )
+
+  const selectedProspectsForAssignment = useMemo(
+    () => prospectRows.filter((prospect) => selectedProspectIdSet.has(normalizeText(prospect?.id))),
+    [prospectRows, selectedProspectIdSet],
+  )
+
+  const allVisibleProspectsSelected = visibleProspectIds.length > 0 && visibleProspectIds.every((id) => selectedProspectIdSet.has(id))
+  const selectedProspectCount = selectedProspectsForAssignment.length
+
+  useEffect(() => {
+    const availableIds = new Set(prospectRows.map((prospect) => normalizeText(prospect?.id)).filter(Boolean))
+    setSelectedProspectIds((previous) => previous.filter((id) => availableIds.has(normalizeText(id))))
+  }, [prospectRows])
+
+	  const availableSourceOptions = useMemo(() => {
     const list = Array.from(new Set(prospectRows.map((prospect) => prospect?.resolvedSourceKey || 'unknown')))
     const ordered = CANVASSING_SOURCE_PILL_ORDER.filter((key) => list.includes(key))
     const extras = list.filter((key) => !ordered.includes(key))
@@ -2038,12 +2208,39 @@ function PipelineCanvassingPage() {
   async function handleCreateProspect(event) {
     event.preventDefault()
     if (!organisationId) return
-    if (!normalizeText(prospectForm.firstName) && !normalizeText(prospectForm.lastName)) {
-      setError('Add at least a first name or last name.')
-      return
-    }
-    if (!normalizeText(prospectForm.phone) && !normalizeText(prospectForm.email)) {
-      setError('Add at least one contact method.')
+    const hasProspectData = [
+      prospectForm.firstName,
+      prospectForm.lastName,
+      prospectForm.phone,
+      prospectForm.email,
+      prospectForm.area,
+      prospectForm.areaSuburb,
+      prospectForm.areaOfInterest,
+      prospectForm.streetAddress,
+      prospectForm.formattedAddress,
+      prospectForm.city,
+      prospectForm.province,
+      prospectForm.postalCode,
+      prospectForm.propertyType,
+      prospectForm.preferredPropertyType,
+      prospectForm.budgetRange,
+      prospectForm.bedrooms,
+      prospectForm.financeStatus,
+      prospectForm.timeframe,
+      prospectForm.subjectToSale,
+      prospectForm.nextFollowUpDate,
+      prospectForm.followUpNote,
+      prospectForm.estimatedValue,
+      prospectForm.estimatedPropertyValue,
+      prospectForm.sellingIntent,
+      prospectForm.lastContactOutcome,
+      prospectForm.propertyOccupancy,
+      prospectForm.notes,
+      prospectForm.enquiryListingId,
+      prospectForm.linkedListingId,
+    ].some((value) => Boolean(normalizeText(value)))
+    if (!hasProspectData) {
+      setError('Add at least one prospect detail before saving.')
       return
     }
     if (!normalizeText(prospectForm.assignedAgentId || currentAgentIdentity)) {
@@ -2095,11 +2292,11 @@ function PipelineCanvassingPage() {
       areaOfInterest: prospectAudience === 'buyer' ? normalizeText(prospectForm.areaOfInterest || prospectForm.areaSuburb || prospectForm.area) : '',
       areaOfInterestPlaceId: prospectAudience === 'buyer' ? normalizeText(prospectForm.areaOfInterestPlaceId || prospectForm.areaSuburbPlaceId) : '',
       preferredPropertyType: prospectAudience === 'buyer' ? normalizeText(prospectForm.preferredPropertyType || prospectForm.propertyType || selectedListing?.propertyType) : '',
-      budgetRange: prospectAudience === 'buyer' ? normalizeText(prospectForm.budgetRange || prospectForm.estimatedPropertyValue) : '',
-      bedrooms: prospectAudience === 'buyer' ? normalizeText(prospectForm.bedrooms) : '',
-      financeStatus: prospectAudience === 'buyer' ? normalizeText(prospectForm.financeStatus) : '',
-      timeframe: prospectAudience === 'buyer' ? normalizeText(prospectForm.timeframe) : '',
-      subjectToSale: prospectAudience === 'buyer' ? normalizeText(prospectForm.subjectToSale) : '',
+      budgetRange: normalizeText(prospectForm.budgetRange || (prospectAudience === 'buyer' ? prospectForm.estimatedPropertyValue : '')),
+      bedrooms: normalizeText(prospectForm.bedrooms),
+      financeStatus: normalizeText(prospectForm.financeStatus),
+      timeframe: normalizeText(prospectForm.timeframe),
+      subjectToSale: normalizeText(prospectForm.subjectToSale),
       source: normalizeText(prospectForm.source || prospectForm.canvassingMethod) || 'Other',
       canvassingMethod: normalizeText(prospectForm.canvassingMethod || prospectForm.source) || 'Other',
       status: prospectAudience === 'buyer'
@@ -2199,11 +2396,13 @@ function PipelineCanvassingPage() {
     const importedActivities = []
     const failedRows = []
     const audience = prospectView === 'buyer' ? 'buyer' : 'seller'
-    const assignedAgent = resolveAgentById(currentAgentIdentity)
+    const fallbackAssignedAgent = resolveAgentById(currentAgentIdentity)
 
     for (const row of rows) {
       const rowNumber = row?.__rowNumber || imported.length + failedRows.length + 2
       try {
+        if (!hasCanvassingImportData(row)) continue
+        const assignedAgent = resolveImportedAssignedAgent(row, agentOptions, fallbackAssignedAgent)
         const payload = buildCanvassingImportPayload(row, {
           audience,
           assignedAgent,
@@ -2211,13 +2410,6 @@ function PipelineCanvassingPage() {
           currentAgent,
           organisationId,
         })
-
-        if (!normalizeText(payload.firstName) && !normalizeText(payload.lastName)) {
-          throw new Error('Name is required.')
-        }
-        if (!normalizeText(payload.phone) && !normalizeText(payload.email)) {
-          throw new Error('Phone or email is required.')
-        }
 
         const created = await createCanvassingProspect(organisationId, payload)
         const createdActivity = await createCanvassingActivity(organisationId, {
@@ -2236,6 +2428,8 @@ function PipelineCanvassingPage() {
             financeStatus: payload.financeStatus,
             timeframe: payload.timeframe,
             sellingIntent: payload.sellingIntent,
+            assignedAgentEmail: payload.assignedAgentEmail,
+            assignedAgentName: payload.assignedAgentName,
             importRowNumber: rowNumber,
           },
           activityDate: new Date().toISOString(),
@@ -2303,11 +2497,11 @@ function PipelineCanvassingPage() {
       areaOfInterest: selectedAudience === 'buyer' ? nextArea : '',
       areaOfInterestPlaceId: selectedAudience === 'buyer' ? normalizeText(selectedProspect.areaOfInterestPlaceId || selectedProspect.areaSuburbPlaceId) : '',
       preferredPropertyType: selectedAudience === 'buyer' ? nextPropertyType : '',
-      budgetRange: selectedAudience === 'buyer' ? nextBudgetRange : '',
-      bedrooms: selectedAudience === 'buyer' ? normalizeText(selectedProspect.bedrooms) : '',
-      financeStatus: selectedAudience === 'buyer' ? normalizeText(selectedProspect.financeStatus) : '',
-      timeframe: selectedAudience === 'buyer' ? normalizeText(selectedProspect.timeframe) : '',
-      subjectToSale: selectedAudience === 'buyer' ? normalizeText(selectedProspect.subjectToSale) : '',
+      budgetRange: normalizeText(selectedProspect.budgetRange || (selectedAudience === 'buyer' ? selectedProspect.estimatedPropertyValue : '')),
+      bedrooms: normalizeText(selectedProspect.bedrooms),
+      financeStatus: normalizeText(selectedProspect.financeStatus),
+      timeframe: normalizeText(selectedProspect.timeframe),
+      subjectToSale: normalizeText(selectedProspect.subjectToSale),
       source: normalizeText(selectedProspect.source || selectedProspect.canvassingMethod) || 'Other',
       canvassingMethod: normalizeText(selectedProspect.canvassingMethod || selectedProspect.source) || 'Other',
       status: nextStatus,
@@ -2334,6 +2528,93 @@ function PipelineCanvassingPage() {
       setError(saveError?.message || 'Unable to update prospect.')
     } finally {
       setIsProspectSaving(false)
+    }
+  }
+
+  function toggleProspectSelection(prospectId, selected) {
+    const id = normalizeText(prospectId)
+    if (!id) return
+    setSelectedProspectIds((previous) => {
+      const next = new Set(previous.map((item) => normalizeText(item)).filter(Boolean))
+      if (selected) next.add(id)
+      else next.delete(id)
+      return [...next]
+    })
+  }
+
+  function toggleAllVisibleProspects(selected) {
+    setSelectedProspectIds((previous) => {
+      const next = new Set(previous.map((item) => normalizeText(item)).filter(Boolean))
+      for (const id of visibleProspectIds) {
+        if (selected) next.add(id)
+        else next.delete(id)
+      }
+      return [...next]
+    })
+  }
+
+  async function handleAssignSelectedProspects(agent) {
+    const assignedAgent = resolveAgentById(agent?.id || agent?.userId || agent?.email)
+    const targetProspects = selectedProspectsForAssignment
+    if (!organisationId || !targetProspects.length) return
+    if (!normalizeText(assignedAgent?.id || assignedAgent?.email)) {
+      setError('Choose an agent before reassigning prospects.')
+      return
+    }
+
+    setAssigningProspects(true)
+    setError('')
+    setMessage('')
+    try {
+      const updatedProspects = []
+      const assignmentActivities = []
+
+      for (const prospect of targetProspects) {
+        const previousAgentName = normalizeText(prospect.assignedAgentName || prospect.assignedProfile?.name || prospect.assignedAgentEmail) || 'Unassigned'
+        const payload = {
+          ...prospect,
+          assignedAgentId: assignedAgent.id || null,
+          assignedUserId: assignedAgent.userId || assignedAgent.id || null,
+          assignedAgentName: assignedAgent.name || null,
+          assignedAgentEmail: assignedAgent.email || null,
+          branchId: assignedAgent.branchId || null,
+          updatedAt: new Date().toISOString(),
+        }
+        const updated = await updateCanvassingProspect(organisationId, prospect.id, payload)
+        updatedProspects.push(updated || payload)
+
+        const activity = await createCanvassingActivity(organisationId, {
+          organisationId,
+          prospectId: prospect.id,
+          agentId: currentAgentForWrites.id || null,
+          agentName: currentAgent.fullName || null,
+          activityType: 'Reassigned',
+          activityNote: `Prospect reassigned from ${previousAgentName} to ${assignedAgent.name || assignedAgent.email || 'agent'}`,
+          outcome: assignedAgent.id || assignedAgent.email || '',
+          metadata: {
+            previousAgentName,
+            previousAgentId: prospect.assignedAgentId || prospect.assignedUserId || '',
+            previousAgentEmail: prospect.assignedAgentEmail || '',
+            assignedAgentId: assignedAgent.id || '',
+            assignedAgentEmail: assignedAgent.email || '',
+            assignedAgentName: assignedAgent.name || '',
+          },
+          activityDate: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          createdBy: currentAgentForWrites.id || currentAgentForWrites.label,
+        }).catch(() => null)
+        if (activity) assignmentActivities.push(activity)
+      }
+
+      const updatedById = new Map(updatedProspects.map((prospect) => [normalizeText(prospect?.id), prospect]))
+      setProspects((previous) => previous.map((row) => updatedById.get(normalizeText(row?.id)) || row))
+      setActivities((previous) => [...assignmentActivities, ...previous])
+      setSelectedProspectIds([])
+      setMessage(`${updatedProspects.length} prospect${updatedProspects.length === 1 ? '' : 's'} reassigned to ${assignedAgent.name || assignedAgent.email || 'agent'}.`)
+    } catch (assignError) {
+      setError(assignError?.message || 'Unable to reassign selected prospects.')
+    } finally {
+      setAssigningProspects(false)
     }
   }
 
@@ -3641,7 +3922,7 @@ function PipelineCanvassingPage() {
         ))}
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 bg-white p-4">
           <div className="grid gap-3">
             <div className="grid gap-3 lg:grid-cols-[minmax(260px,420px)_auto] lg:items-center lg:justify-between">
@@ -3650,11 +3931,17 @@ function PipelineCanvassingPage() {
                 placeholder="Search prospects..."
                 value={filters.search}
                 onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
-              />
-              <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:justify-end">
-                <Button
-                  type="button"
-                  className="min-h-11 w-full justify-center whitespace-nowrap rounded-xl px-4 lg:w-auto"
+	              />
+	              <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:justify-end">
+                <ProspectAssignmentAgentDropdown
+                  agents={agentOptions}
+                  selectedCount={selectedProspectCount}
+                  assigning={assigningProspects}
+                  onAssign={handleAssignSelectedProspects}
+                />
+	                <Button
+	                  type="button"
+	                  className="min-h-11 w-full justify-center whitespace-nowrap rounded-xl px-4 lg:w-auto"
                   onClick={() => {
                     resetProspectForm()
                     setProspectForm((previous) => ({
@@ -3782,10 +4069,21 @@ function PipelineCanvassingPage() {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] border-collapse text-sm">
-            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-              <tr>
-                <th className="w-[24%] px-3 py-3">Prospect</th>
+	          <table className="w-full min-w-[960px] border-collapse text-sm">
+	            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+	              <tr>
+	                <th className="w-[24%] px-3 py-3">
+                    <span className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 accent-[#1f4f78]"
+                        checked={allVisibleProspectsSelected}
+                        onChange={(event) => toggleAllVisibleProspects(event.target.checked)}
+                        aria-label="Select all visible prospects"
+                      />
+                      Prospect
+                    </span>
+                  </th>
                 <th className="w-[13%] px-3 py-3">Source</th>
                 <th className="w-[25%] px-3 py-3">{prospectView === 'seller' ? 'Property / Area' : 'Property Interest'}</th>
                 <th className="w-[23%] px-3 py-3">Stage / Next Step</th>
@@ -3828,15 +4126,25 @@ function PipelineCanvassingPage() {
                   const actionMenuOpen = openActionMenuId === normalizeText(prospect.id)
 
                   return (
-                    <tr
-                      key={prospect.id}
-                      className="h-[88px] cursor-pointer text-slate-700 transition hover:bg-slate-50"
-                      onClick={() => handleOpenProspectDetail(prospect)}
-                    >
-                      <td className="px-3 py-3 align-top">
-                        <div className="flex min-w-0 items-start gap-3">
-                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
-                            {getProspectInitials(prospect)}
+	                    <tr
+	                      key={prospect.id}
+	                      className={`h-[88px] cursor-pointer text-slate-700 transition hover:bg-slate-50 ${
+                          selectedProspectIdSet.has(normalizeText(prospect.id)) ? 'bg-[#f5f9fd]' : ''
+                        }`}
+	                      onClick={() => handleOpenProspectDetail(prospect)}
+	                    >
+	                      <td className="px-3 py-3 align-top">
+	                        <div className="flex min-w-0 items-start gap-3">
+                            <input
+                              type="checkbox"
+                              className="mt-2 h-4 w-4 shrink-0 rounded border-slate-300 accent-[#1f4f78]"
+                              checked={selectedProspectIdSet.has(normalizeText(prospect.id))}
+                              onChange={(event) => toggleProspectSelection(prospect.id, event.target.checked)}
+                              onClick={(event) => event.stopPropagation()}
+                              aria-label={`Select ${displayName}`}
+                            />
+	                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
+	                            {getProspectInitials(prospect)}
                           </div>
                           <div className="min-w-0">
                             <p className="truncate text-[0.95rem] font-semibold text-slate-900">{displayName}</p>
@@ -3942,24 +4250,36 @@ function PipelineCanvassingPage() {
               const actionMenuOpen = openActionMenuId === normalizeText(prospect.id)
 
               return (
-                <div
-                  key={prospect.id}
-                  className="cursor-pointer px-4 py-3 transition hover:bg-slate-50"
-                  onClick={() => handleOpenProspectDetail(prospect)}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
-                      <p className="mt-1 text-xs text-slate-500">{prospectTypeLabel}</p>
-                      {prospectView === 'buyer' ? <p className="mt-0.5 text-xs text-slate-500">{addressLine}</p> : null}
-                      {addressLine2 ? <p className="text-xs text-slate-500">{addressLine2}</p> : null}
-                      {prospectView === 'buyer' ? <p className="text-xs text-slate-500">{interestLine}</p> : null}
-                      <p className="mt-1 text-sm font-semibold text-slate-900">{estimatedValueLabel}</p>
-                      {prospectView === 'buyer' && prospect.resolvedBedrooms ? (
-                        <p className="text-xs text-slate-500">Bedrooms: {prospect.resolvedBedrooms}</p>
-                      ) : null}
-                      {sellerContextLine ? <p className="text-xs text-slate-500">{sellerContextLine}</p> : null}
-                    </div>
+	                <div
+	                  key={prospect.id}
+	                  className={`cursor-pointer px-4 py-3 transition hover:bg-slate-50 ${
+                      selectedProspectIdSet.has(normalizeText(prospect.id)) ? 'bg-[#f5f9fd]' : ''
+                    }`}
+	                  onClick={() => handleOpenProspectDetail(prospect)}
+	                >
+	                  <div className="flex items-start justify-between gap-3">
+	                    <div className="flex min-w-0 gap-3">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 accent-[#1f4f78]"
+                          checked={selectedProspectIdSet.has(normalizeText(prospect.id))}
+                          onChange={(event) => toggleProspectSelection(prospect.id, event.target.checked)}
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label={`Select ${displayName}`}
+                        />
+                        <div className="min-w-0">
+	                      <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
+	                      <p className="mt-1 text-xs text-slate-500">{prospectTypeLabel}</p>
+	                      {prospectView === 'buyer' ? <p className="mt-0.5 text-xs text-slate-500">{addressLine}</p> : null}
+	                      {addressLine2 ? <p className="text-xs text-slate-500">{addressLine2}</p> : null}
+	                      {prospectView === 'buyer' ? <p className="text-xs text-slate-500">{interestLine}</p> : null}
+	                      <p className="mt-1 text-sm font-semibold text-slate-900">{estimatedValueLabel}</p>
+	                      {prospectView === 'buyer' && prospect.resolvedBedrooms ? (
+	                        <p className="text-xs text-slate-500">Bedrooms: {prospect.resolvedBedrooms}</p>
+	                      ) : null}
+	                      {sellerContextLine ? <p className="text-xs text-slate-500">{sellerContextLine}</p> : null}
+                        </div>
+	                    </div>
                     <div className="relative shrink-0" onClick={(event) => event.stopPropagation()}>
                       <button
                         type="button"

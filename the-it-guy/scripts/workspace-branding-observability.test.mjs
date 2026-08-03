@@ -13,6 +13,7 @@ try {
     getWorkspaceBrandingMetricDedupeKey,
     trackWorkspaceBrandingMetric,
   } = await server.ssrLoadModule('/src/services/observability/monitoring.js')
+  const { redactTelemetryMetadata } = await server.ssrLoadModule('/src/services/observability/telemetry.js')
 
   const context = {
     userId: '',
@@ -50,6 +51,21 @@ try {
   const second = await trackWorkspaceBrandingMetric('workspace_branding_phase5_test', context)
   assert.equal(first.persisted, false)
   assert.equal(second.reason, 'deduplicated')
+
+  const redactedBreadcrumbs = redactTelemetryMetadata({
+    breadcrumbs: [{
+      event: 'bridge_boot_failed',
+      eventName: 'bridge_boot_failed',
+      metadata: {
+        retryReason: 'workspace_timeout',
+        email: 'agent@example.test',
+      },
+    }],
+  })
+  assert.equal(redactedBreadcrumbs.breadcrumbs[0].event, 'bridge_boot_failed')
+  assert.equal(redactedBreadcrumbs.breadcrumbs[0].eventName, '[redacted]')
+  assert.equal(redactedBreadcrumbs.breadcrumbs[0].metadata.retryReason, 'workspace_timeout')
+  assert.equal(redactedBreadcrumbs.breadcrumbs[0].metadata.email, '[redacted]')
 
   console.log('workspace branding observability tests passed')
 } finally {

@@ -3,6 +3,7 @@ import {
   CreditCard,
   FileText,
   History,
+  LayoutDashboard,
   Mail,
   Megaphone,
   Palette,
@@ -18,6 +19,13 @@ export const SETTINGS_NAV_GROUPS = [
     title: 'Your account',
     description: 'Personal identity and sign-in security.',
     items: [
+      {
+        to: '/settings',
+        label: 'Overview',
+        description: 'Workspace settings summary and quick links.',
+        icon: LayoutDashboard,
+        keywords: 'settings overview summary workspace',
+      },
       {
         to: '/settings/profile',
         label: 'Profile',

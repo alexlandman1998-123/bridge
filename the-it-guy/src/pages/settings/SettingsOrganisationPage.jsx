@@ -1,9 +1,11 @@
 import {
   Camera,
+  Building2,
   CheckCircle2,
   ChevronRight,
   Circle,
   Copy,
+  CreditCard,
   ExternalLink,
   Eye,
   FileText,
@@ -175,10 +177,10 @@ const BRAND_ASSET_TARGETS = {
 }
 
 const BRAND_COLOUR_CONTROLS = [
-  { key: 'primary', label: 'Primary', fallback: '#274C69' },
-  { key: 'secondary', label: 'Secondary', fallback: '#10273A' },
-  { key: 'accent', label: 'Accent', fallback: '#F7CF22' },
-  { key: 'neutral', label: 'Neutral', fallback: '#F7F8FA' },
+  { key: 'primary', label: 'Primary', fallback: '#274C69', description: 'Used for buttons and headers' },
+  { key: 'secondary', label: 'Secondary', fallback: '#10273A', description: 'Text and dark UI elements' },
+  { key: 'accent', label: 'Accent', fallback: '#F7CF22', description: 'Links, highlights and badges' },
+  { key: 'neutral', label: 'Neutral', fallback: '#F7F8FA', description: 'Backgrounds and surfaces' },
 ]
 
 const ONBOARDING_LANDING_COLOUR_CONTROLS = [
@@ -459,20 +461,52 @@ function getConfiguredBrandAssetCount(branding = {}) {
   return Object.keys(BRAND_ASSET_TARGETS).filter((targetKey) => normalizeText(branding?.[targetKey])).length
 }
 
-function getBrandHealthScore({ branding = {}, brandColours = {}, publicBranding = {} } = {}) {
-  const checks = [
-    normalizeText(branding.logoLight),
-    normalizeText(branding.logoDark),
-    normalizeText(branding.logoIcon),
-    getBrandColourValue(brandColours, 'primary', ''),
-    getBrandColourValue(brandColours, 'secondary', ''),
-    getBrandColourValue(brandColours, 'accent', ''),
-    getBrandColourValue(brandColours, 'neutral', ''),
-    normalizeText(publicBranding.website),
-    normalizeText(publicBranding.supportEmail),
-  ]
+function getBrandHealthScore({ branding = {}, brandColours = {}, publicBranding = {}, showPublicIntake = false, publicIntakeDraft = null } = {}) {
+  const checks = getBrandHealthChecks({ branding, brandColours, publicBranding, showPublicIntake, publicIntakeDraft }).map((item) => item.complete)
   const completed = checks.filter(Boolean).length
   return Math.round((completed / checks.length) * 100)
+}
+
+function getBrandHealthChecks({ branding = {}, brandColours = {}, publicBranding = {}, showPublicIntake = false, publicIntakeDraft = null } = {}) {
+  return [
+    {
+      key: 'logo-assets',
+      label: 'Logo & assets',
+      complete: Boolean(normalizeText(branding.logoLight) && normalizeText(branding.logoDark) && normalizeText(branding.logoIcon)),
+    },
+    {
+      key: 'colours',
+      label: 'Colours',
+      complete: BRAND_COLOUR_CONTROLS.every((control) => Boolean(getBrandColourValue(brandColours, control.key, ''))),
+    },
+    {
+      key: 'client-portals',
+      label: 'Client portals',
+      complete: Boolean(normalizeText(branding.logoLight || branding.logoIcon)),
+    },
+    {
+      key: 'email-branding',
+      label: 'Email branding',
+      complete: Boolean(normalizeText(branding.logoDark || branding.logoLight) && normalizeText(publicBranding.supportEmail)),
+    },
+    {
+      key: 'document-branding',
+      label: 'Document branding',
+      complete: Boolean(normalizeText(branding.logoLight) && getBrandColourValue(brandColours, 'primary', '')),
+    },
+    {
+      key: 'favicon',
+      label: 'Favicon',
+      complete: Boolean(normalizeText(branding.favicon || branding.logoIcon)),
+    },
+    ...(showPublicIntake
+      ? [{
+          key: 'public-intake',
+          label: 'Public intake',
+          complete: publicIntakeDraft?.status === 'active',
+        }]
+      : []),
+  ]
 }
 
 function getBrandLastUpdatedLabel(value = '') {
@@ -552,6 +586,66 @@ function OrganisationField({ label, id, badge, className = '', children }) {
   )
 }
 
+function SettingsToast({ message }) {
+  if (!message) return null
+  return (
+    <div className="fixed bottom-6 right-6 z-40 max-w-sm rounded-[14px] border border-[#ccead8] bg-white px-4 py-3 text-sm font-semibold text-[#1f7a45] shadow-[0_18px_42px_rgba(15,23,42,0.14)]" role="status">
+      {message}
+    </div>
+  )
+}
+
+function BrandingTabLink({ icon: Icon, label, to, active = false, onClick }) {
+  const content = (
+    <>
+      <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
+      <span className="whitespace-nowrap">{label}</span>
+    </>
+  )
+  const className = [
+    'relative inline-flex min-h-12 items-center gap-2 border-b-2 px-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9dd9bd]',
+    active
+      ? 'border-[#0f7f4f] text-[#0f7f4f]'
+      : 'border-transparent text-[#24364b] hover:border-[#cfe8dc] hover:text-[#0f7f4f]',
+  ].join(' ')
+
+  if (to.startsWith('#')) {
+    return <a href={to} className={className} onClick={onClick}>{content}</a>
+  }
+
+  return <Link to={to} className={className} onClick={onClick}>{content}</Link>
+}
+
+function BrandingSubNav({ activeKey = 'overview', onSelect }) {
+  const tabs = [
+    { key: 'overview', label: 'Overview', to: '#brand-overview', icon: Palette },
+    { key: 'identity', label: 'Identity', to: '#identity', icon: Camera },
+    { key: 'colours-typography', label: 'Colours & Typography', to: '#colours-typography', icon: Type },
+    { key: 'client-experience', label: 'Client Experience', to: '#client-experience', icon: Monitor },
+    { key: 'documents', label: 'Documents', to: '#documents', icon: FileText },
+    { key: 'permissions', label: 'Permissions', to: '/settings/users', icon: ShieldCheck },
+    { key: 'billing', label: 'Billing', to: '/settings/billing', icon: CreditCard },
+    { key: 'activity', label: 'Activity', to: '/settings/activity', icon: RotateCcw },
+  ]
+
+  return (
+    <nav className="-mx-4 overflow-x-auto border-b border-[#dfe8f1] px-4 sm:mx-0 sm:px-0" aria-label="Branding sections">
+      <div className="flex min-w-max items-center gap-7">
+        {tabs.map((tab) => (
+          <BrandingTabLink
+            key={tab.key}
+            icon={tab.icon}
+            label={tab.label}
+            to={tab.to}
+            active={activeKey === tab.key}
+            onClick={() => onSelect?.(tab.key)}
+          />
+        ))}
+      </div>
+    </nav>
+  )
+}
+
 function OrganisationSwitch({ checked = false, disabled = false, label, onChange }) {
   return (
     <button
@@ -597,75 +691,132 @@ function LogoMark({ logoUrl, name }) {
 function BrandHero({
   organisationName,
   primaryLogo,
-  configuredAssetCount,
+  roleLabel,
+  publicUrl,
+  organisationTypeLabel,
   brandHealth,
-  lastUpdatedLabel,
+  healthChecks = [],
   canEdit,
   uploading = false,
   onPreview,
   onUpload,
+  onHistory,
 }) {
+  const circumference = 2 * Math.PI * 46
+  const progressOffset = circumference - (Math.max(0, Math.min(100, brandHealth)) / 100) * circumference
+
   return (
-    <section className="overflow-hidden rounded-[24px] border border-[#dfe8f1] bg-white shadow-[0_18px_46px_rgba(15,23,42,0.06)]">
-      <div className="grid gap-6 p-5 sm:p-6 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-center">
-        <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center">
-          <LogoMark logoUrl={primaryLogo} name={organisationName} />
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0f7f4f]">Brand Assets</p>
-            <h2 className="mt-2 text-[1.5rem] font-semibold leading-tight text-[#17233a]">{organisationName}</h2>
-            <div className="mt-4 grid gap-3 text-sm text-[#60758d] sm:grid-cols-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8fa5]">Last Updated</p>
-                <p className="mt-1 font-semibold text-[#24364b]">{lastUpdatedLabel}</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8fa5]">Assets Configured</p>
-                <p className="mt-1 font-semibold text-[#24364b]">{configuredAssetCount} Assets Configured</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8fa5]">Brand Health</p>
-                <p className="mt-1 font-semibold text-[#24364b]">{brandHealth}%</p>
+    <section id="brand-overview" className="scroll-mt-24 overflow-hidden rounded-[24px] border border-[#dfe8f1] bg-white shadow-[0_18px_46px_rgba(15,23,42,0.06)]">
+      <div className="grid gap-7 p-5 sm:p-7 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-stretch">
+        <div className="flex min-w-0 flex-col gap-6">
+          <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center">
+            <LogoMark logoUrl={primaryLogo} name={organisationName} />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[1.65rem] font-semibold leading-tight text-[#17233a]">{organisationName}</h2>
+              <div className="mt-5 grid gap-4 text-sm text-[#60758d] md:grid-cols-3">
+                <div className="flex gap-2">
+                  <UsersRound className="mt-0.5 h-4 w-4 shrink-0 text-[#40566d]" strokeWidth={2} />
+                  <span>
+                    <span className="block text-xs font-semibold text-[#7b8fa5]">Role</span>
+                    <span className="mt-1 block font-semibold capitalize text-[#24364b]">{roleLabel || 'Workspace admin'}</span>
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Globe2 className="mt-0.5 h-4 w-4 shrink-0 text-[#40566d]" strokeWidth={2} />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold text-[#7b8fa5]">Agency URL</span>
+                    <span className="mt-1 flex min-w-0 items-center gap-1 font-semibold text-[#24364b]">
+                      <span className="truncate">{publicUrl || 'Not configured'}</span>
+                      {publicUrl ? <ExternalLink className="h-3.5 w-3.5 shrink-0" strokeWidth={2} /> : null}
+                    </span>
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-[#40566d]" strokeWidth={2} />
+                  <span>
+                    <span className="block text-xs font-semibold text-[#7b8fa5]">Industry</span>
+                    <span className="mt-1 block font-semibold text-[#24364b]">{organisationTypeLabel || 'Real Estate'}</span>
+                  </span>
+                </div>
               </div>
             </div>
-            <div className="mt-5 flex flex-wrap gap-2">
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            {canEdit ? (
+              <label className="inline-flex h-12 cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#0f7f4f] bg-[#0f7f4f] px-5 text-sm font-semibold text-white shadow-[0_10px_18px_rgba(15,127,79,0.18)] transition hover:bg-[#0d6f45]">
+                <UploadCloud className="h-4 w-4" strokeWidth={2} />
+                {uploading ? 'Uploading...' : 'Upload Assets'}
+                <input
+                  type="file"
+                  accept="image/png,image/svg+xml,image/jpeg,image/webp"
+                  className="sr-only"
+                  disabled={uploading}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    if (file) void onUpload?.(file)
+                    event.target.value = ''
+                  }}
+                />
+              </label>
+            ) : null}
               <button
                 type="button"
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#24364b] shadow-[0_6px_16px_rgba(15,23,42,0.04)] transition hover:bg-[#f7fafc]"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-5 text-sm font-semibold text-[#24364b] shadow-[0_6px_16px_rgba(15,23,42,0.04)] transition hover:bg-[#f7fafc]"
                 onClick={onPreview}
               >
                 <Eye className="h-4 w-4" strokeWidth={2} />
                 Preview Brand
               </button>
-              {canEdit ? (
-                <label className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#0f7f4f] bg-[#0f7f4f] px-4 text-sm font-semibold text-white shadow-[0_10px_18px_rgba(15,127,79,0.18)] transition hover:bg-[#0d6f45]">
-                  <UploadCloud className="h-4 w-4" strokeWidth={2} />
-                  {uploading ? 'Uploading...' : 'Upload Assets'}
-                  <input
-                    type="file"
-                    accept="image/png,image/svg+xml,image/jpeg,image/webp"
-                    className="sr-only"
-                    disabled={uploading}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0]
-                      if (file) void onUpload?.(file)
-                      event.target.value = ''
-                    }}
-                  />
-                </label>
-              ) : null}
-            </div>
+              <button
+                type="button"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-5 text-sm font-semibold text-[#24364b] shadow-[0_6px_16px_rgba(15,23,42,0.04)] transition hover:bg-[#f7fafc]"
+                onClick={onHistory}
+              >
+                <RotateCcw className="h-4 w-4" strokeWidth={2} />
+                View Version History
+              </button>
           </div>
         </div>
-        <div className="rounded-[20px] border border-[#dfe8f1] bg-[#f8fbfa] p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-[#17233a]">Brand Health</p>
-              <p className="mt-1 text-sm text-[#60758d]">Core assets, colours and public identity.</p>
+
+        <div className="border-[#e5edf4] xl:border-l xl:pl-7">
+          <div className="flex gap-5">
+            <div className="relative h-32 w-32 shrink-0">
+              <svg viewBox="0 0 108 108" className="h-full w-full -rotate-90" aria-hidden="true">
+                <circle cx="54" cy="54" r="46" fill="none" stroke="#dce8f1" strokeWidth="8" />
+                <circle
+                  cx="54"
+                  cy="54"
+                  r="46"
+                  fill="none"
+                  stroke="#0f7f4f"
+                  strokeLinecap="round"
+                  strokeWidth="8"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={progressOffset}
+                />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-2xl font-semibold text-[#0f7f4f]">{brandHealth}%</span>
             </div>
-            <span className="text-3xl font-semibold text-[#0f7f4f]">{brandHealth}%</span>
-          </div>
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#dce8f1]">
-            <span className="block h-full rounded-full bg-[#0f7f4f]" style={{ width: `${brandHealth}%` }} />
+            <div className="min-w-0 flex-1">
+              <h3 className="text-base font-semibold text-[#17233a]">Brand Health</h3>
+              <p className="mt-1 text-sm leading-6 text-[#60758d]">{brandHealth >= 85 ? 'Your brand is looking great.' : 'A few brand surfaces still need attention.'}</p>
+              <div className="mt-4 grid gap-2">
+                {healthChecks.map((item) => (
+                  <div key={item.key} className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-3 text-sm">
+                    {item.complete ? (
+                      <CheckCircle2 className="h-4 w-4 text-[#0f7f4f]" strokeWidth={2} />
+                    ) : (
+                      <Circle className="h-4 w-4 text-[#f97316]" strokeWidth={2} />
+                    )}
+                    <span className="truncate text-[#31455c]">{item.label}</span>
+                    <span className={item.complete ? 'text-xs font-semibold text-[#60758d]' : 'text-xs font-semibold text-[#9a4d12]'}>
+                      {item.complete ? 'Complete' : 'Missing'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -780,50 +931,23 @@ function BrandAssetTile({
   )
 }
 
-function BrandColourRow({ label, value, disabled = false, onChange, onCopy }) {
+function BrandColourField({ label, value, description = 'Used across branded surfaces.', disabled = false, onChange, onCopy }) {
   const safeValue = /^#[0-9a-f]{6}$/i.test(value || '') ? value : '#274C69'
   return (
-    <div className="grid gap-3 border-t border-[#e5edf4] py-4 first:border-t-0 first:pt-0 md:grid-cols-[160px_minmax(0,1fr)_auto] md:items-center">
-      <div className="flex items-center gap-3">
-        <span className="h-10 w-10 rounded-[12px] border border-[#d8e3ee]" style={{ backgroundColor: safeValue }} />
-        <div>
-          <p className="text-sm font-semibold text-[#17233a]">{label}</p>
-          <p className="text-xs text-[#60758d]">Live preview colour</p>
-        </div>
-      </div>
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Field className={INPUT_CLASS} value={value || ''} disabled={disabled} onChange={(event) => onChange(event.target.value)} aria-label={`${label} hex value`} />
-        <input
-          type="color"
-          className="h-11 w-full cursor-pointer rounded-[12px] border border-[#d8e3ee] bg-white p-1 sm:w-14"
-          value={safeValue}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-          aria-label={`${label} colour picker`}
-        />
-      </div>
-      <button
-        type="button"
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]"
-        onClick={onCopy}
-      >
-        <Copy className="h-4 w-4" strokeWidth={2} />
-        Copy HEX
-      </button>
-    </div>
-  )
-}
-
-function BrandColourField({ label, value, disabled = false, onChange, onCopy }) {
-  const safeValue = /^#[0-9a-f]{6}$/i.test(value || '') ? value : '#274C69'
-  return (
-    <div className="rounded-[14px] border border-[#e1eaf3] bg-white p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="h-10 w-10 shrink-0 rounded-[12px] border border-[#d8e3ee]" style={{ backgroundColor: safeValue }} />
-          <div className="min-w-0">
+    <div className="rounded-[14px] border border-[#e1eaf3] bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 gap-3">
+          <span className="h-12 w-12 shrink-0 rounded-[12px] border border-[#d8e3ee] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.36)]" style={{ backgroundColor: safeValue }} />
+          <div className="min-w-0 pt-0.5">
             <p className="truncate text-sm font-semibold text-[#17233a]">{label}</p>
-            <p className="text-xs font-medium uppercase tracking-[0.08em] text-[#7b8fa5]">{safeValue.toUpperCase()}</p>
+            <button
+              type="button"
+              className="mt-1 font-mono text-xs font-semibold uppercase tracking-[0.04em] text-[#31455c] transition hover:text-[#0f7f4f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9dd9bd]"
+              onClick={onCopy}
+            >
+              {safeValue.toUpperCase()}
+            </button>
+            <p className="mt-1 text-xs leading-5 text-[#60758d]">{description}</p>
           </div>
         </div>
         {onCopy ? (
@@ -838,7 +962,7 @@ function BrandColourField({ label, value, disabled = false, onChange, onCopy }) 
           </button>
         ) : null}
       </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_48px] gap-2">
+      <div className="mt-4 grid grid-cols-[minmax(0,1fr)_48px] gap-2">
         <Field className={INPUT_CLASS} value={value || ''} disabled={disabled} onChange={(event) => onChange(event.target.value)} aria-label={`${label} hex value`} />
         <input
           type="color"
@@ -849,6 +973,29 @@ function BrandColourField({ label, value, disabled = false, onChange, onCopy }) 
           aria-label={`${label} colour picker`}
         />
       </div>
+    </div>
+  )
+}
+
+function TypographyPreviewCard({ title, fontName, children }) {
+  return (
+    <div className="rounded-[14px] border border-[#e1eaf3] bg-white p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+        <span className="text-5xl font-semibold leading-none text-[#111827]" style={{ fontFamily: fontName }}>
+          Aa
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[#17233a]">{title}</p>
+          <p className="mt-1 text-xs font-semibold text-[#60758d]">{fontName}</p>
+          <p className="mt-3 truncate text-xs font-semibold uppercase tracking-[0.08em] text-[#24364b]" style={{ fontFamily: fontName }}>
+            ABCDEFGHIJKLMNOPQRSTUVWXYZ
+          </p>
+          <p className="mt-1 truncate text-xs text-[#60758d]" style={{ fontFamily: fontName }}>
+            abcdefghijklmnopqrstuvwxyz 1234567890
+          </p>
+        </div>
+      </div>
+      {children ? <div className="mt-4">{children}</div> : null}
     </div>
   )
 }
@@ -948,7 +1095,8 @@ function BrandPreviewSurface({ activeTab, organisationName, logoUrl, iconUrl, co
 
 function BrandPreviewWorkspace({ activeTab, setActiveTab, organisationName, logoUrl, iconUrl, colours, typography }) {
   return (
-    <OrganisationCard title="Email & Portal Preview" description="Preview how brand assets appear in portals, emails and PDFs before saving.">
+    <div id="brand-preview-workspace" className="scroll-mt-24">
+      <OrganisationCard title="Email & Portal Preview" description="Preview how brand assets appear in portals, emails and PDFs before saving.">
       <div className="flex flex-wrap gap-2">
         <PreviewTabButton active={activeTab === 'portal'} onClick={() => setActiveTab('portal')}>
           <Monitor className="h-4 w-4" strokeWidth={2} />
@@ -966,24 +1114,71 @@ function BrandPreviewWorkspace({ activeTab, setActiveTab, organisationName, logo
       <div className="mt-5">
         <BrandPreviewSurface activeTab={activeTab} organisationName={organisationName} logoUrl={logoUrl} iconUrl={iconUrl} colours={colours} typography={typography} />
       </div>
-    </OrganisationCard>
+      </OrganisationCard>
+    </div>
   )
 }
 
-function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, colours, typography, brandHealth, configuredAssetCount }) {
+function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, colours, typography, brandHealth, configuredAssetCount, onOpenFullPreview }) {
+  const previewItems = [
+    { key: 'agency', label: 'Agency Portal', description: 'Header & navigation', tab: 'portal', accent: colours.primary },
+    { key: 'buyer', label: 'Buyer Portal', description: 'Mobile view', tab: 'portal', accent: colours.secondary },
+    { key: 'seller', label: 'Seller Portal', description: 'Mobile view', tab: 'portal', accent: colours.accent },
+    { key: 'email', label: 'Emails', description: 'Email header', tab: 'email', accent: colours.primary },
+    { key: 'pdf', label: 'PDF / Documents', description: 'Document header', tab: 'pdf', accent: colours.secondary },
+  ]
+
   return (
-    <aside className="hidden xl:block">
-      <div className="sticky top-4 space-y-4 rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.045)]">
+    <aside id="live-preview" className="min-w-0">
+      <div className="space-y-4 rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.045)] xl:sticky xl:top-6">
         <div>
-          <h2 className="text-base font-semibold text-[#17233a]">Brand Preview</h2>
-          <p className="mt-2 text-sm leading-6 text-[#60758d]">Live portal and email signals.</p>
+          <h2 className="text-base font-semibold text-[#17233a]">Live Brand Preview</h2>
+          <p className="mt-2 text-sm leading-6 text-[#60758d]">See how your brand appears across Arch9.</p>
         </div>
-        <BrandPreviewSurface activeTab="portal" organisationName={organisationName} logoUrl={logoUrl} iconUrl={iconUrl} colours={colours} typography={typography} />
+        <div className="grid gap-2">
+          {previewItems.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              className="grid grid-cols-[96px_minmax(0,1fr)_auto] items-center gap-3 border-b border-[#e8eef5] py-3 text-left last:border-b-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9dd9bd]"
+              onClick={() => {
+                document.getElementById('brand-preview-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              }}
+            >
+              <span className="flex h-14 items-center justify-center overflow-hidden rounded-[10px] border border-[#e2ebf3] bg-[#f8fbfe]">
+                {item.tab === 'email' || item.tab === 'pdf' ? (
+                  <span className="grid w-16 gap-1">
+                    <span className="h-2 rounded-full" style={{ backgroundColor: item.accent }} />
+                    <span className="h-1.5 rounded-full bg-[#dbe5ef]" />
+                    <span className="h-1.5 w-3/4 rounded-full bg-[#dbe5ef]" />
+                  </span>
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center" style={{ background: `linear-gradient(135deg, ${hexToRgba(item.accent, 0.95)}, ${hexToRgba(colours.neutral, 0.95)})` }}>
+                    {iconUrl || logoUrl ? <img src={iconUrl || logoUrl} alt="" className="h-8 w-8 object-contain" /> : <span className="text-xs font-semibold text-white">{getInitials(organisationName)}</span>}
+                  </span>
+                )}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-[#17233a]">{item.label}</span>
+                <span className="mt-0.5 block truncate text-xs text-[#60758d]">{item.description}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 text-[#40566d]" strokeWidth={2} />
+            </button>
+          ))}
+        </div>
         <div className="space-y-3 border-y border-[#e5edf4] py-4">
           <OverviewRow label="Brand Health" value={`${brandHealth}%`} verified={brandHealth >= 80} />
           <OverviewRow label="Assets" value={configuredAssetCount} verified={configuredAssetCount >= 3} />
           <OverviewRow label="Colours" value="Configured" verified />
         </div>
+        <button
+          type="button"
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]"
+          onClick={onOpenFullPreview}
+        >
+          Open Full Preview
+          <ExternalLink className="h-4 w-4" strokeWidth={2} />
+        </button>
       </div>
     </aside>
   )
@@ -1661,6 +1856,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const [saving, setSaving] = useState(false)
   const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
   const [brandPreviewTab, setBrandPreviewTab] = useState('portal')
+  const [activeBrandTab, setActiveBrandTab] = useState('overview')
   const [onboardingPreviewType, setOnboardingPreviewType] = useState('buyer')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -1741,6 +1937,16 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     })
     return () => window.cancelAnimationFrame(frame)
   }, [loading, location.hash, publicIntakeLoading, section, showPublicIntakeControls])
+
+  useEffect(() => {
+    if (section !== 'branding') return
+    const nextTab = normalizeText(location.hash).replace('#', '') || 'overview'
+    if (['brand-overview', 'overview'].includes(nextTab)) setActiveBrandTab('overview')
+    if (nextTab === 'identity') setActiveBrandTab('identity')
+    if (nextTab === 'colours-typography') setActiveBrandTab('colours-typography')
+    if (nextTab === 'client-experience') setActiveBrandTab('client-experience')
+    if (nextTab === 'documents') setActiveBrandTab('documents')
+  }, [location.hash, section])
 
   useEffect(() => {
     let active = true
@@ -2391,8 +2597,8 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const typography = getBrandTypography(branding)
   const publicBranding = getPublicBranding(form, agencyInfo, branding)
   const configuredBrandAssetCount = getConfiguredBrandAssetCount(branding)
-  const brandHealth = getBrandHealthScore({ branding, brandColours, publicBranding })
-  const brandLastUpdatedLabel = getBrandLastUpdatedLabel(onboarding.status?.lastSavedAt)
+  const brandHealthChecks = getBrandHealthChecks({ branding, brandColours, publicBranding, showPublicIntake: showPublicIntakeControls, publicIntakeDraft })
+  const brandHealth = getBrandHealthScore({ branding, brandColours, publicBranding, showPublicIntake: showPublicIntakeControls, publicIntakeDraft })
   const isSaveSuccessMessage = message === ORGANISATION_SUCCESS_MESSAGE || message === BRANDING_SUCCESS_MESSAGE
   const primaryAssetUrl = normalizeText(branding.logoLight || primaryLogo)
   const iconAssetUrl = normalizeText(branding.logoIcon)
@@ -2444,37 +2650,35 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   if (showBrandingOnly) {
     return (
       <div className={settingsPageClass}>
-        <OrganisationPageHeader
-          sectionTitle="Branding"
-          description="Manage your agency's visual identity across Arch9, client portals and communications."
-        />
+        <BrandingSubNav activeKey={activeBrandTab} onSelect={setActiveBrandTab} />
 
         {!canEdit ? <SettingsBanner tone="warning">{copy.readOnly}</SettingsBanner> : null}
         {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
-        {message && !isSaveSuccessMessage ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
-        {isSaveSuccessMessage ? (
-          <div className="fixed bottom-6 right-6 z-40 max-w-sm rounded-[16px] border border-[#ccead8] bg-white px-4 py-3 text-sm font-semibold text-[#1f7a45] shadow-[0_18px_42px_rgba(15,23,42,0.14)]" role="status">
-            {message}
-          </div>
-        ) : null}
+        <SettingsToast message={message} />
 
         <form className="space-y-6" onSubmit={handleSave}>
           <BrandHero
             organisationName={organisationName}
             primaryLogo={primaryAssetUrl}
-            configuredAssetCount={configuredBrandAssetCount}
+            roleLabel={membershipRole}
+            publicUrl={publicBranding.website}
+            organisationTypeLabel={organisationTypeLabel}
             brandHealth={brandHealth}
-            lastUpdatedLabel={brandLastUpdatedLabel}
+            healthChecks={brandHealthChecks}
             canEdit={canEdit}
             uploading={uploadingLogoTarget === 'logoLight'}
-            onPreview={() => setBrandPreviewTab('portal')}
+            onPreview={() => {
+              setBrandPreviewTab('portal')
+              document.getElementById('live-preview')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }}
             onUpload={(file) => handleLogoUpload(file, 'logoLight')}
+            onHistory={() => document.getElementById('identity')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
           />
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,920px)_300px] xl:items-start">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
             <div className="space-y-6">
-              <OrganisationCard title="Brand Assets" description="Manage the core logos used across portals, emails, reports and workspace surfaces.">
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <OrganisationCard title="Identity" description="Manage your logos and brand assets.">
+                <div id="identity" className="scroll-mt-24 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                   {mainBrandAssets.map((asset) => {
                     const config = BRAND_ASSET_TARGETS[asset.targetKey]
                     return (
@@ -2500,12 +2704,13 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 </div>
               </OrganisationCard>
 
-              <OrganisationCard title="Brand Colours" description="Set the core palette that drives buttons, email headers, portal accents and PDF previews.">
-                <div className="rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+              <OrganisationCard title="Colours & Typography" description="Set the palette and type rules that drive portals, emails and document previews.">
+                <div id="colours-typography" className="scroll-mt-24 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   {BRAND_COLOUR_CONTROLS.map((control) => (
-                    <BrandColourRow
+                    <BrandColourField
                       key={control.key}
                       label={control.label}
+                      description={control.description}
                       value={brandColours[control.key] || control.fallback}
                       disabled={!canEdit}
                       onChange={(value) => updateBrandColour(control.key, value)}
@@ -2513,84 +2718,77 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                     />
                   ))}
                 </div>
-              </OrganisationCard>
-
-              <OnboardingLandingBrandingCard
-                organisationName={organisationName}
-                logoUrl={primaryAssetUrl}
-                darkLogoUrl={branding.logoDark}
-                iconUrl={iconAssetUrl}
-                colours={onboardingLandingColours}
-                activePortalType={onboardingPreviewType}
-                setActivePortalType={setOnboardingPreviewType}
-                canEdit={canEdit}
-                uploadingLogoTarget={uploadingLogoTarget}
-                onUploadLogo={(file, targetKey) => handleLogoUpload(file, targetKey)}
-                onColourChange={(key, value) => updateBrandColour(key, value)}
-                onCopyColour={(value) => copyBrandHex(value)}
-              />
-
-              {showPublicIntakeControls ? (
-                <section id="public-intake" className="scroll-mt-24 space-y-6">
-                  <PublicIntakeLinkCard
-                    canEdit={canEdit}
-                    draft={publicIntakeDraft}
-                    loading={publicIntakeLoading}
-                    schemaReady={publicIntakeSchemaReady}
-                    saving={publicIntakeSaving}
-                    urls={publicIntakeUrls}
-                    onChange={updatePublicIntakeField}
-                    onCopy={copyPublicIntakeUrl}
-                    onDisable={disablePublicIntakeLink}
-                    onOpen={openPublicIntakeUrl}
-                    onSave={savePublicIntakeLink}
-                    onToggleIntent={togglePublicIntakeIntent}
-                  />
-                  <PublicIntakePerformanceCard
-                    loading={publicIntakePerformanceLoading}
-                    schemaReady={publicIntakePerformanceSchemaReady}
-                    performance={publicIntakePerformance}
-                    onRefresh={refreshPublicIntakePerformance}
-                  />
-                </section>
-              ) : null}
-
-              <OrganisationCard title="Typography" description="Keep text, buttons and rounded controls consistent across branded surfaces.">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <OrganisationField label="Primary Font" id="branding-primary-font">
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <TypographyPreviewCard title="Heading Font" fontName={typography.primaryFont}>
                     <Field as="select" id="branding-primary-font" className={INPUT_CLASS} value={typography.primaryFont} disabled={!canEdit} onChange={(event) => updateBrandingNestedField('typography', 'primaryFont', event.target.value)}>
                       <option value="Inter">Inter</option>
                       <option value="Geist">Geist</option>
                       <option value="Arial">Arial</option>
                     </Field>
-                  </OrganisationField>
-                  <OrganisationField label="Weight" id="branding-font-weight">
-                    <Field as="select" id="branding-font-weight" className={INPUT_CLASS} value={typography.weight} disabled={!canEdit} onChange={(event) => updateBrandingNestedField('typography', 'weight', event.target.value)}>
-                      <option value="Regular">Regular</option>
-                      <option value="Medium">Medium</option>
-                      <option value="Semibold">Semibold</option>
-                    </Field>
-                  </OrganisationField>
-                  <OrganisationField label="Button Style" id="branding-button-style">
-                    <Field as="select" id="branding-button-style" className={INPUT_CLASS} value={typography.buttonStyle} disabled={!canEdit} onChange={(event) => updateBrandingNestedField('typography', 'buttonStyle', event.target.value)}>
-                      <option value="Rounded">Rounded</option>
-                      <option value="Soft">Soft</option>
-                      <option value="Square">Square</option>
-                    </Field>
-                  </OrganisationField>
-                  <OrganisationField label="Border Radius" id="branding-border-radius">
-                    <Field as="select" id="branding-border-radius" className={INPUT_CLASS} value={typography.borderRadius} disabled={!canEdit} onChange={(event) => updateBrandingNestedField('typography', 'borderRadius', event.target.value)}>
-                      <option value="8px">8px</option>
-                      <option value="12px">12px</option>
-                      <option value="16px">16px</option>
-                    </Field>
-                  </OrganisationField>
-                </div>
-                <div className="mt-5 flex items-center gap-3 rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
-                  <Type className="h-5 w-5 text-[#0f7f4f]" strokeWidth={2} />
-                  <p className="text-sm leading-6 text-[#60758d]">Typography settings are stored with your brand profile and reflected in previews before saving.</p>
+                  </TypographyPreviewCard>
+                  <TypographyPreviewCard title="Body Font" fontName={typography.primaryFont}>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <Field as="select" id="branding-font-weight" className={INPUT_CLASS} value={typography.weight} disabled={!canEdit} onChange={(event) => updateBrandingNestedField('typography', 'weight', event.target.value)}>
+                        <option value="Regular">Regular</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Semibold">Semibold</option>
+                      </Field>
+                      <Field as="select" id="branding-button-style" className={INPUT_CLASS} value={typography.buttonStyle} disabled={!canEdit} onChange={(event) => updateBrandingNestedField('typography', 'buttonStyle', event.target.value)}>
+                        <option value="Rounded">Rounded</option>
+                        <option value="Soft">Soft</option>
+                        <option value="Square">Square</option>
+                      </Field>
+                      <Field as="select" id="branding-border-radius" className={INPUT_CLASS} value={typography.borderRadius} disabled={!canEdit} onChange={(event) => updateBrandingNestedField('typography', 'borderRadius', event.target.value)}>
+                        <option value="8px">8px</option>
+                        <option value="12px">12px</option>
+                        <option value="16px">16px</option>
+                      </Field>
+                    </div>
+                  </TypographyPreviewCard>
                 </div>
               </OrganisationCard>
+
+              <section id="client-experience" className="scroll-mt-24 space-y-6">
+                <OnboardingLandingBrandingCard
+                  organisationName={organisationName}
+                  logoUrl={primaryAssetUrl}
+                  darkLogoUrl={branding.logoDark}
+                  iconUrl={iconAssetUrl}
+                  colours={onboardingLandingColours}
+                  activePortalType={onboardingPreviewType}
+                  setActivePortalType={setOnboardingPreviewType}
+                  canEdit={canEdit}
+                  uploadingLogoTarget={uploadingLogoTarget}
+                  onUploadLogo={(file, targetKey) => handleLogoUpload(file, targetKey)}
+                  onColourChange={(key, value) => updateBrandColour(key, value)}
+                  onCopyColour={(value) => copyBrandHex(value)}
+                />
+
+                {showPublicIntakeControls ? (
+                  <section id="public-intake" className="scroll-mt-24 space-y-6">
+                    <PublicIntakeLinkCard
+                      canEdit={canEdit}
+                      draft={publicIntakeDraft}
+                      loading={publicIntakeLoading}
+                      schemaReady={publicIntakeSchemaReady}
+                      saving={publicIntakeSaving}
+                      urls={publicIntakeUrls}
+                      onChange={updatePublicIntakeField}
+                      onCopy={copyPublicIntakeUrl}
+                      onDisable={disablePublicIntakeLink}
+                      onOpen={openPublicIntakeUrl}
+                      onSave={savePublicIntakeLink}
+                      onToggleIntent={togglePublicIntakeIntent}
+                    />
+                    <PublicIntakePerformanceCard
+                      loading={publicIntakePerformanceLoading}
+                      schemaReady={publicIntakePerformanceSchemaReady}
+                      performance={publicIntakePerformance}
+                      onRefresh={refreshPublicIntakePerformance}
+                    />
+                  </section>
+                ) : null}
+              </section>
 
               <BrandPreviewWorkspace
                 activeTab={brandPreviewTab}
@@ -2602,7 +2800,8 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                 typography={typography}
               />
 
-              <OrganisationCard title="App Icons" description="Manage compact assets for favicons, portals, mobile shortcuts and browser tiles.">
+              <OrganisationCard title="Documents & App Icons" description="Manage compact assets for favicons, portals, mobile shortcuts and document-adjacent brand surfaces.">
+                <div id="documents" className="scroll-mt-24" />
                 <div className="grid gap-4 md:grid-cols-2">
                   {appIconAssets.map((asset) => {
                     const config = BRAND_ASSET_TARGETS[asset.targetKey]
@@ -2659,6 +2858,9 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
               typography={typography}
               brandHealth={brandHealth}
               configuredAssetCount={configuredBrandAssetCount}
+              onOpenFullPreview={() => {
+                if (typeof window !== 'undefined') window.open(publicProfileTarget, '_blank', 'noopener,noreferrer')
+              }}
             />
           </div>
         </form>

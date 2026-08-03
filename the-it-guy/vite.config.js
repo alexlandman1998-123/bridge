@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { createAdminMobileDashboardResponse } from './server/services/adminMobileDashboardApi.js'
 import { createMissionControlResponse, writeNodeJsonResponse } from './server/services/hqMissionControlApi.js'
+import { createPublicAgencyIntakeResponse } from './server/services/publicAgencyIntakeApi.js'
 import { createPublicListingsResponse } from './server/services/publicListingsApi.js'
 
 function documentTitleFallbackPlugin() {
@@ -142,6 +143,18 @@ function missionControlApiPlugin() {
           method: request.method,
           url: request.url,
           headers: request.headers,
+        })
+        writeNodeJsonResponse(response, payload)
+      })
+      server.middlewares.use('/api/public/agency-intake', async (request, response) => {
+        const chunks = []
+        for await (const chunk of request) chunks.push(chunk)
+        const body = chunks.length ? Buffer.concat(chunks).toString('utf8') : null
+        const payload = await createPublicAgencyIntakeResponse({
+          method: request.method,
+          url: request.url,
+          headers: request.headers,
+          body,
         })
         writeNodeJsonResponse(response, payload)
       })

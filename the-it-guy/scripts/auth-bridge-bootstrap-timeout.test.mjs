@@ -18,14 +18,32 @@ assert.match(
 
 assert.match(
   source,
-  /const BRIDGE_AUTH_BOOTSTRAP_RETRY_MS = 3000/,
-  'retryable bridge auth bootstrap failures should automatically retry without a sign-in loop',
+  /const BRIDGE_AUTH_BOOTSTRAP_RETRY_BASE_MS = 1500/,
+  'retryable bridge auth bootstrap failures should use a short initial backoff',
+)
+
+assert.match(
+  source,
+  /const BRIDGE_AUTH_BOOTSTRAP_RETRY_MAX_MS = 8000/,
+  'retryable bridge auth bootstrap failures should cap retry backoff',
+)
+
+assert.match(
+  source,
+  /const BRIDGE_AUTH_BOOTSTRAP_RETRY_JITTER_MS = 750/,
+  'retryable bridge auth bootstrap failures should add jitter to avoid synchronized retry storms',
 )
 
 assert.match(
   source,
   /const MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS = 2/,
   'retryable bridge auth bootstrap failures should be capped so navigation is not held in a permanent loading loop',
+)
+
+assert.match(
+  source,
+  /const AUTH_BOOT_OBSERVABILITY_STORAGE_KEY = 'arch9:auth-boot-observability:v1'/,
+  'auth boot observability should keep a session-scoped breadcrumb buffer',
 )
 
 assert.match(
@@ -42,8 +60,32 @@ assert.match(
 
 assert.match(
   source,
-  /isRetryableBridgeBootstrapError\(error\) && bootAttempt < MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS[\s\S]*?status: 'loading'[\s\S]*?setBootAttempt\(\(previous\) => previous \+ 1\)/,
-  'retryable bridge bootstrap errors should stay in the loading gate only while under the retry ceiling',
+  /bridgeRetryScopeRef\.current\.key !== retryScopeKey[\s\S]*?bridgeRetryScopeRef\.current = \{ key: retryScopeKey, attempts: 0 \}/,
+  'retry attempts should be scoped to the current user and selected workspace',
+)
+
+assert.match(
+  source,
+  /const retryReason = getBridgeBootstrapRetryReason\(error\)[\s\S]*?retryAttemptsUsed < MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS[\s\S]*?getBridgeBootstrapRetryDelayMs\(retryAttemptsUsed\)/,
+  'retryable bridge bootstrap errors should use classified bounded backoff instead of a fixed retry loop',
+)
+
+assert.match(
+  source,
+  /trackAuthMetric\('auth_boot_retry_scheduled'[\s\S]*?retryReason/,
+  'scheduled retry attempts should be tracked with retry reason metadata',
+)
+
+assert.match(
+  source,
+  /writeAuthBootBreadcrumb\('bridge_boot_failed'[\s\S]*?reportError\(error,[\s\S]*?breadcrumbs: failureBreadcrumbs/,
+  'auth boot failures should attach recent breadcrumbs to error reports',
+)
+
+assert.match(
+  source,
+  /trackAuthMetric\('auth_boot_failed'[\s\S]*?retryExhausted/,
+  'terminal auth boot failures should emit structured telemetry',
 )
 
 const authBootSource = await readFile(new URL('../src/lib/authBoot.js', import.meta.url), 'utf8')
@@ -62,8 +104,26 @@ assert.match(
 
 assert.match(
   authBootSource,
+  /const AUTH_BOOT_HEALTH_PROBE_TIMEOUT_MS = 2500/,
+  'auth boot health probe should be short enough to diagnose backend health without delaying normal boot',
+)
+
+assert.match(
+  authBootSource,
   /const AUTH_BOOT_WORKSPACE_STEP_TIMEOUT_MS = 12000/,
   'workspace resolution should have a per-step timeout that fits comfortably below the bridge bootstrap cap',
+)
+
+assert.match(
+  authBootSource,
+  /'bootHealth\.probe'[\s\S]*?probeAuthBootHealth\(\{ user, client: supabase \}\)/,
+  'bridge auth boot should run a lightweight health probe before workspace resolution',
+)
+
+assert.match(
+  authBootSource,
+  /attachBootHealthToWorkspaceResolution\(workspaceResolution, bootHealth\)/,
+  'workspace diagnostics should carry boot health probe results for later support and telemetry',
 )
 
 assert.match(

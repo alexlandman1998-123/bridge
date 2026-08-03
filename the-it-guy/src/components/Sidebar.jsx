@@ -31,10 +31,11 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { getRoleNavItems } from '../lib/roles'
-import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
+import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
 import { trackWorkspaceBrandingMetric } from '../services/observability/monitoring'
 import { filterNavigationItems } from '../auth/permissions/navigationPermissions'
+import { buildVisibleSettingsGroups } from '../pages/settings/settingsNavigation'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 
 const ICON_BY_KEY = {
@@ -226,7 +227,8 @@ function normalizeQuery(search = '') {
 }
 
 function targetMatchesLocation(location, target = '') {
-  const [targetPathname, targetSearch = ''] = String(target || '').split('?')
+  const [targetWithoutHash] = String(target || '').split('#')
+  const [targetPathname, targetSearch = ''] = targetWithoutHash.split('?')
   if (!routeMatches(location.pathname, targetPathname)) return false
   if (!targetSearch) return true
   return normalizeQuery(location.search) === normalizeQuery(targetSearch)
@@ -325,25 +327,52 @@ function Sidebar() {
       ),
     [role, workspaceContext],
   )
+  const settingsCanManage = canManageOrganisationSettings({
+    appRole: role,
+    membershipRole,
+    workspaceType: navWorkspaceType,
+  })
+  const canEvaluatePermission = typeof workspaceContext.can === 'function' ? workspaceContext.can : () => true
+  const settingsChildren = useMemo(
+    () =>
+      role === 'client'
+        ? []
+        : buildVisibleSettingsGroups({ role, canManage: settingsCanManage, can: canEvaluatePermission })
+          .flatMap((group) => group.items)
+          .map((item) => ({
+            ...item,
+            key: `settings_${item.label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'item'}`,
+          })),
+    [canEvaluatePermission, role, settingsCanManage],
+  )
+  const withSettingsChildren = (items = []) =>
+    items.map((item) => {
+      if (item.key !== 'settings' || !settingsChildren.length) return item
+      return {
+        ...item,
+        activeMatch: [...new Set([...(Array.isArray(item.activeMatch) ? item.activeMatch : []), '/settings'])],
+        children: settingsChildren,
+      }
+    })
   const roleSecondaryNavItems = useMemo(
-    () => roleNavItems.filter((item) => item.navSection === 'secondary'),
-    [roleNavItems],
+    () => withSettingsChildren(roleNavItems.filter((item) => item.navSection === 'secondary')),
+    [roleNavItems, settingsChildren],
   )
   const primaryNavItems = useMemo(
     () => {
-      if (role === 'attorney') return roleNavItems.filter((item) => !ATTORNEY_SECONDARY_KEYS.has(item.key))
-      if (role === 'bond_originator') return roleNavItems.filter((item) => item.navSection !== 'secondary')
-      return roleNavItems
+      if (role === 'attorney') return withSettingsChildren(roleNavItems.filter((item) => !ATTORNEY_SECONDARY_KEYS.has(item.key)))
+      if (role === 'bond_originator') return withSettingsChildren(roleNavItems.filter((item) => item.navSection !== 'secondary'))
+      return withSettingsChildren(roleNavItems)
     },
-    [role, roleNavItems],
+    [role, roleNavItems, settingsChildren],
   )
   const firmNavItems = useMemo(
     () => {
-      if (role === 'attorney') return [...roleNavItems.filter((item) => ATTORNEY_SECONDARY_KEYS.has(item.key)), ...secondaryItems]
+      if (role === 'attorney') return withSettingsChildren([...roleNavItems.filter((item) => ATTORNEY_SECONDARY_KEYS.has(item.key)), ...secondaryItems])
       if (role === 'bond_originator') return roleSecondaryNavItems.length ? roleSecondaryNavItems : secondaryItems
-      return secondaryItems
+      return withSettingsChildren(secondaryItems)
     },
-    [role, roleNavItems, roleSecondaryNavItems, secondaryItems],
+    [role, roleNavItems, roleSecondaryNavItems, secondaryItems, settingsChildren],
   )
   const bondGroupedNavSections = useMemo(() => {
     if (role !== 'bond_originator') return []
@@ -359,7 +388,7 @@ function Sidebar() {
   }, [firmNavItems, primaryNavItems, role])
 
   const renderNavItem = (item, { child = false } = {}) => {
-    const Icon = ICON_BY_KEY[item.key] || LayoutDashboard
+    const Icon = item.icon || ICON_BY_KEY[item.key] || LayoutDashboard
     const hasChildren = item.key !== 'clients' && Array.isArray(item.children) && item.children.length > 0
     const isParentActive = hasChildren ? isParentNavActive(item, location) : false
     const menuExpanded = Boolean(expandedMenus[item.key] ?? isParentActive)

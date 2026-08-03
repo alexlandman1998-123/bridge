@@ -13,7 +13,14 @@ function isMissingSchemaError(error, token = '') {
 }
 
 export function redactTelemetryMetadata(metadata = {}) {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return {}
+  if (Array.isArray(metadata)) {
+    return metadata.slice(0, 50).map((item) => {
+      if (item && typeof item === 'object') return redactTelemetryMetadata(item)
+      if (typeof item === 'string' && item.length > 500) return `${item.slice(0, 500)}...`
+      return item
+    })
+  }
+  if (!metadata || typeof metadata !== 'object') return {}
   return Object.fromEntries(
     Object.entries(metadata).map(([key, value]) => {
       if (SENSITIVE_KEY_PATTERN.test(key)) return [key, '[redacted]']

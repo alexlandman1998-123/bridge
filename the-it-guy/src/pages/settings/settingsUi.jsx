@@ -1,5 +1,5 @@
 export const settingsPageClass =
-  'mx-auto w-full max-w-[1120px] space-y-7'
+  'mx-auto w-full max-w-[1440px] space-y-6'
 export const settingsCardClass = 'rounded-[14px] border border-[#e1e8ef] bg-white p-5'
 export const settingsGridClass = 'grid gap-4 md:grid-cols-2'
 export const settingsFieldClass = 'grid gap-2 [&_.ui-input]:px-3.5 [&_.ui-input]:py-2.5 [&_.ui-select]:px-3.5 [&_.ui-select]:py-2.5 [&_.ui-textarea]:px-3.5 [&_.ui-textarea]:py-2.5'

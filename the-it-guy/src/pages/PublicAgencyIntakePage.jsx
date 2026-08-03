@@ -575,7 +575,7 @@ function ListingSelectionCard({ listing = {}, selected = false, onToggle }) {
           <img
             src={listing.coverImageUrl}
             alt=""
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+            className="h-full w-full object-cover opacity-80 transition duration-500 group-hover:scale-105 group-hover:opacity-90"
             loading="lazy"
           />
         ) : (
@@ -583,12 +583,12 @@ function ListingSelectionCard({ listing = {}, selected = false, onToggle }) {
             <Home size={28} aria-hidden="true" />
           </span>
         )}
-        <span className="absolute inset-0 bg-gradient-to-t from-black/88 via-black/28 to-black/5" />
+        <span className="absolute inset-0 bg-gradient-to-t from-black/78 via-black/36 to-black/10" />
         <span className={`absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border text-white shadow-lg ${selected ? 'border-[var(--intake-accent)] bg-[var(--intake-primary)]' : 'border-white/50 bg-black/35 backdrop-blur'}`}>
           <CheckCircle2 size={18} aria-hidden="true" />
         </span>
         <span className="absolute inset-x-0 bottom-0 block p-4 text-white">
-          {price ? <span className="mb-2 inline-flex rounded bg-black/55 px-2.5 py-1 text-xs font-semibold backdrop-blur">{price}</span> : null}
+          {price ? <span className="mb-2 inline-flex rounded bg-black/75 px-2.5 py-1 text-xs font-semibold backdrop-blur">{price}</span> : null}
           <span className="line-clamp-2 block text-base font-semibold leading-5 drop-shadow">{listing.title || 'Published listing'}</span>
           <span className="mt-2 flex items-center gap-1.5 text-xs font-medium text-white/80">
             <MapPin size={13} aria-hidden="true" /> {[listing.suburb, listing.city].filter(Boolean).join(', ') || 'Area available on request'}

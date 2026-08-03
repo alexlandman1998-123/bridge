@@ -1,8 +1,13 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { clearStoredDevAuthRole, createDevAuthSession, getStoredDevAuthRole, isDevAuthBypassEnabled } from '../lib/devAuth'
 import { getDevBypassWorkspaceId } from '../lib/demoIds'
-import { getActiveAuthBootStepDiagnostics, loadBridgeAuthState } from '../lib/authBoot'
+import {
+  buildDegradedBridgeAuthState,
+  getActiveAuthBootStepDiagnostics,
+  loadBridgeAuthState,
+  persistLastGoodBridgeAuthState,
+} from '../lib/authBoot'
 import { clearSupabaseLocalAuthState, isSupabaseConfigured, isUnsupportedJwtAlgorithmError, supabase } from '../lib/supabaseClient'
 import { getProductionSafetyViolation } from '../lib/envValidation'
 import { APP_ROLE_LABELS } from '../lib/appRoleMetadata'
@@ -20,8 +25,12 @@ import { clearWorkspaceScopedRuntimeCaches } from '../services/workspaceScopedCa
 const SESSION_BOOTSTRAP_TIMEOUT_MS = 15000
 const BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS = 45000
 const BRIDGE_AUTH_BOOTSTRAP_SLOW_MS = 15000
-const BRIDGE_AUTH_BOOTSTRAP_RETRY_MS = 3000
+const BRIDGE_AUTH_BOOTSTRAP_RETRY_BASE_MS = 1500
+const BRIDGE_AUTH_BOOTSTRAP_RETRY_MAX_MS = 8000
+const BRIDGE_AUTH_BOOTSTRAP_RETRY_JITTER_MS = 750
 const MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS = 2
+const AUTH_BOOT_OBSERVABILITY_STORAGE_KEY = 'arch9:auth-boot-observability:v1'
+const AUTH_BOOT_OBSERVABILITY_MAX_BREADCRUMBS = 20
 
 const EMPTY_AUTH_STATE = Object.freeze({
   status: 'loading',
@@ -46,6 +55,10 @@ const EMPTY_AUTH_STATE = Object.freeze({
   workspaceType: '',
   onboardingComplete: false,
   onboardingRequiredReason: '',
+  workspaceAccessDegraded: false,
+  workspaceDegradedReason: '',
+  workspaceDegradedMessage: '',
+  bootRetry: null,
   bootError: '',
 })
 
@@ -115,6 +128,10 @@ function createDevOnlyAuthState(devAuthRole) {
     workspaceType,
     onboardingComplete: true,
     onboardingRequiredReason: '',
+    workspaceAccessDegraded: false,
+    workspaceDegradedReason: '',
+    workspaceDegradedMessage: '',
+    bootRetry: null,
     bootError: '',
   }
 }
@@ -132,14 +149,104 @@ function buildBootstrapTimeoutMessage({ phase = '', diagnostics = [] } = {}) {
   return 'Authentication bootstrap timed out. Please retry.'
 }
 
-function isRetryableBridgeBootstrapError(error) {
+function getBridgeBootstrapRetryReason(error) {
   const message = String(error?.message || '').toLowerCase()
-  return (
-    error?.code === 'AUTH_BOOT_STEP_TIMEOUT' ||
-    message.includes('authentication bootstrap timed out') ||
-    (message.includes('workspace.resolvecurrentworkspace') && message.includes('timed out')) ||
-    (message.includes('schema cache') && message.includes('retry'))
+  const bootHealthStatus = String(error?.bootHealth?.status || '').toLowerCase()
+  if (error?.code === 'AUTH_BOOT_STEP_TIMEOUT') return 'step_timeout'
+  if (message.includes('authentication bootstrap timed out')) return 'bootstrap_timeout'
+  if (message.includes('workspace.resolvecurrentworkspace') && message.includes('timed out')) return 'workspace_timeout'
+  if (message.includes('schema cache') && message.includes('retry')) return 'schema_cache'
+  if (['timeout', 'schema_cache_unavailable', 'query_error', 'probe_failed'].includes(bootHealthStatus)) {
+    return `boot_health_${bootHealthStatus}`
+  }
+  return ''
+}
+
+function getBridgeBootstrapRetryDelayMs(attemptIndex = 0) {
+  const baseDelay = Math.min(
+    BRIDGE_AUTH_BOOTSTRAP_RETRY_MAX_MS,
+    BRIDGE_AUTH_BOOTSTRAP_RETRY_BASE_MS * (2 ** Math.max(0, Number(attemptIndex) || 0)),
   )
+  const jitter = Math.floor(Math.random() * BRIDGE_AUTH_BOOTSTRAP_RETRY_JITTER_MS)
+  return baseDelay + jitter
+}
+
+function normalizeBootNumber(value, fallback = null) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? Math.round(numeric) : fallback
+}
+
+function getAuthBootRoute() {
+  return typeof window !== 'undefined' ? String(window.location?.pathname || '') : ''
+}
+
+function getAuthBootObservabilityStorage() {
+  if (typeof window === 'undefined' || !window.sessionStorage) return null
+  return window.sessionStorage
+}
+
+function readAuthBootBreadcrumbs() {
+  const storage = getAuthBootObservabilityStorage()
+  if (!storage) return []
+  try {
+    const parsed = JSON.parse(storage.getItem(AUTH_BOOT_OBSERVABILITY_STORAGE_KEY) || '[]')
+    return Array.isArray(parsed) ? parsed.slice(-AUTH_BOOT_OBSERVABILITY_MAX_BREADCRUMBS) : []
+  } catch {
+    return []
+  }
+}
+
+function writeAuthBootBreadcrumb(eventName, metadata = {}) {
+  const storage = getAuthBootObservabilityStorage()
+  const breadcrumb = {
+    event: String(eventName || '').trim(),
+    route: getAuthBootRoute(),
+    at: new Date().toISOString(),
+    metadata,
+  }
+  if (!breadcrumb.event) return readAuthBootBreadcrumbs()
+  const breadcrumbs = [...readAuthBootBreadcrumbs(), breadcrumb].slice(-AUTH_BOOT_OBSERVABILITY_MAX_BREADCRUMBS)
+  if (storage) {
+    try {
+      storage.setItem(AUTH_BOOT_OBSERVABILITY_STORAGE_KEY, JSON.stringify(breadcrumbs))
+    } catch {
+      // Observability should never make auth boot less reliable.
+    }
+  }
+  return breadcrumbs
+}
+
+function buildAuthBootObservabilityMetadata({
+  selectedWorkspaceId = '',
+  attempt = 1,
+  retry = null,
+  retryReason = '',
+  retryInMs = null,
+  bootHealth = null,
+  activeSteps = [],
+  currentWorkspaceId = '',
+  outcome = '',
+  error = null,
+} = {}) {
+  return {
+    selectedWorkspaceProvided: Boolean(selectedWorkspaceId),
+    attempt: normalizeBootNumber(attempt, 1),
+    maxRetryAttempts: MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS,
+    retryAttempt: normalizeBootNumber(retry?.attempt, null),
+    retryReason: String(retryReason || retry?.reason || '').trim() || null,
+    retryInMs: normalizeBootNumber(retryInMs ?? retry?.retryInMs, null),
+    bootHealthOk: bootHealth?.ok === true,
+    bootHealthStatus: String(bootHealth?.status || '').trim() || null,
+    bootHealthDurationMs: normalizeBootNumber(bootHealth?.durationMs, null),
+    activeStepCount: Array.isArray(activeSteps) ? activeSteps.length : 0,
+    activeStepLabels: Array.isArray(activeSteps)
+      ? activeSteps.map((step) => String(step?.label || '').trim()).filter(Boolean).slice(0, 6)
+      : [],
+    currentWorkspaceId: String(currentWorkspaceId || '').trim() || null,
+    outcome: String(outcome || '').trim() || null,
+    errorCode: error?.code || null,
+    errorMessage: error?.message || null,
+  }
 }
 
 function getMembershipWorkspaceId(membership = null) {
@@ -183,6 +290,7 @@ export function AuthSessionProvider({ children }) {
   const [authState, setAuthState] = useState(EMPTY_AUTH_STATE)
   const [bootAttempt, setBootAttempt] = useState(0)
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('')
+  const bridgeRetryScopeRef = useRef({ key: '', attempts: 0 })
   const productionSafetyViolation = getProductionSafetyViolation()
   const sessionUserId = session?.user?.id || ''
 
@@ -338,6 +446,10 @@ export function AuthSessionProvider({ children }) {
     }
 
     let active = true
+    const retryScopeKey = `${sessionUserId}:${selectedWorkspaceId || ''}`
+    if (bridgeRetryScopeRef.current.key !== retryScopeKey) {
+      bridgeRetryScopeRef.current = { key: retryScopeKey, attempts: 0 }
+    }
 
     async function bootBridgeState() {
       const bridgeTrace = createDashboardPerformanceTrace({
@@ -348,11 +460,15 @@ export function AuthSessionProvider({ children }) {
       let resolvedBridgeState = null
       let slowTimerId = null
       let retryTimerId = null
+      let bridgeRetryReason = ''
+      let bridgeBootHealthStatus = ''
+      let bridgeBreadcrumbCount = 0
       setAuthState((previous) => ({
         ...previous,
         status: 'loading',
         session,
         user: session.user,
+        bootRetry: null,
         bootError: '',
       }))
       try {
@@ -362,9 +478,21 @@ export function AuthSessionProvider({ children }) {
           attempt: bootAttempt + 1,
           slowWarningMs: BRIDGE_AUTH_BOOTSTRAP_SLOW_MS,
         })
+        writeAuthBootBreadcrumb('bridge_boot_start', buildAuthBootObservabilityMetadata({
+          selectedWorkspaceId,
+          attempt: bootAttempt + 1,
+          outcome: 'started',
+        }))
         slowTimerId = window.setTimeout(() => {
           if (!active) return
           const diagnostics = getActiveAuthBootStepDiagnostics()
+          const slowMetadata = buildAuthBootObservabilityMetadata({
+            selectedWorkspaceId,
+            attempt: bootAttempt + 1,
+            activeSteps: diagnostics,
+            outcome: 'slow',
+          })
+          const breadcrumbs = writeAuthBootBreadcrumb('bridge_boot_slow', slowMetadata)
           console.warn('[AUTH] bridge-boot:slow', {
             userId: session.user.id,
             selectedWorkspaceId: selectedWorkspaceId || null,
@@ -375,11 +503,12 @@ export function AuthSessionProvider({ children }) {
           void trackAuthMetric('auth_boot_slow', {
             userId: session.user.id,
             metadata: {
-              selectedWorkspaceId: selectedWorkspaceId || null,
+              ...slowMetadata,
               activeSteps: diagnostics.map((step) => ({
                 label: step.label,
                 durationMs: step.durationMs,
               })),
+              breadcrumbCount: breadcrumbs.length,
             },
           })
         }, BRIDGE_AUTH_BOOTSTRAP_SLOW_MS)
@@ -393,14 +522,31 @@ export function AuthSessionProvider({ children }) {
           bridgeOutcome = 'cancelled'
           return
         }
+        bridgeRetryScopeRef.current = { key: retryScopeKey, attempts: 0 }
+        const successMetadata = buildAuthBootObservabilityMetadata({
+          selectedWorkspaceId,
+          attempt: bootAttempt + 1,
+          bootHealth: nextState.workspaceDiagnostics?.bootHealth || null,
+          currentWorkspaceId: nextState.currentWorkspace?.id || '',
+          outcome: 'success',
+        })
+        const successBreadcrumbs = writeAuthBootBreadcrumb('bridge_boot_success', successMetadata)
+        bridgeBootHealthStatus = successMetadata.bootHealthStatus || ''
+        bridgeBreadcrumbCount = successBreadcrumbs.length
         setAuthState(nextState)
+        persistLastGoodBridgeAuthState(nextState)
         void trackAuthMetric('auth_boot_success', {
           userId: session.user.id,
           workspaceId: nextState.currentWorkspace?.id || '',
           metadata: {
+            ...successMetadata,
             appRole: nextState.appRole || null,
             activeMemberships: nextState.activeMemberships.length,
             onboardingRequiredReason: nextState.onboardingRequiredReason || null,
+            bootHealthStatus: nextState.workspaceDiagnostics?.bootHealth?.status || null,
+            bootHealthDurationMs: nextState.workspaceDiagnostics?.bootHealth?.durationMs || null,
+            retryAttempt: bootAttempt || 0,
+            breadcrumbCount: successBreadcrumbs.length,
           },
         })
         void trackWorkspaceBrandingMetric('workspace_branding_resolved', {
@@ -422,13 +568,39 @@ export function AuthSessionProvider({ children }) {
       } catch (error) {
         bridgeOutcome = active ? 'failed' : 'cancelled'
         if (!active) return
+        const activeStepDiagnostics = getActiveAuthBootStepDiagnostics()
+        const retryReason = getBridgeBootstrapRetryReason(error)
+        const failureMetadata = buildAuthBootObservabilityMetadata({
+          selectedWorkspaceId,
+          attempt: bootAttempt + 1,
+          retryReason,
+          bootHealth: error?.bootHealth || null,
+          activeSteps: activeStepDiagnostics,
+          outcome: 'failed',
+          error,
+        })
+        const failureBreadcrumbs = writeAuthBootBreadcrumb('bridge_boot_failed', failureMetadata)
+        bridgeRetryReason = retryReason
+        bridgeBootHealthStatus = failureMetadata.bootHealthStatus || ''
+        bridgeBreadcrumbCount = failureBreadcrumbs.length
         console.error('[AUTH] bridge-boot:failed', error)
         void reportError(error, {
           userId: session.user.id,
           operation: 'bridge_auth_boot',
           category: 'auth_error',
+          metadata: {
+            ...failureMetadata,
+            breadcrumbs: failureBreadcrumbs,
+          },
         })
-        if (isRetryableBridgeBootstrapError(error) && bootAttempt < MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS) {
+        const retryAttemptsUsed = bridgeRetryScopeRef.current.attempts || 0
+        if (retryReason && retryAttemptsUsed < MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS) {
+          const nextRetryAttempt = retryAttemptsUsed + 1
+          const retryInMs = getBridgeBootstrapRetryDelayMs(retryAttemptsUsed)
+          bridgeRetryScopeRef.current = {
+            key: retryScopeKey,
+            attempts: nextRetryAttempt,
+          }
           bridgeOutcome = 'retrying'
           setAuthState((previous) => ({
             ...previous,
@@ -436,24 +608,108 @@ export function AuthSessionProvider({ children }) {
             session,
             user: session.user,
             bootError: error?.message || 'Workspace bootstrap is taking longer than expected.',
+            bootRetry: {
+              attempt: nextRetryAttempt,
+              maxAttempts: MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS,
+              retryInMs,
+              reason: retryReason,
+            },
           }))
+          const retryMetadata = buildAuthBootObservabilityMetadata({
+            selectedWorkspaceId,
+            attempt: bootAttempt + 1,
+            retry: {
+              attempt: nextRetryAttempt,
+              retryInMs,
+              reason: retryReason,
+            },
+            bootHealth: error?.bootHealth || null,
+            outcome: 'retrying',
+            error,
+          })
+          const retryBreadcrumbs = writeAuthBootBreadcrumb('bridge_boot_retry_scheduled', retryMetadata)
+          bridgeBootHealthStatus = retryMetadata.bootHealthStatus || ''
+          bridgeBreadcrumbCount = retryBreadcrumbs.length
           retryTimerId = window.setTimeout(() => {
             if (!active) return
             console.warn('[AUTH] bridge-boot:retrying', {
               userId: session.user.id,
               selectedWorkspaceId: selectedWorkspaceId || null,
-              retryInMs: BRIDGE_AUTH_BOOTSTRAP_RETRY_MS,
+              attempt: nextRetryAttempt,
+              maxAttempts: MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS,
+              retryInMs,
+              retryReason,
               previousError: error?.message || null,
             })
+            void trackAuthMetric('auth_boot_retry_scheduled', {
+              userId: session.user.id,
+              metadata: {
+                ...retryMetadata,
+                selectedWorkspaceId: selectedWorkspaceId || null,
+                attempt: nextRetryAttempt,
+                maxAttempts: MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS,
+                retryInMs,
+                retryReason,
+                breadcrumbCount: retryBreadcrumbs.length,
+              },
+            })
             setBootAttempt((previous) => previous + 1)
-          }, BRIDGE_AUTH_BOOTSTRAP_RETRY_MS)
+          }, retryInMs)
           return
         }
+        const degradedState = retryReason
+          ? buildDegradedBridgeAuthState({ session, selectedWorkspaceId, error })
+          : null
+        if (degradedState) {
+          bridgeOutcome = 'degraded'
+          resolvedBridgeState = degradedState
+          console.warn('[AUTH] bridge-boot:degraded', {
+            userId: session.user.id,
+            selectedWorkspaceId: selectedWorkspaceId || null,
+            previousError: error?.message || null,
+            currentWorkspaceId: degradedState.currentWorkspace?.id || null,
+          })
+          const degradedMetadata = buildAuthBootObservabilityMetadata({
+            selectedWorkspaceId,
+            attempt: bootAttempt + 1,
+            retryReason,
+            bootHealth: degradedState.workspaceDiagnostics?.bootHealth || error?.bootHealth || null,
+            currentWorkspaceId: degradedState.currentWorkspace?.id || '',
+            outcome: 'degraded',
+            error,
+          })
+          const degradedBreadcrumbs = writeAuthBootBreadcrumb('bridge_boot_degraded', degradedMetadata)
+          bridgeBootHealthStatus = degradedMetadata.bootHealthStatus || ''
+          bridgeBreadcrumbCount = degradedBreadcrumbs.length
+          setAuthState(degradedState)
+          void trackAuthMetric('auth_boot_degraded', {
+            userId: session.user.id,
+            workspaceId: degradedState.currentWorkspace?.id || '',
+            metadata: {
+              ...degradedMetadata,
+              selectedWorkspaceId: selectedWorkspaceId || null,
+              previousError: error?.message || null,
+              sourceCapturedAt: degradedState.workspaceDiagnostics?.sourceCapturedAt || null,
+              bootHealthStatus: degradedState.workspaceDiagnostics?.bootHealth?.status || null,
+              breadcrumbCount: degradedBreadcrumbs.length,
+            },
+          })
+          return
+        }
+        void trackAuthMetric('auth_boot_failed', {
+          userId: session.user.id,
+          metadata: {
+            ...failureMetadata,
+            retryExhausted: Boolean(retryReason),
+            breadcrumbCount: failureBreadcrumbs.length,
+          },
+        })
         setAuthState({
           ...EMPTY_AUTH_STATE,
           status: 'error',
           session,
           user: session.user,
+          bootRetry: null,
           bootError: error?.message || 'Unable to load your Arch9 workspace.',
         })
       } finally {
@@ -475,6 +731,10 @@ export function AuthSessionProvider({ children }) {
           hasData: Boolean(resolvedBridgeState),
           selectedWorkspaceProvided: Boolean(selectedWorkspaceId),
           activeMembershipCount: resolvedBridgeState?.activeMemberships?.length,
+          retryCount: bridgeRetryScopeRef.current.attempts || 0,
+          bootHealthStatus: bridgeBootHealthStatus,
+          retryReason: bridgeRetryReason,
+          breadcrumbCount: bridgeBreadcrumbCount,
         })
       }
     }
@@ -487,6 +747,7 @@ export function AuthSessionProvider({ children }) {
   }, [bootAttempt, devAuthRole, productionSafetyViolation, selectedWorkspaceId, sessionLoading, sessionUserId])
 
   const refreshAuthState = useCallback(() => {
+    bridgeRetryScopeRef.current = { key: '', attempts: 0 }
     setBootAttempt((previous) => previous + 1)
   }, [])
 
@@ -499,6 +760,7 @@ export function AuthSessionProvider({ children }) {
         return
       }
       clearWorkspaceScopedRuntimeCaches()
+      bridgeRetryScopeRef.current = { key: '', attempts: 0 }
       setSelectedWorkspaceId(id)
       void setActiveWorkspacePreference(authState.user?.id || session?.user?.id || '', id, {
         user: authState.user || session?.user || null,

@@ -46,6 +46,10 @@ const INVALID_SERVICE_WORKSPACE_IDS = new Set([
   'local-workspace',
 ])
 
+const WORKSPACE_QUERY_TIMEOUT_MS = 6000
+const WORKSPACE_OPTIONAL_QUERY_TIMEOUT_MS = 3500
+const WORKSPACE_CONTEXT_RPC_NAME = 'bridge_resolve_current_workspace_context'
+
 const INACTIVE_WORKSPACE_STATUSES = new Set([
   'archived',
   'deleted',
@@ -58,6 +62,61 @@ const INACTIVE_WORKSPACE_STATUSES = new Set([
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function normalizeTimeoutMs(value, fallback) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function createWorkspaceQueryTimeoutError(label, timeoutMs, metadata = {}) {
+  const error = new Error(`${label} timed out after ${timeoutMs}ms.`)
+  error.code = 'WORKSPACE_QUERY_TIMEOUT'
+  error.label = label
+  error.timeoutMs = timeoutMs
+  error.metadata = metadata
+  return error
+}
+
+function isWorkspaceQueryTimeoutError(error = null) {
+  return error?.code === 'WORKSPACE_QUERY_TIMEOUT'
+}
+
+async function withWorkspaceQueryTimeout(task, {
+  label = 'workspace.query',
+  timeoutMs = WORKSPACE_QUERY_TIMEOUT_MS,
+  metadata = {},
+} = {}) {
+  const resolvedTimeoutMs = normalizeTimeoutMs(timeoutMs, WORKSPACE_QUERY_TIMEOUT_MS)
+  let timeoutId = null
+  const setTimer = typeof window !== 'undefined' && typeof window.setTimeout === 'function'
+    ? window.setTimeout.bind(window)
+    : setTimeout
+  const clearTimer = typeof window !== 'undefined' && typeof window.clearTimeout === 'function'
+    ? window.clearTimeout.bind(window)
+    : clearTimeout
+
+  try {
+    return await Promise.race([
+      typeof task === 'function' ? Promise.resolve().then(task) : Promise.resolve(task),
+      new Promise((_, reject) => {
+        timeoutId = setTimer(() => {
+          reject(createWorkspaceQueryTimeoutError(label, resolvedTimeoutMs, metadata))
+        }, resolvedTimeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId) clearTimer(timeoutId)
+  }
+}
+
+function warnOptionalWorkspaceQueryTimeout(error = null, fallbackLabel = 'workspace.optionalQuery') {
+  if (!isWorkspaceQueryTimeoutError(error)) return
+  console.warn('[WORKSPACE_RESOLUTION] optional workspace query timed out', {
+    label: error.label || fallbackLabel,
+    timeoutMs: error.timeoutMs || null,
+    metadata: error.metadata || {},
+  })
 }
 
 function normalizeEmail(value) {
@@ -88,6 +147,20 @@ function isMissingColumnError(error, columnName = '') {
 
 function isRecoverableSchemaError(error, tableName = '', columnName = '') {
   return isMissingTableError(error, tableName) || (columnName ? isMissingColumnError(error, columnName) : false)
+}
+
+function isMissingWorkspaceContextRpcError(error = null) {
+  if (!error) return false
+  const code = String(error.code || '').toLowerCase()
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  if (code === '42883' || code === 'pgrst202') return true
+  return (
+    message.includes(WORKSPACE_CONTEXT_RPC_NAME) &&
+    (message.includes('not find') ||
+      message.includes('could not find') ||
+      message.includes('does not exist') ||
+      message.includes('schema cache'))
+  )
 }
 
 function normalizeProfile(profile = null) {
@@ -786,12 +859,28 @@ function requireClient(client = null) {
   return resolvedClient
 }
 
-async function fetchServerWorkspacePreference(client, userId) {
-  const result = await client
-    .from('user_workspace_preferences')
-    .select('active_workspace_id, active_workspace_source, updated_at')
-    .eq('user_id', userId)
-    .maybeSingle()
+async function fetchServerWorkspacePreference(client, userId, options = {}) {
+  let result
+  try {
+    result = await withWorkspaceQueryTimeout(
+      client
+        .from('user_workspace_preferences')
+        .select('active_workspace_id, active_workspace_source, updated_at')
+        .eq('user_id', userId)
+        .maybeSingle(),
+      {
+        label: 'workspace.preference.fetch',
+        timeoutMs: options.timeoutMs,
+        metadata: { table: 'user_workspace_preferences', userId },
+      },
+    )
+  } catch (error) {
+    if (isWorkspaceQueryTimeoutError(error)) {
+      warnOptionalWorkspaceQueryTimeout(error, 'workspace.preference.fetch')
+      return { workspaceId: '', missingSchema: false, timedOut: true }
+    }
+    throw error
+  }
 
   if (result.error) {
     if (isMissingTableError(result.error, 'user_workspace_preferences')) return { workspaceId: '', missingSchema: true }
@@ -803,7 +892,87 @@ async function fetchServerWorkspacePreference(client, userId) {
     source: result.data?.active_workspace_source || '',
     updatedAt: result.data?.updated_at || null,
     missingSchema: false,
+    timedOut: false,
   }
+}
+
+function normalizeWorkspaceContextRpcArray(context = null, key = '') {
+  const value = context?.[key]
+  return Array.isArray(value) ? value.filter(Boolean) : []
+}
+
+function normalizeWorkspaceContextRpcPreference(context = null) {
+  const preference = context?.preference || null
+  return {
+    workspaceId: normalizeText(preference?.active_workspace_id),
+    source: preference?.active_workspace_source || '',
+    updatedAt: preference?.updated_at || null,
+    missingSchema: Boolean(context?.diagnostics?.preferenceSchemaMissing),
+    timedOut: false,
+  }
+}
+
+function appendProfileAttorneyFirmMembership(rows = [], user = null, profile = null) {
+  const profileFirmId = normalizeText(profile?.primaryAttorneyFirmId || profile?.primary_attorney_firm_id)
+  const userId = normalizeText(user?.id || profile?.id)
+  const normalizedRows = Array.isArray(rows) ? rows.filter(Boolean) : []
+  const hasProfileFirm = profileFirmId && normalizedRows.some((row) => row?.firm_id === profileFirmId)
+  if (!profileFirmId || hasProfileFirm || !userId) return normalizedRows
+
+  return [
+    ...normalizedRows,
+    {
+      id: `attorney-profile-primary-${profileFirmId}-${userId}`,
+      firm_id: profileFirmId,
+      user_id: userId,
+      role: 'attorney',
+      status: MEMBERSHIP_STATUSES.pending,
+      department_id: null,
+      joined_at: null,
+    },
+  ]
+}
+
+function normalizeWorkspaceResolutionRpcContext(context = null, { user = null, profile = null } = {}) {
+  const normalizedProfile = normalizeProfile(profile || context?.profile)
+  const normalizedUser = user && !user.email && normalizedProfile?.email
+    ? { ...user, email: normalizedProfile.email }
+    : user
+
+  return {
+    user: normalizedUser,
+    profile: normalizedProfile,
+    preference: normalizeWorkspaceContextRpcPreference(context),
+    organisationMembershipRows: normalizeWorkspaceContextRpcArray(context, 'organisationMembershipRows'),
+    organisationRows: normalizeWorkspaceContextRpcArray(context, 'organisationRows'),
+    attorneyMembershipRows: appendProfileAttorneyFirmMembership(
+      normalizeWorkspaceContextRpcArray(context, 'attorneyMembershipRows'),
+      normalizedUser,
+      normalizedProfile,
+    ),
+    attorneyFirmRows: normalizeWorkspaceContextRpcArray(context, 'attorneyFirmRows'),
+  }
+}
+
+async function fetchWorkspaceResolutionContextRpc(client, { userId = '', user = null, requestedWorkspaceId = '', timeoutMs } = {}) {
+  const safeUserId = normalizeText(userId || user?.id)
+  if (!safeUserId || typeof client?.rpc !== 'function') return null
+
+  const result = await withWorkspaceQueryTimeout(
+    client.rpc(WORKSPACE_CONTEXT_RPC_NAME, {
+      target_user_id: safeUserId,
+      requested_workspace_id: normalizeText(requestedWorkspaceId) || null,
+      user_email: normalizeEmail(user?.email),
+    }),
+    {
+      label: 'workspace.context.rpc',
+      timeoutMs,
+      metadata: { rpc: WORKSPACE_CONTEXT_RPC_NAME, userId: safeUserId },
+    },
+  )
+
+  if (result.error) throw result.error
+  return result.data || null
 }
 
 export async function setActiveWorkspacePreference(userId, workspaceId, options = {}) {
@@ -848,17 +1017,24 @@ export async function setActiveWorkspacePreference(userId, workspaceId, options 
   return result.data
 }
 
-async function fetchOrganisationMembershipRows(client, user, profile) {
+async function fetchOrganisationMembershipRows(client, user, profile, options = {}) {
   const userId = normalizeText(user?.id)
   const userEmail = normalizeEmail(user?.email || profile?.email)
   const membershipSelect =
     'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, region_id, workspace_unit_id, scope_level, scope_metadata, module_context, module_metadata, job_title, is_primary_owner, active_workspace_selected_at, department_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, app_role, workspace_type, status, membership_status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at'
   const fallbackSelect = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at'
   const currentMembershipSelect = 'id, organization_id, user_id, organization_role, membership_status, created_at, updated_at'
-  let byUserId = await client
-    .from('organisation_users')
-    .select(membershipSelect)
-    .eq('user_id', userId)
+  let byUserId = await withWorkspaceQueryTimeout(
+    client
+      .from('organisation_users')
+      .select(membershipSelect)
+      .eq('user_id', userId),
+    {
+      label: 'workspace.organisationUsers.byUserId',
+      timeoutMs: options.timeoutMs,
+      metadata: { table: 'organisation_users', userId },
+    },
+  )
 
   if (byUserId.error) {
     if (
@@ -877,10 +1053,17 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
       isMissingColumnError(byUserId.error, 'active_workspace_selected_at') ||
       isMissingColumnError(byUserId.error, 'job_title')
     ) {
-      byUserId = await client
-        .from('organisation_users')
-        .select(fallbackSelect)
-        .eq('user_id', userId)
+      byUserId = await withWorkspaceQueryTimeout(
+        client
+          .from('organisation_users')
+          .select(fallbackSelect)
+          .eq('user_id', userId),
+        {
+          label: 'workspace.organisationUsers.byUserIdFallback',
+          timeoutMs: options.timeoutMs,
+          metadata: { table: 'organisation_users', userId },
+        },
+      )
     }
   }
 
@@ -891,10 +1074,17 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
 
   let invitedRows = []
   if (userEmail) {
-    let byEmail = await client
-      .from('organisation_users')
-      .select(membershipSelect)
-      .eq('email', userEmail)
+    let byEmail = await withWorkspaceQueryTimeout(
+      client
+        .from('organisation_users')
+        .select(membershipSelect)
+        .eq('email', userEmail),
+      {
+        label: 'workspace.organisationUsers.byEmail',
+        timeoutMs: options.timeoutMs,
+        metadata: { table: 'organisation_users', userId },
+      },
+    )
 
     if (
       byEmail.error &&
@@ -913,10 +1103,17 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
         isMissingColumnError(byEmail.error, 'active_workspace_selected_at') ||
         isMissingColumnError(byEmail.error, 'job_title'))
     ) {
-      byEmail = await client
-        .from('organisation_users')
-        .select(fallbackSelect)
-        .eq('email', userEmail)
+      byEmail = await withWorkspaceQueryTimeout(
+        client
+          .from('organisation_users')
+          .select(fallbackSelect)
+          .eq('email', userEmail),
+        {
+          label: 'workspace.organisationUsers.byEmailFallback',
+          timeoutMs: options.timeoutMs,
+          metadata: { table: 'organisation_users', userId },
+        },
+      )
     }
 
     if (!byEmail.error) {
@@ -931,10 +1128,17 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
     if (row?.id) rowsById.set(row.id, row)
   }
 
-  const currentSchemaRows = await client
-    .from('organization_members')
-    .select(currentMembershipSelect)
-    .eq('user_id', userId)
+  const currentSchemaRows = await withWorkspaceQueryTimeout(
+    client
+      .from('organization_members')
+      .select(currentMembershipSelect)
+      .eq('user_id', userId),
+    {
+      label: 'workspace.organizationMembers.byUserId',
+      timeoutMs: options.timeoutMs,
+      metadata: { table: 'organization_members', userId },
+    },
+  )
 
   if (!currentSchemaRows.error) {
     for (const row of currentSchemaRows.data || []) {
@@ -962,34 +1166,62 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
   return [...rowsById.values()]
 }
 
-async function fetchOrganisationRows(client, organisationIds = []) {
+async function fetchOrganisationRows(client, organisationIds = [], options = {}) {
   const ids = Array.from(new Set(organisationIds.map((id) => normalizeText(id)).filter(Boolean)))
   if (!ids.length) return []
 
-  let query = await client
-    .from('organisations')
-    .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, workspace_kind, status')
-    .in('id', ids)
+  let query = await withWorkspaceQueryTimeout(
+    client
+      .from('organisations')
+      .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, workspace_kind, status')
+      .in('id', ids),
+    {
+      label: 'workspace.organisations.fetch',
+      timeoutMs: options.timeoutMs,
+      metadata: { table: 'organisations', count: ids.length },
+    },
+  )
 
   if (query.error && isMissingColumnError(query.error, 'status')) {
-    query = await client
-      .from('organisations')
-      .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, workspace_kind')
-      .in('id', ids)
+    query = await withWorkspaceQueryTimeout(
+      client
+        .from('organisations')
+        .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type, workspace_kind')
+        .in('id', ids),
+      {
+        label: 'workspace.organisations.fetchWithoutStatus',
+        timeoutMs: options.timeoutMs,
+        metadata: { table: 'organisations', count: ids.length },
+      },
+    )
   }
 
   if (query.error && isMissingColumnError(query.error, 'workspace_kind')) {
-    query = await client
-      .from('organisations')
-      .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type')
-      .in('id', ids)
+    query = await withWorkspaceQueryTimeout(
+      client
+        .from('organisations')
+        .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type')
+        .in('id', ids),
+      {
+        label: 'workspace.organisations.fetchWithoutKind',
+        timeoutMs: options.timeoutMs,
+        metadata: { table: 'organisations', count: ids.length },
+      },
+    )
   }
 
   if (query.error && isMissingColumnError(query.error, 'type')) {
-    query = await client
-      .from('organisations')
-      .select('id, name, display_name, company_email, company_phone, support_email, support_phone')
-      .in('id', ids)
+    query = await withWorkspaceQueryTimeout(
+      client
+        .from('organisations')
+        .select('id, name, display_name, company_email, company_phone, support_email, support_phone')
+        .in('id', ids),
+      {
+        label: 'workspace.organisations.fetchLegacy',
+        timeoutMs: options.timeoutMs,
+        metadata: { table: 'organisations', count: ids.length },
+      },
+    )
   }
 
   if (query.error) {
@@ -1000,18 +1232,48 @@ async function fetchOrganisationRows(client, organisationIds = []) {
   return query.data || []
 }
 
-async function fetchAttorneyMembershipRows(client, user, profile) {
-  const profileFirmId = normalizeText(profile?.primaryAttorneyFirmId || profile?.primary_attorney_firm_id)
-  let query = await client
-    .from('attorney_firm_members')
-    .select('id, firm_id, user_id, branch_id, primary_branch_id, branch_scope, department_id, role, status, invited_by, joined_at, created_at, updated_at')
-    .eq('user_id', user.id)
+async function fetchAttorneyMembershipRows(client, user, profile, options = {}) {
+  let query
+  try {
+    query = await withWorkspaceQueryTimeout(
+      client
+        .from('attorney_firm_members')
+        .select('id, firm_id, user_id, branch_id, primary_branch_id, branch_scope, department_id, role, status, invited_by, joined_at, created_at, updated_at')
+        .eq('user_id', user.id),
+      {
+        label: 'workspace.attorneyFirmMembers.byUserId',
+        timeoutMs: options.timeoutMs,
+        metadata: { table: 'attorney_firm_members', userId: user.id },
+      },
+    )
+  } catch (error) {
+    if (options.optional === true && isWorkspaceQueryTimeoutError(error)) {
+      warnOptionalWorkspaceQueryTimeout(error, 'workspace.attorneyFirmMembers.byUserId')
+      return []
+    }
+    throw error
+  }
 
   if (query.error && (isMissingColumnError(query.error, 'branch_scope') || isMissingColumnError(query.error, 'branch_id') || isMissingColumnError(query.error, 'primary_branch_id'))) {
-    query = await client
-      .from('attorney_firm_members')
-      .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
-      .eq('user_id', user.id)
+    try {
+      query = await withWorkspaceQueryTimeout(
+        client
+          .from('attorney_firm_members')
+          .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
+          .eq('user_id', user.id),
+        {
+          label: 'workspace.attorneyFirmMembers.byUserIdFallback',
+          timeoutMs: options.timeoutMs,
+          metadata: { table: 'attorney_firm_members', userId: user.id },
+        },
+      )
+    } catch (error) {
+      if (options.optional === true && isWorkspaceQueryTimeoutError(error)) {
+        warnOptionalWorkspaceQueryTimeout(error, 'workspace.attorneyFirmMembers.byUserIdFallback')
+        return []
+      }
+      throw error
+    }
   }
 
   if (query.error) {
@@ -1019,32 +1281,24 @@ async function fetchAttorneyMembershipRows(client, user, profile) {
     throw query.error
   }
 
-  const rows = query.data || []
-  const hasProfileFirm = profileFirmId && rows.some((row) => row.firm_id === profileFirmId)
-  if (!profileFirmId || hasProfileFirm) return rows
-
-  return [
-    ...rows,
-    {
-      id: `attorney-profile-primary-${profileFirmId}-${user.id}`,
-      firm_id: profileFirmId,
-      user_id: user.id,
-      role: 'attorney',
-      status: MEMBERSHIP_STATUSES.pending,
-      department_id: null,
-      joined_at: null,
-    },
-  ]
+  return appendProfileAttorneyFirmMembership(query.data || [], user, profile)
 }
 
-async function fetchAttorneyFirmRows(client, firmIds = []) {
+async function fetchAttorneyFirmRows(client, firmIds = [], options = {}) {
   const ids = Array.from(new Set(firmIds.map((id) => normalizeText(id)).filter(Boolean)))
   if (!ids.length) return []
 
-  const query = await client
-    .from('attorney_firms')
-    .select('id, organisation_id, name, email, phone, logo_url, primary_colour, secondary_colour, created_by, is_active')
-    .in('id', ids)
+  const query = await withWorkspaceQueryTimeout(
+    client
+      .from('attorney_firms')
+      .select('id, organisation_id, name, email, phone, logo_url, primary_colour, secondary_colour, created_by, is_active')
+      .in('id', ids),
+    {
+      label: 'workspace.attorneyFirms.fetch',
+      timeoutMs: options.timeoutMs,
+      metadata: { table: 'attorney_firms', count: ids.length },
+    },
+  )
 
   if (query.error) {
     if (isMissingTableError(query.error, 'attorney_firms')) return []
@@ -1059,28 +1313,91 @@ export async function resolveCurrentWorkspace(userId, options = {}) {
   if (!safeUserId) {
     return buildWorkspaceResolution({ user: null, profile: null })
   }
+  const queryTimeoutMs = normalizeTimeoutMs(options.queryTimeoutMs, WORKSPACE_QUERY_TIMEOUT_MS)
+  const optionalQueryTimeoutMs = normalizeTimeoutMs(
+    options.optionalQueryTimeoutMs,
+    Math.min(queryTimeoutMs, WORKSPACE_OPTIONAL_QUERY_TIMEOUT_MS),
+  )
 
   let user = options.user || null
   if (!user?.id && client.auth?.getUser) {
-    const userResult = await client.auth.getUser()
+    const userResult = await withWorkspaceQueryTimeout(
+      client.auth.getUser(),
+      {
+        label: 'workspace.auth.getUser',
+        timeoutMs: queryTimeoutMs,
+        metadata: { userId: safeUserId },
+      },
+    )
     if (userResult.error) throw userResult.error
     user = userResult.data?.user || null
   }
   if (!user?.id) user = { id: safeUserId, email: options.email || '' }
 
-  const profile = normalizeProfile(options.profile || await getOrCreateUserProfile({ user }))
+  let workspaceContext = options.workspaceContext || null
+  let workspaceContextRpcUnavailable = false
+  if (!workspaceContext && options.skipWorkspaceContextRpc !== true) {
+    try {
+      workspaceContext = await fetchWorkspaceResolutionContextRpc(client, {
+        user,
+        userId: safeUserId,
+        requestedWorkspaceId: options.requestedWorkspaceId,
+        timeoutMs: queryTimeoutMs,
+      })
+    } catch (error) {
+      if (isMissingWorkspaceContextRpcError(error)) {
+        workspaceContextRpcUnavailable = true
+        console.warn('[WORKSPACE_RESOLUTION] consolidated workspace resolver RPC unavailable; falling back to legacy queries', {
+          rpc: WORKSPACE_CONTEXT_RPC_NAME,
+          userId: safeUserId,
+          error,
+        })
+      } else {
+        throw error
+      }
+    }
+  }
+
+  const rpcContext = workspaceContext
+    ? normalizeWorkspaceResolutionRpcContext(workspaceContext, { user, profile: options.profile || null })
+    : null
+
+  const profile = normalizeProfile(
+    options.profile ||
+      rpcContext?.profile ||
+      await withWorkspaceQueryTimeout(
+        () => getOrCreateUserProfile({ user }),
+        {
+          label: 'workspace.profile.getOrCreate',
+          timeoutMs: queryTimeoutMs,
+          metadata: { userId: safeUserId },
+        },
+      ),
+  )
+  if (!user?.email && profile?.email) user = { ...user, email: profile.email }
+
   const preference = options.storedWorkspaceId
     ? { workspaceId: normalizeText(options.storedWorkspaceId), missingSchema: false }
-    : await fetchServerWorkspacePreference(client, safeUserId)
+    : rpcContext?.preference || await fetchServerWorkspacePreference(client, safeUserId, { timeoutMs: optionalQueryTimeoutMs })
 
-  const [organisationMembershipRows, attorneyMembershipRows] = await Promise.all([
-    fetchOrganisationMembershipRows(client, user, profile),
-    fetchAttorneyMembershipRows(client, user, profile),
-  ])
-  const [organisationRows, attorneyFirmRows] = await Promise.all([
-    fetchOrganisationRows(client, organisationMembershipRows.map((row) => row.organisation_id)),
-    fetchAttorneyFirmRows(client, attorneyMembershipRows.map((row) => row.firm_id)),
-  ])
+  let organisationMembershipRows = rpcContext?.organisationMembershipRows || []
+  let organisationRows = rpcContext?.organisationRows || []
+  let attorneyMembershipRows = rpcContext?.attorneyMembershipRows || []
+  let attorneyFirmRows = rpcContext?.attorneyFirmRows || []
+
+  if (!rpcContext) {
+    ;[organisationMembershipRows, attorneyMembershipRows] = await Promise.all([
+      fetchOrganisationMembershipRows(client, user, profile, { timeoutMs: queryTimeoutMs }),
+      fetchAttorneyMembershipRows(client, user, profile, {
+        timeoutMs: optionalQueryTimeoutMs,
+        optional: profile?.role !== APP_ROLES.attorney,
+      }),
+    ])
+    ;[organisationRows, attorneyFirmRows] = await Promise.all([
+      fetchOrganisationRows(client, organisationMembershipRows.map((row) => row.organisation_id), { timeoutMs: queryTimeoutMs }),
+      fetchAttorneyFirmRows(client, attorneyMembershipRows.map((row) => row.firm_id), { timeoutMs: queryTimeoutMs }),
+    ])
+  }
 
   const resolution = buildWorkspaceResolution({
     user,
@@ -1092,12 +1409,19 @@ export async function resolveCurrentWorkspace(userId, options = {}) {
     requestedWorkspaceId: options.requestedWorkspaceId,
     storedWorkspaceId: preference.workspaceId,
   })
+  resolution.diagnostics.source = rpcContext ? 'workspace_context_rpc' : 'workspace_resolution_queries'
 
   if (preference.missingSchema) {
     resolution.diagnostics.warnings = [...(resolution.diagnostics.warnings || []), 'workspace_preference_schema_missing']
   }
+  if (preference.timedOut) {
+    resolution.diagnostics.warnings = [...(resolution.diagnostics.warnings || []), 'workspace_preference_timeout']
+  }
+  if (workspaceContextRpcUnavailable) {
+    resolution.diagnostics.warnings = [...(resolution.diagnostics.warnings || []), 'workspace_context_rpc_unavailable']
+  }
 
-  if (resolution.ok && resolution.currentWorkspace?.id && options.persistPreference !== false && !preference.missingSchema) {
+  if (resolution.ok && resolution.currentWorkspace?.id && options.persistPreference !== false && !preference.missingSchema && !preference.timedOut) {
     const shouldPersist =
       normalizeText(options.requestedWorkspaceId) ||
       !preference.workspaceId ||
@@ -1324,4 +1648,6 @@ export const __workspaceResolutionTestUtils = Object.freeze({
   buildMembershipContexts,
   sortMemberships,
   getPermissionMapForMembership,
+  normalizeWorkspaceResolutionRpcContext,
+  isMissingWorkspaceContextRpcError,
 })

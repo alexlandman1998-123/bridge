@@ -87,6 +87,9 @@ export function WorkspaceProvider({ children }) {
   const profileError = authState.bootError || ''
   const workspaceReady = authState.status !== 'loading'
   const workspaceStatus = resolveWorkspaceStatus(authState)
+  const workspaceAccessDegraded = authState.workspaceAccessDegraded === true
+  const workspaceDegradedReason = String(authState.workspaceDegradedReason || '').trim()
+  const workspaceDegradedMessage = String(authState.workspaceDegradedMessage || '').trim()
   const workspaceSetupStatus =
     authState.activeMemberships.length > 0
       ? 'active'
@@ -272,6 +275,9 @@ export function WorkspaceProvider({ children }) {
       permissions: authState.permissions || {},
       workspaceResolution: authState.workspaceResolution || null,
       workspaceDiagnostics: authState.workspaceDiagnostics || null,
+      workspaceAccessDegraded,
+      workspaceDegradedReason,
+      workspaceDegradedMessage,
       onboardingRequiredReason: authState.onboardingRequiredReason,
       permissionResolver,
       can: (permission) => can(permission, permissionContext),
@@ -323,6 +329,9 @@ export function WorkspaceProvider({ children }) {
       workspaceReady,
       workspaceStatus,
       workspaceSetupStatus,
+      workspaceAccessDegraded,
+      workspaceDegradedMessage,
+      workspaceDegradedReason,
     ],
   )
 

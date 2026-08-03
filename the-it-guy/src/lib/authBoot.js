@@ -20,11 +20,178 @@ const AUTO_CLAIMABLE_ONBOARDING_REASONS = new Set([
 
 const AUTH_BOOT_REQUIRED_STEP_TIMEOUT_MS = 10000
 const AUTH_BOOT_OPTIONAL_STEP_TIMEOUT_MS = 5000
+const AUTH_BOOT_HEALTH_PROBE_TIMEOUT_MS = 2500
 const AUTH_BOOT_WORKSPACE_STEP_TIMEOUT_MS = 12000
 const AUTH_BOOT_TRANSIENT_SCHEMA_RETRY_DELAYS_MS = [750, 1750, 3500]
+const DEGRADED_WORKSPACE_BOOT_STORAGE_KEY = 'arch9:last-good-auth-boot:v1'
+const DEGRADED_WORKSPACE_BOOT_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function getStorage() {
+  if (typeof window === 'undefined' || !window.localStorage) return null
+  return window.localStorage
+}
+
+function cloneJsonSafe(value, fallback) {
+  try {
+    return JSON.parse(JSON.stringify(value ?? fallback))
+  } catch {
+    return fallback
+  }
+}
+
+function buildEmptyMembershipContexts() {
+  return {
+    effective: null,
+    organisation: null,
+    attorneyFirm: null,
+  }
+}
+
+function hasMembershipForWorkspace(memberships = [], workspaceId = '') {
+  const id = normalizeText(workspaceId)
+  if (!id) return false
+  return (Array.isArray(memberships) ? memberships : []).some((membership) => {
+    const membershipWorkspaceId = normalizeText(
+      membership?.workspaceId ||
+        membership?.workspace_id ||
+        membership?.workspace?.id ||
+        membership?.raw?.workspace_id ||
+        membership?.raw?.organisation_id ||
+        membership?.raw?.organization_id ||
+        membership?.raw?.firm_id,
+    )
+    return membershipWorkspaceId === id || normalizeText(membership?.id) === id
+  })
+}
+
+function readLastGoodBridgeAuthSnapshot() {
+  const storage = getStorage()
+  if (!storage) return null
+  try {
+    const parsed = JSON.parse(storage.getItem(DEGRADED_WORKSPACE_BOOT_STORAGE_KEY) || 'null')
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch (error) {
+    console.warn('[AUTH] degraded workspace cache could not be read', error)
+    return null
+  }
+}
+
+export function persistLastGoodBridgeAuthState(state = {}) {
+  const storage = getStorage()
+  if (!storage || state?.status !== 'authenticated' || state?.workspaceAccessDegraded) return
+  const userId = normalizeText(state?.user?.id)
+  const currentWorkspaceId = normalizeText(state?.currentWorkspace?.id)
+  const activeMemberships = Array.isArray(state?.activeMemberships) ? state.activeMemberships : []
+  if (!userId || !currentWorkspaceId || !activeMemberships.length) return
+
+  const snapshot = {
+    version: 1,
+    capturedAt: new Date().toISOString(),
+    userId,
+    profile: cloneJsonSafe(state.profile, null),
+    appRole: normalizeText(state.appRole),
+    memberships: cloneJsonSafe(state.memberships, []),
+    activeMemberships: cloneJsonSafe(activeMemberships, []),
+    pendingMemberships: cloneJsonSafe(state.pendingMemberships, []),
+    suspendedMemberships: cloneJsonSafe(state.suspendedMemberships, []),
+    currentMembership: cloneJsonSafe(state.currentMembership, null),
+    currentMemberships: cloneJsonSafe(state.currentMemberships, []),
+    membershipContexts: cloneJsonSafe(state.membershipContexts, buildEmptyMembershipContexts()),
+    currentWorkspace: cloneJsonSafe(state.currentWorkspace, null),
+    workspaceType: normalizeText(state.workspaceType),
+    workspaceRole: normalizeText(state.workspaceRole),
+    permissions: cloneJsonSafe(state.permissions, {}),
+    onboardingComplete: state.onboardingComplete === true,
+    onboardingRequiredReason: normalizeText(state.onboardingRequiredReason),
+  }
+
+  try {
+    storage.setItem(DEGRADED_WORKSPACE_BOOT_STORAGE_KEY, JSON.stringify(snapshot))
+  } catch (error) {
+    console.warn('[AUTH] degraded workspace cache could not be written', error)
+  }
+}
+
+export function buildDegradedBridgeAuthState({ session = null, selectedWorkspaceId = '', error = null } = {}) {
+  const snapshot = readLastGoodBridgeAuthSnapshot()
+  const userId = normalizeText(session?.user?.id)
+  if (!snapshot || !userId || normalizeText(snapshot.userId) !== userId) return null
+  const capturedAtMs = Date.parse(snapshot.capturedAt || '')
+  if (!Number.isFinite(capturedAtMs) || Date.now() - capturedAtMs > DEGRADED_WORKSPACE_BOOT_MAX_AGE_MS) return null
+  const requestedWorkspaceId = normalizeText(selectedWorkspaceId)
+  const activeMemberships = Array.isArray(snapshot.activeMemberships) ? snapshot.activeMemberships : []
+  if (requestedWorkspaceId && !hasMembershipForWorkspace(activeMemberships, requestedWorkspaceId)) return null
+  const currentWorkspace = snapshot.currentWorkspace && typeof snapshot.currentWorkspace === 'object'
+    ? snapshot.currentWorkspace
+    : null
+  if (!currentWorkspace?.id || !activeMemberships.length) return null
+
+  const profile = snapshot.profile && typeof snapshot.profile === 'object'
+    ? snapshot.profile
+    : buildDefaultProfileFromUser(session.user)
+  const membershipContexts =
+    snapshot.membershipContexts && typeof snapshot.membershipContexts === 'object'
+      ? snapshot.membershipContexts
+      : buildEmptyMembershipContexts()
+  const diagnostics = {
+    degraded: true,
+    reason: 'workspace_boot_timeout',
+    recoveredFromCache: true,
+    sourceCapturedAt: snapshot.capturedAt,
+    originalError: error?.message || '',
+    warnings: ['workspace_boot_degraded_from_last_good_snapshot'],
+  }
+
+  return {
+    status: 'authenticated',
+    session,
+    user: session.user,
+    profile: {
+      ...profile,
+      bootFallback: profile.bootFallback === true,
+    },
+    signupIntent: null,
+    onboardingState: {
+      degraded: true,
+      recoveryReason: '',
+      validation: {
+        ok: true,
+        degraded: true,
+        reason: '',
+      },
+    },
+    appRole: normalizeText(snapshot.appRole || profile.role),
+    memberships: Array.isArray(snapshot.memberships) ? snapshot.memberships : activeMemberships,
+    activeMemberships,
+    pendingMemberships: Array.isArray(snapshot.pendingMemberships) ? snapshot.pendingMemberships : [],
+    suspendedMemberships: Array.isArray(snapshot.suspendedMemberships) ? snapshot.suspendedMemberships : [],
+    currentMembership: snapshot.currentMembership || activeMemberships[0] || null,
+    currentMemberships: Array.isArray(snapshot.currentMemberships) && snapshot.currentMemberships.length
+      ? snapshot.currentMemberships
+      : activeMemberships,
+    membershipContexts,
+    currentWorkspace,
+    workspaceType: normalizeText(snapshot.workspaceType || currentWorkspace.type || inferWorkspaceTypeFromAppRole(snapshot.appRole || profile.role)),
+    workspaceRole: normalizeText(snapshot.workspaceRole),
+    permissions: snapshot.permissions && typeof snapshot.permissions === 'object' ? snapshot.permissions : {},
+    workspaceResolution: {
+      ok: true,
+      status: 'degraded',
+      reason: '',
+      diagnostics,
+    },
+    workspaceDiagnostics: diagnostics,
+    workspaceAccessDegraded: true,
+    workspaceDegradedReason: 'workspace_boot_timeout',
+    workspaceDegradedMessage: 'Workspace data is refreshing from the last successful session while Arch9 reconnects to the backend.',
+    onboardingComplete: snapshot.onboardingComplete !== false,
+    onboardingRequiredReason: normalizeText(snapshot.onboardingRequiredReason),
+    bootError: '',
+  }
 }
 
 function getNowMs() {
@@ -113,6 +280,103 @@ function isTransientSchemaCacheError(error = null) {
     message.includes('could not query the database for the schema cache') ||
     (message.includes('schema cache') && message.includes('retrying'))
   )
+}
+
+function buildAuthBootHealthProbeResult({
+  ok,
+  status,
+  durationMs = 0,
+  checkedAt = new Date().toISOString(),
+  error = null,
+} = {}) {
+  return {
+    ok: ok === true,
+    status: normalizeText(status) || (ok ? 'healthy' : 'unhealthy'),
+    durationMs: roundDuration(durationMs),
+    checkedAt,
+    errorCode: error?.code || null,
+    errorMessage: error?.message || null,
+  }
+}
+
+export async function probeAuthBootHealth({ user, client = supabase } = {}) {
+  const startedAt = getNowMs()
+  const userId = normalizeText(user?.id)
+  if (!isSupabaseConfigured || !client || !userId) {
+    return buildAuthBootHealthProbeResult({
+      ok: false,
+      status: 'unconfigured',
+      durationMs: getNowMs() - startedAt,
+    })
+  }
+
+  try {
+    const result = await withStepTimeout(
+      client
+        .from('profiles')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle(),
+      {
+        label: 'bootHealth.profilesProbe',
+        timeoutMs: AUTH_BOOT_HEALTH_PROBE_TIMEOUT_MS,
+      },
+    )
+
+    if (result.error) {
+      const status = isTransientSchemaCacheError(result.error)
+        ? 'schema_cache_unavailable'
+        : 'query_error'
+      return buildAuthBootHealthProbeResult({
+        ok: false,
+        status,
+        durationMs: getNowMs() - startedAt,
+        error: result.error,
+      })
+    }
+
+    return buildAuthBootHealthProbeResult({
+      ok: true,
+      status: 'healthy',
+      durationMs: getNowMs() - startedAt,
+    })
+  } catch (error) {
+    return buildAuthBootHealthProbeResult({
+      ok: false,
+      status: isAuthBootStepTimeout(error) ? 'timeout' : 'probe_failed',
+      durationMs: getNowMs() - startedAt,
+      error,
+    })
+  }
+}
+
+function attachBootHealthToWorkspaceResolution(workspaceResolution = null, bootHealth = null) {
+  if (!workspaceResolution || !bootHealth) return workspaceResolution
+  const diagnostics = workspaceResolution.diagnostics && typeof workspaceResolution.diagnostics === 'object'
+    ? workspaceResolution.diagnostics
+    : {}
+  const warnings = Array.isArray(diagnostics.warnings) ? diagnostics.warnings : []
+  workspaceResolution.diagnostics = {
+    ...diagnostics,
+    bootHealth,
+    warnings: bootHealth.ok ? warnings : [...new Set([...warnings, 'boot_health_probe_unhealthy'])],
+  }
+  return workspaceResolution
+}
+
+function attachBootHealthToError(error, bootHealth = null) {
+  if (error && bootHealth && typeof error === 'object' && !error.bootHealth) {
+    error.bootHealth = bootHealth
+  }
+  return error
+}
+
+async function runAuthBootStepWithBootHealth(label, task, metadata = {}, bootHealth = null) {
+  try {
+    return await runAuthBootStep(label, task, metadata)
+  } catch (error) {
+    throw attachBootHealthToError(error, bootHealth)
+  }
 }
 
 async function withTransientSchemaRetry(task, {
@@ -295,6 +559,9 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       workspaceType: '',
       onboardingComplete: false,
       onboardingRequiredReason: '',
+      workspaceAccessDegraded: false,
+      workspaceDegradedReason: '',
+      workspaceDegradedMessage: '',
       bootError: '',
     }
   }
@@ -306,6 +573,21 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
         () => supabase.auth.getUser(),
       ))?.data?.user
   if (!user?.id) throw new Error('Authenticated Supabase user could not be resolved.')
+
+  const bootHealth = await runAuthBootStep(
+    'bootHealth.probe',
+    () => probeAuthBootHealth({ user, client: supabase }),
+    { userId: user.id },
+  )
+  if (!bootHealth.ok) {
+    console.warn('[AUTH] boot health probe reported degraded backend access', {
+      userId: user.id,
+      status: bootHealth.status,
+      durationMs: bootHealth.durationMs,
+      errorCode: bootHealth.errorCode,
+      errorMessage: bootHealth.errorMessage,
+    })
+  }
 
   const profile = await runAuthBootStep(
     'profile.getOrCreate',
@@ -371,7 +653,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     })
   }
 
-  let workspaceResolution = await runAuthBootStep(
+  let workspaceResolution = await runAuthBootStepWithBootHealth(
     'workspace.resolveCurrentWorkspace',
     () => withTransientSchemaRetry(
       () => withStepTimeout(
@@ -392,7 +674,9 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       userId: user.id,
       requestedWorkspaceId: normalizeText(selectedWorkspaceId) || null,
     },
+    bootHealth,
   )
+  attachBootHealthToWorkspaceResolution(workspaceResolution, bootHealth)
   let memberships = workspaceResolution.memberships
   let activeMemberships = workspaceResolution.activeMemberships
   let pendingMemberships = workspaceResolution.pendingMemberships
@@ -436,7 +720,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
         error: claimRepair.error,
       })
     } else if (claimRepair.data?.success) {
-      workspaceResolution = await runAuthBootStep(
+      workspaceResolution = await runAuthBootStepWithBootHealth(
         'workspace.resolveCurrentWorkspace.afterClaim',
         () => withTransientSchemaRetry(
           () => withStepTimeout(
@@ -457,7 +741,9 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
           userId: user.id,
           requestedWorkspaceId: claimRepair.data.workspace_id || claimRepair.data.organisation_id || normalizeText(selectedWorkspaceId) || null,
         },
+        bootHealth,
       )
+      attachBootHealthToWorkspaceResolution(workspaceResolution, bootHealth)
       memberships = workspaceResolution.memberships
       activeMemberships = workspaceResolution.activeMemberships
       pendingMemberships = workspaceResolution.pendingMemberships
@@ -541,7 +827,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
         error: repair.error,
       })
     } else if (repair.data?.success) {
-      workspaceResolution = await runAuthBootStep(
+      workspaceResolution = await runAuthBootStepWithBootHealth(
         'workspace.resolveCurrentWorkspace.afterRepair',
         () => withTransientSchemaRetry(
           () => withStepTimeout(
@@ -562,7 +848,9 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
           userId: user.id,
           requestedWorkspaceId: repair.data.workspace_id || repair.data.organisation_id || currentWorkspace?.id || null,
         },
+        bootHealth,
       )
+      attachBootHealthToWorkspaceResolution(workspaceResolution, bootHealth)
       memberships = workspaceResolution.memberships
       activeMemberships = workspaceResolution.activeMemberships
       pendingMemberships = workspaceResolution.pendingMemberships
@@ -664,6 +952,9 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     permissions: workspaceResolution.permissions,
     workspaceResolution,
     workspaceDiagnostics: workspaceResolution.diagnostics,
+    workspaceAccessDegraded: false,
+    workspaceDegradedReason: '',
+    workspaceDegradedMessage: '',
     onboardingComplete: engineRequiresSetup ? false : onboarding.onboardingComplete,
     onboardingRequiredReason: engineRequiresSetup || onboardingState?.onboardingStatus === ONBOARDING_STATUSES.workspacePendingApproval
       ? engineRequiredReason
