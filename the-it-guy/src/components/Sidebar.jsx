@@ -27,7 +27,7 @@ import {
   Workflow,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { getRoleNavItems } from '../lib/roles'
@@ -36,7 +36,6 @@ import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
 import { trackWorkspaceBrandingMetric } from '../services/observability/monitoring'
 import { filterNavigationItems } from '../auth/permissions/navigationPermissions'
 import { buildVisibleSettingsGroups } from '../pages/settings/settingsNavigation'
-import WorkspaceSwitcher from './WorkspaceSwitcher'
 
 const ICON_BY_KEY = {
   dashboard: LayoutDashboard,
@@ -258,7 +257,6 @@ function Sidebar() {
   const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = workspaceContext
   const { branding, loading: organisationLoading, membershipRole: organisationMembershipRole } = useOrganisation()
   const location = useLocation()
-  const navigate = useNavigate()
   const inferredRoleWorkspaceType = inferWorkspaceTypeFromAppRole(role)
   const navWorkspaceType =
     inferredRoleWorkspaceType && workspaceContext.currentWorkspace?.type !== inferredRoleWorkspaceType
@@ -550,14 +548,6 @@ function Sidebar() {
               <h1 className="ui-sidebar-brand-mark">{BRIDGE_BRAND_MARK}</h1>
               <p className="ui-sidebar-brand-copy">{BRIDGE_BRAND_SUBTITLE}</p>
             </>
-          )}
-        </div>
-        <div className="ui-sidebar-workspace">
-          {role === 'bond_originator' ? null : (
-            <WorkspaceSwitcher
-              currentPath={`${location.pathname}${location.search || ''}`}
-              onSelectWorkspace={(path) => navigate(path)}
-            />
           )}
         </div>
       </div>

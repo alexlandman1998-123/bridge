@@ -29,7 +29,6 @@ import { reportError } from './services/observability/errorTracking'
 import { trackPermissionMetric } from './services/observability/monitoring'
 import {
   hasCommercialAccessMarker,
-  isCommercialBrokerMember,
   isCommercialProfessionalMember,
 } from './lib/commercialAccess'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
@@ -44,7 +43,6 @@ const RELEASE_REFRESH_STORAGE_PREFIX = 'arch9:release-refresh'
 
 const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => ({ default: module[exportName] })))
 
-const WORKSPACE_SWITCHER_STORAGE_KEY = 'bridge:active-workspace'
 const PUBLIC_WEBSITE_HOSTS = new Set(['arch9.co.za', 'www.arch9.co.za'])
 
 function normalizeRouteText(value = '') {
@@ -59,16 +57,6 @@ function isPublicWebsiteHost() {
 
 function PublicAwareRootRoute() {
   return isPublicWebsiteHost() ? <BridgeLanding /> : <Navigate to="/dashboard" replace />
-}
-
-function getPreferredWorkspaceMode() {
-  if (typeof window === 'undefined' || !window.localStorage) return ''
-  try {
-    const value = normalizeRouteText(window.localStorage.getItem(WORKSPACE_SWITCHER_STORAGE_KEY))
-    return value === 'residential' || value === 'commercial' ? value : ''
-  } catch {
-    return ''
-  }
 }
 
 function getLoadedReleaseId() {
@@ -3154,27 +3142,12 @@ function ConveyancerOrDeveloperDevelopmentDetail() {
 
 function ClientAwareDashboard() {
   const workspaceContext = useWorkspace()
-  const { role, currentMembership, activeMemberships = [] } = workspaceContext
-  const preferredWorkspaceMode = getPreferredWorkspaceMode()
+  const { role } = workspaceContext
   if (role === 'client') {
     return <ClientModulePage />
   }
   if (role === 'attorney') {
     return <Navigate to="/attorney/dashboard" replace />
-  }
-  const hasCommercialAccess =
-    hasCommercialAccessMarker(currentMembership) ||
-    activeMemberships.some((membership) => hasCommercialAccessMarker(membership))
-  const hasCommercialBrokerAccess =
-    isCommercialBrokerMember(currentMembership) ||
-    isCommercialProfessionalMember(currentMembership) ||
-    activeMemberships.some((membership) => isCommercialBrokerMember(membership) || isCommercialProfessionalMember(membership))
-  if (
-    (preferredWorkspaceMode === 'commercial' || (!preferredWorkspaceMode && hasCommercialBrokerAccess)) &&
-    hasCommercialAccess &&
-    (role === 'agent' || hasCommercialBrokerAccess)
-  ) {
-    return <Navigate to="/commercial" replace />
   }
   const dashboardPermission = role === 'agent'
     ? PERMISSIONS.viewAgencyDashboard

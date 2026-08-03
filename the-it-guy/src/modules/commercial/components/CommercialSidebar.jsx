@@ -1,15 +1,12 @@
 import { ChevronDown } from 'lucide-react'
 import { memo, useMemo, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
-import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
+import { Link, useLocation } from 'react-router-dom'
 import { COMMERCIAL_BOTTOM_NAV_ITEMS, COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_SECTIONS, isCommercialNavItemActive, isCommercialNavItemAvailable } from '../commercialNavigation'
 import CommercialBranding from './CommercialBranding'
 
 function CommercialSidebar({ scope = null }) {
   const location = useLocation()
-  const navigate = useNavigate()
   const currentFullPath = `${location.pathname}${location.hash || ''}`
-  const currentWorkspacePath = `${location.pathname}${location.search || ''}`
   const DashboardIcon = COMMERCIAL_DASHBOARD_NAV_ITEM.icon
   const sectionButtonBaseClass =
     'relative flex min-h-[42px] items-center gap-3 rounded-[12px] px-3 py-2 text-[0.92rem] font-semibold transition duration-150 ease-out focus:outline-none focus-visible:ring-4 focus-visible:ring-[#2f80ed]/10'
@@ -44,12 +41,6 @@ function CommercialSidebar({ scope = null }) {
       <div className="flex min-h-0 w-full flex-col px-4 py-3">
         <div className="shrink-0">
           <CommercialBranding />
-
-          <WorkspaceSwitcher
-            currentPath={currentWorkspacePath}
-            variant="compact"
-            onSelectWorkspace={(path) => navigate(path)}
-          />
         </div>
 
         <nav className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" aria-label="Commercial Navigation">

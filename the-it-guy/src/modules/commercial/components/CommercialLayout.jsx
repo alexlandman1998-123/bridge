@@ -2,7 +2,6 @@ import { Bell, ChevronDown, Search } from 'lucide-react'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import QuickCreateDropdown from '../../../components/QuickCreateDropdown'
-import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
 import {
   COMMERCIAL_MOBILE_MORE_NAV_ITEMS,
   COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS,
@@ -75,7 +74,6 @@ function CommercialLayout({ onLogout = null, user = null }) {
   const [accessState, setAccessState] = useState({ loading: true, allowed: false, reason: '', message: '', scope: null })
   const [profileOpen, setProfileOpen] = useState(false)
   const profileMenuRef = useRef(null)
-  const currentPath = `${location.pathname}${location.search || ''}`
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const mobilePrimaryItems = useMemo(() => COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS, [])
   const mobileMoreItems = useMemo(() => COMMERCIAL_MOBILE_MORE_NAV_ITEMS, [])
@@ -244,9 +242,6 @@ function CommercialLayout({ onLogout = null, user = null }) {
           <div className="flex items-center justify-between gap-3">
             <CommercialBranding compact />
             <div className="flex items-center gap-2">
-              <div className="w-[190px]">
-                <WorkspaceSwitcher currentPath={currentPath} onSelectWorkspace={(path) => navigate(path)} variant="compact" />
-              </div>
               {profileControl}
             </div>
           </div>
