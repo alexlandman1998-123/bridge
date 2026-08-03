@@ -2,8 +2,9 @@ import { Component } from 'react'
 import { Link } from 'react-router-dom'
 import { reportError } from '../services/observability/errorTracking'
 
-const STALE_CHUNK_AUTO_RELOAD_LIMIT = 2
+const STALE_CHUNK_AUTO_RELOAD_LIMIT = 6
 const STALE_CHUNK_RELOAD_MARKER_TTL_MS = 10 * 60 * 1000
+const STALE_CHUNK_RETRY_DELAYS_MS = [250, 1500, 4000, 8000, 15000, 30000]
 
 function getErrorMessage(error) {
   const message = String(error?.message || '').trim()
@@ -29,6 +30,44 @@ function isStaleChunkLoadError(error) {
   ].some((pattern) => text.includes(pattern)) ||
     (/\/assets\/.+\.js/.test(text) && /chunkloaderror|dynamically imported module|module script|failed to fetch|importing a module|load failed for module/i.test(text)) ||
     (normalizedText.includes('javascript mime type') && normalizedText.includes('text/html'))
+}
+
+function getStaleChunkErrorText(error) {
+  return [
+    error?.name,
+    error?.message,
+    error?.stack,
+  ].filter(Boolean).join(' ')
+}
+
+function getStaleChunkAssetUrl(error) {
+  if (typeof window === 'undefined') return ''
+  const text = getStaleChunkErrorText(error)
+  const absoluteMatch = text.match(/https?:\/\/[^\s'")]+\/assets\/[^\s'")]+\.js\b/i)
+  const relativeMatch = text.match(/\/assets\/[^\s'")]+\.js\b/i)
+  const rawUrl = absoluteMatch?.[0] || relativeMatch?.[0] || ''
+  if (!rawUrl) return ''
+
+  try {
+    const url = new URL(rawUrl, window.location.origin)
+    if (url.origin !== window.location.origin) return ''
+    return url.toString()
+  } catch {
+    return ''
+  }
+}
+
+function getAssetPath(assetUrl) {
+  try {
+    return new URL(assetUrl, window.location.origin).pathname.replace(/^\/+/, '')
+  } catch {
+    return ''
+  }
+}
+
+function getStaleChunkRetryDelay(attemptIndex) {
+  const index = Math.max(0, Math.min(attemptIndex, STALE_CHUNK_RETRY_DELAYS_MS.length - 1))
+  return STALE_CHUNK_RETRY_DELAYS_MS[index]
 }
 
 function getLoadedReleaseId() {
@@ -65,6 +104,52 @@ async function clearClientAssetCaches() {
   }
 }
 
+async function fetchLatestReleaseManifest() {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const response = await fetch(`/release-manifest.json?stale_chunk_check=${Date.now()}`, {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok) return null
+    return await response.json()
+  } catch {
+    return null
+  }
+}
+
+async function isAssetReachable(assetUrl) {
+  if (!assetUrl || typeof fetch !== 'function') return true
+
+  try {
+    const url = new URL(assetUrl)
+    url.searchParams.set('stale_chunk_probe', String(Date.now()))
+    const response = await fetch(url.toString(), {
+      method: 'HEAD',
+      cache: 'no-store',
+    })
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase()
+    return response.ok && (contentType.includes('javascript') || contentType.includes('ecmascript'))
+  } catch {
+    return false
+  }
+}
+
+async function shouldWaitForCurrentReleaseAsset(assetUrl) {
+  if (!assetUrl) return false
+  const manifest = await fetchLatestReleaseManifest()
+  if (!manifest) return false
+
+  const latestReleaseId = String(manifest?.releaseId || '').trim()
+  const loadedReleaseId = getLoadedReleaseId()
+  if (latestReleaseId && loadedReleaseId && latestReleaseId !== loadedReleaseId) return false
+
+  const assetPath = getAssetPath(assetUrl)
+  const criticalAssets = Array.isArray(manifest?.criticalAssets) ? manifest.criticalAssets : []
+  return Boolean(assetPath && criticalAssets.includes(assetPath))
+}
+
 class AppErrorBoundary extends Component {
   constructor(props) {
     super(props)
@@ -73,8 +158,11 @@ class AppErrorBoundary extends Component {
       error: null,
       recoveringFromStaleChunk: false,
       staleChunkRecoveryExhausted: false,
+      staleChunkRecoveryAttempt: 0,
     }
     this.clearReloadMarkerTimer = null
+    this.staleChunkRecoveryTimer = null
+    this.unmounted = false
   }
 
   static getDerivedStateFromError(error) {
@@ -124,8 +212,12 @@ class AppErrorBoundary extends Component {
   }
 
   componentWillUnmount() {
+    this.unmounted = true
     if (this.clearReloadMarkerTimer) {
       window.clearTimeout(this.clearReloadMarkerTimer)
+    }
+    if (this.staleChunkRecoveryTimer) {
+      window.clearTimeout(this.staleChunkRecoveryTimer)
     }
   }
 
@@ -136,6 +228,9 @@ class AppErrorBoundary extends Component {
     let reloadCount = 0
 
     try {
+      if (force && key) {
+        window.sessionStorage.removeItem(key)
+      }
       reloadCount = key ? Number(window.sessionStorage.getItem(key) || 0) : 0
       if (!Number.isFinite(reloadCount) || reloadCount < 0) reloadCount = 0
       if (!force && reloadCount >= STALE_CHUNK_AUTO_RELOAD_LIMIT) {
@@ -149,17 +244,46 @@ class AppErrorBoundary extends Component {
       reloadCount = 0
     }
 
-    this.setState({ recoveringFromStaleChunk: true, staleChunkRecoveryExhausted: false })
-    window.setTimeout(() => {
-      void clearClientAssetCaches().finally(() => {
-        const url = buildCacheBustedUrl()
-        if (url) {
-          window.location.replace(url)
-          return
-        }
-        window.location.reload()
-      })
-    }, 250)
+    const attemptNumber = reloadCount + 1
+    const delayMs = getStaleChunkRetryDelay(reloadCount)
+    this.setState({
+      recoveringFromStaleChunk: true,
+      staleChunkRecoveryExhausted: false,
+      staleChunkRecoveryAttempt: attemptNumber,
+    })
+
+    if (this.staleChunkRecoveryTimer) {
+      window.clearTimeout(this.staleChunkRecoveryTimer)
+    }
+    this.staleChunkRecoveryTimer = window.setTimeout(() => {
+      void this.continueStaleChunkRecovery({ force, attemptNumber })
+    }, delayMs)
+  }
+
+  async continueStaleChunkRecovery({ force = false, attemptNumber = 1 } = {}) {
+    const assetUrl = getStaleChunkAssetUrl(this.state.error)
+    const waitForCurrentReleaseAsset = await shouldWaitForCurrentReleaseAsset(assetUrl)
+    const assetReady = waitForCurrentReleaseAsset ? await isAssetReachable(assetUrl) : true
+
+    if (this.unmounted) return
+
+    if (assetReady) {
+      await clearClientAssetCaches()
+      const url = buildCacheBustedUrl()
+      if (url) {
+        window.location.replace(url)
+        return
+      }
+      window.location.reload()
+      return
+    }
+
+    if (!force && attemptNumber >= STALE_CHUNK_AUTO_RELOAD_LIMIT) {
+      this.setState({ recoveringFromStaleChunk: false, staleChunkRecoveryExhausted: true })
+      return
+    }
+
+    this.recoverFromStaleChunk({ force: false })
   }
 
   render() {
@@ -180,9 +304,9 @@ class AppErrorBoundary extends Component {
           </h2>
           <p>
             {this.state.recoveringFromStaleChunk
-              ? 'A newer version of Arch9 is available. Refreshing this page now.'
+              ? `A newer version of Arch9 is available. Checking app files before refreshing${this.state.staleChunkRecoveryAttempt > 1 ? `, attempt ${this.state.staleChunkRecoveryAttempt}` : ''}.`
               : staleChunkExhausted
-                ? 'One of the app files was temporarily unavailable. Refresh again in a moment, or open the dashboard while the route file catches up.'
+                ? 'One of the app files is still unavailable at this location. Refresh again in a moment, or open the dashboard while the app file catches up.'
               : staleChunkError
                 ? 'This page was opened with an older app file. Refresh to load the latest version.'
                 : getErrorMessage(this.state.error)}
