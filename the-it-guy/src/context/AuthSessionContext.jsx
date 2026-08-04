@@ -12,6 +12,7 @@ import { clearSupabaseLocalAuthState, isSupabaseConfigured, isUnsupportedJwtAlgo
 import { getProductionSafetyViolation } from '../lib/envValidation'
 import { APP_ROLE_LABELS } from '../lib/appRoleMetadata'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
+import { createPerfTimer } from '../lib/performanceTrace'
 import { reportError } from '../services/observability/errorTracking'
 import {
   DASHBOARD_PERFORMANCE_METRICS,
@@ -456,6 +457,10 @@ export function AuthSessionProvider({ children }) {
         metricName: DASHBOARD_PERFORMANCE_METRICS.authBridgeBoot,
         resourceOrigin: import.meta.env.VITE_SUPABASE_URL,
       })
+      const bootTimer = createPerfTimer('auth.bridgeBoot', {
+        selectedWorkspaceId: selectedWorkspaceId || null,
+        attempt: bootAttempt + 1,
+      })
       let bridgeOutcome = 'success'
       let resolvedBridgeState = null
       let slowTimerId = null
@@ -477,6 +482,9 @@ export function AuthSessionProvider({ children }) {
           selectedWorkspaceId: selectedWorkspaceId || null,
           attempt: bootAttempt + 1,
           slowWarningMs: BRIDGE_AUTH_BOOTSTRAP_SLOW_MS,
+        })
+        bootTimer.mark('loadBridgeAuthState:start', {
+          userId: session.user.id,
         })
         writeAuthBootBreadcrumb('bridge_boot_start', buildAuthBootObservabilityMetadata({
           selectedWorkspaceId,
@@ -518,6 +526,11 @@ export function AuthSessionProvider({ children }) {
           getDiagnostics: getActiveAuthBootStepDiagnostics,
         })
         resolvedBridgeState = nextState
+        bootTimer.mark('loadBridgeAuthState:success', {
+          appRole: nextState.appRole || null,
+          activeMemberships: nextState.activeMemberships.length,
+          currentWorkspaceId: nextState.currentWorkspace?.id || null,
+        })
         if (!active) {
           bridgeOutcome = 'cancelled'
           return
@@ -567,6 +580,10 @@ export function AuthSessionProvider({ children }) {
         })
       } catch (error) {
         bridgeOutcome = active ? 'failed' : 'cancelled'
+        bootTimer.mark('failed', {
+          outcome: bridgeOutcome,
+          message: error?.message || null,
+        })
         if (!active) return
         const activeStepDiagnostics = getActiveAuthBootStepDiagnostics()
         const retryReason = getBridgeBootstrapRetryReason(error)
@@ -715,6 +732,12 @@ export function AuthSessionProvider({ children }) {
       } finally {
         if (slowTimerId) window.clearTimeout(slowTimerId)
         if (!active && retryTimerId) window.clearTimeout(retryTimerId)
+        bootTimer.end({
+          outcome: bridgeOutcome,
+          appRole: resolvedBridgeState?.appRole || null,
+          activeMemberships: resolvedBridgeState?.activeMemberships?.length || 0,
+          currentWorkspaceId: resolvedBridgeState?.currentWorkspace?.id || null,
+        })
         const bridgeWorkspaceId =
           resolvedBridgeState?.workspaceType === WORKSPACE_TYPES.agency ||
           resolvedBridgeState?.currentWorkspace?.type === WORKSPACE_TYPES.agency

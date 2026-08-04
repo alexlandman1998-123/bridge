@@ -1,129 +1,82 @@
 import assert from 'node:assert/strict'
 import { access, readFile } from 'node:fs/promises'
 
-const layout = await readFile(new URL('../src/pages/settings/SettingsLayout.jsx', import.meta.url), 'utf8')
-const account = await readFile(new URL('../src/pages/settings/SettingsAccountPage.jsx', import.meta.url), 'utf8')
-const legalTemplates = await readFile(new URL('../src/pages/settings/SettingsSigningTemplatesPage.jsx', import.meta.url), 'utf8')
-const documentPacketsApi = await readFile(new URL('../src/lib/documentPacketsApi.js', import.meta.url), 'utf8')
-const ui = await readFile(new URL('../src/pages/settings/settingsUi.jsx', import.meta.url), 'utf8')
 const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+const sidebar = await readFile(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
+const layout = await readFile(new URL('../src/pages/settings/SettingsLayout.jsx', import.meta.url), 'utf8')
+const landing = await readFile(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url), 'utf8')
+const navigation = await readFile(new URL('../src/pages/settings/settingsNavigation.js', import.meta.url), 'utf8')
+const theme = await readFile(new URL('../src/theme.css', import.meta.url), 'utf8')
 const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8')
 
-let landingExists = true
-try {
-  await access(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url))
-} catch {
-  landingExists = false
+await access(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url))
+
+assert.doesNotMatch(
+  sidebar,
+  /buildVisibleSettingsGroups|settingsChildren|withSettingsChildren|canManageOrganisationSettings/,
+  'Global sidebar should not build or inject settings submenu items.',
+)
+
+assert.match(
+  sidebar,
+  /\{ key: 'settings', label: 'Settings', to: '\/settings' \}/,
+  'Global sidebar should keep Settings as a single destination item.',
+)
+
+assert.doesNotMatch(
+  navigation,
+  /label: 'Overview'/,
+  'Settings navigation should not expose a dedicated Overview item.',
+)
+
+for (const group of ['YOUR ACCOUNT', 'ORGANISATION', 'PLATFORM MANAGEMENT']) {
+  assert.match(navigation + landing, new RegExp(group), `Settings dashboard should include ${group}.`)
 }
 
-assert.equal(landingExists, false, 'Settings launcher landing page should be removed.')
-
-for (const group of ['PERSONAL', 'COMPANY', 'TRANSACTIONS', 'PLATFORM', 'SUPPORT']) {
-  assert.match(layout, new RegExp(`label: '${group}'`), `Settings sidebar should include ${group} navigation group.`)
-}
-
-for (const route of ['/settings/profile', '/settings/security', '/settings/notifications', '/settings/organisation', '/settings/branding', '/settings/users', '/settings/commission-structures', '/settings/signing-templates', '/settings/legal-templates', '/settings/lead-capture', '/settings/integrations', '/settings/api', '/settings/billing', '/settings/help']) {
-  assert.match(layout + app, new RegExp(route.replaceAll('/', '\\/')), `Settings route ${route} should be wired into the workspace.`)
+for (const route of ['/settings/profile', '/settings/security', '/settings/organisation', '/settings/branding', '/settings/roles', '/settings/activity', '/settings/billing']) {
+  assert.match(navigation + app, new RegExp(route.replaceAll('/', '\\/')), `Settings route ${route} should be wired into the workspace.`)
 }
 
 assert.match(
   app,
-  /<Route index element=\{<Navigate to="profile" replace \/>\} \/>/,
-  'Settings index route should open Profile by default.',
+  /path="overview" element=\{<Navigate to="\/settings" replace \/>/,
+  'Legacy /settings/overview should redirect to the settings dashboard.',
 )
 
-assert.doesNotMatch(app, /SettingsLanding/, 'SettingsLanding should not be imported or routed.')
-assert.doesNotMatch(layout + account + app, /Settings categories|Manage your account, organisation and platform preferences\./, 'Settings launcher copy and category cards should not remain.')
+assert.match(
+  app,
+  /path="roles"[\s\S]*<PermissionGate capability="manage_users">[\s\S]*<SettingsUsersPage \/>/,
+  'Roles & Permissions should have a clean /settings/roles route guarded by manage_users.',
+)
 
-assert.ok(
-  layout.indexOf("label: 'Document Builder'") < layout.indexOf("label: 'Documents'"),
-  'Settings sidebar should list Document Builder before Documents.',
+assert.match(
+  app,
+  /<Route path="\/settings" element=\{<ClientAwareSettingsLayout \/>}>[\s\S]*path="legal-templates"[\s\S]*<SettingsSigningTemplatesPage \/>[\s\S]*<\/Route>/,
+  'Settings legal templates should render inside the shared SettingsLayout.',
 )
 
 assert.match(
   layout,
-  /placeholder="Search settings\.\.\."/,
-  'Settings search should use the workspace placeholder.',
-)
-
-for (const keyword of ['fields', 'templates', 'api keys', 'logo colours colors brand', 'billing subscription invoices', 'permissions']) {
-  assert.match(layout, new RegExp(keyword), `Settings search keywords should include ${keyword}.`)
-}
-
-assert.match(
-  layout,
-  /function AccountSummary[\s\S]*Profile Complete[\s\S]*Edit Profile/,
-  'Settings layout should render the compact account summary.',
+  /function SettingsSidebar[\s\S]*buildVisibleSettingsGroups[\s\S]*settings-workspace-nav[\s\S]*<Outlet \/>/,
+  'SettingsLayout should own the permission-aware internal navigation and persistent content outlet.',
 )
 
 assert.match(
-  layout,
-  /requiresManage: true[\s\S]*canShowSettingsItem[\s\S]*item\.requiresManage && !canManage/,
-  'Settings sidebar should hide management-only sections from non-management users.',
+  landing,
+  /<h1>Settings<\/h1>[\s\S]*settings-dashboard-card[\s\S]*settings-dashboard-chip/,
+  'Settings dashboard should render a minimal Settings header and grouped navigation cards with status chips.',
 )
 
 assert.match(
-  app,
-  /path="branding"[\s\S]*<SettingsOrganisationPage section="branding" \/>/,
-  'Branding should be a deep-linkable settings workspace.',
+  navigation,
+  /PERMISSIONS\.manageWorkspaceSettings[\s\S]*PERMISSIONS\.manageUsers[\s\S]*PERMISSIONS\.manageBilling/,
+  'Settings navigation should remain permission-driven.',
 )
 
 assert.match(
-  legalTemplates,
-  /title = 'Document Builder'[\s\S]*Create, preview, send, and manage the documents your agency uses every day\./,
-  'Document Builder page should keep the simplified title and description copy.',
-)
-
-assert.match(
-  legalTemplates,
-  /DEFAULT_ALLOWED_PACKET_TYPES[\s\S]*stableAllowedPacketTypes[\s\S]*useEffect\(\(\) => \{[\s\S]*loadTemplatesAndRegistry[\s\S]*\}, \[defaultPacketType, loadTemplatesAndRegistry, resolvedWorkspaceType, role, workspaceMembershipRole\]\)/,
-  'Legal template loading should use a stable packet-type dependency so normal renders do not restart the library load.',
-)
-
-assert.match(
-  legalTemplates,
-  /const \{ role, currentMembership, currentWorkspace, workspaceType \} = useWorkspace\(\)[\s\S]*workspaceMembershipRole[\s\S]*if \(workspaceMembershipRole\) \{[\s\S]*setMembershipRole\(workspaceMembershipRole\)[\s\S]*\} else \{[\s\S]*fetchOrganisationSettings\(\)/,
-  'Legal template loading should use the already-resolved workspace membership role before falling back to organisation settings.',
-)
-
-assert.match(
-  documentPacketsApi,
-  /TEMPLATE_SELECT_PLAN_CACHE_KEY[\s\S]*sessionStorage[\s\S]*rememberDocumentPacketTemplateSelectPlanIndex\(Math\.min\(planIndex \+ 1/,
-  'Legal template loading should cache schema-compatible select plans after missing-column fallbacks.',
-)
-
-assert.match(
-  app,
-  /path="legal-templates"[\s\S]*<OrganisationSettingsManageRoute>[\s\S]*<SettingsSigningTemplatesPage \/>[\s\S]*<\/OrganisationSettingsManageRoute>/,
-  'Settings legal templates route should require organisation settings management authority.',
-)
-
-assert.match(
-  app,
-  /path="signing-templates"[\s\S]*<OrganisationSettingsManageRoute>[\s\S]*<SettingsSigningTemplatesPage \/>[\s\S]*<\/OrganisationSettingsManageRoute>/,
-  'Legacy signing templates route should require organisation settings management authority.',
-)
-
-for (const section of ['Profile Photo', 'Personal Information', 'Surname', 'Bio', 'Employment', 'Preferences', 'Danger Zone', 'Two-factor authentication', 'Active Sessions', 'Login History']) {
-  assert.match(account, new RegExp(section), `Settings account workspace missing section: ${section}`)
-}
-
-assert.match(
-  ui,
-  /function SettingsSectionCard[\s\S]*border-t border/,
-  'Settings sections should use dividers instead of launcher-style cards.',
-)
-
-assert.match(
-  ui,
-  /function SettingsStickySaveBar[\s\S]*disabled=\{!dirty \|\| saving\}[\s\S]*Save Changes/,
-  'Settings should use a sticky bottom-right Save Changes control that only enables when data changes.',
-)
-
-assert.match(
-  app,
-  /const isSettingsRoute = location\.pathname === '\/settings' \|\| location\.pathname\.startsWith\('\/settings\/'\)[\s\S]*\? '\/settings'[\s\S]*: isBondRoute/,
-  'Settings route transitions should keep the settings shell mounted instead of re-keying the entire outlet.',
+  theme,
+  /\.settings-workspace[\s\S]*grid-template-columns: 280px minmax\(0, 1fr\)[\s\S]*\.settings-workspace-mobile-nav[\s\S]*\.settings-dashboard-card-grid[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/,
+  'Settings workspace styling should provide desktop nav, mobile nav, and dashboard card grid.',
 )
 
 assert.match(

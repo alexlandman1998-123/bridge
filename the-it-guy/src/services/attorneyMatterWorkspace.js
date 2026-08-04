@@ -9,6 +9,7 @@ import {
   resolvePortalPropertyLabel,
   resolvePortalSellerName,
 } from './portalCanonicalFieldFallbacks.js'
+import { createPerfTimer } from '../lib/performanceTrace'
 
 export const ATTORNEY_MATTER_PAGE_SIZES = [20, 50, 100]
 
@@ -1154,35 +1155,70 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
 
 export async function getAttorneyMatterWorkspace(options = {}) {
   const viewConfig = getAttorneyMatterViewConfig(options.view || 'all')
+  const timer = createPerfTimer('attorney.service.matterWorkspace', {
+    firmId: options.firmId || null,
+    userId: options.userId || null,
+    view: viewConfig.key,
+    incoming: Boolean(viewConfig.usesIncomingQueue),
+  })
+  let outcome = 'success'
 
-  if (viewConfig.usesIncomingQueue) {
-    const incomingMatterSource = await getAttorneyIncomingMatterQueue({
-      firmId: options.firmId || null,
-      userId: options.userId || null,
-    })
-    const incomingUser = incomingMatterSource.currentUser || {}
-    const operational = {
-      firm: incomingMatterSource.firm || null,
-      currentUser: {
-        ...incomingUser,
-        practiceQualifications:
-          incomingUser.practiceQualifications ||
-          incomingUser.practice_qualifications ||
-          [],
-      },
-      permissions: incomingUser.permissions || {},
-      incomingMatterSource,
-      incomingMatterQueue: incomingMatterSource.filteredRows || incomingMatterSource.rows || [],
-      matterQueue: [],
-      documentQueue: [],
-      availableFilters: {
-        members: [],
-      },
+  try {
+    if (viewConfig.usesIncomingQueue) {
+      timer.mark('incoming:start')
+      const incomingMatterSource = await getAttorneyIncomingMatterQueue({
+        firmId: options.firmId || null,
+        userId: options.userId || null,
+      })
+      timer.mark('incoming:end', {
+        rows: incomingMatterSource?.rows?.length || 0,
+        filteredRows: incomingMatterSource?.filteredRows?.length || 0,
+      })
+      const incomingUser = incomingMatterSource.currentUser || {}
+      const operational = {
+        firm: incomingMatterSource.firm || null,
+        currentUser: {
+          ...incomingUser,
+          practiceQualifications:
+            incomingUser.practiceQualifications ||
+            incomingUser.practice_qualifications ||
+            [],
+        },
+        permissions: incomingUser.permissions || {},
+        incomingMatterSource,
+        incomingMatterQueue: incomingMatterSource.filteredRows || incomingMatterSource.rows || [],
+        matterQueue: [],
+        documentQueue: [],
+        availableFilters: {
+          members: [],
+        },
+      }
+
+      const workspace = buildAttorneyMatterWorkspace(operational, options)
+      timer.end({
+        outcome,
+        rows: workspace?.tableRows?.length || 0,
+        allRows: workspace?.allRows?.length || 0,
+      })
+      return workspace
     }
 
-    return buildAttorneyMatterWorkspace(operational, options)
+    timer.mark('operational:start')
+    const operational = await getAttorneyOperationalWorkspaceData(options.firmId || null, options.userId || null)
+    timer.mark('operational:end', {
+      matters: operational?.matterQueue?.length || 0,
+      documents: operational?.documentQueue?.length || 0,
+    })
+    const workspace = buildAttorneyMatterWorkspace(operational, options)
+    timer.end({
+      outcome,
+      rows: workspace?.tableRows?.length || 0,
+      allRows: workspace?.allRows?.length || 0,
+    })
+    return workspace
+  } catch (error) {
+    outcome = 'failed'
+    timer.end({ outcome, message: error?.message || null })
+    throw error
   }
-
-  const operational = await getAttorneyOperationalWorkspaceData(options.firmId || null, options.userId || null)
-  return buildAttorneyMatterWorkspace(operational, options)
 }

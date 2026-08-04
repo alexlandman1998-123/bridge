@@ -21,6 +21,7 @@ import {
   resolvePortalPropertyLabel,
   resolvePortalSellerName,
 } from './portalCanonicalFieldFallbacks.js'
+import { createPerfTimer } from '../lib/performanceTrace'
 
 const DASHBOARD_CACHE_TTL_MS = 15_000
 const dashboardCache = new Map()
@@ -1011,6 +1012,12 @@ function getDashboardCacheKey({ firmId = '', userId = '', roleView = 'all' } = {
   return `${normalizeCacheText(firmId) || 'no-firm'}:${normalizeCacheText(userId) || 'current-user'}:${normalizeCacheText(roleView) || 'all'}`
 }
 
+function buildScopedAuthUser(userId = '', authUser = null) {
+  if (authUser?.id) return authUser
+  const id = normalizeCacheText(userId)
+  return id ? { id, email: '', user_metadata: {} } : null
+}
+
 export function clearAttorneyManagementDashboardCache({ firmId = '', userId = '' } = {}) {
   if (!firmId && !userId) {
     dashboardCache.clear()
@@ -1029,17 +1036,36 @@ export function clearAttorneyManagementDashboardCache({ firmId = '', userId = ''
   }
 }
 
-export async function getAttorneyManagementDashboardData(firmId = null, { roleView = 'all', force = false } = {}) {
+export async function getAttorneyManagementDashboardData(firmId = null, { roleView = 'all', force = false, userId = null, authUser: scopedAuthUser = null } = {}) {
   const client = requireClient()
-  const authUser = await getAuthenticatedUser(client)
+  const timer = createPerfTimer('attorney.service.dashboard', {
+    firmId: normalizeCacheText(firmId) || null,
+    userId: normalizeCacheText(userId || scopedAuthUser?.id) || null,
+    roleView,
+    force: Boolean(force),
+  })
+  const providedUserId = normalizeCacheText(userId || scopedAuthUser?.id)
+  const authUser = scopedAuthUser || buildScopedAuthUser(providedUserId) || await getAuthenticatedUser(client)
+  const currentUserId = providedUserId || authUser.id
   const resolvedFirm = firmId ? await getAttorneyFirmById(firmId) : await getCurrentUserPrimaryAttorneyFirm()
-  const cacheKey = getDashboardCacheKey({ firmId: resolvedFirm?.id, userId: authUser.id, roleView })
+  const cacheKey = getDashboardCacheKey({ firmId: resolvedFirm?.id, userId: currentUserId, roleView })
+  timer.mark('context:resolved', {
+    firmId: resolvedFirm?.id || null,
+    userId: currentUserId || null,
+    usedProvidedUser: Boolean(providedUserId),
+  })
 
   if (!force) {
     const cached = dashboardCache.get(cacheKey)
-    if (cached && cached.expiresAt > Date.now()) return cached.data
+    if (cached && cached.expiresAt > Date.now()) {
+      timer.end({ outcome: 'cache-hit' })
+      return cached.data
+    }
     const inflight = dashboardInflight.get(cacheKey)
-    if (inflight) return inflight
+    if (inflight) {
+      timer.end({ outcome: 'inflight-hit' })
+      return inflight
+    }
   }
 
   const loadPromise = loadAttorneyManagementDashboardData(firmId, {
@@ -1047,13 +1073,25 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     client,
     authUser,
     resolvedFirm,
+    userId: currentUserId,
+    timer,
   })
     .then((data) => {
       dashboardCache.set(cacheKey, {
         data,
         expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
       })
+      timer.end({
+        outcome: 'loaded',
+        activeMatters: data?.kpis?.activeMatters ?? null,
+        members: data?.members?.length || 0,
+        attentionItems: data?.mattersRequiringAttention?.length || 0,
+      })
       return data
+    })
+    .catch((error) => {
+      timer.end({ outcome: 'failed', message: error?.message || null })
+      throw error
     })
     .finally(() => {
       dashboardInflight.delete(cacheKey)
@@ -1063,10 +1101,20 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
   return loadPromise
 }
 
-async function loadAttorneyManagementDashboardData(firmId = null, { roleView = 'all', client: scopedClient = null, authUser: scopedAuthUser = null, resolvedFirm: scopedFirm = null } = {}) {
+async function loadAttorneyManagementDashboardData(firmId = null, { roleView = 'all', client: scopedClient = null, authUser: scopedAuthUser = null, resolvedFirm: scopedFirm = null, userId = null, timer: scopedTimer = null } = {}) {
   const client = scopedClient || requireClient()
-  const authUser = scopedAuthUser || await getAuthenticatedUser(client)
+  const timer = scopedTimer || createPerfTimer('attorney.service.dashboard.load', {
+    firmId: normalizeCacheText(firmId) || null,
+    userId: normalizeCacheText(userId || scopedAuthUser?.id) || null,
+    roleView,
+  })
+  const providedUserId = normalizeCacheText(userId || scopedAuthUser?.id)
+  const authUser = scopedAuthUser || buildScopedAuthUser(providedUserId) || await getAuthenticatedUser(client)
+  const currentUserId = providedUserId || authUser.id
   const resolvedFirm = scopedFirm || (firmId ? await getAttorneyFirmById(firmId) : await getCurrentUserPrimaryAttorneyFirm())
+  timer.mark('firm:resolved', {
+    firmId: resolvedFirm?.id || null,
+  })
   if (!resolvedFirm?.id) {
     return {
       firm: null,
@@ -1091,7 +1139,13 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     }
   }
 
-  const currentMembership = await getCurrentUserAttorneyMembership(resolvedFirm.id, authUser.id).catch(() => null)
+  const currentMembership = await getCurrentUserAttorneyMembership(resolvedFirm.id, currentUserId).catch(() => null)
+  timer.mark('membership:resolved', {
+    status: currentMembership?.status || null,
+    canViewDashboard: currentMembership?.isActive
+      ? attorneyRoleHasPermission(currentMembership.role, 'can_view_firm_dashboard')
+      : false,
+  })
   const currentUserRole = currentMembership?.isActive ? currentMembership.role : null
   const canViewFirmDashboard = attorneyRoleHasPermission(currentUserRole, 'can_view_firm_dashboard')
   if (!currentMembership?.isActive || !canViewFirmDashboard) {
@@ -1125,8 +1179,15 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     readDashboardDependency('transactions', fetchTransactionsForDashboard(client), []),
     readDashboardDependency('assignments', getFirmAttorneyAssignments(resolvedFirm.id, { includeInactive: true }), []),
   ])
+  timer.mark('primaryDependencies:loaded', {
+    departments: departmentsRaw?.length || 0,
+    members: membersRaw?.length || 0,
+    invites: invitesRaw?.length || 0,
+    transactions: transactionsRaw?.length || 0,
+    assignments: assignmentRows?.length || 0,
+  })
 
-  const dashboardMembers = (membersRaw || []).some((member) => member.userId === authUser.id)
+  const dashboardMembers = (membersRaw || []).some((member) => member.userId === currentUserId)
     ? membersRaw
     : [...(membersRaw || []), currentMembership]
 
@@ -1155,6 +1216,11 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     ), {}),
     readDashboardDependency('partner organisations', fetchOrganisationMap(client, partnerOrganisationIds), {}),
   ])
+  timer.mark('secondaryDependencies:loaded', {
+    memberProfiles: Object.keys(memberProfilesById || {}).length,
+    buyers: Object.keys(buyersById || {}).length,
+    organisations: Object.keys(organisationsById || {}).length,
+  })
 
   const firmNameToken = toLower(resolvedFirm.name)
   const assignments = (assignmentRows || []).filter((assignment) => assignment.firmId === resolvedFirm.id)

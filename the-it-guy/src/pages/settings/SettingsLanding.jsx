@@ -1,12 +1,40 @@
-import { ArrowUpRight } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings } from '../../lib/organisationAccess'
-import { settingsPageClass, SettingsPageHeader } from './settingsUi'
+import { settingsPageClass, SettingsEmptyState } from './settingsUi'
 import { buildVisibleSettingsGroups } from './settingsNavigation'
 
+const STATUS_TONE_CLASS = {
+  success: 'settings-dashboard-chip-success',
+  warning: 'settings-dashboard-chip-warning',
+  neutral: 'settings-dashboard-chip-neutral',
+}
+
+function getStatusForItem(item, { branding, currentWorkspace, profile }) {
+  if (item.label === 'Profile') {
+    return profile?.avatarUrl || profile?.avatar_url
+      ? { tone: 'success', label: 'Profile complete' }
+      : { tone: 'warning', label: 'Missing profile image' }
+  }
+
+  if (item.label === 'Organisation' && currentWorkspace?.name) {
+    return { tone: 'neutral', label: currentWorkspace.name }
+  }
+
+  if (item.label === 'Branding') {
+    return branding?.hasCustomLogo
+      ? { tone: 'success', label: 'Logo configured' }
+      : { tone: 'warning', label: 'Logo not configured' }
+  }
+
+  return item.status || null
+}
+
 export default function SettingsLanding() {
-  const { can, role, currentWorkspace, organisationMembershipRole, workspaceRole, workspaceType } = useWorkspace()
+  const { branding } = useOrganisation()
+  const { can, role, currentWorkspace, organisationMembershipRole, workspaceRole, workspaceType, profile } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const membershipRole = organisationMembershipRole || workspaceRole || 'viewer'
   const canManage = canManageOrganisationSettings({ appRole: role, membershipRole, workspaceType: resolvedWorkspaceType })
@@ -14,46 +42,48 @@ export default function SettingsLanding() {
 
   return (
     <div className={settingsPageClass}>
-      <SettingsPageHeader
-        kicker="Settings"
-        title="Workspace settings"
-        description="Manage only the settings available to your role. Every section below is connected to an active workspace function."
-      />
+      <header className="settings-dashboard-header">
+        <h1>Settings</h1>
+      </header>
 
-      <div className="space-y-8">
-        {groups.map((group) => (
-          <section key={group.label} aria-labelledby={`settings-group-${group.label.toLowerCase()}`}>
-            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-[#7c8ea2]">{group.label}</p>
-                <h3 id={`settings-group-${group.label.toLowerCase()}`} className="mt-1 text-base font-semibold text-[#172536]">{group.title}</h3>
+      {groups.length ? (
+        <div className="settings-dashboard-groups">
+          {groups.map((group) => (
+            <section key={group.label} aria-labelledby={`settings-group-${group.label.toLowerCase()}`}>
+              <p id={`settings-group-${group.label.toLowerCase()}`} className="settings-dashboard-group-label">{group.label}</p>
+              <div className="settings-dashboard-card-grid">
+                {group.items.map((item) => {
+                  const Icon = item.icon
+                  const status = getStatusForItem(item, { branding, currentWorkspace, profile })
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className="settings-dashboard-card"
+                    >
+                      <span className="settings-dashboard-icon">
+                        <Icon size={18} strokeWidth={1.9} />
+                      </span>
+                      <span className="settings-dashboard-card-body">
+                        <span className="settings-dashboard-card-title">{item.label}</span>
+                        <span className="settings-dashboard-card-description">{item.description}</span>
+                        {status ? (
+                          <span className={`settings-dashboard-chip ${STATUS_TONE_CLASS[status.tone] || STATUS_TONE_CLASS.neutral}`}>
+                            {status.label}
+                          </span>
+                        ) : null}
+                      </span>
+                      <ChevronRight size={18} className="settings-dashboard-chevron" />
+                    </Link>
+                  )
+                })}
               </div>
-              <p className="text-sm text-[#718398]">{group.description}</p>
-            </div>
-            <div className="grid overflow-hidden rounded-[16px] border border-[#dfe7ee] bg-[#fbfcfd] sm:grid-cols-2">
-              {group.items.map((item) => {
-                const Icon = item.icon
-                return (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className="group flex min-h-[104px] items-center gap-4 border-b border-[#e4ebf1] bg-white p-4 transition last:border-b-0 hover:z-10 hover:bg-[#f7fbf8] sm:[&:nth-child(odd)]:border-r sm:[&:nth-last-child(-n+2)]:border-b-0"
-                  >
-                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[12px] border border-[#dbe7df] bg-[#f1f8f4] text-[#176b48] transition group-hover:border-[#bcd8c8] group-hover:bg-white">
-                      <Icon size={18} strokeWidth={1.9} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold text-[#172536]">{item.label}</span>
-                      <span className="mt-1 block text-xs leading-5 text-[#718398]">{item.description}</span>
-                    </span>
-                    <ArrowUpRight size={16} className="shrink-0 text-[#9aa9b8] transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-[#176b48]" />
-                  </Link>
-                )
-              })}
-            </div>
-          </section>
-        ))}
-      </div>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <SettingsEmptyState title="No settings available" description="Your current role does not have access to configurable settings in this workspace." />
+      )}
     </div>
   )
 }

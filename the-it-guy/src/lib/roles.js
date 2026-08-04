@@ -159,8 +159,8 @@ export const APP_NAV_BY_ROLE = {
       children: [
         { key: 'attorney_matters_all', label: 'All Matters', to: '/attorney/matters/all' },
         { key: 'attorney_matters_transfer', label: 'Transfer Matters', to: '/attorney/matters/transfer' },
-        { key: 'attorney_matters_bond', label: 'Bond Matters', to: '/attorney/matters/bond' },
-        { key: 'attorney_matters_cancellation', label: 'Cancellation Matters', to: '/attorney/matters/cancellation' },
+        { key: 'attorney_matters_bond', label: 'Bond Matters', to: '/attorney/matters/bond', moduleKey: 'bond' },
+        { key: 'attorney_matters_cancellation', label: 'Cancellation Matters', to: '/attorney/matters/cancellation', moduleKey: 'cancellation' },
       ],
     },
     {

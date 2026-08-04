@@ -22,7 +22,11 @@ import {
 } from 'lucide-react'
 import { createElement, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useWorkspace } from '../context/WorkspaceContext'
+import useAttorneyModuleSettings from '../hooks/useAttorneyModuleSettings'
+import { isAttorneyMatterViewEnabled } from '../lib/attorneyModuleSettings'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
+import { createPerfTimer } from '../lib/performanceTrace'
 import {
   ATTORNEY_MATTER_PAGE_SIZES,
   buildAttorneyMatterWorkspace,
@@ -1312,7 +1316,9 @@ function AttorneyMattersPage() {
   const { matterType = 'all' } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const { profile, workspace: activeWorkspace } = useWorkspace()
   const permissionsState = useAttorneyPermissions()
+  const attorneyModuleState = useAttorneyModuleSettings()
   const [source, setSource] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1332,21 +1338,57 @@ function AttorneyMattersPage() {
   const [assignmentDialog, setAssignmentDialog] = useState({ row: null })
 
   const viewKey = normalize(matterType || 'all')
+  const viewEnabled = isAttorneyMatterViewEnabled(viewKey, attorneyModuleState.modules)
+  const attorneyFirmId = useMemo(() => {
+    if (normalize(activeWorkspace?.type) === 'attorney_firm') return normalize(activeWorkspace?.id)
+    return normalize(profile?.primaryAttorneyFirmId || profile?.primary_attorney_firm_id)
+  }, [activeWorkspace?.id, activeWorkspace?.type, profile?.primaryAttorneyFirmId, profile?.primary_attorney_firm_id])
+  const currentUserId = normalize(profile?.id || profile?.userId)
+
+  useEffect(() => {
+    if (attorneyModuleState.loading || viewEnabled) return
+    const basePath = location.pathname.startsWith('/attorney/transactions') ? '/attorney/transactions' : '/attorney/matters'
+    navigate(`${basePath}/all${location.search || ''}`, { replace: true })
+  }, [attorneyModuleState.loading, location.pathname, location.search, navigate, viewEnabled])
 
   useEffect(() => {
     let active = true
 
     async function load() {
+      const timer = createPerfTimer('attorney.page.matters', {
+        firmId: attorneyFirmId || null,
+        userId: currentUserId || null,
+        view: viewKey,
+        viewEnabled,
+      })
+      let outcome = 'success'
+      if (!viewEnabled) {
+        setLoading(false)
+        timer.end({ outcome: 'view-disabled' })
+        return
+      }
       setLoading(true)
       setError('')
       try {
-        const workspace = await getAttorneyMatterWorkspace({ view: viewKey })
+        timer.mark('workspace:start')
+        const workspace = await getAttorneyMatterWorkspace({
+          view: viewKey,
+          firmId: attorneyFirmId || null,
+          userId: currentUserId || null,
+        })
+        timer.mark('workspace:end', {
+          rows: workspace?.tableRows?.length || 0,
+          allRows: workspace?.allRows?.length || 0,
+          sourceHasFirm: Boolean(workspace?.firm?.id),
+        })
         if (!active) return
         setSource(workspace.source)
       } catch (loadError) {
+        outcome = 'failed'
         if (!active) return
         setError(loadError?.message || 'Unable to load attorney matters.')
       } finally {
+        timer.end({ outcome })
         if (active) setLoading(false)
       }
     }
@@ -1355,7 +1397,7 @@ function AttorneyMattersPage() {
     return () => {
       active = false
     }
-  }, [viewKey])
+  }, [attorneyFirmId, currentUserId, viewEnabled, viewKey])
 
   useEffect(() => {
     function handleHeaderSearch(event) {
@@ -1508,7 +1550,21 @@ function AttorneyMattersPage() {
   }
 
   async function refreshIncomingWorkspaceAfterDecision(row = {}) {
-    const refreshedWorkspace = await getAttorneyMatterWorkspace({ view: viewKey })
+    const timer = createPerfTimer('attorney.page.matters.refresh', {
+      firmId: attorneyFirmId || null,
+      userId: currentUserId || null,
+      view: viewKey,
+      matterId: row.matterId || row.transactionId || null,
+    })
+    const refreshedWorkspace = await getAttorneyMatterWorkspace({
+      view: viewKey,
+      firmId: attorneyFirmId || null,
+      userId: currentUserId || null,
+    })
+    timer.end({
+      rows: refreshedWorkspace?.tableRows?.length || 0,
+      allRows: refreshedWorkspace?.allRows?.length || 0,
+    })
     setSource(refreshedWorkspace.source)
     setSelectedRows((previous) => previous.filter((id) => id !== row.matterId))
   }

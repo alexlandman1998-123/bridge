@@ -30,6 +30,7 @@ import {
   applyAttorneyOperationsScope,
   buildAttorneyOperationsScope,
 } from '../core/transactions/attorneyOperationsScope.js'
+import { createPerfTimer } from '../lib/performanceTrace'
 import {
   resolvePortalBuyerName,
   resolvePortalPropertyLabel,
@@ -709,6 +710,12 @@ function getOperationalWorkspaceCacheKey(firmId = '', userId = '') {
   return `${normalizeText(firmId) || 'no-firm'}:${normalizeText(userId) || 'current-user'}`
 }
 
+function buildScopedAuthUser(userId = '', authUser = null) {
+  if (authUser?.id) return authUser
+  const id = normalizeText(userId)
+  return id ? { id, email: '', user_metadata: {} } : null
+}
+
 export function clearAttorneyOperationalWorkspaceCache({ firmId = '', userId = '' } = {}) {
   if (!firmId && !userId) {
     operationalWorkspaceCache.clear()
@@ -729,29 +736,58 @@ export function clearAttorneyOperationalWorkspaceCache({ firmId = '', userId = '
 
 export async function getAttorneyOperationalWorkspaceData(firmId = null, userId = null, options = {}) {
   const client = requireClient()
-  const authUser = await getAuthenticatedUser(client)
-  const resolvedFirm = firmId ? await getAttorneyFirmById(firmId) : await getCurrentUserPrimaryAttorneyFirm()
-  const currentUserId = userId || authUser.id
+  const timer = createPerfTimer('attorney.service.operations', {
+    firmId: normalizeText(firmId) || null,
+    userId: normalizeText(userId || options.userId) || null,
+    force: Boolean(options?.force),
+  })
+  const providedUserId = normalizeText(userId || options.userId)
+  const authUser = options.authUser || buildScopedAuthUser(providedUserId) || await getAuthenticatedUser(client)
+  const resolvedFirm = options.resolvedFirm || (firmId ? await getAttorneyFirmById(firmId) : await getCurrentUserPrimaryAttorneyFirm())
+  const currentUserId = providedUserId || authUser.id
   const cacheKey = getOperationalWorkspaceCacheKey(resolvedFirm?.id, currentUserId)
+  timer.mark('context:resolved', {
+    firmId: resolvedFirm?.id || null,
+    userId: currentUserId || null,
+    usedProvidedUser: Boolean(providedUserId),
+  })
 
   if (!options?.force) {
     const cached = operationalWorkspaceCache.get(cacheKey)
-    if (cached && cached.expiresAt > Date.now()) return cached.data
+    if (cached && cached.expiresAt > Date.now()) {
+      timer.end({ outcome: 'cache-hit' })
+      return cached.data
+    }
     const inflight = operationalWorkspaceInflight.get(cacheKey)
-    if (inflight) return inflight
+    if (inflight) {
+      timer.end({ outcome: 'inflight-hit' })
+      return inflight
+    }
   }
 
   const loadPromise = loadAttorneyOperationalWorkspaceData(firmId, userId, {
     client,
     authUser,
     resolvedFirm,
+    currentUserId,
+    timer,
   })
     .then((data) => {
       operationalWorkspaceCache.set(cacheKey, {
         data,
         expiresAt: Date.now() + OPERATIONAL_WORKSPACE_CACHE_TTL_MS,
       })
+      timer.end({
+        outcome: 'loaded',
+        matters: data?.matterQueue?.length || 0,
+        documents: data?.documentQueue?.length || 0,
+        appointments: data?.appointmentQueue?.length || 0,
+      })
       return data
+    })
+    .catch((error) => {
+      timer.end({ outcome: 'failed', message: error?.message || null })
+      throw error
     })
     .finally(() => {
       operationalWorkspaceInflight.delete(cacheKey)
@@ -763,9 +799,18 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
 
 async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null, context = {}) {
   const client = context.client || requireClient()
-  const authUser = context.authUser || await getAuthenticatedUser(client)
+  const timer = context.timer || createPerfTimer('attorney.service.operations.load', {
+    firmId: normalizeText(firmId) || null,
+    userId: normalizeText(context.currentUserId || userId) || null,
+  })
+  const providedUserId = normalizeText(context.currentUserId || userId)
+  const authUser = context.authUser || buildScopedAuthUser(providedUserId) || await getAuthenticatedUser(client)
+  const currentUserId = providedUserId || authUser.id
 
   const resolvedFirm = context.resolvedFirm || (firmId ? await getAttorneyFirmById(firmId) : await getCurrentUserPrimaryAttorneyFirm())
+  timer.mark('firm:resolved', {
+    firmId: resolvedFirm?.id || null,
+  })
 
   if (!resolvedFirm?.id) {
     return {
@@ -798,8 +843,11 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
     }
   }
 
-  const currentUserId = userId || authUser.id
   const currentMembership = await getCurrentUserAttorneyMembership(resolvedFirm.id, currentUserId).catch(() => null)
+  timer.mark('membership:resolved', {
+    status: currentMembership?.status || null,
+    active: Boolean(currentMembership?.isActive),
+  })
   if (!currentMembership?.isActive) {
     return {
       firm: null,
@@ -845,6 +893,10 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
     getAttorneyFirmDepartments(resolvedFirm.id).catch(() => []),
     getAttorneyFirmMembers(resolvedFirm.id).catch(() => []),
   ])
+  timer.mark('firmDirectory:loaded', {
+    departments: departments?.length || 0,
+    members: members?.length || 0,
+  })
 
   const listedMembership = (members || []).find((member) => member.userId === currentUserId) || null
   const resolvedCurrentMembership = listedMembership?.isActive ? listedMembership : currentMembership
@@ -855,6 +907,9 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
 
   const allProfileIds = [...new Set(activeMembers.map((member) => member.userId).filter(Boolean))]
   const profilesById = await fetchProfilesById(client, allProfileIds)
+  timer.mark('profiles:loaded', {
+    profiles: Object.keys(profilesById || {}).length,
+  })
 
   const currentProfile = profilesById[currentUserId] || {
     id: currentUserId,
@@ -885,11 +940,19 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
     : resolvedCurrentMembership
       ? await getUserAttorneyAssignments(resolvedFirm.id, currentUserId)
       : []
+  timer.mark('assignments:loaded', {
+    assignments: assignments?.length || 0,
+    scope: MANAGEMENT_ROLES.has(currentRole) || permissions.can_view_all_firm_matters ? 'firm' : 'user',
+  })
 
   const relevantAssignments = assignments.filter((assignment) => ['pending', 'active', 'paused'].includes(toLower(assignment.status)))
 
   const transactionIds = [...new Set(relevantAssignments.map((assignment) => assignment.transactionId).filter(Boolean))]
   const transactions = await fetchTransactions(client, transactionIds)
+  timer.mark('transactions:loaded', {
+    transactionIds: transactionIds.length,
+    transactions: transactions.length,
+  })
   const transactionsById = transactions.reduce((accumulator, row) => {
     accumulator[row.id] = row
     return accumulator
@@ -905,6 +968,10 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
     ]),
   ]
   const developmentsById = await fetchDevelopmentsById(client, developmentIds)
+  timer.mark('propertyContext:loaded', {
+    units: Object.keys(unitsById || {}).length,
+    developments: Object.keys(developmentsById || {}).length,
+  })
 
   const [buyersById, checklistItems, documentRequests, appointments, packetSigners] = await Promise.all([
     fetchBuyersById(client, transactions.map((transaction) => transaction.buyer_id).filter(Boolean)),
@@ -913,6 +980,13 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
     fetchAppointments(client, transactionIds, resolvedFirm.id),
     fetchPacketSigners(client, transactionIds),
   ])
+  timer.mark('matterDependencies:loaded', {
+    buyers: Object.keys(buyersById || {}).length,
+    checklistItems: checklistItems?.length || 0,
+    documentRequests: documentRequests?.length || 0,
+    appointments: appointments?.length || 0,
+    packetSigners: packetSigners?.length || 0,
+  })
 
   const participantsByAppointment = await fetchParticipantsByAppointment(
     client,
@@ -922,6 +996,10 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
     client,
     appointments.map((appointment) => appointment.appointment_id).filter(Boolean),
   )
+  timer.mark('appointmentDependencies:loaded', {
+    participantGroups: Object.keys(participantsByAppointment || {}).length,
+    rescheduleGroups: Object.keys(rescheduleRequestsByAppointment || {}).length,
+  })
 
   const allMatterQueue = relevantAssignments
     .map((assignment) => {

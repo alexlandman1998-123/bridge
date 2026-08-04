@@ -2650,7 +2650,7 @@ function AppRoutes() {
                 path="/agency/roles"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
-                    <Navigate to="/settings/users" replace />
+                    <Navigate to="/settings/roles" replace />
                   </RoleRoute>
                 }
               />
@@ -2826,58 +2826,9 @@ function AppRoutes() {
                   </RoleRoute>
                 }
               />
-              <Route
-                path="/settings/legal-templates/:documentKey/edit/:editorScope"
-                element={
-                  <OrganisationSettingsManageRoute>
-                    <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <LegalDocumentEditorRoute />
-                    </RoleRoute>
-                  </OrganisationSettingsManageRoute>
-                }
-              />
-              <Route
-                path="/settings/legal-templates/:documentKey/edit"
-                element={
-                  <OrganisationSettingsManageRoute>
-                    <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <LegalDocumentEditorRoute />
-                    </RoleRoute>
-                  </OrganisationSettingsManageRoute>
-                }
-              />
-              <Route
-                path="/settings/legal-templates/:documentKey/preview"
-                element={
-                  <OrganisationSettingsManageRoute>
-                    <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <LegalDocumentPreviewPage />
-                    </RoleRoute>
-                  </OrganisationSettingsManageRoute>
-                }
-              />
-              <Route
-                path="/settings/legal-templates/:documentKey"
-                element={
-                  <OrganisationSettingsManageRoute>
-                    <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <LegalDocumentOverviewPage />
-                    </RoleRoute>
-                  </OrganisationSettingsManageRoute>
-                }
-              />
-              <Route
-                path="/settings/legal-templates"
-                element={
-                  <OrganisationSettingsManageRoute>
-                    <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <SettingsSigningTemplatesPage />
-                    </RoleRoute>
-                  </OrganisationSettingsManageRoute>
-                }
-              />
               <Route path="/settings" element={<ClientAwareSettingsLayout />}>
                 <Route index element={<SettingsLanding />} />
+                <Route path="overview" element={<Navigate to="/settings" replace />} />
                 <Route path="account" element={<SettingsAccountPage section="profile" />} />
                 <Route path="profile" element={<SettingsAccountPage section="profile" />} />
                 <Route path="security" element={<SettingsAccountPage section="security" />} />
@@ -2982,10 +2933,70 @@ function AppRoutes() {
                   }
                 />
                 <Route
+                  path="legal-templates/:documentKey/edit/:editorScope"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['developer', 'agent']}>
+                        <LegalDocumentEditorRoute />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route
+                  path="legal-templates/:documentKey/edit"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['developer', 'agent']}>
+                        <LegalDocumentEditorRoute />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route
+                  path="legal-templates/:documentKey/preview"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['developer', 'agent']}>
+                        <LegalDocumentPreviewPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route
+                  path="legal-templates/:documentKey"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['developer', 'agent']}>
+                        <LegalDocumentOverviewPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route
+                  path="legal-templates"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['developer', 'agent']}>
+                        <SettingsSigningTemplatesPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route
                   path="communications/templates"
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent']}>
                       <SettingsCommunicationsTemplatesPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="roles"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                      <PermissionGate capability="manage_users">
+                        <SettingsUsersPage />
+                      </PermissionGate>
                     </RoleRoute>
                   }
                 />

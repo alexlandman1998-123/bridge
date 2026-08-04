@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
+import useAttorneyModuleSettings from '../hooks/useAttorneyModuleSettings'
+import { ATTORNEY_MODULE_DEFINITIONS } from '../lib/attorneyModuleSettings'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { getCurrentUserPrimaryAttorneyFirm, updateAttorneyFirm } from '../services/attorneyFirms'
 
@@ -12,6 +14,7 @@ function AttorneyFirmSettingsPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [firm, setFirm] = useState(null)
+  const attorneyModuleState = useAttorneyModuleSettings()
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -30,6 +33,7 @@ function AttorneyFirmSettingsPage() {
 
   const canSubmit = useMemo(() => Boolean(String(form.name || '').trim()) && !saving, [form.name, saving])
   const canEditBranding = permissionsState.hasPermission('can_manage_branding')
+  const canManageFirmSettings = permissionsState.hasPermission('can_manage_firm_settings')
 
   useEffect(() => {
     let active = true
@@ -96,6 +100,19 @@ function AttorneyFirmSettingsPage() {
     }
   }
 
+  async function toggleAttorneyModule(moduleKey, nextValue) {
+    if (!canManageFirmSettings) return
+    setError('')
+    setSuccess('')
+    try {
+      await attorneyModuleState.updateModules({ [moduleKey]: nextValue })
+      const moduleDefinition = ATTORNEY_MODULE_DEFINITIONS.find((item) => item.key === moduleKey)
+      setSuccess(`${moduleDefinition?.title || 'Attorney module'} ${nextValue ? 'enabled' : 'disabled'}.`)
+    } catch (moduleError) {
+      setError(moduleError?.message || 'Unable to update attorney module settings.')
+    }
+  }
+
   if (role !== 'attorney') {
     return <Navigate to="/dashboard" replace />
   }
@@ -158,6 +175,31 @@ function AttorneyFirmSettingsPage() {
             You can view firm branding details, but only users with branding permissions can edit this section.
           </p>
         ) : null}
+
+        <div style={{ border: '1px solid #e4ecf5', borderRadius: '16px', background: '#fbfdff', padding: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1rem' }}>Attorney Modules</h3>
+              <p className="status-message" style={{ margin: '0.25rem 0 0' }}>Choose which legal workstreams appear in this firm workspace.</p>
+            </div>
+            {attorneyModuleState.saving ? <span className="status-message">Saving...</span> : null}
+          </div>
+          {ATTORNEY_MODULE_DEFINITIONS.map((definition) => (
+            <label key={definition.key} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '1rem', alignItems: 'center', borderTop: '1px solid #e5edf4', padding: '0.85rem 0' }}>
+              <span>
+                <strong style={{ display: 'block' }}>{definition.title}</strong>
+                <span className="status-message">{definition.description}</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={attorneyModuleState.modules[definition.key] !== false}
+                disabled={!canManageFirmSettings || attorneyModuleState.loading || attorneyModuleState.saving}
+                onChange={(event) => void toggleAttorneyModule(definition.key, event.target.checked)}
+              />
+            </label>
+          ))}
+          {attorneyModuleState.error ? <p className="status-message" style={{ margin: 0, color: '#b42318' }}>{attorneyModuleState.error}</p> : null}
+        </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '0.85rem' }}>
           <label className="form-field">

@@ -26,6 +26,7 @@ import {
   resolvePortalPropertyLabel,
   resolvePortalSellerName,
 } from './portalCanonicalFieldFallbacks.js'
+import { createPerfTimer } from '../lib/performanceTrace'
 
 export const ATTORNEY_INCOMING_MATTER_PAGE_SIZES = [20, 50, 100]
 
@@ -1004,92 +1005,151 @@ function mapCurrentUser(authUser = {}, membership = null, permissions = {}) {
   }
 }
 
+function buildScopedAuthUser(userId = '', authUser = null) {
+  if (authUser?.id) return authUser
+  const id = normalizeText(userId)
+  return id ? { id, email: '', user_metadata: {} } : null
+}
+
 export async function getAttorneyIncomingMatterQueue(options = {}) {
   const client = options.client || requireClient()
-  const authUser = options.authUser || await getAuthenticatedUser(client)
-  const currentUserId = options.userId || authUser.id
-  const firm = options.firm || (options.firmId ? await getAttorneyFirmById(options.firmId) : await getCurrentUserPrimaryAttorneyFirm())
+  const timer = createPerfTimer('attorney.service.incomingMatters', {
+    firmId: normalizeText(options.firmId || options.firm?.id) || null,
+    userId: normalizeText(options.userId || options.authUser?.id) || null,
+  })
+  let outcome = 'success'
 
-  if (!firm?.id) {
-    return buildAttorneyIncomingMatterQueueFromSources({}, options)
-  }
+  try {
+    const providedUserId = normalizeText(options.userId || options.authUser?.id)
+    const authUser = options.authUser || buildScopedAuthUser(providedUserId) || await getAuthenticatedUser(client)
+    const currentUserId = providedUserId || authUser.id
+    const firm = options.firm || (options.firmId ? await getAttorneyFirmById(options.firmId) : await getCurrentUserPrimaryAttorneyFirm())
+    timer.mark('context:resolved', {
+      firmId: firm?.id || null,
+      userId: currentUserId || null,
+      usedProvidedUser: Boolean(providedUserId),
+    })
 
-  const membership = options.membership || await getCurrentUserAttorneyMembership(firm.id, currentUserId).catch(() => null)
-  const role = membership?.isActive ? membership.professionalRole : ''
-  const permissions = membership?.isActive
-    ? getAttorneyProfessionalProfilePermissions(membership)
-    : getAttorneyProfessionalProfilePermissions({})
-  if (!membership?.isActive) {
-    return buildAttorneyIncomingMatterQueueFromSources({
-      firm: null,
-      currentUser: mapCurrentUser(authUser, null, permissions),
-    }, options)
-  }
-  const canViewAll = Boolean(permissions.can_view_all_firm_matters || MANAGEMENT_ROLES.has(role))
+    if (!firm?.id) {
+      timer.end({ outcome: 'missing-firm' })
+      return buildAttorneyIncomingMatterQueueFromSources({}, options)
+    }
 
-  const [preInstructionAllocations, assignments] = await Promise.all([
-    fetchPreInstructionAllocations(client, firm.id),
-    fetchAssignments(client, {
-      firmId: firm.id,
-      userId: currentUserId,
+    const membership = options.membership || await getCurrentUserAttorneyMembership(firm.id, currentUserId).catch(() => null)
+    const role = membership?.isActive ? membership.professionalRole : ''
+    const permissions = membership?.isActive
+      ? getAttorneyProfessionalProfilePermissions(membership)
+      : getAttorneyProfessionalProfilePermissions({})
+    timer.mark('membership:resolved', {
+      status: membership?.status || null,
+      active: Boolean(membership?.isActive),
+      role: role || null,
+    })
+    if (!membership?.isActive) {
+      timer.end({ outcome: 'inactive-membership' })
+      return buildAttorneyIncomingMatterQueueFromSources({
+        firm: null,
+        currentUser: mapCurrentUser(authUser, null, permissions),
+      }, options)
+    }
+    const canViewAll = Boolean(permissions.can_view_all_firm_matters || MANAGEMENT_ROLES.has(role))
+
+    const [preInstructionAllocations, assignments] = await Promise.all([
+      fetchPreInstructionAllocations(client, firm.id),
+      fetchAssignments(client, {
+        firmId: firm.id,
+        userId: currentUserId,
+        canViewAll,
+      }),
+    ])
+    timer.mark('assignments:loaded', {
+      preInstructionAllocations: preInstructionAllocations?.length || 0,
+      assignments: assignments?.length || 0,
       canViewAll,
-    }),
-  ])
-  const attorneyAssignments = assignments.map(normalizeAssignment).filter(isAttorneyInstructionAssignment)
-  const transactionIds = unique(attorneyAssignments.map((assignment) => assignment.transaction_id))
-  const transactions = await fetchRowsByIds(client, 'transactions', TRANSACTION_COLUMNS, transactionIds)
-  const [onboardingRows, documentRequests] = await Promise.all([
-    fetchOnboardingRows(client, transactionIds),
-    fetchDocumentRequests(client, transactionIds),
-  ])
+    })
+    const attorneyAssignments = assignments.map(normalizeAssignment).filter(isAttorneyInstructionAssignment)
+    const transactionIds = unique(attorneyAssignments.map((assignment) => assignment.transaction_id))
+    const transactions = await fetchRowsByIds(client, 'transactions', TRANSACTION_COLUMNS, transactionIds)
+    timer.mark('transactions:loaded', {
+      transactionIds: transactionIds.length,
+      transactions: transactions.length,
+    })
+    const [onboardingRows, documentRequests] = await Promise.all([
+      fetchOnboardingRows(client, transactionIds),
+      fetchDocumentRequests(client, transactionIds),
+    ])
+    timer.mark('matterDependencies:loaded', {
+      onboardingRows: onboardingRows?.length || 0,
+      documentRequests: documentRequests?.length || 0,
+    })
 
-  const buyerIds = unique(transactions.map((transaction) => transaction.buyer_id))
-  const organisationIds = unique(transactions.flatMap((transaction) => [
-    transaction.originating_partner_organisation_id,
-    transaction.referral_source_organisation_id,
-    transaction.organisation_id,
-  ]).concat((preInstructionAllocations || []).flatMap((allocation) => [
-    allocation.agency_organisation_id,
-    allocation.agencyOrganisationId,
-    allocation.source_organisation_id,
-    allocation.sourceOrganisationId,
-  ])))
-  const unitIds = unique(transactions.map((transaction) => transaction.unit_id))
-  const profileIds = unique(attorneyAssignments.flatMap((assignment) => [
-    assignment.primary_attorney_id,
-    assignment.attorney_user_id,
-    assignment.secretary_id,
-    assignment.admin_handler_id,
-    assignment.assigned_user_id,
-    assignment.preferred_attorney_user_id,
-  ]))
+    const buyerIds = unique(transactions.map((transaction) => transaction.buyer_id))
+    const organisationIds = unique(transactions.flatMap((transaction) => [
+      transaction.originating_partner_organisation_id,
+      transaction.referral_source_organisation_id,
+      transaction.organisation_id,
+    ]).concat((preInstructionAllocations || []).flatMap((allocation) => [
+      allocation.agency_organisation_id,
+      allocation.agencyOrganisationId,
+      allocation.source_organisation_id,
+      allocation.sourceOrganisationId,
+    ])))
+    const unitIds = unique(transactions.map((transaction) => transaction.unit_id))
+    const profileIds = unique(attorneyAssignments.flatMap((assignment) => [
+      assignment.primary_attorney_id,
+      assignment.attorney_user_id,
+      assignment.secretary_id,
+      assignment.admin_handler_id,
+      assignment.assigned_user_id,
+      assignment.preferred_attorney_user_id,
+    ]))
 
-  const [buyers, units, profiles, organisations] = await Promise.all([
-    fetchRowsByIds(client, 'buyers', BUYER_COLUMNS, buyerIds),
-    fetchRowsByIds(client, 'units', UNIT_COLUMNS, unitIds),
-    fetchRowsByIds(client, 'profiles', PROFILE_COLUMNS, profileIds),
-    fetchRowsByIds(client, 'organisations', ORGANISATION_COLUMNS, organisationIds),
-  ])
-  const developmentIds = unique([
-    ...transactions.map((transaction) => transaction.development_id),
-    ...units.map((unit) => unit.development_id),
-  ])
-  const developments = await fetchRowsByIds(client, 'developments', DEVELOPMENT_COLUMNS, developmentIds)
+    const [buyers, units, profiles, organisations] = await Promise.all([
+      fetchRowsByIds(client, 'buyers', BUYER_COLUMNS, buyerIds),
+      fetchRowsByIds(client, 'units', UNIT_COLUMNS, unitIds),
+      fetchRowsByIds(client, 'profiles', PROFILE_COLUMNS, profileIds),
+      fetchRowsByIds(client, 'organisations', ORGANISATION_COLUMNS, organisationIds),
+    ])
+    timer.mark('enrichment:loaded', {
+      buyers: buyers?.length || 0,
+      units: units?.length || 0,
+      profiles: profiles?.length || 0,
+      organisations: organisations?.length || 0,
+    })
+    const developmentIds = unique([
+      ...transactions.map((transaction) => transaction.development_id),
+      ...units.map((unit) => unit.development_id),
+    ])
+    const developments = await fetchRowsByIds(client, 'developments', DEVELOPMENT_COLUMNS, developmentIds)
+    timer.mark('developments:loaded', {
+      developments: developments?.length || 0,
+    })
 
-  return buildAttorneyIncomingMatterQueueFromSources({
-    firm,
-    currentUser: mapCurrentUser(authUser, membership, permissions),
-    assignments: attorneyAssignments,
-    transactions,
-    onboardingRows,
-    documentRequests,
-    buyers,
-    units,
-    developments,
-    profiles,
-    organisations,
-    preInstructionAllocations,
-  }, options)
+    const queue = buildAttorneyIncomingMatterQueueFromSources({
+      firm,
+      currentUser: mapCurrentUser(authUser, membership, permissions),
+      assignments: attorneyAssignments,
+      transactions,
+      onboardingRows,
+      documentRequests,
+      buyers,
+      units,
+      developments,
+      profiles,
+      organisations,
+      preInstructionAllocations,
+    }, options)
+    timer.end({
+      outcome,
+      rows: queue?.rows?.length || 0,
+      filteredRows: queue?.filteredRows?.length || 0,
+    })
+    return queue
+  } catch (error) {
+    outcome = 'failed'
+    timer.end({ outcome, message: error?.message || null })
+    throw error
+  }
 }
 
 export const __attorneyIncomingMatterQueueTestUtils = Object.freeze({

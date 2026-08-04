@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom'
 import AttorneySchedulingWorkspace from '../components/attorney/scheduling/AttorneySchedulingWorkspace'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { listAppointmentResourcesAsync } from '../lib/agencyPipelineService'
+import { createPerfTimer } from '../lib/performanceTrace'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { getAttorneyOperationalWorkspaceData } from '../services/attorneyOperations'
 
@@ -11,7 +12,7 @@ function normalizeText(value = '') {
 }
 
 function AttorneySchedulingPage() {
-  const { role } = useWorkspace()
+  const { role, profile, workspace: activeWorkspace } = useWorkspace()
   const permissionsState = useAttorneyPermissions()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -19,14 +20,31 @@ function AttorneySchedulingPage() {
   const [resources, setResources] = useState([])
   const [resourcesLoading, setResourcesLoading] = useState(false)
   const loadRequestIdRef = useRef(0)
+  const attorneyFirmId = useMemo(() => {
+    if (normalizeText(activeWorkspace?.type) === 'attorney_firm') return normalizeText(activeWorkspace?.id)
+    return normalizeText(profile?.primaryAttorneyFirmId || profile?.primary_attorney_firm_id)
+  }, [activeWorkspace?.id, activeWorkspace?.type, profile?.primaryAttorneyFirmId, profile?.primary_attorney_firm_id])
+  const currentUserId = normalizeText(profile?.id || profile?.userId)
 
   const loadWorkspace = useCallback(async ({ force = false } = {}) => {
     const requestId = loadRequestIdRef.current + 1
     loadRequestIdRef.current = requestId
+    const timer = createPerfTimer('attorney.page.scheduling', {
+      firmId: attorneyFirmId || null,
+      userId: currentUserId || null,
+      force: Boolean(force),
+    })
+    let outcome = 'success'
     setLoading(true)
     setError('')
     try {
-      const next = await getAttorneyOperationalWorkspaceData(null, null, { force })
+      timer.mark('workspace:start')
+      const next = await getAttorneyOperationalWorkspaceData(attorneyFirmId || null, currentUserId || null, { force })
+      timer.mark('workspace:end', {
+        hasFirm: Boolean(next?.firm?.id),
+        matters: next?.matterQueue?.length || 0,
+        appointments: next?.appointmentQueue?.length || 0,
+      })
       if (loadRequestIdRef.current !== requestId) return
       setData(next)
       setLoading(false)
@@ -34,30 +52,41 @@ function AttorneySchedulingPage() {
       const organisationId = normalizeText(next?.matterQueue?.[0]?.organisationId || next?.appointmentQueue?.[0]?.organisationId)
       if (organisationId) {
         setResourcesLoading(true)
+        const resourceTimer = createPerfTimer('attorney.page.scheduling.resources', {
+          organisationId,
+        })
         listAppointmentResourcesAsync(organisationId, { includeInactive: false })
           .then((resourceRows) => {
             if (loadRequestIdRef.current !== requestId) return
             setResources(Array.isArray(resourceRows) ? resourceRows : [])
+            resourceTimer.mark('resources:end', {
+              resources: Array.isArray(resourceRows) ? resourceRows.length : 0,
+            })
           })
           .catch(() => {
             if (loadRequestIdRef.current !== requestId) return
             setResources([])
+            resourceTimer.mark('resources:failed')
           })
           .finally(() => {
             if (loadRequestIdRef.current !== requestId) return
             setResourcesLoading(false)
+            resourceTimer.end()
           })
       } else {
         setResources([])
         setResourcesLoading(false)
       }
     } catch (loadError) {
+      outcome = 'failed'
       if (loadRequestIdRef.current !== requestId) return
       setError(loadError?.message || 'Unable to load attorney scheduling workspace.')
       setLoading(false)
       setResourcesLoading(false)
+    } finally {
+      timer.end({ outcome })
     }
-  }, [])
+  }, [attorneyFirmId, currentUserId])
 
   useEffect(() => {
     let active = true

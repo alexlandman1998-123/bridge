@@ -11303,7 +11303,7 @@ function BuyerLeadUpcomingAppointmentsSection({ appointments = [], lead, propert
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Upcoming Appointments</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-500">All confirmed viewings and meetings for this buyer.</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">All confirmed viewings and meetings.</p>
         </div>
         <button type="button" onClick={onViewCalendar} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
           View calendar
@@ -11350,7 +11350,7 @@ function BuyerLeadUpcomingAppointmentsSection({ appointments = [], lead, propert
               <CalendarDays size={26} />
             </div>
             <h3 className="mt-4 text-base font-semibold text-slate-950">No upcoming appointments</h3>
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">There are no confirmed viewings or client meetings scheduled for this buyer.</p>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">You don't have any confirmed viewings scheduled yet.</p>
             <button type="button" onClick={onStartViewing} className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">
               <CalendarDays size={15} />
               Start a viewing
@@ -11369,7 +11369,7 @@ function BuyerLeadRecentViewingActivity({ lead = {}, timeline = [], onViewAll })
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Recent Viewing Activity</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-500">Latest updates on this buyer's viewing process.</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Latest updates on this lead.</p>
         </div>
         <button type="button" onClick={onViewAll} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-50">
           View full activity
@@ -22579,8 +22579,8 @@ function AgentLeadWorkspace() {
     ]
     : [
       { key: 'overview', label: 'Overview' },
-      { key: 'property_match', label: 'Property Match' },
-      { key: 'timeline', label: 'Timeline' },
+      { key: 'property_match', label: 'Properties' },
+      { key: 'timeline', label: 'Activity' },
       { key: 'tasks', label: 'Tasks' },
       { key: 'appointments', label: 'Appointments' },
       { key: 'offers', label: 'Offers' },

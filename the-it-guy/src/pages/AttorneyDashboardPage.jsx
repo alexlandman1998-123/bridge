@@ -22,6 +22,7 @@ import { createElement, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
+import { createPerfTimer } from '../lib/performanceTrace'
 import { getAttorneyManagementDashboardData } from '../services/attorneyDashboard'
 
 const ROLE_VIEW_OPTIONS = [
@@ -35,6 +36,10 @@ const ROLE_VIEW_OPTIONS = [
   { value: 'shared', label: 'Shared Matters' },
   { value: 'full-service', label: 'Full-Service Matters' },
 ]
+
+function normalizeText(value = '') {
+  return String(value || '').trim()
+}
 
 const EMPTY_DASHBOARD = {
   firm: null,
@@ -830,7 +835,7 @@ function AttorneyAnalyticsSection({ partnerAnalytics, matterHealth, conveyancing
 }
 
 function AttorneyDashboardPage() {
-  const { role, profile } = useWorkspace()
+  const { role, profile, workspace: activeWorkspace } = useWorkspace()
   const permissionsState = useAttorneyPermissions()
   const location = useLocation()
   const [loading, setLoading] = useState(true)
@@ -842,23 +847,44 @@ function AttorneyDashboardPage() {
     const value = new URLSearchParams(location.search).get('roleView') || 'all'
     return ROLE_VIEW_OPTIONS.some((option) => option.value === value) ? value : 'all'
   }, [location.search])
+  const attorneyFirmId = useMemo(() => {
+    if (normalizeText(activeWorkspace?.type) === 'attorney_firm') return normalizeText(activeWorkspace?.id)
+    return normalizeText(profile?.primaryAttorneyFirmId || profile?.primary_attorney_firm_id)
+  }, [activeWorkspace?.id, activeWorkspace?.type, profile?.primaryAttorneyFirmId, profile?.primary_attorney_firm_id])
+  const currentUserId = normalizeText(profile?.id || profile?.userId)
   const shellClass = 'grid w-full max-w-none gap-4 bg-[#f7f9fb] px-0 py-3'
 
   useEffect(() => {
     let active = true
 
     async function loadDashboard() {
+      const timer = createPerfTimer('attorney.page.dashboard', {
+        firmId: attorneyFirmId || null,
+        userId: currentUserId || null,
+        roleView,
+      })
+      let outcome = 'success'
       setLoading(true)
       setError('')
       try {
-        const nextData = await getAttorneyManagementDashboardData(null, { roleView })
+        timer.mark('service:start')
+        const nextData = await getAttorneyManagementDashboardData(attorneyFirmId || null, {
+          roleView,
+          userId: currentUserId || null,
+        })
+        timer.mark('service:end', {
+          hasFirm: Boolean(nextData?.firm?.id),
+          activeMatters: nextData?.kpis?.activeMatters ?? null,
+        })
         if (!active) return
         setDashboard(nextData || EMPTY_DASHBOARD)
       } catch (loadError) {
+        outcome = 'failed'
         if (!active) return
         setError(loadError?.message || 'Unable to load attorney dashboard.')
         setDashboard(EMPTY_DASHBOARD)
       } finally {
+        timer.end({ outcome })
         if (active) setLoading(false)
       }
     }
@@ -868,7 +894,7 @@ function AttorneyDashboardPage() {
     return () => {
       active = false
     }
-  }, [roleView])
+  }, [attorneyFirmId, currentUserId, roleView])
 
   if (role !== 'attorney') return <Navigate to="/dashboard" replace />
   if (permissionsState.loading) return <StatePanel>Loading attorney permissions...</StatePanel>

@@ -33,6 +33,8 @@ import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Field from '../../components/ui/Field'
 import { useOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import useAttorneyModuleSettings from '../../hooks/useAttorneyModuleSettings'
+import { ATTORNEY_MODULE_DEFINITIONS } from '../../lib/attorneyModuleSettings'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import {
@@ -595,10 +597,11 @@ function SettingsToast({ message }) {
   )
 }
 
-function BrandingTabLink({ icon: Icon, label, to, active = false, onClick }) {
+function BrandingTabLink({ icon, label, to, active = false, onClick }) {
+  const TabIcon = icon
   const content = (
     <>
-      <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
+      <TabIcon className="h-4 w-4 shrink-0" strokeWidth={2} />
       <span className="whitespace-nowrap">{label}</span>
     </>
   )
@@ -1119,7 +1122,7 @@ function BrandPreviewWorkspace({ activeTab, setActiveTab, organisationName, logo
   )
 }
 
-function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, colours, typography, brandHealth, configuredAssetCount, onOpenFullPreview }) {
+function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, colours, brandHealth, configuredAssetCount, onOpenFullPreview }) {
   const previewItems = [
     { key: 'agency', label: 'Agency Portal', description: 'Header & navigation', tab: 'portal', accent: colours.primary },
     { key: 'buyer', label: 'Buyer Portal', description: 'Mobile view', tab: 'portal', accent: colours.secondary },
@@ -1824,6 +1827,31 @@ function PermissionRow({ title, description, checked, disabled, onChange }) {
   )
 }
 
+function AttorneyModulesCard({ modules = {}, loading = false, saving = false, error = '', canEdit = false, onToggle }) {
+  return (
+    <OrganisationCard title="Attorney Modules" description="Choose which legal workstreams appear in this firm workspace.">
+      <div className="rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
+        {ATTORNEY_MODULE_DEFINITIONS.map((definition) => (
+          <PermissionRow
+            key={definition.key}
+            title={definition.title}
+            description={definition.description}
+            checked={modules[definition.key] !== false}
+            disabled={!canEdit || loading || saving}
+            onChange={(nextValue) => onToggle(definition.key, nextValue)}
+          />
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+        <p className="text-[#60758d]">
+          {loading ? 'Loading module settings...' : saving ? 'Saving module settings...' : 'Transfer matters stay available as the core conveyancing workspace.'}
+        </p>
+        {error ? <p className="font-semibold text-[#b42318]">{error}</p> : null}
+      </div>
+    </OrganisationCard>
+  )
+}
+
 function OverviewRow({ label, value, verified = false }) {
   return (
     <div className="flex items-center justify-between gap-3">
@@ -1840,6 +1868,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const location = useLocation()
   const { role, currentWorkspace, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
+  const isAttorneyWorkspace = resolvedWorkspaceType === 'attorney_firm' || role === 'attorney'
   const copyKey = WORKSPACE_TYPE_COPY_KEYS[resolvedWorkspaceType] || (role === 'bond_originator' ? 'bond' : 'agency')
   const isBondOriginator = copyKey === 'bond'
   const copy = isBondOriginator ? BOND_SETTINGS_COPY : AGENCY_SETTINGS_COPY
@@ -1867,6 +1896,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const [publicIntakePerformance, setPublicIntakePerformance] = useState(null)
   const [publicIntakePerformanceLoading, setPublicIntakePerformanceLoading] = useState(false)
   const [publicIntakePerformanceSchemaReady, setPublicIntakePerformanceSchemaReady] = useState(true)
+  const attorneyModuleState = useAttorneyModuleSettings({ enabled: isAttorneyWorkspace })
 
   useEffect(() => {
     let active = true
@@ -2558,6 +2588,19 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     }
   }
 
+  async function toggleAttorneyModule(moduleKey, nextValue) {
+    if (!canEdit) return
+    setMessage('')
+    setError('')
+    try {
+      await attorneyModuleState.updateModules({ [moduleKey]: nextValue })
+      const moduleDefinition = ATTORNEY_MODULE_DEFINITIONS.find((item) => item.key === moduleKey)
+      setMessage(`${moduleDefinition?.title || 'Attorney module'} ${nextValue ? 'enabled' : 'disabled'}.`)
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to update attorney module settings.')
+    }
+  }
+
   if (loading) {
     return <SettingsLoadingState label="Loading organisation settings…" />
   }
@@ -2888,7 +2931,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     <div className={settingsPageClass}>
       <OrganisationPageHeader
         sectionTitle={showBrandingOnly ? 'Branding' : 'Organisation'}
-        description={showBrandingOnly ? 'Manage logos, colours, and brand assets used across Arch9.' : 'Manage your agency information, branding, permissions and operational defaults.'}
+        description={showBrandingOnly ? 'Manage logos, colours, and brand assets used across Arch9.' : isAttorneyWorkspace ? 'Manage your firm information, branding, permissions and platform modules.' : 'Manage your agency information, branding, permissions and operational defaults.'}
       />
 
       {!canEdit ? <SettingsBanner tone="warning">{copy.readOnly}</SettingsBanner> : null}
@@ -2969,6 +3012,17 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
           <div className="space-y-6">
             {!showBrandingOnly ? (
               <>
+                {isAttorneyWorkspace ? (
+                  <AttorneyModulesCard
+                    modules={attorneyModuleState.modules}
+                    loading={attorneyModuleState.loading}
+                    saving={attorneyModuleState.saving}
+                    error={attorneyModuleState.error}
+                    canEdit={canEdit}
+                    onToggle={(moduleKey, nextValue) => void toggleAttorneyModule(moduleKey, nextValue)}
+                  />
+                ) : null}
+
                 <OrganisationCard title="Agency Information" description="General company information.">
                   <div className="grid gap-4 md:grid-cols-2">
                     <OrganisationField label={copy.organisationNameLabel} id="organisation-agency-name">
