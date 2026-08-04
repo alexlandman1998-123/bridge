@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import AttorneySchedulingWorkspace from '../components/attorney/scheduling/AttorneySchedulingWorkspace'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -17,25 +17,45 @@ function AttorneySchedulingPage() {
   const [error, setError] = useState('')
   const [data, setData] = useState(null)
   const [resources, setResources] = useState([])
+  const [resourcesLoading, setResourcesLoading] = useState(false)
+  const loadRequestIdRef = useRef(0)
 
-  const loadWorkspace = useCallback(async () => {
+  const loadWorkspace = useCallback(async ({ force = false } = {}) => {
+    const requestId = loadRequestIdRef.current + 1
+    loadRequestIdRef.current = requestId
     setLoading(true)
     setError('')
     try {
-      const next = await getAttorneyOperationalWorkspaceData()
+      const next = await getAttorneyOperationalWorkspaceData(null, null, { force })
+      if (loadRequestIdRef.current !== requestId) return
       setData(next)
+      setLoading(false)
 
       const organisationId = normalizeText(next?.matterQueue?.[0]?.organisationId || next?.appointmentQueue?.[0]?.organisationId)
       if (organisationId) {
-        const resourceRows = await listAppointmentResourcesAsync(organisationId, { includeInactive: false })
-        setResources(Array.isArray(resourceRows) ? resourceRows : [])
+        setResourcesLoading(true)
+        listAppointmentResourcesAsync(organisationId, { includeInactive: false })
+          .then((resourceRows) => {
+            if (loadRequestIdRef.current !== requestId) return
+            setResources(Array.isArray(resourceRows) ? resourceRows : [])
+          })
+          .catch(() => {
+            if (loadRequestIdRef.current !== requestId) return
+            setResources([])
+          })
+          .finally(() => {
+            if (loadRequestIdRef.current !== requestId) return
+            setResourcesLoading(false)
+          })
       } else {
         setResources([])
+        setResourcesLoading(false)
       }
     } catch (loadError) {
+      if (loadRequestIdRef.current !== requestId) return
       setError(loadError?.message || 'Unable to load attorney scheduling workspace.')
-    } finally {
       setLoading(false)
+      setResourcesLoading(false)
     }
   }, [])
 
@@ -112,11 +132,12 @@ function AttorneySchedulingPage() {
         matterRows={data?.matterQueue || []}
         documentRows={data?.documentQueue || []}
         resources={resources}
+        resourcesLoading={resourcesLoading}
         memberOptions={memberOptions}
         organisationId={organisationId}
         currentRole={data?.currentUser?.role || ''}
         currentUser={data.currentUser}
-        onWorkspaceChanged={loadWorkspace}
+        onWorkspaceChanged={() => loadWorkspace({ force: true })}
       />
     </section>
   )

@@ -67,7 +67,7 @@ for (const status of ['in_progress', 'signed_uploaded', 'signed_external_pending
 
 assert.match(
   source,
-  /mandateStatus === 'signed_uploaded' \? 'signed_external_pending_upload' : mandateStatus/,
+  /if \(normalized === 'signed_uploaded'\) return 'signed_external_pending_upload'/,
   'Quick Add should keep signed-and-uploaded as pending upload until the document upload succeeds.',
 )
 
@@ -79,20 +79,20 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /listingStatus: resolvedListingIsActive \? 'listing_review' : resolvedListingStatus/,
+  /if \(\['active', 'mandate_signed', 'under_offer', 'transaction_created', 'sold'\]\.includes\(normalized\)\) return 'listing_review'/,
   'Supabase Quick Add should create as listing review before any signed mandate upload promotes it to active.',
 )
 
-assert.match(
+assert.doesNotMatch(
   source,
   /sellerUpdatePayload\.listingStatus = 'active'/,
-  'Quick Add should promote controlled active listings after activation validation passes.',
+  'Quick Add should not promote listings to active without canonical mandate completion.',
 )
 
 assert.match(
   source,
-  /function canQuickListingActivateWithMandateStatus\(value\)/,
-  'Active listing selection should allow signed-uploaded and signed-external mandate states.',
+  /function canQuickListingActivateWithMandateStatus\(\)[\s\S]*return false/,
+  'Active listing selection should wait for canonical mandate completion before activation.',
 )
 
 assert.match(
@@ -177,8 +177,8 @@ assert.match(
 
 assert.match(
   source,
-  /Signed mandate upload outstanding/,
-  'Signed external mandates should keep the upload follow-up visible.',
+  /Manual mandate evidence upload outstanding/,
+  'Signed external mandates should keep the evidence upload follow-up visible.',
 )
 
 assert.match(

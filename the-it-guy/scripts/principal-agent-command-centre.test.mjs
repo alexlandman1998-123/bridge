@@ -414,6 +414,97 @@ function buildModel(overrides = {}) {
 }
 
 {
+  const detailNow = new Date('2026-08-04T12:00:00.000Z')
+  const plannerAgent = {
+    id: 'planner-agent',
+    name: 'Planner Agent',
+    email: 'planner@example.test',
+    role: 'agent',
+    status: 'active',
+    organisationId: 'agency-a',
+    branchId: 'benoni',
+  }
+  const plannerAppointment = {
+    appointmentId: 'planner-viewing-appointment',
+    leadId: 'buyer-lead-planner',
+    listingId: 'listing-planner',
+    appointmentType: 'viewing',
+    title: 'Property Viewing - 114 West Street',
+    status: 'confirmed',
+    assignedAgentId: 'planner-agent',
+    assignedAgentName: 'Planner Agent',
+    assignedAgentEmail: 'planner@example.test',
+    dateTime: '2026-08-06T10:00:00.000Z',
+    createdAt: '2026-08-04T12:00:00.000Z',
+    updatedAt: '2026-08-04T12:00:00.000Z',
+  }
+  const model = getPrincipalAgentCommandCentre({
+    principalId: 'principal-a',
+    organisationId: 'agency-a',
+    branchId: 'all',
+    agents: [plannerAgent],
+    branches,
+    leads: [
+      {
+        leadId: 'buyer-lead-planner',
+        assignedAgentId: 'planner-agent',
+        assignedAgentName: 'Planner Agent',
+        assignedAgentEmail: 'planner@example.test',
+        leadCategory: 'buyer',
+        status: 'Viewing Scheduled',
+        stage: 'Viewing Scheduled',
+        createdAt: '2026-08-04T09:00:00.000Z',
+      },
+    ],
+    appointments: [plannerAppointment],
+    filters: {
+      dateRange: 'last_7_days',
+      rankingMetric: 'activityVolume',
+      sortBy: 'recent',
+    },
+    now: detailNow,
+  })
+  const plannerRow = model.agentsTable.find((row) => row.id === 'planner-agent')
+  assert.equal(plannerRow?.performance.activityVolume, 1, 'planner-created viewing appointment should pull through as agent activity')
+
+  const detail = getPrincipalAgentDetailCommandCentre({
+    agent: plannerAgent,
+    branches,
+    leads: [
+      {
+        leadId: 'buyer-lead-planner',
+        assignedAgentId: 'planner-agent',
+        assignedAgentName: 'Planner Agent',
+        assignedAgentEmail: 'planner@example.test',
+        leadCategory: 'buyer',
+        status: 'Viewing Scheduled',
+        stage: 'Viewing Scheduled',
+        createdAt: '2026-08-04T09:00:00.000Z',
+      },
+    ],
+    appointments: [plannerAppointment],
+    now: detailNow,
+  })
+  assert.equal(
+    detail?.calendarSummary?.nextSevenDayCounts?.find((row) => row.key === 'viewings')?.count,
+    1,
+    'planner-created viewing appointment should increment the principal agent detail viewings counter',
+  )
+  const monthlyMetrics = new Map(detail.monthlyPerformance.metrics.map((metric) => [metric.key, metric]))
+  const prospectingMetrics = new Map(detail.prospectingActivity.metrics.map((metric) => [metric.key, metric]))
+  assert.equal(
+    monthlyMetrics.get('viewingsScheduled')?.value,
+    1,
+    'planner-created viewing appointment should increment current-month viewings scheduled',
+  )
+  assert.equal(
+    prospectingMetrics.get('viewingsScheduled')?.value,
+    1,
+    'planner-created viewing appointment should increment prospecting viewings scheduled',
+  )
+}
+
+{
   const pullThroughNow = new Date('2026-08-02T13:00:00.000Z')
   const pullThroughAgent = {
     id: 'pull-through-agent',

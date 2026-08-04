@@ -2093,7 +2093,7 @@ export default function BondBankRelationshipsPage() {
     } catch (error) {
       return { commandCentre: null, workspace: null, analytics: [], bankPanel: [], systemBanks: [], error: String(error?.message || 'Could not load bank relationships.') }
     }
-  }, [bankId, workspaceContext, options, seededOptions])
+  }, [bankId, workspaceContext, options])
 
   function refresh() {
     setNotice('Bank relationships refreshed.')

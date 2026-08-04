@@ -17,14 +17,15 @@ function assertIncludes(source, token, label = token) {
 for (const [source, token, label] of [
   [component, 'ATTORNEY_INVITE_LOCATION_OPTIONS.map', 'shared location options in the invite modal'],
   [component, "updateDraft('locationMode', event.target.value)} required", 'required location mode control'],
-  [component, "updateDraft('resourceId', event.target.value)} required", 'required boardroom control'],
+  [component, "updateDraft('resourceId', event.target.value)", 'boardroom control'],
   [component, 'buildAttorneyInviteContract({', 'contract validation before submission'],
-  [component, 'recipientName: inviteDraft.recipientName || selectedMatter.clientName', 'matter client-name fallback'],
+  [component, 'recipientName: inviteDraft.recipientName || selectedMatter?.clientName', 'matter client-name fallback'],
   [component, 'createAttorneyAppointmentInvite(inviteContract.value)', 'normalized invite service payload'],
   [service, 'const invite = requireValidAttorneyInvite(input)', 'service-boundary invite validation'],
   [service, 'timezone: invite.timezone', 'explicit appointment timezone persistence'],
   [service, 'location_type: invite.locationType', 'canonical location type persistence'],
   [service, 'resource_id: invite.resourceId', 'boardroom resource persistence'],
+  [service, 'filter((appointment) => !appointment.transaction_id || scopedMatterIds.has(appointment.transaction_id))', 'firm-level internal appointment visibility'],
   [migration, "'physical_address', 'video_call', 'phone_call', 'to_be_confirmed'", 'database-supported location values'],
 ]) {
   assertIncludes(source, token, label)

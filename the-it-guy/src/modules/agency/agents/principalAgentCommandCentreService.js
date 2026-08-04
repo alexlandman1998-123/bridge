@@ -761,6 +761,10 @@ export function getPrincipalAgentDetailCommandCentre({
   const performanceAgent = performanceModel.agents[0] || { ...agent, performance: {} }
   const performance = performanceAgent.performance || {}
   const monthRange = resolveAgentDateRange('month_to_date', now)
+  const currentMonthRange = {
+    start: monthRange.start,
+    end: endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+  }
   const todayStart = startOfDay(now)
   const todayEnd = endOfDay(now)
   const nextWeekEnd = endOfDay(addDays(now, 6))
@@ -789,6 +793,11 @@ export function getPrincipalAgentDetailCommandCentre({
     return !isAppointmentCancelled(row) &&
       classifyAppointmentBucket(row) === 'valuations' &&
       isWithinWindow(getAppointmentDateTime(row), monthRange.start, monthRange.end)
+  }).length
+  const viewingsScheduled = agentAppointments.filter((row) => {
+    return !isAppointmentCancelled(row) &&
+      classifyAppointmentBucket(row) === 'viewings' &&
+      isWithinWindow(getAppointmentDateTime(row), currentMonthRange.start, currentMonthRange.end)
   }).length
   const valuationsCompleted = agentAppointments.filter((row) => {
     return normalizeKey(getAppointmentStatusText(row)).includes('completed') &&
@@ -870,10 +879,11 @@ export function getPrincipalAgentDetailCommandCentre({
         { key: 'prospectsAdded', label: 'Prospects Added', value: prospectsAdded },
         { key: 'callsLogged', label: 'Calls Logged', value: callsLogged },
         { key: 'followUpsDue', label: 'Follow Ups Due', value: dueFollowUps },
+        { key: 'viewingsScheduled', label: 'Viewings Scheduled', value: viewingsScheduled },
         { key: 'valuationsBooked', label: 'Valuations Booked', value: valuationsBooked },
         { key: 'mandatesWon', label: 'Mandates Won', value: mandatesWon },
       ],
-      hasActivity: prospectsAdded + callsLogged + dueFollowUps + valuationsBooked + mandatesWon > 0,
+      hasActivity: prospectsAdded + callsLogged + dueFollowUps + viewingsScheduled + valuationsBooked + mandatesWon > 0,
       funnel: null,
     },
     pipelineHealth: {
@@ -911,6 +921,7 @@ export function getPrincipalAgentDetailCommandCentre({
         { key: 'dealsRegistered', label: 'Deals Registered', value: registeredThisMonthRows.length },
         { key: 'dealsClosed', label: 'Deals Closed', value: registeredThisMonthRows.length },
         { key: 'mandatesWon', label: 'Mandates Won', value: mandatesWon },
+        { key: 'viewingsScheduled', label: 'Viewings Scheduled', value: viewingsScheduled },
         { key: 'valuationsCompleted', label: 'Valuations Completed', value: valuationsCompleted },
         { key: 'salesValue', label: 'Sales Value', value: registeredThisMonthValue, format: 'currency' },
         { key: 'commissionGenerated', label: 'Commission Generated', value: commissionGenerated, format: 'currency' },

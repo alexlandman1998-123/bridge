@@ -10129,6 +10129,7 @@ function AttorneyTransactionDetail() {
   const [detailPanelKey, setDetailPanelKey] = useState('matter')
   const [hydratingDetail, setHydratingDetail] = useState(false)
   const [workflowOperations, setWorkflowOperations] = useState(null)
+  const [workflowOperationsTransactionId, setWorkflowOperationsTransactionId] = useState('')
   const [, setWorkflowLoading] = useState(false)
   const [, setWorkflowError] = useState('')
   const [transactionRollup, setTransactionRollup] = useState(null)
@@ -10234,6 +10235,7 @@ function AttorneyTransactionDetail() {
     setError('')
     setHydratingDetail(false)
     setWorkflowOperations(null)
+    setWorkflowOperationsTransactionId('')
     setWorkflowError('')
     setWorkflowDrawerLaneKey('')
     setWorkflowFocusedStepKey('')
@@ -10284,11 +10286,13 @@ function AttorneyTransactionDetail() {
         const operations = await getAttorneyWorkflowOperationsForTransaction(transactionId, { initialize: false })
         if (!active) return
         setWorkflowOperations(operations)
+        setWorkflowOperationsTransactionId(transactionId)
         setMatterAccessKey(currentMatterAccessKey)
         setMatterAccessAllowed(true)
       } catch (accessError) {
         if (!active) return
         setWorkflowOperations(null)
+        setWorkflowOperationsTransactionId('')
         setMatterAccessKey('')
         setError(accessError?.message || 'You do not have access to this matter.')
         setMatterAccessAllowed(false)
@@ -10328,7 +10332,10 @@ function AttorneyTransactionDetail() {
         loadData({ background: true }),
         operationsPromise,
       ])
-      if (operations) setWorkflowOperations(operations)
+      if (operations) {
+        setWorkflowOperations(operations)
+        setWorkflowOperationsTransactionId(transaction?.id || transactionId || '')
+      }
     },
   })
 
@@ -10679,6 +10686,10 @@ function AttorneyTransactionDetail() {
     async function loadWorkflowOperations() {
       if (!transaction?.id) {
         setWorkflowOperations(null)
+        setWorkflowOperationsTransactionId('')
+        return
+      }
+      if (workflowOperations && workflowOperationsTransactionId === transaction.id) {
         return
       }
 
@@ -10688,9 +10699,11 @@ function AttorneyTransactionDetail() {
         const operations = await getAttorneyWorkflowOperationsForTransaction(transaction.id)
         if (!active) return
         setWorkflowOperations(operations)
+        setWorkflowOperationsTransactionId(transaction.id)
       } catch (workflowLoadError) {
         if (!active) return
         setWorkflowOperations(null)
+        setWorkflowOperationsTransactionId('')
         setWorkflowError(workflowLoadError?.message || 'Unable to load attorney workflow lanes.')
       } finally {
         if (active) setWorkflowLoading(false)
@@ -10702,7 +10715,7 @@ function AttorneyTransactionDetail() {
     return () => {
       active = false
     }
-  }, [transaction?.id])
+  }, [transaction?.id, workflowOperations, workflowOperationsTransactionId])
 
   useEffect(() => {
     if (!isAgentTransactionView || !workspaceOrganisationId) {
@@ -14679,7 +14692,9 @@ function AttorneyTransactionDetail() {
     return <p className="status-message error">Supabase is not configured for this workspace.</p>
   }
 
-  if (workspaceRole === 'attorney' && attorneyPermissionState.loading) {
+  const canRenderNavigationPreview = Boolean(navigationPreviewData && data?.__isNavigationPreview)
+
+  if (workspaceRole === 'attorney' && attorneyPermissionState.loading && !canRenderNavigationPreview) {
     return <LoadingSkeleton lines={8} className="panel" />
   }
 
@@ -14687,7 +14702,7 @@ function AttorneyTransactionDetail() {
     return <p className="status-message error">You do not have access to this attorney workspace.</p>
   }
 
-  if (workspaceRole === 'attorney' && !matterAccessChecked) {
+  if (workspaceRole === 'attorney' && !matterAccessChecked && !canRenderNavigationPreview) {
     return <LoadingSkeleton lines={8} className="panel" />
   }
 

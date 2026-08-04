@@ -4977,6 +4977,14 @@ function parseBuyerViewingPlanNoteBlock(notes = '') {
       sellerRequestedAt: '',
       bookedAt: '',
       recipientEmail: '',
+      buyerEmailDeliveryStatus: '',
+      buyerEmailDeliveryId: '',
+      buyerEmailProviderMessageId: '',
+      buyerEmailDeliveryFailure: '',
+      sellerEmailDeliveryStatus: '',
+      sellerEmailDeliveryIds: '',
+      sellerEmailProviderMessageIds: '',
+      sellerEmailDeliveryFailure: '',
     }
   }
 
@@ -4995,6 +5003,14 @@ function parseBuyerViewingPlanNoteBlock(notes = '') {
     ['Seller availability requested at', 'sellerRequestedAt'],
     ['Viewing appointments booked at', 'bookedAt'],
     ['Buyer email', 'recipientEmail'],
+    ['Buyer email delivery status', 'buyerEmailDeliveryStatus'],
+    ['Buyer email delivery id', 'buyerEmailDeliveryId'],
+    ['Buyer email provider message id', 'buyerEmailProviderMessageId'],
+    ['Buyer email delivery failure', 'buyerEmailDeliveryFailure'],
+    ['Seller email delivery status', 'sellerEmailDeliveryStatus'],
+    ['Seller email delivery ids', 'sellerEmailDeliveryIds'],
+    ['Seller email provider message ids', 'sellerEmailProviderMessageIds'],
+    ['Seller email delivery failure', 'sellerEmailDeliveryFailure'],
     ['Updated at', 'updatedAt'],
   ])
   const parsed = {}
@@ -5046,6 +5062,14 @@ function parseBuyerViewingPlanNoteBlock(notes = '') {
     sellerRequestedAt: normalizeText(parsed.sellerRequestedAt),
     bookedAt: normalizeText(parsed.bookedAt),
     recipientEmail: normalizeText(parsed.recipientEmail),
+    buyerEmailDeliveryStatus: normalizeText(parsed.buyerEmailDeliveryStatus),
+    buyerEmailDeliveryId: normalizeText(parsed.buyerEmailDeliveryId),
+    buyerEmailProviderMessageId: normalizeText(parsed.buyerEmailProviderMessageId),
+    buyerEmailDeliveryFailure: normalizeText(parsed.buyerEmailDeliveryFailure),
+    sellerEmailDeliveryStatus: normalizeText(parsed.sellerEmailDeliveryStatus),
+    sellerEmailDeliveryIds: normalizeText(parsed.sellerEmailDeliveryIds),
+    sellerEmailProviderMessageIds: normalizeText(parsed.sellerEmailProviderMessageIds),
+    sellerEmailDeliveryFailure: normalizeText(parsed.sellerEmailDeliveryFailure),
   }
 }
 
@@ -5065,6 +5089,14 @@ function buildBuyerViewingPlanBlock({
   sellerRequestedAt = '',
   bookedAt = '',
   recipientEmail = '',
+  buyerEmailDeliveryStatus = '',
+  buyerEmailDeliveryId = '',
+  buyerEmailProviderMessageId = '',
+  buyerEmailDeliveryFailure = '',
+  sellerEmailDeliveryStatus = '',
+  sellerEmailDeliveryIds = '',
+  sellerEmailProviderMessageIds = '',
+  sellerEmailDeliveryFailure = '',
 } = {}) {
   return [
     BUYER_VIEWING_PLAN_NOTE_START,
@@ -5082,6 +5114,14 @@ function buildBuyerViewingPlanBlock({
     `Seller availability requested at: ${normalizeText(sellerRequestedAt)}`,
     `Viewing appointments booked at: ${normalizeText(bookedAt)}`,
     `Buyer email: ${normalizeText(recipientEmail)}`,
+    `Buyer email delivery status: ${normalizeText(buyerEmailDeliveryStatus)}`,
+    `Buyer email delivery id: ${normalizeText(buyerEmailDeliveryId)}`,
+    `Buyer email provider message id: ${normalizeText(buyerEmailProviderMessageId)}`,
+    `Buyer email delivery failure: ${normalizeText(buyerEmailDeliveryFailure)}`,
+    `Seller email delivery status: ${normalizeText(sellerEmailDeliveryStatus)}`,
+    `Seller email delivery ids: ${normalizeText(sellerEmailDeliveryIds)}`,
+    `Seller email provider message ids: ${normalizeText(sellerEmailProviderMessageIds)}`,
+    `Seller email delivery failure: ${normalizeText(sellerEmailDeliveryFailure)}`,
     `Updated at: ${normalizeText(updatedAt)}`,
     BUYER_VIEWING_PLAN_NOTE_END,
   ].join('\n')
@@ -5132,6 +5172,21 @@ function buildBuyerViewingAvailabilityEmailBody({
     `Regards,`,
     normalizeText(agentName) || 'Your agent',
   ].join('\n')
+}
+
+function buildBuyerViewingAvailabilityEmailProperties(properties = [], origin = '') {
+  return (Array.isArray(properties) ? properties : []).map((property) => {
+    const listingId = normalizeText(property?.id)
+    const hasListingRoute = origin && listingId && !listingId.startsWith('recommended-')
+    return {
+      id: listingId,
+      title: normalizeText(property?.title) || 'Recommended property',
+      price: normalizeText(property?.price),
+      area: normalizeText(property?.area),
+      match: normalizeText(property?.match) ? `${property.match}%` : '',
+      link: hasListingRoute ? `${origin}/listings/${encodeURIComponent(listingId)}` : '',
+    }
+  })
 }
 
 function buildSellerViewingAvailabilityEmailBody({
@@ -7110,7 +7165,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadKey)
       .sort((left, right) => new Date(right?.receivedAt || right?.processedAt || 0).getTime() - new Date(left?.receivedAt || left?.processedAt || 0).getTime())[0] || null
   }, [records.inboundLeadEmails, selectedLead])
-  const selectedLeadCapturedEnquiry = useMemo(
+  const _selectedLeadCapturedEnquiry = useMemo(
     () => buildCapturedEnquirySummary(selectedLead, selectedLeadCapturedEmail),
     [selectedLead, selectedLeadCapturedEmail],
   )
@@ -9875,7 +9930,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadWorkflowHealth.items,
   ])
 
-  const buyerOverviewWorkflowItems = useMemo(() => {
+  const _buyerOverviewWorkflowItems = useMemo(() => {
     const baseRows = [
       { key: 'lead_received', label: 'Lead received', done: Boolean(selectedLead) },
       { key: 'contacted', label: 'Contacted', done: buyerOverviewQualification.hasContacted },
@@ -9892,7 +9947,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }))
   }, [buyerOverviewQualification, selectedLead])
 
-  const buyerOverviewLinkedRecords = useMemo(() => ([
+  const _buyerOverviewLinkedRecords = useMemo(() => ([
     {
       key: 'listing',
       label: 'Enquired listing',
@@ -10825,6 +10880,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           sellerRequestedAt: savedPlan.sellerRequestedAt,
           bookedAt: savedPlan.bookedAt,
           recipientEmail: savedPlan.recipientEmail,
+          buyerEmailDeliveryStatus: savedPlan.buyerEmailDeliveryStatus,
+          buyerEmailDeliveryId: savedPlan.buyerEmailDeliveryId,
+          buyerEmailProviderMessageId: savedPlan.buyerEmailProviderMessageId,
+          buyerEmailDeliveryFailure: savedPlan.buyerEmailDeliveryFailure,
+          sellerEmailDeliveryStatus: savedPlan.sellerEmailDeliveryStatus,
+          sellerEmailDeliveryIds: savedPlan.sellerEmailDeliveryIds,
+          sellerEmailProviderMessageIds: savedPlan.sellerEmailProviderMessageIds,
+          sellerEmailDeliveryFailure: savedPlan.sellerEmailDeliveryFailure,
           updatedAt: savedAt,
         },
         selectedLead.notes,
@@ -10877,6 +10940,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       const sentAt = new Date().toISOString()
       const nextStatus = 'buyer_availability'
+      const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+      const origin = typeof window !== 'undefined' ? window.location?.origin || '' : ''
+      const buyerName = normalizeText(selectedLeadDisplayName || selectedLeadContact?.firstName || selectedLead?.firstName) || 'there'
+      const agentName = normalizeText(currentAgent?.fullName || currentAgent?.email) || 'your agent'
+      const agentEmail = normalizeText(currentAgent?.email).toLowerCase()
+      const emailResponse = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'buyer_viewing_availability_request',
+          to: buyerEmail,
+          buyerName,
+          recipientName: buyerName,
+          agentName,
+          agentEmail,
+          organisationId,
+          organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+          leadId: selectedLead.leadId,
+          recipientRole: 'buyer',
+          propertyCount: selectedPropertyIds.length,
+          properties: buildBuyerViewingAvailabilityEmailProperties(selectedProperties, origin),
+          idempotencyKey: `buyer-viewing-availability:${organisationId}:${selectedLead.leadId}:${selectedPropertyIds.join(',')}`,
+          deliveryMetadata: {
+            source: 'buyer_viewing_planner',
+            selectedPropertyIds,
+          },
+        },
+      })
+      assertEdgeFunctionSuccess(emailResponse, 'Unable to send the buyer viewing availability email.')
+      const deliveryData = emailResponse?.data || {}
+      const deliveryStatus = deliveryData?.suppressed ? 'suppressed' : 'sent'
       const notes = buildBuyerViewingPlanNotes(
         {
           status: nextStatus,
@@ -10888,13 +10980,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           responseNotes: viewingPlanResponseForm.responseNotes,
           sellerRecipientEmails: viewingPlanSellerForm.sellerRecipientEmails,
           sellerCoordinationNotes: viewingPlanSellerForm.sellerCoordinationNotes,
-          bookedPropertyIds: parseBuyerViewingPlanNoteBlock(selectedLead.notes).bookedPropertyIds,
-          bookedAppointmentIds: parseBuyerViewingPlanNoteBlock(selectedLead.notes).bookedAppointmentIds,
+          bookedPropertyIds: savedPlan.bookedPropertyIds,
+          bookedAppointmentIds: savedPlan.bookedAppointmentIds,
           requestedAt: sentAt,
-          respondedAt: parseBuyerViewingPlanNoteBlock(selectedLead.notes).respondedAt,
-          sellerRequestedAt: parseBuyerViewingPlanNoteBlock(selectedLead.notes).sellerRequestedAt,
-          bookedAt: parseBuyerViewingPlanNoteBlock(selectedLead.notes).bookedAt,
+          respondedAt: savedPlan.respondedAt,
+          sellerRequestedAt: savedPlan.sellerRequestedAt,
+          bookedAt: savedPlan.bookedAt,
           recipientEmail: buyerEmail,
+          buyerEmailDeliveryStatus: deliveryStatus,
+          buyerEmailDeliveryId: normalizeText(deliveryData?.deliveryId),
+          buyerEmailProviderMessageId: normalizeText(deliveryData?.providerMessageId || deliveryData?.emailId),
+          buyerEmailDeliveryFailure: '',
+          sellerEmailDeliveryStatus: savedPlan.sellerEmailDeliveryStatus,
+          sellerEmailDeliveryIds: savedPlan.sellerEmailDeliveryIds,
+          sellerEmailProviderMessageIds: savedPlan.sellerEmailProviderMessageIds,
+          sellerEmailDeliveryFailure: savedPlan.sellerEmailDeliveryFailure,
           updatedAt: sentAt,
         },
         selectedLead.notes,
@@ -10907,8 +11007,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         {
           agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
           activityType: 'Viewing Availability Requested',
-          activityNote: `Availability request prepared for ${buyerEmail} with ${selectedPropertyIds.length} selected propert${selectedPropertyIds.length === 1 ? 'y' : 'ies'}.`,
-          outcome: 'Sent to buyer',
+          activityNote: `Availability request sent to ${buyerEmail} with ${selectedPropertyIds.length} selected propert${selectedPropertyIds.length === 1 ? 'y' : 'ies'}.`,
+          outcome: deliveryStatus === 'suppressed' ? 'Suppressed test delivery' : 'Sent to buyer',
         },
         { actor: currentAgent },
       ).catch(() => null)
@@ -10924,20 +11024,70 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setViewingPlanStatus(nextStatus)
       scheduleRecordsReload(organisationId, 850)
 
+      setMessage(deliveryStatus === 'suppressed' ? 'Viewing availability request logged. Email delivery was suppressed for this test recipient.' : 'Viewing availability email sent and logged.')
+      setError('')
+    } catch (sendError) {
+      const failedAt = new Date().toISOString()
+      const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+      const deliveryFailure = sendError?.message || 'Unable to send the buyer viewing availability email.'
+      const failureNotes = buildBuyerViewingPlanNotes(
+        {
+          status: savedPlan.status || viewingPlanStatus || 'draft',
+          selectedPropertyIds,
+          confirmedPropertyIds: (Array.isArray(viewingPlanResponseForm.confirmedPropertyIds) ? viewingPlanResponseForm.confirmedPropertyIds : [])
+            .map(normalizeText)
+            .filter((id) => id && selectedPropertyIds.includes(id)),
+          availabilityWindows: viewingPlanResponseForm.availabilityWindows,
+          responseNotes: viewingPlanResponseForm.responseNotes,
+          sellerRecipientEmails: viewingPlanSellerForm.sellerRecipientEmails,
+          sellerCoordinationNotes: viewingPlanSellerForm.sellerCoordinationNotes,
+          bookedPropertyIds: savedPlan.bookedPropertyIds,
+          bookedAppointmentIds: savedPlan.bookedAppointmentIds,
+          requestedAt: savedPlan.requestedAt,
+          respondedAt: savedPlan.respondedAt,
+          sellerRequestedAt: savedPlan.sellerRequestedAt,
+          bookedAt: savedPlan.bookedAt,
+          recipientEmail: buyerEmail,
+          buyerEmailDeliveryStatus: 'failed',
+          buyerEmailDeliveryId: savedPlan.buyerEmailDeliveryId,
+          buyerEmailProviderMessageId: savedPlan.buyerEmailProviderMessageId,
+          buyerEmailDeliveryFailure: deliveryFailure,
+          sellerEmailDeliveryStatus: savedPlan.sellerEmailDeliveryStatus,
+          sellerEmailDeliveryIds: savedPlan.sellerEmailDeliveryIds,
+          sellerEmailProviderMessageIds: savedPlan.sellerEmailProviderMessageIds,
+          sellerEmailDeliveryFailure: savedPlan.sellerEmailDeliveryFailure,
+          updatedAt: failedAt,
+        },
+        selectedLead.notes,
+      )
+      const failurePatch = { notes: failureNotes }
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, failurePatch).catch(() => null)
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        selectedLead.leadId,
+        {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Viewing Availability Email Failed',
+          activityNote: `Availability request could not be sent to ${buyerEmail}. ${deliveryFailure}`,
+          outcome: 'Failed',
+        },
+        { actor: currentAgent },
+      ).catch(() => null)
+      patchSelectedLeadRecord(failurePatch, selectedLead.leadId)
+      setViewingPlanSelectedPropertyIds(selectedPropertyIds)
+      scheduleRecordsReload(organisationId, 850)
+
       if (typeof window !== 'undefined') {
         const buyerName = normalizeText(selectedLeadDisplayName || selectedLeadContact?.firstName || selectedLead?.firstName) || 'there'
         const body = buildBuyerViewingAvailabilityEmailBody({
           buyerName,
-          agentName: currentAgent.fullName || currentAgent.email,
+          agentName: normalizeText(currentAgent?.fullName || currentAgent?.email) || 'your agent',
           properties: selectedProperties,
           origin: window.location?.origin || '',
         })
         window.location.href = `mailto:${encodeURIComponent(buyerEmail)}?subject=${encodeURIComponent('Viewing availability request')}&body=${encodeURIComponent(body)}`
       }
-      setMessage('Viewing availability request prepared and logged.')
-      setError('')
-    } catch (sendError) {
-      setError(sendError?.message || 'Could not prepare the buyer availability request.')
+      setError(`${deliveryFailure} I opened an email draft as a fallback.`)
     } finally {
       setIsLeadDetailSaving(false)
     }
@@ -10981,6 +11131,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           sellerRequestedAt: savedPlan.sellerRequestedAt,
           bookedAt: savedPlan.bookedAt,
           recipientEmail: savedPlan.recipientEmail || normalizeText(selectedLeadContact?.email || selectedLead?.email),
+          buyerEmailDeliveryStatus: savedPlan.buyerEmailDeliveryStatus,
+          buyerEmailDeliveryId: savedPlan.buyerEmailDeliveryId,
+          buyerEmailProviderMessageId: savedPlan.buyerEmailProviderMessageId,
+          buyerEmailDeliveryFailure: savedPlan.buyerEmailDeliveryFailure,
+          sellerEmailDeliveryStatus: savedPlan.sellerEmailDeliveryStatus,
+          sellerEmailDeliveryIds: savedPlan.sellerEmailDeliveryIds,
+          sellerEmailProviderMessageIds: savedPlan.sellerEmailProviderMessageIds,
+          sellerEmailDeliveryFailure: savedPlan.sellerEmailDeliveryFailure,
           updatedAt: savedAt,
         },
         selectedLead.notes,
@@ -11057,15 +11215,69 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
 
-    setIsLeadDetailSaving(true)
-    try {
-      const sentAt = new Date().toISOString()
-      const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
-      const nextStatus = 'seller_coordination'
-      const sellerRecipientEmails = sellerEmails.join(', ')
-      const sellerCoordinationNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
-      const notes = buildBuyerViewingPlanNotes(
-        {
+	    setIsLeadDetailSaving(true)
+	    try {
+	      const sentAt = new Date().toISOString()
+	      const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+	      const nextStatus = 'seller_coordination'
+	      const sellerRecipientEmails = sellerEmails.join(', ')
+	      const sellerCoordinationNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
+	      const origin = typeof window !== 'undefined' ? window.location?.origin || '' : ''
+	      const sellerName = confirmedProperties.length === 1
+	        ? normalizeText(confirmedProperties[0]?.sellerName) || 'there'
+	        : 'there'
+	      const buyerName = normalizeText(selectedLeadDisplayName || selectedLeadContactName) || 'the buyer'
+	      const agentName = normalizeText(currentAgent?.fullName || currentAgent?.email) || 'your agent'
+	      const agentEmail = normalizeText(currentAgent?.email).toLowerCase()
+	      const emailResponse = await invokeEdgeFunction('send-email', {
+	        body: {
+	          type: 'seller_viewing_availability_request',
+	          to: sellerEmails,
+	          recipients: sellerEmails,
+	          sellerName,
+	          recipientName: sellerName,
+	          buyerName,
+	          agentName,
+	          agentEmail,
+	          organisationId,
+	          organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+	          leadId: selectedLead.leadId,
+	          recipientRole: 'seller',
+	          propertyCount: confirmedPropertyIds.length,
+	          properties: buildBuyerViewingAvailabilityEmailProperties(confirmedProperties.length ? confirmedProperties : selectedProperties, origin),
+	          availabilityWindows,
+	          coordinationNotes: sellerCoordinationNotes,
+	          idempotencyKey: `seller-viewing-availability:${organisationId}:${selectedLead.leadId}:${confirmedPropertyIds.join(',')}:${sellerEmails.join(',')}`,
+	          metadata: {
+	            source: 'buyer_viewing_planner',
+	            confirmedPropertyIds,
+	            sellerEmails,
+	          },
+	          deliveryMetadata: {
+	            source: 'buyer_viewing_planner',
+	            confirmedPropertyIds,
+	            sellerEmails,
+	          },
+	        },
+	      })
+	      assertEdgeFunctionSuccess(emailResponse, 'Unable to send the seller viewing availability email.')
+	      const deliveryData = emailResponse?.data || {}
+	      const sentCount = Number(deliveryData?.sentCount || 0)
+	      const suppressedCount = deliveryData?.suppressed ? sellerEmails.length : Number(deliveryData?.suppressedCount || 0)
+	      const failedCount = Number(deliveryData?.failedCount || 0)
+	      const sellerDeliveryStatus = failedCount && (sentCount || suppressedCount)
+	        ? 'partial_sent'
+	        : suppressedCount && !sentCount
+	          ? 'suppressed'
+	          : 'sent'
+	      const sellerDeliveryFailure = failedCount
+	        ? (Array.isArray(deliveryData?.results) ? deliveryData.results : [])
+	          .filter((result) => !result?.ok)
+	          .map((result) => `${result?.recipient || 'seller'}: ${result?.error || 'Failed'}`)
+	          .join('; ')
+	        : ''
+	      const notes = buildBuyerViewingPlanNotes(
+	        {
           status: nextStatus,
           selectedPropertyIds: selectedPropertyIds.length ? selectedPropertyIds : confirmedPropertyIds,
           confirmedPropertyIds,
@@ -11080,8 +11292,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           sellerRequestedAt: sentAt,
           bookedAt: savedPlan.bookedAt,
           recipientEmail: savedPlan.recipientEmail || normalizeText(selectedLeadContact?.email || selectedLead?.email),
-          updatedAt: sentAt,
-        },
+          buyerEmailDeliveryStatus: savedPlan.buyerEmailDeliveryStatus,
+          buyerEmailDeliveryId: savedPlan.buyerEmailDeliveryId,
+          buyerEmailProviderMessageId: savedPlan.buyerEmailProviderMessageId,
+	          buyerEmailDeliveryFailure: savedPlan.buyerEmailDeliveryFailure,
+	          sellerEmailDeliveryStatus: sellerDeliveryStatus,
+	          sellerEmailDeliveryIds: (Array.isArray(deliveryData?.deliveryIds) ? deliveryData.deliveryIds : []).map(normalizeText).filter(Boolean).join(', '),
+	          sellerEmailProviderMessageIds: (Array.isArray(deliveryData?.providerMessageIds) ? deliveryData.providerMessageIds : []).map(normalizeText).filter(Boolean).join(', '),
+	          sellerEmailDeliveryFailure: sellerDeliveryFailure,
+	          updatedAt: sentAt,
+	        },
         selectedLead.notes,
       )
       const leadPatch = { notes }
@@ -11091,11 +11311,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         organisationId,
         selectedLead.leadId,
         {
-          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-          activityType: 'Seller Availability Requested',
-          activityNote: `Seller availability requested from ${sellerRecipientEmails} for ${confirmedPropertyIds.length} propert${confirmedPropertyIds.length === 1 ? 'y' : 'ies'}. Buyer availability: ${availabilityWindows}`,
-          outcome: 'Seller coordination',
-        },
+	          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+	          activityType: 'Seller Availability Requested',
+	          activityNote: `Seller availability request sent to ${sellerRecipientEmails} for ${confirmedPropertyIds.length} propert${confirmedPropertyIds.length === 1 ? 'y' : 'ies'}. Buyer availability: ${availabilityWindows}`,
+	          outcome: failedCount ? 'Partially sent' : sellerDeliveryStatus === 'suppressed' ? 'Suppressed test delivery' : 'Sent to seller',
+	        },
         { actor: currentAgent },
       ).catch(() => null)
 
@@ -11107,27 +11327,82 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
       scheduleRecordsReload(organisationId, 850)
 
-      if (typeof window !== 'undefined') {
-        const sellerName = confirmedProperties.length === 1
-          ? normalizeText(confirmedProperties[0]?.sellerName) || 'there'
-          : 'there'
-        const body = buildSellerViewingAvailabilityEmailBody({
-          sellerName,
-          buyerName: selectedLeadDisplayName || selectedLeadContactName,
-          agentName: currentAgent.fullName || currentAgent.email,
-          properties: confirmedProperties.length ? confirmedProperties : selectedProperties,
-          availabilityWindows,
-          coordinationNotes: sellerCoordinationNotes,
-          origin: window.location?.origin || '',
-        })
-        const mailtoRecipients = sellerEmails.map((email) => encodeURIComponent(email)).join(',')
-        window.location.href = `mailto:${mailtoRecipients}?subject=${encodeURIComponent('Viewing access availability request')}&body=${encodeURIComponent(body)}`
-      }
-      setMessage('Seller availability request prepared and logged.')
-      setError('')
-    } catch (sendError) {
-      setError(sendError?.message || 'Could not prepare the seller availability request.')
-    } finally {
+	      setMessage(
+	        sellerDeliveryStatus === 'suppressed'
+	          ? 'Seller availability request logged. Email delivery was suppressed for test recipients.'
+	          : sellerDeliveryStatus === 'partial_sent'
+	            ? 'Seller availability request partially sent and logged.'
+	            : 'Seller availability email sent and logged.',
+	      )
+	      setError('')
+	    } catch (sendError) {
+	      const failedAt = new Date().toISOString()
+	      const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+	      const deliveryFailure = sendError?.message || 'Unable to send the seller viewing availability email.'
+	      const sellerRecipientEmails = sellerEmails.join(', ')
+	      const sellerCoordinationNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
+	      const failureNotes = buildBuyerViewingPlanNotes(
+	        {
+	          status: savedPlan.status || viewingPlanStatus || 'buyer_confirmed',
+	          selectedPropertyIds: selectedPropertyIds.length ? selectedPropertyIds : confirmedPropertyIds,
+	          confirmedPropertyIds,
+	          availabilityWindows,
+	          responseNotes: normalizeText(viewingPlanResponseForm.responseNotes),
+	          sellerRecipientEmails,
+	          sellerCoordinationNotes,
+	          bookedPropertyIds: savedPlan.bookedPropertyIds,
+	          bookedAppointmentIds: savedPlan.bookedAppointmentIds,
+	          requestedAt: savedPlan.requestedAt,
+	          respondedAt: savedPlan.respondedAt,
+	          sellerRequestedAt: savedPlan.sellerRequestedAt,
+	          bookedAt: savedPlan.bookedAt,
+	          recipientEmail: savedPlan.recipientEmail || normalizeText(selectedLeadContact?.email || selectedLead?.email),
+	          buyerEmailDeliveryStatus: savedPlan.buyerEmailDeliveryStatus,
+	          buyerEmailDeliveryId: savedPlan.buyerEmailDeliveryId,
+	          buyerEmailProviderMessageId: savedPlan.buyerEmailProviderMessageId,
+	          buyerEmailDeliveryFailure: savedPlan.buyerEmailDeliveryFailure,
+	          sellerEmailDeliveryStatus: 'failed',
+	          sellerEmailDeliveryIds: savedPlan.sellerEmailDeliveryIds,
+	          sellerEmailProviderMessageIds: savedPlan.sellerEmailProviderMessageIds,
+	          sellerEmailDeliveryFailure: deliveryFailure,
+	          updatedAt: failedAt,
+	        },
+	        selectedLead.notes,
+	      )
+	      const failurePatch = { notes: failureNotes }
+	      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, failurePatch).catch(() => null)
+	      await createAgencyCrmLeadActivity(
+	        organisationId,
+	        selectedLead.leadId,
+	        {
+	          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+	          activityType: 'Seller Availability Email Failed',
+	          activityNote: `Seller availability request could not be sent to ${sellerRecipientEmails}. ${deliveryFailure}`,
+	          outcome: 'Failed',
+	        },
+	        { actor: currentAgent },
+	      ).catch(() => null)
+	      patchSelectedLeadRecord(failurePatch, selectedLead.leadId)
+	      scheduleRecordsReload(organisationId, 850)
+
+	      if (typeof window !== 'undefined') {
+	        const sellerName = confirmedProperties.length === 1
+	          ? normalizeText(confirmedProperties[0]?.sellerName) || 'there'
+	          : 'there'
+	        const body = buildSellerViewingAvailabilityEmailBody({
+	          sellerName,
+	          buyerName: selectedLeadDisplayName || selectedLeadContactName,
+	          agentName: normalizeText(currentAgent?.fullName || currentAgent?.email) || 'your agent',
+	          properties: confirmedProperties.length ? confirmedProperties : selectedProperties,
+	          availabilityWindows,
+	          coordinationNotes: sellerCoordinationNotes,
+	          origin: window.location?.origin || '',
+	        })
+	        const mailtoRecipients = sellerEmails.map((email) => encodeURIComponent(email)).join(',')
+	        window.location.href = `mailto:${mailtoRecipients}?subject=${encodeURIComponent('Viewing access availability request')}&body=${encodeURIComponent(body)}`
+	      }
+	      setError(`${deliveryFailure} I opened an email draft as a fallback.`)
+	    } finally {
       setIsLeadDetailSaving(false)
     }
   }
@@ -11900,6 +12175,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               sellerRequestedAt: savedPlan.sellerRequestedAt,
               bookedAt,
               recipientEmail: savedPlan.recipientEmail || normalizeText(selectedLeadContact?.email || linkedLead?.email),
+              buyerEmailDeliveryStatus: savedPlan.buyerEmailDeliveryStatus,
+              buyerEmailDeliveryId: savedPlan.buyerEmailDeliveryId,
+              buyerEmailProviderMessageId: savedPlan.buyerEmailProviderMessageId,
+              buyerEmailDeliveryFailure: savedPlan.buyerEmailDeliveryFailure,
+              sellerEmailDeliveryStatus: savedPlan.sellerEmailDeliveryStatus,
+              sellerEmailDeliveryIds: savedPlan.sellerEmailDeliveryIds,
+              sellerEmailProviderMessageIds: savedPlan.sellerEmailProviderMessageIds,
+              sellerEmailDeliveryFailure: savedPlan.sellerEmailDeliveryFailure,
               updatedAt: bookedAt,
             },
             linkedLead.notes,
@@ -18712,7 +18995,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const viewingPlannerActiveStepKey = viewingPlannerSteps[viewingPlannerActiveIndex]?.key || 'select'
                         const viewingPlannerSelectedCountLabel = `${viewingPlanSelectedProperties.length} propert${viewingPlanSelectedProperties.length === 1 ? 'y' : 'ies'} selected`
                         const viewingPlannerBuyerHasRequest = Boolean(savedViewingPlan.requestedAt)
+                        const viewingPlannerBuyerEmailDeliveryStatus = normalizeText(savedViewingPlan.buyerEmailDeliveryStatus).toLowerCase()
+                        const viewingPlannerBuyerEmailDeliveryLabel = viewingPlannerBuyerEmailDeliveryStatus === 'sent'
+                          ? 'Email sent'
+                          : viewingPlannerBuyerEmailDeliveryStatus === 'suppressed'
+                            ? 'Delivery suppressed'
+                            : viewingPlannerBuyerEmailDeliveryStatus === 'failed'
+                              ? 'Email failed'
+                              : ''
+                        const viewingPlannerBuyerEmailDeliveryClass = viewingPlannerBuyerEmailDeliveryStatus === 'failed'
+                          ? 'bg-[#fff4f2] text-[#a43f2c] ring-[#f3d1c9]'
+                          : viewingPlannerBuyerEmailDeliveryStatus === 'suppressed'
+                            ? 'bg-[#fff8e8] text-[#8a5b13] ring-[#f0dfb7]'
+                            : 'bg-[#e8f4ee] text-[#17643a] ring-[#d8eadf]'
                         const viewingPlannerSellerHasRequest = Boolean(savedViewingPlan.sellerRequestedAt)
+                        const viewingPlannerSellerEmailDeliveryStatus = normalizeText(savedViewingPlan.sellerEmailDeliveryStatus).toLowerCase()
+                        const viewingPlannerSellerEmailDeliveryLabel = viewingPlannerSellerEmailDeliveryStatus === 'sent'
+                          ? 'Email sent'
+                          : viewingPlannerSellerEmailDeliveryStatus === 'partial_sent'
+                            ? 'Partially sent'
+                            : viewingPlannerSellerEmailDeliveryStatus === 'suppressed'
+                              ? 'Delivery suppressed'
+                              : viewingPlannerSellerEmailDeliveryStatus === 'failed'
+                                ? 'Email failed'
+                                : ''
+                        const viewingPlannerSellerEmailDeliveryClass = viewingPlannerSellerEmailDeliveryStatus === 'failed'
+                          ? 'bg-[#fff4f2] text-[#a43f2c] ring-[#f3d1c9]'
+                          : viewingPlannerSellerEmailDeliveryStatus === 'partial_sent' || viewingPlannerSellerEmailDeliveryStatus === 'suppressed'
+                            ? 'bg-[#fff8e8] text-[#8a5b13] ring-[#f0dfb7]'
+                            : 'bg-[#e8f4ee] text-[#17643a] ring-[#d8eadf]'
                         const viewingPlannerBuyerAvailability = normalizeText(viewingPlanResponseForm.availabilityWindows)
                         const viewingPlannerBuyerNotes = normalizeText(viewingPlanResponseForm.responseNotes)
                         const viewingPlannerSellerNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
@@ -18722,6 +19033,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           properties: viewingPlanSelectedProperties,
                           origin: typeof window !== 'undefined' ? window.location?.origin || '' : '',
                         })
+                        const showLegacyViewingPlanWorkspace = Boolean(selectedLead?.showLegacyViewingPlanWorkspace)
+                        const findViewingAutomationTask = (title = '') => {
+                          const normalizedTitle = normalizeText(title).toLowerCase()
+                          return selectedLeadTasks.find((task) => (
+                            normalizeText(task?.title).toLowerCase() === normalizedTitle &&
+                            normalizeText(task?.status) !== 'Completed'
+                          )) || null
+                        }
+                        const viewingPlanAutomationRows = [
+                          {
+                            key: 'buyer-availability',
+                            label: 'Follow up buyer availability',
+                            active: viewingPlanStatus === 'buyer_availability' && !savedViewingPlan.respondedAt,
+                            task: findViewingAutomationTask('Follow up buyer viewing availability'),
+                          },
+                          {
+                            key: 'seller-access',
+                            label: 'Follow up seller viewing access',
+                            active: viewingPlanStatus === 'buyer_confirmed' || viewingPlanStatus === 'seller_coordination',
+                            task: findViewingAutomationTask('Follow up seller viewing access'),
+                          },
+                          {
+                            key: 'post-viewing',
+                            label: 'Post-viewing buyer follow-up',
+                            active: viewingPlanStatus === 'booked',
+                            task: findViewingAutomationTask('Post-viewing buyer follow-up'),
+                          },
+                        ]
 
                         return (
                           <>
@@ -19111,14 +19450,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       </p>
                                       {viewingPlannerBuyerHasRequest ? (
                                         <div className="mt-4 rounded-[14px] border border-[#dce7f2] bg-white p-4">
-                                          <div className="flex flex-wrap items-center justify-between gap-3">
-                                            <div>
-                                              <p className="text-sm font-semibold text-[#102033]">Request sent</p>
-                                              <p className="mt-1 text-xs text-[#60758b]">{savedViewingPlan.requestedAt ? formatDateShort(savedViewingPlan.requestedAt) : 'Date not captured'}</p>
-                                            </div>
-                                            <span className="rounded-full bg-[#e8f4ee] px-3 py-1 text-xs font-semibold text-[#17643a]">Automatic follow-up enabled</span>
-                                          </div>
-                                        </div>
+	                                          <div className="flex flex-wrap items-center justify-between gap-3">
+	                                            <div>
+	                                              <p className="text-sm font-semibold text-[#102033]">Request sent</p>
+	                                              <p className="mt-1 text-xs text-[#60758b]">{savedViewingPlan.requestedAt ? formatDateShort(savedViewingPlan.requestedAt) : 'Date not captured'}</p>
+	                                              {viewingPlannerBuyerEmailDeliveryStatus === 'failed' && savedViewingPlan.buyerEmailDeliveryFailure ? (
+	                                                <p className="mt-1 text-xs font-semibold text-[#a43f2c]">{savedViewingPlan.buyerEmailDeliveryFailure}</p>
+	                                              ) : null}
+	                                            </div>
+	                                            <div className="flex flex-wrap items-center justify-end gap-2">
+	                                              {viewingPlannerBuyerEmailDeliveryLabel ? (
+	                                                <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${viewingPlannerBuyerEmailDeliveryClass}`}>{viewingPlannerBuyerEmailDeliveryLabel}</span>
+	                                              ) : null}
+	                                              <span className="rounded-full bg-[#e8f4ee] px-3 py-1 text-xs font-semibold text-[#17643a]">Automatic follow-up enabled</span>
+	                                            </div>
+	                                          </div>
+	                                        </div>
                                       ) : (
                                         <div className="mt-4 rounded-[14px] border border-[#dce7f2] bg-white p-4">
                                           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Email preview</p>
@@ -19195,10 +19542,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   ) : null}
 
                                   {viewingPlannerActiveStepKey === 'seller' ? (
-                                    <div className="rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
-                                      <p className="text-sm font-semibold text-[#60758b]">Step 3 of 4</p>
-                                      <h4 className="mt-1 text-lg font-semibold text-[#102033]">Confirm with sellers</h4>
-                                      <div className="mt-3 rounded-[14px] border border-[#dce7f2] bg-white p-4">
+	                                    <div className="rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
+	                                      <p className="text-sm font-semibold text-[#60758b]">Step 3 of 4</p>
+	                                      <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+	                                        <h4 className="text-lg font-semibold text-[#102033]">Confirm with sellers</h4>
+	                                        {viewingPlannerSellerEmailDeliveryLabel ? (
+	                                          <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${viewingPlannerSellerEmailDeliveryClass}`}>{viewingPlannerSellerEmailDeliveryLabel}</span>
+	                                        ) : null}
+	                                      </div>
+	                                      {viewingPlannerSellerEmailDeliveryStatus === 'failed' && savedViewingPlan.sellerEmailDeliveryFailure ? (
+	                                        <p className="mt-2 text-xs font-semibold text-[#a43f2c]">{savedViewingPlan.sellerEmailDeliveryFailure}</p>
+	                                      ) : null}
+	                                      <div className="mt-3 rounded-[14px] border border-[#dce7f2] bg-white p-4">
                                         <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Buyer availability</p>
                                         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#29435d]">{viewingPlannerBuyerAvailability || 'No buyer availability captured yet.'}</p>
                                         {viewingPlannerBuyerNotes ? <p className="mt-2 text-sm leading-6 text-[#60758b]">{viewingPlannerBuyerNotes}</p> : null}
@@ -19333,8 +19688,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         <p><span className="font-semibold text-[#102033]">{viewingPlannerSelectedCountLabel}</span></p>
                                         {savedViewingPlan.requestedAt ? <p>Buyer requested {formatDateShort(savedViewingPlan.requestedAt)}.</p> : null}
                                         {savedViewingPlan.respondedAt ? <p>Buyer response captured {formatDateShort(savedViewingPlan.respondedAt)}.</p> : null}
-                                        {savedViewingPlan.sellerRequestedAt ? <p>Seller access requested {formatDateShort(savedViewingPlan.sellerRequestedAt)}.</p> : null}
-                                        {viewingPlanStatus === 'booked' ? <p className="font-semibold text-[#17643a]">Viewing appointment created.</p> : null}
+	                                        {savedViewingPlan.sellerRequestedAt ? <p>Seller access requested {formatDateShort(savedViewingPlan.sellerRequestedAt)}.</p> : null}
+	                                        {viewingPlannerSellerEmailDeliveryLabel ? <p>Seller email status: {viewingPlannerSellerEmailDeliveryLabel}.</p> : null}
+	                                        {viewingPlanStatus === 'booked' ? <p className="font-semibold text-[#17643a]">Viewing appointment created.</p> : null}
                                       </div>
                                     )}
                                   </div>
@@ -19342,7 +19698,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             </section>
 
-                            {false ? (
+                            {showLegacyViewingPlanWorkspace ? (
                               <>
                             <section className="rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6">
                               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -19714,11 +20070,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           ? `${viewingPlanSelectedProperties.length} propert${viewingPlanSelectedProperties.length === 1 ? 'y' : 'ies'} selected for the first request.`
                                           : 'Select at least one property to prepare the request.'}
                                       </p>
-                                      {savedViewingPlan.requestedAt ? (
-                                        <p className="mt-1 text-[0.68rem] font-semibold text-[#7c91a8]">
-                                          Last requested {formatDateShort(savedViewingPlan.requestedAt)}
-                                        </p>
-                                      ) : null}
+	                                      {savedViewingPlan.requestedAt ? (
+	                                        <div className="mt-1 flex flex-wrap items-center gap-2">
+	                                          <p className="text-[0.68rem] font-semibold text-[#7c91a8]">
+	                                            Last requested {formatDateShort(savedViewingPlan.requestedAt)}
+	                                          </p>
+	                                          {viewingPlannerBuyerEmailDeliveryLabel ? (
+	                                            <span className={`rounded-full px-2 py-0.5 text-[0.62rem] font-semibold ring-1 ${viewingPlannerBuyerEmailDeliveryClass}`}>{viewingPlannerBuyerEmailDeliveryLabel}</span>
+	                                          ) : null}
+	                                        </div>
+	                                      ) : null}
                                     </div>
                                   </div>
 

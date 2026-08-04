@@ -118,6 +118,8 @@ await test('assignment service normalizes the server candidate list', async () =
     name: 'A. Attorney',
     email: 'A@example.com',
     role: 'transfer_attorney',
+    professionalRole: '',
+    practiceQualifications: [],
     branchId: 'branch-1',
   })
 })

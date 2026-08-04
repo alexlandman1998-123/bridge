@@ -1,4 +1,3 @@
-/* global process */
 import { createServer } from 'vite'
 
 function parseArgs(argv = []) {

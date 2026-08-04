@@ -228,6 +228,13 @@ try {
   }
   assert.ok(workspaceSource.includes('buttonLabel="Add Enquired Listing"'), 'Property Match should support linking the listing the buyer enquired on')
   assert.ok(workspaceSource.includes('function LeadAppointmentsPanel'), 'appointments tab should expose a lead appointment creation panel')
+  const buyerAppointmentsPanelSource = workspaceSource.match(/function LeadAppointmentsPanel[\s\S]*?\nfunction SellerAppointmentForm/)?.[0] || ''
+  assert.ok(buyerAppointmentsPanelSource.includes('ViewingPlannerSummary'), 'buyer appointments tab should start with the viewing planner summary')
+  assert.ok(buyerAppointmentsPanelSource.includes('BuyerLeadUpcomingAppointmentsSection'), 'buyer appointments tab should show upcoming confirmed appointments')
+  assert.ok(buyerAppointmentsPanelSource.includes('BuyerLeadRecentViewingActivity'), 'buyer appointments tab should show recent viewing activity from the lead timeline')
+  assert.ok(buyerAppointmentsPanelSource.includes('BuyerLeadPastViewingsSection'), 'buyer appointments tab should show past viewing outcomes')
+  assert.ok(!buyerAppointmentsPanelSource.includes('QuickScheduleCard'), 'buyer appointments tab should not permanently display the quick booking form')
+  assert.ok(!buyerAppointmentsPanelSource.includes('AvailabilityWorkflowCard'), 'buyer appointments tab should not keep the old availability card beside booking')
   assert.ok(workspaceSource.includes('createAppointmentAsync(organisationId'), 'lead appointments should be created through the appointment service')
   assert.ok(workspaceSource.includes('updateAppointmentAsync(organisationId'), 'lead appointment cards should update appointment outcomes through the appointment service')
   assert.ok(workspaceSource.includes('upsertAppointmentViewedListings'), 'completed viewing outcomes should record the viewed property relationship')

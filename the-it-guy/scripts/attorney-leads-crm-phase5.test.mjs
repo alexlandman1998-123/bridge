@@ -28,20 +28,25 @@ test('Leads is an Attorney-only Pipeline workspace beside Incoming Matters', () 
   assert.match(app, /path="\/attorney\/leads"[\s\S]*?<RoleRoute allowedRoles=\{\['attorney'\]\}>[\s\S]*?<AttorneyFirmRoute>[\s\S]*?<AttorneyLeadsPage \/>/)
   assert.match(roles, /label: 'Pipeline'[\s\S]*label: 'Incoming Matters'[\s\S]*label: 'Leads', to: '\/attorney\/leads'/)
   assert.match(sidebar, /attorney_leads: Users/)
-  assert.match(page, /Formal instructions remain in Incoming Matters/)
+  assert.match(page, /<h1 className="text-3xl[\s\S]*>Leads<\/h1>/)
+  assert.doesNotMatch(page, />Pipeline<\/p>[\s\S]*>Leads<\/h1>/)
 })
 
-test('workspace provides the Phase 5 KPIs, filters, responsive queue, and detail history', () => {
-  for (const label of ['New Leads', 'Open Pipeline', 'Follow-Ups Due', 'label="Won"']) {
+test('workspace provides the refactored KPIs, filters, responsive queue, and detail drawer', () => {
+  for (const label of ['New Enquiries', 'Follow-Ups Due', 'Active Opportunities', 'Awaiting Client', 'Converted']) {
     assert.match(page, new RegExp(label))
   }
-  for (const filter of ['Filter by stage', 'Filter by service', 'Filter by source']) {
+  assert.match(page, /Needs attention/)
+  assert.match(page, /First Contact SLA breach/)
+  for (const filter of ['Filter by stage', 'Filter by service', 'More filters', 'Filter by attention required']) {
     assert.match(page, new RegExp(filter))
   }
-  for (const column of ['Date', 'Lead', 'Service Required', 'Source', 'Status', 'Assigned To', 'Last Contact', 'Next Follow-Up']) {
+  for (const column of ['Lead', 'Enquiry', 'Stage', 'Owner', 'Last Activity', 'Next Action']) {
     assert.match(page, new RegExp(`<th>${column}</th>`))
   }
-  assert.match(page, /Activity history/)
+  assert.match(page, /role="dialog"/)
+  assert.match(page, /Contact Details/)
+  assert.match(page, /Timeline/)
   assert.match(page, /ManualLeadDrawer/)
   assert.match(page, /LeadDetailDrawer/)
   assert.match(page, /PublicLinkDrawer/)

@@ -25,7 +25,7 @@ function normalizeOperationalMembership(membership = null, { firmId = '', userId
 }
 
 export default function useAttorneyPermissions({ firmId = null } = {}) {
-  const { role: appRole, profile, workspaceReady, profileLoading } = useWorkspace()
+  const { role: appRole, profile, workspace, workspaceReady, profileLoading } = useWorkspace()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [resolvedFirmId, setResolvedFirmId] = useState('')
@@ -51,6 +51,9 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
         let nextFirmId = String(firmId || '').trim()
         if (!nextFirmId) {
           nextFirmId = String(profile?.primaryAttorneyFirmId || '').trim()
+        }
+        if (!nextFirmId && String(workspace?.type || '').trim() === 'attorney_firm') {
+          nextFirmId = String(workspace?.id || '').trim()
         }
         if (!nextFirmId) {
           const primaryFirm = await getCurrentUserPrimaryAttorneyFirm()
@@ -87,7 +90,7 @@ export default function useAttorneyPermissions({ firmId = null } = {}) {
     return () => {
       active = false
     }
-  }, [appRole, firmId, profile?.id, profile?.primaryAttorneyFirmId, profileLoading, workspaceReady])
+  }, [appRole, firmId, profile?.id, profile?.primaryAttorneyFirmId, profileLoading, workspace?.id, workspace?.type, workspaceReady])
 
   const role = membership?.professionalRole || null
   const compatibilityRole = membership?.role || null

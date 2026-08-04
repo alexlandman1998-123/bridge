@@ -28,21 +28,21 @@ export function createPerfTimer(scope, context = {}) {
   const startedAt = getNow()
 
   if (enabled) {
-    // eslint-disable-next-line no-console
+
     console.debug(`[perf] ${scope} start`, context)
   }
 
   function mark(label, payload = {}) {
     if (!enabled) return
     const elapsedMs = Math.round(getNow() - startedAt)
-    // eslint-disable-next-line no-console
+
     console.debug(`[perf] ${scope} :: ${label} (+${elapsedMs}ms)`, payload)
   }
 
   function end(payload = {}) {
     if (!enabled) return
     const totalMs = Math.round(getNow() - startedAt)
-    // eslint-disable-next-line no-console
+
     console.debug(`[perf] ${scope} end (${totalMs}ms)`, payload)
   }
 
@@ -57,7 +57,7 @@ export function bondPerfLog(label = '', startedAt = 0, payload = {}) {
   if (!isPerformanceTracingEnabled()) return
   const now = startedAt > 1_000_000_000_000 ? Date.now() : getNow()
   const elapsedMs = Math.round(now - startedAt)
-  // eslint-disable-next-line no-console
+
   console.debug(`[bond-perf] ${label} ${elapsedMs}ms`, payload)
 }
 
@@ -74,7 +74,6 @@ export function startRouteTransitionTrace({ from = '', to = '', label = 'route-t
     routeRenderedAt: null,
   }
 
-  // eslint-disable-next-line no-console
   console.debug(`[perf] route transition start`, window.__itgRoutePerfTrace)
 }
 
@@ -96,7 +95,7 @@ export function markRouteRendered(pathname = '') {
 
   trace.routeRenderedAt = getNow()
   const elapsedMs = Math.round(trace.routeRenderedAt - trace.startedAt)
-  // eslint-disable-next-line no-console
+
   console.debug(`[perf] route rendered (+${elapsedMs}ms)`, {
     label: trace.label,
     from: trace.from,
@@ -122,7 +121,7 @@ export function markRouteFirstVisibleContent(pathname = '') {
 
   const firstVisibleAt = getNow()
   const elapsedMs = Math.round(firstVisibleAt - trace.startedAt)
-  // eslint-disable-next-line no-console
+
   console.debug(`[perf] route first visible content (+${elapsedMs}ms)`, {
     label: trace.label,
     from: trace.from,

@@ -2,6 +2,14 @@ import {
   buildAppointmentEmailHtml,
   buildAppointmentEmailText,
 } from "./appointment.ts";
+import {
+  buildBuyerViewingAvailabilityRequestEmailHtml,
+  buildBuyerViewingAvailabilityRequestEmailText,
+} from "./viewingAvailabilityRequest.ts";
+import {
+  buildSellerViewingAvailabilityRequestEmailHtml,
+  buildSellerViewingAvailabilityRequestEmailText,
+} from "./sellerViewingAvailabilityRequest.ts";
 import { buildOnboardingEmailHtml } from "./onboarding.ts";
 import {
   buildReservationDepositEmailHtml,
@@ -174,6 +182,84 @@ Deno.test("appointment template preserves notes and branded plain-text support",
   assertIncludes(text, "Support: support@example.test | +27 21 000 0000");
   assertIncludes(text, "Kingstons Property");
   assertIncludes(text, "Powered by Arch9");
+});
+
+Deno.test("buyer viewing availability request renders company branding and property list", () => {
+  const html = buildBuyerViewingAvailabilityRequestEmailHtml({
+    buyerName: "Buyer One",
+    agentName: "Agent One",
+    properties: [
+      {
+        title: "114 West Street",
+        price: "R 1 250 000",
+        area: "Brooklyn, Lynnwood",
+        match: "72%",
+        link: "https://app.example.test/listings/114",
+      },
+      {
+        title: "115 Paul Kruger Street",
+        price: "R 1 300 000",
+        area: "Brooklyn, Lynnwood",
+      },
+    ],
+    branding,
+  });
+  const text = buildBuyerViewingAvailabilityRequestEmailText({
+    buyerName: "Buyer One",
+    agentName: "Agent One",
+    properties: [{ title: "114 West Street", price: "R 1 250 000" }],
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+  });
+
+  assertIncludes(html, "Kingstons Property");
+  assertIncludes(html, "background: #123abc");
+  assertIncludes(html, "border-bottom: 4px solid #fedcba");
+  assertIncludes(html, "Viewing Options");
+  assertIncludes(html, "114 West Street");
+  assertIncludes(html, "View property details");
+  assertIncludes(text, "Please reply with:");
+  assertIncludes(text, "Support: support@example.test | +27 21 000 0000");
+});
+
+Deno.test("seller viewing availability request renders company branding and access instructions", () => {
+  const html = buildSellerViewingAvailabilityRequestEmailHtml({
+    sellerName: "Seller One",
+    buyerName: "Buyer One",
+    agentName: "Agent One",
+    availabilityWindows: "Saturday 10:00-12:00\nMonday 15:00-16:00",
+    coordinationNotes: "Please confirm gate access.",
+    properties: [
+      {
+        title: "114 West Street",
+        price: "R 1 250 000",
+        area: "Brooklyn, Lynnwood",
+        link: "https://app.example.test/listings/114",
+      },
+    ],
+    branding,
+  });
+  const text = buildSellerViewingAvailabilityRequestEmailText({
+    sellerName: "Seller One",
+    buyerName: "Buyer One",
+    agentName: "Agent One",
+    availabilityWindows: "Saturday 10:00-12:00",
+    properties: [{ title: "114 West Street", price: "R 1 250 000" }],
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+  });
+
+  assertIncludes(html, "Kingstons Property");
+  assertIncludes(html, "background: #123abc");
+  assertIncludes(html, "border-bottom: 4px solid #fedcba");
+  assertIncludes(html, "Seller Viewing Availability");
+  assertIncludes(html, "Properties To Confirm");
+  assertIncludes(html, "114 West Street");
+  assertIncludes(html, "Buyer availability");
+  assertIncludes(text, "Please reply with:");
+  assertIncludes(text, "Support: support@example.test | +27 21 000 0000");
 });
 
 Deno.test("reservation deposit template uses shared branded shell", () => {

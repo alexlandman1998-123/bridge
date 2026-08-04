@@ -623,7 +623,7 @@ export default function AttorneyFirmPage() {
 
   useEffect(() => {
     // The request lifecycle owns the related loading, error, and result state.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+
     void loadFirm()
   }, [loadFirm])
 

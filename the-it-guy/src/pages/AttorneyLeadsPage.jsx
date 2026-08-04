@@ -1,4 +1,7 @@
 import {
+  AlertTriangle,
+  ArrowRight,
+  Building2,
   CalendarClock,
   Check,
   ChevronRight,
@@ -8,10 +11,12 @@ import {
   ExternalLink,
   Filter,
   Globe2,
+  Home,
   Link2,
   LoaderCircle,
   Mail,
   MessageSquareText,
+  MoreHorizontal,
   Phone,
   Plus,
   RefreshCw,
@@ -20,6 +25,7 @@ import {
   SlidersHorizontal,
   UserRound,
   UsersRound,
+  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Drawer from '../components/ui/Drawer'
@@ -136,6 +142,12 @@ function leadName(lead) {
   return [lead?.contact?.firstName, lead?.contact?.lastName].filter(Boolean).join(' ') || 'Unnamed Lead'
 }
 
+function leadInitials(lead) {
+  const name = leadName(lead)
+  const parts = name.split(/\s+/).filter(Boolean)
+  return (parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : name.slice(0, 2)).toUpperCase()
+}
+
 function isFollowUpDue(value, graceMinutes = 0) {
   if (!value) return false
   const date = new Date(value)
@@ -187,6 +199,39 @@ function canOwnConvertedMatter(assignee, matterType) {
     return role === 'cancellation_attorney' || ['attorney', 'conveyancer', 'attorney_conveyancer'].includes(role)
   }
   return role === 'transfer_attorney' || ['attorney', 'conveyancer', 'attorney_conveyancer'].includes(role)
+}
+
+function getLeadOwnerLabel(lead, assignees = []) {
+  const assignee = assignees.find((item) => item.userId === lead?.assignedUserId)
+  return assignee?.name || lead?.assignedUserName || lead?.ownerName || (lead?.assignedUserId ? 'Assigned' : 'Unassigned')
+}
+
+function getLastActivitySummary(lead) {
+  if (lead?.lastContactedAt) {
+    return { label: 'Client contacted', when: formatDate(lead.lastContactedAt), tone: 'text-slate-600', icon: Mail }
+  }
+  if (lead?.stage === 'won') return { label: 'Converted', when: formatDate(lead.convertedAt || lead.closedAt), tone: 'text-emerald-700', icon: Check }
+  if (lead?.stage === 'lost') return { label: 'Closed lost', when: formatDate(lead.closedAt), tone: 'text-slate-600', icon: X }
+  return { label: 'No contact yet', when: '—', tone: 'text-slate-600', icon: Phone }
+}
+
+function getNextActionSummary(lead, firstContactSlaHours = 24, followUpGraceMinutes = 0) {
+  if (isFirstContactOverdue(lead, firstContactSlaHours)) {
+    return { label: 'Call client', when: 'Overdue', tone: 'text-rose-700', icon: Phone }
+  }
+  if (!lead?.assignedUserId && lead?.status === 'open') {
+    return { label: 'Assign owner', when: 'Overdue', tone: 'text-orange-700', icon: UserRound }
+  }
+  if (isFollowUpDue(lead?.nextFollowUpAt, followUpGraceMinutes)) {
+    return { label: 'Follow up', when: 'Due now', tone: 'text-orange-700', icon: CalendarClock }
+  }
+  if (lead?.nextFollowUpAt) {
+    return { label: 'Follow up', when: formatDate(lead.nextFollowUpAt), tone: 'text-slate-600', icon: CalendarClock }
+  }
+  if (lead?.convertedTransactionId) {
+    return { label: 'Open instruction', when: 'Converted', tone: 'text-emerald-700', icon: Check }
+  }
+  return { label: lead?.stage === 'new' ? 'First contact' : 'Progress lead', when: 'Today', tone: 'text-slate-600', icon: ClipboardList }
 }
 
 function Field({ label, children, required = false }) {
@@ -711,199 +756,321 @@ function LeadDetailDrawer({
     lead.assignedUserId && !leadAssignees.some((assignee) => assignee.userId === lead.assignedUserId),
   )
   const conversionAssignees = assignees.filter((assignee) => canOwnConvertedMatter(assignee, matterType))
+  const serviceLabel = optionLabel(SERVICE_OPTIONS, detail.serviceType, 'General Enquiry')
+  const sourceLabel = optionLabel(SOURCE_OPTIONS, lead.sourceChannel, 'Other')
+  const ownerLabel = getLeadOwnerLabel(lead, assignees)
+  const lastActivity = getLastActivitySummary(lead)
+  const nextAction = getNextActionSummary(lead)
+  const LastActivityIcon = lastActivity.icon
+  const NextActionIcon = nextAction.icon
+  const statusDirty = stage !== lead.stage || lostReason !== lead.lostReason
+  const conversionDisabled = !conversionReady || !conversionConfirmed || !conversionAssigneeId || !conversionPropertyAddress.trim() || conversionSaving
+  const converted = Boolean(lead.convertedTransactionId)
+  const propertyValueLabel = detail.propertyValue ? formatMoney(detail.propertyValue) : 'Not provided'
+
+  const convertPayload = {
+    matterType,
+    clientRole,
+    assignedUserId: conversionAssigneeId,
+    propertyAddress: conversionPropertyAddress,
+    propertyValue: conversionPropertyValue,
+    financeType: conversionFinanceType,
+    conversionNote,
+  }
 
   return (
-    <Drawer
-      open={Boolean(lead)}
-      onClose={onClose}
-      title={leadName(lead)}
-      subtitle={`${optionLabel(SERVICE_OPTIONS, detail.serviceType, 'General Enquiry')} · ${formatDate(lead.createdAt)}`}
-      widthClassName="max-w-[680px]"
-      footer={(
-        <div className="flex w-full justify-end">
-          <button type="button" className="ui-button ui-button-primary" onClick={() => onStageSave(stage, lostReason)} disabled={!canEdit || Boolean(lead.convertedTransactionId) || saving || (stage === lead.stage && lostReason === lead.lostReason)}>
-            {saving ? <LoaderCircle className="animate-spin" size={16} /> : <Check size={16} />} Save status
-          </button>
-        </div>
-      )}
-    >
-      <div className="grid gap-6">
-        <section className="rounded-2xl border border-slate-200 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h4 className="font-semibold text-slate-900">Lead status</h4>
-            <StagePill stage={lead.stage} />
-          </div>
-          <div className="mt-4 grid gap-3">
-            <Field label="Pipeline stage">
-              <select className={inputClass} value={stage} onChange={(event) => setStage(event.target.value)} disabled={!canEdit || Boolean(lead.convertedTransactionId)}>
-                {STAGE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-            </Field>
-            {stage === 'lost' ? (
-              <Field label="Lost reason" required>
-                <textarea className={`${inputClass} min-h-24 py-3`} value={lostReason} onChange={(event) => setLostReason(event.target.value)} placeholder="Why was this opportunity lost?" disabled={!canEdit} />
-              </Field>
-            ) : null}
-          </div>
-        </section>
-
-        {canAssign && !lead.convertedTransactionId ? (
-          <section className="rounded-2xl border border-slate-200 p-4">
-            <h4 className="font-semibold text-slate-900">Lead assignment</h4>
-            <div className="mt-4 grid gap-3">
-              <Field label="Assigned team member">
-                <select className={inputClass} value={assignedUserId} onChange={(event) => setAssignedUserId(event.target.value)}>
-                  <option value="">Unassigned queue</option>
-                  {currentAssignmentNeedsReassignment ? (
-                    <option value={lead.assignedUserId} disabled>Current assignment is not qualified for this lead</option>
-                  ) : null}
-                  {leadAssignees.map((assignee) => <option key={assignee.userId} value={assignee.userId}>{assignee.name}{assignee.role ? ` · ${assignee.role.replaceAll('_', ' ')}` : ''}</option>)}
-                </select>
-              </Field>
-              {currentAssignmentNeedsReassignment ? (
-                <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  The current assignee is not qualified for this {assignmentMatterType === 'cancellation' ? 'cancellation' : assignmentMatterType} lead. Reassign it to a qualified team member or return it to the unassigned queue.
-                </p>
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="lead-detail-title">
+      <button type="button" className="absolute inset-0 h-full w-full cursor-default bg-slate-950/40 backdrop-blur-[2px]" aria-label="Close Lead detail" onClick={onClose} />
+      <aside className="absolute inset-y-0 right-0 flex w-full max-w-[920px] flex-col overflow-hidden rounded-l-[28px] border-l border-slate-200 bg-white shadow-2xl">
+        <header className="border-b border-slate-200 px-6 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <span className="inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Lead</span>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <h2 id="lead-detail-title" className="min-w-0 text-2xl font-semibold tracking-[-0.035em] text-slate-950">{leadName(lead)}</h2>
+                <StagePill stage={lead.stage} />
+              </div>
+              <p className="mt-1 text-sm text-slate-500">{serviceLabel} · Received {formatDate(lead.createdAt, true)}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {contact.phone ? <a className="ui-button ui-button-secondary" href={`tel:${contact.phone}`}><Phone size={16} /> Call</a> : null}
+              {contact.email ? <a className="ui-button ui-button-secondary" href={`mailto:${contact.email}`}><Mail size={16} /> Email</a> : null}
+              {canAssign && !converted ? (
+                <button type="button" className="ui-button ui-button-primary" onClick={() => document.getElementById('lead-conversion-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                  <Check size={16} /> Convert
+                </button>
               ) : null}
-              {lead.assignedUserId && assignedUserId !== lead.assignedUserId ? (
-                <Field label="Reassignment reason" required>
-                  <input className={inputClass} value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Why is ownership changing?" />
-                </Field>
-              ) : null}
-              <div><button type="button" className="ui-button ui-button-secondary" disabled={assignmentSaving || assignedUserId === lead.assignedUserId || (Boolean(assignedUserId) && !leadAssignees.some((assignee) => assignee.userId === assignedUserId))} onClick={() => onAssignmentSave(assignedUserId, assignmentReason)}>{assignmentSaving ? <LoaderCircle className="animate-spin" size={16} /> : <UserRound size={16} />} Save assignment</button></div>
+              <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50" aria-label="More Lead actions"><MoreHorizontal size={18} /></button>
+              <button type="button" className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100" aria-label="Close Lead detail" onClick={onClose}><X size={20} /></button>
             </div>
-          </section>
-        ) : null}
+          </div>
 
-        {canEdit ? (
-          <section className="rounded-2xl border border-slate-200 p-4">
-            <h4 className="font-semibold text-slate-900">Next follow-up</h4>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <Field label="Date and time">
-                <input className={inputClass} type="datetime-local" value={followUpAt} min={formatDateTimeLocal(new Date())} onChange={(event) => setFollowUpAt(event.target.value)} />
-              </Field>
-              <Field label="Follow-up note">
-                <input className={inputClass} value={followUpNote} onChange={(event) => setFollowUpNote(event.target.value)} placeholder="Optional context" />
-              </Field>
+          <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2 xl:grid-cols-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-700"><ClipboardList size={18} /></span>
+              <div><p className="text-xs font-semibold text-slate-500">Stage</p><p className="mt-0.5 text-sm font-semibold text-slate-900">{optionLabel(STAGE_OPTIONS, lead.stage, 'New')}</p></div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" className="ui-button ui-button-secondary" disabled={followUpSaving || !followUpAt} onClick={() => onFollowUpSave(followUpAt, followUpNote)}>{followUpSaving ? <LoaderCircle className="animate-spin" size={16} /> : <CalendarClock size={16} />} Schedule follow-up</button>
-              {lead.nextFollowUpAt ? <button type="button" className="ui-button ui-button-ghost" disabled={followUpSaving} onClick={() => onFollowUpSave(null, followUpNote)}>Clear follow-up</button> : null}
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><UserRound size={18} /></span>
+              <div><p className="text-xs font-semibold text-slate-500">Owner</p><p className="mt-0.5 text-sm font-semibold text-slate-900">{ownerLabel}</p></div>
             </div>
-          </section>
-        ) : null}
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-700"><LastActivityIcon size={18} /></span>
+              <div><p className="text-xs font-semibold text-slate-500">Last activity</p><p className={`mt-0.5 text-sm font-semibold ${lastActivity.tone}`}>{lastActivity.label}</p></div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-700"><NextActionIcon size={18} /></span>
+              <div><p className="text-xs font-semibold text-slate-500">Next action</p><p className={`mt-0.5 text-sm font-semibold ${nextAction.tone}`}>{nextAction.label}</p></div>
+            </div>
+          </div>
+        </header>
 
-        <LeadQuotesSection leadId={lead.id} quotes={quotes} quoteLinks={quoteLinks} loading={quotesLoading} canEdit={canEdit} locked={Boolean(lead.convertedTransactionId) || lead.status !== 'open'} saving={quoteSaving} onCreate={onQuoteCreate} onTransition={onQuoteTransition} onShare={onQuoteShare} onRevokeLink={onQuoteLinkRevoke} onEmail={onQuoteEmail} />
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="grid gap-5">
+            <section>
+              <h3 className="text-sm font-semibold text-slate-950">Contact Details</h3>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <article className="rounded-2xl border border-slate-200 p-4">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-sm font-semibold text-emerald-700">{leadInitials(lead)}</span>
+                    <div>
+                      <p className="font-semibold text-slate-950">{leadName(lead)}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{sourceLabel}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-2 text-sm text-slate-600">
+                    <p className="flex items-center gap-2"><Mail size={15} /> {contact.email || 'No email provided'}</p>
+                    <p className="flex items-center gap-2"><Phone size={15} /> {contact.phone || 'No mobile provided'}</p>
+                    <p className="flex items-center gap-2"><UserRound size={15} /> {detail.partyRole && detail.partyRole !== 'unknown' ? optionLabel([['buyer', 'Buyer'], ['seller', 'Seller'], ['other', 'Other']], detail.partyRole) : 'Role not specified'}</p>
+                  </div>
+                </article>
+                <article className="rounded-2xl border border-slate-200 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Lead Context</p>
+                  <dl className="mt-3 grid gap-3 text-sm">
+                    <div><dt className="text-xs font-semibold text-slate-500">Service requested</dt><dd className="mt-0.5 font-semibold text-slate-900">{serviceLabel}</dd></div>
+                    <div><dt className="text-xs font-semibold text-slate-500">Source</dt><dd className="mt-0.5 text-slate-700">{sourceLabel}</dd></div>
+                    <div><dt className="text-xs font-semibold text-slate-500">Campaign</dt><dd className="mt-0.5 text-slate-700">{lead.campaignCode || 'Not captured'}</dd></div>
+                  </dl>
+                </article>
+              </div>
+            </section>
 
-        {lead.convertedTransactionId ? (
-          <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-            <h4 className="font-semibold text-emerald-900">Matter created</h4>
-            <p className="mt-1 text-sm text-emerald-800">This Lead has been converted and its Matter lineage is locked.</p>
-            <a className="ui-button ui-button-secondary mt-3" href={`/transactions/${encodeURIComponent(lead.convertedTransactionId)}`}><ExternalLink size={16} /> Open Matter</a>
-          </section>
-        ) : canAssign ? (
-          <section className="rounded-2xl border border-emerald-200 p-4">
-            <h4 className="font-semibold text-slate-900">Convert to Matter</h4>
-            <p className="mt-1 text-xs leading-5 text-slate-500">Creates a firm-originated active Matter directly. It will not enter Incoming Matters.</p>
-            {!conversionReady ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">Qualify this Lead before conversion.</p> : null}
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <Field label="Matter type" required>
-                <select className={inputClass} value={matterType} onChange={(event) => { const nextType = event.target.value; setMatterType(nextType); setClientRole(defaultClientRoleForMatter(lead, nextType)); setConversionFinanceType(nextType === 'bond' ? 'bond' : 'cash'); setConversionAssigneeId((current) => canOwnConvertedMatter(assignees.find((assignee) => assignee.userId === current), nextType) ? current : '') }} disabled={!conversionReady}>
-                  <option value="transfer">Transfer</option><option value="bond">Bond Registration</option><option value="cancellation">Bond Cancellation</option>
-                </select>
-              </Field>
-              <Field label="Client role" required>
-                <select className={inputClass} value={clientRole} onChange={(event) => setClientRole(event.target.value)} disabled={!conversionReady}>
-                  {matterType === 'transfer' ? <><option value="buyer">Buyer</option><option value="seller">Seller</option></> : null}
-                  {matterType === 'bond' ? <><option value="borrower">Borrower</option><option value="buyer">Buyer</option><option value="owner">Owner</option></> : null}
-                  {matterType === 'cancellation' ? <><option value="owner">Owner</option><option value="seller">Seller</option></> : null}
-                </select>
-              </Field>
-              <Field label="Matter owner" required>
-                <select className={inputClass} value={conversionAssigneeId} onChange={(event) => setConversionAssigneeId(event.target.value)} disabled={!conversionReady}>
-                  <option value="">Choose an Attorney</option>
-                  {conversionAssignees.map((assignee) => <option key={assignee.userId} value={assignee.userId}>{assignee.name}</option>)}
-                </select>
-              </Field>
-              {matterType === 'transfer' ? (
-                <Field label="Finance type">
-                  <select className={inputClass} value={conversionFinanceType} onChange={(event) => setConversionFinanceType(event.target.value)} disabled={!conversionReady}>
-                    <option value="cash">Cash</option><option value="bond">Bond</option><option value="combination">Combination</option><option value="hybrid">Hybrid</option>
+            <section>
+              <h3 className="text-sm font-semibold text-slate-950">Property</h3>
+              <article className="mt-3 rounded-2xl border border-slate-200 p-4">
+                <div className="grid gap-4 sm:grid-cols-[minmax(0,1.3fr)_repeat(2,minmax(120px,0.7fr))]">
+                  <div className="flex gap-3">
+                    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500"><Home size={22} /></span>
+                    <div>
+                      <p className="font-semibold text-slate-950">{detail.propertyAddress || 'Property address not provided'}</p>
+                      <p className="mt-1 text-sm text-slate-500">{detail.partyRole && detail.partyRole !== 'unknown' ? `${optionLabel([['buyer', 'Buyer'], ['seller', 'Seller'], ['other', 'Other']], detail.partyRole)} enquiry` : 'Role not specified'}</p>
+                    </div>
+                  </div>
+                  <div><p className="text-xs font-semibold text-slate-500">Estimated value</p><p className="mt-1 font-semibold text-slate-900">{propertyValueLabel}</p></div>
+                  <div><p className="text-xs font-semibold text-slate-500">Listing reference</p><p className="mt-1 font-semibold text-slate-900">{lead.campaignCode || 'Not provided'}</p></div>
+                </div>
+              </article>
+            </section>
+
+            <section>
+              <h3 className="text-sm font-semibold text-slate-950">Enquiry Details</h3>
+              <div className="mt-3 grid gap-3">
+                <article className="rounded-2xl border border-slate-200 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Submitted intake answers</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{detail.message || lead.notes || 'No message provided.'}</p>
+                </article>
+                {lead.notes && detail.message ? (
+                  <article className="rounded-2xl border border-slate-200 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Internal notes</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{lead.notes}</p>
+                  </article>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-950">Lead Status</h3>
+                  <p className="mt-1 text-xs text-slate-500">Update the stage without leaving the review drawer.</p>
+                </div>
+                <StagePill stage={lead.stage} />
+              </div>
+              <div className="mt-4 grid gap-3">
+                <Field label="Pipeline stage">
+                  <select className={inputClass} value={stage} onChange={(event) => setStage(event.target.value)} disabled={!canEdit || converted}>
+                    {STAGE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </Field>
-              ) : <div />}
-              <div className="sm:col-span-2"><Field label="Property address" required><input className={inputClass} value={conversionPropertyAddress} onChange={(event) => setConversionPropertyAddress(event.target.value)} disabled={!conversionReady} /></Field></div>
-              <Field label="Matter value"><input className={inputClass} type="number" min="0" max="9999999999.99" step="0.01" value={conversionPropertyValue} onChange={(event) => setConversionPropertyValue(event.target.value)} disabled={!conversionReady} /></Field>
-              <Field label="Conversion note"><input className={inputClass} value={conversionNote} onChange={(event) => setConversionNote(event.target.value)} placeholder="Optional internal context" disabled={!conversionReady} /></Field>
-            </div>
-            <label className="mt-4 flex items-start gap-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-              <input type="checkbox" className="mt-0.5" checked={conversionConfirmed} onChange={(event) => setConversionConfirmed(event.target.checked)} disabled={!conversionReady} />
-              <span>I confirm that this qualified Lead should become an active firm Matter.</span>
-            </label>
-            <button type="button" className="ui-button ui-button-primary mt-3" disabled={!conversionReady || !conversionConfirmed || !conversionAssigneeId || !conversionPropertyAddress.trim() || conversionSaving} onClick={() => onConvert({ matterType, clientRole, assignedUserId: conversionAssigneeId, propertyAddress: conversionPropertyAddress, propertyValue: conversionPropertyValue, financeType: conversionFinanceType, conversionNote })}>
-              {conversionSaving ? <LoaderCircle className="animate-spin" size={16} /> : <Check size={16} />} {conversionSaving ? 'Creating Matter…' : 'Convert to Matter'}
-            </button>
-          </section>
-        ) : null}
+                {stage === 'lost' ? (
+                  <Field label="Lost reason" required>
+                    <textarea className={`${inputClass} min-h-24 py-3`} value={lostReason} onChange={(event) => setLostReason(event.target.value)} placeholder="Why was this opportunity lost?" disabled={!canEdit} />
+                  </Field>
+                ) : null}
+                <div>
+                  <button type="button" className="ui-button ui-button-secondary" onClick={() => onStageSave(stage, lostReason)} disabled={!canEdit || converted || saving || !statusDirty}>
+                    {saving ? <LoaderCircle className="animate-spin" size={16} /> : <Check size={16} />} Save status
+                  </button>
+                </div>
+              </div>
+            </section>
 
-        {canEdit ? (
-          <section className="rounded-2xl border border-slate-200 p-4">
-            <h4 className="font-semibold text-slate-900">Record activity</h4>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <Field label="Activity type">
-                <select className={inputClass} value={activityType} onChange={(event) => setActivityType(event.target.value)}>
-                  <option value="note">Internal note</option><option value="call">Call</option><option value="email">Email</option><option value="meeting">Meeting</option><option value="whatsapp">WhatsApp</option>
-                </select>
-              </Field>
-              <Field label="Outcome">
-                <input className={inputClass} value={activityOutcome} onChange={(event) => setActivityOutcome(event.target.value)} placeholder="Optional" />
-              </Field>
-            </div>
-            <div className="mt-3"><Field label="Activity notes" required><textarea className={`${inputClass} min-h-24 py-3`} value={activityNote} onChange={(event) => setActivityNote(event.target.value)} placeholder="What happened and what is next?" /></Field></div>
-            <div className="mt-3"><button type="button" className="ui-button ui-button-secondary" disabled={activitySaving || !activityNote.trim()} onClick={async () => { const saved = await onActivitySave(activityType, activityNote, activityOutcome); if (saved) { setActivityNote(''); setActivityOutcome('') } }}>{activitySaving ? <LoaderCircle className="animate-spin" size={16} /> : <Plus size={16} />} Add activity</button></div>
-          </section>
-        ) : null}
+            {canAssign && !converted ? (
+              <section className="rounded-2xl border border-slate-200 p-4">
+                <h3 className="text-sm font-semibold text-slate-950">Lead assignment</h3>
+                <div className="mt-4 grid gap-3">
+                  <Field label="Assigned team member">
+                    <select className={inputClass} value={assignedUserId} onChange={(event) => setAssignedUserId(event.target.value)}>
+                      <option value="">Unassigned queue</option>
+                      {currentAssignmentNeedsReassignment ? (
+                        <option value={lead.assignedUserId} disabled>Current assignment is not qualified for this lead</option>
+                      ) : null}
+                      {leadAssignees.map((assignee) => <option key={assignee.userId} value={assignee.userId}>{assignee.name}{assignee.role ? ` · ${assignee.role.replaceAll('_', ' ')}` : ''}</option>)}
+                    </select>
+                  </Field>
+                  {currentAssignmentNeedsReassignment ? (
+                    <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                      The current assignee is not qualified for this {assignmentMatterType === 'cancellation' ? 'cancellation' : assignmentMatterType} lead. Reassign it to a qualified team member or return it to the unassigned queue.
+                    </p>
+                  ) : null}
+                  {lead.assignedUserId && assignedUserId !== lead.assignedUserId ? (
+                    <Field label="Reassignment reason" required>
+                      <input className={inputClass} value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="Why is ownership changing?" />
+                    </Field>
+                  ) : null}
+                  <div><button type="button" className="ui-button ui-button-secondary" disabled={assignmentSaving || assignedUserId === lead.assignedUserId || (Boolean(assignedUserId) && !leadAssignees.some((assignee) => assignee.userId === assignedUserId))} onClick={() => onAssignmentSave(assignedUserId, assignmentReason)}>{assignmentSaving ? <LoaderCircle className="animate-spin" size={16} /> : <UserRound size={16} />} Save assignment</button></div>
+                </div>
+              </section>
+            ) : null}
 
-        <section>
-          <h4 className="font-semibold text-slate-900">Contact details</h4>
-          <div className="mt-3 grid gap-2 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600 sm:grid-cols-2">
-            <p className="flex items-center gap-2"><Mail size={15} /> {contact.email || 'No email provided'}</p>
-            <p className="flex items-center gap-2"><Phone size={15} /> {contact.phone || 'No mobile provided'}</p>
-            <p className="flex items-center gap-2"><UserRound size={15} /> {detail.partyRole && detail.partyRole !== 'unknown' ? optionLabel([['buyer', 'Buyer'], ['seller', 'Seller'], ['other', 'Other']], detail.partyRole) : 'Role not specified'}</p>
-            <p className="flex items-center gap-2"><ClipboardList size={15} /> {optionLabel(SOURCE_OPTIONS, lead.sourceChannel, 'Other')}</p>
+            {canEdit ? (
+              <section className="rounded-2xl border border-slate-200 p-4">
+                <h3 className="text-sm font-semibold text-slate-950">Next follow-up</h3>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <Field label="Date and time">
+                    <input className={inputClass} type="datetime-local" value={followUpAt} min={formatDateTimeLocal(new Date())} onChange={(event) => setFollowUpAt(event.target.value)} />
+                  </Field>
+                  <Field label="Follow-up note">
+                    <input className={inputClass} value={followUpNote} onChange={(event) => setFollowUpNote(event.target.value)} placeholder="Optional context" />
+                  </Field>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" className="ui-button ui-button-secondary" disabled={followUpSaving || !followUpAt} onClick={() => onFollowUpSave(followUpAt, followUpNote)}>{followUpSaving ? <LoaderCircle className="animate-spin" size={16} /> : <CalendarClock size={16} />} Schedule follow-up</button>
+                  {lead.nextFollowUpAt ? <button type="button" className="ui-button ui-button-ghost" disabled={followUpSaving} onClick={() => onFollowUpSave(null, followUpNote)}>Clear follow-up</button> : null}
+                </div>
+              </section>
+            ) : null}
+
+            <LeadQuotesSection leadId={lead.id} quotes={quotes} quoteLinks={quoteLinks} loading={quotesLoading} canEdit={canEdit} locked={converted || lead.status !== 'open'} saving={quoteSaving} onCreate={onQuoteCreate} onTransition={onQuoteTransition} onShare={onQuoteShare} onRevokeLink={onQuoteLinkRevoke} onEmail={onQuoteEmail} />
+
+            {converted ? (
+              <section id="lead-conversion-panel" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <h3 className="text-sm font-semibold text-emerald-900">Matter created</h3>
+                <p className="mt-1 text-sm text-emerald-800">This Lead has been converted and its Matter lineage is locked.</p>
+                <a className="ui-button ui-button-secondary mt-3" href={`/transactions/${encodeURIComponent(lead.convertedTransactionId)}`}><ExternalLink size={16} /> Open Matter</a>
+              </section>
+            ) : canAssign ? (
+              <section id="lead-conversion-panel" className="rounded-2xl border border-emerald-200 p-4">
+                <h3 className="text-sm font-semibold text-slate-950">Convert to Matter</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Creates a firm-originated active Matter directly. It will not enter Incoming Matters.</p>
+                {!conversionReady ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">Qualify this Lead before conversion.</p> : null}
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <Field label="Matter type" required>
+                    <select className={inputClass} value={matterType} onChange={(event) => { const nextType = event.target.value; setMatterType(nextType); setClientRole(defaultClientRoleForMatter(lead, nextType)); setConversionFinanceType(nextType === 'bond' ? 'bond' : 'cash'); setConversionAssigneeId((current) => canOwnConvertedMatter(assignees.find((assignee) => assignee.userId === current), nextType) ? current : '') }} disabled={!conversionReady}>
+                      <option value="transfer">Transfer</option><option value="bond">Bond Registration</option><option value="cancellation">Bond Cancellation</option>
+                    </select>
+                  </Field>
+                  <Field label="Client role" required>
+                    <select className={inputClass} value={clientRole} onChange={(event) => setClientRole(event.target.value)} disabled={!conversionReady}>
+                      {matterType === 'transfer' ? <><option value="buyer">Buyer</option><option value="seller">Seller</option></> : null}
+                      {matterType === 'bond' ? <><option value="borrower">Borrower</option><option value="buyer">Buyer</option><option value="owner">Owner</option></> : null}
+                      {matterType === 'cancellation' ? <><option value="owner">Owner</option><option value="seller">Seller</option></> : null}
+                    </select>
+                  </Field>
+                  <Field label="Matter owner" required>
+                    <select className={inputClass} value={conversionAssigneeId} onChange={(event) => setConversionAssigneeId(event.target.value)} disabled={!conversionReady}>
+                      <option value="">Choose an Attorney</option>
+                      {conversionAssignees.map((assignee) => <option key={assignee.userId} value={assignee.userId}>{assignee.name}</option>)}
+                    </select>
+                  </Field>
+                  {matterType === 'transfer' ? (
+                    <Field label="Finance type">
+                      <select className={inputClass} value={conversionFinanceType} onChange={(event) => setConversionFinanceType(event.target.value)} disabled={!conversionReady}>
+                        <option value="cash">Cash</option><option value="bond">Bond</option><option value="combination">Combination</option><option value="hybrid">Hybrid</option>
+                      </select>
+                    </Field>
+                  ) : <div />}
+                  <div className="sm:col-span-2"><Field label="Property address" required><input className={inputClass} value={conversionPropertyAddress} onChange={(event) => setConversionPropertyAddress(event.target.value)} disabled={!conversionReady} /></Field></div>
+                  <Field label="Matter value"><input className={inputClass} type="number" min="0" max="9999999999.99" step="0.01" value={conversionPropertyValue} onChange={(event) => setConversionPropertyValue(event.target.value)} disabled={!conversionReady} /></Field>
+                  <Field label="Conversion note"><input className={inputClass} value={conversionNote} onChange={(event) => setConversionNote(event.target.value)} placeholder="Optional internal context" disabled={!conversionReady} /></Field>
+                </div>
+                <label className="mt-4 flex items-start gap-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+                  <input type="checkbox" className="mt-0.5" checked={conversionConfirmed} onChange={(event) => setConversionConfirmed(event.target.checked)} disabled={!conversionReady} />
+                  <span>I confirm that this qualified Lead should become an active firm Matter.</span>
+                </label>
+              </section>
+            ) : null}
+
+            {canEdit ? (
+              <section className="rounded-2xl border border-slate-200 p-4">
+                <h3 className="text-sm font-semibold text-slate-950">Record activity</h3>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <Field label="Activity type">
+                    <select className={inputClass} value={activityType} onChange={(event) => setActivityType(event.target.value)}>
+                      <option value="note">Internal note</option><option value="call">Call</option><option value="email">Email</option><option value="meeting">Meeting</option><option value="whatsapp">WhatsApp</option>
+                    </select>
+                  </Field>
+                  <Field label="Outcome">
+                    <input className={inputClass} value={activityOutcome} onChange={(event) => setActivityOutcome(event.target.value)} placeholder="Optional" />
+                  </Field>
+                </div>
+                <div className="mt-3"><Field label="Activity notes" required><textarea className={`${inputClass} min-h-24 py-3`} value={activityNote} onChange={(event) => setActivityNote(event.target.value)} placeholder="What happened and what is next?" /></Field></div>
+                <div className="mt-3"><button type="button" className="ui-button ui-button-secondary" disabled={activitySaving || !activityNote.trim()} onClick={async () => { const saved = await onActivitySave(activityType, activityNote, activityOutcome); if (saved) { setActivityNote(''); setActivityOutcome('') } }}>{activitySaving ? <LoaderCircle className="animate-spin" size={16} /> : <Plus size={16} />} Add activity</button></div>
+              </section>
+            ) : null}
+
+            <section>
+              <h3 className="text-sm font-semibold text-slate-950">Timeline</h3>
+              {activitiesLoading ? (
+                <p className="mt-3 text-sm text-slate-500">Loading activity...</p>
+              ) : activities.length ? (
+                <div className="mt-4 grid gap-0">
+                  {activities.map((activity, index) => (
+                    <article key={activity.id} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3">
+                      <div className="flex flex-col items-center">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-500"><ClipboardList size={14} /></span>
+                        {index < activities.length - 1 ? <span className="h-full w-px bg-slate-200" /> : null}
+                      </div>
+                      <div className="pb-4">
+                        <div className="rounded-2xl border border-slate-200 p-3">
+                          <div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold text-slate-800">{activity.type}</p><time className="text-xs text-slate-400">{formatDate(activity.date, true)}</time></div>
+                          {activity.note ? <p className="mt-1 text-sm leading-5 text-slate-600">{activity.note}</p> : null}
+                          {activity.outcome ? <p className="mt-2 text-xs font-semibold text-slate-500">Outcome: {activity.outcome}</p> : null}
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No activity has been recorded yet.</p>
+              )}
+            </section>
+            {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</div> : null}
           </div>
-        </section>
+        </div>
 
-        <section>
-          <h4 className="font-semibold text-slate-900">Enquiry</h4>
-          <dl className="mt-3 grid gap-3 text-sm">
-            <div className="rounded-xl border border-slate-200 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Property</dt><dd className="mt-1 text-slate-700">{detail.propertyAddress || 'Not provided'}</dd></div>
-            {detail.propertyValue ? <div className="rounded-xl border border-slate-200 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Property value</dt><dd className="mt-1 text-slate-700">{new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(detail.propertyValue)}</dd></div> : null}
-            <div className="rounded-xl border border-slate-200 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Message</dt><dd className="mt-1 whitespace-pre-wrap leading-6 text-slate-700">{detail.message || lead.notes || 'No message provided.'}</dd></div>
-            {lead.campaignCode ? <div className="rounded-xl border border-slate-200 p-3"><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Campaign</dt><dd className="mt-1 text-slate-700">{lead.campaignCode}</dd></div> : null}
-          </dl>
-        </section>
-
-        <section>
-          <h4 className="font-semibold text-slate-900">Activity history</h4>
-          {activitiesLoading ? (
-            <p className="mt-3 text-sm text-slate-500">Loading activity…</p>
-          ) : activities.length ? (
-            <div className="mt-3 grid gap-3">
-              {activities.map((activity) => (
-                <article key={activity.id} className="rounded-xl border border-slate-200 p-3">
-                  <div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold text-slate-800">{activity.type}</p><time className="text-xs text-slate-400">{formatDate(activity.date, true)}</time></div>
-                  {activity.note ? <p className="mt-1 text-sm leading-5 text-slate-600">{activity.note}</p> : null}
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-3 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No activity has been recorded yet.</p>
-          )}
-        </section>
-        {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</div> : null}
-      </div>
-    </Drawer>
+        <footer className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-4">
+          <button type="button" className="ui-button ui-button-secondary" onClick={onClose}>Close</button>
+          {converted ? (
+            <a className="ui-button ui-button-primary" href={`/transactions/${encodeURIComponent(lead.convertedTransactionId)}`}>Open Matter <ArrowRight size={16} /></a>
+          ) : canAssign ? (
+            <button type="button" className="ui-button ui-button-primary" disabled={conversionDisabled} onClick={() => onConvert(convertPayload)}>
+              {conversionSaving ? <LoaderCircle className="animate-spin" size={16} /> : <Check size={16} />} {conversionSaving ? 'Creating Matter...' : 'Convert to Matter'}
+            </button>
+          ) : null}
+        </footer>
+      </aside>
+    </div>
   )
 }
 
@@ -1049,11 +1216,16 @@ export default function AttorneyLeadsPage() {
 
   const kpis = useMemo(() => ({
     new: leads.filter((lead) => lead.stage === 'new').length,
-    open: leads.filter((lead) => lead.status === 'open').length,
+    active: leads.filter((lead) => lead.status === 'open' && !['new', 'won', 'lost'].includes(lead.stage)).length,
     followUps: leads.filter((lead) => lead.status === 'open' && isFollowUpDue(lead.nextFollowUpAt, followUpGraceMinutes)).length,
     firstContactOverdue: leads.filter((lead) => isFirstContactOverdue(lead, firstContactSlaHours)).length,
-    won: leads.filter((lead) => lead.stage === 'won').length,
+    awaitingClient: leads.filter((lead) => lead.status === 'open' && ['quote_sent', 'follow_up'].includes(lead.stage)).length,
+    converted: leads.filter((lead) => lead.stage === 'won').length,
+    unassigned: leads.filter((lead) => lead.status === 'open' && !lead.assignedUserId).length,
   }), [firstContactSlaHours, followUpGraceMinutes, leads])
+
+  const hasAttention = kpis.firstContactOverdue > 0 || kpis.unassigned > 0 || kpis.followUps > 0
+  const filtersChanged = Boolean(search.trim()) || stageFilter !== 'all' || serviceFilter !== 'all' || sourceFilter !== 'all' || attentionFilter !== 'all'
 
   async function handleManualCreate(values) {
     setManualSaving(true)
@@ -1284,30 +1456,42 @@ export default function AttorneyLeadsPage() {
       <div className="mx-auto w-full max-w-[1500px]">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Pipeline</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] text-slate-950">Leads</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Potential future work from public enquiries, calls, walk-ins, emails and referrals. Formal instructions remain in Incoming Matters.</p>
+            <h1 className="text-3xl font-semibold tracking-[-0.04em] text-slate-950">Leads</h1>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="ui-button ui-button-secondary" onClick={() => { setSlaError(''); setSlaOpen(true) }}><SlidersHorizontal size={16} /> SLA policy</button>
-            <button type="button" className="ui-button ui-button-secondary" onClick={() => setLinkOpen(true)}><Link2 size={16} /> Public link</button>
             <button type="button" className="ui-button ui-button-primary" onClick={() => { setManualError(''); setManualOpen(true) }}><Plus size={16} /> New Lead</button>
+            <button type="button" className="ui-button ui-button-secondary" onClick={() => setLinkOpen(true)}><Link2 size={16} /> Public Intake Link</button>
+            <button type="button" className="ui-button ui-button-secondary" onClick={() => { setSlaError(''); setSlaOpen(true) }}><SlidersHorizontal size={16} /> SLA Settings</button>
           </div>
         </header>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <KpiCard icon={UsersRound} label="New Leads" value={kpis.new} helper="Awaiting first contact" tone="bg-sky-50 text-sky-700" />
-          <KpiCard icon={ClipboardList} label="Open Pipeline" value={kpis.open} helper="Active opportunities" tone="bg-violet-50 text-violet-700" />
-          <KpiCard icon={CalendarClock} label="Follow-Ups Due" value={kpis.followUps} helper="Due now or overdue" tone="bg-amber-50 text-amber-700" />
-          <KpiCard icon={Phone} label="First Contact SLA" value={kpis.firstContactOverdue} helper={`New for more than ${firstContactSlaHours} hours`} tone="bg-rose-50 text-rose-700" />
-          <KpiCard icon={CircleDollarSign} label="Won" value={kpis.won} helper="Converted opportunities" tone="bg-emerald-50 text-emerald-700" />
+          <KpiCard icon={UsersRound} label="New Enquiries" value={kpis.new} helper={`${kpis.firstContactOverdue} first-contact SLA breach${kpis.firstContactOverdue === 1 ? '' : 'es'}`} tone="bg-sky-50 text-sky-700" />
+          <KpiCard icon={CalendarClock} label="Follow-Ups Due" value={kpis.followUps} helper="Overdue or due today" tone="bg-orange-50 text-orange-700" />
+          <KpiCard icon={Building2} label="Active Opportunities" value={kpis.active} helper="Qualified and in progress" tone="bg-violet-50 text-violet-700" />
+          <KpiCard icon={ClipboardList} label="Awaiting Client" value={kpis.awaitingClient} helper="Waiting on client action" tone="bg-amber-50 text-amber-700" />
+          <KpiCard icon={CircleDollarSign} label="Converted" value={kpis.converted} helper="Converted to instructions" tone="bg-emerald-50 text-emerald-700" />
         </div>
+
+        {hasAttention ? (
+          <button type="button" className="mt-5 flex w-full items-center justify-between gap-4 rounded-2xl border border-orange-200 bg-orange-50/70 px-5 py-4 text-left shadow-sm" onClick={() => setAttentionFilter('first_contact_overdue')}>
+            <span className="flex min-w-0 flex-wrap items-center gap-4">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-orange-600"><AlertTriangle size={20} /></span>
+              <span className="font-semibold text-orange-900">Needs attention</span>
+              <span className="hidden h-5 w-px bg-orange-200 sm:block" />
+              <span className="text-sm font-semibold text-rose-700">{kpis.firstContactOverdue} First Contact SLA breach{kpis.firstContactOverdue === 1 ? '' : 'es'}</span>
+              <span className="text-sm font-semibold text-orange-700">{kpis.unassigned} unassigned lead{kpis.unassigned === 1 ? '' : 's'}</span>
+              <span className="text-sm font-semibold text-slate-700">{kpis.followUps} follow-up{kpis.followUps === 1 ? '' : 's'} overdue</span>
+            </span>
+            <ChevronRight className="shrink-0 text-orange-600" size={18} />
+          </button>
+        ) : null}
 
         <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
           <div className="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_repeat(4,minmax(145px,180px))_auto]">
             <label className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
-              <input className={`${inputClass} w-full pl-10`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, email, phone or property" aria-label="Search Leads" />
+              <input className={`${inputClass} w-full pl-10`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search leads..." aria-label="Search Leads" />
             </label>
             <select className={inputClass} value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} aria-label="Filter by stage">
               <option value="all">All stages</option>{STAGE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -1315,15 +1499,19 @@ export default function AttorneyLeadsPage() {
             <select className={inputClass} value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value)} aria-label="Filter by service">
               <option value="all">All services</option>{SERVICE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
-            <select className={inputClass} value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)} aria-label="Filter by source">
-              <option value="all">All sources</option>{SOURCE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            <select className={inputClass} value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)} aria-label="More filters">
+              <option value="all">More filters</option>{SOURCE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
             <select className={inputClass} value={attentionFilter} onChange={(event) => setAttentionFilter(event.target.value)} aria-label="Filter by attention required">
-              <option value="all">All attention states</option>
+              <option value="all">Needs attention</option>
               <option value="follow_up_due">Follow-up due</option>
               <option value="first_contact_overdue">First contact overdue</option>
             </select>
-            <button type="button" className="ui-button ui-button-secondary" onClick={() => { setSearch(''); setStageFilter('all'); setServiceFilter('all'); setSourceFilter('all'); setAttentionFilter('all') }}><Filter size={16} /> Reset</button>
+            {filtersChanged ? (
+              <button type="button" className="ui-button ui-button-secondary" onClick={() => { setSearch(''); setStageFilter('all'); setServiceFilter('all'); setSourceFilter('all'); setAttentionFilter('all') }}><Filter size={16} /> Reset</button>
+            ) : (
+              <span aria-hidden="true" />
+            )}
           </div>
         </div>
 
@@ -1336,34 +1524,100 @@ export default function AttorneyLeadsPage() {
             <>
               <div className="hidden md:block">
                 <DataTable>
-                  <DataTableInner className="min-w-[980px]">
-                    <thead><tr><th>Date</th><th>Lead</th><th>Service Required</th><th>Source</th><th>Status</th><th>Assigned To</th><th>Last Contact</th><th>Next Follow-Up</th><th aria-label="Open" /></tr></thead>
+                  <DataTableInner className="min-w-[1120px]">
+                    <thead><tr><th>Lead</th><th>Enquiry</th><th>Stage</th><th>Owner</th><th>Last Activity</th><th>Next Action</th><th aria-label="Open" /></tr></thead>
                     <tbody>
-                      {filteredLeads.map((lead) => (
-                        <tr key={lead.id} className="cursor-pointer" onClick={() => { setDetailError(''); setSelectedLead(lead) }}>
-                          <td>{formatDate(lead.createdAt)}</td>
-                          <td><p className="font-semibold text-slate-900">{leadName(lead)}</p><p className="mt-0.5 text-xs text-slate-500">{lead.contact.email || lead.contact.phone || 'No contact method'}</p>{isFirstContactOverdue(lead, firstContactSlaHours) ? <span className="mt-1 inline-flex rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700">First contact overdue</span> : null}</td>
-                          <td>{optionLabel(SERVICE_OPTIONS, lead.detail.serviceType, 'General Enquiry')}</td>
-                          <td>{optionLabel(SOURCE_OPTIONS, lead.sourceChannel, 'Other')}</td>
-                          <td><StagePill stage={lead.stage} /></td>
-                          <td>{lead.assignedUserId ? 'Assigned' : 'Unassigned'}</td>
-                          <td>{formatDate(lead.lastContactedAt)}</td>
-                          <td className={isFollowUpDue(lead.nextFollowUpAt, followUpGraceMinutes) ? 'font-semibold text-orange-700' : ''}>{formatDate(lead.nextFollowUpAt)}</td>
-                          <td><ChevronRight size={17} className="text-slate-400" /></td>
-                        </tr>
-                      ))}
+                      {filteredLeads.map((lead) => {
+                        const lastActivity = getLastActivitySummary(lead)
+                        const nextAction = getNextActionSummary(lead, firstContactSlaHours, followUpGraceMinutes)
+                        const LastIcon = lastActivity.icon
+                        const NextIcon = nextAction.icon
+                        const unassigned = !lead.assignedUserId
+                        return (
+                          <tr key={lead.id} className={`cursor-pointer ${isFirstContactOverdue(lead, firstContactSlaHours) ? 'bg-rose-50/30' : ''}`} onClick={() => { setDetailError(''); setSelectedLead(lead) }}>
+                            <td>
+                              <div className="flex items-center gap-3">
+                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 text-xs font-semibold text-rose-700">{leadInitials(lead)}</span>
+                                <div>
+                                  <p className="font-semibold text-slate-900">{leadName(lead)}</p>
+                                  <p className="mt-0.5 text-xs text-slate-500">{lead.contact.email || lead.contact.phone || 'No contact method'}</p>
+                                  <p className="mt-0.5 text-xs text-slate-500">{optionLabel(SOURCE_OPTIONS, lead.sourceChannel, 'Other')}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <p className="font-semibold text-slate-900">{optionLabel(SERVICE_OPTIONS, lead.detail.serviceType, 'General Enquiry')}</p>
+                              <p className="mt-0.5 max-w-[280px] truncate text-xs text-slate-500">{lead.detail.propertyAddress || 'Property not supplied'}</p>
+                              <p className="mt-0.5 text-xs text-slate-500">Received {formatDate(lead.createdAt)}</p>
+                            </td>
+                            <td>
+                              <div className="grid gap-1">
+                                <StagePill stage={lead.stage} />
+                                {isFirstContactOverdue(lead, firstContactSlaHours) ? <span className="inline-flex rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700">First contact overdue</span> : null}
+                              </div>
+                            </td>
+                            <td>
+                              {unassigned ? (
+                                <div className="flex items-center gap-2 text-orange-700">
+                                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-50"><UserRound size={15} /></span>
+                                  <div><p className="font-semibold">Unassigned</p><p className="text-xs">Assign owner</p></div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700">{getLeadOwnerLabel(lead).slice(0, 2).toUpperCase()}</span>
+                                  <div><p className="font-semibold text-slate-900">{getLeadOwnerLabel(lead)}</p><p className="text-xs text-slate-500">Attorney</p></div>
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              <div className="flex items-center gap-2">
+                                <LastIcon size={15} className="text-slate-500" />
+                                <div><p className={`font-semibold ${lastActivity.tone}`}>{lastActivity.label}</p><p className="text-xs text-slate-500">{lastActivity.when}</p></div>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="flex items-center gap-2">
+                                <NextIcon size={15} className={nextAction.tone} />
+                                <div><p className={`font-semibold ${nextAction.tone}`}>{nextAction.label}</p><p className="text-xs text-slate-500">{nextAction.when}</p></div>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="flex items-center justify-end gap-2">
+                                <button type="button" className="rounded-xl border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50" onClick={(event) => { event.stopPropagation(); setDetailError(''); setSelectedLead(lead) }}>Open</button>
+                                <button type="button" className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50" aria-label={`More actions for ${leadName(lead)}`} onClick={(event) => event.stopPropagation()}><MoreHorizontal size={17} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </DataTableInner>
                 </DataTable>
               </div>
               <div className="grid gap-3 md:hidden">
-                {filteredLeads.map((lead) => (
-                  <button key={lead.id} type="button" onClick={() => { setDetailError(''); setSelectedLead(lead) }} className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm">
-                    <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{leadName(lead)}</p><p className="mt-1 text-xs text-slate-500">{optionLabel(SERVICE_OPTIONS, lead.detail.serviceType)}</p></div><StagePill stage={lead.stage} /></div>
-                    {isFirstContactOverdue(lead, firstContactSlaHours) ? <span className="mt-3 inline-flex rounded-full bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700">First contact overdue</span> : null}
-                    <div className="mt-4 flex items-center justify-between text-xs text-slate-500"><span>{optionLabel(SOURCE_OPTIONS, lead.sourceChannel, 'Other')}</span><span>{formatDate(lead.createdAt)}</span></div>
-                  </button>
-                ))}
+                {filteredLeads.map((lead) => {
+                  const nextAction = getNextActionSummary(lead, firstContactSlaHours, followUpGraceMinutes)
+                  return (
+                    <button key={lead.id} type="button" onClick={() => { setDetailError(''); setSelectedLead(lead) }} className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 gap-3">
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 text-xs font-semibold text-rose-700">{leadInitials(lead)}</span>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900">{leadName(lead)}</p>
+                            <p className="mt-1 truncate text-xs text-slate-500">{lead.contact.email || lead.contact.phone || 'No contact method'}</p>
+                          </div>
+                        </div>
+                        <StagePill stage={lead.stage} />
+                      </div>
+                      <div className="mt-4 rounded-xl bg-slate-50 p-3">
+                        <p className="text-sm font-semibold text-slate-900">{optionLabel(SERVICE_OPTIONS, lead.detail.serviceType)}</p>
+                        <p className="mt-1 text-xs text-slate-500">{lead.detail.propertyAddress || 'Property not supplied'}</p>
+                      </div>
+                      {isFirstContactOverdue(lead, firstContactSlaHours) ? <span className="mt-3 inline-flex rounded-full bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700">First contact overdue</span> : null}
+                      <div className="mt-4 flex items-center justify-between text-xs text-slate-500"><span>{nextAction.label}</span><span className={nextAction.tone}>{nextAction.when}</span></div>
+                    </button>
+                  )
+                })}
               </div>
             </>
           ) : (

@@ -1027,13 +1027,14 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
   }
   const canViewAll = Boolean(permissions.can_view_all_firm_matters || MANAGEMENT_ROLES.has(role))
 
-  const preInstructionAllocations = await fetchPreInstructionAllocations(client, firm.id)
-
-  const assignments = await fetchAssignments(client, {
-    firmId: firm.id,
-    userId: currentUserId,
-    canViewAll,
-  })
+  const [preInstructionAllocations, assignments] = await Promise.all([
+    fetchPreInstructionAllocations(client, firm.id),
+    fetchAssignments(client, {
+      firmId: firm.id,
+      userId: currentUserId,
+      canViewAll,
+    }),
+  ])
   const attorneyAssignments = assignments.map(normalizeAssignment).filter(isAttorneyInstructionAssignment)
   const transactionIds = unique(attorneyAssignments.map((assignment) => assignment.transaction_id))
   const transactions = await fetchRowsByIds(client, 'transactions', TRANSACTION_COLUMNS, transactionIds)
@@ -1054,11 +1055,6 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
     allocation.sourceOrganisationId,
   ])))
   const unitIds = unique(transactions.map((transaction) => transaction.unit_id))
-  const units = await fetchRowsByIds(client, 'units', UNIT_COLUMNS, unitIds)
-  const developmentIds = unique([
-    ...transactions.map((transaction) => transaction.development_id),
-    ...units.map((unit) => unit.development_id),
-  ])
   const profileIds = unique(attorneyAssignments.flatMap((assignment) => [
     assignment.primary_attorney_id,
     assignment.attorney_user_id,
@@ -1068,12 +1064,17 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
     assignment.preferred_attorney_user_id,
   ]))
 
-  const [buyers, developments, profiles, organisations] = await Promise.all([
+  const [buyers, units, profiles, organisations] = await Promise.all([
     fetchRowsByIds(client, 'buyers', BUYER_COLUMNS, buyerIds),
-    fetchRowsByIds(client, 'developments', DEVELOPMENT_COLUMNS, developmentIds),
+    fetchRowsByIds(client, 'units', UNIT_COLUMNS, unitIds),
     fetchRowsByIds(client, 'profiles', PROFILE_COLUMNS, profileIds),
     fetchRowsByIds(client, 'organisations', ORGANISATION_COLUMNS, organisationIds),
   ])
+  const developmentIds = unique([
+    ...transactions.map((transaction) => transaction.development_id),
+    ...units.map((unit) => unit.development_id),
+  ])
+  const developments = await fetchRowsByIds(client, 'developments', DEVELOPMENT_COLUMNS, developmentIds)
 
   return buildAttorneyIncomingMatterQueueFromSources({
     firm,

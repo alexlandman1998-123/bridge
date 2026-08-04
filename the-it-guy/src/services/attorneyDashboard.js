@@ -22,8 +22,16 @@ import {
   resolvePortalSellerName,
 } from './portalCanonicalFieldFallbacks.js'
 
+const DASHBOARD_CACHE_TTL_MS = 15_000
+const dashboardCache = new Map()
+const dashboardInflight = new Map()
+
 function toLower(value) {
   return String(value || '').trim().toLowerCase()
+}
+
+function normalizeCacheText(value = '') {
+  return String(value || '').trim()
 }
 
 function isTruthy(value) {
@@ -999,11 +1007,66 @@ async function readDashboardDependency(label, promise, fallback) {
   }
 }
 
-export async function getAttorneyManagementDashboardData(firmId = null, { roleView = 'all' } = {}) {
+function getDashboardCacheKey({ firmId = '', userId = '', roleView = 'all' } = {}) {
+  return `${normalizeCacheText(firmId) || 'no-firm'}:${normalizeCacheText(userId) || 'current-user'}:${normalizeCacheText(roleView) || 'all'}`
+}
+
+export function clearAttorneyManagementDashboardCache({ firmId = '', userId = '' } = {}) {
+  if (!firmId && !userId) {
+    dashboardCache.clear()
+    dashboardInflight.clear()
+    return
+  }
+
+  const firmKey = normalizeCacheText(firmId)
+  const userKey = normalizeCacheText(userId)
+  for (const key of [...dashboardCache.keys(), ...dashboardInflight.keys()]) {
+    const [cachedFirmId, cachedUserId] = key.split(':')
+    if (firmKey && cachedFirmId !== firmKey) continue
+    if (userKey && cachedUserId !== userKey) continue
+    dashboardCache.delete(key)
+    dashboardInflight.delete(key)
+  }
+}
+
+export async function getAttorneyManagementDashboardData(firmId = null, { roleView = 'all', force = false } = {}) {
   const client = requireClient()
   const authUser = await getAuthenticatedUser(client)
-
   const resolvedFirm = firmId ? await getAttorneyFirmById(firmId) : await getCurrentUserPrimaryAttorneyFirm()
+  const cacheKey = getDashboardCacheKey({ firmId: resolvedFirm?.id, userId: authUser.id, roleView })
+
+  if (!force) {
+    const cached = dashboardCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) return cached.data
+    const inflight = dashboardInflight.get(cacheKey)
+    if (inflight) return inflight
+  }
+
+  const loadPromise = loadAttorneyManagementDashboardData(firmId, {
+    roleView,
+    client,
+    authUser,
+    resolvedFirm,
+  })
+    .then((data) => {
+      dashboardCache.set(cacheKey, {
+        data,
+        expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
+      })
+      return data
+    })
+    .finally(() => {
+      dashboardInflight.delete(cacheKey)
+    })
+
+  dashboardInflight.set(cacheKey, loadPromise)
+  return loadPromise
+}
+
+async function loadAttorneyManagementDashboardData(firmId = null, { roleView = 'all', client: scopedClient = null, authUser: scopedAuthUser = null, resolvedFirm: scopedFirm = null } = {}) {
+  const client = scopedClient || requireClient()
+  const authUser = scopedAuthUser || await getAuthenticatedUser(client)
+  const resolvedFirm = scopedFirm || (firmId ? await getAttorneyFirmById(firmId) : await getCurrentUserPrimaryAttorneyFirm())
   if (!resolvedFirm?.id) {
     return {
       firm: null,

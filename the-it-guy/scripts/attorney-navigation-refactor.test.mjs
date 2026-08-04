@@ -5,7 +5,6 @@ const rolesSource = readFileSync(new URL('../src/lib/roles.js', import.meta.url)
 const sidebarSource = readFileSync(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8')
 const mattersSource = readFileSync(new URL('../src/pages/AttorneyMattersPage.jsx', import.meta.url), 'utf8')
 const matterWorkspaceServiceSource = readFileSync(new URL('../src/services/attorneyMatterWorkspace.js', import.meta.url), 'utf8')
-const settingsLayoutSource = readFileSync(new URL('../src/pages/settings/SettingsLayout.jsx', import.meta.url), 'utf8')
 const settingsNavigationSource = readFileSync(new URL('../src/pages/settings/settingsNavigation.js', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const headerSource = readFileSync(new URL('../src/components/HeaderBar.jsx', import.meta.url), 'utf8')
@@ -49,10 +48,10 @@ assert.match(sidebarSource, /attorney_firm:\s*Building2/, 'Attorney Firm nav sho
 assert.doesNotMatch(sidebarSource, /Firm Administration/, 'Attorney sidebar should not keep the old Firm Administration section label')
 assert.match(sidebarSource, /role === 'attorney'\s*\?\s*\[\{ key: 'settings', label: 'Settings', to: '\/settings' \}\]/, 'Attorney sidebar secondary items should collapse to Settings only')
 
-for (const copy of ['All Matters', 'Active Matters', 'Quick Filters', 'Matter Reference', 'Next Action', 'Assigned To']) {
+for (const copy of ['Matter Reference', 'Next Action', 'Assigned To']) {
   assert.match(mattersSource, new RegExp(copy), `Matter workspace should include ${copy}`)
 }
-for (const copy of ['Transfer Matters', 'Bond Matters', 'Cancellation Matters', 'lockedMatterType']) {
+for (const copy of ['All Matters', 'Active Matters', 'Transfer Matters', 'Bond Matters', 'Cancellation Matters', 'lockedMatterType', 'quickFilters']) {
   assert.match(matterWorkspaceServiceSource, new RegExp(copy), `Matter workspace service should define ${copy}`)
 }
 assert.match(mattersSource, /view=\{workspace\.view\}/, 'Matter workspace header should receive route-specific view metadata')
@@ -71,7 +70,7 @@ for (const field of ['matterId', 'reference', 'matterType', 'property', 'buyer',
 
 assert.match(appSource, /path="\/attorney\/transactions"/, 'Attorney transactions route should exist')
 assert.match(appSource, /path="\/attorney\/transactions\/:matterType"/, 'Attorney transactions tab route should exist')
-assert.match(appSource, /Navigate to="\/attorney\/matters\/all"/, 'Attorney matters base route should open All Matters')
+assert.match(appSource, /Navigate to="\/attorney\/transactions\/all"/, 'Attorney transactions base route should open All Matters')
 assert.match(appSource, /path="\/attorney\/cost-calculator"[\s\S]*?Navigate to="\/attorney\/dashboard"/, 'Legacy Attorney Cost Calculator URLs should redirect to the Attorney dashboard')
 assert.doesNotMatch(appSource, /ConveyancingCostCalculatorPage/, 'Attorney application routes should not load the Cost Calculator page')
 assert.match(appSource, /AttorneyFirmPage/, 'Attorney users route should render the firm administration workspace')
@@ -87,7 +86,7 @@ assert.match(navigationPermissionsSource, /attorney_firm_users:\s*PERMISSIONS\.m
 assert.match(permissionsSource, /prefix:\s*'\/users'/, 'Attorney firm users route should be permission protected')
 
 assert.match(sidebarSource, /label: 'Organizations'/, 'Organizations should remain available from the sidebar')
-assert.match(settingsLayoutSource, /buildVisibleSettingsGroups/, 'Settings should render the permission-aware settings navigation')
+assert.match(sidebarSource, /buildVisibleSettingsGroups/, 'Settings should render the permission-aware settings navigation from the sidebar')
 assert.match(settingsNavigationSource, /label:\s*'Organisation'/, 'Organisation settings should remain available from Settings')
 assert.doesNotMatch(appSource, /SettingsAuditLogPage/, 'Placeholder Audit Logs should stay out of Settings until real telemetry is connected')
 

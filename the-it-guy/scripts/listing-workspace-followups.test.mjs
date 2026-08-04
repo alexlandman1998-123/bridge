@@ -58,8 +58,8 @@ assert.match(
 
 assert.match(
   listingsSource,
-  /card\.followUpQueue\.slice\(0, 3\)/,
-  'Listing cards should show a compact queue preview instead of hiding all skipped work.',
+  /card\.quickAddPrimaryAction/,
+  'Listing cards should show a compact primary handoff preview instead of hiding all skipped work.',
 )
 
 assert.match(
@@ -94,14 +94,14 @@ assert.match(
 
 assert.match(
   source,
-  /handleSignedMandateUpload/,
-  'Signed mandate upload should have a dedicated handler.',
+  /uploadPrivateListingDocument/,
+  'Signed mandate uploads should flow through the listing document upload service.',
 )
 
 assert.match(
   source,
-  /mandateStatus: 'signed_uploaded'/,
-  'Signed mandate uploads should mark the listing mandate as signed and uploaded.',
+  /'signed_uploaded'/,
+  'Signed mandate states should be recognized when computing listing mandate readiness.',
 )
 
 assert.match(

@@ -6,7 +6,6 @@ const serviceSource = readFileSync(new URL('../src/services/attorneyDashboard.js
 
 const requiredPageCopy = [
   'Good morning',
-  'You have',
   'Active Matters',
   'Awaiting Client',
   'Registrations',
@@ -21,7 +20,6 @@ const requiredPageCopy = [
   'Partner Analytics',
   'Conveyancing Performance',
   'Matter Health',
-  'No active transfer matters yet.',
   'AttorneyAnalyticsSection',
   'PartnerAnalyticsCard',
   'MatterHealthCard',

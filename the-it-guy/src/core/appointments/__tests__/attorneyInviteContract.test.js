@@ -92,4 +92,21 @@ const internal = buildAttorneyInviteContract(validInput({
 assert.equal(internal.isValid, false)
 assert.ok(internal.errors.some((error) => error.code === 'missing_recipient_email'))
 
+const matterlessInternal = buildAttorneyInviteContract(validInput({
+  appointmentType: 'internal_meeting',
+  transactionId: '',
+  recipientEmail: 'secretary@example.com',
+  locationMode: 'phone_call',
+  location: '+27 21 555 0100',
+}), { now: NOW })
+assert.equal(matterlessInternal.isValid, true)
+assert.equal(matterlessInternal.value.transactionId, '')
+assert.equal(matterlessInternal.value.visibility, 'internal_only')
+
+const matterlessTransfer = buildAttorneyInviteContract(validInput({
+  transactionId: '',
+}), { now: NOW })
+assert.equal(matterlessTransfer.isValid, false)
+assert.ok(matterlessTransfer.errors.some((error) => error.code === 'missing_matter'))
+
 console.log('attorney invite contract tests passed')

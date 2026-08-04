@@ -174,6 +174,7 @@ function normalizeProfile(profile = null) {
     fullName: profile.fullName || profile.full_name || '',
     role: normalizeCanonicalAppRole(profile.role, profile.role || ''),
     systemRole: resolveSystemRole(profile),
+    primaryAttorneyFirmId: normalizeText(profile.primaryAttorneyFirmId || profile.primary_attorney_firm_id),
     onboardingCompleted: Boolean(profile.onboardingCompleted ?? profile.onboarding_completed),
   }
 }

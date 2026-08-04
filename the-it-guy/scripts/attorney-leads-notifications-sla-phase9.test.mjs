@@ -34,7 +34,7 @@ test('Lead events use the canonical audit ledger and existing in-app bell', () =
   assert.match(migration, /bridge_insert_invite_accepted_transaction_notification_phase2/)
   assert.match(migration, /'actionRoute', '\/attorney\/leads'/)
   assert.match(migration, /'notificationDomain', 'attorney_lead'/)
-  assert.match(header, /eventData\?\.actionRoute/)
+  assert.match(header, /findFirstNotificationText\(data\.applicationPath, data\.actionRoute/)
 })
 
 test('Lead bell access is recipient-only and derived from the visible parent Lead', () => {

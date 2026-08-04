@@ -23,6 +23,7 @@ import {
   Plus,
   Copy,
   Link2,
+  Send,
   ShieldCheck,
   Star,
   Trash2,
@@ -5150,6 +5151,156 @@ function AgentListingDetail() {
     }
   }, [listingRecord, marketingDraft.price, sellerFormData])
 
+  const followUpActions = useMemo(() => {
+    const sellerEmail = resolveSellerEmailFromListing(listingRecord)
+    const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
+    const getSellerField = (sectionKey, fieldKey) => sellerProfile.sections
+      .find((section) => section.key === sectionKey)?.rows
+      .find((row) => row.key === fieldKey)
+    const sellerIdentity = getSellerField('seller_details', 'idNumber')
+    const ficaStatus = getSellerField('compliance', 'ficaStatus')
+    const sellerFactsComplete = sellerProfile.completionPercent >= 80
+    const documentsReady = Boolean(sellerDocumentExperience.summary.ready)
+    const hasPhotos = marketingDraft.galleryImages.length > 0
+    const hasExternalListingLink = normalizeExternalListingLinks(marketingDraft.externalLinks).some((link) => link.url)
+    const onboardingStarted = ['sent', 'viewed', 'in_progress', 'submitted', 'under_review', 'completed'].includes(
+      String(listingRecord?.sellerOnboardingStatus || listingRecord?.seller_onboarding_status || listingRecord?.sellerOnboarding?.status || '').trim().toLowerCase(),
+    )
+
+    return [
+      {
+        key: 'send_onboarding',
+        icon: Send,
+        title: 'Send seller onboarding',
+        copy: 'Create or resend the seller onboarding link so the seller can complete their profile.',
+        complete: onboardingStarted,
+        priorityLabel: onboardingStarted ? 'Complete' : 'High priority',
+        buttonLabel: onboardingStarted ? 'Resend onboarding' : 'Send onboarding',
+      },
+      {
+        key: 'generate_mandate',
+        icon: FileText,
+        title: 'Generate mandate',
+        copy: 'Start the mandate from saved listing details or seller onboarding data.',
+        complete: mandateWorkspace.status === 'ready' || mandateWorkspace.isSigned,
+        priorityLabel: mandateWorkspace.isSigned ? 'Complete' : 'Required',
+        buttonLabel: 'Generate mandate',
+      },
+      {
+        key: 'upload_signed_mandate',
+        icon: Upload,
+        title: 'Upload signed mandate',
+        copy: 'Attach signed mandate evidence and keep the canonical mandate record current.',
+        complete: mandateWorkspace.isSigned,
+        priorityLabel: mandateWorkspace.isSigned ? 'Complete' : 'Required',
+        buttonLabel: 'Open documents',
+      },
+      {
+        key: 'add_seller_contact',
+        icon: UserRound,
+        title: 'Add seller contact',
+        copy: 'Capture at least one usable seller contact method before sending documents or links.',
+        complete: Boolean(sellerEmail || sellerPhone),
+        priorityLabel: sellerEmail || sellerPhone ? 'Complete' : 'Blocked',
+        buttonLabel: 'Open seller',
+      },
+      {
+        key: 'add_seller_identity',
+        icon: ShieldCheck,
+        title: 'Add seller ID / registration number',
+        copy: 'Capture the seller identity or registration number for mandate and FICA readiness.',
+        complete: isSellerProfileFilled(sellerIdentity?.rawValue),
+        priorityLabel: isSellerProfileFilled(sellerIdentity?.rawValue) ? 'Complete' : 'Required',
+        buttonLabel: 'Open seller',
+      },
+      {
+        key: 'add_seller_fica',
+        icon: ShieldCheck,
+        title: 'Add seller FICA',
+        copy: 'Collect seller FICA requirements so the listing is ready for attorney handoff.',
+        complete: documentsReady || isSellerProfileFilled(ficaStatus?.rawValue),
+        priorityLabel: documentsReady ? 'Complete' : 'Required',
+        buttonLabel: 'Open documents',
+      },
+      {
+        key: 'complete_seller_facts',
+        icon: Home,
+        title: 'Complete seller facts',
+        copy: 'Fill the seller profile sections that drive documents, mandate generation, and handoff.',
+        complete: sellerFactsComplete,
+        priorityLabel: sellerFactsComplete ? 'Complete' : `${sellerProfile.completionPercent}% complete`,
+        buttonLabel: 'Open seller',
+      },
+      {
+        key: 'confirm_commission',
+        icon: HandCoins,
+        title: 'Confirm commission',
+        copy: 'Confirm commission percentage, fixed fee, VAT handling, and payment terms.',
+        complete: commissionWorkspace.hasData,
+        priorityLabel: commissionWorkspace.hasData ? 'Complete' : 'Required',
+        buttonLabel: 'Open commission',
+      },
+      {
+        key: 'add_photos',
+        icon: Camera,
+        title: 'Add photos',
+        copy: 'Upload listing images and choose a cover image for buyer-facing distribution.',
+        complete: hasPhotos,
+        priorityLabel: hasPhotos ? 'Complete' : 'Recommended',
+        buttonLabel: 'Open listing',
+      },
+      {
+        key: 'add_external_link',
+        icon: ExternalLink,
+        title: 'Add external listing link',
+        copy: 'Store portal references such as Property24 or Private Property links.',
+        complete: hasExternalListingLink,
+        priorityLabel: hasExternalListingLink ? 'Complete' : 'Recommended',
+        buttonLabel: 'Open listing',
+      },
+    ]
+  }, [
+    commissionWorkspace.hasData,
+    listingRecord,
+    mandateWorkspace.isSigned,
+    mandateWorkspace.status,
+    marketingDraft.externalLinks,
+    marketingDraft.galleryImages.length,
+    sellerDocumentExperience.summary.ready,
+    sellerProfile.completionPercent,
+    sellerProfile.sections,
+  ])
+
+  const listingFollowUpsComplete = !followUpActions.length || followUpActions.every((action) => action.complete)
+  const shouldShowListingFollowUps = sellerWorkspaceTab === 'overview' && !listingFollowUpsComplete
+
+  function handleListingFollowUpAction(action = {}) {
+    const key = String(action.key || '').trim()
+    if (key === 'send_onboarding') {
+      void handleSendSellerOnboardingFollowUp()
+      return
+    }
+    if (key === 'generate_mandate') {
+      setMandateStartOpen(true)
+      return
+    }
+    if (key === 'upload_signed_mandate' || key === 'add_seller_fica') {
+      openSellerWorkspaceSection('documents')
+      return
+    }
+    if (key === 'add_seller_contact' || key === 'add_seller_identity' || key === 'complete_seller_facts') {
+      openSellerWorkspaceSection('seller')
+      return
+    }
+    if (key === 'confirm_commission') {
+      openSellerWorkspaceSection('commission')
+      return
+    }
+    if (key === 'add_photos' || key === 'add_external_link') {
+      openSellerWorkspaceSection('listing')
+    }
+  }
+
   const listingMandateStartSummary = useMemo(() => {
     const sellerEmail = resolveSellerEmailFromListing(listingRecord)
     const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
@@ -8841,6 +8992,30 @@ function AgentListingDetail() {
                   ))}
                 </div>
               </article>
+
+              {shouldShowListingFollowUps ? (
+                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h3 className="text-base font-semibold text-[#142132]">Listing Follow-Ups</h3>
+                      <p className="mt-1 text-sm text-[#607387]">Complete a Quick Add listing here without restarting seller onboarding.</p>
+                    </div>
+                    <span className="inline-flex min-h-8 items-center rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 text-xs font-semibold text-[#35546c]">
+                      {followUpActions.filter((action) => !action.complete).length} open
+                    </span>
+                  </div>
+                  <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {followUpActions.filter((action) => !action.complete).map((action) => (
+                      <FollowUpActionCard
+                        key={action.key}
+                        action={action}
+                        loading={followUpActionId === action.key}
+                        onAction={handleListingFollowUpAction}
+                      />
+                    ))}
+                  </div>
+                </article>
+              ) : null}
 
               <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">

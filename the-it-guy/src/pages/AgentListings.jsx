@@ -3214,10 +3214,10 @@ function AgentListings({ initialTab = null } = {}) {
       const quickAddHandoffActions = reconcileQuickAddHandoffActions(card, baseFollowUpQueue, card.quickAddHandoffActions)
       const quickAddCompletion = getQuickAddHandoffCompletion(card.quickAddHandoffActions, quickAddHandoffActions)
       const followUpQueue = mergeFollowUpQueues(baseFollowUpQueue, quickAddHandoffActions)
-      return withFollowUpReminderStatus({
+      const enrichedCard = withFollowUpReminderStatus({
         ...card,
         quickAddHandoffActions,
-        quickAddPrimaryAction: quickAddHandoffActions[0] || null,
+        quickAddPrimaryAction: followUpQueue[0] || quickAddHandoffActions[0] || null,
         quickAddOpenActionCount: quickAddHandoffActions.length,
         quickAddCompletedActionCount: quickAddCompletion.completedCount,
         quickAddCompletedActionKeys: quickAddCompletion.completedKeys,
@@ -3225,6 +3225,10 @@ function AgentListings({ initialTab = null } = {}) {
         followUpQueue,
         followUpCount: followUpQueue.length,
       })
+      return {
+        ...enrichedCard,
+        quickAddPrimaryAction: enrichedCard.followUpQueue[0] || enrichedCard.quickAddPrimaryAction,
+      }
     })
   }, [deletedListingIds, privateListings, profile?.email, profile?.fullName, profile?.name])
 
@@ -3712,6 +3716,9 @@ function AgentListings({ initialTab = null } = {}) {
                           <div className="min-w-0">
                             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#4d8060]">Quick Add handoff</p>
                             <p className="mt-1 truncate text-[0.82rem] font-semibold text-[#24583a]">{card.quickAddPrimaryAction.label}</p>
+                            {card.quickAddPrimaryAction.reminderLabel ? (
+                              <p className="mt-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#5f8a6f]">{card.quickAddPrimaryAction.reminderLabel}</p>
+                            ) : null}
                           </div>
                           <button
                             type="button"

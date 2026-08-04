@@ -192,7 +192,8 @@ export function buildAttorneyInviteContract(input = {}, options = {}) {
   if (!organisationId) {
     addError(errors, 'organisationId', 'missing_organisation', 'Firm workspace is required before creating an attorney invite.')
   }
-  if (!transactionId) {
+  const allowsFirmLevelEvent = typeDefinition?.value === 'internal_meeting' || typeDefinition?.visibility === 'internal_only'
+  if (!transactionId && !allowsFirmLevelEvent) {
     addError(errors, 'transactionId', 'missing_matter', 'Choose the matter this invite belongs to.')
   }
   if (!recipientEmail) {

@@ -1,17 +1,26 @@
 import {
   AlertTriangle,
   ArrowRight,
+  Building2,
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
   Clock3,
+  Download,
+  FileText,
   Flag,
+  Home,
+  Mail,
+  MapPin,
   MoreHorizontal,
+  Phone,
   UserPlus,
+  UserRound,
   UsersRound,
+  X,
   XCircle,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { createElement, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import {
@@ -22,7 +31,12 @@ import {
 import {
   acceptAttorneyIncomingMatterInstruction,
   declineAttorneyIncomingMatterInstruction,
+  fetchTransactionEvents,
 } from '../lib/api'
+import {
+  fetchDocumentPacket,
+  requestPersistedPdfAccess,
+} from '../lib/documentPacketsApi'
 import { getAssignableAttorneyFirmMembers } from '../services/transactionAttorneyAssignments'
 import { assignAttorneyIncomingMatterPrimary } from '../services/transferFirmAllocationService'
 import {
@@ -145,6 +159,45 @@ function formatIncomingAge(value) {
   if (!days) return 'Today'
   if (days === 1) return '1 day'
   return `${days} days`
+}
+
+function formatCurrency(value) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount) || amount <= 0) return '-'
+  return new Intl.NumberFormat('en-ZA', {
+    style: 'currency',
+    currency: 'ZAR',
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+function formatDateTime(value) {
+  const date = new Date(value || '')
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function firstText(...values) {
+  for (const value of values) {
+    const text = String(value || '').trim()
+    if (text) return text
+  }
+  return ''
+}
+
+function humanizeKey(value = '') {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  return text
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (match) => match.toUpperCase())
 }
 
 function dueTone(value, status) {
@@ -271,14 +324,14 @@ function Assignee({ person }) {
   )
 }
 
-function AssignedBySource({ source = {} }) {
+function AssignedBySource({ source = {}, compact = false }) {
   const label = source.label || 'Private'
   const key = source.key || 'private'
   const isProduktive = key === 'produktive'
   const isPrivate = source.kind === 'private' || key === 'private'
 
   return (
-    <div className="flex min-w-[130px] items-center gap-2">
+    <div className={classNames('flex items-center gap-2', compact ? 'min-w-0' : 'min-w-[130px]')}>
       <span
         className={classNames(
           'inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border text-[0.68rem] font-bold uppercase',
@@ -296,7 +349,292 @@ function AssignedBySource({ source = {} }) {
           label.slice(0, 2)
         )}
       </span>
-      <span className="truncate text-sm font-semibold text-slate-700">{label}</span>
+      {compact ? null : <span className="truncate text-sm font-semibold text-slate-700">{label}</span>}
+    </div>
+  )
+}
+
+function PropertyThumbnail({ row = {}, size = 'md' }) {
+  const imageUrl = firstText(row.propertyThumbnailUrl, row.raw?.allocation?.property_image_url, row.raw?.transaction?.property_image_url)
+  const label = firstText(row.propertyAddress, row.property, row.reference, 'Property')
+  const sizeClass = size === 'lg' ? 'h-20 w-28 rounded-xl' : 'h-14 w-16 rounded-lg'
+
+  return (
+    <div className={classNames('shrink-0 overflow-hidden border border-slate-200 bg-slate-100', sizeClass)}>
+      {imageUrl ? (
+        <img src={imageUrl} alt={label} className="h-full w-full object-cover" />
+      ) : (
+        <div className="grid h-full w-full place-items-center bg-gradient-to-br from-emerald-50 via-white to-slate-100 text-[#00614f]">
+          <Home size={size === 'lg' ? 24 : 20} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ContactCard({ icon: Icon, label, name, email, phone, meta }) {
+  return (
+    <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start gap-3">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-[#00614f]">
+          {createElement(Icon, { size: 18 })}
+        </span>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+          <p className="mt-1 truncate text-sm font-semibold text-slate-950">{name || '-'}</p>
+          {meta ? <p className="mt-1 truncate text-xs font-medium text-slate-500">{meta}</p> : null}
+          {email ? (
+            <p className="mt-3 flex items-center gap-1.5 truncate text-xs font-medium text-slate-600">
+              <Mail size={13} className="shrink-0 text-slate-400" />
+              {email}
+            </p>
+          ) : null}
+          {phone ? (
+            <p className="mt-1.5 flex items-center gap-1.5 truncate text-xs font-medium text-slate-600">
+              <Phone size={13} className="shrink-0 text-slate-400" />
+              {phone}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function DrawerMetric({ icon: Icon, label, value, helper }) {
+  return (
+    <article className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex items-start gap-2.5">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">
+          {createElement(Icon, { size: 16 })}
+        </span>
+        <div className="min-w-0">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+          <p className="mt-1 truncate text-sm font-semibold text-slate-950">{value || '-'}</p>
+          {helper ? <p className="mt-1 truncate text-xs font-medium text-slate-500">{helper}</p> : null}
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function buildIncomingMatterTimeline(row = {}, events = [], packet = null) {
+  const packetEvents = (packet?.events || []).map((event) => ({
+    id: event.id || `packet-${event.event_type}-${event.created_at}`,
+    label: humanizeKey(event.event_type || 'Mandate activity'),
+    at: event.created_at,
+    tone: 'emerald',
+  }))
+  const transactionEvents = (events || []).slice(0, 4).map((event) => ({
+    id: event.id || `event-${event.eventType}-${event.createdAt}`,
+    label: humanizeKey(event.eventData?.message || event.eventType || 'Matter activity'),
+    at: event.createdAt,
+    tone: 'slate',
+  }))
+  const baseEvents = [
+    row.incomingSince ? {
+      id: 'incoming-since',
+      label: row.isPreInstruction ? 'Mandate received' : 'Instruction received',
+      at: row.incomingSince,
+      tone: 'emerald',
+    } : null,
+    row.assignedBySource?.label ? {
+      id: 'assigned-by',
+      label: `Assigned by ${row.assignedBySource.label}`,
+      at: row.createdAt || row.incomingSince,
+      tone: 'amber',
+    } : null,
+    row.waitingOnLabels?.length ? {
+      id: 'waiting-on',
+      label: `Waiting for ${row.waitingOnLabels.join(', ')}`,
+      at: row.lastActivity || row.createdAt || row.incomingSince,
+      tone: 'slate',
+    } : null,
+  ].filter(Boolean)
+
+  return [...baseEvents, ...packetEvents, ...transactionEvents]
+    .filter((item) => item.label)
+    .sort((left, right) => new Date(right.at || 0) - new Date(left.at || 0))
+    .slice(0, 6)
+}
+
+function getLatestPacketVersion(packet = null) {
+  return Array.isArray(packet?.versions) && packet.versions.length ? packet.versions[0] : null
+}
+
+function getMandateDocument(row = {}, packet = null) {
+  const version = getLatestPacketVersion(packet)
+  const packetTitle = firstText(packet?.title, row.raw?.allocation?.mandate_title, 'Mandate Agreement')
+  return {
+    packetId: firstText(packet?.id, row.mandatePacketId),
+    versionId: version?.id || '',
+    name: firstText(version?.final_signed_file_name, version?.rendered_file_name, packetTitle, 'Mandate Agreement.pdf'),
+    uploadedAt: firstText(version?.finalised_at, version?.generated_at, packet?.completed_at, packet?.updated_at, packet?.created_at, row.incomingSince),
+    fallbackHref: row.mandatePacketId ? `/legal-documents/${encodeURIComponent(row.mandatePacketId)}` : row.actionHref,
+  }
+}
+
+function IncomingMatterDrawer({
+  row,
+  events = [],
+  packet = null,
+  packetLoading = false,
+  packetError = '',
+  downloadingMandate = false,
+  onClose,
+  onOpenFullMatter,
+  onDownloadMandate,
+}) {
+  if (!row) return null
+
+  const document = getMandateDocument(row, packet)
+  const timeline = buildIncomingMatterTimeline(row, events, packet)
+  const propertyArea = firstText(row.propertyArea, [row.development, row.unit ? `Unit ${row.unit}` : ''].filter(Boolean).join(' / '))
+  const assignedTo = row.assignedAttorney?.name || 'Young Law inc.'
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/35 backdrop-blur-[1px]" role="dialog" aria-modal="true">
+      <button type="button" className="absolute inset-0 cursor-default" aria-label="Close incoming matter overview" onClick={onClose} />
+      <section className="relative flex h-full w-full max-w-[880px] flex-col overflow-hidden bg-white shadow-2xl sm:my-4 sm:mr-4 sm:h-[calc(100%-2rem)] sm:rounded-2xl">
+        <header className="border-b border-slate-100 px-5 py-5 md:px-7">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <span className="inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Incoming Matter</span>
+              <h2 className="mt-3 text-2xl font-semibold leading-tight tracking-tight text-slate-950">{row.propertyAddress || row.property}</h2>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium text-slate-500">
+                <span>Matter No. {row.reference}</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Clock3 size={14} />
+                  Received {formatDateTime(row.incomingSince || row.createdAt)}
+                </span>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                disabled={!document.packetId || downloadingMandate}
+                onClick={() => onDownloadMandate?.(document)}
+                className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#00614f] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#00463d] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Download size={16} />
+                {downloadingMandate ? 'Preparing' : 'Download Mandate'}
+              </button>
+              <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900" aria-label="Close">
+                <X size={19} />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-5 py-5 md:px-7">
+          <section className="grid gap-3 md:grid-cols-4">
+            <DrawerMetric icon={Flag} label="Stage" value={row.status} helper={row.nextAction} />
+            <DrawerMetric icon={CalendarDays} label="Assigned On" value={formatShortDate(row.createdAt || row.incomingSince)} helper={`${formatIncomingAge(row.incomingAgeDays)} in queue`} />
+            <DrawerMetric icon={Building2} label="Assigned By" value={row.assignedBySource?.label || 'Private'} helper={row.assignedBySource?.kind === 'private' ? 'Private instruction' : 'Network partner'} />
+            <DrawerMetric icon={UserRound} label="Assigned To" value={assignedTo} helper={row.assignedAttorney?.email || row.matterType} />
+          </section>
+
+          <section className="mt-6">
+            <h3 className="text-sm font-semibold text-slate-950">Parties Involved</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <ContactCard icon={UserRound} label="Seller" name={row.seller} email={row.sellerEmail} phone={row.sellerPhone} />
+              <ContactCard icon={UsersRound} label="Agent" name={row.agentName || row.agent || 'Agent pending'} email={row.agentEmail} phone={row.agentPhone} meta={row.assignedBySource?.label} />
+            </div>
+          </section>
+
+          <section className="mt-6">
+            <h3 className="text-sm font-semibold text-slate-950">Property</h3>
+            <article className="mt-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center">
+                <PropertyThumbnail row={row} size="lg" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-base font-semibold text-slate-950">{row.propertyAddress || row.property}</p>
+                  {propertyArea ? (
+                    <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-500">
+                      <MapPin size={14} className="shrink-0" />
+                      {propertyArea}
+                    </p>
+                  ) : null}
+                  {row.erf ? <p className="mt-2 text-xs font-semibold text-slate-500">ERF {row.erf}</p> : null}
+                </div>
+                <div className="grid min-w-[220px] grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500">Asking Price</p>
+                    <p className="mt-1 font-semibold text-slate-950">{formatCurrency(row.purchasePrice || row.matterValue)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500">Property Type</p>
+                    <p className="mt-1 font-semibold text-slate-950">{row.propertyType || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500">Listing Ref</p>
+                    <p className="mt-1 font-semibold text-slate-950">{row.listingReference || row.privateListingId || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500">Matter Type</p>
+                    <p className="mt-1 font-semibold text-slate-950">{row.matterType}</p>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section className="mt-6">
+            <h3 className="text-sm font-semibold text-slate-950">Mandate Document</h3>
+            <article className="mt-3 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600">
+                <FileText size={18} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-slate-950">{document.name}</p>
+                <p className="mt-1 text-xs font-medium text-slate-500">
+                  {packetLoading ? 'Loading mandate details...' : `Uploaded ${formatDateTime(document.uploadedAt)}`}
+                </p>
+                {packetError ? <p className="mt-1 text-xs font-semibold text-amber-700">{packetError}</p> : null}
+              </div>
+              <button
+                type="button"
+                disabled={!document.packetId || downloadingMandate}
+                onClick={() => onDownloadMandate?.(document)}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#00614f] px-4 text-sm font-semibold text-white transition hover:bg-[#00463d] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Download size={15} />
+                Download
+              </button>
+            </article>
+          </section>
+
+          <section className="mt-6">
+            <h3 className="text-sm font-semibold text-slate-950">Timeline</h3>
+            <div className="mt-3 space-y-0">
+              {timeline.map((item, index) => (
+                <div key={item.id || `${item.label}-${index}`} className="grid grid-cols-[28px_1fr] gap-3">
+                  <div className="flex flex-col items-center">
+                    <span className={classNames('mt-1 h-3 w-3 rounded-full', item.tone === 'emerald' ? 'bg-[#00614f]' : item.tone === 'amber' ? 'bg-amber-400' : 'bg-slate-300')} />
+                    {index < timeline.length - 1 ? <span className="h-9 w-px bg-slate-200" /> : null}
+                  </div>
+                  <div className="pb-4">
+                    <p className="text-sm font-semibold text-slate-800">{item.label}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500">{formatDateTime(item.at)}</p>
+                  </div>
+                </div>
+              ))}
+              {!timeline.length ? <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">No intake activity has been recorded yet.</p> : null}
+            </div>
+          </section>
+        </div>
+
+        <footer className="flex flex-wrap items-center gap-2 border-t border-slate-100 bg-white px-5 py-4 md:px-7">
+          <button type="button" onClick={onClose} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+            <CheckCircle2 size={16} />
+            Mark as Actioned
+          </button>
+          <button type="button" onClick={() => onOpenFullMatter?.(row)} className="ml-auto inline-flex h-10 items-center gap-2 rounded-lg bg-[#00614f] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#00463d]">
+            Open Full Matter
+            <ArrowRight size={16} />
+          </button>
+        </footer>
+      </section>
     </div>
   )
 }
@@ -465,31 +803,30 @@ function IncomingMattersTable({
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
           <thead className="bg-white text-[0.68rem] uppercase tracking-[0.12em] text-slate-500">
             <tr>
               <th className="w-10 border-b border-slate-200 px-4 py-3">
                 <input type="checkbox" checked={allSelected} onChange={(event) => onToggleAll(event.target.checked)} aria-label="Select all incoming matters" />
               </th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Incoming Instruction</th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Parties / Property</th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Waiting On</th>
+              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Property / Matter</th>
+              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Seller</th>
+              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Current Stage</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Assigned By</th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Incoming Since</th>
+              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Assigned On</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((row) => {
               const selected = selectedRows.includes(row.matterId)
-              const href = row.actionHref || '#'
-              const preview = getMatterPreview(row)
               const readyForAcceptance = canAcceptIncomingMatter(row)
               const canAssign = canAssignIncomingMatter(row, canManageAssignments)
               const accepting = acceptingMatterId === row.assignmentId
               const declining = decliningMatterId === row.assignmentId
               const assigning = assigningMatterId === row.assignmentId
               const matterLabel = getIncomingMatterActionLabel(row)
+              const propertyArea = firstText(row.propertyArea, [row.development, row.unit ? `Unit ${row.unit}` : ''].filter(Boolean).join(' / '))
               return (
                 <tr
                   key={row.assignmentId || row.matterId}
@@ -513,22 +850,25 @@ function IncomingMattersTable({
                       aria-label={`Select ${row.reference}`}
                     />
                   </td>
+                  <td className="min-w-[310px] px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <PropertyThumbnail row={row} />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-950">{row.propertyAddress || row.property}</p>
+                        {propertyArea ? <p className="mt-1 truncate text-xs font-medium text-slate-500">{propertyArea}</p> : null}
+                        <p className="mt-1 truncate text-xs font-medium text-slate-500">{row.reference}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="max-w-[210px] px-4 py-3">
+                    <p className="truncate font-semibold text-slate-800">{row.seller}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500">Seller</p>
+                  </td>
                   <td className="min-w-[190px] px-4 py-3">
-                    <p className="font-semibold text-slate-950">{row.reference}</p>
-                    <div className="mt-2"><StatusPill status={row.status} /></div>
+                    <StatusPill status={row.status} />
+                    <div className="mt-2"><WaitingOnChips labels={row.waitingOnLabels} /></div>
                   </td>
-                  <td className="max-w-[280px] px-4 py-3">
-                    <p className="truncate font-medium text-slate-800">{row.buyer}</p>
-                    <p className="mt-1 truncate text-xs text-slate-500">{row.seller}</p>
-                    <p className="mt-2 truncate text-sm font-semibold text-slate-700">{row.property}</p>
-                    {row.development || row.unit ? (
-                      <p className="mt-1 truncate text-xs text-slate-500">
-                        {[row.development, row.unit ? `Unit ${row.unit}` : ''].filter(Boolean).join(' / ')}
-                      </p>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3"><WaitingOnChips labels={row.waitingOnLabels} /></td>
-                  <td className="px-4 py-3"><AssignedBySource source={row.assignedBySource} /></td>
+                  <td className="px-4 py-3"><AssignedBySource source={row.assignedBySource} compact /></td>
                   <td className="min-w-[150px] px-4 py-3">
                     <p className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
                       <Clock3 size={15} className="text-slate-400" />
@@ -552,15 +892,17 @@ function IncomingMattersTable({
                           {accepting ? 'Accepting' : `Accept ${matterLabel}`}
                         </button>
                       ) : row.actionHref ? (
-                        <Link
-                          to={href}
-                          state={{ matterPreview: preview }}
-                          onClick={(event) => event.stopPropagation()}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onOpenMatter?.(row)
+                          }}
                           className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#00463d] px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-[#00614f]"
                         >
-                          {row.isPreInstruction ? 'Open Mandate' : `Open ${matterLabel}`}
+                          Open Matter
                           <ArrowRight size={14} />
-                        </Link>
+                        </button>
                       ) : null}
                       {canAssign ? (
                         <button
@@ -577,15 +919,17 @@ function IncomingMattersTable({
                         </button>
                       ) : null}
                       {readyForAcceptance ? (
-                        <Link
-                          to={href}
-                          state={{ matterPreview: preview }}
-                          onClick={(event) => event.stopPropagation()}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onOpenMatter?.(row)
+                          }}
                           className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
                         >
                           Open
                           <ArrowRight size={14} />
-                        </Link>
+                        </button>
                       ) : null}
                       <IncomingRowActions
                         row={row}
@@ -977,6 +1321,12 @@ function AttorneyMattersPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [selectedRows, setSelectedRows] = useState([])
+  const [selectedIncomingRow, setSelectedIncomingRow] = useState(null)
+  const [drawerEvents, setDrawerEvents] = useState([])
+  const [drawerPacket, setDrawerPacket] = useState(null)
+  const [drawerPacketLoading, setDrawerPacketLoading] = useState(false)
+  const [drawerPacketError, setDrawerPacketError] = useState('')
+  const [downloadingMandateId, setDownloadingMandateId] = useState('')
   const [incomingAction, setIncomingAction] = useState({ pendingId: '', error: '' })
   const [declineDialog, setDeclineDialog] = useState({ row: null, reason: '' })
   const [assignmentDialog, setAssignmentDialog] = useState({ row: null })
@@ -1019,6 +1369,7 @@ function AttorneyMattersPage() {
   useEffect(() => {
     setPage(1)
     setSelectedRows([])
+    setSelectedIncomingRow(null)
     setIncomingAction({ pendingId: '', error: '' })
     setDeclineDialog({ row: null, reason: '' })
     setAssignmentDialog({ row: null })
@@ -1056,6 +1407,42 @@ function AttorneyMattersPage() {
     permissionsState.hasPermission('can_update_attorney_assignments'),
   )
 
+  useEffect(() => {
+    let active = true
+    setDrawerEvents([])
+    setDrawerPacket(null)
+    setDrawerPacketError('')
+
+    if (!selectedIncomingRow) return undefined
+
+    async function loadDrawerContext() {
+      setDrawerPacketLoading(true)
+      const transactionId = selectedIncomingRow.isPreInstruction ? '' : selectedIncomingRow.matterId || selectedIncomingRow.transactionId || ''
+      const packetId = selectedIncomingRow.mandatePacketId || ''
+
+      const [eventsResult, packetResult] = await Promise.allSettled([
+        transactionId ? fetchTransactionEvents(transactionId, { limit: 8 }) : Promise.resolve([]),
+        packetId ? fetchDocumentPacket(packetId, { includeVersions: true, includeEvents: true }) : Promise.resolve(null),
+      ])
+
+      if (!active) return
+      setDrawerEvents(eventsResult.status === 'fulfilled' ? eventsResult.value || [] : [])
+      if (packetResult.status === 'fulfilled') {
+        setDrawerPacket(packetResult.value || null)
+      } else {
+        setDrawerPacket(null)
+        setDrawerPacketError(packetResult.reason?.message || 'Mandate details could not be loaded.')
+      }
+      setDrawerPacketLoading(false)
+    }
+
+    void loadDrawerContext()
+
+    return () => {
+      active = false
+    }
+  }, [selectedIncomingRow])
+
   function handleToggleRow(matterId) {
     setSelectedRows((previous) =>
       previous.includes(matterId)
@@ -1069,8 +1456,55 @@ function AttorneyMattersPage() {
   }
 
   function handleOpenMatter(row = {}) {
+    if (usesIncomingQueue) {
+      setSelectedIncomingRow(row)
+      return
+    }
     if (!row.actionHref) return
     navigate(row.actionHref, { state: { matterPreview: getMatterPreview(row) } })
+  }
+
+  function handleOpenFullMatter(row = {}) {
+    if (!row.actionHref) return
+    navigate(row.actionHref, { state: { matterPreview: getMatterPreview(row) } })
+  }
+
+  async function handleDownloadMandate(document = {}) {
+    const key = document.versionId || document.packetId || document.fallbackHref
+    if (!key) return
+    setDownloadingMandateId(key)
+    const pendingWindow = typeof window !== 'undefined' ? window.open('', '_blank') : null
+    if (pendingWindow) pendingWindow.opener = null
+    try {
+      let downloadUrl = ''
+      if (document.packetId && document.versionId) {
+        try {
+          const access = await requestPersistedPdfAccess({
+            packetId: document.packetId,
+            versionId: document.versionId,
+            purpose: 'download',
+          })
+          downloadUrl = access?.signedUrl || ''
+        } catch {
+          downloadUrl = ''
+        }
+      }
+      downloadUrl = downloadUrl || document.fallbackHref || ''
+      if (!downloadUrl) throw new Error('No mandate document is linked to this incoming matter yet.')
+      if (pendingWindow) {
+        pendingWindow.location.href = downloadUrl
+      } else if (typeof window !== 'undefined') {
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+      }
+    } catch (downloadError) {
+      if (pendingWindow) pendingWindow.close()
+      setIncomingAction({
+        pendingId: '',
+        error: downloadError?.message || 'Unable to download the mandate.',
+      })
+    } finally {
+      setDownloadingMandateId('')
+    }
   }
 
   async function refreshIncomingWorkspaceAfterDecision(row = {}) {
@@ -1092,10 +1526,8 @@ function AttorneyMattersPage() {
       })
       await refreshIncomingWorkspaceAfterDecision(row)
       setIncomingAction({ pendingId: '', error: '' })
-      if (result?.actionHref) {
-        navigate(result.actionHref, {
-          state: { instructionAccepted: true },
-        })
+      if (result?.actionHref && selectedIncomingRow?.assignmentId === row.assignmentId) {
+        setSelectedIncomingRow((previous) => previous ? { ...previous, actionHref: result.actionHref } : previous)
       }
     } catch (actionError) {
       setIncomingAction({
@@ -1257,6 +1689,17 @@ function AttorneyMattersPage() {
         pending={incomingAction.kind === 'assign' && Boolean(incomingAction.pendingId)}
         onCancel={() => setAssignmentDialog({ row: null })}
         onConfirm={handleAssignIncomingMatter}
+      />
+      <IncomingMatterDrawer
+        row={selectedIncomingRow}
+        events={drawerEvents}
+        packet={drawerPacket}
+        packetLoading={drawerPacketLoading}
+        packetError={drawerPacketError}
+        downloadingMandate={Boolean(downloadingMandateId)}
+        onClose={() => setSelectedIncomingRow(null)}
+        onOpenFullMatter={handleOpenFullMatter}
+        onDownloadMandate={handleDownloadMandate}
       />
     </main>
   )

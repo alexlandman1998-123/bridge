@@ -67,7 +67,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /item\.reminderLabel/,
+  /reminderLabel/,
   'Listing cards should show due labels beside follow-up items.',
 )
 

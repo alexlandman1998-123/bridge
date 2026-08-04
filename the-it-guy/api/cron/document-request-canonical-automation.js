@@ -1,5 +1,3 @@
-/* global process */
-
 import { execFile } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import os from 'node:os'

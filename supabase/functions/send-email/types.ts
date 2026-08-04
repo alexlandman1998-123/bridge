@@ -1078,6 +1078,86 @@ export type SendLeadPropertySharePayload = {
   metadata?: JsonRecord;
 } & DeliveryContextPayload;
 
+export type ViewingAvailabilityRequestPropertyPayload = {
+  id?: string;
+  title?: string;
+  name?: string;
+  address?: string;
+  price?: string;
+  priceLabel?: string;
+  area?: string;
+  suburb?: string;
+  location?: string;
+  match?: string;
+  matchLabel?: string;
+  link?: string;
+  url?: string;
+};
+
+export type SendBuyerViewingAvailabilityRequestPayload = {
+  type:
+    | "buyer_viewing_availability_request"
+    | "buyer_viewing_request"
+    | "viewing_availability_request";
+  to: string;
+  subject?: string;
+  buyerName?: string;
+  recipientName?: string;
+  agentName?: string;
+  agentEmail?: string;
+  note?: string;
+  message?: string;
+  propertyCount?: number;
+  properties?: ViewingAvailabilityRequestPropertyPayload[];
+  organisationName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
+  idempotencyKey?: string;
+  idempotency_key?: string;
+} & DeliveryContextPayload;
+
+export type SellerViewingAvailabilityRequestPropertyPayload = {
+  id?: string;
+  title?: string;
+  name?: string;
+  address?: string;
+  price?: string;
+  priceLabel?: string;
+  area?: string;
+  suburb?: string;
+  location?: string;
+  match?: string;
+  matchLabel?: string;
+  link?: string;
+  url?: string;
+};
+
+export type SendSellerViewingAvailabilityRequestPayload = {
+  type:
+    | "seller_viewing_availability_request"
+    | "seller_viewing_request"
+    | "viewing_access_availability_request";
+  to: string | string[];
+  recipients?: string | string[];
+  subject?: string;
+  sellerName?: string;
+  recipientName?: string;
+  buyerName?: string;
+  agentName?: string;
+  agentEmail?: string;
+  availabilityWindows?: string;
+  coordinationNotes?: string;
+  note?: string;
+  message?: string;
+  propertyCount?: number;
+  properties?: SellerViewingAvailabilityRequestPropertyPayload[];
+  organisationName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
+  idempotencyKey?: string;
+  idempotency_key?: string;
+} & DeliveryContextPayload;
+
 export type SendBuyerOfferSubmittedAgentPayload = {
   type:
     | "buyer_offer_submitted_agent"

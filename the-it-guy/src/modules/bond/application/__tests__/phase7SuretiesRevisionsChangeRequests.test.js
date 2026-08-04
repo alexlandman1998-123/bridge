@@ -3,7 +3,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/* global process */
 
 import {
   BOND_APPLICATION_CHANGE_REQUEST_EFFECTS,

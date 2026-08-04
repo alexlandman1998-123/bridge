@@ -31,7 +31,7 @@ assert.match(
 
 assert.match(
   source,
-  /Listing follow-ups/,
+  /Quick Add handoff/,
   'Listing cards should still show their own follow-up hints.',
 )
 

@@ -10435,6 +10435,193 @@ function AppointmentStatusBadge({ status = '' }) {
   )
 }
 
+const VIEWING_PLAN_WORKFLOW_STEPS = [
+  { key: 'select', label: 'Select properties', meta: 'Choose 1 or more properties' },
+  { key: 'request', label: 'Request availability', meta: 'Ask buyer for suitable times' },
+  { key: 'seller', label: 'Confirm with sellers', meta: 'Check access and availability' },
+  { key: 'book', label: 'Book appointments', meta: 'Schedule and notify parties' },
+]
+
+function getBuyerViewingPlanBucket(appointment = {}) {
+  const status = normalizeText(appointment?.status).toLowerCase()
+  if (['confirmed', 'booked', 'scheduled'].includes(status)) return 'scheduled'
+  if (['seller_availability_requested', 'requested', 'seller_coordination', 'buyer_confirmed'].includes(status) || status.includes('seller')) return 'awaitingSellers'
+  if (['buyer_availability', 'awaiting_buyer_confirmation'].includes(status) || status.includes('buyer')) return 'awaitingBuyer'
+  return 'draft'
+}
+
+function getBuyerViewingPlanSummary(appointments = []) {
+  const viewingPlans = (Array.isArray(appointments) ? appointments : []).filter(Boolean).filter(isViewingAppointment)
+  const activePlans = viewingPlans.filter((appointment) => !isAppointmentClosed(appointment))
+  const counts = activePlans.reduce((acc, appointment) => {
+    const bucket = getBuyerViewingPlanBucket(appointment)
+    acc[bucket] = (acc[bucket] || 0) + 1
+    return acc
+  }, { draft: 0, awaitingBuyer: 0, awaitingSellers: 0, scheduled: 0 })
+  const activeStepIndex = counts.scheduled ? 3 : counts.awaitingSellers ? 2 : counts.awaitingBuyer ? 1 : 0
+  return {
+    viewingPlans,
+    activePlans,
+    counts,
+    activeStepIndex,
+  }
+}
+
+function getViewingActivityIcon(item = {}) {
+  const haystack = `${item.title || ''} ${item.activityType || item.activity_type || ''} ${item.summary || ''} ${item.activityNote || item.activity_note || ''}`.toLowerCase()
+  if (haystack.includes('email') || haystack.includes('request')) return Mail
+  if (haystack.includes('seller') || haystack.includes('access')) return UserRound
+  if (haystack.includes('complete') || haystack.includes('outcome')) return CheckCircle2
+  return CalendarDays
+}
+
+function getBuyerViewingActivityItems(lead = {}, timeline = [], limit = 5) {
+  const items = [
+    ...(Array.isArray(timeline) ? timeline : []),
+    ...(Array.isArray(lead?.communicationTimeline) ? lead.communicationTimeline : []),
+    ...(Array.isArray(lead?.activities) ? lead.activities : []),
+  ]
+    .map((item, index) => {
+      const date = getLatestActivityDate(item) || item?.occurredAt || item?.occurred_at || item?.createdAt || item?.created_at || item?.updatedAt || item?.updated_at
+      const title = formatCleanValue(item?.title || item?.activityType || item?.activity_type || item?.communicationType || item?.communication_type || item?.kind || item?.type)
+      const description = normalizeText(item?.description || item?.summary || item?.message || item?.subject || item?.activityNote || item?.activity_note || item?.notes || item?.note)
+      return {
+        id: normalizeText(item?.id || item?.activityId || item?.activity_id || `${title}-${date || index}`),
+        title: title || 'Viewing activity',
+        description: description || 'Viewing workflow update logged.',
+        date,
+        icon: getViewingActivityIcon(item),
+      }
+    })
+    .filter((item) => {
+      if (!item.date || Number.isNaN(new Date(item.date).getTime())) return false
+      const haystack = `${item.title} ${item.description}`.toLowerCase()
+      return /viewing|availability|seller access|appointment|scheduled|reschedul|cancel|no-show|outcome/.test(haystack)
+    })
+    .sort((left, right) => new Date(right.date || 0).getTime() - new Date(left.date || 0).getTime())
+
+  const seen = new Set()
+  return items.filter((item) => {
+    const key = `${item.title}:${item.description}:${item.date}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).slice(0, limit)
+}
+
+function getPastViewingRows(appointments = []) {
+  return (Array.isArray(appointments) ? appointments : [])
+    .filter(Boolean)
+    .filter((appointment) => isViewingAppointment(appointment) && isAppointmentClosed(appointment))
+    .sort((left, right) => {
+      const leftDate = getAppointmentStartDate(left)?.getTime() || new Date(left.completedAt || left.completed_at || left.updatedAt || left.updated_at || 0).getTime()
+      const rightDate = getAppointmentStartDate(right)?.getTime() || new Date(right.completedAt || right.completed_at || right.updatedAt || right.updated_at || 0).getTime()
+      return rightDate - leftDate
+    })
+}
+
+function getAppointmentBookedByLabel(appointment = {}, actor = {}) {
+  const assigned = appointment?.assignedAgent || appointment?.assigned_agent || {}
+  return normalizeText(
+    assigned.name ||
+      assigned.fullName ||
+      appointment?.assignedAgentName ||
+      appointment?.assigned_agent_name ||
+      appointment?.createdByName ||
+      appointment?.created_by_name ||
+      actor?.fullName ||
+      actor?.name ||
+      'Agent',
+  )
+}
+
+function ViewingPlannerSummary({ appointments = [], propertyOptions = [], onStartViewing, onViewPlan }) {
+  const summary = getBuyerViewingPlanSummary(appointments)
+  const stats = [
+    { key: 'draft', label: 'Draft plans', value: summary.counts.draft || 0, icon: FileText, tone: 'amber' },
+    { key: 'awaitingBuyer', label: 'Awaiting buyer', value: summary.counts.awaitingBuyer || 0, icon: Mail, tone: 'blue' },
+    { key: 'awaitingSellers', label: 'Awaiting sellers', value: summary.counts.awaitingSellers || 0, icon: UserRound, tone: 'amber' },
+    { key: 'scheduled', label: 'Scheduled', value: summary.counts.scheduled || 0, icon: CalendarDays, tone: 'green' },
+  ]
+  const visiblePlans = summary.activePlans.slice(0, 3)
+
+  return (
+    <section className={`${buyerWorkspaceCardClass} overflow-hidden p-0`}>
+      <div className="flex flex-col gap-4 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 gap-4">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+            <CalendarDays size={22} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Viewing Planner</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Manage viewings from request to confirmation.</p>
+          </div>
+        </div>
+        <button type="button" onClick={onStartViewing} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-700 shadow-sm hover:bg-emerald-50">
+          <CalendarDays size={15} />
+          Start new viewing
+        </button>
+      </div>
+
+      <div className="border-t border-slate-100 px-5 py-5 sm:px-6">
+        <div className="grid gap-3 md:grid-cols-4">
+          {VIEWING_PLAN_WORKFLOW_STEPS.map((step, index) => {
+            const active = index === summary.activeStepIndex
+            const complete = summary.activePlans.length > 0 && index < summary.activeStepIndex
+            return (
+              <div key={step.key} className="grid gap-3 rounded-2xl border border-slate-100 bg-white p-3 sm:grid-cols-[42px_minmax(0,1fr)]">
+                <span className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold ${complete ? 'bg-emerald-600 text-white' : active ? 'bg-emerald-50 text-emerald-700 ring-2 ring-emerald-100' : 'bg-slate-100 text-slate-500'}`}>
+                  {complete ? <CheckCircle2 size={16} /> : index + 1}
+                </span>
+                <span className="min-w-0">
+                  <span className={`block text-sm font-semibold ${active ? 'text-emerald-700' : 'text-slate-950'}`}>{step.label}</span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500">{step.meta}</span>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="grid border-t border-slate-100 md:grid-cols-5">
+        {stats.map((stat) => {
+          const Icon = stat.icon
+          const toneClass = stat.tone === 'green'
+            ? 'bg-emerald-50 text-emerald-700'
+            : stat.tone === 'amber'
+              ? 'bg-amber-50 text-amber-700'
+              : 'bg-blue-50 text-blue-700'
+          return (
+            <button key={stat.key} type="button" onClick={() => onViewPlan?.()} className="flex min-h-20 items-center gap-3 border-b border-slate-100 px-5 py-4 text-left transition hover:bg-slate-50 md:border-b-0 md:border-r last:md:border-r-0">
+              <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${toneClass}`}><Icon size={16} /></span>
+              <span>
+                <span className="block text-xs font-semibold text-slate-500">{stat.label}</span>
+                <span className="mt-1 block text-lg font-semibold text-slate-950">{stat.value}</span>
+              </span>
+            </button>
+          )
+        })}
+        <button type="button" onClick={() => onViewPlan?.()} className="flex min-h-20 items-center justify-between gap-3 px-5 py-4 text-sm font-semibold text-emerald-700 hover:bg-emerald-50">
+          View all plans
+          <ArrowRight size={15} />
+        </button>
+      </div>
+
+      {visiblePlans.length ? (
+        <div className="grid gap-3 border-t border-slate-100 bg-slate-50/70 p-5 sm:p-6 lg:grid-cols-3">
+          {visiblePlans.map((appointment, index) => (
+            <button key={getAppointmentId(appointment) || `${appointment.title || 'viewing'}-${index}`} type="button" onClick={() => onViewPlan?.(appointment)} className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:border-emerald-200 hover:bg-emerald-50/40">
+              <span className="block truncate text-sm font-semibold text-slate-950">{getAppointmentPropertyLabel(appointment, propertyOptions) || appointment.title || 'Viewing plan'}</span>
+              <span className="mt-2 inline-flex"><AppointmentStatusBadge status={appointment.status || 'draft'} /></span>
+              <span className="mt-2 block text-xs font-medium text-slate-500">{getAppointmentDateLabel(appointment)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function AppointmentsPageHeader({ onBack, onSchedule, onViewCalendar }) {
   return (
     <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -11106,6 +11293,239 @@ function AppointmentHistoryTable({ items = [], lead, propertyOptions = [], onSch
         </div>
       )}
     </section>
+  )
+}
+
+function BuyerLeadUpcomingAppointmentsSection({ appointments = [], lead, propertyOptions = [], onStartViewing, onViewAppointment, onViewCalendar }) {
+  const contact = getLeadContactSnapshot(lead)
+  return (
+    <section className={`${buyerWorkspaceCardClass} flex min-h-[320px] flex-col p-5 sm:p-6`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Upcoming Appointments</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">All confirmed viewings and meetings for this buyer.</p>
+        </div>
+        <button type="button" onClick={onViewCalendar} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          View calendar
+          <ArrowRight size={14} />
+        </button>
+      </div>
+
+      {appointments.length ? (
+        <div className="mt-5 grid gap-3">
+          {appointments.map((appointment, index) => {
+            const dayParts = getAppointmentDayParts(appointment)
+            const propertyLabel = getAppointmentPropertyLabel(appointment, propertyOptions)
+            const propertyDescription = getAppointmentPropertyDescription(appointment, propertyOptions)
+            return (
+              <article key={getAppointmentId(appointment) || `${appointment.title || 'appointment'}-${index}`} className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:grid-cols-[82px_minmax(0,1fr)_auto] md:items-center">
+                <div className="flex items-center gap-3 md:block md:border-r md:border-slate-200 md:pr-4 md:text-center">
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-emerald-700">{dayParts.weekday}</p>
+                  <p className="text-3xl font-semibold tracking-[-0.04em] text-slate-950">{dayParts.day}</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{dayParts.month}</p>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-base font-semibold text-slate-950">{getAppointmentTimeLabel(appointment)}</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-900">{propertyLabel || appointment.title || 'Appointment'}</p>
+                  <p className="mt-1 truncate text-sm text-slate-500">{propertyDescription || contact.phone || 'Location to be confirmed'}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <AppointmentStatusBadge status={appointment.status || 'confirmed'} />
+                    <StatusPill tone={isViewingAppointment(appointment) ? 'green' : 'blue'}>{isViewingAppointment(appointment) ? 'Property viewing' : titleCaseLabel(appointment.appointmentType || appointment.appointment_type || 'Appointment')}</StatusPill>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 md:justify-end">
+                  <button type="button" onClick={() => onViewAppointment?.(appointment)} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50">View details</button>
+                  <button type="button" onClick={() => onViewAppointment?.(appointment)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" aria-label="Open appointment actions">
+                    <MoreVertical size={16} />
+                  </button>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="mt-5 flex flex-1 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+          <div>
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm">
+              <CalendarDays size={26} />
+            </div>
+            <h3 className="mt-4 text-base font-semibold text-slate-950">No upcoming appointments</h3>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">There are no confirmed viewings or client meetings scheduled for this buyer.</p>
+            <button type="button" onClick={onStartViewing} className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">
+              <CalendarDays size={15} />
+              Start a viewing
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function BuyerLeadRecentViewingActivity({ lead = {}, timeline = [], onViewAll }) {
+  const items = getBuyerViewingActivityItems(lead, timeline)
+  return (
+    <section className={`${buyerWorkspaceCardClass} flex min-h-[320px] flex-col p-5 sm:p-6`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Recent Viewing Activity</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Latest updates on this buyer's viewing process.</p>
+        </div>
+        <button type="button" onClick={onViewAll} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold text-emerald-700 hover:bg-emerald-50">
+          View full activity
+          <ArrowRight size={14} />
+        </button>
+      </div>
+      {items.length ? (
+        <div className="mt-5 divide-y divide-slate-100">
+          {items.map((item) => {
+            const Icon = item.icon
+            return (
+              <article key={item.id} className="grid grid-cols-[42px_minmax(0,1fr)_auto] gap-3 py-3 first:pt-0 last:pb-0">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><Icon size={16} /></span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-slate-950">{item.title}</span>
+                  <span className="mt-1 block line-clamp-2 text-xs leading-5 text-slate-500">{item.description}</span>
+                </span>
+                <span className="whitespace-nowrap text-xs font-semibold text-slate-500">{formatRelativeTime(item.date, formatDate(item.date, ''))}</span>
+              </article>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="mt-5 flex flex-1 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+          <div>
+            <p className="text-sm font-semibold text-slate-950">No viewing activity yet</p>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Viewing requests, seller confirmations, and outcome updates will appear here.</p>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function BuyerLeadPastViewingsSection({ appointments = [], actor = {}, propertyOptions = [], onViewAppointment }) {
+  const [outcomeFilter, setOutcomeFilter] = useState('all')
+  const rows = useMemo(() => getPastViewingRows(appointments), [appointments])
+  const filteredRows = useMemo(() => {
+    if (outcomeFilter === 'all') return rows
+    return rows.filter((appointment) => {
+      const haystack = `${appointment.status || ''} ${appointment.outcomeSummary || appointment.outcome_summary || ''} ${appointment.clientFeedback || appointment.client_feedback || ''} ${appointment.nextStep || appointment.next_step || ''}`.toLowerCase()
+      if (outcomeFilter === 'interested') return haystack.includes('interested') && !haystack.includes('not interested')
+      if (outcomeFilter === 'not_interested') return haystack.includes('not interested')
+      if (outcomeFilter === 'cancelled') return haystack.includes('cancel')
+      if (outcomeFilter === 'no_show') return haystack.includes('no_show') || haystack.includes('no show')
+      if (outcomeFilter === 'offer') return haystack.includes('offer')
+      return true
+    })
+  }, [outcomeFilter, rows])
+
+  return (
+    <section className={`${buyerWorkspaceCardClass} overflow-hidden p-0`}>
+      <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Past Viewings</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Completed and cancelled property viewings for this buyer.</p>
+        </div>
+        {rows.length > 3 ? (
+          <select value={outcomeFilter} onChange={(event) => setOutcomeFilter(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-300">
+            <option value="all">All outcomes</option>
+            <option value="interested">Interested</option>
+            <option value="not_interested">Not interested</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="no_show">No-show</option>
+            <option value="offer">Offer-related</option>
+          </select>
+        ) : null}
+      </div>
+      {filteredRows.length ? (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[920px] border-t border-slate-100 text-left">
+            <thead className="bg-slate-50/80">
+              <tr className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                <th className="px-5 py-3">Date & Time</th>
+                <th className="px-5 py-3">Property</th>
+                <th className="px-5 py-3">Outcome</th>
+                <th className="px-5 py-3">Notes</th>
+                <th className="px-5 py-3">Booked By</th>
+                <th className="px-5 py-3">Follow-up</th>
+                <th className="px-5 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredRows.map((appointment, index) => {
+                const propertyLabel = getAppointmentPropertyLabel(appointment, propertyOptions)
+                const propertyDescription = getAppointmentPropertyDescription(appointment, propertyOptions)
+                const outcome = normalizeText(appointment.outcomeSummary || appointment.outcome_summary || appointment.status) || 'Viewing completed'
+                const notes = normalizeText(appointment.clientFeedback || appointment.client_feedback || appointment.agentNotes || appointment.agent_notes || appointment.notes)
+                const nextStep = normalizeText(appointment.nextStep || appointment.next_step) || 'Follow up'
+                return (
+                  <tr key={getAppointmentId(appointment) || `${appointment.title || 'past-viewing'}-${index}`} className="align-middle text-sm">
+                    <td className="px-5 py-4">
+                      <p className="font-semibold text-slate-950">{formatDate(getAppointmentStartDate(appointment), 'Date TBC')}</p>
+                      <p className="mt-1 text-xs font-medium text-slate-500">{getAppointmentTimeLabel(appointment)}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <p className="font-semibold text-slate-950">{propertyLabel || 'Property TBC'}</p>
+                      <p className="mt-1 text-xs text-slate-500">{propertyDescription || 'Address pending'}</p>
+                    </td>
+                    <td className="px-5 py-4"><AppointmentStatusBadge status={outcome} /></td>
+                    <td className="max-w-[260px] px-5 py-4 text-slate-600"><p className="line-clamp-2">{notes || 'No viewing notes captured.'}</p></td>
+                    <td className="px-5 py-4 font-semibold text-slate-700">{getAppointmentBookedByLabel(appointment, actor)}</td>
+                    <td className="px-5 py-4 text-slate-600">{nextStep}</td>
+                    <td className="px-5 py-4">
+                      <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => onViewAppointment?.(appointment)} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50">View</button>
+                        <button type="button" onClick={() => onViewAppointment?.(appointment)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" aria-label="Open past viewing actions">
+                          <MoreVertical size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="border-t border-slate-100 p-6">
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+            <p className="text-sm font-semibold text-slate-950">No previous viewings</p>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Completed and cancelled property viewings will appear here.</p>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function BuyerViewingPlansModal({ open, appointments = [], propertyOptions = [], onClose, onViewAppointment }) {
+  const rows = useMemo(() => getBuyerViewingPlanSummary(appointments).viewingPlans, [appointments])
+  return (
+    <Modal open={open} onClose={onClose} title="Viewing Plans" subtitle="All viewing-related plans and appointments linked to this buyer." className="max-w-4xl">
+      {rows.length ? (
+        <div className="grid gap-3">
+          {rows.map((appointment, index) => (
+            <article key={getAppointmentId(appointment) || `${appointment.title || 'viewing-plan'}-${index}`} className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-950">{getAppointmentPropertyLabel(appointment, propertyOptions) || appointment.title || 'Viewing plan'}</p>
+                <p className="mt-1 truncate text-sm text-slate-500">{getAppointmentPropertyDescription(appointment, propertyOptions) || getAppointmentDateLabel(appointment)}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <AppointmentStatusBadge status={appointment.status || 'draft'} />
+                  <StatusPill tone={isAppointmentClosed(appointment) ? 'slate' : 'green'}>{isAppointmentClosed(appointment) ? 'Closed' : 'Active'}</StatusPill>
+                </div>
+              </div>
+              <button type="button" onClick={() => onViewAppointment?.(appointment)} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-blue-700 hover:bg-blue-50">Open</button>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+          <p className="text-sm font-semibold text-slate-950">No viewing plans yet</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Start a viewing request by selecting one or more properties for this buyer.</p>
+        </div>
+      )}
+    </Modal>
   )
 }
 
@@ -11854,10 +12274,11 @@ function ManualBuyerViewingCompletedModal({ open, organisationId, lead, actor, o
   )
 }
 
-function LeadAppointmentsPanel({ organisationId, lead, actor, onSaved, onBackToLead, onManualViewingCompleted, onCaptureManualOffer }) {
+function LeadAppointmentsPanel({ organisationId, lead, actor, timeline = [], onSaved, onViewActivity }) {
   const navigate = useNavigate()
   const [composerOpen, setComposerOpen] = useState(false)
   const [selectedAppointment, setSelectedAppointment] = useState(null)
+  const [plansOpen, setPlansOpen] = useState(false)
   const [activeListings, setActiveListings] = useState([])
   const [listingsLoading, setListingsLoading] = useState(false)
   const appointments = useMemo(() => Array.isArray(lead?.appointments) ? lead.appointments : [], [lead?.appointments])
@@ -11886,6 +12307,7 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, onSaved, onBackToL
 
   const closeComposer = useCallback(() => setComposerOpen(false), [])
   const closeDetails = useCallback(() => setSelectedAppointment(null), [])
+  const closePlans = useCallback(() => setPlansOpen(false), [])
   const handleComposerSaved = useCallback(async () => {
     setComposerOpen(false)
     await onSaved?.()
@@ -11893,58 +12315,36 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, onSaved, onBackToL
   const handleDetailsSaved = useCallback(async () => {
     await onSaved?.()
   }, [onSaved])
+  const openViewingPlan = useCallback((appointment = null) => {
+    if (appointment) {
+      setSelectedAppointment(appointment)
+      return
+    }
+    setPlansOpen(true)
+  }, [])
 
   return (
     <section className="grid gap-5">
-      <AppointmentsPageHeader
-        onBack={onBackToLead || (() => navigate(`/pipeline/leads/${lead?.leadId || ''}`))}
-        onSchedule={() => setComposerOpen(true)}
-        onViewCalendar={() => navigate('/pipeline/calendar')}
-      />
-
-      <section className={`${buyerWorkspaceCardClass} p-4 sm:p-5`}>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-500">Viewing progress</p>
-            <h2 className="mt-1 text-lg font-semibold tracking-[-0.04em] text-slate-950">Capture off-platform progress</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-500">Record completed viewings and submitted offers that happened by phone, WhatsApp, email, or in person.</p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button type="button" onClick={onManualViewingCompleted} disabled={!onManualViewingCompleted} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300">
-              <CheckCircle2 size={15} />
-              Viewing Completed
-            </button>
-            <button type="button" onClick={onCaptureManualOffer} disabled={!onCaptureManualOffer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
-              <Phone size={15} />
-              Capture Offer Submitted
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <UpcomingAppointmentCard
-        appointments={upcomingAppointments}
-        lead={lead}
+      <ViewingPlannerSummary
+        appointments={appointments}
         propertyOptions={propertyOptions}
-        onSchedule={() => setComposerOpen(true)}
-        onViewDetails={setSelectedAppointment}
-        onViewCalendar={() => navigate('/pipeline/calendar')}
+        onStartViewing={() => setComposerOpen(true)}
+        onViewPlan={openViewingPlan}
       />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <QuickScheduleCard
-          organisationId={organisationId}
+      <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
+        <BuyerLeadUpcomingAppointmentsSection
+          appointments={upcomingAppointments}
           lead={lead}
-          actor={actor}
           propertyOptions={propertyOptions}
-          onSaved={onSaved}
-          onOpenAdvanced={() => setComposerOpen(true)}
+          onStartViewing={() => setComposerOpen(true)}
+          onViewAppointment={setSelectedAppointment}
+          onViewCalendar={() => navigate('/pipeline/calendar')}
         />
-        <AvailabilityWorkflowCard
-          appointments={appointments}
-          propertyOptions={propertyOptions}
-          onViewResponses={() => setSelectedAppointment(upcomingAppointments[0] || appointments[0] || null)}
-          onRequestAvailability={() => setComposerOpen(true)}
+        <BuyerLeadRecentViewingActivity
+          lead={lead}
+          timeline={timeline}
+          onViewAll={onViewActivity}
         />
       </div>
 
@@ -11952,11 +12352,10 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, onSaved, onBackToL
         <p className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700">Loading active listing options...</p>
       ) : null}
 
-      <AppointmentHistoryTable
-        items={appointments}
-        lead={lead}
+      <BuyerLeadPastViewingsSection
+        appointments={appointments}
+        actor={actor}
         propertyOptions={propertyOptions}
-        onSchedule={() => setComposerOpen(true)}
         onViewAppointment={setSelectedAppointment}
       />
 
@@ -11976,6 +12375,17 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, onSaved, onBackToL
           onLeadUpdated={onSaved}
         />
       </Modal>
+
+      <BuyerViewingPlansModal
+        open={plansOpen}
+        appointments={appointments}
+        propertyOptions={propertyOptions}
+        onClose={closePlans}
+        onViewAppointment={(appointment) => {
+          setPlansOpen(false)
+          setSelectedAppointment(appointment)
+        }}
+      />
 
       <Modal
         open={Boolean(selectedAppointment)}
@@ -16484,6 +16894,14 @@ function SellerLeadHeader({
   const sellerEmail = normalizeText(row?.email || row?.contact?.email)
   const portalStatus = normalizeText(journey?.sellerPortalStatus || (getSellerPortalLink(row, listing) ? 'Active' : 'Pending'))
   const onboardingComplete = sellerOnboardingIsSubmitted(onboardingStatus)
+  const statusShortcuts = [
+    { actionId: 'edit_seller', label: 'Seller' },
+    { actionId: 'assign_agent', label: 'Owner' },
+    { actionId: 'open_journey', label: 'Journey' },
+    { actionId: 'open_readiness', label: 'Readiness' },
+    { actionId: 'open_listing', label: 'Listing' },
+    { actionId: 'view_mandate', label: 'Mandate' },
+  ]
   const downloadSellerPack = useCallback(async () => {
     try {
       setDownloadingSellerPack(true)
@@ -16532,6 +16950,18 @@ function SellerLeadHeader({
               <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700/70">Portal Status</span>
               <span className="mt-0.5 flex items-center gap-2 text-sm font-semibold text-emerald-800"><span className="h-2 w-2 rounded-full bg-emerald-600" />{portalStatus}</span>
             </div>
+          </div>
+          <div role="list" aria-label="Seller lead status shortcuts" className="flex flex-wrap gap-2">
+            {statusShortcuts.map((shortcut) => (
+              <button
+                key={shortcut.actionId}
+                type="button"
+                onClick={() => onStatusAction?.(shortcut.actionId)}
+                className="inline-flex min-h-8 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+              >
+                {shortcut.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -19862,17 +20292,7 @@ function SellerPropertyTab({ row, listing, onSavePropertyDetails }) {
   useEffect(() => {
     if (editing) return
     setDraft(createSellerPropertyDraft(property))
-  }, [
-    editing,
-    property.address,
-    property.askingPrice,
-    property.bathrooms,
-    property.bedrooms,
-    property.description,
-    property.erfSize,
-    property.parking,
-    property.propertyType,
-  ])
+  }, [editing, property])
 
   const updateDraft = useCallback((key, value) => {
     setError('')
@@ -23202,10 +23622,9 @@ function AgentLeadWorkspace() {
                   organisationId={organisationId}
                   lead={row}
                   actor={actor}
+                  timeline={data?.timeline || row.communicationTimeline || []}
                   onSaved={loadWorkspace}
-                  onBackToLead={() => setActiveTab('overview')}
-                  onManualViewingCompleted={openManualViewingCompleted}
-                  onCaptureManualOffer={openBuyerManualOfferCapture}
+                  onViewActivity={() => setActiveTab('timeline')}
                 />
               ) : null}
 

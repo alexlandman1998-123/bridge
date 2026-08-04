@@ -164,6 +164,22 @@ function normalize(value = '') {
   return String(value || '').trim().toLowerCase()
 }
 
+function firstText(...values) {
+  for (const value of values) {
+    const text = String(value || '').trim()
+    if (text) return text
+  }
+  return ''
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric) && numeric > 0) return numeric
+  }
+  return 0
+}
+
 function normalizePracticeQualifications(values = []) {
   const candidates = Array.isArray(values) ? values : String(values || '').split(',')
   return [...new Set(candidates
@@ -378,6 +394,9 @@ function getIncomingMatterHealth(row = {}) {
 function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
   const stage = getIncomingMatterStage(row)
   const health = getIncomingMatterHealth(row)
+  const rawTransaction = row.raw?.transaction || row.transaction || {}
+  const rawAllocation = row.raw?.allocation || row.allocation || {}
+  const rawOnboarding = row.raw?.onboarding || row.onboarding || {}
   const assignedAttorneyName = row.assignedAttorney?.name || 'Unassigned'
   const assignedAssistant = row.assignedSecretary?.id ? row.assignedSecretary : row.assignedAdminHandler
   const assistantName = assignedAssistant?.name || ''
@@ -390,6 +409,60 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
   const propertyLabel = resolvePortalPropertyLabel(row)
   const buyerName = resolvePortalBuyerName(row)
   const sellerName = resolvePortalSellerName(row, { fallback: 'Seller pending' })
+  const propertyAddress = firstText(
+    row.propertyAddress,
+    row.property,
+    rawTransaction.property_address_line_1,
+    rawTransaction.property_address,
+    rawTransaction.property_description,
+    rawAllocation.property_address,
+    rawAllocation.propertyAddress,
+    rawAllocation.address_line_1,
+    rawAllocation.addressLine1,
+    propertyLabel,
+  )
+  const propertyArea = [
+    firstText(row.suburb, rawTransaction.suburb, rawAllocation.suburb),
+    firstText(row.city, rawTransaction.city, rawAllocation.city),
+  ].filter(Boolean).join(', ')
+  const propertyThumbnailUrl = firstText(
+    row.propertyThumbnailUrl,
+    row.propertyImageUrl,
+    rawTransaction.property_image_url,
+    rawTransaction.propertyImageUrl,
+    rawTransaction.thumbnail_url,
+    rawTransaction.thumbnailUrl,
+    rawAllocation.property_image_url,
+    rawAllocation.propertyImageUrl,
+    rawAllocation.thumbnail_url,
+    rawAllocation.thumbnailUrl,
+    rawAllocation.cover_image_url,
+    rawAllocation.coverImageUrl,
+  )
+  const agentName = firstText(
+    row.agentName,
+    row.agent,
+    rawTransaction.assigned_agent,
+    rawAllocation.assigned_agent_name,
+    rawAllocation.assignedAgentName,
+    rawAllocation.agent_name,
+    rawAllocation.agentName,
+  )
+  const agentEmail = firstText(
+    row.agentEmail,
+    rawTransaction.assigned_agent_email,
+    rawAllocation.assigned_agent_email,
+    rawAllocation.assignedAgentEmail,
+    rawAllocation.agent_email,
+    rawAllocation.agentEmail,
+  )
+  const agentPhone = firstText(
+    row.agentPhone,
+    rawAllocation.assigned_agent_phone,
+    rawAllocation.assignedAgentPhone,
+    rawAllocation.agent_phone,
+    rawAllocation.agentPhone,
+  )
 
   const nextRow = {
     rowKind: row.rowKind || 'incoming',
@@ -406,12 +479,19 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
     laneKey,
     attorneyRole: row.attorneyRole || '',
     property: propertyLabel,
+    propertyAddress,
+    propertyArea,
+    propertyThumbnailUrl,
     buyer: buyerName,
     seller: sellerName,
+    sellerEmail: firstText(row.sellerEmail, rawTransaction.seller_email, rawAllocation.seller_email, rawAllocation.sellerEmail, rawOnboarding.seller_email),
+    sellerPhone: firstText(row.sellerPhone, rawTransaction.seller_phone, rawAllocation.seller_phone, rawAllocation.sellerPhone, rawOnboarding.seller_phone),
     development: row.development || '',
     unit: row.unit || '',
     phase: row.phase || '',
-    erf: '',
+    erf: firstText(row.erf, rawTransaction.erf_number, rawTransaction.erf, rawAllocation.erf_number, rawAllocation.erfNumber, rawAllocation.erf),
+    propertyType: firstText(row.propertyType, rawTransaction.property_type, rawAllocation.property_type, rawAllocation.propertyType),
+    listingReference: firstText(row.listingReference, rawTransaction.listing_reference, rawAllocation.listing_reference, rawAllocation.listingReference),
     stage,
     nextAction: row.nextAction || waitingOnLabels.join(', ') || 'Review incoming instruction',
     expectedDue: null,
@@ -430,12 +510,15 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
       initials: assignedAssistant?.initials || getInitials(assistantName),
     },
     assignedBySource: row.assignedBySource || { key: 'private', label: 'Private', kind: 'private', logoUrl: '' },
-    agent: row.agent || '',
+    agent: agentName,
+    agentName,
+    agentEmail,
+    agentPhone,
     bondOriginator: '',
     bank: '',
-    matterValue: Number(row.purchasePrice || 0),
+    matterValue: firstNumber(row.purchasePrice, rawTransaction.purchase_price, rawTransaction.sales_price, rawAllocation.asking_price, rawAllocation.askingPrice),
     financeType: row.financeType || '',
-    purchasePrice: Number(row.purchasePrice || 0),
+    purchasePrice: firstNumber(row.purchasePrice, rawTransaction.purchase_price, rawTransaction.sales_price, rawAllocation.asking_price, rawAllocation.askingPrice),
     propertyLabel,
     buyerName,
     sellerName,
@@ -443,6 +526,7 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
     lastUpdated: row.incomingSince || null,
     status: row.statusLabel || 'Incoming',
     statusKey,
+    incomingSince: row.incomingSince || null,
     lastActivity: row.incomingSince || null,
     createdAt: row.incomingSince || null,
     priority: health.key === 'attention' ? 'Medium' : 'Normal',
@@ -456,6 +540,7 @@ function normalizeIncomingMatterRow(row = {}, { currentUser = {} } = {}) {
     firmAcceptanceStatus: row.firmAcceptanceStatus || 'not_required',
     staffAssignmentStatus: row.staffAssignmentStatus || 'not_required',
     allocationState: row.allocationState || 'active',
+    raw: row.raw || {},
   }
 
   nextRow.searchText = [
@@ -1069,31 +1154,35 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
 
 export async function getAttorneyMatterWorkspace(options = {}) {
   const viewConfig = getAttorneyMatterViewConfig(options.view || 'all')
-  const [operational, incomingMatterSource] = await Promise.all([
-    getAttorneyOperationalWorkspaceData(options.firmId || null, options.userId || null),
-    viewConfig.usesIncomingQueue
-      ? getAttorneyIncomingMatterQueue({
-          firmId: options.firmId || null,
-          userId: options.userId || null,
-        })
-      : Promise.resolve(null),
-  ])
 
-  if (incomingMatterSource) {
-    operational.incomingMatterSource = incomingMatterSource
-    operational.incomingMatterQueue = incomingMatterSource.filteredRows || incomingMatterSource.rows || []
-    operational.firm = incomingMatterSource.firm || operational.firm
-    operational.currentUser = {
-      ...(operational.currentUser || {}),
-      ...(incomingMatterSource.currentUser || {}),
-      practiceQualifications:
-        incomingMatterSource.currentUser?.practiceQualifications ||
-        incomingMatterSource.currentUser?.practice_qualifications ||
-        operational.currentUser?.practiceQualifications ||
-        operational.currentUser?.practice_qualifications ||
-        [],
+  if (viewConfig.usesIncomingQueue) {
+    const incomingMatterSource = await getAttorneyIncomingMatterQueue({
+      firmId: options.firmId || null,
+      userId: options.userId || null,
+    })
+    const incomingUser = incomingMatterSource.currentUser || {}
+    const operational = {
+      firm: incomingMatterSource.firm || null,
+      currentUser: {
+        ...incomingUser,
+        practiceQualifications:
+          incomingUser.practiceQualifications ||
+          incomingUser.practice_qualifications ||
+          [],
+      },
+      permissions: incomingUser.permissions || {},
+      incomingMatterSource,
+      incomingMatterQueue: incomingMatterSource.filteredRows || incomingMatterSource.rows || [],
+      matterQueue: [],
+      documentQueue: [],
+      availableFilters: {
+        members: [],
+      },
     }
+
+    return buildAttorneyMatterWorkspace(operational, options)
   }
 
+  const operational = await getAttorneyOperationalWorkspaceData(options.firmId || null, options.userId || null)
   return buildAttorneyMatterWorkspace(operational, options)
 }

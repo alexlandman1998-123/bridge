@@ -84,6 +84,48 @@ const APPOINTMENT_TONES = {
     bg: '#f8fafc',
     border: '#dbe3ef',
   },
+  buyer: {
+    label: 'Buyer',
+    accent: '#2563eb',
+    text: '#1d4ed8',
+    bg: '#eff6ff',
+    border: '#bfdbfe',
+  },
+  seller: {
+    label: 'Seller',
+    accent: '#16a34a',
+    text: '#166534',
+    bg: '#ecfdf3',
+    border: '#bbf7d0',
+  },
+  both: {
+    label: 'Both Parties',
+    accent: '#8b5cf6',
+    text: '#6d28d9',
+    bg: '#f5f3ff',
+    border: '#ddd6fe',
+  },
+  deadline: {
+    label: 'Deadline',
+    accent: '#ef4444',
+    text: '#b42318',
+    bg: '#fef2f2',
+    border: '#fecaca',
+  },
+  task: {
+    label: 'Task',
+    accent: '#0f766e',
+    text: '#0f766e',
+    bg: '#f0fdfa',
+    border: '#99f6e4',
+  },
+  external: {
+    label: 'External',
+    accent: '#d97706',
+    text: '#92400e',
+    bg: '#fffbeb',
+    border: '#fde68a',
+  },
 }
 
 const STATUS_TONES = {
@@ -96,6 +138,19 @@ const STATUS_TONES = {
 }
 
 const VIEW_MODES = ['Day', 'Week', 'Month', 'Agenda']
+const STAFF_COLORS = ['#2563eb', '#16a34a', '#7c3aed', '#f97316', '#db2777', '#0891b2', '#65a30d', '#dc2626']
+const EVENT_TYPE_CARDS = [
+  { value: 'signing', appointmentType: 'transfer_signing', label: 'Signing', icon: Send },
+  { value: 'meeting', appointmentType: 'attorney_consultation', label: 'Meeting', icon: Users },
+  { value: 'deadline', appointmentType: 'internal_meeting', label: 'Deadline', icon: Clock3 },
+  { value: 'task', appointmentType: 'internal_meeting', label: 'Task', icon: CheckCircle2 },
+  { value: 'other', appointmentType: 'internal_meeting', label: 'Other', icon: LayoutGrid },
+]
+const RELATED_TO_OPTIONS = [
+  { value: 'buyer', label: 'Buyer' },
+  { value: 'seller', label: 'Seller' },
+  { value: 'both', label: 'Both' },
+]
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -173,6 +228,31 @@ function formatDateTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function toDateInputValue(value) {
+  const parsed = value instanceof Date ? value : new Date(value || '')
+  if (Number.isNaN(parsed.getTime())) return ''
+  const year = parsed.getFullYear()
+  const month = String(parsed.getMonth() + 1).padStart(2, '0')
+  const day = String(parsed.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getInitials(value = '') {
+  const parts = normalizeText(value).split(/\s+/).filter(Boolean)
+  if (!parts.length) return 'YL'
+  return parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')
+}
+
+function formatRoleLabel(value = '') {
+  const normalized = normalizeText(value)
+  if (!normalized) return 'Team Member'
+  return normalized
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
 }
 
 function formatJohannesburgDateTimeInput(value) {
@@ -330,6 +410,7 @@ function buildSchedulingRows({ appointmentRows = [], matterRows = [], documentRo
       return {
         ...row,
         matterType: matter?.matterType || row.matterType || 'Transfer',
+        propertyLabel: matter?.propertyLabel || row.propertyLabel || '',
         flags: matter?.flags || row.flags || {},
         operationalStatus,
         operationalStatusLabel: prettifyOperationalStatus(operationalStatus),
@@ -371,15 +452,32 @@ function buildRescheduleRows(appointmentRows = []) {
 
 function normalizeStaffOptions(members = []) {
   return (members || [])
-    .filter((member) => ['conveyancing_secretary', 'admin_staff', 'reception_scheduling', 'candidate_attorney'].includes(normalizeLower(member.role)))
+    .filter((member) => [
+      'attorney_conveyancer',
+      'transfer_attorney',
+      'bond_attorney',
+      'conveyancing_secretary',
+      'admin_staff',
+      'reception_scheduling',
+      'candidate_attorney',
+      'firm_admin',
+      'director_partner',
+    ].includes(normalizeLower(member.role)))
     .map((member) => ({
       value: member.value,
       label: member.label,
+      role: member.role,
     }))
 }
 
 function classifyAppointment(row = {}) {
-  const haystack = normalizeLower(`${row.appointmentTypeKey || ''} ${row.appointmentType || ''} ${row.status || ''}`)
+  const haystack = normalizeLower(`${row.appointmentTypeKey || ''} ${row.appointmentType || ''} ${row.status || ''} ${row.linkedWorkflow || ''} ${row.linkedWorkflowStage || ''}`)
+  if (haystack.includes('deadline')) return 'deadline'
+  if (haystack.includes('task')) return 'task'
+  if (haystack.includes('court') || haystack.includes('external')) return 'external'
+  if (haystack.includes('buyer') && haystack.includes('seller')) return 'both'
+  if (haystack.includes('buyer')) return 'buyer'
+  if (haystack.includes('seller')) return 'seller'
   if (haystack.includes('reschedule')) return 'reschedule'
   if (haystack.includes('bond')) return 'bond'
   if (haystack.includes('cancel')) return 'cancellation'
@@ -442,12 +540,14 @@ function buildVisibleRows(rows = [], filters = {}, selectedDate = new Date()) {
   return rows.filter((row) => {
     const searchable = normalizeLower([
       row.matterReference,
+      row.propertyLabel,
       row.clientName,
       row.appointmentType,
       row.status,
       row.resourceName,
       row.assignedAttorneyName,
       row.assignedSecretaryName,
+      row.assignedAdminHandlerName,
     ].join(' '))
     if (query && !searchable.includes(query)) return false
     if (!appointmentMatchesMatterType(row, filters.matterType)) return false
@@ -519,15 +619,6 @@ function buildMonthCells(selectedDate = new Date()) {
   return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index))
 }
 
-function metricSubtitle(key, value) {
-  if (key === 'todaysAppointments') return value ? 'On today' : 'No appointments today'
-  if (key === 'pendingConfirmations') return value ? 'Awaiting responses' : 'Clear'
-  if (key === 'blockedSignings') return value ? 'Require attention' : 'No blockers'
-  if (key === 'overdueSignings') return value ? 'Past due' : 'None overdue'
-  if (key === 'rescheduleRequests') return value ? 'Waiting on response' : 'No requests'
-  return 'This week'
-}
-
 function getInviteType(value = '') {
   return getAttorneyInviteTypeDefinition(value) || ATTORNEY_INVITE_TYPES[0]
 }
@@ -541,6 +632,7 @@ function buildMatterOptions(matterRows = []) {
       return {
         matterId,
         matterReference: matterReference || `MAT-${matterId.slice(0, 8).toUpperCase()}`,
+        propertyLabel: normalizeText(row.propertyLabel || row.property || row.address),
         clientName: normalizeText(row.clientName || row.buyerName || row.sellerName),
         matterType: normalizeText(row.matterType || row.assignmentType),
         organisationId: normalizeText(row.organisationId || row.organisation_id),
@@ -549,14 +641,97 @@ function buildMatterOptions(matterRows = []) {
     .filter(Boolean)
 }
 
+function buildStaffRows(members = [], rows = []) {
+  const seen = new Set()
+  const baseRows = normalizeStaffOptions(members).map((member, index) => {
+    seen.add(String(member.value || ''))
+    const color = STAFF_COLORS[index % STAFF_COLORS.length]
+    const appointments = rows.filter((row) => [
+      row.assignedAttorneyId,
+      row.assignedSecretaryId,
+      row.assignedAdminHandlerId,
+    ].some((id) => String(id || '') === String(member.value || ''))).length
+    return {
+      ...member,
+      roleLabel: formatRoleLabel(member.role),
+      initials: getInitials(member.label),
+      color,
+      appointments,
+    }
+  })
+
+  const syntheticRows = []
+  rows.forEach((row) => {
+    [
+      { id: row.assignedAttorneyId, name: row.assignedAttorneyName, role: 'Attorney' },
+      { id: row.assignedSecretaryId, name: row.assignedSecretaryName, role: 'Secretary' },
+      { id: row.assignedAdminHandlerId, name: row.assignedAdminHandlerName, role: 'Support Staff' },
+    ].forEach((staff) => {
+      const id = normalizeText(staff.id)
+      if (!id || seen.has(id)) return
+      seen.add(id)
+      const color = STAFF_COLORS[(baseRows.length + syntheticRows.length) % STAFF_COLORS.length]
+      syntheticRows.push({
+        value: id,
+        label: staff.name || 'Team Member',
+        role: staff.role,
+        roleLabel: staff.role,
+        initials: getInitials(staff.name),
+        color,
+        appointments: rows.filter((item) => [item.assignedAttorneyId, item.assignedSecretaryId, item.assignedAdminHandlerId].some((staffId) => String(staffId || '') === id)).length,
+      })
+    })
+  })
+
+  return [...baseRows, ...syntheticRows].filter((member) => normalizeText(member.value))
+}
+
+function appointmentMatchesStaffSelection(row = {}, selectedStaffIds = []) {
+  if (!selectedStaffIds.length) return true
+  return [
+    row.assignedAttorneyId,
+    row.assignedSecretaryId,
+    row.assignedAdminHandlerId,
+  ].some((id) => selectedStaffIds.includes(String(id || '')))
+}
+
+function getStaffForAppointment(row = {}, staffRows = []) {
+  return staffRows.find((staff) => [
+    row.assignedAttorneyId,
+    row.assignedSecretaryId,
+    row.assignedAdminHandlerId,
+  ].some((id) => String(id || '') === String(staff.value || ''))) || null
+}
+
+function createInviteDraftDefaults(selectedDate = new Date()) {
+  const start = new Date(selectedDate)
+  if (Number.isNaN(start.getTime())) {
+    return { ...DEFAULT_ATTORNEY_INVITE_DRAFT }
+  }
+  if (!start.getHours()) start.setHours(9, 0, 0, 0)
+  return {
+    ...DEFAULT_ATTORNEY_INVITE_DRAFT,
+    title: '',
+    eventType: 'signing',
+    date: toDateInputValue(start),
+    startTime: `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
+    endTime: `${String(Math.min(start.getHours() + 1, 23)).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
+    allDay: false,
+    repeat: 'none',
+    relatedTo: 'buyer',
+    visibility: 'shared_role_players',
+    reminder: '15',
+    sendNotifications: true,
+  }
+}
+
 function SchedulingPageHeader({ onCreateInvite, rolloutStatus }) {
   const inviteEnabled = rolloutStatus?.enabled === true
   return (
     <section className="scheduling-page-header">
       <div>
-        <span>Attorney Calendar</span>
-        <h1>Scheduling</h1>
-        <p>Signings, consultations, boardrooms, confirmations, and reschedules.</p>
+        <h1>Calendar</h1>
+        <p>Manage appointments, deadlines and important dates.</p>
       </div>
       <div className="scheduling-header-actions">
         <button
@@ -564,10 +739,10 @@ function SchedulingPageHeader({ onCreateInvite, rolloutStatus }) {
           className="scheduling-primary-action"
           onClick={onCreateInvite}
           disabled={!inviteEnabled}
-          title={inviteEnabled ? 'Create a calendar invite' : 'Create Invite is outside the active rollout cohort'}
+          title={inviteEnabled ? 'Create a new event' : 'New Event is outside the active rollout cohort'}
         >
           <Plus size={16} />
-          Create Invite
+          New Event
         </button>
       </div>
     </section>
@@ -582,71 +757,112 @@ function FilterToolbar({ filters, setFilters, resources, memberOptions }) {
         <input
           value={filters.query}
           onChange={(event) => setFilters((previous) => ({ ...previous, query: event.target.value }))}
-          placeholder="Search matters, clients, or appointments..."
+          placeholder="Search matters, clients or appointments..."
         />
       </label>
       <select value={filters.attorney} onChange={(event) => setFilters((previous) => ({ ...previous, attorney: event.target.value }))}>
-        <option value="all">All attorneys</option>
+        <option value="all">All Attorneys</option>
         {memberOptions.map((member) => (
           <option key={member.value} value={member.value}>{member.label}</option>
         ))}
       </select>
       <select value={filters.matterType} onChange={(event) => setFilters((previous) => ({ ...previous, matterType: event.target.value }))}>
-        <option value="all">All matter types</option>
+        <option value="all">All Matter Types</option>
         <option value="transfer">Transfer</option>
         <option value="bond">Bond</option>
         <option value="cancellation">Cancellation</option>
       </select>
       <select value={filters.status} onChange={(event) => setFilters((previous) => ({ ...previous, status: event.target.value }))}>
-        <option value="all">All statuses</option>
+        <option value="all">All Statuses</option>
         <option value="confirmed">Confirmed</option>
         <option value="awaiting_confirmation">Pending</option>
         <option value="reschedule_requested">Reschedule requested</option>
         <option value="blocked">Blocked</option>
       </select>
       <select value={filters.boardroom} onChange={(event) => setFilters((previous) => ({ ...previous, boardroom: event.target.value }))}>
-        <option value="all">All boardrooms</option>
+        <option value="all">All Boardrooms</option>
         <option value="unassigned">Unassigned</option>
         {resources.map((resource) => (
           <option key={resource.resourceId} value={resource.resourceId}>{resource.resourceName}</option>
         ))}
       </select>
       <select value={filters.dateRange} onChange={(event) => setFilters((previous) => ({ ...previous, dateRange: event.target.value }))}>
-        <option value="all">All dates</option>
+        <option value="all">All Dates</option>
         <option value="today">Today</option>
-        <option value="week">This week</option>
-        <option value="month">This month</option>
+        <option value="week">This Week</option>
+        <option value="month">This Month</option>
       </select>
+      <button type="button" className="scheduling-filter-icon" aria-label="Advanced calendar filters">
+        <Filter size={16} />
+      </button>
     </section>
   )
 }
 
-function MetricsStrip({ metrics }) {
+function MiniMonthPicker({ selectedDate, setSelectedDate }) {
+  const monthStart = startOfMonth(selectedDate)
+  const cells = buildMonthCells(selectedDate).slice(0, 35)
+
+  function shiftMonth(direction) {
+    setSelectedDate((previous) => {
+      const next = new Date(previous)
+      next.setMonth(next.getMonth() + direction)
+      return next
+    })
+  }
+
+  return (
+    <aside className="mini-month-picker" aria-label="Monthly date picker">
+      <div className="mini-month-header">
+        <strong>{selectedDate.toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })}</strong>
+        <span>
+          <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month"><ChevronLeft size={14} /></button>
+          <button type="button" onClick={() => shiftMonth(1)} aria-label="Next month"><ChevronRight size={14} /></button>
+        </span>
+      </div>
+      <div className="mini-month-grid">
+        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
+        {cells.map((day) => (
+          <button
+            key={day.toISOString()}
+            type="button"
+            className={`${day.getMonth() !== monthStart.getMonth() ? 'is-muted' : ''} ${isSameCalendarDay(day, selectedDate) ? 'is-selected' : ''}`}
+            onClick={() => setSelectedDate(day)}
+          >
+            {day.getDate()}
+          </button>
+        ))}
+      </div>
+    </aside>
+  )
+}
+
+function MetricsStrip({ metrics, selectedDate, setSelectedDate }) {
   const cards = [
-    { key: 'todaysAppointments', label: "Today's Appointments", icon: CalendarDays, value: metrics.todaysAppointments },
-    { key: 'pendingConfirmations', label: 'Pending Confirmations', icon: Clock3, value: metrics.pendingConfirmations },
-    { key: 'blockedSignings', label: 'Blocked Signings', icon: AlertTriangle, value: metrics.blockedSignings },
-    { key: 'overdueSignings', label: 'Overdue Signings', icon: AlertTriangle, value: metrics.overdueSignings },
-    { key: 'rescheduleRequests', label: 'Reschedule Requests', icon: RefreshCw, value: metrics.rescheduleRequests },
-    { key: 'boardroomUtilisation', label: 'Boardroom Utilisation', icon: Users, value: `${metrics.boardroomUtilisation}%` },
+    { key: 'today', title: 'Today', label: 'Appointments', icon: CalendarDays, value: metrics.todaysAppointments, tone: 'blue' },
+    { key: 'week', title: 'This Week', label: 'Appointments', icon: CalendarDays, value: metrics.thisWeekAppointments, tone: 'green' },
+    { key: 'pending', title: 'Pending', label: 'Confirmations', icon: Clock3, value: metrics.pendingConfirmations, tone: 'amber' },
+    { key: 'overdue', title: 'Overdue', label: 'Items', icon: AlertTriangle, value: metrics.overdueItems, tone: 'red' },
   ]
 
   return (
-    <section className="scheduling-metrics">
-      {cards.map((card) => {
-        const Icon = card.icon
-        const isRisk = ['blockedSignings', 'overdueSignings'].includes(card.key) && Number(card.value) > 0
-        return (
-          <article key={card.key} className={`scheduling-metric-card ${isRisk ? 'is-risk' : ''}`}>
-            <div className="scheduling-metric-icon"><Icon size={16} /></div>
-            <div>
-              <p>{card.label}</p>
-              <strong>{card.value}</strong>
-              <span>{metricSubtitle(card.key, Number(card.value) || 0)}</span>
-            </div>
-          </article>
-        )
-      })}
+    <section className="scheduling-summary-row">
+      <div className="scheduling-metrics">
+        {cards.map((card) => {
+          const Icon = card.icon
+          return (
+            <article key={card.key} className={`scheduling-metric-card tone-${card.tone}`}>
+              <div className="scheduling-metric-icon"><Icon size={18} /></div>
+              <div>
+                <p>{card.title}</p>
+                <strong>{card.value}</strong>
+                <span>{card.label}</span>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+      <MiniMonthPicker selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
     </section>
   )
 }
@@ -660,41 +876,59 @@ function StatusBadge({ row }) {
   )
 }
 
-function UpcomingSigningsPanel({ rows, onSelect, onResendCommunication }) {
+function StaffVisibilityPanel({ staffRows, selectedStaffIds, setSelectedStaffIds }) {
+  const allSelected = selectedStaffIds.length === 0
+
+  function toggleStaff(id) {
+    const value = String(id || '')
+    setSelectedStaffIds((previous) => {
+      if (previous.includes(value)) return previous.filter((item) => item !== value)
+      return [...previous, value]
+    })
+  }
+
   return (
-    <section className="scheduling-panel upcoming-signings-panel">
+    <section className="scheduling-panel staff-visibility-panel">
       <div className="scheduling-panel-header">
-        <h2>Upcoming Signings</h2>
-        <button type="button">View all</button>
+        <h2>Attorneys</h2>
+        <button type="button" onClick={() => setSelectedStaffIds([])}>View everyone</button>
       </div>
-      {!rows.length ? (
+      {!staffRows.length ? (
         <div className="scheduling-empty-state">
-          <CalendarDays size={18} />
-          <strong>No signings match these filters</strong>
-          <span>Confirmed and pending appointments will appear here.</span>
+          <Users size={18} />
+          <strong>No staff calendars yet</strong>
+          <span>Assigned appointment owners will appear here.</span>
         </div>
       ) : (
-        <div className="scheduling-row-list">
-          {rows.slice(0, 10).map((row) => {
-            const tone = getAppointmentTone(row)
+        <div className="staff-list">
+          <button
+            type="button"
+            className={`staff-row ${allSelected ? 'is-active' : ''}`}
+            onClick={() => setSelectedStaffIds([])}
+          >
+            <span className="staff-avatar is-all"><Users size={15} /></span>
+            <span>
+              <strong>Everyone</strong>
+              <small>Firm calendar</small>
+            </span>
+            <i style={{ background: '#0f3558' }} />
+          </button>
+          {staffRows.map((staff) => {
+            const active = allSelected || selectedStaffIds.includes(String(staff.value))
             return (
-              <article key={row.id} className="scheduling-queue-row">
-                <span className="scheduling-row-dot" style={{ background: tone.accent }} />
-                <button type="button" className="scheduling-row-main" onClick={() => onSelect(row)}>
-                  <strong>{row.matterReference}</strong>
-                  <span>{row.clientName || 'Client pending'} - {formatDate(row.dateTime, { includeYear: false })} - {formatTime(row.dateTime)}</span>
-                </button>
-                <div className="scheduling-row-meta">
-                  <span style={{ color: tone.text }}>{tone.label}</span>
-                  <StatusBadge row={row} />
-                </div>
-                <div className="scheduling-row-actions">
-                  {row.operationalStatus === 'awaiting_confirmation' ? (
-                    <button type="button" onClick={() => onResendCommunication(row, 'confirmation')}>Remind</button>
-                  ) : null}
-                  <button type="button" onClick={() => onSelect(row)}>Open</button>
-                </div>
-              </article>
+              <button
+                key={staff.value}
+                type="button"
+                className={`staff-row ${active ? 'is-active' : 'is-muted'}`}
+                onClick={() => toggleStaff(staff.value)}
+              >
+                <span className="staff-avatar" style={{ borderColor: staff.color }}>{staff.initials}</span>
+                <span>
+                  <strong>{staff.label}</strong>
+                  <small>{staff.roleLabel}</small>
+                </span>
+                <i style={{ background: staff.color }} />
+              </button>
             )
           })}
         </div>
@@ -720,6 +954,12 @@ function CalendarControls({ viewMode, setViewMode, selectedDate, setSelectedDate
 
   return (
     <div className="calendar-controls">
+      <div className="calendar-date-controls">
+        <button type="button" aria-label="Previous" onClick={() => shiftDate(-1)}><ChevronLeft size={16} /></button>
+        <button type="button" onClick={() => setSelectedDate(new Date())}>Today</button>
+        <button type="button" aria-label="Next" onClick={() => shiftDate(1)}><ChevronRight size={16} /></button>
+        <strong>{rangeLabel}</strong>
+      </div>
       <div className="calendar-view-toggle">
         {VIEW_MODES.map((mode) => (
           <button
@@ -732,18 +972,11 @@ function CalendarControls({ viewMode, setViewMode, selectedDate, setSelectedDate
           </button>
         ))}
       </div>
-      <div className="calendar-date-controls">
-        <button type="button" onClick={() => setSelectedDate(new Date())}>Today</button>
-        <button type="button" aria-label="Previous" onClick={() => shiftDate(-1)}><ChevronLeft size={16} /></button>
-        <button type="button" aria-label="Next" onClick={() => shiftDate(1)}><ChevronRight size={16} /></button>
-        <strong>{rangeLabel}</strong>
-        <button type="button" aria-label="Calendar filters"><Filter size={15} /> Filters</button>
-      </div>
     </div>
   )
 }
 
-function WeekCalendar({ rows, viewMode, selectedDate, onSelect }) {
+function WeekCalendar({ rows, viewMode, selectedDate, onSelect, staffRows }) {
   const columns = buildDayColumns(viewMode, selectedDate)
   const timeSlots = Array.from({ length: BUSINESS_DAY_END - BUSINESS_DAY_START }, (_, index) => BUSINESS_DAY_START + index)
   const now = new Date()
@@ -782,6 +1015,7 @@ function WeekCalendar({ rows, viewMode, selectedDate, onSelect }) {
                 const top = Math.max(0, Math.min(93, (minutesFromStart / BUSINESS_DAY_MINUTES) * 100))
                 const height = Math.max(7, Math.min(22, (resolveAppointmentDuration(row) / BUSINESS_DAY_MINUTES) * 100))
                 const tone = getAppointmentTone(row)
+                const staff = getStaffForAppointment(row, staffRows)
                 return (
                   <button
                     key={row.id}
@@ -792,13 +1026,15 @@ function WeekCalendar({ rows, viewMode, selectedDate, onSelect }) {
                       minHeight: `${height}%`,
                       background: tone.bg,
                       borderColor: tone.border,
+                      borderLeftColor: staff?.color || tone.accent,
                       color: tone.text,
                     }}
                     onClick={() => onSelect(row)}
                   >
-                    <span>{tone.label}</span>
-                    <strong>{row.matterReference}</strong>
+                    <span>{row.matterReference}</span>
+                    <strong>{row.appointmentType || tone.label}</strong>
                     <small>{formatTime(row.dateTime)} - {formatTime(new Date(parsed.getTime() + resolveAppointmentDuration(row) * 60 * 1000))}</small>
+                    <small>{staff?.label || row.assignedAttorneyName || row.assignedSecretaryName || tone.label}</small>
                   </button>
                 )
               })}
@@ -866,7 +1102,7 @@ function AgendaCalendar({ rows, onSelect }) {
   )
 }
 
-function CalendarSurface({ rows, viewMode, setViewMode, selectedDate, setSelectedDate, onSelect }) {
+function CalendarSurface({ rows, viewMode, setViewMode, selectedDate, setSelectedDate, onSelect, staffRows }) {
   return (
     <section className="scheduling-panel calendar-surface">
       <CalendarControls
@@ -881,7 +1117,7 @@ function CalendarSurface({ rows, viewMode, setViewMode, selectedDate, setSelecte
         ) : normalizeLower(viewMode) === 'agenda' ? (
           <AgendaCalendar rows={rows} onSelect={onSelect} />
         ) : (
-          <WeekCalendar rows={rows} viewMode={viewMode} selectedDate={selectedDate} onSelect={onSelect} />
+          <WeekCalendar rows={rows} viewMode={viewMode} selectedDate={selectedDate} onSelect={onSelect} staffRows={staffRows} />
         )}
       </div>
       <div className="calendar-legend">
@@ -1052,6 +1288,7 @@ export function CreateInviteDrawer({
   setDraft,
   matterOptions,
   resources,
+  staffOptions = [],
   busyId,
   onClose,
   onSubmit,
@@ -1060,135 +1297,246 @@ export function CreateInviteDrawer({
   const selectedInviteType = getInviteType(draft.appointmentType)
   const selectedMatter = matterOptions.find((matter) => matter.matterId === draft.matterId)
   const isBoardroomInvite = draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.boardroom
+  const selectedEventType = draft.eventType || 'signing'
+  const matterRequired = draft.appointmentType !== 'internal_meeting'
+  const searchableMatterOptions = matterOptions.filter((matter) => {
+    const query = normalizeLower(draft.matterSearch || '')
+    if (!query) return true
+    return normalizeLower(`${matter.matterReference} ${matter.propertyLabel} ${matter.clientName}`).includes(query)
+  }).slice(0, 8)
 
   function updateDraft(key, value) {
     setDraft((previous) => ({ ...previous, [key]: value }))
   }
 
   return (
-    <aside className="invite-drawer" aria-label="Create attorney invite">
-      <form className="invite-drawer-card" onSubmit={onSubmit}>
-        <div className="appointment-drawer-header">
-          <span>Create Invite</span>
+    <aside className="invite-drawer event-modal-backdrop" aria-label="Create new calendar event">
+      <form className="invite-drawer-card event-modal-card" onSubmit={onSubmit}>
+        <div className="event-modal-header">
+          <div className="event-modal-title">
+            <span><CalendarDays size={18} /></span>
+            <div>
+              <h2>New Event</h2>
+              <p>Schedule an appointment, deadline or important action.</p>
+            </div>
+          </div>
           <button type="button" onClick={onClose} aria-label="Close create invite"><X size={17} /></button>
         </div>
 
-        <div>
-          <h2>Attorney invite</h2>
-          <p>Send a signing, consultation, or firm coordination invite from the conveyancing calendar.</p>
-        </div>
+        <div className="event-modal-body">
+          <div className="event-modal-column">
+            <label className="drawer-field invite-field-wide">
+              <span>Event Title *</span>
+              <input
+                value={draft.title || ''}
+                onChange={(event) => updateDraft('title', event.target.value)}
+                placeholder="e.g. OTP Signing with Buyer"
+                required
+              />
+            </label>
 
-        <div className="invite-type-list" role="radiogroup" aria-label="Invite type">
-          {ATTORNEY_INVITE_TYPES.map((type) => (
-            <button
-              key={type.value}
-              type="button"
-              className={`invite-type-option ${draft.appointmentType === type.value ? 'is-active' : ''}`}
-              aria-pressed={draft.appointmentType === type.value}
-              onClick={() => updateDraft('appointmentType', type.value)}
-            >
-              <strong>{type.label}</strong>
-              <span>{type.helper}</span>
-            </button>
-          ))}
-        </div>
+            <div className="drawer-field invite-field-wide">
+              <span>Event Type *</span>
+              <div className="event-type-card-list" role="radiogroup" aria-label="Event type">
+                {EVENT_TYPE_CARDS.map((type) => {
+                  const Icon = type.icon
+                  return (
+                    <button
+                      key={type.value}
+                      type="button"
+                      className={`event-type-card ${selectedEventType === type.value ? 'is-active' : ''}`}
+                      aria-pressed={selectedEventType === type.value}
+                      onClick={() => {
+                        setDraft((previous) => ({
+                          ...previous,
+                          eventType: type.value,
+                          appointmentType: type.appointmentType,
+                        }))
+                      }}
+                    >
+                      <Icon size={17} />
+                      <strong>{type.label}</strong>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
 
-        <div className="invite-selected-summary">
-          <Send size={15} />
-          <span>{selectedInviteType.label}</span>
-          {selectedMatter ? <strong>{selectedMatter.matterReference}</strong> : <strong>Matter required</strong>}
-        </div>
+            <div className="drawer-field invite-field-wide">
+              <span>Date &amp; Time *</span>
+              <div className="event-date-grid">
+                <input type="date" value={draft.date} onChange={(event) => updateDraft('date', event.target.value)} required />
+                <input type="time" value={draft.startTime} onChange={(event) => updateDraft('startTime', event.target.value)} required />
+                <input type="time" value={draft.endTime || ''} onChange={(event) => updateDraft('endTime', event.target.value)} />
+                <label className="event-check-row">
+                  <input type="checkbox" checked={Boolean(draft.allDay)} onChange={(event) => updateDraft('allDay', event.target.checked)} />
+                  <span>All day</span>
+                </label>
+              </div>
+              <select value={draft.timezone || APPOINTMENT_RESCHEDULE_TIMEZONE} onChange={(event) => updateDraft('timezone', event.target.value)}>
+                <option value={APPOINTMENT_RESCHEDULE_TIMEZONE}>(GMT+02:00) South Africa Standard Time</option>
+              </select>
+            </div>
 
-        <div className="invite-form-grid">
-          <label className="drawer-field invite-field-wide">
-            <span>Matter</span>
-            <select value={draft.matterId} onChange={(event) => updateDraft('matterId', event.target.value)} required>
-              <option value="">Choose a matter</option>
-              {matterOptions.map((matter) => (
-                <option key={matter.matterId} value={matter.matterId}>
-                  {matter.matterReference} {matter.clientName ? `- ${matter.clientName}` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label className="drawer-field invite-field-wide">
+              <span>Repeat</span>
+              <select value={draft.repeat || 'none'} onChange={(event) => updateDraft('repeat', event.target.value)}>
+                <option value="none">Does not repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </label>
 
-          <label className="drawer-field">
-            <span>Invitee name</span>
-            <input
-              value={draft.recipientName}
-              onChange={(event) => updateDraft('recipientName', event.target.value)}
-              placeholder="Client or staff name"
-            />
-          </label>
+            <div className="drawer-field invite-field-wide">
+              <span>Location</span>
+              <select value={draft.locationMode} onChange={(event) => updateDraft('locationMode', event.target.value)} required>
+                {ATTORNEY_INVITE_LOCATION_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              {isBoardroomInvite ? null : (
+                <input
+                  value={draft.location}
+                  onChange={(event) => updateDraft('location', event.target.value)}
+                  placeholder={draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.videoCall ? 'Microsoft Teams, Zoom or meeting link' : 'Office, external address or phone details'}
+                  required
+                />
+              )}
+            </div>
 
-          <label className="drawer-field">
-            <span>Invitee email</span>
-            <input
-              type="email"
-              value={draft.recipientEmail}
-              onChange={(event) => updateDraft('recipientEmail', event.target.value)}
-              placeholder="name@example.com"
-              required
-            />
-          </label>
+            <label className="drawer-field invite-field-wide">
+              <span>Description / Notes</span>
+              <textarea
+                value={draft.notes}
+                onChange={(event) => updateDraft('notes', event.target.value)}
+                placeholder="Add any additional details, agenda or notes..."
+                rows={5}
+                maxLength={500}
+              />
+              <small>{normalizeText(draft.notes).length}/500</small>
+            </label>
 
-          <label className="drawer-field">
-            <span>Date</span>
-            <input type="date" value={draft.date} onChange={(event) => updateDraft('date', event.target.value)} required />
-          </label>
+            <div className="drawer-field invite-field-wide">
+              <span>Invitees</span>
+              <input
+                value={draft.recipientEmail}
+                onChange={(event) => updateDraft('recipientEmail', event.target.value)}
+                placeholder="Search to add attorneys, staff or external contacts..."
+                type="email"
+                required
+              />
+              <input
+                value={draft.recipientName}
+                onChange={(event) => updateDraft('recipientName', event.target.value)}
+                placeholder="Invitee name"
+              />
+            </div>
+          </div>
 
-          <label className="drawer-field">
-            <span>Start time</span>
-            <input type="time" value={draft.startTime} onChange={(event) => updateDraft('startTime', event.target.value)} required />
-          </label>
+          <div className="event-modal-column event-modal-side">
+            <div className="drawer-field invite-field-wide">
+              <span>Link to Matter</span>
+              <input
+                value={draft.matterSearch || ''}
+                onChange={(event) => updateDraft('matterSearch', event.target.value)}
+                placeholder="Search matter number or address..."
+              />
+              <select value={draft.matterId} onChange={(event) => updateDraft('matterId', event.target.value)} required={matterRequired}>
+                <option value="">Choose a matter</option>
+                {searchableMatterOptions.map((matter) => (
+                  <option key={matter.matterId} value={matter.matterId}>
+                    {matter.matterReference} {matter.propertyLabel ? `- ${matter.propertyLabel}` : matter.clientName ? `- ${matter.clientName}` : ''}
+                  </option>
+                ))}
+              </select>
+              {selectedMatter ? (
+                <div className="linked-matter-card">
+                  <div>
+                    <strong>{selectedMatter.matterReference}</strong>
+                    <span>{selectedMatter.propertyLabel || selectedMatter.clientName || 'Property pending'}</span>
+                  </div>
+                  <small>{selectedMatter.matterType || selectedInviteType.label}</small>
+                  <button type="button" onClick={() => updateDraft('matterId', '')} aria-label="Remove linked matter"><X size={14} /></button>
+                </div>
+              ) : null}
+            </div>
 
-          <label className="drawer-field">
-            <span>Location type</span>
-            <select value={draft.locationMode} onChange={(event) => updateDraft('locationMode', event.target.value)} required>
-              {ATTORNEY_INVITE_LOCATION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
+            {selectedMatter ? (
+              <div className="drawer-field invite-field-wide">
+                <span>Related To</span>
+                <div className="related-toggle">
+                  {RELATED_TO_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={draft.relatedTo === option.value ? 'is-active' : ''}
+                      onClick={() => updateDraft('relatedTo', option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
-          {isBoardroomInvite ? (
-            <label className="drawer-field">
+            <label className="drawer-field invite-field-wide">
               <span>Boardroom</span>
-              <select value={draft.resourceId} onChange={(event) => updateDraft('resourceId', event.target.value)} required>
-                <option value="">Choose boardroom</option>
+              <select value={draft.resourceId} onChange={(event) => {
+                updateDraft('resourceId', event.target.value)
+                if (event.target.value) updateDraft('locationMode', ATTORNEY_INVITE_LOCATION_MODES.boardroom)
+              }}>
+                <option value="">No boardroom</option>
                 {resources.map((resource) => (
                   <option key={resource.resourceId} value={resource.resourceId}>{resource.resourceName}</option>
                 ))}
               </select>
             </label>
-          ) : (
-            <label className="drawer-field">
-              <span>{draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.videoCall ? 'Meeting link' : 'Location'}</span>
-              <input
-                value={draft.location}
-                onChange={(event) => updateDraft('location', event.target.value)}
-                placeholder={draft.locationMode === ATTORNEY_INVITE_LOCATION_MODES.videoCall ? 'Teams or Meet link' : 'Address or phone details'}
-                required
-              />
-            </label>
-          )}
 
-          <label className="drawer-field invite-field-wide">
-            <span>Notes</span>
-            <textarea
-              value={draft.notes}
-              onChange={(event) => updateDraft('notes', event.target.value)}
-              placeholder="Anything the invitee should know before the appointment"
-              rows={4}
-            />
-          </label>
+            <label className="drawer-field invite-field-wide">
+              <span>Attorneys / Staff</span>
+              <select value="" onChange={(event) => updateDraft('assignedStaffId', event.target.value)}>
+                <option value="">Choose staff member</option>
+                {staffOptions.map((member) => (
+                  <option key={member.value} value={member.value}>{member.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="drawer-field invite-field-wide">
+              <span>Visibility</span>
+              <select value={draft.visibility || 'shared_role_players'} onChange={(event) => updateDraft('visibility', event.target.value)}>
+                <option value="shared_role_players">All Firm</option>
+                <option value="internal_only">Internal Only</option>
+                <option value="client_visible">Client Visible</option>
+              </select>
+            </label>
+
+            <label className="drawer-field invite-field-wide">
+              <span>Reminder</span>
+              <select value={draft.reminder || '15'} onChange={(event) => updateDraft('reminder', event.target.value)}>
+                <option value="15">15 minutes before</option>
+                <option value="30">30 minutes before</option>
+                <option value="60">1 hour before</option>
+                <option value="1440">1 day before</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         <div className="invite-actions">
+          <label className="event-check-row event-notify-row">
+            <input
+              type="checkbox"
+              checked={draft.sendNotifications !== false}
+              onChange={(event) => updateDraft('sendNotifications', event.target.checked)}
+            />
+            <span>Send notifications</span>
+          </label>
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" disabled={Boolean(busyId)}>
             <Send size={15} />
-            Create Invite
+            Create Event
           </button>
         </div>
       </form>
@@ -1358,7 +1706,7 @@ function SchedulingStyles() {
 
       .scheduling-toolbar {
         display: grid;
-        grid-template-columns: minmax(240px, 1fr) repeat(5, minmax(136px, 0.35fr));
+        grid-template-columns: minmax(260px, 1fr) repeat(5, minmax(132px, 0.35fr)) 2.35rem;
         gap: 0.55rem;
         align-items: center;
         padding: 0.72rem;
@@ -2152,9 +2500,410 @@ function SchedulingStyles() {
         justify-content: flex-end;
       }
 
+      .scheduling-summary-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 228px;
+        gap: 1rem;
+        align-items: stretch;
+      }
+
+      .scheduling-metrics {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .scheduling-metric-card {
+        min-height: 7.25rem;
+        border-radius: 14px;
+        padding: 1rem;
+        align-items: center;
+      }
+
+      .scheduling-metric-icon {
+        width: 2.35rem;
+        height: 2.35rem;
+        border-radius: 13px;
+      }
+
+      .scheduling-metric-card.tone-green .scheduling-metric-icon {
+        background: #ecfdf3;
+        color: #087443;
+      }
+
+      .scheduling-metric-card.tone-amber .scheduling-metric-icon {
+        background: #fff7ed;
+        color: #c2410c;
+      }
+
+      .scheduling-metric-card.tone-red .scheduling-metric-icon {
+        background: #fef3f2;
+        color: #b42318;
+      }
+
+      .scheduling-metric-card p {
+        color: #60748c;
+        font-weight: 700;
+      }
+
+      .scheduling-metric-card strong {
+        font-size: 2rem;
+      }
+
+      .mini-month-picker {
+        border: 1px solid #dce6f2;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: 0 8px 24px rgba(15, 35, 65, 0.05);
+        padding: 0.8rem;
+      }
+
+      .mini-month-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.6rem;
+        margin-bottom: 0.55rem;
+      }
+
+      .mini-month-header strong {
+        color: #10233f;
+        font-size: 0.82rem;
+      }
+
+      .mini-month-header span {
+        display: inline-flex;
+        gap: 0.25rem;
+      }
+
+      .mini-month-header button,
+      .scheduling-filter-icon {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 9px;
+        border: 1px solid #d9e4f0;
+        background: #fff;
+        color: #18314d;
+        display: inline-grid;
+        place-items: center;
+        cursor: pointer;
+      }
+
+      .mini-month-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 0.16rem;
+      }
+
+      .mini-month-grid span,
+      .mini-month-grid button {
+        min-height: 1.34rem;
+        border: 0;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: transparent;
+        color: #60748c;
+        font-size: 0.68rem;
+        font-weight: 700;
+      }
+
+      .mini-month-grid button {
+        cursor: pointer;
+      }
+
+      .mini-month-grid button.is-muted {
+        color: #a7b3c2;
+      }
+
+      .mini-month-grid button.is-selected {
+        background: #0f3558;
+        color: #fff;
+      }
+
+      .staff-list {
+        display: grid;
+      }
+
+      .staff-row {
+        width: 100%;
+        min-height: 4rem;
+        border: 0;
+        border-bottom: 1px solid #edf2f7;
+        background: #fff;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 0.7rem;
+        padding: 0.65rem 0.8rem;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .staff-row.is-active {
+        background: #f7fbfa;
+      }
+
+      .staff-row.is-muted {
+        opacity: 0.48;
+      }
+
+      .staff-avatar {
+        width: 2.15rem;
+        height: 2.15rem;
+        border: 2px solid #d9e4f0;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: #fff;
+        color: #10233f;
+        font-size: 0.72rem;
+        font-weight: 800;
+      }
+
+      .staff-avatar.is-all {
+        border-color: #d9e4f0;
+        background: #eff6ff;
+        color: #1459b8;
+      }
+
+      .staff-row strong,
+      .staff-row small {
+        display: block;
+      }
+
+      .staff-row strong {
+        color: #10233f;
+        font-size: 0.82rem;
+      }
+
+      .staff-row small {
+        margin-top: 0.12rem;
+        color: #60748c;
+        font-size: 0.72rem;
+      }
+
+      .staff-row i {
+        width: 0.44rem;
+        height: 0.44rem;
+        border-radius: 999px;
+      }
+
+      .calendar-controls {
+        flex-wrap: nowrap;
+      }
+
+      .calendar-date-controls strong {
+        text-align: left;
+        min-width: 13rem;
+      }
+
+      .event-modal-backdrop {
+        justify-content: center;
+        align-items: center;
+        background: rgba(7, 18, 36, 0.42);
+      }
+
+      .event-modal-card {
+        width: min(980px, calc(100vw - 2rem));
+        max-height: calc(100vh - 2rem);
+        height: auto;
+        margin: 1rem;
+        padding: 0;
+        overflow: hidden;
+      }
+
+      .event-modal-header {
+        min-height: 5.7rem;
+        border-bottom: 1px solid #e4ecf5;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.35rem;
+      }
+
+      .event-modal-title {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+      }
+
+      .event-modal-title > span {
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: #eff6ff;
+        color: #2563eb;
+      }
+
+      .event-modal-title h2 {
+        margin: 0;
+      }
+
+      .event-modal-header > button {
+        width: 2.15rem;
+        height: 2.15rem;
+        border-radius: 10px;
+        border: 1px solid #d9e4f0;
+        background: #fff;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+
+      .event-modal-body {
+        max-height: calc(100vh - 9.8rem);
+        overflow: auto;
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.72fr);
+      }
+
+      .event-modal-column {
+        display: grid;
+        align-content: start;
+        gap: 0.85rem;
+        padding: 1.25rem;
+      }
+
+      .event-modal-side {
+        border-left: 1px solid #e4ecf5;
+        background: #fbfdff;
+      }
+
+      .event-type-card-list {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.55rem;
+      }
+
+      .event-type-card {
+        min-height: 4.7rem;
+        border: 1px solid #d9e4f0;
+        border-radius: 10px;
+        background: #fff;
+        color: #60748c;
+        display: grid;
+        place-items: center;
+        gap: 0.35rem;
+        cursor: pointer;
+      }
+
+      .event-type-card strong {
+        color: #10233f;
+        font-size: 0.78rem;
+      }
+
+      .event-type-card.is-active {
+        border-color: #93c5fd;
+        background: #eff6ff;
+        color: #2563eb;
+        box-shadow: inset 0 0 0 1px #bfdbfe;
+      }
+
+      .event-date-grid {
+        display: grid;
+        grid-template-columns: minmax(145px, 1fr) minmax(96px, 0.55fr) minmax(96px, 0.55fr) auto;
+        gap: 0.55rem;
+        align-items: center;
+      }
+
+      .event-check-row {
+        min-height: 2.25rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: #334155;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .event-check-row input {
+        width: 1rem;
+        height: 1rem;
+      }
+
+      .linked-matter-card {
+        border: 1px solid #d9e4f0;
+        border-radius: 12px;
+        background: #fff;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.7rem;
+      }
+
+      .linked-matter-card strong,
+      .linked-matter-card span,
+      .linked-matter-card small {
+        display: block;
+      }
+
+      .linked-matter-card strong {
+        color: #10233f;
+        font-size: 0.86rem;
+      }
+
+      .linked-matter-card span {
+        margin-top: 0.18rem;
+        color: #60748c;
+        font-size: 0.74rem;
+      }
+
+      .linked-matter-card small {
+        border-radius: 999px;
+        background: #ecfdf3;
+        color: #067647;
+        padding: 0.22rem 0.48rem;
+        font-size: 0.68rem;
+        font-weight: 800;
+      }
+
+      .linked-matter-card button {
+        width: 1.8rem;
+        height: 1.8rem;
+        border: 0;
+        background: transparent;
+        color: #60748c;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+
+      .related-toggle {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.45rem;
+      }
+
+      .related-toggle button {
+        min-height: 2.35rem;
+        border: 1px solid #d9e4f0;
+        border-radius: 10px;
+        background: #fff;
+        color: #334155;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .related-toggle button.is-active {
+        border-color: #93c5fd;
+        background: #eff6ff;
+        color: #2563eb;
+      }
+
+      .event-notify-row {
+        margin-right: auto;
+      }
+
       @media (max-width: 1280px) {
-        .scheduling-metrics {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+        .scheduling-summary-row {
+          grid-template-columns: 1fr;
+        }
+
+        .mini-month-picker {
+          display: none;
         }
 
         .scheduling-toolbar {
@@ -2189,6 +2938,15 @@ function SchedulingStyles() {
           display: grid;
           grid-template-columns: 1fr;
         }
+
+        .event-modal-body {
+          grid-template-columns: 1fr;
+        }
+
+        .event-modal-side {
+          border-left: 0;
+          border-top: 1px solid #e4ecf5;
+        }
       }
 
       @media (max-width: 720px) {
@@ -2204,6 +2962,8 @@ function SchedulingStyles() {
 
         .scheduling-toolbar,
         .scheduling-metrics,
+        .event-type-card-list,
+        .event-date-grid,
         .invite-type-list,
         .invite-form-grid {
           grid-template-columns: 1fr;
@@ -2240,6 +3000,16 @@ function SchedulingStyles() {
           text-align: left;
           order: 10;
         }
+
+        .event-modal-card {
+          width: calc(100vw - 1rem);
+          max-height: calc(100vh - 1rem);
+        }
+
+        .event-modal-header,
+        .event-modal-column {
+          padding: 1rem;
+        }
       }
     `}</style>
   )
@@ -2265,7 +3035,8 @@ function AttorneySchedulingWorkspace({
   const [rescheduleProposal, setRescheduleProposal] = useState(null)
   const [rescheduleDraft, setRescheduleDraft] = useState({ preferredStart: '', preferredEnd: '', reason: '' })
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [inviteDraft, setInviteDraft] = useState(DEFAULT_ATTORNEY_INVITE_DRAFT)
+  const [inviteDraft, setInviteDraft] = useState(() => createInviteDraftDefaults(new Date()))
+  const [selectedStaffIds, setSelectedStaffIds] = useState([])
   const [rolloutStatus, setRolloutStatus] = useState(() => ({
     enabled: resolveAttorneyCalendarEnvironment() !== 'production',
     environment: resolveAttorneyCalendarEnvironment(),
@@ -2293,7 +3064,12 @@ function AttorneySchedulingWorkspace({
   }, [appointmentRows, matterRows, documentRows, currentRole, resources])
 
   const activeRows = useMemo(() => filterActive(normalizedRows), [normalizedRows])
-  const visibleRows = useMemo(() => sortByDateAscending(buildVisibleRows(activeRows, filters, selectedDate)), [activeRows, filters, selectedDate])
+  const staffRows = useMemo(() => buildStaffRows(memberOptions, activeRows), [memberOptions, activeRows])
+  const staffFilteredRows = useMemo(
+    () => activeRows.filter((row) => appointmentMatchesStaffSelection(row, selectedStaffIds)),
+    [activeRows, selectedStaffIds],
+  )
+  const visibleRows = useMemo(() => sortByDateAscending(buildVisibleRows(staffFilteredRows, filters, selectedDate)), [staffFilteredRows, filters, selectedDate])
   const rescheduleRows = useMemo(() => buildRescheduleRows(normalizedRows), [normalizedRows])
   const visibleRescheduleRows = useMemo(() => buildRescheduleRows(visibleRows), [visibleRows])
   const staffOptions = useMemo(() => normalizeStaffOptions(memberOptions), [memberOptions])
@@ -2322,17 +3098,22 @@ function AttorneySchedulingWorkspace({
 
   const metrics = useMemo(() => {
     const boardroomAssigned = activeRows.filter((row) => normalizeText(row.resourceId)).length
+    const weekStart = startOfWeek(selectedDate)
+    const weekEnd = addDays(weekStart, 7)
     return {
       todaysAppointments: activeRows.filter((row) => isToday(row.dateTime)).length,
+      thisWeekAppointments: activeRows.filter((row) => {
+        const parsed = new Date(row.dateTime || '')
+        return !Number.isNaN(parsed.getTime()) && parsed >= weekStart && parsed < weekEnd
+      }).length,
       pendingConfirmations: activeRows.filter((row) => row.operationalStatus === 'awaiting_confirmation').length,
       blockedSignings: activeRows.filter((row) => row.readiness?.label === 'Blocked' || row.operationalStatus === 'blocked').length,
       overdueSignings: activeRows.filter((row) => row.operationalStatus === 'awaiting_confirmation' && isPast(row.dateTime)).length,
+      overdueItems: activeRows.filter((row) => (row.operationalStatus === 'awaiting_confirmation' || row.readiness?.label === 'Blocked') && isPast(row.dateTime)).length,
       rescheduleRequests: rescheduleRows.length,
       boardroomUtilisation: activeRows.length ? Math.round((boardroomAssigned / activeRows.length) * 100) : 0,
     }
-  }, [activeRows, rescheduleRows.length])
-
-  const upcomingRows = useMemo(() => sortByDateAscending(visibleRows).slice(0, 14), [visibleRows])
+  }, [activeRows, rescheduleRows.length, selectedDate])
 
   async function withBusy(id, callback, successMessage = 'Scheduling workspace updated.') {
     setBusyId(id)
@@ -2422,11 +3203,12 @@ function AttorneySchedulingWorkspace({
   const handleCreateInvite = (event) => {
     event.preventDefault()
     if (!rolloutStatus.enabled) {
-      setError('Create Invite is temporarily unavailable for this firm.')
+      setError('New Event is temporarily unavailable for this firm.')
       return
     }
     const selectedMatter = matterOptions.find((matter) => matter.matterId === inviteDraft.matterId)
-    if (!selectedMatter) {
+    const isFirmLevelEvent = inviteDraft.appointmentType === 'internal_meeting'
+    if (!selectedMatter && !isFirmLevelEvent) {
       setError('Choose a matter before creating the invite.')
       return
     }
@@ -2435,9 +3217,12 @@ function AttorneySchedulingWorkspace({
     const boardroomLocation = selectedResource?.resourceName || ''
     const inviteContract = buildAttorneyInviteContract({
       ...inviteDraft,
-      recipientName: inviteDraft.recipientName || selectedMatter.clientName,
-      organisationId: organisationId || selectedMatter.organisationId,
-      transactionId: selectedMatter.matterId,
+      title: inviteDraft.title,
+      visibility: inviteDraft.visibility,
+      attachCalendarInvite: inviteDraft.sendNotifications !== false,
+      recipientName: inviteDraft.recipientName || selectedMatter?.clientName || currentUser?.name || currentUser?.email || 'Team Member',
+      organisationId: organisationId || selectedMatter?.organisationId,
+      transactionId: selectedMatter?.matterId || '',
       resourceName: boardroomLocation,
       attorneyName: currentUser?.name || currentUser?.email || '',
       attorneyEmail: currentUser?.email || '',
@@ -2451,30 +3236,30 @@ function AttorneySchedulingWorkspace({
     void withBusy('create-invite', async () => {
       const created = await createAttorneyAppointmentInvite(inviteContract.value)
       setInviteOpen(false)
-      setInviteDraft(DEFAULT_ATTORNEY_INVITE_DRAFT)
+      setInviteDraft(createInviteDraftDefaults(selectedDate))
       return buildAttorneyInviteOutcome(created.delivery)
     })
+  }
+
+  function openCreateEventModal() {
+    setInviteDraft(createInviteDraftDefaults(selectedDate))
+    setInviteOpen(true)
   }
 
   return (
     <section className="attorney-scheduling-os">
       <SchedulingStyles />
-      <SchedulingPageHeader onCreateInvite={() => setInviteOpen(true)} rolloutStatus={rolloutStatus} />
-      {!rolloutStatus.enabled && rolloutStatus.reason !== 'loading' ? (
-        <div className="scheduling-alert">
-          Create Invite is paused for this firm. Existing appointments and scheduling actions remain available.
-        </div>
-      ) : null}
+      <SchedulingPageHeader onCreateInvite={openCreateEventModal} rolloutStatus={rolloutStatus} />
       {error ? <div className="scheduling-alert is-error">{error}</div> : null}
       {message ? <div className="scheduling-alert is-success">{message}</div> : null}
       {busyId ? <div className="scheduling-alert">Processing scheduling action...</div> : null}
-      <FilterToolbar filters={filters} setFilters={setFilters} resources={resources} memberOptions={memberOptions} />
-      <MetricsStrip metrics={metrics} />
+      <MetricsStrip metrics={metrics} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
+      <FilterToolbar filters={filters} setFilters={setFilters} resources={resources} memberOptions={staffRows} />
       <section className="scheduling-main-grid">
-        <UpcomingSigningsPanel
-          rows={upcomingRows}
-          onSelect={setSelectedAppointment}
-          onResendCommunication={handleResendCommunication}
+        <StaffVisibilityPanel
+          staffRows={staffRows}
+          selectedStaffIds={selectedStaffIds}
+          setSelectedStaffIds={setSelectedStaffIds}
         />
         <CalendarSurface
           rows={visibleRows}
@@ -2483,6 +3268,7 @@ function AttorneySchedulingWorkspace({
           selectedDate={selectedDate}
           setSelectedDate={setSelectedDate}
           onSelect={setSelectedAppointment}
+          staffRows={staffRows}
         />
       </section>
       <section className="scheduling-secondary-grid">
@@ -2512,6 +3298,7 @@ function AttorneySchedulingWorkspace({
         setDraft={setInviteDraft}
         matterOptions={matterOptions}
         resources={resources}
+        staffOptions={staffOptions}
         busyId={busyId}
         onClose={() => setInviteOpen(false)}
         onSubmit={handleCreateInvite}

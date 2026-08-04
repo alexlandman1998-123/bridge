@@ -327,7 +327,7 @@ export default function SettingsPartnerRoutingRulesPage() {
       setSavingItemId(rule.id)
       await saveOrganisationPartnerRoutingRule({
         ...rule,
-        isActive: !Boolean(rule.isActive),
+        isActive: !rule.isActive,
       })
       await loadRules()
       setMessage(`Partner routing rule ${rule?.isActive ? 'deactivated' : 'activated'}.`)

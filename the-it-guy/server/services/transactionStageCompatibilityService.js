@@ -1,4 +1,3 @@
-/* global process */
 import { requireClient, isMissingColumnError } from '../../src/services/attorneyFirmServiceShared.js'
 import { logTransactionWorkflowEvent } from './workflowEventService.js'
 

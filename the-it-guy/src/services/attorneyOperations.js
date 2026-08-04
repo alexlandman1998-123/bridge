@@ -37,6 +37,9 @@ import {
 } from './portalCanonicalFieldFallbacks.js'
 
 const MANAGEMENT_ROLES = new Set(['firm_admin', 'director_partner'])
+const OPERATIONAL_WORKSPACE_CACHE_TTL_MS = 15_000
+const operationalWorkspaceCache = new Map()
+const operationalWorkspaceInflight = new Map()
 
 const ATTORNEY_STAGE_LABELS = {
   instruction_received: 'Instruction Received',
@@ -428,14 +431,21 @@ async function fetchDocumentRequests(client, transactionIds = []) {
   return query.data || []
 }
 
-async function fetchAppointments(client, transactionIds = []) {
+async function fetchAppointments(client, transactionIds = [], organisationId = '') {
   const ids = [...new Set((transactionIds || []).filter(Boolean))]
-  if (!ids.length) return []
+  const scopedOrganisationId = normalizeText(organisationId)
+  if (!ids.length && !scopedOrganisationId) return []
 
-  let query = await client
-    .from('appointments')
-    .select('appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, linked_workflow, linked_workflow_stage, linked_transaction_stage, visibility_scope, appointment_instructions, required_documents, status, calendar_event_uid, external_calendar_status, external_calendar_provider, external_calendar_event_id, ics_generated_at, updated_at, created_at')
-    .in('transaction_id', ids)
+  const primarySelect = 'appointment_id, organisation_id, transaction_id, resource_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, linked_workflow, linked_workflow_stage, linked_transaction_stage, visibility_scope, appointment_instructions, required_documents, status, calendar_event_uid, external_calendar_status, external_calendar_provider, external_calendar_event_id, ics_generated_at, updated_at, created_at'
+  const compatibilitySelect = 'appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, updated_at, created_at'
+
+  let baseQuery = client.from('appointments').select(primarySelect)
+  if (scopedOrganisationId) {
+    baseQuery = baseQuery.eq('organisation_id', scopedOrganisationId)
+  } else {
+    baseQuery = baseQuery.in('transaction_id', ids)
+  }
+  let query = await baseQuery
 
   if (
     query.error &&
@@ -445,13 +455,19 @@ async function fetchAppointments(client, transactionIds = []) {
       isMissingColumnError(query.error, 'visibility_scope') ||
       isMissingColumnError(query.error, 'appointment_instructions') ||
       isMissingColumnError(query.error, 'required_documents') ||
+      isMissingColumnError(query.error, 'organisation_id') ||
+      isMissingColumnError(query.error, 'resource_id') ||
       isMissingColumnError(query.error, 'calendar_event_uid') ||
       isMissingColumnError(query.error, 'external_calendar_status'))
   ) {
-    query = await client
-      .from('appointments')
-      .select('appointment_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, updated_at, created_at')
-      .in('transaction_id', ids)
+    const canUseOrganisationFallback = scopedOrganisationId && !isMissingColumnError(query.error, 'organisation_id')
+    let fallbackQuery = client.from('appointments').select(compatibilitySelect)
+    if (canUseOrganisationFallback) {
+      fallbackQuery = fallbackQuery.eq('organisation_id', scopedOrganisationId)
+    } else {
+      fallbackQuery = fallbackQuery.in('transaction_id', ids)
+    }
+    query = await fallbackQuery
   }
 
   if (query.error) {
@@ -461,7 +477,11 @@ async function fetchAppointments(client, transactionIds = []) {
     throw query.error
   }
 
-  return query.data || []
+  return (query.data || []).filter((appointment) => {
+    if (!ids.length) return true
+    if (!appointment.transaction_id) return true
+    return ids.includes(appointment.transaction_id)
+  })
 }
 
 async function fetchParticipantsByAppointment(client, appointmentIds = []) {
@@ -685,11 +705,67 @@ function buildDateTimeFromAppointment(appointment = {}) {
   return appointment.created_at || appointment.updated_at || null
 }
 
-export async function getAttorneyOperationalWorkspaceData(firmId = null, userId = null) {
+function getOperationalWorkspaceCacheKey(firmId = '', userId = '') {
+  return `${normalizeText(firmId) || 'no-firm'}:${normalizeText(userId) || 'current-user'}`
+}
+
+export function clearAttorneyOperationalWorkspaceCache({ firmId = '', userId = '' } = {}) {
+  if (!firmId && !userId) {
+    operationalWorkspaceCache.clear()
+    operationalWorkspaceInflight.clear()
+    return
+  }
+
+  const firmKey = normalizeText(firmId)
+  const userKey = normalizeText(userId)
+  for (const key of [...operationalWorkspaceCache.keys(), ...operationalWorkspaceInflight.keys()]) {
+    const [cachedFirmId, cachedUserId] = key.split(':')
+    if (firmKey && cachedFirmId !== firmKey) continue
+    if (userKey && cachedUserId !== userKey) continue
+    operationalWorkspaceCache.delete(key)
+    operationalWorkspaceInflight.delete(key)
+  }
+}
+
+export async function getAttorneyOperationalWorkspaceData(firmId = null, userId = null, options = {}) {
   const client = requireClient()
   const authUser = await getAuthenticatedUser(client)
-
   const resolvedFirm = firmId ? await getAttorneyFirmById(firmId) : await getCurrentUserPrimaryAttorneyFirm()
+  const currentUserId = userId || authUser.id
+  const cacheKey = getOperationalWorkspaceCacheKey(resolvedFirm?.id, currentUserId)
+
+  if (!options?.force) {
+    const cached = operationalWorkspaceCache.get(cacheKey)
+    if (cached && cached.expiresAt > Date.now()) return cached.data
+    const inflight = operationalWorkspaceInflight.get(cacheKey)
+    if (inflight) return inflight
+  }
+
+  const loadPromise = loadAttorneyOperationalWorkspaceData(firmId, userId, {
+    client,
+    authUser,
+    resolvedFirm,
+  })
+    .then((data) => {
+      operationalWorkspaceCache.set(cacheKey, {
+        data,
+        expiresAt: Date.now() + OPERATIONAL_WORKSPACE_CACHE_TTL_MS,
+      })
+      return data
+    })
+    .finally(() => {
+      operationalWorkspaceInflight.delete(cacheKey)
+    })
+
+  operationalWorkspaceInflight.set(cacheKey, loadPromise)
+  return loadPromise
+}
+
+async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null, context = {}) {
+  const client = context.client || requireClient()
+  const authUser = context.authUser || await getAuthenticatedUser(client)
+
+  const resolvedFirm = context.resolvedFirm || (firmId ? await getAttorneyFirmById(firmId) : await getCurrentUserPrimaryAttorneyFirm())
 
   if (!resolvedFirm?.id) {
     return {
@@ -834,7 +910,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
     fetchBuyersById(client, transactions.map((transaction) => transaction.buyer_id).filter(Boolean)),
     fetchChecklistItems(client, transactionIds),
     fetchDocumentRequests(client, transactionIds),
-    fetchAppointments(client, transactionIds),
+    fetchAppointments(client, transactionIds, resolvedFirm.id),
     fetchPacketSigners(client, transactionIds),
   ])
 
@@ -978,7 +1054,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
 
   const appointmentQueue = canAccessAppointments
     ? (appointments || [])
-        .filter((appointment) => scopedMatterIds.has(appointment.transaction_id))
+        .filter((appointment) => !appointment.transaction_id || scopedMatterIds.has(appointment.transaction_id))
         .map((appointment) => {
           const matter = matterQueue.find((item) => item.matterId === appointment.transaction_id)
           const attendeesDetailed = participantsByAppointment[appointment.appointment_id] || []
@@ -1002,7 +1078,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
             appointmentTypeKey,
             matterReference: matter?.matterReference || getMatterReference({}, appointment.transaction_id),
             transactionId: appointment.transaction_id || null,
-            organisationId: matter?.organisationId || null,
+            organisationId: appointment.organisation_id || matter?.organisationId || null,
             clientName: matter?.clientName || 'Unassigned client',
             dateTime,
             rawDateTime: dateTime,
@@ -1019,6 +1095,7 @@ export async function getAttorneyOperationalWorkspaceData(firmId = null, userId 
             externalCalendarProvider: appointment.external_calendar_provider || null,
             externalCalendarEventId: appointment.external_calendar_event_id || null,
             icsGeneratedAt: appointment.ics_generated_at || null,
+            resourceId: appointment.resource_id || null,
             status: statusWithRescheduleContext,
             rescheduleRequests,
             latestRescheduleRequest,

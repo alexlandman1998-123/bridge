@@ -10,6 +10,8 @@ import { handleWorkspaceInviteEmail } from "./handlers/workspaceInvite.ts";
 import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
 import { handleLeadPropertyShareEmail } from "./handlers/leadPropertyShare.ts";
+import { handleBuyerViewingAvailabilityRequestEmail } from "./handlers/viewingAvailabilityRequest.ts";
+import { handleSellerViewingAvailabilityRequestEmail } from "./handlers/sellerViewingAvailabilityRequest.ts";
 import { handleLeadAcknowledgementEmail } from "./handlers/leadAcknowledgement.ts";
 import { handleLeadOperationsNotificationEmail } from "./handlers/leadOperationsNotification.ts";
 import { handleAdditionalDocumentRequestEmail } from "./handlers/additionalDocumentRequest.ts";
@@ -50,6 +52,7 @@ import type {
   SendBondOriginatorBuyerIntroPayload,
   SendBuyerOfferLinkPayload,
   SendBuyerOfferSubmittedAgentPayload,
+  SendBuyerViewingAvailabilityRequestPayload,
   SendClientOnboardingPayload,
   SendClientSellerPortalNotificationPayload,
   SendCommercialAccessNotificationPayload,
@@ -70,6 +73,7 @@ import type {
   SendSellerOfferReviewPayload,
   SendSellerOnboardingPayload,
   SendSellerOnboardingSubmittedPayload,
+  SendSellerViewingAvailabilityRequestPayload,
   SendTransactionOperationsNotificationPayload,
   SendTransactionPartnerInvitationPayload,
   SendTransactionProgressDispatchPayload,
@@ -417,6 +421,42 @@ Deno.serve(async (req: Request) => {
       return await handleLeadPropertyShareEmail(
         payload as SendLeadPropertySharePayload,
       );
+    }
+
+    if (
+      [
+        "buyer_viewing_availability_request",
+        "buyer_viewing_request",
+        "viewing_availability_request",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "buyer_viewing_availability_request",
+        recipient: recipient || null,
+        leadId: normalizeText(payload.leadId ?? payload.lead_id) || null,
+      });
+      return await handleBuyerViewingAvailabilityRequestEmail({
+        ...(payload as SendBuyerViewingAvailabilityRequestPayload),
+        type: type as SendBuyerViewingAvailabilityRequestPayload["type"],
+      });
+    }
+
+    if (
+      [
+        "seller_viewing_availability_request",
+        "seller_viewing_request",
+        "viewing_access_availability_request",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "seller_viewing_availability_request",
+        recipient: recipient || null,
+        leadId: normalizeText(payload.leadId ?? payload.lead_id) || null,
+      });
+      return await handleSellerViewingAvailabilityRequestEmail({
+        ...(payload as SendSellerViewingAvailabilityRequestPayload),
+        type: type as SendSellerViewingAvailabilityRequestPayload["type"],
+      });
     }
 
     if (
@@ -987,6 +1027,8 @@ Deno.serve(async (req: Request) => {
           "lead_operations_notification",
           "lead_property_share",
           "property_collection",
+          "buyer_viewing_availability_request",
+          "seller_viewing_availability_request",
           "additional_document_request",
           "document_request",
           "buyer_offer_link",

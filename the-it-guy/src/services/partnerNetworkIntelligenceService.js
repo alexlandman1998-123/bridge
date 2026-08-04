@@ -326,7 +326,7 @@ function buildActivityFeed({ snapshot = {}, partnerProfiles = [], auditEvents = 
     feed.push(
       toActivityEvent({
         kind: 'audit',
-        title: kind.replace(/[\._]/g, ' '),
+        title: kind.replace(/[._]/g, ' '),
         detail: normalizeText(payload.resolutionReason || payload.message || payload.targetRoleType || ''),
         partnerId: normalizeText(payload.targetOrganisationId || payload.partnerOrganisationId || payload.organisationId || ''),
         partnerName: normalizeText(payload.targetOrganisationName || payload.partnerOrganisationName || ''),
