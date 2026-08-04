@@ -16263,37 +16263,48 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                          <a
-                            href={normalizeText(selectedLeadContact?.phone || selectedLead?.phone) ? `tel:${selectedLeadContact?.phone || selectedLead?.phone}` : undefined}
-                            className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d2dfec] bg-white px-4 text-sm font-semibold text-[#20364c] shadow-sm transition hover:border-[#aebfd0] ${normalizeText(selectedLeadContact?.phone || selectedLead?.phone) ? '' : 'pointer-events-none opacity-50'}`}
-                          >
-                            <Phone className="h-4 w-4" />
-                            Schedule Call
-                          </a>
-                          <Button type="button" variant="secondary" size="sm" className="min-h-10 rounded-[12px]" onClick={() => handleOpenAppointmentModal()}>
-                            <CalendarDays className="h-4 w-4" />
-                            Schedule Viewing
-                          </Button>
-                          <Button type="button" variant="secondary" size="sm" className="min-h-10 rounded-[12px]" onClick={handleBuyerCommandSendListings}>
-                            <Send className="h-4 w-4" />
-                            Send Listings
-                          </Button>
                           <div ref={leadActionsMenuRef} className="relative">
                             <Button
                               type="button"
                               variant="secondary"
                               size="sm"
-                              className="min-h-10 rounded-[12px]"
+                              className="min-h-10 rounded-[12px] border-[#cfdcea] bg-white px-5 text-[#102033] shadow-[0_12px_28px_rgba(15,39,67,0.08)] hover:border-[#adc0d3] hover:bg-[#fbfdff]"
                               onClick={() => setLeadActionsMenuOpen((value) => !value)}
                               aria-haspopup="menu"
                               aria-expanded={leadActionsMenuOpen}
                             >
-                              <MoreHorizontal className="h-4 w-4" />
-                              More
+                              Actions
+                              <ChevronDown className="h-4 w-4" />
                             </Button>
                             {leadActionsMenuOpen ? (
-                              <div className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-[18px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
+                              <div className="absolute right-0 z-30 mt-2 w-72 overflow-hidden rounded-[18px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
                                 {[
+                                  {
+                                    label: 'Call Buyer',
+                                    Icon: Phone,
+                                    disabled: !normalizeText(selectedLeadContact?.phone || selectedLead?.phone),
+                                    onClick: () => {
+                                      setLeadActionsMenuOpen(false)
+                                      const phone = normalizeText(selectedLeadContact?.phone || selectedLead?.phone).replace(/[^\d+]/g, '')
+                                      if (phone && typeof window !== 'undefined') window.location.href = `tel:${phone}`
+                                    },
+                                  },
+                                  {
+                                    label: 'Schedule Viewing',
+                                    Icon: CalendarDays,
+                                    onClick: () => {
+                                      setLeadActionsMenuOpen(false)
+                                      handleOpenAppointmentModal()
+                                    },
+                                  },
+                                  {
+                                    label: 'Send Listings',
+                                    Icon: Send,
+                                    onClick: () => {
+                                      setLeadActionsMenuOpen(false)
+                                      handleBuyerCommandSendListings()
+                                    },
+                                  },
                                   {
                                     label: selectedLeadBuyerOnboardingActionLabel,
                                     Icon: Mail,
@@ -16301,6 +16312,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     onClick: () => {
                                       setLeadActionsMenuOpen(false)
                                       void handleSendBuyerOnboardingFromLead()
+                                    },
+                                  },
+                                  {
+                                    label: 'Generate OTP',
+                                    Icon: CheckSquare,
+                                    disabled: otpQuickStartBusy || isOfferLinkSending,
+                                    onClick: () => {
+                                      setLeadActionsMenuOpen(false)
+                                      handleSelectedLeadOtpPrimaryAction()
+                                    },
+                                  },
+                                  {
+                                    label: 'Convert To Transaction',
+                                    Icon: ArrowUpRight,
+                                    onClick: () => {
+                                      setLeadActionsMenuOpen(false)
+                                      handleBuyerCommandConvertToTransaction()
+                                    },
+                                  },
+                                  {
+                                    label: 'Edit Buyer Details',
+                                    Icon: Pencil,
+                                    onClick: () => {
+                                      setLeadActionsMenuOpen(false)
+                                      setLeadWorkspaceTab('overview')
                                     },
                                   },
                                   {
@@ -16325,6 +16361,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       openDeleteLeadModal(selectedLead.leadId)
                                     },
                                   },
+                                  {
+                                    label: 'Change Owner',
+                                    Icon: UserRound,
+                                    onClick: () => {
+                                      setLeadActionsMenuOpen(false)
+                                      setMessage('Owner changes can be managed from lead assignment settings.')
+                                    },
+                                  },
+                                  {
+                                    label: 'Mark as Lost',
+                                    Icon: X,
+                                    onClick: () => {
+                                      setLeadActionsMenuOpen(false)
+                                      openArchiveLeadModal(selectedLead.leadId)
+                                    },
+                                  },
+                                  {
+                                    label: 'Convert Status',
+                                    Icon: TrendingUp,
+                                    onClick: () => {
+                                      setLeadActionsMenuOpen(false)
+                                      setMessage('Use the stage selector in Lead Summary to convert this lead status.')
+                                    },
+                                  },
                                 ].map(({ label, Icon, onClick, disabled, tone = 'text-[#29435d]' }) => (
                                   <button
                                     key={label}
@@ -16341,9 +16401,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             ) : null}
                           </div>
-                          <Button type="button" size="sm" className="min-h-10 rounded-[12px] bg-[#0b2b4c] px-5 shadow-[0_12px_24px_rgba(11,43,76,0.18)] hover:bg-[#08243f]" onClick={handleBuyerCommandConvertToTransaction}>
-                            Convert To Transaction
-                          </Button>
                         </div>
                       </div>
 
@@ -16403,41 +16460,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                      </div>
 
 	                      {selectedLead ? (
-	                        <div className={`grid w-full gap-2 xl:w-auto xl:justify-end ${selectedLeadIsSeller ? 'grid-cols-1 xl:grid-cols-[max-content]' : 'grid-cols-2 xl:grid-cols-[repeat(6,max-content)]'}`}>
-	                          {selectedLeadIsSeller ? (
-	                            null
-	                          ) : (
-	                            <>
-	                              <Button
-	                                type="button"
-	                                size="sm"
-	                                className="w-full bg-[#123955] shadow-[0_10px_24px_rgba(18,57,85,0.18)] xl:w-auto"
-	                                onClick={() => void handleCreateBuyerOfferDraft()}
-	                                disabled={Boolean(selectedLead.convertedTransactionId || selectedLead.convertedDealId)}
-	                              >
-	                                {selectedLead.convertedTransactionId || selectedLead.convertedDealId ? 'Transaction Created' : 'Create Offer'}
-	                              </Button>
-	                              <Button
-	                                type="button"
-	                                variant="secondary"
-	                                size="sm"
-	                                className="hidden w-full xl:inline-flex xl:w-auto"
-	                                onClick={() => void handleSendBuyerOnboardingFromLead()}
-	                                disabled={canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`}
-	                              >
-	                                {selectedLeadBuyerOnboardingActionLabel}
-	                              </Button>
-	                              <Button type="button" variant="secondary" size="sm" className="hidden w-full xl:inline-flex xl:w-auto" onClick={() => handleOpenAppointmentModal()}>
-	                                Schedule
-	                              </Button>
-	                            </>
-	                          )}
+	                        <div className="grid w-full grid-cols-1 gap-2 xl:w-auto xl:grid-cols-[max-content] xl:justify-end">
 	                          <div ref={leadActionsMenuRef} className="relative">
 	                            <Button
 	                              type="button"
 	                              variant="secondary"
 	                              size="sm"
-	                              className={`w-full border-[#cfdcea] bg-white text-[#102033] shadow-[0_12px_28px_rgba(15,39,67,0.08)] hover:border-[#adc0d3] hover:bg-[#fbfdff] xl:w-auto ${selectedLeadIsSeller ? 'min-h-11 rounded-[14px] px-5' : ''}`}
+	                              className="min-h-11 w-full rounded-[14px] border-[#cfdcea] bg-white px-5 text-[#102033] shadow-[0_12px_28px_rgba(15,39,67,0.08)] hover:border-[#adc0d3] hover:bg-[#fbfdff] xl:w-auto"
 	                              onClick={() => setLeadActionsMenuOpen((value) => !value)}
 	                              aria-haspopup="menu"
 	                              aria-expanded={leadActionsMenuOpen}
@@ -16533,7 +16562,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                          label: selectedLeadBuyerOnboardingActionLabel,
 	                                          Icon: Mail,
 	                                          tone: 'text-[#29435d]',
-	                                          mobileOnly: true,
 	                                          disabled: canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`,
 	                                          onClick: () => {
 	                                            setLeadActionsMenuOpen(false)
@@ -16541,13 +16569,49 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                          },
 	                                        },
 	                                        {
-	                                          label: 'Schedule',
+	                                          label: 'Schedule Appointment',
 	                                          Icon: CalendarDays,
 	                                          tone: 'text-[#29435d]',
-	                                          mobileOnly: true,
 	                                          onClick: () => {
 	                                            setLeadActionsMenuOpen(false)
 	                                            handleOpenAppointmentModal()
+	                                          },
+	                                        },
+	                                        {
+	                                          label: 'Send Listings',
+	                                          Icon: Send,
+	                                          tone: 'text-[#29435d]',
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            handleBuyerCommandSendListings()
+	                                          },
+	                                        },
+	                                        {
+	                                          label: 'Generate OTP',
+	                                          Icon: CheckSquare,
+	                                          tone: 'text-[#29435d]',
+	                                          disabled: otpQuickStartBusy || isOfferLinkSending,
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            handleSelectedLeadOtpPrimaryAction()
+	                                          },
+	                                        },
+	                                        {
+	                                          label: 'Convert To Transaction',
+	                                          Icon: ArrowUpRight,
+	                                          tone: 'text-[#29435d]',
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            handleBuyerCommandConvertToTransaction()
+	                                          },
+	                                        },
+	                                        {
+	                                          label: 'Edit Buyer Details',
+	                                          Icon: Pencil,
+	                                          tone: 'text-[#29435d]',
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            setLeadWorkspaceTab('overview')
 	                                          },
 	                                        },
 	                                      ]),
@@ -16602,11 +16666,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                    tone: 'text-[#29435d]',
 	                                    onClick: handleCopySelectedLeadLink,
 	                                  },
-	                                ].map(({ label, Icon, tone, onClick, disabled, mobileOnly, title }) => (
+	                                ].map(({ label, Icon, tone, onClick, disabled, title }) => (
 	                                  <button
 	                                    key={label}
 	                                    type="button"
-	                                    className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold transition hover:bg-[#f5f9fc] disabled:cursor-not-allowed disabled:opacity-45 ${tone} ${mobileOnly && !selectedLeadIsSeller ? 'xl:hidden' : ''}`}
+	                                    className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold transition hover:bg-[#f5f9fc] disabled:cursor-not-allowed disabled:opacity-45 ${tone}`}
 	                                    onClick={onClick}
 	                                    disabled={disabled}
 	                                    title={title}
@@ -16619,18 +16683,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                              </div>
 	                            ) : null}
 	                          </div>
-	                          <Button
-	                            type="button"
-	                            variant="ghost"
-	                            size="sm"
-	                            className={`hidden h-10 w-10 px-0 ${selectedLeadIsSeller ? '' : 'xl:inline-flex'}`}
-	                            title="More lead actions"
-	                            onClick={() => setLeadActionsMenuOpen((value) => !value)}
-	                            aria-haspopup="menu"
-	                            aria-expanded={leadActionsMenuOpen}
-	                          >
-	                            <MoreHorizontal className="h-4 w-4" />
-	                          </Button>
 	                        </div>
 	                      ) : null}
 	                    </div>
