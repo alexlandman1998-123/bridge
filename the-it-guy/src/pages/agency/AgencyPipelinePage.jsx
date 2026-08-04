@@ -4804,6 +4804,126 @@ const LEAD_DETAIL_DEFAULTS = {
   notes: '',
 }
 
+const BUYER_QUALIFICATION_NOTE_START = '[Buyer qualification]'
+const BUYER_QUALIFICATION_NOTE_END = '[/Buyer qualification]'
+
+const BUYER_QUALIFICATION_FORM_DEFAULTS = {
+  budget: '',
+  areaInterest: '',
+  moveTimeframe: '',
+  financeType: '',
+  subjectToFinance: '',
+  depositAvailable: '',
+  preApprovalStatus: '',
+  propertyToSell: '',
+  propertyNeed: '',
+  additionalNotes: '',
+}
+
+const BUYER_QUALIFICATION_NOTE_FIELDS = [
+  { key: 'budget', label: 'Budget' },
+  { key: 'areaInterest', label: 'Preferred areas' },
+  { key: 'moveTimeframe', label: 'Move timeframe' },
+  { key: 'financeType', label: 'Cash or bond' },
+  { key: 'subjectToFinance', label: 'Subject to finance' },
+  { key: 'depositAvailable', label: 'Deposit available' },
+  { key: 'preApprovalStatus', label: 'Pre-approval status' },
+  { key: 'propertyToSell', label: 'Property to sell first' },
+  { key: 'propertyNeed', label: 'Property need' },
+  { key: 'additionalNotes', label: 'Call notes' },
+]
+
+const BUYER_MOVE_TIMEFRAME_OPTIONS = ['', 'Immediately', '1-3 months', '3-6 months', '6+ months', 'Just browsing']
+const BUYER_FINANCE_TYPE_OPTIONS = ['', 'Bond', 'Cash', 'Cash + bond', 'Not sure']
+const BUYER_SUBJECT_TO_FINANCE_OPTIONS = ['', 'Yes', 'No', 'Unsure']
+const BUYER_PRE_APPROVAL_OPTIONS = ['', 'Not started', 'Pre-approved', 'Submitted', 'Needs bond originator', 'Cash buyer']
+const BUYER_PROPERTY_TO_SELL_OPTIONS = ['', 'No', 'Yes', 'Unsure']
+
+function stripBuyerQualificationNoteBlock(notes = '') {
+  const raw = String(notes || '').trim()
+  const startIndex = raw.indexOf(BUYER_QUALIFICATION_NOTE_START)
+  if (startIndex === -1) return raw
+  const endIndex = raw.indexOf(BUYER_QUALIFICATION_NOTE_END, startIndex)
+  const before = raw.slice(0, startIndex).trim()
+  const after = endIndex === -1 ? '' : raw.slice(endIndex + BUYER_QUALIFICATION_NOTE_END.length).trim()
+  return [before, after].filter(Boolean).join('\n\n')
+}
+
+function parseBuyerQualificationNoteBlock(notes = '') {
+  const raw = String(notes || '')
+  const startIndex = raw.indexOf(BUYER_QUALIFICATION_NOTE_START)
+  const endIndex = raw.indexOf(BUYER_QUALIFICATION_NOTE_END, startIndex)
+  if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) return {}
+
+  const labelToKey = new Map(BUYER_QUALIFICATION_NOTE_FIELDS.map((field) => [field.label, field.key]))
+  const parsed = {}
+  let activeKey = ''
+  raw
+    .slice(startIndex + BUYER_QUALIFICATION_NOTE_START.length, endIndex)
+    .trim()
+    .split(/\r?\n/)
+    .forEach((line) => {
+      const labelMatch = line.match(/^([^:]+):\s*(.*)$/)
+      const matchedKey = labelMatch ? labelToKey.get(normalizeText(labelMatch[1])) : ''
+      if (matchedKey) {
+        activeKey = matchedKey
+        parsed[matchedKey] = normalizeText(labelMatch[2])
+        return
+      }
+      if (activeKey && normalizeText(line)) {
+        parsed[activeKey] = [parsed[activeKey], normalizeText(line)].filter(Boolean).join('\n')
+      }
+    })
+  return parsed
+}
+
+function buildBuyerQualificationFormFromLead(lead = {}) {
+  const parsed = parseBuyerQualificationNoteBlock(lead?.notes)
+  const freeformNotes = stripBuyerQualificationNoteBlock(lead?.notes)
+  return {
+    ...BUYER_QUALIFICATION_FORM_DEFAULTS,
+    ...parsed,
+    budget: normalizeText(parsed.budget) || normalizeText(lead?.budget),
+    areaInterest: normalizeText(parsed.areaInterest) || normalizeText(lead?.areaInterest),
+    propertyNeed: normalizeText(parsed.propertyNeed) || normalizeText(lead?.propertyInterest),
+    additionalNotes: [normalizeText(parsed.additionalNotes), parsed.additionalNotes ? freeformNotes : ''].filter(Boolean).join('\n\n') || freeformNotes,
+  }
+}
+
+function buildBuyerQualificationNotes(form = {}) {
+  const rows = BUYER_QUALIFICATION_NOTE_FIELDS.map(({ key, label }) => {
+    const value = normalizeText(form[key])
+    return `${label}: ${value}`
+  })
+  return [
+    BUYER_QUALIFICATION_NOTE_START,
+    ...rows,
+    BUYER_QUALIFICATION_NOTE_END,
+  ].join('\n')
+}
+
+function formatBuyerQualificationBudget(value = '') {
+  const raw = normalizeText(value)
+  const amount = parseCurrencyAmount(raw)
+  if (amount > 0) return formatCurrency(amount)
+  return raw || 'Not captured'
+}
+
+function buildBuyerQualificationQuestionRows(form = {}) {
+  return [
+    { label: 'Budget', value: formatBuyerQualificationBudget(form.budget) },
+    { label: 'Preferred areas', value: normalizeText(form.areaInterest) || 'Not captured' },
+    { label: 'Move timeframe', value: normalizeText(form.moveTimeframe) || 'Not captured' },
+    { label: 'Cash or bond', value: normalizeText(form.financeType) || 'Not captured' },
+    { label: 'Subject to finance', value: normalizeText(form.subjectToFinance) || 'Not captured' },
+    { label: 'Deposit available', value: normalizeText(form.depositAvailable) || 'Not captured' },
+    { label: 'Pre-approval status', value: normalizeText(form.preApprovalStatus) || 'Not captured' },
+    { label: 'Property to sell first', value: normalizeText(form.propertyToSell) || 'Not captured' },
+    { label: 'Property need', value: normalizeText(form.propertyNeed) || 'Not captured' },
+    { label: 'Call notes', value: normalizeText(form.additionalNotes) || 'Not captured', wide: true },
+  ]
+}
+
 function buildLeadAddressValue(lead = {}) {
   const formattedAddress = normalizeText(
     lead.formattedAddress ||
@@ -4968,6 +5088,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerContactFeedbackModal, setSellerContactFeedbackModal] = useState(SELLER_CONTACT_FEEDBACK_DEFAULTS)
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
   const [isLeadDetailSaving, setIsLeadDetailSaving] = useState(false)
+  const [buyerQualificationEditing, setBuyerQualificationEditing] = useState(false)
+  const [buyerQualificationForm, setBuyerQualificationForm] = useState(BUYER_QUALIFICATION_FORM_DEFAULTS)
   const [financeReadinessForm, setFinanceReadinessForm] = useState(FINANCE_READINESS_FORM_DEFAULTS)
   const [isFinanceReadinessSaving, setIsFinanceReadinessSaving] = useState(false)
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
@@ -6707,6 +6829,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     if (!selectedLead) {
       setLeadDetailForm(LEAD_DETAIL_DEFAULTS)
+      setBuyerQualificationForm(BUYER_QUALIFICATION_FORM_DEFAULTS)
+      setBuyerQualificationEditing(false)
       return
     }
     setLeadDetailForm({
@@ -6734,6 +6858,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
       notes: normalizeText(selectedLead?.notes),
     })
+    setBuyerQualificationForm(buildBuyerQualificationFormFromLead(selectedLead))
+    setBuyerQualificationEditing(false)
   }, [selectedLead, selectedLeadContact])
 
   const selectedLeadIsSeller = resolveLeadCategoryView(selectedLead) === 'seller'
@@ -10201,6 +10327,65 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ...previous,
       [field]: value,
     }))
+  }
+
+  function updateBuyerQualificationField(field, value) {
+    setBuyerQualificationForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }))
+  }
+
+  async function handleSaveBuyerQualification(event) {
+    event.preventDefault()
+    if (!organisationId || !selectedLead) return
+
+    setIsLeadDetailSaving(true)
+    try {
+      const budgetAmount = parseCurrencyAmount(buyerQualificationForm.budget)
+      const notes = buildBuyerQualificationNotes(buyerQualificationForm)
+      const leadPatch = {
+        budget: budgetAmount || 0,
+        estimatedValue: budgetAmount || Number(leadDetailForm.estimatedValue || 0) || 0,
+        areaInterest: normalizeText(buyerQualificationForm.areaInterest),
+        propertyInterest: normalizeText(buyerQualificationForm.propertyNeed),
+        notes,
+        stage: 'Qualified',
+        status: 'Qualified',
+      }
+
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      await upsertAreaByName(leadPatch.areaInterest, { incrementListingCount: false })
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        selectedLead.leadId,
+        {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Buyer Qualification Updated',
+          activityNote: 'Buyer phone qualification was saved.',
+          outcome: 'Qualified',
+        },
+        { actor: currentAgent },
+      ).catch(() => null)
+
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      setLeadDetailForm((previous) => ({
+        ...previous,
+        budget: budgetAmount ? String(budgetAmount) : '',
+        estimatedValue: budgetAmount ? String(budgetAmount) : previous.estimatedValue,
+        areaInterest: leadPatch.areaInterest,
+        propertyInterest: leadPatch.propertyInterest,
+        notes,
+      }))
+      setBuyerQualificationEditing(false)
+      setError('')
+      setMessage('Buyer qualification saved.')
+      scheduleRecordsReload(organisationId, 250)
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to save buyer qualification right now.')
+    } finally {
+      setIsLeadDetailSaving(false)
+    }
   }
 
   function handleActivityComposerModeChange(nextMode) {
@@ -17516,29 +17701,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   {resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === 'overview' && !selectedLeadIsSeller ? (
                     <div className="space-y-6">
                       {(() => {
-                        const qualificationPrimaryAction = !buyerOverviewQualification.hasContacted
-                          ? {
-                              label: 'Mark contacted',
-                              Icon: Phone,
-                              onClick: () => handleUpdateLeadStage(selectedLead.leadId, 'Contacted', { successMessage: 'Buyer marked as contacted.' }),
-                            }
-                          : !buyerOverviewQualification.hasQualificationSignal
-                            ? {
-                                label: 'Mark as qualified',
-                                Icon: CheckCircle2,
-                                onClick: () => handleUpdateLeadStage(selectedLead.leadId, 'Qualified', { successMessage: 'Buyer marked as qualified.' }),
-                              }
-                            : !buyerOverviewQualification.hasViewingBooked
-                              ? {
-                                  label: 'Book viewing',
-                                  Icon: CalendarDays,
-                                  onClick: () => handleOpenAppointmentModal(),
-                                }
-                              : {
-                                  label: isLeadDetailSaving ? 'Saving...' : 'Save qualification',
-                                  Icon: CheckCircle2,
-                                  submit: true,
-                                }
+                        const qualificationQuestionRows = buildBuyerQualificationQuestionRows(buyerQualificationForm)
+                        const buyerQualificationStageKey = normalizeText(selectedLead?.stage).toLowerCase()
+                        const buyerQualificationStatusLabel = buyerQualificationEditing
+                          ? 'Editing'
+                          : buyerQualificationStageKey.includes('qualified') || buyerQualificationStageKey.includes('viewing') || buyerQualificationStageKey.includes('offer') || buyerQualificationStageKey.includes('transaction')
+                            ? 'Qualified'
+                            : buyerOverviewQualification.hasQualificationSignal
+                              ? 'In progress'
+                              : 'Needs qualification'
                         const activityQuickTypes = ['Call', 'WhatsApp', 'Email', 'Note', 'Meeting'].filter((type) => type !== 'Meeting' || ACTIVITY_TYPES.includes('Meeting'))
                         const activityIconByType = {
                           Call: Phone,
@@ -17550,71 +17721,138 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                         return (
                           <>
-                            <div className="grid items-start gap-6 xl:grid-cols-[minmax(360px,0.45fr)_minmax(0,0.55fr)]">
-                              <form className="flex h-full flex-col rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6" onSubmit={handleSaveLeadDetails}>
+                            <div className="grid items-start gap-6 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)]">
+                              <form className="flex h-full flex-col rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6" onSubmit={handleSaveBuyerQualification}>
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Buyer Qualification</p>
                                     <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">Phone qualification questions</h3>
                                   </div>
-                                  <span className="rounded-full border border-[#d7e6f2] bg-[#f8fbfd] px-3 py-1 text-xs font-semibold text-[#60758b]">
-                                    {buyerOverviewQualification.hasQualificationSignal ? 'In progress' : 'Needs qualification'}
-                                  </span>
-                                </div>
-
-                                <div className="mt-5 grid flex-1 gap-4">
-                                  <div className="grid gap-4 md:grid-cols-2">
-                                    <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
-                                      What is your budget?
-                                      <Field placeholder="Budget" value={leadDetailForm.budget} onChange={(event) => updateLeadDetailField('budget', event.target.value)} />
-                                    </label>
-                                    <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
-                                      How soon are you looking to buy?
-                                      <Field as="select" value={leadDetailForm.priority} onChange={(event) => updateLeadDetailField('priority', event.target.value)}>
-                                        {LEAD_PRIORITIES.map((option) => (
-                                          <option key={option} value={option}>{option}</option>
-                                        ))}
-                                      </Field>
-                                    </label>
-                                  </div>
-                                  <AreaAutocomplete
-                                    label="Which areas should we focus on?"
-                                    value={leadDetailForm.areaInterest}
-                                    onChange={(nextArea) => updateLeadDetailField('areaInterest', nextArea)}
-                                    placeholder="Bedfordview, Bartlett, Sandton..."
-                                  />
-                                  <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
-                                    What type of property do you need?
-                                    <Field placeholder="Property type, bedrooms, must-haves" value={leadDetailForm.propertyInterest} onChange={(event) => updateLeadDetailField('propertyInterest', event.target.value)} />
-                                  </label>
-                                  <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
-                                    What did the buyer say on the call?
-                                    <Field as="textarea" rows={6} placeholder="Capture affordability, urgency, must-haves, exclusions, and next step..." value={leadDetailForm.notes} onChange={(event) => updateLeadDetailField('notes', event.target.value)} />
-                                  </label>
-                                </div>
-
-                                <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-[#edf3f8] pt-4">
-                                  <Button
-                                    type={qualificationPrimaryAction.submit ? 'submit' : 'button'}
-                                    size="sm"
-                                    onClick={qualificationPrimaryAction.submit ? undefined : qualificationPrimaryAction.onClick}
-                                    disabled={qualificationPrimaryAction.submit && isLeadDetailSaving}
-                                  >
-                                    {createElement(qualificationPrimaryAction.Icon, { className: 'h-4 w-4' })}
-                                    {qualificationPrimaryAction.label}
-                                  </Button>
-                                  <div className="flex flex-wrap gap-2">
-                                    {!qualificationPrimaryAction.submit ? (
-                                      <Button type="submit" size="sm" variant="secondary" disabled={isLeadDetailSaving}>
-                                        {isLeadDetailSaving ? 'Saving...' : 'Save changes'}
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="rounded-full border border-[#d7e6f2] bg-[#f8fbfd] px-3 py-1 text-xs font-semibold text-[#60758b]">
+                                      {buyerQualificationStatusLabel}
+                                    </span>
+                                    {buyerQualificationEditing ? (
+                                      <Button type="button" size="sm" variant="secondary" onClick={() => setBuyerQualificationEditing(false)}>
+                                        <X className="h-4 w-4" />
+                                        Cancel
                                       </Button>
-                                    ) : null}
-                                    <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/bond/pipeline?view=new')}>
-                                      Continue qualification
-                                      <ArrowUpRight className="h-4 w-4" />
-                                    </Button>
+                                    ) : (
+                                      <Button type="button" size="sm" variant="secondary" onClick={() => setBuyerQualificationEditing(true)}>
+                                        <Pencil className="h-4 w-4" />
+                                        Edit
+                                      </Button>
+                                    )}
                                   </div>
                                 </div>
+
+                                {buyerQualificationEditing ? (
+                                  <>
+                                    <div className="mt-5 grid flex-1 gap-4">
+                                      <div className="grid gap-4 md:grid-cols-2">
+                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                          What is your budget?
+                                          <Field placeholder="R 2 500 000" value={buyerQualificationForm.budget} onChange={(event) => updateBuyerQualificationField('budget', event.target.value)} />
+                                        </label>
+                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                          When would you like to move?
+                                          <Field as="select" value={buyerQualificationForm.moveTimeframe} onChange={(event) => updateBuyerQualificationField('moveTimeframe', event.target.value)}>
+                                            {BUYER_MOVE_TIMEFRAME_OPTIONS.map((option) => (
+                                              <option key={option || 'empty-timeframe'} value={option}>{option || 'Select timeframe'}</option>
+                                            ))}
+                                          </Field>
+                                        </label>
+                                      </div>
+                                      <AreaAutocomplete
+                                        label="Which areas should we focus on?"
+                                        value={buyerQualificationForm.areaInterest}
+                                        onChange={(nextArea) => updateBuyerQualificationField('areaInterest', nextArea)}
+                                        placeholder="Bedfordview, Bartlett, Sandton..."
+                                      />
+                                      <div className="grid gap-4 md:grid-cols-2">
+                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                          Cash buyer or bond?
+                                          <Field as="select" value={buyerQualificationForm.financeType} onChange={(event) => updateBuyerQualificationField('financeType', event.target.value)}>
+                                            {BUYER_FINANCE_TYPE_OPTIONS.map((option) => (
+                                              <option key={option || 'empty-finance'} value={option}>{option || 'Select finance type'}</option>
+                                            ))}
+                                          </Field>
+                                        </label>
+                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                          Is the purchase subject to finance?
+                                          <Field as="select" value={buyerQualificationForm.subjectToFinance} onChange={(event) => updateBuyerQualificationField('subjectToFinance', event.target.value)}>
+                                            {BUYER_SUBJECT_TO_FINANCE_OPTIONS.map((option) => (
+                                              <option key={option || 'empty-subject-to-finance'} value={option}>{option || 'Select answer'}</option>
+                                            ))}
+                                          </Field>
+                                        </label>
+                                      </div>
+                                      <div className="grid gap-4 md:grid-cols-3">
+                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                          Deposit available?
+                                          <Field placeholder="R 400 000" value={buyerQualificationForm.depositAvailable} onChange={(event) => updateBuyerQualificationField('depositAvailable', event.target.value)} />
+                                        </label>
+                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                          Bond pre-approval status?
+                                          <Field as="select" value={buyerQualificationForm.preApprovalStatus} onChange={(event) => updateBuyerQualificationField('preApprovalStatus', event.target.value)}>
+                                            {BUYER_PRE_APPROVAL_OPTIONS.map((option) => (
+                                              <option key={option || 'empty-pre-approval'} value={option}>{option || 'Select status'}</option>
+                                            ))}
+                                          </Field>
+                                        </label>
+                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                          Do you need to sell a property first?
+                                          <Field as="select" value={buyerQualificationForm.propertyToSell} onChange={(event) => updateBuyerQualificationField('propertyToSell', event.target.value)}>
+                                            {BUYER_PROPERTY_TO_SELL_OPTIONS.map((option) => (
+                                              <option key={option || 'empty-property-to-sell'} value={option}>{option || 'Select answer'}</option>
+                                            ))}
+                                          </Field>
+                                        </label>
+                                      </div>
+                                      <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                        What type of property do you need?
+                                        <Field placeholder="Property type, bedrooms, must-haves" value={buyerQualificationForm.propertyNeed} onChange={(event) => updateBuyerQualificationField('propertyNeed', event.target.value)} />
+                                      </label>
+                                      <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                        What did the buyer say on the call?
+                                        <Field as="textarea" rows={5} placeholder="Capture affordability, urgency, must-haves, exclusions, and next step..." value={buyerQualificationForm.additionalNotes} onChange={(event) => updateBuyerQualificationField('additionalNotes', event.target.value)} />
+                                      </label>
+                                    </div>
+
+                                    <div className="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-[#edf3f8] pt-4">
+                                      <Button type="button" size="sm" variant="secondary" onClick={() => setBuyerQualificationForm(buildBuyerQualificationFormFromLead(selectedLead))}>
+                                        Reset
+                                      </Button>
+                                      <Button type="submit" size="sm" disabled={isLeadDetailSaving}>
+                                        <CheckCircle2 className="h-4 w-4" />
+                                        {isLeadDetailSaving ? 'Saving...' : 'Save qualification'}
+                                      </Button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="mt-5 grid flex-1 gap-3 md:grid-cols-2">
+                                      {qualificationQuestionRows.map((row) => {
+                                        const isMissing = row.value === 'Not captured'
+                                        return (
+                                          <div key={row.label} className={`rounded-[16px] border border-[#edf3f8] bg-[#fbfdff] px-4 py-3 ${row.wide ? 'md:col-span-2' : ''}`}>
+                                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7c91a8]">{row.label}</p>
+                                            <p className={`mt-1 whitespace-pre-wrap text-sm font-semibold leading-6 ${isMissing ? 'text-[#9aa9b8]' : 'text-[#102033]'}`}>{row.value}</p>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+
+                                    {buyerOverviewQualification.hasQualificationSignal && !buyerOverviewQualification.hasViewingBooked ? (
+                                      <div className="mt-5 flex justify-end border-t border-[#edf3f8] pt-4">
+                                        <Button type="button" size="sm" onClick={() => handleOpenAppointmentModal()}>
+                                          <CalendarDays className="h-4 w-4" />
+                                          Book viewing
+                                        </Button>
+                                      </div>
+                                    ) : null}
+                                  </>
+                                )}
                               </form>
 
                               <section className="flex h-full flex-col rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6">
@@ -17751,7 +17989,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             type="button"
                                             size="sm"
                                             variant="secondary"
-                                            className="w-full"
+                                            className="w-full min-w-0 px-2 text-xs leading-none"
                                             onClick={() => {
                                               const listingId = normalizeText(property.id)
                                               if (listingId && !listingId.startsWith('recommended-')) {
@@ -17761,10 +17999,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                               }
                                             }}
                                           >
-                                            View
+                                            <span className="min-w-0 truncate">View</span>
                                           </Button>
-                                          <Button type="button" size="sm" className="w-full" onClick={() => handleOpenAppointmentModal()}>
-                                            Book Viewing
+                                          <Button type="button" size="sm" className="w-full min-w-0 px-2 text-xs leading-none" onClick={() => handleOpenAppointmentModal()}>
+                                            <span className="min-w-0 truncate">Book Viewing</span>
                                           </Button>
                                         </div>
                                       </div>
