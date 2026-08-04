@@ -3999,6 +3999,35 @@ function dedupeByKey(rows = [], resolveKey) {
   return [...map.values()]
 }
 
+function isLifecycleLeadSourceLabel(value = '') {
+  const normalized = normalizeKey(value)
+  return (
+    !normalized ||
+    normalized === 'seller_onboarding' ||
+    normalized === 'seller_onboarding_sent' ||
+    normalized === 'seller_onboarding_submitted' ||
+    normalized === 'seller_onboarding_completed' ||
+    normalized === 'onboarding_sent' ||
+    normalized === 'onboarding_submitted' ||
+    normalized === 'onboarding_completed' ||
+    normalized === 'mandate_sent' ||
+    normalized === 'mandate_signed' ||
+    normalized === 'listing_live' ||
+    normalized === 'listing_activated' ||
+    normalized === 'private_listing' ||
+    normalized === 'pipeline_seller_lead' ||
+    normalized === 'pipeline_seller_conversion'
+  )
+}
+
+function resolveActualLeadSource(...values) {
+  for (const value of values) {
+    const source = normalizeText(value)
+    if (source && !isLifecycleLeadSourceLabel(source)) return source
+  }
+  return ''
+}
+
 function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
   const mergedById = new Map()
   const remoteLeadRows = Array.isArray(remoteRows) ? remoteRows : []
@@ -4020,6 +4049,20 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
       ? { ...localRow, ...remoteRow }
       : remoteUpdated >= localUpdated ? { ...localRow, ...remoteRow } : { ...remoteRow, ...localRow }
     const mergedSellerOnboarding = mergeSellerOnboardingSnapshot(baseRow, localRow, remoteRow)
+    const leadSource = resolveActualLeadSource(
+      localRow.leadSource,
+      localRow.lead_source,
+      localRow.source,
+      localRow.sourceLabel,
+      remoteRow.leadSource,
+      remoteRow.lead_source,
+      remoteRow.source,
+      remoteRow.sourceLabel,
+      baseRow.leadSource,
+      baseRow.lead_source,
+      baseRow.source,
+      baseRow.sourceLabel,
+    ) || 'Other'
     const localContactId = normalizeText(localRow?.contactId)
     const remoteContactId = normalizeText(remoteRow?.contactId)
     const shouldPreservePersistedContactId =
@@ -4029,6 +4072,7 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
 
     mergedById.set(key, {
       ...baseRow,
+      leadSource,
       contactId: shouldPreservePersistedContactId
         ? localContactId
         : normalizeText(baseRow.contactId || localContactId || remoteContactId),
@@ -4109,6 +4153,11 @@ function mapPrivateListingToLeadFallback(listing = {}) {
   const formData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
     ? listing.sellerOnboarding.formData
     : {}
+  const sellerOnboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
+    ? listing.sellerOnboarding
+    : listing?.seller_onboarding && typeof listing.seller_onboarding === 'object'
+      ? listing.seller_onboarding
+      : {}
   const leadIdSeed =
     normalizeText(listing?.originatingCrmLeadId) ||
     normalizeText(listing?.sellerLeadId) ||
@@ -4120,6 +4169,20 @@ function mapPrivateListingToLeadFallback(listing = {}) {
   const isCompleted = onboardingStatus.toLowerCase() === 'completed'
   const createdAt = listing?.createdAt || new Date().toISOString()
   const updatedAt = listing?.sellerOnboarding?.submittedAt || listing?.updatedAt || createdAt
+  const leadSource = resolveActualLeadSource(
+    listing?.leadSource,
+    listing?.lead_source,
+    listing?.sourceLabel,
+    listing?.source_label,
+    listing?.origin,
+    sellerOnboarding?.leadSource,
+    sellerOnboarding?.lead_source,
+    formData.leadSource,
+    formData.lead_source,
+    formData.source,
+    formData.sourceLabel,
+    formData.source_label,
+  ) || 'Manual Entry'
 
   return {
     leadId,
@@ -4130,7 +4193,7 @@ function mapPrivateListingToLeadFallback(listing = {}) {
     contactId: `contact_${leadIdSeed}`,
     leadCategory: 'seller',
     leadDirection: 'Inbound',
-    leadSource: 'Seller Onboarding',
+    leadSource,
     stage: isCompleted ? 'Onboarding Submitted' : onboardingStatus ? 'Onboarding Sent' : 'Lead',
     status: isCompleted ? 'Submitted' : onboardingStatus ? 'Sent' : 'Lead',
     priority: 'Medium',

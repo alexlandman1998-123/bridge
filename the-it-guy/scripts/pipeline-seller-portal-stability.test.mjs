@@ -84,6 +84,21 @@ assert.match(
 )
 assert.match(
   pipelineSource,
+  /function resolveActualLeadSource[\s\S]*?isLifecycleLeadSourceLabel/,
+  'seller lead fallback rows should resolve actual lead sources separately from lifecycle labels',
+)
+assert.match(
+  pipelineSource,
+  /const leadSource = resolveActualLeadSource\([\s\S]*?localRow\.leadSource[\s\S]*?remoteRow\.leadSource[\s\S]*?baseRow\.leadSource/,
+  'lead refresh merges should preserve persisted CRM lead sources over listing lifecycle fallback labels',
+)
+assert.doesNotMatch(
+  pipelineSource,
+  /leadSource:\s*['"]Seller Onboarding['"]/,
+  'seller listing fallback rows must not populate the Source column with the seller onboarding lifecycle label',
+)
+assert.match(
+  pipelineSource,
   /routeLeadWorkspaceSnapshotRef\.current = \{[\s\S]*?requestedLeadId: normalizeText\(routeLeadId\)[\s\S]*?resolvedLeadId: resolvedRouteLeadId/,
   'successful direct lead hydration should pin the requested and resolved lead ids',
 )
