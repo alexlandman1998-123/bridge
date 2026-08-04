@@ -10794,7 +10794,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     )
   }
 
-  async function handleSaveBuyerViewingPlan() {
+  async function handleSaveBuyerViewingPlan(nextStatusOverride = '') {
     if (!organisationId || !selectedLead || selectedLeadIsSeller) return
     const selectedPropertyIds = viewingPlanSelectedPropertyIds.map(normalizeText).filter(Boolean)
     if (!selectedPropertyIds.length) {
@@ -10806,9 +10806,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       const savedAt = new Date().toISOString()
       const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+      const nextStatus = normalizeText(nextStatusOverride) || viewingPlanStatus
       const notes = buildBuyerViewingPlanNotes(
         {
-          status: viewingPlanStatus,
+          status: nextStatus,
           selectedPropertyIds,
           confirmedPropertyIds: (Array.isArray(viewingPlanResponseForm.confirmedPropertyIds) ? viewingPlanResponseForm.confirmedPropertyIds : [])
             .map(normalizeText)
@@ -10829,7 +10830,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         selectedLead.notes,
       )
       const leadPatch = { notes }
-      const statusLabel = BUYER_VIEWING_PLAN_STATUS_OPTIONS.find((option) => option.key === viewingPlanStatus)?.label || 'Draft'
+      const statusLabel = BUYER_VIEWING_PLAN_STATUS_OPTIONS.find((option) => option.key === nextStatus)?.label || 'Draft'
 
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
       await createAgencyCrmLeadActivity(
@@ -10843,16 +10844,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
         { actor: currentAgent },
       ).catch(() => null)
-      await completeBuyerViewingAutomationTask('Follow up buyer viewing availability').catch(() => null)
-      await createBuyerViewingAutomationTask({
-        title: 'Coordinate seller viewing access',
-        description: `Buyer confirmed ${confirmedPropertyIds.length} propert${confirmedPropertyIds.length === 1 ? 'y' : 'ies'}. Request seller access for: ${availabilityWindows}`,
-        dueDate: getTodayIsoDate(),
-        priority: 'High',
-      }).catch(() => null)
 
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       setViewingPlanSelectedPropertyIds(selectedPropertyIds)
+      setViewingPlanStatus(nextStatus)
       setMessage('Viewing plan saved.')
       scheduleRecordsReload(organisationId, 850)
     } catch (saveError) {
@@ -18685,36 +18680,48 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           viewingPlanUnbookedProperties[0] ||
                           viewingPlanConfirmedProperties[0] ||
                           null
-                        const findViewingAutomationTask = (title) => selectedLeadTasks.find((task) => (
-                          normalizeKey(task?.title) === normalizeKey(title) &&
-                          !['completed', 'cancelled', 'done'].includes(normalizeText(task?.status).toLowerCase())
-                        ))
-                        const viewingPlanAutomationRows = [
+                        const viewingPlannerSteps = [
                           {
-                            key: 'buyer',
-                            label: 'Buyer availability follow-up',
-                            task: findViewingAutomationTask('Follow up buyer viewing availability'),
-                            active: Boolean(savedViewingPlan.requestedAt),
+                            key: 'select',
+                            label: 'Select properties',
+                            meta: 'Choose properties for the viewing',
                           },
                           {
-                            key: 'seller_coordinate',
-                            label: 'Seller access coordination',
-                            task: findViewingAutomationTask('Coordinate seller viewing access'),
-                            active: Boolean(savedViewingPlan.respondedAt),
+                            key: 'request',
+                            label: 'Request availability',
+                            meta: 'Ask buyer for suitable times',
                           },
                           {
-                            key: 'seller_follow_up',
-                            label: 'Seller access follow-up',
-                            task: findViewingAutomationTask('Follow up seller viewing access'),
-                            active: Boolean(savedViewingPlan.sellerRequestedAt),
+                            key: 'seller',
+                            label: 'Confirm with sellers',
+                            meta: 'Check access and availability',
                           },
                           {
-                            key: 'post_viewing',
-                            label: 'Post-viewing follow-up',
-                            task: findViewingAutomationTask('Post-viewing buyer follow-up'),
-                            active: Boolean(viewingPlanBookedAppointmentIds.length),
+                            key: 'book',
+                            label: 'Book appointments',
+                            meta: 'Schedule and notify parties',
                           },
                         ]
+                        const viewingPlannerActiveIndex = viewingPlanStatus === 'booked' || (viewingPlanStatus === 'seller_coordination' && savedViewingPlan.sellerRequestedAt)
+                          ? 3
+                          : viewingPlanStatus === 'seller_coordination' || viewingPlanStatus === 'buyer_confirmed'
+                            ? 2
+                            : viewingPlanStatus === 'buyer_availability'
+                              ? 1
+                              : 0
+                        const viewingPlannerActiveStepKey = viewingPlannerSteps[viewingPlannerActiveIndex]?.key || 'select'
+                        const viewingPlannerSelectedCountLabel = `${viewingPlanSelectedProperties.length} propert${viewingPlanSelectedProperties.length === 1 ? 'y' : 'ies'} selected`
+                        const viewingPlannerBuyerHasRequest = Boolean(savedViewingPlan.requestedAt)
+                        const viewingPlannerSellerHasRequest = Boolean(savedViewingPlan.sellerRequestedAt)
+                        const viewingPlannerBuyerAvailability = normalizeText(viewingPlanResponseForm.availabilityWindows)
+                        const viewingPlannerBuyerNotes = normalizeText(viewingPlanResponseForm.responseNotes)
+                        const viewingPlannerSellerNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
+                        const viewingPlannerEmailPreview = buildBuyerViewingAvailabilityEmailBody({
+                          buyerName: normalizeText(selectedLeadDisplayName || selectedLeadContact?.firstName || selectedLead?.firstName) || 'there',
+                          agentName: currentAgent.fullName || currentAgent.email,
+                          properties: viewingPlanSelectedProperties,
+                          origin: typeof window !== 'undefined' ? window.location?.origin || '' : '',
+                        })
 
                         return (
                           <>
@@ -19002,6 +19009,341 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </section>
                             </div>
 
+                            <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6">
+                              <div className="flex flex-wrap items-start justify-between gap-4">
+                                <div>
+                                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Viewing Planner</p>
+                                  <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#102033]">Schedule buyer viewings</h3>
+                                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#60758b]">
+                                    <span className="font-semibold text-[#20364c]">{selectedLeadDisplayName}</span>
+                                    {(selectedLeadContact?.phone || selectedLead?.phone) ? (
+                                      <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />{selectedLeadContact?.phone || selectedLead?.phone}</span>
+                                    ) : null}
+                                    {viewingPlanBuyerEmail ? (
+                                      <span className="inline-flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{viewingPlanBuyerEmail}</span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <span className="rounded-full border border-[#d7e6f2] bg-[#f8fbfd] px-3 py-1 text-xs font-semibold text-[#60758b]">
+                                  {viewingPlanStatusLabel}
+                                </span>
+                              </div>
+
+                              <div className="mt-5 grid gap-3 rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-3 lg:grid-cols-4">
+                                {viewingPlannerSteps.map((step, index) => {
+                                  const isActive = index === viewingPlannerActiveIndex
+                                  const isComplete = index < viewingPlannerActiveIndex
+                                  return (
+                                    <div key={step.key} className="flex min-w-0 items-center gap-3">
+                                      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-semibold ${isComplete ? 'bg-[#157a4d] text-white' : isActive ? 'border border-[#9bcdb4] bg-white text-[#157a4d] shadow-[0_6px_16px_rgba(21,122,77,0.08)]' : 'bg-[#eaf1f7] text-[#7c91a8]'}`}>
+                                        {isComplete ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                                      </span>
+                                      <span className="min-w-0">
+                                        <span className={`block truncate text-sm font-semibold ${isActive || isComplete ? 'text-[#102033]' : 'text-[#60758b]'}`}>{step.label}</span>
+                                        <span className="block truncate text-xs text-[#60758b]">{step.meta}</span>
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+
+                              <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
+                                <div className="min-w-0">
+                                  {viewingPlannerActiveStepKey === 'select' ? (
+                                    <>
+                                      <div className="flex flex-wrap items-end justify-between gap-3">
+                                        <div>
+                                          <p className="text-sm font-semibold text-[#60758b]">Step 1 of 4</p>
+                                          <h4 className="mt-1 text-lg font-semibold text-[#102033]">Select properties for viewing</h4>
+                                          <p className="mt-1 text-sm text-[#60758b]">Choose the enquiry property and any suitable alternatives for one buyer request.</p>
+                                        </div>
+                                        <Button type="button" size="sm" variant="secondary" onClick={() => handleLeadWorkspaceTabSelection('properties')}>
+                                          <Plus className="h-4 w-4" />
+                                          Search another property
+                                        </Button>
+                                      </div>
+                                      {selectedLeadViewingPlanProperties.length ? (
+                                        <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                          {selectedLeadViewingPlanProperties.map((property) => {
+                                            const propertyId = normalizeText(property?.id)
+                                            const isSelected = viewingPlanSelectedPropertyIds.includes(propertyId)
+                                            return (
+                                              <button
+                                                key={propertyId}
+                                                type="button"
+                                                className={`group grid min-w-0 grid-cols-[104px_minmax(0,1fr)] items-center gap-3 rounded-[14px] border p-2.5 text-left transition ${isSelected ? 'border-[#157a4d] bg-[#f4fbf7] shadow-[0_10px_24px_rgba(21,122,77,0.08)]' : 'border-[#e3ecf5] bg-white hover:border-[#cbdbea]'}`}
+                                                onClick={() => handleToggleViewingPlanProperty(propertyId)}
+                                                aria-pressed={isSelected}
+                                              >
+                                                <span className="relative h-24 overflow-hidden rounded-[10px] bg-[#edf4fb]">
+                                                  <img src={property.image} alt={property.title} className="h-full w-full object-cover" />
+                                                  <span className={`absolute left-2 top-2 grid h-6 w-6 place-items-center rounded-[8px] border text-[0.65rem] ${isSelected ? 'border-[#157a4d] bg-[#157a4d] text-white' : 'border-white/80 bg-white/90 text-[#7d93aa]'}`}>
+                                                    {isSelected ? <CheckCircle2 className="h-4 w-4" /> : null}
+                                                  </span>
+                                                </span>
+                                                <span className="min-w-0">
+                                                  <span className="inline-flex rounded-full bg-[#e8f4ee] px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.06em] text-[#17643a]">{property.planLabel}</span>
+                                                  <span className="mt-2 block truncate text-base font-semibold text-[#102033]" title={property.title}>{property.title}</span>
+                                                  <span className="mt-1 block truncate text-sm text-[#60758b]" title={property.area}>{property.area || 'Area pending'}</span>
+                                                  <span className="mt-2 inline-flex rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#17643a] ring-1 ring-[#d8eadf]">{property.match}% match</span>
+                                                </span>
+                                              </button>
+                                            )
+                                          })}
+                                        </div>
+                                      ) : (
+                                        <div className="mt-4 rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-8 text-center">
+                                          <p className="text-sm font-semibold text-[#20364c]">No properties ready for a viewing plan</p>
+                                          <p className="mt-1 text-sm text-[#6f839c]">Update the buyer qualification or matching list first.</p>
+                                        </div>
+                                      )}
+                                    </>
+                                  ) : null}
+
+                                  {viewingPlannerActiveStepKey === 'request' ? (
+                                    <div className="rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
+                                      <p className="text-sm font-semibold text-[#60758b]">Step 2 of 4</p>
+                                      <h4 className="mt-1 text-lg font-semibold text-[#102033]">{viewingPlannerBuyerHasRequest ? 'Waiting for buyer availability' : 'Request buyer availability'}</h4>
+                                      <p className="mt-1 text-sm leading-6 text-[#60758b]">
+                                        {viewingPlannerBuyerHasRequest
+                                          ? `${viewingPlannerSelectedCountLabel} were sent to ${viewingPlanBuyerEmail || 'the buyer'}. Automatic follow-up enabled.`
+                                          : 'Send one concise request covering the selected properties.'}
+                                      </p>
+                                      {viewingPlannerBuyerHasRequest ? (
+                                        <div className="mt-4 rounded-[14px] border border-[#dce7f2] bg-white p-4">
+                                          <div className="flex flex-wrap items-center justify-between gap-3">
+                                            <div>
+                                              <p className="text-sm font-semibold text-[#102033]">Request sent</p>
+                                              <p className="mt-1 text-xs text-[#60758b]">{savedViewingPlan.requestedAt ? formatDateShort(savedViewingPlan.requestedAt) : 'Date not captured'}</p>
+                                            </div>
+                                            <span className="rounded-full bg-[#e8f4ee] px-3 py-1 text-xs font-semibold text-[#17643a]">Automatic follow-up enabled</span>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="mt-4 rounded-[14px] border border-[#dce7f2] bg-white p-4">
+                                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Email preview</p>
+                                          <p className="mt-2 line-clamp-6 whitespace-pre-wrap text-sm leading-6 text-[#29435d]">{viewingPlannerEmailPreview}</p>
+                                        </div>
+                                      )}
+                                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          disabled={!viewingPlanSelectedProperties.length || !viewingPlanBuyerEmail || isLeadDetailSaving}
+                                          onClick={() => void handleSendBuyerViewingAvailabilityRequest(viewingPlanSelectedProperties)}
+                                        >
+                                          <Send className="h-4 w-4" />
+                                          {viewingPlannerBuyerHasRequest ? 'Resend request' : 'Send availability request'}
+                                        </Button>
+                                        <Button type="button" size="sm" variant="secondary" onClick={() => setViewingPlanStatus('draft')}>
+                                          Edit selected properties
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="secondary"
+                                          onClick={() => {
+                                            if (typeof navigator !== 'undefined') {
+                                              void navigator.clipboard?.writeText(viewingPlannerEmailPreview)
+                                            }
+                                            setMessage('Buyer availability request copied.')
+                                          }}
+                                        >
+                                          <Copy className="h-4 w-4" />
+                                          Copy request
+                                        </Button>
+                                      </div>
+                                      {!viewingPlanBuyerEmail ? (
+                                        <p className="mt-3 text-sm font-semibold text-[#b45309]">Add a buyer email before sending the request.</p>
+                                      ) : null}
+                                      {viewingPlannerBuyerHasRequest ? (
+                                        <div className="mt-5 border-t border-[#e6eef6] pt-4">
+                                          <h5 className="text-sm font-semibold text-[#102033]">Capture buyer response manually</h5>
+                                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                            {viewingPlanSelectedProperties.map((property) => {
+                                              const propertyId = normalizeText(property?.id)
+                                              const confirmed = viewingPlanConfirmedPropertyIds.includes(propertyId)
+                                              return (
+                                                <button
+                                                  key={`confirmed-${propertyId}`}
+                                                  type="button"
+                                                  className={`flex min-w-0 items-center gap-2 rounded-[12px] border px-2.5 py-2 text-left transition ${confirmed ? 'border-[#b9dbc9] bg-white text-[#17643a]' : 'border-[#e3ecf5] bg-white text-[#60758b] hover:border-[#cbdbea]'}`}
+                                                  onClick={() => handleToggleViewingResponseProperty(propertyId)}
+                                                  aria-pressed={confirmed}
+                                                >
+                                                  <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${confirmed ? 'border-[#157a4d] bg-[#157a4d] text-white' : 'border-[#cbd8e6] bg-white text-[#9aa9b8]'}`}>
+                                                    {confirmed ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
+                                                  </span>
+                                                  <span className="min-w-0 truncate text-xs font-semibold">{property.title}</span>
+                                                </button>
+                                              )
+                                            })}
+                                          </div>
+                                          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                            <Field as="textarea" rows={3} placeholder="Available dates and time windows..." value={viewingPlanResponseForm.availabilityWindows} onChange={(event) => updateViewingPlanResponseField('availabilityWindows', event.target.value)} />
+                                            <Field as="textarea" rows={3} placeholder="Buyer notes..." value={viewingPlanResponseForm.responseNotes} onChange={(event) => updateViewingPlanResponseField('responseNotes', event.target.value)} />
+                                          </div>
+                                          <div className="mt-3 flex justify-end">
+                                            <Button type="button" size="sm" disabled={!viewingPlanConfirmedPropertyIds.length || !viewingPlannerBuyerAvailability || isLeadDetailSaving} onClick={() => void handleCaptureBuyerViewingResponse()}>
+                                              <CheckCircle2 className="h-4 w-4" />
+                                              Capture response
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+
+                                  {viewingPlannerActiveStepKey === 'seller' ? (
+                                    <div className="rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
+                                      <p className="text-sm font-semibold text-[#60758b]">Step 3 of 4</p>
+                                      <h4 className="mt-1 text-lg font-semibold text-[#102033]">Confirm with sellers</h4>
+                                      <div className="mt-3 rounded-[14px] border border-[#dce7f2] bg-white p-4">
+                                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Buyer availability</p>
+                                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#29435d]">{viewingPlannerBuyerAvailability || 'No buyer availability captured yet.'}</p>
+                                        {viewingPlannerBuyerNotes ? <p className="mt-2 text-sm leading-6 text-[#60758b]">{viewingPlannerBuyerNotes}</p> : null}
+                                      </div>
+                                      <div className="mt-3 space-y-2">
+                                        {viewingPlanConfirmedProperties.map((property) => (
+                                          <article key={`seller-card-${property.id}`} className="grid min-w-0 grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] border border-[#e4edf6] bg-white p-2.5">
+                                            <img src={property.image} alt="" className="h-12 w-12 rounded-[10px] object-cover" />
+                                            <div className="min-w-0">
+                                              <p className="truncate text-sm font-semibold text-[#102033]" title={property.title}>{property.title}</p>
+                                              <p className="mt-0.5 truncate text-xs text-[#60758b]" title={property.sellerEmail || property.area}>
+                                                {property.sellerEmail ? `Seller: ${property.sellerEmail}` : property.area || 'Seller email needed'}
+                                              </p>
+                                            </div>
+                                            <span className="rounded-full bg-[#eef4f9] px-2.5 py-1 text-[0.68rem] font-semibold text-[#60758b]">
+                                              {viewingPlannerSellerHasRequest ? 'Awaiting seller' : 'Not contacted'}
+                                            </span>
+                                          </article>
+                                        ))}
+                                      </div>
+                                      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,0.5fr)]">
+                                        <Field placeholder={viewingPlanSuggestedSellerEmails.length ? viewingPlanSuggestedSellerEmails.join(', ') : 'seller@example.com'} value={viewingPlanSellerForm.sellerRecipientEmails} onChange={(event) => updateViewingPlanSellerField('sellerRecipientEmails', event.target.value)} />
+                                        <Field placeholder="Access notes or preferred order..." value={viewingPlanSellerForm.sellerCoordinationNotes} onChange={(event) => updateViewingPlanSellerField('sellerCoordinationNotes', event.target.value)} />
+                                      </div>
+                                      <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                                        <Button type="button" size="sm" disabled={!viewingPlanConfirmedProperties.length || !viewingPlannerBuyerAvailability || !viewingPlanSellerRecipientCount || isLeadDetailSaving} onClick={() => void handleSendSellerViewingAvailabilityRequest(viewingPlanConfirmedProperties)}>
+                                          <Send className="h-4 w-4" />
+                                          Request seller availability
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ) : null}
+
+                                  {viewingPlannerActiveStepKey === 'book' ? (
+                                    <div className="rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
+                                      <p className="text-sm font-semibold text-[#60758b]">Step 4 of 4</p>
+                                      <h4 className="mt-1 text-lg font-semibold text-[#102033]">Book appointments</h4>
+                                      <p className="mt-1 text-sm leading-6 text-[#60758b]">Create the viewing appointments once seller access is confirmed.</p>
+                                      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
+                                        <div className="space-y-2">
+                                          {viewingPlanConfirmedProperties.length ? (
+                                            viewingPlanConfirmedProperties.map((property) => {
+                                              const propertyId = normalizeText(property?.id)
+                                              const isBooked = viewingPlanBookedPropertyIds.includes(propertyId)
+                                              const isActive = normalizeText(viewingPlanBookingProperty?.id) === propertyId
+                                              return (
+                                                <button
+                                                  key={`book-viewing-${propertyId}`}
+                                                  type="button"
+                                                  className={`grid w-full min-w-0 grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] border p-2.5 text-left transition ${isActive ? 'border-[#b9dbc9] bg-white shadow-[0_8px_22px_rgba(21,122,77,0.08)]' : 'border-[#edf3f8] bg-white hover:border-[#cbdbea]'}`}
+                                                  onClick={() => setViewingPlanBookingPropertyId(propertyId)}
+                                                >
+                                                  <img src={property.image} alt="" className="h-12 w-12 rounded-[10px] object-cover" />
+                                                  <span className="min-w-0">
+                                                    <span className="block truncate text-sm font-semibold text-[#102033]" title={property.title}>{property.title}</span>
+                                                    <span className="mt-0.5 block truncate text-xs text-[#60758b]">{property.area || property.price || 'Viewing property'}</span>
+                                                  </span>
+                                                  <span className={`rounded-full px-2 py-0.5 text-[0.66rem] font-semibold ${isBooked ? 'bg-[#e8f4ee] text-[#17643a]' : 'bg-[#eef4f9] text-[#60758b]'}`}>
+                                                    {isBooked ? 'Booked' : 'To book'}
+                                                  </span>
+                                                </button>
+                                              )
+                                            })
+                                          ) : (
+                                            <div className="rounded-[12px] border border-dashed border-[#d7e2ef] bg-white px-4 py-5 text-center">
+                                              <p className="text-sm font-semibold text-[#20364c]">No confirmed properties yet</p>
+                                              <p className="mt-1 text-xs text-[#6f839c]">Capture the buyer response first.</p>
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="space-y-3 rounded-[14px] border border-[#dce7f2] bg-white p-4">
+                                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Buyer windows</p>
+                                          <p className="line-clamp-5 whitespace-pre-wrap text-sm leading-6 text-[#29435d]">{viewingPlannerBuyerAvailability || 'No buyer availability captured yet.'}</p>
+                                          {viewingPlannerSellerNotes ? <p className="text-xs leading-5 text-[#60758b]">{viewingPlannerSellerNotes}</p> : null}
+                                          <Button type="button" size="sm" className="w-full" disabled={!viewingPlanBookingProperty || !viewingPlannerBuyerAvailability} onClick={() => handleOpenViewingPlanBookingModal(viewingPlanBookingProperty)}>
+                                            <CalendarDays className="h-4 w-4" />
+                                            Book viewing appointment
+                                          </Button>
+                                          {viewingPlanStatus === 'booked' ? (
+                                            <Button type="button" size="sm" variant="secondary" className="w-full" onClick={() => handleLeadWorkspaceTabSelection('appointments')}>
+                                              View appointments
+                                            </Button>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+
+                                <aside className="rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <h4 className="text-sm font-semibold text-[#102033]">Selected properties</h4>
+                                    <span className="grid h-7 w-7 place-items-center rounded-full bg-[#157a4d] text-xs font-semibold text-white">{viewingPlanSelectedProperties.length}</span>
+                                  </div>
+                                  <div className="mt-3 space-y-2">
+                                    {viewingPlanSelectedProperties.length ? (
+                                      viewingPlanSelectedProperties.map((property) => (
+                                        <div key={`selected-plan-${property.id}`} className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)_28px] items-center gap-2 rounded-[12px] bg-white p-2 ring-1 ring-[#edf3f8]">
+                                          <img src={property.image} alt="" className="h-11 w-11 rounded-[9px] object-cover" />
+                                          <div className="min-w-0">
+                                            <p className="truncate text-xs font-semibold text-[#20364c]" title={property.title}>{property.title}</p>
+                                            <p className="truncate text-[0.68rem] text-[#7c91a8]">{property.area || property.price}</p>
+                                          </div>
+                                          <button type="button" className="grid h-7 w-7 place-items-center rounded-full text-[#60758b] hover:bg-[#eef4f9] hover:text-[#102033]" onClick={() => handleToggleViewingPlanProperty(normalizeText(property.id))} aria-label={`Remove ${property.title} from viewing plan`}>
+                                            <X className="h-4 w-4" />
+                                          </button>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <div className="rounded-[12px] border border-dashed border-[#d7e2ef] bg-white px-3 py-5 text-center">
+                                        <p className="text-sm font-semibold text-[#20364c]">No properties selected</p>
+                                        <p className="mt-1 text-xs text-[#6f839c]">Pick one or more matches to begin.</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="mt-4 border-t border-[#e6eef6] pt-4">
+                                    {viewingPlannerActiveStepKey === 'select' ? (
+                                      <>
+                                        <p className="text-sm font-semibold text-[#102033]">What happens next?</p>
+                                        <div className="mt-3 space-y-3 text-sm leading-5 text-[#60758b]">
+                                          <p className="flex gap-2"><Mail className="mt-0.5 h-4 w-4 shrink-0 text-[#157a4d]" />Send the buyer one email with these properties.</p>
+                                          <p className="flex gap-2"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-[#157a4d]" />They reply with suitable viewing times.</p>
+                                          <p className="flex gap-2"><UserRound className="mt-0.5 h-4 w-4 shrink-0 text-[#157a4d]" />Then confirm access and book the appointments.</p>
+                                        </div>
+                                        <Button type="button" size="sm" className="mt-4 w-full" disabled={!viewingPlanSelectedProperties.length || isLeadDetailSaving} onClick={() => void handleSaveBuyerViewingPlan('buyer_availability')}>
+                                          Continue to request availability
+                                          <ChevronRight className="h-4 w-4" />
+                                        </Button>
+                                      </>
+                                    ) : (
+                                      <div className="space-y-2 text-sm leading-5 text-[#60758b]">
+                                        <p><span className="font-semibold text-[#102033]">{viewingPlannerSelectedCountLabel}</span></p>
+                                        {savedViewingPlan.requestedAt ? <p>Buyer requested {formatDateShort(savedViewingPlan.requestedAt)}.</p> : null}
+                                        {savedViewingPlan.respondedAt ? <p>Buyer response captured {formatDateShort(savedViewingPlan.respondedAt)}.</p> : null}
+                                        {savedViewingPlan.sellerRequestedAt ? <p>Seller access requested {formatDateShort(savedViewingPlan.sellerRequestedAt)}.</p> : null}
+                                        {viewingPlanStatus === 'booked' ? <p className="font-semibold text-[#17643a]">Viewing appointment created.</p> : null}
+                                      </div>
+                                    )}
+                                  </div>
+                                </aside>
+                              </div>
+                            </section>
+
+                            {false ? (
+                              <>
                             <section className="rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6">
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
@@ -19462,6 +19804,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 </aside>
                               </div>
                             </section>
+                              </>
+                            ) : null}
                           </>
                         )
                       })()}
