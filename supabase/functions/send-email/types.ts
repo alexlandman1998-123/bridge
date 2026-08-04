@@ -1112,6 +1112,7 @@ export type SendBuyerViewingAvailabilityRequestPayload = {
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
+  resend?: boolean;
   idempotencyKey?: string;
   idempotency_key?: string;
 } & DeliveryContextPayload;
@@ -1154,6 +1155,7 @@ export type SendSellerViewingAvailabilityRequestPayload = {
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
+  resend?: boolean;
   idempotencyKey?: string;
   idempotency_key?: string;
 } & DeliveryContextPayload;

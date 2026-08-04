@@ -17,16 +17,15 @@ const plannerHandler = pageSource.slice(handlerStart, handlerEnd)
 assert.match(plannerHandler, /invokeEdgeFunction\('send-email'/, 'seller planner should call the email edge function')
 assert.match(plannerHandler, /type: 'seller_viewing_availability_request'/, 'seller planner should send the seller viewing template type')
 assert.match(plannerHandler, /to: sellerEmails/, 'seller planner should send the selected seller recipients')
+assert.match(plannerHandler, /resend: isResend/, 'seller planner resend should stay on the edge-function email path')
 assert.match(plannerHandler, /availabilityWindows/, 'seller planner should include buyer availability windows')
 assert.match(plannerHandler, /sellerEmailDeliveryStatus/, 'seller planner should persist seller delivery status')
 assert.match(plannerHandler, /sellerEmailProviderMessageIds/, 'seller planner should persist provider message ids')
 assert.match(plannerHandler, /partial_sent/, 'seller planner should handle partial batch sends')
 assert.match(plannerHandler, /Seller Availability Requested/, 'seller planner should log successful request activity')
 assert.match(plannerHandler, /Seller Availability Email Failed/, 'seller planner should log failed request activity')
-assert.ok(
-  plannerHandler.indexOf("invokeEdgeFunction('send-email'") < plannerHandler.indexOf('window.location.href'),
-  'mailto fallback should only appear after the edge function send attempt',
-)
+assert.doesNotMatch(plannerHandler, /window\.location\.href = `mailto:/, 'seller viewing planner should not open a mailto draft fallback')
+assert.doesNotMatch(plannerHandler, /I opened an email draft as a fallback/, 'seller viewing planner should not report draft fallback copy')
 
 assert.match(pageSource, /viewingPlannerSellerEmailDeliveryLabel/, 'planner should show seller delivery status to the agent')
 assert.match(pageSource, /Email sent/, 'planner should label successful seller send')

@@ -16,19 +16,20 @@ const plannerHandler = pageSource.slice(handlerStart, handlerEnd)
 
 assert.match(plannerHandler, /invokeEdgeFunction\('send-email'/, 'planner should call the email edge function')
 assert.match(plannerHandler, /type: 'buyer_viewing_availability_request'/, 'planner should send the buyer viewing template type')
+assert.match(plannerHandler, /resend: isResend/, 'planner resend should stay on the edge-function email path')
 assert.match(plannerHandler, /buyerEmailDeliveryStatus/, 'planner should persist delivery status in the viewing plan')
 assert.match(plannerHandler, /buyerEmailProviderMessageId/, 'planner should persist the provider message id')
 assert.match(plannerHandler, /Viewing Availability Requested/, 'planner should log successful request activity')
 assert.match(plannerHandler, /Viewing Availability Email Failed/, 'planner should log failed request activity')
-assert.ok(
-  plannerHandler.indexOf("invokeEdgeFunction('send-email'") < plannerHandler.indexOf('window.location.href'),
-  'mailto fallback should only appear after the edge function send attempt',
-)
+assert.doesNotMatch(plannerHandler, /window\.location\.href = `mailto:/, 'buyer viewing planner should not open a mailto draft fallback')
+assert.doesNotMatch(plannerHandler, /I opened an email draft as a fallback/, 'buyer viewing planner should not report draft fallback copy')
 
 assert.match(pageSource, /viewingPlannerBuyerEmailDeliveryLabel/, 'planner should show delivery status to the agent')
 assert.match(pageSource, /Email sent/, 'planner should label successful send')
 assert.match(pageSource, /Delivery suppressed/, 'planner should label suppressed test delivery')
 assert.match(pageSource, /Email failed/, 'planner should label failed delivery')
+assert.match(pageSource, />\s*Back\s*<\/Button>/, 'planner should expose a simple Back button for property selection')
+assert.doesNotMatch(pageSource, /Edit selected properties/, 'planner should not use the old edit-selected-properties copy')
 
 assert.match(sendEmailIndexSource, /handleBuyerViewingAvailabilityRequestEmail/, 'send-email router should import the buyer viewing handler')
 assert.match(sendEmailIndexSource, /buyer_viewing_availability_request/, 'send-email router should route the buyer viewing template')

@@ -67,9 +67,13 @@ try {
 
 const buyerOfferPage = await readFile(new URL('../src/pages/BuyerOfferSubmission.jsx', import.meta.url), 'utf8')
 const postViewingPortal = await readFile(new URL('../src/pages/PostViewingOfferPortal.jsx', import.meta.url), 'utf8')
+const agencyPipelinePage = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
 assert.match(buyerOfferPage, /Secure Offer \+ Onboarding/)
 assert.match(buyerOfferPage, /Agent Reviews Conditions/)
 assert.match(postViewingPortal, /Offer \+ Onboarding link/)
 assert.match(postViewingPortal, /before OTP generation/)
+assert.match(agencyPipelinePage, /Send Offer \+ Onboarding Link/)
+assert.match(agencyPipelinePage, /successPrefix: 'Offer \+ onboarding '/)
+assert.doesNotMatch(agencyPipelinePage, /Create or accept an offer first, then Arch9 can create the transaction and send buyer onboarding\./)
 
 console.log('Residential offer lifecycle Phase 1A contract passed.')

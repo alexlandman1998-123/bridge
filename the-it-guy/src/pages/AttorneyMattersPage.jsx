@@ -14,6 +14,8 @@ import {
   MapPin,
   MoreHorizontal,
   Phone,
+  Search,
+  SlidersHorizontal,
   UserPlus,
   UserRound,
   UsersRound,
@@ -52,6 +54,7 @@ import {
 const DEFAULT_FILTERS = {
   status: 'all',
   matterType: 'all',
+  stage: 'all',
   attorney: 'all',
   assistant: 'all',
   branch: 'all',
@@ -104,9 +107,14 @@ const KPI_TONES = {
 
 const STATUS_STYLES = {
   Active: 'bg-emerald-50 text-emerald-700',
+  'On Track': 'bg-emerald-50 text-emerald-700',
   Attention: 'bg-orange-50 text-orange-700',
+  'At Risk': 'bg-orange-50 text-orange-700',
+  Waiting: 'bg-amber-50 text-amber-700',
   Delayed: 'bg-red-50 text-red-700',
+  Blocked: 'bg-red-50 text-red-700',
   Registered: 'bg-blue-50 text-blue-700',
+  Completed: 'bg-slate-100 text-slate-600',
   Archived: 'bg-slate-100 text-slate-600',
   'Buyer Onboarding': 'bg-slate-100 text-slate-700',
   'Awaiting Signed OTP': 'bg-orange-50 text-orange-700',
@@ -138,7 +146,7 @@ function normalize(value = '') {
 
 function formatDue(value) {
   const date = new Date(value || '')
-  if (Number.isNaN(date.getTime())) return '-'
+  if (Number.isNaN(date.getTime())) return '—'
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -204,10 +212,9 @@ function humanizeKey(value = '') {
     .replace(/\b\w/g, (match) => match.toUpperCase())
 }
 
-function dueTone(value, status) {
+function getDueState(value, status) {
   const date = new Date(value || '')
-  if (status === 'Delayed') return 'text-red-600'
-  if (Number.isNaN(date.getTime())) return 'text-slate-500'
+  if (Number.isNaN(date.getTime())) return 'none'
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -216,9 +223,9 @@ function dueTone(value, status) {
   const target = new Date(date)
   target.setHours(0, 0, 0, 0)
 
-  if (target < today) return 'text-red-600'
-  if (target.getTime() <= tomorrow.getTime()) return 'text-orange-600'
-  return 'text-slate-700'
+  if (target < today || status === 'Delayed') return 'overdue'
+  if (target.getTime() <= tomorrow.getTime()) return 'soon'
+  return 'scheduled'
 }
 
 function LoadingState({ copy = 'Loading attorney matters...' }) {
@@ -279,6 +286,9 @@ function KpiCard({ item }) {
 }
 
 function StageProgress({ stage }) {
+  const completedCount = stage.completedCount || Math.min((stage.index || 0) + 1, stage.steps?.length || 0)
+  const totalCount = stage.totalCount || stage.steps?.length || 0
+
   return (
     <div className="min-w-[150px]">
       <div className="flex items-center gap-1.5" aria-label={`Stage ${stage.label}`}>
@@ -304,26 +314,34 @@ function StageProgress({ stage }) {
           )
         })}
       </div>
-      <p className="mt-2 text-xs font-medium text-slate-500">{stage.label}</p>
+      <p className="mt-2 text-xs font-semibold text-[#00614f]">{stage.label}</p>
+      {totalCount ? <p className="mt-1 text-xs font-medium text-slate-500">{completedCount} of {totalCount} completed</p> : null}
     </div>
   )
 }
 
 function StatusPill({ status }) {
+  const displayStatus = status === 'Active' ? 'On Track' : status === 'Attention' ? 'At Risk' : status === 'Registered' ? 'Completed' : status
+
   return (
-    <span className={classNames('inline-flex rounded-lg px-3 py-1 text-xs font-semibold', STATUS_STYLES[status] || STATUS_STYLES.Active)}>
-      {status}
+    <span className={classNames('inline-flex rounded-lg px-3 py-1 text-xs font-semibold', STATUS_STYLES[displayStatus] || STATUS_STYLES.Active)}>
+      {displayStatus}
     </span>
   )
 }
 
 function Assignee({ person }) {
+  const isUnassigned = !person?.id || normalize(person?.name) === 'unassigned'
+
   return (
     <div className="flex min-w-[150px] items-center gap-2">
-      <span className="inline-grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#00463d] text-xs font-semibold text-white">
-        {person.initials}
+      <span className={classNames('inline-grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold', isUnassigned ? 'bg-slate-100 text-slate-500' : 'bg-[#00463d] text-white')}>
+        {isUnassigned ? 'UN' : person.initials}
       </span>
-      <span className="truncate text-sm font-medium text-slate-700">{person.name}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium text-slate-700">{isUnassigned ? 'Unassigned' : person.name}</span>
+        {isUnassigned ? <span className="block text-xs font-semibold text-[#00614f]">Assign</span> : null}
+      </span>
     </div>
   )
 }
@@ -970,25 +988,258 @@ function BulkActionBar({ selectedCount, onClear }) {
   )
 }
 
+function SelectFilter({ label, value, onChange, options = [] }) {
+  return (
+    <label className="min-w-0">
+      <span className="sr-only">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-[#00614f] focus:ring-4 focus:ring-emerald-50"
+      >
+        {options.map((option) => (
+          <option key={option.value || option.key} value={option.value || option.key}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function MatterFilters({ workspace, searchTerm, filters, onSearchChange, onFilterChange, onReset }) {
+  const showMatterType = !workspace.view?.lockedMatterType && !workspace.view?.usesIncomingQueue
+  const filterOptions = workspace.filters || {}
+  const hasActiveFilters = Boolean(searchTerm) || Object.entries(filters || {}).some(([key, value]) => {
+    if (key !== 'matterType' || showMatterType) return value && value !== 'all'
+    return false
+  })
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="grid gap-3 lg:grid-cols-[minmax(260px,1.4fr)_repeat(5,minmax(150px,0.7fr))_auto]">
+        <label className="relative min-w-0">
+          <span className="sr-only">Search matters</span>
+          <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search matters..."
+            className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#00614f] focus:ring-4 focus:ring-emerald-50"
+          />
+        </label>
+
+        {showMatterType ? (
+          <SelectFilter
+            label="Matter type"
+            value={filters.matterType}
+            onChange={(value) => onFilterChange('matterType', value)}
+            options={(filterOptions.matterTypes || []).map((item) => ({ value: item.key || item.value, label: item.label }))}
+          />
+        ) : null}
+
+        <SelectFilter
+          label="Stage"
+          value={filters.stage}
+          onChange={(value) => onFilterChange('stage', value)}
+          options={filterOptions.stages || [{ value: 'all', label: 'All Stages' }]}
+        />
+        <SelectFilter
+          label="Assigned attorney"
+          value={filters.attorney}
+          onChange={(value) => onFilterChange('attorney', value)}
+          options={filterOptions.attorneys || [{ value: 'all', label: 'All Attorneys' }]}
+        />
+        <SelectFilter
+          label="Status"
+          value={filters.status}
+          onChange={(value) => onFilterChange('status', value)}
+          options={(filterOptions.statuses || []).map((item) => ({ value: item.key || item.value, label: item.label }))}
+        />
+        <SelectFilter
+          label="More filters"
+          value={filters.priority}
+          onChange={(value) => onFilterChange('priority', value)}
+          options={(filterOptions.priorities || [{ value: 'all', label: 'More Filters' }]).map((item, index) => ({
+            value: item.value,
+            label: index === 0 ? 'More Filters' : item.label,
+          }))}
+        />
+
+        {hasActiveFilters ? (
+          <button
+            type="button"
+            onClick={onReset}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            <SlidersHorizontal size={16} />
+            Reset
+          </button>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function MatterPropertyCell({ row, preview }) {
+  const address = firstText(row.propertyAddress, row.property === 'Property pending' ? '' : row.property, 'Property details pending')
+  const location = firstText(row.propertyArea, [row.development, row.unit ? `Unit ${row.unit}` : '', row.phase].filter(Boolean).join(' / '))
+
+  return (
+    <div className="flex min-w-0 items-center gap-4 md:min-w-[340px]">
+      <PropertyThumbnail row={row} size="lg" />
+      <div className="min-w-0">
+        <Link
+          to={row.actionHref}
+          state={{ matterPreview: preview }}
+          onClick={(event) => event.stopPropagation()}
+          className="block truncate text-base font-semibold text-slate-950 hover:text-[#00614f]"
+        >
+          {address}
+        </Link>
+        <p className="mt-1 truncate text-sm font-semibold text-slate-600">{row.reference || 'Matter reference pending'}</p>
+        {location ? (
+          <p className="mt-1 flex items-center gap-1.5 truncate text-xs font-medium text-slate-500">
+            <MapPin size={13} className="shrink-0" />
+            {location}
+          </p>
+        ) : null}
+        <p className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+          <BriefcaseBusiness size={13} className="shrink-0" />
+          {row.matterType || 'Matter'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function MatterStageCell({ row }) {
+  return <StageProgress stage={row.stage || { label: 'Instruction', index: 0, steps: ['Instruction'] }} />
+}
+
+function MatterNextActionCell({ row, preview }) {
+  const urgent = row.status === 'Delayed'
+  const attention = row.status === 'Attention'
+  const textTone = urgent ? 'text-red-600' : attention ? 'text-orange-700' : 'text-slate-800'
+  const helperTone = urgent ? 'text-red-500' : attention ? 'text-orange-600' : 'text-[#00614f]'
+  const helper = urgent ? 'Overdue or blocked' : attention ? 'Waiting' : 'Open'
+
+  return (
+    <div className="min-w-[190px]">
+      <p className={classNames('font-semibold leading-5', textTone)}>{row.nextAction || 'Review matter'}</p>
+      {row.actionHref ? (
+        <Link
+          to={row.actionHref}
+          state={{ matterPreview: preview }}
+          onClick={(event) => event.stopPropagation()}
+          className={classNames('mt-2 inline-flex text-xs font-semibold', helperTone)}
+        >
+          {helper}
+        </Link>
+      ) : (
+        <p className={classNames('mt-2 text-xs font-semibold', helperTone)}>{helper}</p>
+      )}
+    </div>
+  )
+}
+
+function MatterDueCell({ row }) {
+  const state = getDueState(row.expectedDue, row.status)
+  const dateLabel = formatDue(row.expectedDue)
+  const tileClass = state === 'overdue'
+    ? 'bg-red-50 text-red-700'
+    : state === 'soon'
+      ? 'bg-orange-50 text-orange-700'
+      : state === 'scheduled'
+        ? 'bg-emerald-50 text-emerald-700'
+        : 'bg-slate-50 text-slate-500'
+
+  return (
+    <div className={classNames('inline-flex min-w-12 justify-center rounded-lg px-3 py-2 text-center text-xs font-semibold leading-4', tileClass)}>
+      {dateLabel === '—' ? '—' : dateLabel}
+    </div>
+  )
+}
+
+function MatterMobileCard({ row, selected, onToggleRow, onOpenMatter }) {
+  const preview = getMatterPreview(row)
+
+  return (
+    <article
+      className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpenMatter?.(row)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpenMatter?.(row)
+        }
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={selected}
+          onClick={(event) => event.stopPropagation()}
+          onChange={() => onToggleRow(row.matterId)}
+          aria-label={`Select ${row.reference}`}
+          className="mt-1"
+        />
+        <div className="min-w-0 flex-1">
+          <MatterPropertyCell row={row} preview={preview} />
+        </div>
+        <RowActions row={row} />
+      </div>
+      <div className="mt-4 grid gap-3 border-t border-slate-100 pt-3">
+        <MatterStageCell row={row} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <MatterNextActionCell row={row} preview={preview} />
+          <div>
+            <p className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-slate-500">Due</p>
+            <MatterDueCell row={row} />
+          </div>
+          <div>
+            <p className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-slate-500">Assigned To</p>
+            <Assignee person={row.assignedAttorney} />
+          </div>
+          <div>
+            <p className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-slate-500">Status</p>
+            <StatusPill status={row.status} />
+          </div>
+        </div>
+      </div>
+    </article>
+  )
+}
+
 function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, onOpenMatter }) {
-  const showDevelopmentColumns = rows.some((row) => row.matterTypeKeys.includes('development'))
   const allSelected = rows.length > 0 && rows.every((row) => selectedRows.includes(row.matterId))
 
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1260px] border-collapse text-left text-sm">
+    <section className="space-y-3">
+      <div className="grid gap-3 md:hidden">
+        {rows.map((row) => (
+          <MatterMobileCard
+            key={row.assignmentId || row.matterId}
+            row={row}
+            selected={selectedRows.includes(row.matterId)}
+            onToggleRow={onToggleRow}
+            onOpenMatter={onOpenMatter}
+          />
+        ))}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm md:block">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
           <thead className="bg-white text-[0.68rem] uppercase tracking-[0.12em] text-slate-500">
             <tr>
               <th className="w-10 border-b border-slate-200 px-4 py-3">
                 <input type="checkbox" checked={allSelected} onChange={(event) => onToggleAll(event.target.checked)} aria-label="Select all matters" />
               </th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Matter Reference</th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Property</th>
-              {showDevelopmentColumns ? <th className="border-b border-slate-200 px-4 py-3 font-semibold">Development</th> : null}
-              {showDevelopmentColumns ? <th className="border-b border-slate-200 px-4 py-3 font-semibold">Unit</th> : null}
-              {showDevelopmentColumns ? <th className="border-b border-slate-200 px-4 py-3 font-semibold">Phase</th> : null}
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Buyer / Seller</th>
+              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Matter &amp; Property</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Stage</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Next Action</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Due</th>
@@ -1024,45 +1275,10 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
                       aria-label={`Select ${row.reference}`}
                     />
                   </td>
-                  <td className="px-4 py-3 font-semibold text-slate-950">
-                    <Link
-                      to={row.actionHref}
-                      state={{ matterPreview: preview }}
-                      onClick={(event) => event.stopPropagation()}
-                      className="inline-flex items-center gap-1 text-slate-950 hover:text-[#00614f]"
-                    >
-                      {row.reference}
-                      <ArrowRight size={13} className="opacity-0 transition group-hover:opacity-100" />
-                    </Link>
-                  </td>
-                  <td className="max-w-[250px] px-4 py-3">
-                    <p className="truncate font-medium text-slate-800">{row.property}</p>
-                    <p className="mt-1 truncate text-xs text-slate-500">{row.matterType}</p>
-                  </td>
-                  {showDevelopmentColumns ? <td className="max-w-[190px] px-4 py-3 text-slate-700"><span className="block truncate">{row.development || '-'}</span></td> : null}
-                  {showDevelopmentColumns ? <td className="px-4 py-3 text-slate-700">{row.unit || '-'}</td> : null}
-                  {showDevelopmentColumns ? <td className="px-4 py-3 text-slate-700">{row.phase || '-'}</td> : null}
-                  <td className="max-w-[210px] px-4 py-3">
-                    <p className="truncate font-medium text-slate-800">{row.buyer}</p>
-                    <p className="mt-1 truncate text-xs text-slate-500">{row.seller}</p>
-                  </td>
-                  <td className="px-4 py-3"><StageProgress stage={row.stage} /></td>
-                  <td className="min-w-[220px] px-4 py-3">
-                    <p className={classNames('font-semibold', row.status === 'Delayed' ? 'text-red-600' : row.status === 'Attention' ? 'text-orange-600' : 'text-slate-800')}>
-                      {row.nextAction}
-                    </p>
-                    <div className="mt-2 hidden flex-wrap gap-2 group-hover:flex">
-                      <Link
-                        to={row.actionHref}
-                        state={{ matterPreview: preview }}
-                        onClick={(event) => event.stopPropagation()}
-                        className="text-xs font-semibold text-[#00614f]"
-                      >
-                        Open
-                      </Link>
-                    </div>
-                  </td>
-                  <td className={classNames('px-4 py-3 font-semibold', dueTone(row.expectedDue, row.status))}>{formatDue(row.expectedDue)}</td>
+                  <td className="px-4 py-3"><MatterPropertyCell row={row} preview={preview} /></td>
+                  <td className="px-4 py-3"><MatterStageCell row={row} /></td>
+                  <td className="px-4 py-3"><MatterNextActionCell row={row} preview={preview} /></td>
+                  <td className="px-4 py-3"><MatterDueCell row={row} /></td>
                   <td className="px-4 py-3"><Assignee person={row.assignedAttorney} /></td>
                   <td className="px-4 py-3"><StatusPill status={row.status} /></td>
                   <td className="px-4 py-3"><RowActions row={row} /></td>
@@ -1071,6 +1287,7 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </section>
   )
@@ -1497,6 +1714,17 @@ function AttorneyMattersPage() {
     setSelectedRows(checked ? (workspace?.tableRows || []).map((row) => row.matterId) : [])
   }
 
+  function handleFilterChange(key, value) {
+    setFilters((previous) => ({ ...previous, [key]: value }))
+    setPage(1)
+  }
+
+  function handleResetFilters() {
+    setSearchTerm('')
+    setFilters(DEFAULT_FILTERS)
+    setPage(1)
+  }
+
   function handleOpenMatter(row = {}) {
     if (usesIncomingQueue) {
       setSelectedIncomingRow(row)
@@ -1676,6 +1904,15 @@ function AttorneyMattersPage() {
   return (
     <main className="w-full max-w-none bg-[#f7f9fb] px-0 py-3">
       <div className="w-full max-w-none space-y-4 px-2 md:px-3 xl:px-4">
+        <section className="flex flex-col gap-3 pt-2 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">{workspace.view?.title || 'All Matters'}</h1>
+            {workspace.view?.description ? (
+              <p className="mt-1 max-w-2xl text-sm font-medium leading-6 text-slate-600">{workspace.view.description}</p>
+            ) : null}
+          </div>
+        </section>
+
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {workspace.kpis.map((item) => <KpiCard key={item.key} item={item} />)}
         </section>
@@ -1688,6 +1925,18 @@ function AttorneyMattersPage() {
         ) : null}
 
         <BulkActionBar selectedCount={selectedRows.length} onClear={() => setSelectedRows([])} />
+
+        <MatterFilters
+          workspace={workspace}
+          searchTerm={searchTerm}
+          filters={filters}
+          onSearchChange={(value) => {
+            setSearchTerm(value)
+            setPage(1)
+          }}
+          onFilterChange={handleFilterChange}
+          onReset={handleResetFilters}
+        />
 
         {workspace.tableRows.length ? (
           usesIncomingQueue ? (

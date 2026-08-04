@@ -48,7 +48,7 @@ assert.doesNotMatch(source, /navigate\(result\.actionHref/, 'Accepting an incomi
 assert.match(source, /declineAttorneyIncomingMatterInstruction/, 'Incoming rows should call the decline command')
 assert.match(source, /function IncomingDeclineDialog/, 'Declining an incoming matter should collect a reason')
 assert.match(source, /Decline Transfer/, 'Incoming row actions should expose transfer decline')
-assert.match(source, /getAttorneyMatterWorkspace\(\{ view: viewKey \}\)/, 'Accepting an incoming matter should refresh the queue')
+assert.match(source, /getAttorneyMatterWorkspace\(\{\s*view: viewKey/, 'Accepting an incoming matter should refresh the queue')
 assert.doesNotMatch(source, /incoming=\{usesIncomingQueue\}/, 'Bulk selection should not expose an unimplemented incoming action mode')
 assert.match(source, /Bulk actions are unavailable until a supported operation is selected/, 'Bulk selection should explain why unsupported operations are unavailable')
 assert.doesNotMatch(incomingActionsSource, /Archive/, 'Incoming action menu should not inherit archive-first register actions')

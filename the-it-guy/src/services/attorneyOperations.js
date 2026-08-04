@@ -234,7 +234,7 @@ async function fetchTransactions(client, ids = []) {
   if (!transactionIds.length) return []
 
   const primarySelect =
-    'id, organisation_id, development_id, unit_id, buyer_id, matter_number, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, next_action_due_at, updated_at, created_at, assigned_attorney_email, attorney, assigned_agent, assigned_agent_email, assigned_agent_id, bond_originator, assigned_bond_originator_email, bank, property_description, property_address_line_1, property_address_line_2, suburb, city, province, erf_number, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at, is_active'
+    'id, organisation_id, development_id, unit_id, buyer_id, matter_number, transaction_reference, stage, current_main_stage, current_sub_stage_summary, finance_type, risk_status, operational_state, attorney_stage, next_action, next_action_due_at, updated_at, created_at, assigned_attorney_email, attorney, assigned_agent, assigned_agent_email, assigned_agent_id, bond_originator, assigned_bond_originator_email, bank, property_description, property_address_line_1, property_address_line_2, suburb, city, province, erf_number, property_image_url, thumbnail_url, cover_image_url, hero_image_url, image_url, seller_name, seller_email, seller_phone, seller_has_existing_bond, current_bond_bank, current_bond_account_number, estimated_settlement_amount, purchase_price, sales_price, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at, is_active'
 
   let query = await client
     .from('transactions')
@@ -255,6 +255,11 @@ async function fetchTransactions(client, ids = []) {
       isMissingColumnError(query.error, 'operational_state') ||
       isMissingColumnError(query.error, 'attorney_stage') ||
       isMissingColumnError(query.error, 'property_description') ||
+      isMissingColumnError(query.error, 'property_image_url') ||
+      isMissingColumnError(query.error, 'thumbnail_url') ||
+      isMissingColumnError(query.error, 'cover_image_url') ||
+      isMissingColumnError(query.error, 'hero_image_url') ||
+      isMissingColumnError(query.error, 'image_url') ||
       isMissingColumnError(query.error, 'development_id') ||
       isMissingColumnError(query.error, 'unit_id') ||
       isMissingColumnError(query.error, 'erf_number') ||
@@ -303,14 +308,17 @@ async function fetchUnitsById(client, ids = []) {
 
   let query = await client
     .from('units')
-    .select('id, development_id, unit_number, unit_label, phase, block, status')
+    .select('id, development_id, unit_number, unit_label, phase, block, status, image_url, thumbnail_url, cover_image_url')
     .in('id', unitIds)
 
   if (
     query.error &&
     (isMissingColumnError(query.error, 'unit_label') ||
       isMissingColumnError(query.error, 'block') ||
-      isMissingColumnError(query.error, 'phase'))
+      isMissingColumnError(query.error, 'phase') ||
+      isMissingColumnError(query.error, 'image_url') ||
+      isMissingColumnError(query.error, 'thumbnail_url') ||
+      isMissingColumnError(query.error, 'cover_image_url'))
   ) {
     query = await client
       .from('units')
@@ -337,13 +345,16 @@ async function fetchDevelopmentsById(client, ids = []) {
 
   let query = await client
     .from('developments')
-    .select('id, name, development_name, code')
+    .select('id, name, development_name, code, hero_image_url, cover_image_url, image_url')
     .in('id', developmentIds)
 
   if (
     query.error &&
     (isMissingColumnError(query.error, 'development_name') ||
-      isMissingColumnError(query.error, 'code'))
+      isMissingColumnError(query.error, 'code') ||
+      isMissingColumnError(query.error, 'hero_image_url') ||
+      isMissingColumnError(query.error, 'cover_image_url') ||
+      isMissingColumnError(query.error, 'image_url'))
   ) {
     query = await client
       .from('developments')
@@ -1052,6 +1063,22 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
         propertyLabel: resolvePortalPropertyLabel(identityRow, {
           fallback: unit?.unit_number ? `Unit ${unit.unit_number}` : 'Property pending',
         }),
+        propertyAddress: [transaction.property_address_line_1, transaction.property_address_line_2].filter(Boolean).join(', ') || transaction.property_description || '',
+        propertySuburb: transaction.suburb || '',
+        propertyCity: transaction.city || '',
+        propertyImageUrl:
+          transaction.property_image_url ||
+          transaction.thumbnail_url ||
+          transaction.cover_image_url ||
+          transaction.hero_image_url ||
+          transaction.image_url ||
+          unit?.image_url ||
+          unit?.thumbnail_url ||
+          unit?.cover_image_url ||
+          development?.hero_image_url ||
+          development?.cover_image_url ||
+          development?.image_url ||
+          '',
         developmentName: transaction.development_name || development?.development_name || development?.name || 'Standalone matter',
         unitNumber: unit?.unit_label || unit?.unit_number || '',
         phase: unit?.phase || unit?.block || '',

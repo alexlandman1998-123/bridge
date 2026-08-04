@@ -128,6 +128,7 @@ import {
   uploadDocument,
 } from '../lib/api'
 import { buildSellerClientPortalLink } from '../lib/agentListingStorage'
+import { canAccessAttorneyMatter } from '../lib/attorneyPermissions'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
@@ -10283,12 +10284,36 @@ function AttorneyTransactionDetail() {
       }
 
       try {
-        const operations = await getAttorneyWorkflowOperationsForTransaction(transactionId, { initialize: false })
+        const hasMatterAccess = await canAccessAttorneyMatter(
+          transactionId,
+          attorneyPermissionState.firmId,
+          profile?.id || profile?.userId || null,
+        )
         if (!active) return
-        setWorkflowOperations(operations)
-        setWorkflowOperationsTransactionId(transactionId)
+        if (!hasMatterAccess) {
+          setWorkflowOperations(null)
+          setWorkflowOperationsTransactionId('')
+          setMatterAccessKey('')
+          setError('You do not have access to this matter.')
+          setMatterAccessAllowed(false)
+          return
+        }
+
         setMatterAccessKey(currentMatterAccessKey)
         setMatterAccessAllowed(true)
+        setError('')
+
+        try {
+          const operations = await getAttorneyWorkflowOperationsForTransaction(transactionId, { initialize: false })
+          if (!active) return
+          setWorkflowOperations(operations)
+          setWorkflowOperationsTransactionId(transactionId)
+        } catch (workflowAccessError) {
+          if (!active) return
+          console.warn('[attorney-matter] workflow operations access deferred', workflowAccessError)
+          setWorkflowOperations(null)
+          setWorkflowOperationsTransactionId('')
+        }
       } catch (accessError) {
         if (!active) return
         setWorkflowOperations(null)
@@ -10312,7 +10337,16 @@ function AttorneyTransactionDetail() {
     return () => {
       active = false
     }
-  }, [attorneyPermissionState.loading, attorneyPermissionState.membership?.isActive, currentMatterAccessKey, transactionId, workspaceRole])
+  }, [
+    attorneyPermissionState.firmId,
+    attorneyPermissionState.loading,
+    attorneyPermissionState.membership?.isActive,
+    currentMatterAccessKey,
+    profile?.id,
+    profile?.userId,
+    transactionId,
+    workspaceRole,
+  ])
 
   const transaction = data?.transaction || null
   const buyer = data?.buyer || null

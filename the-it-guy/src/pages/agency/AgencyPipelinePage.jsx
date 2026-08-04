@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -7341,7 +7341,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ? 'Resend Link to Portal'
             : selectedLeadLinkedTransactionId
               ? 'Resend Buyer Onboarding'
-              : 'Send Buyer Onboarding'
+              : 'Send Offer + Onboarding Link'
   const selectedLeadSellerOnboardingActionLabel = isSellerOnboardingSending
     ? 'Sending...'
     : selectedLeadOnboardingCompleted
@@ -10941,6 +10941,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const sentAt = new Date().toISOString()
       const nextStatus = 'buyer_availability'
       const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+      const isResend = Boolean(savedPlan.requestedAt)
       const origin = typeof window !== 'undefined' ? window.location?.origin || '' : ''
       const buyerName = normalizeText(selectedLeadDisplayName || selectedLeadContact?.firstName || selectedLead?.firstName) || 'there'
       const agentName = normalizeText(currentAgent?.fullName || currentAgent?.email) || 'your agent'
@@ -10957,11 +10958,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
           leadId: selectedLead.leadId,
           recipientRole: 'buyer',
+          resend: isResend,
           propertyCount: selectedPropertyIds.length,
           properties: buildBuyerViewingAvailabilityEmailProperties(selectedProperties, origin),
-          idempotencyKey: `buyer-viewing-availability:${organisationId}:${selectedLead.leadId}:${selectedPropertyIds.join(',')}`,
+          idempotencyKey: `buyer-viewing-availability:${organisationId}:${selectedLead.leadId}:${isResend ? 'resend' : 'send'}:${sentAt}:${selectedPropertyIds.join(',')}`,
           deliveryMetadata: {
             source: 'buyer_viewing_planner',
+            action: isResend ? 'resend' : 'send',
             selectedPropertyIds,
           },
         },
@@ -11077,17 +11080,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setViewingPlanSelectedPropertyIds(selectedPropertyIds)
       scheduleRecordsReload(organisationId, 850)
 
-      if (typeof window !== 'undefined') {
-        const buyerName = normalizeText(selectedLeadDisplayName || selectedLeadContact?.firstName || selectedLead?.firstName) || 'there'
-        const body = buildBuyerViewingAvailabilityEmailBody({
-          buyerName,
-          agentName: normalizeText(currentAgent?.fullName || currentAgent?.email) || 'your agent',
-          properties: selectedProperties,
-          origin: window.location?.origin || '',
-        })
-        window.location.href = `mailto:${encodeURIComponent(buyerEmail)}?subject=${encodeURIComponent('Viewing availability request')}&body=${encodeURIComponent(body)}`
-      }
-      setError(`${deliveryFailure} I opened an email draft as a fallback.`)
+      setError(`${deliveryFailure} No email draft was opened. Use Resend request to try again after email delivery is available.`)
     } finally {
       setIsLeadDetailSaving(false)
     }
@@ -11219,6 +11212,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	    try {
 	      const sentAt = new Date().toISOString()
 	      const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+	      const isResend = Boolean(savedPlan.sellerRequestedAt)
 	      const nextStatus = 'seller_coordination'
 	      const sellerRecipientEmails = sellerEmails.join(', ')
 	      const sellerCoordinationNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
@@ -11243,18 +11237,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	          organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
 	          leadId: selectedLead.leadId,
 	          recipientRole: 'seller',
+	          resend: isResend,
 	          propertyCount: confirmedPropertyIds.length,
 	          properties: buildBuyerViewingAvailabilityEmailProperties(confirmedProperties.length ? confirmedProperties : selectedProperties, origin),
 	          availabilityWindows,
 	          coordinationNotes: sellerCoordinationNotes,
-	          idempotencyKey: `seller-viewing-availability:${organisationId}:${selectedLead.leadId}:${confirmedPropertyIds.join(',')}:${sellerEmails.join(',')}`,
+	          idempotencyKey: `seller-viewing-availability:${organisationId}:${selectedLead.leadId}:${isResend ? 'resend' : 'send'}:${sentAt}:${confirmedPropertyIds.join(',')}:${sellerEmails.join(',')}`,
 	          metadata: {
 	            source: 'buyer_viewing_planner',
+	            action: isResend ? 'resend' : 'send',
 	            confirmedPropertyIds,
 	            sellerEmails,
 	          },
 	          deliveryMetadata: {
 	            source: 'buyer_viewing_planner',
+	            action: isResend ? 'resend' : 'send',
 	            confirmedPropertyIds,
 	            sellerEmails,
 	          },
@@ -11385,23 +11382,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	      patchSelectedLeadRecord(failurePatch, selectedLead.leadId)
 	      scheduleRecordsReload(organisationId, 850)
 
-	      if (typeof window !== 'undefined') {
-	        const sellerName = confirmedProperties.length === 1
-	          ? normalizeText(confirmedProperties[0]?.sellerName) || 'there'
-	          : 'there'
-	        const body = buildSellerViewingAvailabilityEmailBody({
-	          sellerName,
-	          buyerName: selectedLeadDisplayName || selectedLeadContactName,
-	          agentName: normalizeText(currentAgent?.fullName || currentAgent?.email) || 'your agent',
-	          properties: confirmedProperties.length ? confirmedProperties : selectedProperties,
-	          availabilityWindows,
-	          coordinationNotes: sellerCoordinationNotes,
-	          origin: window.location?.origin || '',
-	        })
-	        const mailtoRecipients = sellerEmails.map((email) => encodeURIComponent(email)).join(',')
-	        window.location.href = `mailto:${mailtoRecipients}?subject=${encodeURIComponent('Viewing access availability request')}&body=${encodeURIComponent(body)}`
-	      }
-	      setError(`${deliveryFailure} I opened an email draft as a fallback.`)
+	      setError(`${deliveryFailure} No email draft was opened. Use Resend request to try again after email delivery is available.`)
 	    } finally {
       setIsLeadDetailSaving(false)
     }
@@ -15962,7 +15943,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     const transactionId = normalizeText(selectedLeadLinkedTransactionId)
     if (!transactionId) {
-      setError('Create or accept an offer first, then Arch9 can create the transaction and send buyer onboarding.')
+      try {
+        setCanonicalOfferActionId(leadActionId)
+        setError('')
+        const result = await createAndSendOfferLinkForLead({
+          directOfferCentreSubmission: true,
+          successPrefix: 'Offer + onboarding ',
+        })
+        if (result?.successMessage) setMessage(result.successMessage)
+        if (result?.errorMessage) setError(result.errorMessage)
+        await reloadRecords(organisationId)
+      } catch (offerLinkError) {
+        setError(offerLinkError?.message || 'Unable to create the offer + onboarding link right now.')
+      } finally {
+        setCanonicalOfferActionId('')
+      }
       return
     }
 
@@ -19483,7 +19478,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           {viewingPlannerBuyerHasRequest ? 'Resend request' : 'Send availability request'}
                                         </Button>
                                         <Button type="button" size="sm" variant="secondary" onClick={() => setViewingPlanStatus('draft')}>
-                                          Edit selected properties
+                                          <ArrowLeft className="h-4 w-4" />
+                                          Back
                                         </Button>
                                         <Button
                                           type="button"

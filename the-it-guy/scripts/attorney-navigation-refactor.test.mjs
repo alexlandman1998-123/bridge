@@ -48,13 +48,18 @@ assert.match(sidebarSource, /attorney_firm:\s*Building2/, 'Attorney Firm nav sho
 assert.doesNotMatch(sidebarSource, /Firm Administration/, 'Attorney sidebar should not keep the old Firm Administration section label')
 assert.match(sidebarSource, /role === 'attorney'\s*\?\s*\[\{ key: 'settings', label: 'Settings', to: '\/settings' \}\]/, 'Attorney sidebar secondary items should collapse to Settings only')
 
-for (const copy of ['Matter Reference', 'Next Action', 'Assigned To']) {
+for (const copy of ['Matter &amp; Property', 'Next Action', 'Assigned To', 'MatterFilters', 'MatterMobileCard']) {
   assert.match(mattersSource, new RegExp(copy), `Matter workspace should include ${copy}`)
 }
+assert.doesNotMatch(
+  mattersSource.slice(mattersSource.indexOf('function MattersTable'), mattersSource.indexOf('function IncomingAssignmentDialog')),
+  /Buyer \/ Seller/,
+  'Generic attorney matter lists should remove the Buyer / Seller column',
+)
 for (const copy of ['All Matters', 'Active Matters', 'Transfer Matters', 'Bond Matters', 'Cancellation Matters', 'lockedMatterType', 'quickFilters']) {
   assert.match(matterWorkspaceServiceSource, new RegExp(copy), `Matter workspace service should define ${copy}`)
 }
-assert.match(mattersSource, /view=\{workspace\.view\}/, 'Matter workspace header should receive route-specific view metadata')
+assert.match(mattersSource, /workspace\.view\?\.title/, 'Matter workspace header should render route-specific view metadata')
 assert.match(mattersSource, /itemLabel=\{workspace\.view\?\.itemLabel/, 'Matter workspace pagination should use route-specific item labels')
 assert.match(matterWorkspaceServiceSource, /summary:\s*buildSummary\(viewRows/, 'Matter workspace summary should be scoped to the active route view')
 assert.match(matterWorkspaceServiceSource, /kpis:\s*buildKpis\(viewRows/, 'Matter workspace KPIs should be scoped to the active route view')
@@ -64,9 +69,10 @@ assert.match(mattersSource, /itg:attorney-matters-search/, 'Matter workspace sho
 for (const serviceContract of ['getAttorneyMatterWorkspace', 'buildAttorneyMatterWorkspace', 'calculateMatterHealth', 'quickFilters', 'pagination']) {
   assert.match(matterWorkspaceServiceSource, new RegExp(serviceContract), `Matter workspace service should expose ${serviceContract}`)
 }
-for (const field of ['matterId', 'reference', 'matterType', 'property', 'buyer', 'seller', 'development', 'unit', 'stage', 'nextAction', 'expectedDue', 'health', 'assignedAttorney', 'status', 'lastActivity', 'priority']) {
+for (const field of ['matterId', 'reference', 'matterType', 'property', 'propertyThumbnailUrl', 'buyer', 'seller', 'development', 'unit', 'stage', 'nextAction', 'expectedDue', 'health', 'assignedAttorney', 'status', 'lastActivity', 'priority']) {
   assert.match(matterWorkspaceServiceSource, new RegExp(field), `Matter workspace rows should include ${field}`)
 }
+assert.match(matterWorkspaceServiceSource, /STAGE_CONFIGS/, 'Matter workspace should define matter-type-specific stage configurations')
 
 assert.match(appSource, /path="\/attorney\/transactions"/, 'Attorney transactions route should exist')
 assert.match(appSource, /path="\/attorney\/transactions\/:matterType"/, 'Attorney transactions tab route should exist')
@@ -86,7 +92,7 @@ assert.match(navigationPermissionsSource, /attorney_firm_users:\s*PERMISSIONS\.m
 assert.match(permissionsSource, /prefix:\s*'\/users'/, 'Attorney firm users route should be permission protected')
 
 assert.match(sidebarSource, /label: 'Organizations'/, 'Organizations should remain available from the sidebar')
-assert.match(sidebarSource, /buildVisibleSettingsGroups/, 'Settings should render the permission-aware settings navigation from the sidebar')
+assert.match(sidebarSource, /filterNavigationItems/, 'Settings should render permission-aware navigation from the sidebar')
 assert.match(settingsNavigationSource, /label:\s*'Organisation'/, 'Organisation settings should remain available from Settings')
 assert.doesNotMatch(appSource, /SettingsAuditLogPage/, 'Placeholder Audit Logs should stay out of Settings until real telemetry is connected')
 

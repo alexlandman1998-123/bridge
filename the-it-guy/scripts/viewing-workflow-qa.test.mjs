@@ -62,18 +62,16 @@ for (const contract of [
 for (const contract of [
   /invokeEdgeFunction\('send-email'/,
   /type: 'buyer_viewing_availability_request'/,
+  /resend: isResend/,
   /propertyCount: selectedPropertyIds\.length/,
   /deliveryMetadata/,
   /Viewing Availability Requested/,
   /Viewing Availability Email Failed/,
-  /window\.location\.href = `mailto:/,
 ]) {
   assert.match(buyerRequestBlock, contract, `buyer availability request should include ${contract}`)
 }
-assert.ok(
-  buyerRequestBlock.indexOf("invokeEdgeFunction('send-email'") < buyerRequestBlock.indexOf('window.location.href'),
-  'buyer mailto fallback should only run after the edge-function send attempt fails',
-)
+assert.doesNotMatch(buyerRequestBlock, /window\.location\.href = `mailto:/, 'buyer availability request should not open a mailto fallback')
+assert.doesNotMatch(buyerRequestBlock, /I opened an email draft as a fallback/, 'buyer availability request should not report draft fallback copy')
 
 for (const contract of [
   /status: nextStatus/,
@@ -91,20 +89,18 @@ for (const contract of [
   /invokeEdgeFunction\('send-email'/,
   /type: 'seller_viewing_availability_request'/,
   /to: sellerEmails/,
+  /resend: isResend/,
   /availabilityWindows/,
   /deliveryMetadata/,
   /sellerEmailDeliveryStatus/,
   /partial_sent/,
   /Seller Availability Requested/,
   /Seller Availability Email Failed/,
-  /window\.location\.href = `mailto:/,
 ]) {
   assert.match(sellerRequestBlock, contract, `seller availability request should include ${contract}`)
 }
-assert.ok(
-  sellerRequestBlock.indexOf("invokeEdgeFunction('send-email'") < sellerRequestBlock.indexOf('window.location.href'),
-  'seller mailto fallback should only run after the edge-function send attempt fails',
-)
+assert.doesNotMatch(sellerRequestBlock, /window\.location\.href = `mailto:/, 'seller availability request should not open a mailto fallback')
+assert.doesNotMatch(sellerRequestBlock, /I opened an email draft as a fallback/, 'seller availability request should not report draft fallback copy')
 
 for (const contract of [
   /setViewingPlanBookingContext\(\{ leadId: normalizeText\(selectedLead\.leadId\), propertyId: resolvedPropertyId \}\)/,

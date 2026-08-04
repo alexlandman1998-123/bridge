@@ -6,7 +6,7 @@ const sidebar = await readFile(new URL('../src/components/Sidebar.jsx', import.m
 const layout = await readFile(new URL('../src/pages/settings/SettingsLayout.jsx', import.meta.url), 'utf8')
 const landing = await readFile(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url), 'utf8')
 const navigation = await readFile(new URL('../src/pages/settings/settingsNavigation.js', import.meta.url), 'utf8')
-const theme = await readFile(new URL('../src/theme.css', import.meta.url), 'utf8')
+const premiumSaaS = await readFile(new URL('../src/styles/premiumSaaS.css', import.meta.url), 'utf8')
 const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8')
 
 await access(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url))
@@ -74,7 +74,7 @@ assert.match(
 )
 
 assert.match(
-  theme,
+  premiumSaaS,
   /\.settings-workspace[\s\S]*grid-template-columns: 280px minmax\(0, 1fr\)[\s\S]*\.settings-workspace-mobile-nav[\s\S]*\.settings-dashboard-card-grid[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/,
   'Settings workspace styling should provide desktop nav, mobile nav, and dashboard card grid.',
 )

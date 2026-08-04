@@ -28,6 +28,16 @@ assert.match(
   /workflowOperationsTransactionId === transaction\.id/,
   'Matter detail should skip the duplicate workflow fetch when access check already loaded the same transaction operations.',
 )
+assert.match(
+  transactionDetailSource,
+  /import \{ canAccessAttorneyMatter \} from '..\/lib\/attorneyPermissions'/,
+  'Matter detail should use matter access permissions for the page-level attorney gate.',
+)
+assert.match(
+  transactionDetailSource,
+  /const hasMatterAccess = await canAccessAttorneyMatter[\s\S]*setMatterAccessAllowed\(true\)[\s\S]*getAttorneyWorkflowOperationsForTransaction\(transactionId, \{ initialize: false \}\)/,
+  'Matter detail should allow the page once matter access passes, then hydrate workflow operations opportunistically.',
+)
 
 for (const expected of [
   'OPERATIONAL_WORKSPACE_CACHE_TTL_MS',

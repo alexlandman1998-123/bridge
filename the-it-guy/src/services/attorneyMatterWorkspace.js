@@ -13,7 +13,13 @@ import { createPerfTimer } from '../lib/performanceTrace'
 
 export const ATTORNEY_MATTER_PAGE_SIZES = [20, 50, 100]
 
-const STAGE_STEPS = ['Instruction', 'Documents', 'Signing', 'Finance', 'Lodgement', 'Registration']
+const STAGE_CONFIGS = {
+  transfer: ['Instruction', 'Documents', 'Signing', 'Finance', 'Lodgement', 'Registration'],
+  bond: ['Instruction', 'Application', 'Approval', 'Preparation', 'Lodgement', 'Registration'],
+  cancellation: ['Instruction', 'Figures', 'Documents', 'Guarantee', 'Lodgement', 'Registration'],
+  development: ['Instruction', 'Documents', 'Signing', 'Finance', 'Lodgement', 'Registration'],
+}
+const STAGE_STEPS = STAGE_CONFIGS.transfer
 const INCOMING_STAGE_STEPS = ['Buyer', 'Onboarding', 'OTP', 'Documents', 'Acceptance']
 
 const STATUS_FILTERS = [
@@ -85,7 +91,7 @@ const ATTORNEY_MATTER_VIEW_CONFIGS = {
   all: {
     key: 'all',
     title: 'All Matters',
-    description: 'Every active firm matter across transfer, bond, cancellation, and development work.',
+    description: 'Overview of all active matters across your firm.',
     primaryMetric: 'activeMatters',
     primaryMetricLabel: 'Active Matters',
     itemLabel: 'matters',
@@ -102,7 +108,7 @@ const ATTORNEY_MATTER_VIEW_CONFIGS = {
   transfer: {
     key: 'transfer',
     title: 'Transfer Matters',
-    description: 'Transfer instructions through preparation, signing, lodgement, and registration.',
+    description: 'Active transfer matters and their next milestones.',
     primaryMetric: 'activeMatters',
     primaryMetricLabel: 'Active Transfer Matters',
     itemLabel: 'transfer matters',
@@ -111,7 +117,7 @@ const ATTORNEY_MATTER_VIEW_CONFIGS = {
   bond: {
     key: 'bond',
     title: 'Bond Matters',
-    description: 'Bond registration work, guarantees, bank conditions, and signing tasks.',
+    description: 'Bond registration matters, bank conditions, and signing tasks.',
     primaryMetric: 'activeMatters',
     primaryMetricLabel: 'Active Bond Matters',
     itemLabel: 'bond matters',
@@ -120,7 +126,7 @@ const ATTORNEY_MATTER_VIEW_CONFIGS = {
   cancellation: {
     key: 'cancellation',
     title: 'Cancellation Matters',
-    description: 'Bond cancellation instructions, releases, and related follow-up work.',
+    description: 'Bond cancellation instructions and release follow-up.',
     primaryMetric: 'activeMatters',
     primaryMetricLabel: 'Active Cancellation Matters',
     itemLabel: 'cancellation matters',
@@ -577,21 +583,40 @@ function isArchivedMatter(matter = {}) {
   return lifecycle.includes('archived') || lifecycle.includes('closed') || status.includes('archived') || status.includes('cancel')
 }
 
+function getPrimaryMatterTypeKey(matter = {}) {
+  const keys = getMatterTypeKeys(matter)
+  if (keys.includes('cancellation')) return 'cancellation'
+  if (keys.includes('bond')) return 'bond'
+  if (keys.includes('development')) return 'development'
+  return 'transfer'
+}
+
 function resolveStage(matter = {}) {
+  const matterTypeKey = getPrimaryMatterTypeKey(matter)
+  const steps = STAGE_CONFIGS[matterTypeKey] || STAGE_STEPS
   const signal = normalize(`${matter.currentStage || ''} ${matter.nextAction || ''} ${matter.lifecycleState || ''}`)
   let currentIndex = 0
 
   if (isRegisteredMatter(matter) || signal.includes('registration confirmed')) currentIndex = 5
   else if (signal.includes('lodg') || signal.includes('deeds')) currentIndex = 4
+  else if (matterTypeKey === 'cancellation' && (signal.includes('guarantee') || signal.includes('settlement') || signal.includes('release'))) currentIndex = 3
+  else if (matterTypeKey === 'cancellation' && (signal.includes('document') || signal.includes('fica'))) currentIndex = 2
+  else if (matterTypeKey === 'cancellation' && (signal.includes('figure') || signal.includes('cob') || signal.includes('clearance'))) currentIndex = 1
+  else if (matterTypeKey === 'bond' && (signal.includes('prepare') || signal.includes('document') || signal.includes('sign'))) currentIndex = 3
+  else if (matterTypeKey === 'bond' && (signal.includes('approval') || signal.includes('grant') || signal.includes('condition') || signal.includes('bank'))) currentIndex = 2
+  else if (matterTypeKey === 'bond' && (signal.includes('application') || signal.includes('apply'))) currentIndex = 1
   else if (signal.includes('finance') || signal.includes('bank') || signal.includes('bond') || signal.includes('guarantee')) currentIndex = 3
   else if (signal.includes('sign') || signal.includes('otp')) currentIndex = 2
   else if (signal.includes('document') || signal.includes('fica') || signal.includes('clearance')) currentIndex = 1
 
   return {
-    key: normalize(STAGE_STEPS[currentIndex]),
-    label: STAGE_STEPS[currentIndex],
+    key: normalize(steps[currentIndex]),
+    label: steps[currentIndex],
     index: currentIndex,
-    steps: STAGE_STEPS,
+    completedCount: Math.min(currentIndex + 1, steps.length),
+    totalCount: steps.length,
+    matterTypeKey,
+    steps,
   }
 }
 
@@ -699,6 +724,26 @@ function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {}
   const propertyLabel = resolvePortalPropertyLabel(matter)
   const buyerName = resolvePortalBuyerName(matter)
   const sellerName = resolvePortalSellerName(matter, { fallback: 'Seller pending' })
+  const propertyAddress = firstText(
+    matter.propertyAddress,
+    matter.propertyLabel,
+    matter.property_address_line_1,
+    matter.property_description,
+    matter.propertyDescription,
+    propertyLabel === 'Property pending' ? '' : propertyLabel,
+  )
+  const propertyArea = [
+    firstText(matter.suburb, matter.propertySuburb),
+    firstText(matter.city, matter.propertyCity),
+  ].filter(Boolean).join(', ')
+  const propertyThumbnailUrl = firstText(
+    matter.propertyThumbnailUrl,
+    matter.propertyImageUrl,
+    matter.imageUrl,
+    matter.thumbnailUrl,
+    matter.coverImageUrl,
+    matter.heroImageUrl,
+  )
 
   const row = {
     matterId: matter.matterId,
@@ -708,6 +753,9 @@ function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {}
     matterType: getMatterTypeLabel(matter),
     matterTypeKeys,
     property: propertyLabel,
+    propertyAddress,
+    propertyArea,
+    propertyThumbnailUrl,
     buyer: buyerName,
     seller: sellerName,
     development: matter.developmentName && normalize(matter.developmentName) !== 'standalone matter' ? matter.developmentName : '',
@@ -824,6 +872,7 @@ function applyWorkspaceFilters(rows = [], { search = '', filters = {}, quickFilt
   const searchTerm = normalize(search)
   const status = normalize(filters.status || 'all')
   const matterType = viewConfig.lockedMatterType || viewConfig.usesIncomingQueue ? 'all' : normalize(filters.matterType || 'all')
+  const stage = normalize(filters.stage || 'all')
   const attorney = normalize(filters.attorney || 'all')
   const assistant = normalize(filters.assistant || 'all')
   const partner = normalize(filters.partner || 'all')
@@ -843,6 +892,7 @@ function applyWorkspaceFilters(rows = [], { search = '', filters = {}, quickFilt
     if (searchTerm && !row.searchText.includes(searchTerm)) return false
     if (status !== 'all' && ![normalize(row.status), normalize(row.statusKey)].includes(status)) return false
     if (matterType !== 'all' && !row.matterTypeKeys.includes(matterType)) return false
+    if (stage !== 'all' && normalize(row.stage?.key || row.stage?.label) !== stage) return false
     if (attorney !== 'all' && normalize(row.assignedAttorney.id || row.assignedAttorney.name) !== attorney) return false
     if (assistant !== 'all' && normalize(row.assignedAssistant.id || row.assignedAssistant.name) !== assistant) return false
     if (partner !== 'all' && ![row.agent, row.bondOriginator].map(normalize).includes(partner)) return false
@@ -1067,10 +1117,15 @@ function buildFilterPayload(operational = {}, rows = [], { view = 'all' } = {}) 
     .map((value) => ({ value: normalize(value), label: value }))
   const bankOptions = [...new Set(rows.map((row) => row.bank).filter(Boolean))]
     .map((value) => ({ value: normalize(value), label: value }))
+  const stageOptions = [...new Map(rows
+    .map((row) => [normalize(row.stage?.key || row.stage?.label), row.stage?.label])
+    .filter(([value, label]) => value && label)).entries()]
+    .map(([value, label]) => ({ value, label }))
 
   return {
     statuses: viewConfig.usesIncomingQueue ? INCOMING_STATUS_FILTERS : STATUS_FILTERS,
     matterTypes: MATTER_TYPE_FILTERS,
+    stages: [{ value: 'all', label: 'All Stages' }, ...stageOptions],
     attorneys: [{ value: 'all', label: 'All Attorneys' }, ...memberOptions],
     assistants: [{ value: 'all', label: 'All Assistants' }, ...memberOptions],
     branches: [{ value: 'all', label: 'All Branches' }],
