@@ -7062,6 +7062,7 @@ function ArchlineTransferWorkspace({
 
 function ArchlineDocumentsWorkspace({
   documentHealthSummary = {},
+  ficaSummary = {},
   categorySummaries = [],
   requiredRows = [],
   libraryRows = [],
@@ -7093,6 +7094,9 @@ function ArchlineDocumentsWorkspace({
     ['Missing', documentHealthSummary.missingCount || missingRows.length || 0, AlertTriangle, 'bg-red-50 text-red-700'],
     ['Verified', documentHealthSummary.approvedCount || 0, FileCheck2, 'bg-emerald-50 text-emerald-700'],
   ]
+  const ficaCards = ['buyer', 'seller']
+    .map((party) => ficaSummary?.[party])
+    .filter((item) => item && item.totalCount > 0)
   const [activeCategoryGroup, setActiveCategoryGroup] = useState('all')
   const systemCategoryKeys = ['buyer', 'seller', 'finance', 'transfer', 'bond', 'cancellation', 'general']
   const activeCategorySummary = systemCategoryKeys.includes(activeFilter)
@@ -7154,6 +7158,40 @@ function ArchlineDocumentsWorkspace({
                     <div className="h-full rounded-full bg-emerald-700" style={{ width: `${category.progressPercent}%` }} />
                   </div>
                 </button>
+              )
+            })}
+          </div>
+        </ArchlinePanel>
+      ) : null}
+
+      {ficaCards.length ? (
+        <ArchlinePanel title="FICA Review" className="p-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            {ficaCards.map((item) => {
+              const receivedTone = item.allReceived ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'
+              const acceptedTone = item.allAccepted ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-700'
+              return (
+                <article key={item.party} className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <strong className="block text-sm font-semibold text-slate-950">{item.label}</strong>
+                      <span className="mt-1 block text-xs font-semibold text-slate-500">{item.missingCount} missing - {item.pendingReviewCount} pending review</span>
+                    </div>
+                    <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold ${receivedTone}`}>
+                      {item.allReceived ? 'Received' : item.receivedLabel}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold ${acceptedTone}`}>
+                      {item.allAccepted ? 'FICA checked and accepted' : item.acceptedLabel}
+                    </span>
+                    {item.rejectedCount ? (
+                      <span className="inline-flex rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
+                        {item.rejectedCount} rejected
+                      </span>
+                    ) : null}
+                  </div>
+                </article>
               )
             })}
           </div>
@@ -11029,6 +11067,23 @@ function AttorneyTransactionDetail() {
   const documentHealthSummary = matterDocumentWorkspaceModel.healthSummary
   const documentLibraryRows = matterDocumentWorkspaceModel.libraryRows
   const archlineDocumentsByWorkflow = matterDocumentWorkspaceModel.documentsByWorkflow
+  const archlineTransferDocumentsForWorkflow = useMemo(
+    () => {
+      const rows = [
+        ...(archlineDocumentsByWorkflow.transfer || []),
+        ...requiredDocumentRows.filter((row) => ['buyer', 'seller', 'transfer'].includes(row.canonicalCategory)),
+        ...allDocumentLibraryRows.filter((row) => ['buyer', 'seller', 'transfer'].includes(row.canonicalCategory)),
+      ]
+      const seen = new Set()
+      return rows.filter((row) => {
+        const key = String(row.id || `${row.displayName || row.name || ''}:${row.requiredDocumentKey || row.documentType || ''}`)
+        if (!key || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+    },
+    [allDocumentLibraryRows, archlineDocumentsByWorkflow.transfer, requiredDocumentRows],
+  )
   const attorneyDocumentControl = useMemo(
     () => buildAttorneyDocumentControl({
       requiredDocumentRows,
@@ -15013,7 +15068,7 @@ function AttorneyTransactionDetail() {
           ) : (
             <ArchlineTransferWorkspace
               workflow={archlineTransferWorkflow}
-              documents={archlineDocumentsByWorkflow.transfer}
+              documents={archlineTransferDocumentsForWorkflow}
               keyDates={archlineKeyDates}
               parties={archlinePartyItems}
               activityFeed={overviewConversationEntries}
@@ -15037,6 +15092,7 @@ function AttorneyTransactionDetail() {
           <section className="space-y-4">
             <ArchlineDocumentsWorkspace
               documentHealthSummary={documentHealthSummary}
+              ficaSummary={matterDocumentWorkspaceModel.ficaSummary}
               categorySummaries={matterDocumentWorkspaceModel.categorySummaries}
               requiredRows={documentHealthSummary.requiredDocuments.length ? documentHealthSummary.requiredDocuments : requiredDocumentRows}
               libraryRows={documentLibraryRows}

@@ -604,6 +604,95 @@ export function normalizeDocumentCommandStatus(status = '', { hasDocument = fals
   return hasDocument ? 'uploaded' : 'missing'
 }
 
+const FICA_RECEIVED_STATUSES = new Set(['uploaded', 'pending_review', 'verified'])
+const FICA_ACCEPTED_STATUSES = new Set(['verified'])
+
+function rowMatchesFicaGroup(row = {}, party = '') {
+  const normalizedParty = String(party || '').trim().toLowerCase()
+  if (!normalizedParty) return false
+  const category = normalizeMatterDocumentCategory(row.canonicalCategory || row.category)
+  if (category !== normalizedParty) return false
+  const haystack = [
+    row.categoryGroup,
+    row.categoryGroupLabel,
+    row.displayName,
+    row.documentType,
+    row.documentTypeLabel,
+    row.requiredDocumentKey,
+    row.requiredParty,
+    row.ownerLabel,
+    row.requirement?.key,
+    row.requirement?.label,
+    row.requirement?.groupKey,
+    row.requiredDocument?.key,
+    row.requiredDocument?.label,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+  return (
+    row.categoryGroup === 'identity_fica' ||
+    haystack.includes('fica') ||
+    haystack.includes('identity') ||
+    haystack.includes(' id ') ||
+    haystack.includes('_id') ||
+    haystack.includes('proof of address') ||
+    haystack.includes('proof_of_address') ||
+    haystack.includes('proof of residence') ||
+    haystack.includes('proof_of_residence')
+  )
+}
+
+function getFicaRowStatus(row = {}) {
+  return normalizeDocumentCommandStatus(row.status || row.requiredDocumentStatus, {
+    hasDocument: Boolean(row.fileUrl || row.linkedDocument || row.raw),
+  })
+}
+
+export function buildMatterFicaReviewSummary({ requiredDocumentRows = [], allDocumentLibraryRows = [] } = {}) {
+  const summaries = {}
+  for (const party of ['buyer', 'seller']) {
+    const requirementRows = toArray(requiredDocumentRows).filter((row) => rowMatchesFicaGroup(row, party))
+    const requirementKeys = new Set(requirementRows.map((row) =>
+      String(row.canonicalRequirementInstanceId || row.requiredDocumentId || row.requiredDocumentKey || row.id || ''),
+    ).filter(Boolean))
+    const supportingDocumentRows = toArray(allDocumentLibraryRows).filter((row) => {
+      if (!rowMatchesFicaGroup(row, party)) return false
+      const requirementKey = String(row.requiredDocumentCanonicalId || row.requiredDocumentId || row.requiredDocumentKey || '')
+      return !requirementKey || !requirementKeys.has(requirementKey)
+    })
+    const rows = [...requirementRows, ...supportingDocumentRows]
+    const requiredCount = requirementRows.length
+    const basisRows = requiredCount ? requirementRows : rows
+    const totalCount = basisRows.length
+    const receivedCount = basisRows.filter((row) => FICA_RECEIVED_STATUSES.has(getFicaRowStatus(row))).length
+    const acceptedCount = basisRows.filter((row) => FICA_ACCEPTED_STATUSES.has(getFicaRowStatus(row))).length
+    const pendingReviewCount = basisRows.filter((row) => getFicaRowStatus(row) === 'pending_review').length
+    const rejectedCount = basisRows.filter((row) => getFicaRowStatus(row) === 'rejected').length
+    const missingCount = basisRows.filter((row) => ['missing', 'requested', 'expired', 'rejected'].includes(getFicaRowStatus(row))).length
+    const allReceived = totalCount > 0 && receivedCount >= totalCount && missingCount === 0 && rejectedCount === 0
+    const allAccepted = totalCount > 0 && acceptedCount >= totalCount && missingCount === 0 && pendingReviewCount === 0 && rejectedCount === 0
+
+    summaries[party] = {
+      party,
+      label: party === 'buyer' ? 'Buyer FICA' : 'Seller FICA',
+      rows,
+      requirementRows,
+      documentRows: supportingDocumentRows,
+      basisRows,
+      requiredCount,
+      totalCount,
+      receivedCount,
+      acceptedCount,
+      pendingReviewCount,
+      rejectedCount,
+      missingCount,
+      allReceived,
+      allAccepted,
+      receivedLabel: totalCount ? `${receivedCount}/${totalCount} received` : 'No FICA requirements',
+      acceptedLabel: totalCount ? `${acceptedCount}/${totalCount} accepted` : 'No FICA requirements',
+    }
+  }
+  return summaries
+}
+
 export function getDocumentCommandStatusLabel(status = '') {
   const normalized = normalizeDocumentCommandStatus(status)
   if (normalized === 'missing') return 'Missing'
@@ -1286,6 +1375,10 @@ export function buildMatterDocumentWorkspaceModel({
     requiredDocumentRows: requiredRows,
     categories: buildScopedDocumentCategories(scopedVisibleLaneKeys),
   })
+  const ficaSummary = buildMatterFicaReviewSummary({
+    requiredDocumentRows: requiredRows,
+    allDocumentLibraryRows: allLibraryRows,
+  })
   const libraryRows = filterMatterDocumentLibraryRows({
     activeFilter: scopedActiveFilter,
     search,
@@ -1308,6 +1401,7 @@ export function buildMatterDocumentWorkspaceModel({
     allLibraryRows,
     readiness,
     healthSummary,
+    ficaSummary,
     categorySummaries,
     libraryRows,
     documentsByWorkflow,

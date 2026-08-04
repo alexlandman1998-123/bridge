@@ -174,7 +174,7 @@ function documentMatchesRequiredKey(document = {}, requiredKey = '') {
 
 function getDocumentStatus(document = {}) {
   const normalized = key(document.status || document.reviewStatus || document.review_status || (document.complete ? 'completed' : 'missing'))
-  if (['missing', 'requested', 'uploaded', 'under_review', 'approved', 'rejected', 'completed', 'ready'].includes(normalized)) {
+  if (['missing', 'requested', 'uploaded', 'under_review', 'pending_review', 'approved', 'accepted', 'verified', 'rejected', 'completed', 'ready'].includes(normalized)) {
     return normalized
   }
   return 'missing'
@@ -182,7 +182,87 @@ function getDocumentStatus(document = {}) {
 
 function isDocumentReady(document = {}) {
   const status = getDocumentStatus(document)
-  return ['uploaded', 'approved', 'completed', 'ready'].includes(status) || document.complete === true
+  return ['uploaded', 'under_review', 'pending_review', 'approved', 'accepted', 'verified', 'completed', 'ready'].includes(status) || document.complete === true
+}
+
+const FICA_RECEIVED_STATUSES = new Set(['uploaded', 'under_review', 'pending_review', 'approved', 'accepted', 'verified', 'completed', 'ready'])
+const FICA_ACCEPTED_STATUSES = new Set(['approved', 'accepted', 'verified', 'completed', 'ready'])
+
+function rowMatchesPartyFica(document = {}, party = '') {
+  const normalizedParty = key(party)
+  if (!normalizedParty) return false
+  const category = key(document.canonicalCategory || document.category)
+  const owner = key(document.requiredParty || document.ownerLabel || document.uploadedByRole || document.uploaded_by_role)
+  if (category && category !== normalizedParty && owner && owner !== normalizedParty) return false
+  if (!category && owner !== normalizedParty) return false
+  const haystack = [
+    document.categoryGroup,
+    document.categoryGroupLabel,
+    document.displayName,
+    document.documentType,
+    document.documentTypeLabel,
+    document.requiredDocumentKey,
+    document.label,
+    document.name,
+    document.key,
+    document.sourceRequirementKey,
+  ].map(key).join(' ')
+  return (
+    document.categoryGroup === 'identity_fica' ||
+    haystack.includes('fica') ||
+    haystack.includes('identity') ||
+    haystack.includes(' id') ||
+    haystack.includes('_id') ||
+    haystack.includes('proof of address') ||
+    haystack.includes('proof_of_address') ||
+    haystack.includes('proof of residence') ||
+    haystack.includes('proof_of_residence')
+  )
+}
+
+function dedupeFicaRows(rows = []) {
+  const seen = new Set()
+  return rows.filter((row) => {
+    const keyValue = text(
+      row.canonicalRequirementInstanceId ||
+        row.requiredDocumentCanonicalId ||
+        row.requiredDocumentId ||
+        row.requiredDocumentKey ||
+        row.id ||
+        row.key ||
+        row.displayName,
+    )
+    if (!keyValue || seen.has(keyValue)) return false
+    seen.add(keyValue)
+    return true
+  })
+}
+
+function buildFicaTaskDerivedCompletion(taskKey = '', documents = []) {
+  const normalizedTaskKey = key(taskKey)
+  const party = normalizedTaskKey.startsWith('buyer_fica') ? 'buyer' : normalizedTaskKey.startsWith('seller_fica') ? 'seller' : ''
+  if (!party) return null
+  const acceptedStage = normalizedTaskKey.includes('approved')
+  const matchingRows = dedupeFicaRows((Array.isArray(documents) ? documents : []).filter((document) => rowMatchesPartyFica(document, party)))
+  if (!matchingRows.length) return null
+  const requirementRows = matchingRows.filter((row) => row.source === 'transaction_required_documents' || row.requirement || row.requiredDocument)
+  const basisRows = requirementRows.length ? requirementRows : matchingRows
+  const statusSet = acceptedStage ? FICA_ACCEPTED_STATUSES : FICA_RECEIVED_STATUSES
+  const completeRows = basisRows.filter((row) => statusSet.has(getDocumentStatus(row)))
+  const relatedDocuments = basisRows.map((row) => ({
+    ...row,
+    status: getDocumentStatus(row),
+    ready: statusSet.has(getDocumentStatus(row)),
+    sourceRequirementKey: row.requiredDocumentKey || row.key || row.sourceRequirementKey || taskKey,
+  }))
+  return {
+    type: acceptedStage ? 'fica_accepted' : 'fica_received',
+    party,
+    complete: basisRows.length > 0 && completeRows.length === basisRows.length,
+    relatedDocuments,
+    completedCount: completeRows.length,
+    totalCount: basisRows.length,
+  }
 }
 
 function isTaskDueWithin(task = {}, days = 7, now = new Date()) {
@@ -200,7 +280,7 @@ function isTaskOverdue(task = {}, now = new Date()) {
   return Number.isFinite(dueTime) && dueTime < new Date(now).getTime()
 }
 
-function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, facts = {}, workflow = null } = {}) {
+function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, facts = {}, workflow = null, documents = [] } = {}) {
   const definitions = getAttorneyStageDefinitionsForLane(workflowKey).filter(
     (definition) => definition.key !== 'guarantees_received' || !facts?.isCashDeal,
   )
@@ -232,6 +312,11 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, facts = {},
 
     const phase = findPhaseForTask(definition.key)
 
+    const derivedCompletion = buildFicaTaskDerivedCompletion(definition.key, documents)
+    if (derivedCompletion?.complete && displayStatus !== 'completed') {
+      displayStatus = 'completed'
+    }
+
     return {
       id: storedStep?.id || definition.key,
       key: definition.key,
@@ -243,6 +328,7 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, facts = {},
       phaseLabel: phase.label,
       status: persistedStatus,
       displayStatus,
+      derivedCompletion,
       statusLabel: DISPLAY_STATUS_META[displayStatus] || DISPLAY_STATUS_META.not_started,
       isCurrent: index === currentIndex,
       completedAt: storedStep?.completedAt || storedStep?.completed_at || null,
@@ -636,8 +722,10 @@ export function buildTransferWorkspaceViewModel({
 } = {}) {
   const lane = workflow?.lane || null
   const permissions = lane?.permissions || {}
-  const tasks = buildWorkflowTasks({ workflowKey, lane, facts: workflow?.facts || {}, workflow }).map((task) => {
-    const relatedDocuments = buildRelatedDocuments(task, lane, documents)
+  const tasks = buildWorkflowTasks({ workflowKey, lane, facts: workflow?.facts || {}, workflow, documents }).map((task) => {
+    const relatedDocuments = task.derivedCompletion?.relatedDocuments?.length
+      ? task.derivedCompletion.relatedDocuments
+      : buildRelatedDocuments(task, lane, documents)
     const taskWithDocuments = {
       ...task,
       relatedDocuments,

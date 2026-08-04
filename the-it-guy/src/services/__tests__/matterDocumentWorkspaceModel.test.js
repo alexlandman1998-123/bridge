@@ -172,6 +172,11 @@ assert.equal(baseModel.healthSummary.missingCount, 1)
 assert.equal(baseModel.healthSummary.pendingReviewCount, 1)
 assert.equal(baseModel.healthSummary.approvedCount, 1)
 assert.equal(baseModel.readiness.missingDocuments[0].id, 'cri-buyer-proof')
+assert.equal(baseModel.ficaSummary.seller.allReceived, true, 'seller FICA should be received once the seller portal upload is linked')
+assert.equal(baseModel.ficaSummary.seller.allAccepted, false, 'seller FICA should not be accepted while it is still under review')
+assert.equal(baseModel.ficaSummary.seller.pendingReviewCount, 1)
+assert.equal(baseModel.ficaSummary.buyer.allReceived, false)
+assert.equal(baseModel.ficaSummary.buyer.missingCount, 1)
 
 const missingModel = buildMatterDocumentWorkspaceModel({
   transaction,

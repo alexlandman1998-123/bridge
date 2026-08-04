@@ -210,6 +210,52 @@ const missingDocumentsModel = buildTransferWorkspaceViewModel({
 assert.ok(missingDocumentsModel.visibleTasks.length > 0)
 assert.ok(missingDocumentsModel.visibleTasks.every((task) => task.missingDocumentCount > 0))
 
+const sellerFicaDerivedModel = buildTransferWorkspaceViewModel({
+  workflow: {
+    ...workflow,
+    lane: {
+      ...workflow.lane,
+      currentStage: 'seller_fica_received',
+      steps: [
+        { id: 'step-1', stepKey: 'instruction_received', status: 'completed', sortOrder: 1 },
+        { id: 'step-2', stepKey: 'seller_fica_requested', status: 'completed', sortOrder: 2 },
+        { id: 'step-3', stepKey: 'seller_fica_received', status: 'in_progress', sortOrder: 3 },
+        { id: 'step-4', stepKey: 'seller_fica_approved', status: 'not_started', sortOrder: 4 },
+      ],
+    },
+  },
+  documents: [
+    {
+      id: 'seller-id',
+      canonicalCategory: 'seller',
+      categoryGroup: 'identity_fica',
+      displayName: 'Seller ID document',
+      requiredDocumentKey: 'seller_id_document',
+      status: 'pending_review',
+      source: 'transaction_required_documents',
+    },
+    {
+      id: 'seller-address',
+      canonicalCategory: 'seller',
+      categoryGroup: 'identity_fica',
+      displayName: 'Seller proof of address',
+      requiredDocumentKey: 'seller_proof_of_address',
+      status: 'pending_review',
+      source: 'transaction_required_documents',
+    },
+  ],
+  selectedTaskKey: 'seller_fica_received',
+})
+
+assert.equal(sellerFicaDerivedModel.selectedTask.displayStatus, 'completed')
+assert.equal(sellerFicaDerivedModel.selectedTask.derivedCompletion.complete, true)
+assert.equal(sellerFicaDerivedModel.selectedTaskContext.documentSummary.received, 2)
+assert.equal(
+  sellerFicaDerivedModel.tasks.find((task) => task.key === 'seller_fica_approved')?.displayStatus,
+  'not_started',
+  'seller FICA approval should not complete until the received documents are verified',
+)
+
 const delayedModel = buildTransferWorkspaceViewModel({
   workflow: {
     ...workflow,
