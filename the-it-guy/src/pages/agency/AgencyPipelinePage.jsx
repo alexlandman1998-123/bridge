@@ -7477,12 +7477,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     const isSeller = resolveLeadCategoryView(selectedLead) === 'seller'
-    const stage = normalizeText(selectedLead.stage).toLowerCase()
+    const stage = normalizeText(selectedLeadEffectiveLifecycleStage || selectedLead.stage).toLowerCase()
     const appointments = selectedLeadAppointments || []
     const hasAppointment = appointments.length > 0
     const hasCompletedAppointment = appointments.some((row) => normalizeText(row?.status).toLowerCase() === 'completed')
     const hasTransaction = Boolean(selectedLeadLinkedTransaction)
     const hasOffer = stage.includes('offer') || hasTransaction || selectedLeadOfferSummary.total > 0
+    const hasContacted = selectedLeadActivities.length > 0 || !['', 'new lead', 'lead', 'cold'].includes(stage)
+    const hasQualificationSignal = Boolean(
+      normalizeText(selectedLead?.budget || selectedLead?.estimatedValue || selectedLead?.areaInterest || selectedLead?.propertyInterest) ||
+        stage.includes('qualified') ||
+        stage.includes('viewing') ||
+        stage.includes('offer') ||
+        hasAppointment ||
+        selectedLeadOfferSummary.total,
+    )
+    const hasViewingStarted = hasAppointment || stage.includes('viewing')
+    const hasViewingCompleted = hasCompletedAppointment || stage.includes('viewing completed')
+    const hasOfferAccepted = Boolean(selectedLeadAcceptedOffer) || hasTransaction || stage.includes('offer accepted')
     const hasListing = Boolean(
       normalizeText(selectedLead?.listingId || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
     )
@@ -7491,7 +7503,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         documentPacketBelongsToLead(mandatePacketStatus?.packet, selectedLead?.leadId),
     )
     const mandateSigned = stage.includes('mandate signed') || selectedLeadMandateSignedEvidence
-    const otpSigned = stage.includes('otp signed')
 
     const checks = isSeller
       ? [
@@ -7501,11 +7512,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           { key: 'listing_active', label: 'Listing active/linked', done: hasListing },
         ]
       : [
-          { key: 'appointment_booked', label: 'Viewing/appointment booked', done: hasAppointment },
-          { key: 'viewing_completed', label: 'Viewing completed', done: hasCompletedAppointment },
-          { key: 'offer_submitted', label: 'Offer submitted', done: hasOffer },
+          { key: 'lead_captured', label: 'Lead captured', done: Boolean(selectedLead) },
+          { key: 'contacted', label: 'Contacted', done: hasContacted },
+          { key: 'qualified', label: 'Qualified', done: hasQualificationSignal },
+          { key: 'viewing_completed', label: hasViewingStarted ? 'Viewing completed' : 'Viewing booked', done: hasViewingCompleted },
+          { key: 'offer_accepted', label: hasOffer ? 'Offer accepted' : 'Offer started', done: hasOfferAccepted },
           { key: 'transaction_created', label: 'Transaction created', done: hasTransaction },
-          { key: 'otp_signed', label: 'OTP signed', done: otpSigned },
         ]
 
     const completed = checks.filter((item) => item.done).length
@@ -7517,7 +7529,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       items: checks,
       missing: checks.filter((item) => !item.done),
     }
-  }, [mandatePacketStatus?.packet, selectedLead, selectedLeadAppointments, selectedLeadLinkedTransaction, selectedLeadMandateSignedEvidence, selectedLeadOfferSummary.total])
+  }, [
+    mandatePacketStatus?.packet,
+    selectedLead,
+    selectedLeadAcceptedOffer,
+    selectedLeadActivities.length,
+    selectedLeadAppointments,
+    selectedLeadEffectiveLifecycleStage,
+    selectedLeadLinkedTransaction,
+    selectedLeadMandateSignedEvidence,
+    selectedLeadOfferSummary.total,
+  ])
 
   const selectedLeadUnifiedTimeline = useMemo(() => {
     const classifyActivity = (activity = {}) => {
@@ -9288,10 +9310,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       { key: 'offer', label: 'Offer', detail: offerComplete ? 'Accepted' : offerStarted ? 'Pending' : 'Not started', done: offerComplete, started: offerStarted },
       { key: 'transaction', label: 'Transaction', detail: transactionDone ? 'Created' : 'Not started', done: transactionDone },
     ]
-    const currentIndex = Math.max(0, rawStages.findIndex((stage) => !stage.done))
+    const firstIncompleteIndex = rawStages.findIndex((stage) => !stage.done)
+    const activeStartedIndex = rawStages.reduce((current, stage, index) => (
+      stage.started && !stage.done ? index : current
+    ), -1)
+    const currentIndex = activeStartedIndex >= 0
+      ? activeStartedIndex
+      : firstIncompleteIndex >= 0
+        ? firstIncompleteIndex
+        : rawStages.length - 1
     return rawStages.map((stage, index) => ({
       ...stage,
-      state: stage.done ? 'completed' : index === currentIndex || stage.started ? 'current' : 'future',
+      state: stage.done ? 'completed' : index === currentIndex ? 'current' : 'future',
     }))
   }, [
     selectedLead,
