@@ -4309,6 +4309,12 @@ function getTomorrowIsoDate() {
   return date.toISOString().slice(0, 10)
 }
 
+function getDateOffsetIsoDate(days = 0) {
+  const date = new Date()
+  date.setDate(date.getDate() + Number(days || 0))
+  return date.toISOString().slice(0, 10)
+}
+
 const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
   appointmentType: '',
   customTypeLabel: '',
@@ -4808,6 +4814,8 @@ const LEAD_DETAIL_DEFAULTS = {
 
 const BUYER_QUALIFICATION_NOTE_START = '[Buyer qualification]'
 const BUYER_QUALIFICATION_NOTE_END = '[/Buyer qualification]'
+const BUYER_VIEWING_PLAN_NOTE_START = '[Buyer viewing plan]'
+const BUYER_VIEWING_PLAN_NOTE_END = '[/Buyer viewing plan]'
 
 const BUYER_QUALIFICATION_FORM_DEFAULTS = {
   budget: '',
@@ -4840,18 +4848,50 @@ const BUYER_FINANCE_TYPE_OPTIONS = ['', 'Bond', 'Cash', 'Cash + bond', 'Not sure
 const BUYER_SUBJECT_TO_FINANCE_OPTIONS = ['', 'Yes', 'No', 'Unsure']
 const BUYER_PRE_APPROVAL_OPTIONS = ['', 'Not started', 'Pre-approved', 'Submitted', 'Needs bond originator', 'Cash buyer']
 const BUYER_PROPERTY_TO_SELL_OPTIONS = ['', 'No', 'Yes', 'Unsure']
+const BUYER_VIEWING_PLAN_STATUS_OPTIONS = [
+  { key: 'draft', label: 'Draft', meta: 'Select properties' },
+  { key: 'buyer_availability', label: 'Sent to buyer', meta: 'Awaiting times' },
+  { key: 'buyer_confirmed', label: 'Buyer confirmed', meta: 'Times received' },
+  { key: 'seller_coordination', label: 'Seller coordination', meta: 'Confirm access' },
+  { key: 'booked', label: 'Booked', meta: 'Appointments set' },
+]
+const BUYER_VIEWING_RESPONSE_DEFAULTS = {
+  confirmedPropertyIds: [],
+  availabilityWindows: '',
+  responseNotes: '',
+}
+const BUYER_SELLER_COORDINATION_DEFAULTS = {
+  sellerRecipientEmails: '',
+  sellerCoordinationNotes: '',
+}
 const BUYER_QUALIFICATION_LABEL_CLASS = 'grid gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-[#60758b]'
 const BUYER_QUALIFICATION_FIELD_CLASS = 'h-11 rounded-[12px] px-3 text-sm font-medium tracking-normal placeholder:font-medium placeholder:tracking-normal'
 const BUYER_QUALIFICATION_TEXTAREA_CLASS = 'min-h-[132px] rounded-[12px] px-3 py-3 text-sm font-medium leading-6 tracking-normal placeholder:font-medium placeholder:tracking-normal'
 
-function stripBuyerQualificationNoteBlock(notes = '') {
+function stripLeadNoteBlock(notes = '', startMarker = '', endMarker = '') {
   const raw = String(notes || '').trim()
-  const startIndex = raw.indexOf(BUYER_QUALIFICATION_NOTE_START)
+  const startIndex = raw.indexOf(startMarker)
   if (startIndex === -1) return raw
-  const endIndex = raw.indexOf(BUYER_QUALIFICATION_NOTE_END, startIndex)
+  const endIndex = raw.indexOf(endMarker, startIndex)
   const before = raw.slice(0, startIndex).trim()
-  const after = endIndex === -1 ? '' : raw.slice(endIndex + BUYER_QUALIFICATION_NOTE_END.length).trim()
+  const after = endIndex === -1 ? '' : raw.slice(endIndex + endMarker.length).trim()
   return [before, after].filter(Boolean).join('\n\n')
+}
+
+function replaceLeadNoteBlock(notes = '', startMarker = '', endMarker = '', block = '') {
+  return [stripLeadNoteBlock(notes, startMarker, endMarker), normalizeText(block)].filter(Boolean).join('\n\n')
+}
+
+function stripBuyerQualificationNoteBlock(notes = '') {
+  return stripLeadNoteBlock(notes, BUYER_QUALIFICATION_NOTE_START, BUYER_QUALIFICATION_NOTE_END)
+}
+
+function stripBuyerViewingPlanNoteBlock(notes = '') {
+  return stripLeadNoteBlock(notes, BUYER_VIEWING_PLAN_NOTE_START, BUYER_VIEWING_PLAN_NOTE_END)
+}
+
+function stripBuyerStructuredNoteBlocks(notes = '') {
+  return stripBuyerViewingPlanNoteBlock(stripBuyerQualificationNoteBlock(notes))
 }
 
 function parseBuyerQualificationNoteBlock(notes = '') {
@@ -4884,7 +4924,7 @@ function parseBuyerQualificationNoteBlock(notes = '') {
 
 function buildBuyerQualificationFormFromLead(lead = {}) {
   const parsed = parseBuyerQualificationNoteBlock(lead?.notes)
-  const freeformNotes = stripBuyerQualificationNoteBlock(lead?.notes)
+  const freeformNotes = stripBuyerStructuredNoteBlocks(lead?.notes)
   return {
     ...BUYER_QUALIFICATION_FORM_DEFAULTS,
     ...parsed,
@@ -4895,7 +4935,7 @@ function buildBuyerQualificationFormFromLead(lead = {}) {
   }
 }
 
-function buildBuyerQualificationNotes(form = {}) {
+function buildBuyerQualificationBlock(form = {}) {
   const rows = BUYER_QUALIFICATION_NOTE_FIELDS.map(({ key, label }) => {
     const value = normalizeText(form[key])
     return `${label}: ${value}`
@@ -4905,6 +4945,241 @@ function buildBuyerQualificationNotes(form = {}) {
     ...rows,
     BUYER_QUALIFICATION_NOTE_END,
   ].join('\n')
+}
+
+function buildBuyerQualificationNotes(form = {}, existingNotes = '') {
+  return replaceLeadNoteBlock(
+    existingNotes,
+    BUYER_QUALIFICATION_NOTE_START,
+    BUYER_QUALIFICATION_NOTE_END,
+    buildBuyerQualificationBlock(form),
+  )
+}
+
+function parseBuyerViewingPlanNoteBlock(notes = '') {
+  const raw = String(notes || '')
+  const startIndex = raw.indexOf(BUYER_VIEWING_PLAN_NOTE_START)
+  const endIndex = raw.indexOf(BUYER_VIEWING_PLAN_NOTE_END, startIndex)
+  if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
+    return {
+      status: 'draft',
+      selectedPropertyIds: [],
+      confirmedPropertyIds: [],
+      availabilityWindows: '',
+      responseNotes: '',
+      sellerRecipientEmails: '',
+      sellerCoordinationNotes: '',
+      bookedPropertyIds: [],
+      bookedAppointmentIds: [],
+      updatedAt: '',
+      requestedAt: '',
+      respondedAt: '',
+      sellerRequestedAt: '',
+      bookedAt: '',
+      recipientEmail: '',
+    }
+  }
+
+  const labelToKey = new Map([
+    ['Status', 'status'],
+    ['Selected property ids', 'selectedPropertyIds'],
+    ['Confirmed property ids', 'confirmedPropertyIds'],
+    ['Buyer availability windows', 'availabilityWindows'],
+    ['Buyer response notes', 'responseNotes'],
+    ['Seller recipients', 'sellerRecipientEmails'],
+    ['Seller coordination notes', 'sellerCoordinationNotes'],
+    ['Booked property ids', 'bookedPropertyIds'],
+    ['Booked appointment ids', 'bookedAppointmentIds'],
+    ['Buyer availability requested at', 'requestedAt'],
+    ['Buyer responded at', 'respondedAt'],
+    ['Seller availability requested at', 'sellerRequestedAt'],
+    ['Viewing appointments booked at', 'bookedAt'],
+    ['Buyer email', 'recipientEmail'],
+    ['Updated at', 'updatedAt'],
+  ])
+  const parsed = {}
+  let activeKey = ''
+  raw
+    .slice(startIndex + BUYER_VIEWING_PLAN_NOTE_START.length, endIndex)
+    .trim()
+    .split(/\r?\n/)
+    .forEach((line) => {
+      const labelMatch = line.match(/^([^:]+):\s*(.*)$/)
+      const matchedKey = labelMatch ? labelToKey.get(normalizeText(labelMatch[1])) : ''
+      if (matchedKey) {
+        activeKey = matchedKey
+        parsed[matchedKey] = normalizeText(labelMatch[2])
+        return
+      }
+      if (activeKey && normalizeText(line)) {
+        parsed[activeKey] = [parsed[activeKey], normalizeText(line)].filter(Boolean).join('\n')
+      }
+    })
+
+  const status = normalizeText(parsed.status).toLowerCase() || 'draft'
+  const knownStatus = BUYER_VIEWING_PLAN_STATUS_OPTIONS.some((option) => option.key === status) ? status : 'draft'
+  return {
+    status: knownStatus,
+    selectedPropertyIds: normalizeText(parsed.selectedPropertyIds)
+      .split(',')
+      .map(normalizeText)
+      .filter(Boolean),
+    confirmedPropertyIds: normalizeText(parsed.confirmedPropertyIds)
+      .split(',')
+      .map(normalizeText)
+      .filter(Boolean),
+    availabilityWindows: normalizeText(parsed.availabilityWindows),
+    responseNotes: normalizeText(parsed.responseNotes),
+    sellerRecipientEmails: normalizeText(parsed.sellerRecipientEmails),
+    sellerCoordinationNotes: normalizeText(parsed.sellerCoordinationNotes),
+    bookedPropertyIds: normalizeText(parsed.bookedPropertyIds)
+      .split(',')
+      .map(normalizeText)
+      .filter(Boolean),
+    bookedAppointmentIds: normalizeText(parsed.bookedAppointmentIds)
+      .split(',')
+      .map(normalizeText)
+      .filter(Boolean),
+    updatedAt: normalizeText(parsed.updatedAt),
+    requestedAt: normalizeText(parsed.requestedAt),
+    respondedAt: normalizeText(parsed.respondedAt),
+    sellerRequestedAt: normalizeText(parsed.sellerRequestedAt),
+    bookedAt: normalizeText(parsed.bookedAt),
+    recipientEmail: normalizeText(parsed.recipientEmail),
+  }
+}
+
+function buildBuyerViewingPlanBlock({
+  status = 'draft',
+  selectedPropertyIds = [],
+  confirmedPropertyIds = [],
+  availabilityWindows = '',
+  responseNotes = '',
+  sellerRecipientEmails = '',
+  sellerCoordinationNotes = '',
+  bookedPropertyIds = [],
+  bookedAppointmentIds = [],
+  updatedAt = '',
+  requestedAt = '',
+  respondedAt = '',
+  sellerRequestedAt = '',
+  bookedAt = '',
+  recipientEmail = '',
+} = {}) {
+  return [
+    BUYER_VIEWING_PLAN_NOTE_START,
+    `Status: ${normalizeText(status) || 'draft'}`,
+    `Selected property ids: ${(Array.isArray(selectedPropertyIds) ? selectedPropertyIds : []).map(normalizeText).filter(Boolean).join(', ')}`,
+    `Confirmed property ids: ${(Array.isArray(confirmedPropertyIds) ? confirmedPropertyIds : []).map(normalizeText).filter(Boolean).join(', ')}`,
+    `Buyer availability windows: ${normalizeText(availabilityWindows)}`,
+    `Buyer response notes: ${normalizeText(responseNotes)}`,
+    `Seller recipients: ${normalizeText(sellerRecipientEmails)}`,
+    `Seller coordination notes: ${normalizeText(sellerCoordinationNotes)}`,
+    `Booked property ids: ${(Array.isArray(bookedPropertyIds) ? bookedPropertyIds : []).map(normalizeText).filter(Boolean).join(', ')}`,
+    `Booked appointment ids: ${(Array.isArray(bookedAppointmentIds) ? bookedAppointmentIds : []).map(normalizeText).filter(Boolean).join(', ')}`,
+    `Buyer availability requested at: ${normalizeText(requestedAt)}`,
+    `Buyer responded at: ${normalizeText(respondedAt)}`,
+    `Seller availability requested at: ${normalizeText(sellerRequestedAt)}`,
+    `Viewing appointments booked at: ${normalizeText(bookedAt)}`,
+    `Buyer email: ${normalizeText(recipientEmail)}`,
+    `Updated at: ${normalizeText(updatedAt)}`,
+    BUYER_VIEWING_PLAN_NOTE_END,
+  ].join('\n')
+}
+
+function buildBuyerViewingPlanNotes(plan = {}, existingNotes = '') {
+  return replaceLeadNoteBlock(
+    existingNotes,
+    BUYER_VIEWING_PLAN_NOTE_START,
+    BUYER_VIEWING_PLAN_NOTE_END,
+    buildBuyerViewingPlanBlock(plan),
+  )
+}
+
+function buildBuyerViewingAvailabilityEmailBody({
+  buyerName = 'there',
+  agentName = 'your agent',
+  properties = [],
+  origin = '',
+} = {}) {
+  const propertyLines = properties.map((property, index) => {
+    const listingId = normalizeText(property?.id)
+    const listingLink = origin && listingId && !listingId.startsWith('recommended-')
+      ? `\n   Link: ${origin}/listings/${encodeURIComponent(listingId)}`
+      : ''
+    return [
+      `${index + 1}. ${normalizeText(property?.title) || 'Recommended property'}`,
+      normalizeText(property?.price) ? `   Price: ${property.price}` : '',
+      normalizeText(property?.area) ? `   Area: ${property.area}` : '',
+      listingLink,
+    ].filter(Boolean).join('\n')
+  }).join('\n\n')
+
+  return [
+    `Hi ${normalizeText(buyerName) || 'there'},`,
+    '',
+    'Thanks for your interest. I have put together the viewing options below for you.',
+    '',
+    propertyLines || '1. The property you enquired about',
+    '',
+    'Please reply with:',
+    '1. Which of these properties you would like to view.',
+    '2. Two or three time windows that would work for you.',
+    '3. Whether anyone else will be joining the viewing.',
+    '',
+    'Once I have your preferred times, I will coordinate access with the sellers and confirm the appointments.',
+    '',
+    `Regards,`,
+    normalizeText(agentName) || 'Your agent',
+  ].join('\n')
+}
+
+function buildSellerViewingAvailabilityEmailBody({
+  sellerName = 'there',
+  buyerName = 'the buyer',
+  agentName = 'your agent',
+  properties = [],
+  availabilityWindows = '',
+  coordinationNotes = '',
+  origin = '',
+} = {}) {
+  const propertyLines = properties.map((property, index) => {
+    const listingId = normalizeText(property?.id)
+    const listingLink = origin && listingId && !listingId.startsWith('recommended-')
+      ? `\n   Link: ${origin}/listings/${encodeURIComponent(listingId)}`
+      : ''
+    return [
+      `${index + 1}. ${normalizeText(property?.title) || 'Selected property'}`,
+      normalizeText(property?.price) ? `   Price: ${property.price}` : '',
+      normalizeText(property?.area) ? `   Area: ${property.area}` : '',
+      listingLink,
+    ].filter(Boolean).join('\n')
+  }).join('\n\n')
+
+  return [
+    `Hi ${normalizeText(sellerName) || 'there'},`,
+    '',
+    `${normalizeText(buyerName) || 'The buyer'} has confirmed interest in viewing the following propert${properties.length === 1 ? 'y' : 'ies'}:`,
+    '',
+    propertyLines || '1. Your listed property',
+    '',
+    'The buyer is available during these time windows:',
+    normalizeText(availabilityWindows) || 'Availability still needs to be confirmed.',
+    '',
+    normalizeText(coordinationNotes) ? `Notes: ${normalizeText(coordinationNotes)}` : '',
+    '',
+    'Please reply with the times that will work for access, and I will confirm the appointment with the buyer.',
+    '',
+    'Regards,',
+    normalizeText(agentName) || 'Your agent',
+  ].filter((line, index, lines) => line || lines[index - 1] !== '').join('\n')
+}
+
+function parseEmailList(value = '') {
+  return normalizeText(value)
+    .split(/[,;\n]/)
+    .map((email) => normalizeText(email).toLowerCase())
+    .filter(Boolean)
 }
 
 function parseBuyerQualificationAreas(value = '') {
@@ -5102,6 +5377,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [isLeadDetailSaving, setIsLeadDetailSaving] = useState(false)
   const [buyerQualificationEditing, setBuyerQualificationEditing] = useState(false)
   const [buyerQualificationForm, setBuyerQualificationForm] = useState(BUYER_QUALIFICATION_FORM_DEFAULTS)
+  const [viewingPlanSelectedPropertyIds, setViewingPlanSelectedPropertyIds] = useState([])
+  const [viewingPlanStatus, setViewingPlanStatus] = useState('draft')
+  const [viewingPlanResponseForm, setViewingPlanResponseForm] = useState(BUYER_VIEWING_RESPONSE_DEFAULTS)
+  const [viewingPlanSellerForm, setViewingPlanSellerForm] = useState(BUYER_SELLER_COORDINATION_DEFAULTS)
+  const [viewingPlanBookingPropertyId, setViewingPlanBookingPropertyId] = useState('')
+  const [viewingPlanBookingContext, setViewingPlanBookingContext] = useState({ leadId: '', propertyId: '' })
   const [financeReadinessForm, setFinanceReadinessForm] = useState(FINANCE_READINESS_FORM_DEFAULTS)
   const [isFinanceReadinessSaving, setIsFinanceReadinessSaving] = useState(false)
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
@@ -6843,6 +7124,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadDetailForm(LEAD_DETAIL_DEFAULTS)
       setBuyerQualificationForm(BUYER_QUALIFICATION_FORM_DEFAULTS)
       setBuyerQualificationEditing(false)
+      setViewingPlanSelectedPropertyIds([])
+      setViewingPlanStatus('draft')
+      setViewingPlanResponseForm(BUYER_VIEWING_RESPONSE_DEFAULTS)
+      setViewingPlanSellerForm(BUYER_SELLER_COORDINATION_DEFAULTS)
+      setViewingPlanBookingPropertyId('')
+      setViewingPlanBookingContext({ leadId: '', propertyId: '' })
       return
     }
     setLeadDetailForm({
@@ -9011,6 +9298,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         image: normalizeText(listing?.thumbnailUrl) || fallbackImages[index % fallbackImages.length],
         match,
         source: normalizeText(option?.source) || 'Recommended',
+        sellerName: resolveSellerNameFromListing(listing),
+        sellerEmail: resolveSellerEmailFromListing(listing),
+        sellerPhone: resolveSellerPhoneFromListing(listing),
       }
     })
   }, [
@@ -9022,6 +9312,61 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadBuyerMatchScore,
     selectedLeadPropertyLabel,
   ])
+
+  const selectedLeadViewingPlanProperties = useMemo(() => {
+    const enquiryListingId = normalizeText(selectedLead?.listingId || selectedLead?.propertyId)
+    const ordered = [...selectedLeadBuyerRecommendations].sort((left, right) => {
+      const leftIsOriginal = enquiryListingId && normalizeText(left?.id) === enquiryListingId
+      const rightIsOriginal = enquiryListingId && normalizeText(right?.id) === enquiryListingId
+      if (leftIsOriginal && !rightIsOriginal) return -1
+      if (!leftIsOriginal && rightIsOriginal) return 1
+      return 0
+    })
+    return ordered.slice(0, 4).map((property, index) => ({
+      ...property,
+      planLabel: enquiryListingId && normalizeText(property?.id) === enquiryListingId
+        ? 'Original enquiry'
+        : index === 0
+          ? 'Primary match'
+          : 'Suggested match',
+    }))
+  }, [selectedLead?.listingId, selectedLead?.propertyId, selectedLeadBuyerRecommendations])
+
+  useEffect(() => {
+    if (!selectedLead || selectedLeadIsSeller) {
+      setViewingPlanSelectedPropertyIds([])
+      setViewingPlanStatus('draft')
+      setViewingPlanResponseForm(BUYER_VIEWING_RESPONSE_DEFAULTS)
+      setViewingPlanSellerForm(BUYER_SELLER_COORDINATION_DEFAULTS)
+      setViewingPlanBookingPropertyId('')
+      return
+    }
+    const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead?.notes)
+    if (savedPlan.selectedPropertyIds.length) {
+      setViewingPlanSelectedPropertyIds(savedPlan.selectedPropertyIds)
+      setViewingPlanStatus(savedPlan.status)
+      setViewingPlanResponseForm({
+        confirmedPropertyIds: savedPlan.confirmedPropertyIds.length ? savedPlan.confirmedPropertyIds : savedPlan.selectedPropertyIds,
+        availabilityWindows: savedPlan.availabilityWindows,
+        responseNotes: savedPlan.responseNotes,
+      })
+      setViewingPlanSellerForm({
+        sellerRecipientEmails: savedPlan.sellerRecipientEmails,
+        sellerCoordinationNotes: savedPlan.sellerCoordinationNotes,
+      })
+      setViewingPlanBookingPropertyId(savedPlan.confirmedPropertyIds.find((id) => !savedPlan.bookedPropertyIds.includes(id)) || savedPlan.confirmedPropertyIds[0] || savedPlan.selectedPropertyIds[0] || '')
+      return
+    }
+    const defaultIds = selectedLeadViewingPlanProperties.slice(0, 3).map((property) => normalizeText(property?.id)).filter(Boolean)
+    setViewingPlanSelectedPropertyIds(defaultIds)
+    setViewingPlanStatus(savedPlan.status)
+    setViewingPlanResponseForm({
+      ...BUYER_VIEWING_RESPONSE_DEFAULTS,
+      confirmedPropertyIds: defaultIds,
+    })
+    setViewingPlanSellerForm(BUYER_SELLER_COORDINATION_DEFAULTS)
+    setViewingPlanBookingPropertyId(defaultIds[0] || '')
+  }, [selectedLead, selectedLeadIsSeller, selectedLeadViewingPlanProperties])
 
   const selectedLeadOfferPropertyOptions = useMemo(() => {
     const fallbackImages = [
@@ -10350,6 +10695,518 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }))
   }
 
+  function handleToggleViewingPlanProperty(propertyId) {
+    const normalizedId = normalizeText(propertyId)
+    if (!normalizedId) return
+    setViewingPlanSelectedPropertyIds((previous) => {
+      if (previous.includes(normalizedId)) {
+        setViewingPlanResponseForm((response) => ({
+          ...response,
+          confirmedPropertyIds: (Array.isArray(response.confirmedPropertyIds) ? response.confirmedPropertyIds : []).filter((id) => id !== normalizedId),
+        }))
+        return previous.filter((id) => id !== normalizedId)
+      }
+      return [...previous, normalizedId]
+    })
+  }
+
+  function handleToggleViewingResponseProperty(propertyId) {
+    const normalizedId = normalizeText(propertyId)
+    if (!normalizedId) return
+    setViewingPlanResponseForm((previous) => {
+      const currentIds = Array.isArray(previous.confirmedPropertyIds) ? previous.confirmedPropertyIds : []
+      return {
+        ...previous,
+        confirmedPropertyIds: currentIds.includes(normalizedId)
+          ? currentIds.filter((id) => id !== normalizedId)
+          : [...currentIds, normalizedId],
+      }
+    })
+  }
+
+  function updateViewingPlanResponseField(field, value) {
+    setViewingPlanResponseForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }))
+  }
+
+  function updateViewingPlanSellerField(field, value) {
+    setViewingPlanSellerForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }))
+  }
+
+  async function createBuyerViewingAutomationTask({
+    lead = selectedLead,
+    title = '',
+    description = '',
+    dueDate = getTomorrowIsoDate(),
+    priority = 'Medium',
+  } = {}) {
+    if (!organisationId || !lead || !normalizeText(title)) return null
+    const leadKey = normalizeLeadIdentityKey(lead.leadId)
+    const titleKey = normalizeKey(title)
+    const existingTask = selectedLeadTasks.find((task) => {
+      const taskLeadKey = normalizeLeadIdentityKey(task?.leadId || lead.leadId)
+      const taskTitleKey = normalizeKey(task?.title)
+      const taskStatus = normalizeText(task?.status).toLowerCase()
+      return taskLeadKey === leadKey && taskTitleKey === titleKey && !['completed', 'cancelled', 'done'].includes(taskStatus)
+    })
+    if (existingTask) return existingTask
+    const assignedAgent = resolveAgentById(lead.assignedAgentId || lead.assignedAgentEmail || currentAgent.id)
+    return createAgencyCrmLeadTask(
+      organisationId,
+      lead.leadId,
+      {
+        assignedAgent,
+        title: normalizeText(title),
+        description: normalizeText(description),
+        dueDate,
+        status: 'Pending',
+        priority,
+      },
+      {
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      },
+    )
+  }
+
+  async function completeBuyerViewingAutomationTask(title = '', lead = selectedLead) {
+    if (!organisationId || !lead || !normalizeText(title)) return null
+    const leadKey = normalizeLeadIdentityKey(lead.leadId)
+    const titleKey = normalizeKey(title)
+    const existingTask = selectedLeadTasks.find((task) => {
+      const taskLeadKey = normalizeLeadIdentityKey(task?.leadId || lead.leadId)
+      const taskTitleKey = normalizeKey(task?.title)
+      const taskStatus = normalizeText(task?.status).toLowerCase()
+      return taskLeadKey === leadKey && taskTitleKey === titleKey && !['completed', 'cancelled', 'done'].includes(taskStatus)
+    })
+    if (!existingTask?.taskId) return null
+    return updateAgencyCrmLeadTask(
+      organisationId,
+      existingTask.taskId,
+      { status: 'Completed' },
+      {
+        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+      },
+    )
+  }
+
+  async function handleSaveBuyerViewingPlan() {
+    if (!organisationId || !selectedLead || selectedLeadIsSeller) return
+    const selectedPropertyIds = viewingPlanSelectedPropertyIds.map(normalizeText).filter(Boolean)
+    if (!selectedPropertyIds.length) {
+      setMessage('Select at least one property before saving the viewing plan.')
+      return
+    }
+
+    setIsLeadDetailSaving(true)
+    try {
+      const savedAt = new Date().toISOString()
+      const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+      const notes = buildBuyerViewingPlanNotes(
+        {
+          status: viewingPlanStatus,
+          selectedPropertyIds,
+          confirmedPropertyIds: (Array.isArray(viewingPlanResponseForm.confirmedPropertyIds) ? viewingPlanResponseForm.confirmedPropertyIds : [])
+            .map(normalizeText)
+            .filter((id) => id && selectedPropertyIds.includes(id)),
+          availabilityWindows: viewingPlanResponseForm.availabilityWindows,
+          responseNotes: viewingPlanResponseForm.responseNotes,
+          sellerRecipientEmails: viewingPlanSellerForm.sellerRecipientEmails,
+          sellerCoordinationNotes: viewingPlanSellerForm.sellerCoordinationNotes,
+          bookedPropertyIds: savedPlan.bookedPropertyIds,
+          bookedAppointmentIds: savedPlan.bookedAppointmentIds,
+          requestedAt: savedPlan.requestedAt,
+          respondedAt: savedPlan.respondedAt,
+          sellerRequestedAt: savedPlan.sellerRequestedAt,
+          bookedAt: savedPlan.bookedAt,
+          recipientEmail: savedPlan.recipientEmail,
+          updatedAt: savedAt,
+        },
+        selectedLead.notes,
+      )
+      const leadPatch = { notes }
+      const statusLabel = BUYER_VIEWING_PLAN_STATUS_OPTIONS.find((option) => option.key === viewingPlanStatus)?.label || 'Draft'
+
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        selectedLead.leadId,
+        {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Viewing Plan Updated',
+          activityNote: `${selectedPropertyIds.length} propert${selectedPropertyIds.length === 1 ? 'y' : 'ies'} selected. Status: ${statusLabel}.`,
+          outcome: statusLabel,
+        },
+        { actor: currentAgent },
+      ).catch(() => null)
+      await completeBuyerViewingAutomationTask('Follow up buyer viewing availability').catch(() => null)
+      await createBuyerViewingAutomationTask({
+        title: 'Coordinate seller viewing access',
+        description: `Buyer confirmed ${confirmedPropertyIds.length} propert${confirmedPropertyIds.length === 1 ? 'y' : 'ies'}. Request seller access for: ${availabilityWindows}`,
+        dueDate: getTodayIsoDate(),
+        priority: 'High',
+      }).catch(() => null)
+
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      setViewingPlanSelectedPropertyIds(selectedPropertyIds)
+      setMessage('Viewing plan saved.')
+      scheduleRecordsReload(organisationId, 850)
+    } catch (saveError) {
+      setError(saveError?.message || 'Could not save the viewing plan.')
+    } finally {
+      setIsLeadDetailSaving(false)
+    }
+  }
+
+  async function handleSendBuyerViewingAvailabilityRequest(selectedProperties = []) {
+    if (!organisationId || !selectedLead || selectedLeadIsSeller) return
+    const buyerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.email).toLowerCase()
+    const selectedPropertyIds = (Array.isArray(selectedProperties) ? selectedProperties : [])
+      .map((property) => normalizeText(property?.id))
+      .filter(Boolean)
+
+    if (!selectedPropertyIds.length) {
+      setMessage('Select at least one property before requesting buyer availability.')
+      return
+    }
+    if (!buyerEmail) {
+      setError('Add the buyer email address before sending a viewing availability request.')
+      return
+    }
+
+    setIsLeadDetailSaving(true)
+    try {
+      const sentAt = new Date().toISOString()
+      const nextStatus = 'buyer_availability'
+      const notes = buildBuyerViewingPlanNotes(
+        {
+          status: nextStatus,
+          selectedPropertyIds,
+          confirmedPropertyIds: (Array.isArray(viewingPlanResponseForm.confirmedPropertyIds) ? viewingPlanResponseForm.confirmedPropertyIds : [])
+            .map(normalizeText)
+            .filter((id) => id && selectedPropertyIds.includes(id)),
+          availabilityWindows: viewingPlanResponseForm.availabilityWindows,
+          responseNotes: viewingPlanResponseForm.responseNotes,
+          sellerRecipientEmails: viewingPlanSellerForm.sellerRecipientEmails,
+          sellerCoordinationNotes: viewingPlanSellerForm.sellerCoordinationNotes,
+          bookedPropertyIds: parseBuyerViewingPlanNoteBlock(selectedLead.notes).bookedPropertyIds,
+          bookedAppointmentIds: parseBuyerViewingPlanNoteBlock(selectedLead.notes).bookedAppointmentIds,
+          requestedAt: sentAt,
+          respondedAt: parseBuyerViewingPlanNoteBlock(selectedLead.notes).respondedAt,
+          sellerRequestedAt: parseBuyerViewingPlanNoteBlock(selectedLead.notes).sellerRequestedAt,
+          bookedAt: parseBuyerViewingPlanNoteBlock(selectedLead.notes).bookedAt,
+          recipientEmail: buyerEmail,
+          updatedAt: sentAt,
+        },
+        selectedLead.notes,
+      )
+      const leadPatch = { notes }
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        selectedLead.leadId,
+        {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Viewing Availability Requested',
+          activityNote: `Availability request prepared for ${buyerEmail} with ${selectedPropertyIds.length} selected propert${selectedPropertyIds.length === 1 ? 'y' : 'ies'}.`,
+          outcome: 'Sent to buyer',
+        },
+        { actor: currentAgent },
+      ).catch(() => null)
+      await createBuyerViewingAutomationTask({
+        title: 'Follow up buyer viewing availability',
+        description: `Confirm viewing times for ${selectedPropertyIds.length} selected propert${selectedPropertyIds.length === 1 ? 'y' : 'ies'}.`,
+        dueDate: getDateOffsetIsoDate(1),
+        priority: 'High',
+      }).catch(() => null)
+
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      setViewingPlanSelectedPropertyIds(selectedPropertyIds)
+      setViewingPlanStatus(nextStatus)
+      scheduleRecordsReload(organisationId, 850)
+
+      if (typeof window !== 'undefined') {
+        const buyerName = normalizeText(selectedLeadDisplayName || selectedLeadContact?.firstName || selectedLead?.firstName) || 'there'
+        const body = buildBuyerViewingAvailabilityEmailBody({
+          buyerName,
+          agentName: currentAgent.fullName || currentAgent.email,
+          properties: selectedProperties,
+          origin: window.location?.origin || '',
+        })
+        window.location.href = `mailto:${encodeURIComponent(buyerEmail)}?subject=${encodeURIComponent('Viewing availability request')}&body=${encodeURIComponent(body)}`
+      }
+      setMessage('Viewing availability request prepared and logged.')
+      setError('')
+    } catch (sendError) {
+      setError(sendError?.message || 'Could not prepare the buyer availability request.')
+    } finally {
+      setIsLeadDetailSaving(false)
+    }
+  }
+
+  async function handleCaptureBuyerViewingResponse() {
+    if (!organisationId || !selectedLead || selectedLeadIsSeller) return
+    const selectedPropertyIds = viewingPlanSelectedPropertyIds.map(normalizeText).filter(Boolean)
+    const confirmedPropertyIds = (Array.isArray(viewingPlanResponseForm.confirmedPropertyIds) ? viewingPlanResponseForm.confirmedPropertyIds : [])
+      .map(normalizeText)
+      .filter((id) => id && selectedPropertyIds.includes(id))
+    const availabilityWindows = normalizeText(viewingPlanResponseForm.availabilityWindows)
+
+    if (!confirmedPropertyIds.length) {
+      setMessage('Select at least one property the buyer confirmed.')
+      return
+    }
+    if (!availabilityWindows) {
+      setMessage('Capture the buyer availability windows before saving the response.')
+      return
+    }
+
+    setIsLeadDetailSaving(true)
+    try {
+      const savedAt = new Date().toISOString()
+      const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+      const nextStatus = 'buyer_confirmed'
+      const notes = buildBuyerViewingPlanNotes(
+        {
+          status: nextStatus,
+          selectedPropertyIds: selectedPropertyIds.length ? selectedPropertyIds : confirmedPropertyIds,
+          confirmedPropertyIds,
+          availabilityWindows,
+          responseNotes: normalizeText(viewingPlanResponseForm.responseNotes),
+          sellerRecipientEmails: savedPlan.sellerRecipientEmails || viewingPlanSellerForm.sellerRecipientEmails,
+          sellerCoordinationNotes: savedPlan.sellerCoordinationNotes || viewingPlanSellerForm.sellerCoordinationNotes,
+          bookedPropertyIds: savedPlan.bookedPropertyIds,
+          bookedAppointmentIds: savedPlan.bookedAppointmentIds,
+          requestedAt: savedPlan.requestedAt,
+          respondedAt: savedAt,
+          sellerRequestedAt: savedPlan.sellerRequestedAt,
+          bookedAt: savedPlan.bookedAt,
+          recipientEmail: savedPlan.recipientEmail || normalizeText(selectedLeadContact?.email || selectedLead?.email),
+          updatedAt: savedAt,
+        },
+        selectedLead.notes,
+      )
+      const leadPatch = { notes }
+
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        selectedLead.leadId,
+        {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Buyer Viewing Response Captured',
+          activityNote: `${confirmedPropertyIds.length} propert${confirmedPropertyIds.length === 1 ? 'y' : 'ies'} confirmed. Availability: ${availabilityWindows}`,
+          outcome: 'Buyer confirmed',
+        },
+        { actor: currentAgent },
+      ).catch(() => null)
+      await createBuyerViewingAutomationTask({
+        title: 'Follow up seller viewing access',
+        description: `Confirm seller access for ${confirmedPropertyIds.length} buyer-confirmed propert${confirmedPropertyIds.length === 1 ? 'y' : 'ies'}. Buyer availability: ${availabilityWindows}`,
+        dueDate: getDateOffsetIsoDate(1),
+        priority: 'High',
+      }).catch(() => null)
+      await completeBuyerViewingAutomationTask('Coordinate seller viewing access').catch(() => null)
+
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      setViewingPlanStatus(nextStatus)
+      setViewingPlanResponseForm((previous) => ({
+        ...previous,
+        confirmedPropertyIds,
+        availabilityWindows,
+      }))
+      setMessage('Buyer viewing response captured.')
+      setError('')
+      scheduleRecordsReload(organisationId, 850)
+    } catch (captureError) {
+      setError(captureError?.message || 'Could not capture the buyer viewing response.')
+    } finally {
+      setIsLeadDetailSaving(false)
+    }
+  }
+
+  async function handleSendSellerViewingAvailabilityRequest(selectedProperties = []) {
+    if (!organisationId || !selectedLead || selectedLeadIsSeller) return
+    const selectedPropertyIds = viewingPlanSelectedPropertyIds.map(normalizeText).filter(Boolean)
+    const confirmedPropertyIds = (Array.isArray(viewingPlanResponseForm.confirmedPropertyIds) ? viewingPlanResponseForm.confirmedPropertyIds : [])
+      .map(normalizeText)
+      .filter((id) => id && selectedPropertyIds.includes(id))
+    const confirmedProperties = (Array.isArray(selectedProperties) ? selectedProperties : [])
+      .filter((property) => confirmedPropertyIds.includes(normalizeText(property?.id)))
+    const availabilityWindows = normalizeText(viewingPlanResponseForm.availabilityWindows)
+    const fallbackSellerEmails = confirmedProperties.map((property) => property?.sellerEmail).filter(Boolean)
+    const sellerEmails = [...new Set([
+      ...parseEmailList(viewingPlanSellerForm.sellerRecipientEmails),
+      ...fallbackSellerEmails.map((email) => normalizeText(email).toLowerCase()).filter(Boolean),
+    ])]
+    const invalidSellerEmails = sellerEmails.filter((email) => !isValidEmail(email))
+
+    if (!confirmedPropertyIds.length) {
+      setMessage('Capture the buyer response before coordinating seller availability.')
+      return
+    }
+    if (!availabilityWindows) {
+      setMessage('Capture the buyer availability windows before contacting the sellers.')
+      return
+    }
+    if (!sellerEmails.length) {
+      setError('Add at least one seller email before requesting seller availability.')
+      return
+    }
+    if (invalidSellerEmails.length) {
+      setError(`Check the seller email address${invalidSellerEmails.length === 1 ? '' : 'es'}: ${invalidSellerEmails.join(', ')}`)
+      return
+    }
+
+    setIsLeadDetailSaving(true)
+    try {
+      const sentAt = new Date().toISOString()
+      const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+      const nextStatus = 'seller_coordination'
+      const sellerRecipientEmails = sellerEmails.join(', ')
+      const sellerCoordinationNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
+      const notes = buildBuyerViewingPlanNotes(
+        {
+          status: nextStatus,
+          selectedPropertyIds: selectedPropertyIds.length ? selectedPropertyIds : confirmedPropertyIds,
+          confirmedPropertyIds,
+          availabilityWindows,
+          responseNotes: normalizeText(viewingPlanResponseForm.responseNotes),
+          sellerRecipientEmails,
+          sellerCoordinationNotes,
+          bookedPropertyIds: savedPlan.bookedPropertyIds,
+          bookedAppointmentIds: savedPlan.bookedAppointmentIds,
+          requestedAt: savedPlan.requestedAt,
+          respondedAt: savedPlan.respondedAt,
+          sellerRequestedAt: sentAt,
+          bookedAt: savedPlan.bookedAt,
+          recipientEmail: savedPlan.recipientEmail || normalizeText(selectedLeadContact?.email || selectedLead?.email),
+          updatedAt: sentAt,
+        },
+        selectedLead.notes,
+      )
+      const leadPatch = { notes }
+
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        selectedLead.leadId,
+        {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Seller Availability Requested',
+          activityNote: `Seller availability requested from ${sellerRecipientEmails} for ${confirmedPropertyIds.length} propert${confirmedPropertyIds.length === 1 ? 'y' : 'ies'}. Buyer availability: ${availabilityWindows}`,
+          outcome: 'Seller coordination',
+        },
+        { actor: currentAgent },
+      ).catch(() => null)
+
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      setViewingPlanStatus(nextStatus)
+      setViewingPlanSellerForm({
+        sellerRecipientEmails,
+        sellerCoordinationNotes,
+      })
+      scheduleRecordsReload(organisationId, 850)
+
+      if (typeof window !== 'undefined') {
+        const sellerName = confirmedProperties.length === 1
+          ? normalizeText(confirmedProperties[0]?.sellerName) || 'there'
+          : 'there'
+        const body = buildSellerViewingAvailabilityEmailBody({
+          sellerName,
+          buyerName: selectedLeadDisplayName || selectedLeadContactName,
+          agentName: currentAgent.fullName || currentAgent.email,
+          properties: confirmedProperties.length ? confirmedProperties : selectedProperties,
+          availabilityWindows,
+          coordinationNotes: sellerCoordinationNotes,
+          origin: window.location?.origin || '',
+        })
+        const mailtoRecipients = sellerEmails.map((email) => encodeURIComponent(email)).join(',')
+        window.location.href = `mailto:${mailtoRecipients}?subject=${encodeURIComponent('Viewing access availability request')}&body=${encodeURIComponent(body)}`
+      }
+      setMessage('Seller availability request prepared and logged.')
+      setError('')
+    } catch (sendError) {
+      setError(sendError?.message || 'Could not prepare the seller availability request.')
+    } finally {
+      setIsLeadDetailSaving(false)
+    }
+  }
+
+  function handleOpenViewingPlanBookingModal(property = null) {
+    if (!selectedLead || selectedLeadIsSeller) return
+    const propertyId = normalizeText(property?.id || viewingPlanBookingPropertyId)
+    const selectedProperty =
+      property ||
+      selectedLeadViewingPlanProperties.find((row) => normalizeText(row?.id) === propertyId) ||
+      selectedLeadViewingPlanProperties.find((row) => (viewingPlanResponseForm.confirmedPropertyIds || []).includes(normalizeText(row?.id))) ||
+      null
+    const resolvedPropertyId = normalizeText(selectedProperty?.id || propertyId)
+    if (!resolvedPropertyId) {
+      setMessage('Select a confirmed property before booking the viewing.')
+      return
+    }
+
+    const listing = appointmentListingById.get(resolvedPropertyId) || {}
+    const buyerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.email).toLowerCase()
+    const sellerEmails = parseEmailList(viewingPlanSellerForm.sellerRecipientEmails)
+    const sellerEmail = normalizeText(selectedProperty?.sellerEmail).toLowerCase() || sellerEmails[0] || ''
+    const sellerName = normalizeText(selectedProperty?.sellerName) || (sellerEmail ? 'Seller' : '')
+    const location = normalizeText(listing?.address || selectedProperty?.title || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress)
+    const buyerAvailability = normalizeText(viewingPlanResponseForm.availabilityWindows)
+    const sellerNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
+    const notes = [
+      buyerAvailability ? `Buyer availability: ${buyerAvailability}` : '',
+      sellerNotes ? `Seller coordination: ${sellerNotes}` : '',
+      normalizeText(viewingPlanResponseForm.responseNotes) ? `Buyer response notes: ${normalizeText(viewingPlanResponseForm.responseNotes)}` : '',
+    ].filter(Boolean).join('\n')
+
+    setSelectedAppointmentId('')
+    setAppointmentManualParticipantOpen(false)
+    setAppointmentDeselectedParticipantKeys([])
+    setViewingPlanBookingPropertyId(resolvedPropertyId)
+    setViewingPlanBookingContext({ leadId: normalizeText(selectedLead.leadId), propertyId: resolvedPropertyId })
+    setAppointmentForm(buildDefaultAppointmentFormForType('viewing', {
+      ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
+      appointmentType: 'viewing',
+      title: `Property Viewing - ${normalizeText(selectedProperty?.title || location) || 'Selected property'}`,
+      date: getTomorrowIsoDate(),
+      startTime: getCurrentTimeValue(),
+      contactId: normalizeText(selectedLead?.contactId) || '',
+      listingId: resolvedPropertyId,
+      relatedEntityType: 'lead',
+      relatedEntityId: normalizeText(selectedLead?.leadId) || '',
+      location,
+      status: 'confirmed',
+      notes,
+      recipientEmail: buyerEmail,
+      participants: sellerEmail
+        ? [{
+            name: sellerName || sellerEmail,
+            email: sellerEmail,
+            phone: normalizeText(selectedProperty?.sellerPhone),
+            participantRole: 'Seller',
+            isRequired: true,
+            rsvpStatus: 'Pending',
+          }]
+        : [],
+    }))
+    setAppointmentOutcomeForm({
+      outcomeSummary: '',
+      clientFeedback: '',
+      agentNotes: '',
+      nextStep: '',
+      followUpDate: '',
+    })
+    setAppointmentSchedulingIntegrity(null)
+    setAppointmentSchedulingError('')
+    setAppointmentModalOpen(true)
+  }
+
   async function handleSaveBuyerQualification(event) {
     event.preventDefault()
     if (!organisationId || !selectedLead) return
@@ -10357,7 +11214,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setIsLeadDetailSaving(true)
     try {
       const budgetAmount = parseCurrencyAmount(buyerQualificationForm.budget)
-      const notes = buildBuyerQualificationNotes(buyerQualificationForm)
+      const notes = buildBuyerQualificationNotes(buyerQualificationForm, selectedLead.notes)
       const leadPatch = {
         budget: budgetAmount || 0,
         estimatedValue: budgetAmount || Number(leadDetailForm.estimatedValue || 0) || 0,
@@ -11013,6 +11870,82 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         },
       )
+      const createdAppointmentId = normalizeText(created?.appointmentId || created?.id)
+      const bookingContextLeadId = normalizeLeadIdentityKey(viewingPlanBookingContext.leadId)
+      const bookingContextPropertyId = normalizeText(viewingPlanBookingContext.propertyId || appointmentPayload.listingId)
+      if (
+        linkedLead &&
+        resolveLeadCategoryView(linkedLead) !== 'seller' &&
+        bookingContextLeadId &&
+        bookingContextLeadId === normalizeLeadIdentityKey(linkedLead.leadId) &&
+        bookingContextPropertyId
+      ) {
+        try {
+          const savedPlan = parseBuyerViewingPlanNoteBlock(linkedLead.notes)
+          const bookedPropertyIds = [...new Set([...savedPlan.bookedPropertyIds, bookingContextPropertyId].map(normalizeText).filter(Boolean))]
+          const bookedAppointmentIds = [...new Set([...savedPlan.bookedAppointmentIds, createdAppointmentId].map(normalizeText).filter(Boolean))]
+          const confirmedPropertyIds = savedPlan.confirmedPropertyIds.length
+            ? savedPlan.confirmedPropertyIds
+            : bookedPropertyIds
+          const allConfirmedPropertiesBooked = confirmedPropertyIds.every((propertyId) => bookedPropertyIds.includes(normalizeText(propertyId)))
+          const bookedAt = new Date().toISOString()
+          const notes = buildBuyerViewingPlanNotes(
+            {
+              status: allConfirmedPropertiesBooked ? 'booked' : 'seller_coordination',
+              selectedPropertyIds: savedPlan.selectedPropertyIds.length ? savedPlan.selectedPropertyIds : viewingPlanSelectedPropertyIds,
+              confirmedPropertyIds,
+              availabilityWindows: savedPlan.availabilityWindows || viewingPlanResponseForm.availabilityWindows,
+              responseNotes: savedPlan.responseNotes || viewingPlanResponseForm.responseNotes,
+              sellerRecipientEmails: savedPlan.sellerRecipientEmails || viewingPlanSellerForm.sellerRecipientEmails,
+              sellerCoordinationNotes: savedPlan.sellerCoordinationNotes || viewingPlanSellerForm.sellerCoordinationNotes,
+              bookedPropertyIds,
+              bookedAppointmentIds,
+              requestedAt: savedPlan.requestedAt,
+              respondedAt: savedPlan.respondedAt,
+              sellerRequestedAt: savedPlan.sellerRequestedAt,
+              bookedAt,
+              recipientEmail: savedPlan.recipientEmail || normalizeText(selectedLeadContact?.email || linkedLead?.email),
+              updatedAt: bookedAt,
+            },
+            linkedLead.notes,
+          )
+          await updateAgencyCrmLeadRecord(organisationId, linkedLead.leadId, { notes })
+          await createAgencyCrmLeadActivity(
+            organisationId,
+            linkedLead.leadId,
+            {
+              agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+              activityType: 'Viewing Appointment Booked',
+              activityNote: `${resolveAppointmentListingLabel(bookingContextPropertyId) || 'Viewing'} booked${createdAppointmentId ? ` as appointment ${createdAppointmentId}` : ''}.`,
+              outcome: allConfirmedPropertiesBooked ? 'Booked' : 'Partially booked',
+            },
+            { actor: currentAgent },
+          ).catch(() => null)
+          const viewingDate = normalizeText(appointmentForm.date)
+          const postViewingDueDate = (() => {
+            if (!viewingDate) return getDateOffsetIsoDate(1)
+            const date = new Date(`${viewingDate}T12:00:00`)
+            date.setDate(date.getDate() + 1)
+            return toDateOnlyIso(date)
+          })()
+          await createBuyerViewingAutomationTask({
+            lead: linkedLead,
+            title: 'Post-viewing buyer follow-up',
+            description: `${resolveAppointmentListingLabel(bookingContextPropertyId) || 'Viewing'} is booked. Call the buyer after the viewing to capture feedback and offer readiness.`,
+            dueDate: postViewingDueDate,
+            priority: 'High',
+          }).catch(() => null)
+          await completeBuyerViewingAutomationTask('Follow up seller viewing access', linkedLead).catch(() => null)
+          patchSelectedLeadRecord({ notes }, linkedLead.leadId)
+          setViewingPlanStatus(allConfirmedPropertiesBooked ? 'booked' : 'seller_coordination')
+        } catch (planUpdateError) {
+          console.warn('[buyer viewing plan] appointment booking plan update failed', planUpdateError)
+        } finally {
+          setViewingPlanBookingContext({ leadId: '', propertyId: '' })
+        }
+      } else {
+        setViewingPlanBookingContext({ leadId: '', propertyId: '' })
+      }
       setAppointmentForm(buildDefaultAppointmentFormForType('', {
         ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
         date: getTomorrowIsoDate(),
@@ -11030,8 +11963,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         recipientEmail: explicitRecipientEmail,
       }))
       setAppointmentModalOpen(false)
-      if (created?.appointmentId) {
-        setSelectedAppointmentId(created.appointmentId)
+      if (createdAppointmentId) {
+        setSelectedAppointmentId(createdAppointmentId)
       }
       void (async () => {
         try {
@@ -11094,6 +12027,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   function handleOpenAppointmentModal(appointment = null) {
     setAppointmentManualParticipantOpen(false)
     setAppointmentDeselectedParticipantKeys([])
+    setViewingPlanBookingContext({ leadId: '', propertyId: '' })
     if (appointment) {
       setAppointmentForm(buildDefaultAppointmentFormForType(appointment.appointmentType || 'viewing', {
         appointmentType: appointment.appointmentType || 'viewing',
@@ -17727,6 +18661,60 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           Note: Pencil,
                           Meeting: CalendarDays,
                         }
+                        const viewingPlanSelectedProperties = selectedLeadViewingPlanProperties.filter((property) => viewingPlanSelectedPropertyIds.includes(normalizeText(property?.id)))
+                        const savedViewingPlan = parseBuyerViewingPlanNoteBlock(selectedLead?.notes)
+                        const viewingPlanStatusIndex = Math.max(0, BUYER_VIEWING_PLAN_STATUS_OPTIONS.findIndex((option) => option.key === viewingPlanStatus))
+                        const viewingPlanStatusLabel = BUYER_VIEWING_PLAN_STATUS_OPTIONS[viewingPlanStatusIndex]?.label || 'Draft'
+                        const viewingPlanBuyerEmail = normalizeText(savedViewingPlan.recipientEmail || selectedLeadContact?.email || selectedLead?.email)
+                        const viewingPlanConfirmedPropertyIds = Array.isArray(viewingPlanResponseForm.confirmedPropertyIds)
+                          ? viewingPlanResponseForm.confirmedPropertyIds.map(normalizeText).filter(Boolean)
+                          : []
+                        const viewingPlanConfirmedProperties = viewingPlanSelectedProperties.filter((property) => viewingPlanConfirmedPropertyIds.includes(normalizeText(property?.id)))
+                        const viewingPlanSuggestedSellerEmails = [...new Set(viewingPlanConfirmedProperties.map((property) => normalizeText(property?.sellerEmail).toLowerCase()).filter(Boolean))]
+                        const viewingPlanSellerRecipientEmailDraft = normalizeText(viewingPlanSellerForm.sellerRecipientEmails) || viewingPlanSuggestedSellerEmails.join(', ')
+                        const viewingPlanSellerRecipientCount = parseEmailList(viewingPlanSellerRecipientEmailDraft).length
+                        const viewingPlanBookedPropertyIds = Array.isArray(savedViewingPlan.bookedPropertyIds)
+                          ? savedViewingPlan.bookedPropertyIds.map(normalizeText).filter(Boolean)
+                          : []
+                        const viewingPlanBookedAppointmentIds = Array.isArray(savedViewingPlan.bookedAppointmentIds)
+                          ? savedViewingPlan.bookedAppointmentIds.map(normalizeText).filter(Boolean)
+                          : []
+                        const viewingPlanUnbookedProperties = viewingPlanConfirmedProperties.filter((property) => !viewingPlanBookedPropertyIds.includes(normalizeText(property?.id)))
+                        const viewingPlanBookingProperty =
+                          viewingPlanConfirmedProperties.find((property) => normalizeText(property?.id) === normalizeText(viewingPlanBookingPropertyId)) ||
+                          viewingPlanUnbookedProperties[0] ||
+                          viewingPlanConfirmedProperties[0] ||
+                          null
+                        const findViewingAutomationTask = (title) => selectedLeadTasks.find((task) => (
+                          normalizeKey(task?.title) === normalizeKey(title) &&
+                          !['completed', 'cancelled', 'done'].includes(normalizeText(task?.status).toLowerCase())
+                        ))
+                        const viewingPlanAutomationRows = [
+                          {
+                            key: 'buyer',
+                            label: 'Buyer availability follow-up',
+                            task: findViewingAutomationTask('Follow up buyer viewing availability'),
+                            active: Boolean(savedViewingPlan.requestedAt),
+                          },
+                          {
+                            key: 'seller_coordinate',
+                            label: 'Seller access coordination',
+                            task: findViewingAutomationTask('Coordinate seller viewing access'),
+                            active: Boolean(savedViewingPlan.respondedAt),
+                          },
+                          {
+                            key: 'seller_follow_up',
+                            label: 'Seller access follow-up',
+                            task: findViewingAutomationTask('Follow up seller viewing access'),
+                            active: Boolean(savedViewingPlan.sellerRequestedAt),
+                          },
+                          {
+                            key: 'post_viewing',
+                            label: 'Post-viewing follow-up',
+                            task: findViewingAutomationTask('Post-viewing buyer follow-up'),
+                            active: Boolean(viewingPlanBookedAppointmentIds.length),
+                          },
+                        ]
 
                         return (
                           <>
@@ -18072,6 +19060,407 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <p className="mt-1 text-sm text-[#6f839c]">Update the buyer's preferences to improve matching.</p>
                                 </div>
                               )}
+                            </section>
+
+                            <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                              <div className="flex flex-wrap items-start justify-between gap-4">
+                                <div>
+                                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Viewing Plan</p>
+                                  <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">Schedule selected viewings</h3>
+                                  <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758b]">
+                                    Build a viewing shortlist from the enquiry property and best matches before asking the buyer for available times.
+                                  </p>
+                                </div>
+                                <span className="rounded-full border border-[#d7e6f2] bg-[#f8fbfd] px-3 py-1 text-xs font-semibold text-[#60758b]">
+                                  {viewingPlanStatusLabel}
+                                </span>
+                              </div>
+
+                              <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+                                <div>
+                                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                                    {BUYER_VIEWING_PLAN_STATUS_OPTIONS.map((step, index) => {
+                                      const isActive = index === viewingPlanStatusIndex
+                                      const isComplete = index < viewingPlanStatusIndex
+                                      return (
+                                        <div key={step.key} className={`rounded-[14px] border px-3 py-2.5 ${isActive || isComplete ? 'border-[#cfe4db] bg-[#f4fbf7]' : 'border-[#edf3f8] bg-[#fbfdff]'}`}>
+                                          <div className="flex items-center gap-2">
+                                            <span className={`grid h-6 w-6 place-items-center rounded-full text-[0.7rem] font-semibold ${isActive || isComplete ? 'bg-[#157a4d] text-white' : 'bg-[#eef4f9] text-[#7f95aa]'}`}>
+                                              {isComplete ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
+                                            </span>
+                                            <span className={`truncate text-xs font-semibold ${isActive || isComplete ? 'text-[#17643a]' : 'text-[#60758b]'}`}>{step.label}</span>
+                                          </div>
+                                          <p className="mt-1 truncate text-[0.7rem] text-[#7c91a8]">{step.meta}</p>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+
+                                  {selectedLeadViewingPlanProperties.length ? (
+                                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                                      {selectedLeadViewingPlanProperties.map((property) => {
+                                        const propertyId = normalizeText(property?.id)
+                                        const isSelected = viewingPlanSelectedPropertyIds.includes(propertyId)
+                                        return (
+                                          <button
+                                            key={propertyId}
+                                            type="button"
+                                            className={`group grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-3 rounded-[14px] border p-2 text-left transition ${isSelected ? 'border-[#b9dbc9] bg-[#f7fcf9] shadow-[0_8px_22px_rgba(21,122,77,0.08)]' : 'border-[#e3ecf5] bg-white hover:border-[#cbdbea]'}`}
+                                            onClick={() => handleToggleViewingPlanProperty(propertyId)}
+                                            aria-pressed={isSelected}
+                                          >
+                                            <span className="relative h-[72px] overflow-hidden rounded-[10px] bg-[#edf4fb]">
+                                              <img src={property.image} alt={property.title} className="h-full w-full object-cover" />
+                                              <span className={`absolute left-2 top-2 grid h-5 w-5 place-items-center rounded-full border text-[0.65rem] ${isSelected ? 'border-[#157a4d] bg-[#157a4d] text-white' : 'border-white/80 bg-white/90 text-[#7d93aa]'}`}>
+                                                {isSelected ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                                              </span>
+                                            </span>
+                                            <span className="min-w-0 py-1">
+                                              <span className="block truncate text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7c91a8]">{property.planLabel}</span>
+                                              <span className="mt-1 block truncate text-sm font-semibold text-[#102033]" title={property.title}>{property.title}</span>
+                                              <span className="mt-0.5 block truncate text-xs text-[#60758b]" title={property.area}>{property.area || 'Area pending'}</span>
+                                              <span className="mt-2 inline-flex rounded-full bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-[#17643a] ring-1 ring-[#d8eadf]">{property.match}% match</span>
+                                            </span>
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <div className="mt-4 rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-6 text-center">
+                                      <p className="text-sm font-semibold text-[#20364c]">No properties ready for a viewing plan</p>
+                                      <p className="mt-1 text-xs text-[#6f839c]">Add buyer requirements or matching listings first.</p>
+                                    </div>
+                                  )}
+
+                                  <div className="mt-4 rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div>
+                                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Buyer Response</p>
+                                        <h4 className="mt-1 text-sm font-semibold text-[#102033]">Confirmed viewings and times</h4>
+                                      </div>
+                                      <span className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${viewingPlanStatus === 'buyer_confirmed' ? 'bg-[#e8f4ee] text-[#17643a]' : 'bg-[#eef4f9] text-[#60758b]'}`}>
+                                        {viewingPlanStatus === 'buyer_confirmed' ? 'Captured' : 'Awaiting response'}
+                                      </span>
+                                    </div>
+
+                                    {viewingPlanSelectedProperties.length ? (
+                                      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                                        {viewingPlanSelectedProperties.map((property) => {
+                                          const propertyId = normalizeText(property?.id)
+                                          const confirmed = viewingPlanConfirmedPropertyIds.includes(propertyId)
+                                          return (
+                                            <button
+                                              key={`confirmed-${propertyId}`}
+                                              type="button"
+                                              className={`flex min-w-0 items-center gap-2 rounded-[12px] border px-2.5 py-2 text-left transition ${confirmed ? 'border-[#b9dbc9] bg-white text-[#17643a]' : 'border-[#e3ecf5] bg-white text-[#60758b] hover:border-[#cbdbea]'}`}
+                                              onClick={() => handleToggleViewingResponseProperty(propertyId)}
+                                              aria-pressed={confirmed}
+                                            >
+                                              <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${confirmed ? 'border-[#157a4d] bg-[#157a4d] text-white' : 'border-[#cbd8e6] bg-white text-[#9aa9b8]'}`}>
+                                                {confirmed ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
+                                              </span>
+                                              <span className="min-w-0">
+                                                <span className="block truncate text-xs font-semibold">{property.title}</span>
+                                                <span className="block truncate text-[0.68rem] text-[#7c91a8]">{property.area}</span>
+                                              </span>
+                                            </button>
+                                          )
+                                        })}
+                                      </div>
+                                    ) : null}
+
+                                    <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.55fr)]">
+                                      <label className="grid gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#6d839b]">
+                                        Available time windows
+                                        <Field
+                                          as="textarea"
+                                          rows={4}
+                                          className="rounded-[12px] px-3 py-2.5 text-sm font-medium normal-case leading-5 tracking-normal"
+                                          placeholder="Wed morning, Thu 14:00-16:00, Sat after 10:00..."
+                                          value={viewingPlanResponseForm.availabilityWindows}
+                                          onChange={(event) => updateViewingPlanResponseField('availabilityWindows', event.target.value)}
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#6d839b]">
+                                        Response notes
+                                        <Field
+                                          as="textarea"
+                                          rows={4}
+                                          className="rounded-[12px] px-3 py-2.5 text-sm font-medium normal-case leading-5 tracking-normal"
+                                          placeholder="Partner attending, prefers first property, avoid evenings..."
+                                          value={viewingPlanResponseForm.responseNotes}
+                                          onChange={(event) => updateViewingPlanResponseField('responseNotes', event.target.value)}
+                                        />
+                                      </label>
+                                    </div>
+
+                                    <div className="mt-3 flex justify-end">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        disabled={!viewingPlanConfirmedPropertyIds.length || !normalizeText(viewingPlanResponseForm.availabilityWindows) || isLeadDetailSaving}
+                                        onClick={() => void handleCaptureBuyerViewingResponse()}
+                                      >
+                                        <CheckCircle2 className="h-4 w-4" />
+                                        {isLeadDetailSaving ? 'Saving...' : 'Capture buyer response'}
+                                      </Button>
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-4 rounded-[16px] border border-[#e3ecf5] bg-white p-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div>
+                                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Seller Coordination</p>
+                                        <h4 className="mt-1 text-sm font-semibold text-[#102033]">Confirm seller access</h4>
+                                      </div>
+                                      <span className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${viewingPlanStatusIndex >= BUYER_VIEWING_PLAN_STATUS_OPTIONS.findIndex((option) => option.key === 'seller_coordination') ? 'bg-[#e8f4ee] text-[#17643a]' : 'bg-[#eef4f9] text-[#60758b]'}`}>
+                                        {savedViewingPlan.sellerRequestedAt ? `Requested ${formatDateShort(savedViewingPlan.sellerRequestedAt)}` : 'Not requested'}
+                                      </span>
+                                    </div>
+
+                                    <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,0.85fr)_minmax(260px,0.55fr)]">
+                                      <div className="space-y-2">
+                                        {viewingPlanConfirmedProperties.length ? (
+                                          viewingPlanConfirmedProperties.map((property) => (
+                                            <div key={`seller-coordinate-${property.id}`} className="grid min-w-0 grid-cols-[52px_minmax(0,1fr)] gap-3 rounded-[12px] border border-[#edf3f8] bg-[#fbfdff] p-2.5">
+                                              <img src={property.image} alt="" className="h-12 w-12 rounded-[10px] object-cover" />
+                                              <div className="min-w-0">
+                                                <p className="truncate text-sm font-semibold text-[#102033]" title={property.title}>{property.title}</p>
+                                                <p className="mt-0.5 truncate text-xs text-[#60758b]" title={property.sellerEmail || property.area}>
+                                                  {property.sellerEmail ? `Seller: ${property.sellerEmail}` : property.area || 'Seller email needed'}
+                                                </p>
+                                              </div>
+                                            </div>
+                                          ))
+                                        ) : (
+                                          <div className="rounded-[12px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-5 text-center">
+                                            <p className="text-sm font-semibold text-[#20364c]">No confirmed properties yet</p>
+                                            <p className="mt-1 text-xs text-[#6f839c]">Capture the buyer response before contacting sellers.</p>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      <div className="space-y-3">
+                                        <label className="grid gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#6d839b]">
+                                          Seller email recipients
+                                          <Field
+                                            className="h-10 rounded-[12px] px-3 text-sm font-medium normal-case tracking-normal"
+                                            placeholder={viewingPlanSuggestedSellerEmails.length ? viewingPlanSuggestedSellerEmails.join(', ') : 'seller@example.com'}
+                                            value={viewingPlanSellerForm.sellerRecipientEmails}
+                                            onChange={(event) => updateViewingPlanSellerField('sellerRecipientEmails', event.target.value)}
+                                          />
+                                        </label>
+                                        <div className="rounded-[12px] border border-[#edf3f8] bg-[#fbfdff] px-3 py-2.5">
+                                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7c91a8]">Buyer availability</p>
+                                          <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-[#29435d]">
+                                            {normalizeText(viewingPlanResponseForm.availabilityWindows) || 'Waiting for buyer time windows.'}
+                                          </p>
+                                        </div>
+                                        <label className="grid gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#6d839b]">
+                                          Coordination notes
+                                          <Field
+                                            as="textarea"
+                                            rows={3}
+                                            className="rounded-[12px] px-3 py-2.5 text-sm font-medium normal-case leading-5 tracking-normal"
+                                            placeholder="Access instructions, preferred order, gate codes, seller constraints..."
+                                            value={viewingPlanSellerForm.sellerCoordinationNotes}
+                                            onChange={(event) => updateViewingPlanSellerField('sellerCoordinationNotes', event.target.value)}
+                                          />
+                                        </label>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          className="w-full"
+                                          disabled={!viewingPlanConfirmedProperties.length || !normalizeText(viewingPlanResponseForm.availabilityWindows) || !viewingPlanSellerRecipientCount || isLeadDetailSaving}
+                                          onClick={() => void handleSendSellerViewingAvailabilityRequest(viewingPlanConfirmedProperties)}
+                                        >
+                                          <Send className="h-4 w-4" />
+                                          {isLeadDetailSaving ? 'Preparing...' : 'Request seller availability'}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-4 rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div>
+                                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Appointment Booking</p>
+                                        <h4 className="mt-1 text-sm font-semibold text-[#102033]">Create confirmed viewing appointments</h4>
+                                      </div>
+                                      <span className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${viewingPlanStatus === 'booked' ? 'bg-[#e8f4ee] text-[#17643a]' : 'bg-[#eef4f9] text-[#60758b]'}`}>
+                                        {viewingPlanConfirmedProperties.length
+                                          ? `${viewingPlanBookedPropertyIds.length}/${viewingPlanConfirmedProperties.length} booked`
+                                          : 'Waiting for buyer'}
+                                      </span>
+                                    </div>
+
+                                    <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,0.75fr)_minmax(260px,0.55fr)]">
+                                      <div className="space-y-2">
+                                        {viewingPlanConfirmedProperties.length ? (
+                                          viewingPlanConfirmedProperties.map((property) => {
+                                            const propertyId = normalizeText(property?.id)
+                                            const isBooked = viewingPlanBookedPropertyIds.includes(propertyId)
+                                            const isActive = normalizeText(viewingPlanBookingProperty?.id) === propertyId
+                                            return (
+                                              <button
+                                                key={`book-viewing-${propertyId}`}
+                                                type="button"
+                                                className={`grid w-full min-w-0 grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] border p-2.5 text-left transition ${isActive ? 'border-[#b9dbc9] bg-white shadow-[0_8px_22px_rgba(21,122,77,0.08)]' : 'border-[#edf3f8] bg-white hover:border-[#cbdbea]'}`}
+                                                onClick={() => setViewingPlanBookingPropertyId(propertyId)}
+                                              >
+                                                <img src={property.image} alt="" className="h-12 w-12 rounded-[10px] object-cover" />
+                                                <span className="min-w-0">
+                                                  <span className="block truncate text-sm font-semibold text-[#102033]" title={property.title}>{property.title}</span>
+                                                  <span className="mt-0.5 block truncate text-xs text-[#60758b]">{property.area || property.price || 'Viewing property'}</span>
+                                                </span>
+                                                <span className={`rounded-full px-2 py-0.5 text-[0.66rem] font-semibold ${isBooked ? 'bg-[#e8f4ee] text-[#17643a]' : 'bg-[#eef4f9] text-[#60758b]'}`}>
+                                                  {isBooked ? 'Booked' : 'To book'}
+                                                </span>
+                                              </button>
+                                            )
+                                          })
+                                        ) : (
+                                          <div className="rounded-[12px] border border-dashed border-[#d7e2ef] bg-white px-4 py-5 text-center">
+                                            <p className="text-sm font-semibold text-[#20364c]">No confirmed viewing choices yet</p>
+                                            <p className="mt-1 text-xs text-[#6f839c]">Capture the buyer response first, then book appointments here.</p>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      <div className="space-y-3">
+                                        <div className="rounded-[12px] border border-[#edf3f8] bg-white px-3 py-2.5">
+                                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7c91a8]">Appointment IDs</p>
+                                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#29435d]">
+                                            {viewingPlanBookedAppointmentIds.length ? viewingPlanBookedAppointmentIds.join(', ') : 'Appointments will appear here after booking.'}
+                                          </p>
+                                        </div>
+                                        <div className="rounded-[12px] border border-[#edf3f8] bg-white px-3 py-2.5">
+                                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7c91a8]">Use these buyer windows</p>
+                                          <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-[#29435d]">
+                                            {normalizeText(viewingPlanResponseForm.availabilityWindows) || 'No buyer availability captured yet.'}
+                                          </p>
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          className="w-full"
+                                          disabled={!viewingPlanBookingProperty || !normalizeText(viewingPlanResponseForm.availabilityWindows)}
+                                          onClick={() => handleOpenViewingPlanBookingModal(viewingPlanBookingProperty)}
+                                        >
+                                          <CalendarDays className="h-4 w-4" />
+                                          Book viewing appointment
+                                        </Button>
+                                        {viewingPlanStatus === 'booked' ? (
+                                          <Button type="button" size="sm" variant="secondary" className="w-full" onClick={() => handleLeadWorkspaceTabSelection('appointments')}>
+                                            View booked appointments
+                                          </Button>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <aside className="rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
+                                  <div className="flex items-start gap-3">
+                                    <span className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#e8f4ee] text-[#157a4d]">
+                                      <CalendarDays className="h-5 w-5" />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-[#102033]">Buyer availability request</p>
+                                      <p className="mt-1 text-xs leading-5 text-[#60758b]">
+                                        {viewingPlanSelectedProperties.length
+                                          ? `${viewingPlanSelectedProperties.length} propert${viewingPlanSelectedProperties.length === 1 ? 'y' : 'ies'} selected for the first request.`
+                                          : 'Select at least one property to prepare the request.'}
+                                      </p>
+                                      {savedViewingPlan.requestedAt ? (
+                                        <p className="mt-1 text-[0.68rem] font-semibold text-[#7c91a8]">
+                                          Last requested {formatDateShort(savedViewingPlan.requestedAt)}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-4 space-y-2">
+                                    {viewingPlanSelectedProperties.slice(0, 3).map((property) => (
+                                      <div key={property.id} className="flex items-center gap-2 rounded-[12px] bg-white px-2.5 py-2 ring-1 ring-[#edf3f8]">
+                                        <img src={property.image} alt="" className="h-9 w-9 rounded-[9px] object-cover" />
+                                        <div className="min-w-0">
+                                          <p className="truncate text-xs font-semibold text-[#20364c]">{property.title}</p>
+                                          <p className="truncate text-[0.68rem] text-[#7c91a8]">{property.price}</p>
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {viewingPlanSelectedProperties.length > 3 ? (
+                                      <p className="px-1 text-xs font-semibold text-[#60758b]">+{viewingPlanSelectedProperties.length - 3} more selected</p>
+                                    ) : null}
+                                  </div>
+
+                                  <label className="mt-4 grid gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#6d839b]">
+                                    Plan status
+                                    <Field as="select" className="h-10 rounded-[12px] px-3 text-sm font-semibold normal-case tracking-normal text-[#20364c]" value={viewingPlanStatus} onChange={(event) => setViewingPlanStatus(event.target.value)}>
+                                      {BUYER_VIEWING_PLAN_STATUS_OPTIONS.map((option) => (
+                                        <option key={option.key} value={option.key}>{option.label}</option>
+                                      ))}
+                                    </Field>
+                                  </label>
+
+                                  <div className="mt-4 grid gap-2">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      className="w-full"
+                                      disabled={!viewingPlanSelectedProperties.length || !viewingPlanBuyerEmail || isLeadDetailSaving}
+                                      onClick={() => void handleSendBuyerViewingAvailabilityRequest(viewingPlanSelectedProperties)}
+                                    >
+                                      <Send className="h-4 w-4" />
+                                      {isLeadDetailSaving ? 'Preparing...' : 'Request buyer availability'}
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      className="w-full"
+                                      disabled={!viewingPlanSelectedProperties.length || isLeadDetailSaving}
+                                      onClick={() => void handleSaveBuyerViewingPlan()}
+                                    >
+                                      <CheckCircle2 className="h-4 w-4" />
+                                      Save plan
+                                    </Button>
+                                    <Button type="button" size="sm" variant="secondary" className="w-full" onClick={() => handleOpenAppointmentModal()} disabled={!viewingPlanSelectedProperties.length}>
+                                      <CalendarDays className="h-4 w-4" />
+                                      Schedule manually
+                                    </Button>
+                                    {!viewingPlanBuyerEmail ? (
+                                      <p className="text-xs leading-5 text-[#b45309]">Add a buyer email before sending the request.</p>
+                                    ) : null}
+                                  </div>
+
+                                  <div className="mt-4 border-t border-[#e6eef6] pt-4">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div>
+                                        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Automation</p>
+                                        <p className="mt-1 text-sm font-semibold text-[#102033]">Follow-up queue</p>
+                                      </div>
+                                      <Zap className="h-4 w-4 text-[#2f7b9e]" />
+                                    </div>
+                                    <div className="mt-3 space-y-2">
+                                      {viewingPlanAutomationRows.map((row) => (
+                                        <div key={row.key} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#edf3f8] bg-white px-3 py-2">
+                                          <div className="min-w-0">
+                                            <p className="truncate text-xs font-semibold text-[#20364c]">{row.label}</p>
+                                            <p className="mt-0.5 text-[0.68rem] text-[#7c91a8]">
+                                              {row.task?.dueDate ? `Due ${formatDateShort(row.task.dueDate)}` : row.active ? 'Queued automatically' : 'Waiting for trigger'}
+                                            </p>
+                                          </div>
+                                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.66rem] font-semibold ${row.task ? 'bg-[#e8f4ee] text-[#17643a]' : row.active ? 'bg-[#fff8ec] text-[#8a5b1f]' : 'bg-[#eef4f9] text-[#60758b]'}`}>
+                                            {row.task ? 'Active' : row.active ? 'Pending' : 'Idle'}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </aside>
+                              </div>
                             </section>
                           </>
                         )
@@ -21060,6 +22449,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           setAppointmentModalOpen(false)
           setAppointmentSchedulingError('')
           setAppointmentSchedulingLoading(false)
+          setViewingPlanBookingContext({ leadId: '', propertyId: '' })
         }}
         title={selectedAppointmentId ? 'Appointment Details' : 'Create Appointment'}
         subtitle={selectedAppointmentId ? 'Update appointment details.' : 'Quickly schedule an appointment.'}
@@ -21502,6 +22892,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 setAppointmentModalOpen(false)
                 setAppointmentSchedulingError('')
                 setAppointmentSchedulingLoading(false)
+                setViewingPlanBookingContext({ leadId: '', propertyId: '' })
               }}
             >
               Cancel
