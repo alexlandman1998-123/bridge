@@ -17516,45 +17516,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   {resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === 'overview' && !selectedLeadIsSeller ? (
                     <div className="space-y-6">
                       {(() => {
-                        const qualificationSteps = [
-                          {
-                            key: 'contacted',
-                            label: 'Contacted',
-                            complete: buyerOverviewQualification.hasContacted,
-                            meta: buyerOverviewQualification.hasContacted ? 'Contact logged' : 'Needs first touch',
-                          },
-                          {
-                            key: 'qualified',
-                            label: 'Qualified',
-                            complete: buyerOverviewQualification.hasQualificationSignal,
-                            meta: buyerOverviewQualification.hasQualificationSignal ? 'In progress' : 'Needs qualification',
-                          },
-                          {
-                            key: 'viewing_booked',
-                            label: 'Viewing booked',
-                            complete: buyerOverviewQualification.hasViewingBooked,
-                            meta: buyerOverviewQualification.hasViewingBooked ? `${selectedLeadAppointments.length} appointment${selectedLeadAppointments.length === 1 ? '' : 's'}` : 'Not booked',
-                          },
-                          {
-                            key: 'offer_submitted',
-                            label: 'Offer submitted',
-                            complete: buyerOverviewQualification.offerSubmitted,
-                            meta: buyerOverviewQualification.offerSubmitted ? 'Offer activity found' : 'Not submitted',
-                          },
-                          {
-                            key: 'otp_signed',
-                            label: 'OTP signed',
-                            complete: buyerOverviewQualification.otpSigned,
-                            meta: buyerOverviewQualification.otpSigned ? 'Signed' : 'Not signed',
-                          },
-                          {
-                            key: 'transaction_created',
-                            label: 'Transaction created',
-                            complete: Boolean(selectedLeadLinkedTransactionId),
-                            meta: selectedLeadLinkedTransactionId || 'Not created',
-                          },
-                        ]
-                        const currentQualificationIndex = qualificationSteps.findIndex((step) => !step.complete)
                         const qualificationPrimaryAction = !buyerOverviewQualification.hasContacted
                           ? {
                               label: 'Mark contacted',
@@ -17578,17 +17539,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   Icon: CheckCircle2,
                                   submit: true,
                                 }
-                        const buyerSnapshotRows = [
-                          ['Budget', selectedLeadBuyerBudgetLabel || 'Not captured'],
-                          ['Buying timeframe', normalizeText(leadDetailForm.priority) || 'Not captured'],
-                          ['Preferred areas', normalizeText(leadDetailForm.areaInterest || selectedLead?.areaInterest || selectedLeadPropertyLabel) || 'Not captured'],
-                          ['Cash or bond', buyerOverviewQualification.cashOrBondLabel || 'Not captured'],
-                          ['Deposit available', buyerOverviewQualification.depositLabel || 'Not captured'],
-                          ['First-time buyer', normalizeText(selectedLeadFinanceFormData?.firstTimeBuyer || selectedLeadFinanceFormData?.first_time_buyer || selectedLead?.firstTimeBuyer || selectedLead?.first_time_buyer) || 'Not captured'],
-                          ['Attorney preference', normalizeText(selectedLeadFinanceFormData?.attorneyPreference || selectedLeadFinanceFormData?.attorney_preference || selectedLead?.attorneyPreference || selectedLead?.attorney_preference) || 'Not captured'],
-                          ['Preferred contact method', selectedLeadContact?.phone ? 'Phone' : selectedLeadContact?.email ? 'Email' : 'Not captured'],
-                          ['Best time to contact', selectedLeadOpenActions.nextDueAction?.meta || 'Not captured'],
-                        ]
                         const activityQuickTypes = ['Call', 'WhatsApp', 'Email', 'Note', 'Meeting'].filter((type) => type !== 'Meeting' || ACTIVITY_TYPES.includes('Meeting'))
                         const activityIconByType = {
                           Call: Phone,
@@ -17600,85 +17550,47 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                         return (
                           <>
-                            <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)]">
+                            <div className="grid items-start gap-6 xl:grid-cols-[minmax(360px,0.45fr)_minmax(0,0.55fr)]">
                               <form className="flex h-full flex-col rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6" onSubmit={handleSaveLeadDetails}>
-                                <div>
-                                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Buyer Qualification</p>
-                                  <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">Qualification workspace</h3>
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Buyer Qualification</p>
+                                    <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">Phone qualification questions</h3>
+                                  </div>
+                                  <span className="rounded-full border border-[#d7e6f2] bg-[#f8fbfd] px-3 py-1 text-xs font-semibold text-[#60758b]">
+                                    {buyerOverviewQualification.hasQualificationSignal ? 'In progress' : 'Needs qualification'}
+                                  </span>
                                 </div>
 
-                                <div className="mt-5 grid flex-1 gap-6 2xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
-                                  <div className="rounded-[18px] border border-[#e5edf6] bg-[#fbfdff] p-4">
-                                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">Checklist</p>
-                                    <div className="mt-4 space-y-0">
-                                      {qualificationSteps.map((step, index) => {
-                                        const state = step.complete ? 'completed' : index === currentQualificationIndex ? 'current' : 'incomplete'
-                                        return (
-                                          <div key={step.key} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 pb-4 last:pb-0">
-                                            <div className="relative flex justify-center">
-                                              {index < qualificationSteps.length - 1 ? <span className="absolute top-7 bottom-0 w-px bg-[#dbe7f2]" /> : null}
-                                              <span className={`relative z-10 mt-0.5 grid h-6 w-6 place-items-center rounded-full border ${state === 'completed' ? 'border-[#0d6b57] bg-[#0d6b57] text-white' : state === 'current' ? 'border-[#2f7b9e] bg-white text-[#2f7b9e] shadow-[0_0_0_5px_rgba(47,123,158,0.1)]' : 'border-[#cbd8e6] bg-white text-transparent'}`}>
-                                                {state === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5" /> : state === 'current' ? <span className="h-2 w-2 rounded-full bg-[#2f7b9e]" /> : null}
-                                              </span>
-                                            </div>
-                                            <div className="min-w-0">
-                                              <div className="flex items-start justify-between gap-3">
-                                                <p className="truncate text-sm font-semibold text-[#20364c]" title={step.label}>{step.label}</p>
-                                                <span className={`shrink-0 text-[0.68rem] font-semibold uppercase tracking-[0.08em] ${state === 'completed' ? 'text-[#0d6b57]' : state === 'current' ? 'text-[#2f7b9e]' : 'text-[#8aa0b7]'}`}>
-                                                  {state === 'completed' ? 'Done' : state === 'current' ? 'Current' : 'Open'}
-                                                </span>
-                                              </div>
-                                              <p className="mt-0.5 truncate text-xs text-[#6d839b]" title={String(step.meta)}>{step.meta}</p>
-                                            </div>
-                                          </div>
-                                        )
-                                      })}
-                                    </div>
-                                  </div>
-
-                                  <div className="grid gap-4">
-                                    <div className="grid gap-3 sm:grid-cols-2">
-                                      <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
-                                        Timeframe to buy
-                                        <Field as="select" value={leadDetailForm.priority} onChange={(event) => updateLeadDetailField('priority', event.target.value)}>
-                                          {LEAD_PRIORITIES.map((option) => (
-                                            <option key={option} value={option}>{option}</option>
-                                          ))}
-                                        </Field>
-                                      </label>
-                                      <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
-                                        Budget
-                                        <Field placeholder="Budget" value={leadDetailForm.budget} onChange={(event) => updateLeadDetailField('budget', event.target.value)} />
-                                      </label>
-                                    </div>
-                                    <AreaAutocomplete
-                                      label="Preferred areas"
-                                      value={leadDetailForm.areaInterest}
-                                      onChange={(nextArea) => updateLeadDetailField('areaInterest', nextArea)}
-                                      placeholder="Bedfordview, Bartlett, Sandton..."
-                                    />
+                                <div className="mt-5 grid flex-1 gap-4">
+                                  <div className="grid gap-4 md:grid-cols-2">
                                     <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
-                                      Motivation / property need
-                                      <Field placeholder="Property type, motivation, must-haves" value={leadDetailForm.propertyInterest} onChange={(event) => updateLeadDetailField('propertyInterest', event.target.value)} />
+                                      What is your budget?
+                                      <Field placeholder="Budget" value={leadDetailForm.budget} onChange={(event) => updateLeadDetailField('budget', event.target.value)} />
                                     </label>
-
-                                    <div className="rounded-[18px] border border-[#e5edf6] bg-[#fbfdff] p-4">
-                                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">Buyer snapshot</p>
-                                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                                        {buyerSnapshotRows.map(([label, value]) => (
-                                          <div key={label} className="min-h-[48px] border-b border-[#eef3f8] pb-2 last:border-b-0">
-                                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8aa0b7]">{label}</p>
-                                            <p className="mt-1 truncate text-sm font-semibold text-[#20364c]" title={String(value)}>{value || 'Not captured'}</p>
-                                          </div>
+                                    <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                      How soon are you looking to buy?
+                                      <Field as="select" value={leadDetailForm.priority} onChange={(event) => updateLeadDetailField('priority', event.target.value)}>
+                                        {LEAD_PRIORITIES.map((option) => (
+                                          <option key={option} value={option}>{option}</option>
                                         ))}
-                                      </div>
-                                    </div>
-
-                                    <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
-                                      Notes
-                                      <Field as="textarea" rows={4} placeholder="Add qualification notes from the call..." value={leadDetailForm.notes} onChange={(event) => updateLeadDetailField('notes', event.target.value)} />
+                                      </Field>
                                     </label>
                                   </div>
+                                  <AreaAutocomplete
+                                    label="Which areas should we focus on?"
+                                    value={leadDetailForm.areaInterest}
+                                    onChange={(nextArea) => updateLeadDetailField('areaInterest', nextArea)}
+                                    placeholder="Bedfordview, Bartlett, Sandton..."
+                                  />
+                                  <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                    What type of property do you need?
+                                    <Field placeholder="Property type, bedrooms, must-haves" value={leadDetailForm.propertyInterest} onChange={(event) => updateLeadDetailField('propertyInterest', event.target.value)} />
+                                  </label>
+                                  <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                    What did the buyer say on the call?
+                                    <Field as="textarea" rows={6} placeholder="Capture affordability, urgency, must-haves, exclusions, and next step..." value={leadDetailForm.notes} onChange={(event) => updateLeadDetailField('notes', event.target.value)} />
+                                  </label>
                                 </div>
 
                                 <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-[#edf3f8] pt-4">
@@ -17714,131 +17626,95 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <Zap className="h-5 w-5 text-[#2f7b9e]" />
                                 </div>
 
-                                <div className="mt-5 grid flex-1 gap-6 2xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.82fr)]">
-                                  <div className="min-w-0">
-                                    <div className="grid gap-1 rounded-[14px] bg-[#f3f7fb] p-1" style={{ gridTemplateColumns: `repeat(${activityQuickTypes.length}, minmax(0, 1fr))` }}>
-                                      {activityQuickTypes.map((type) => {
-                                        const ActivityIcon = activityIconByType[type] || Columns3
-                                        const active = activityComposerMode === 'note' ? type === 'Note' : activityForm.activityType === type && activityComposerMode === 'activity'
-                                        return (
-                                          <button
-                                            key={type}
-                                            type="button"
-                                            className={`flex min-h-[42px] items-center justify-center gap-1.5 rounded-[12px] px-2 text-xs font-semibold transition ${active ? 'bg-white text-[#123955] shadow-[0_6px_16px_rgba(31,54,78,0.08)]' : 'text-[#60758b] hover:text-[#123955]'}`}
-                                            onClick={() => {
-                                              handleActivityComposerModeChange(type === 'Note' ? 'note' : 'activity')
-                                              setActivityForm((previous) => ({ ...previous, activityType: type, outcome: type === 'Note' ? '' : previous.outcome }))
-                                            }}
-                                          >
-                                            {createElement(ActivityIcon, { className: 'h-4 w-4' })}
-                                            <span className="hidden sm:inline">{type}</span>
-                                          </button>
-                                        )
-                                      })}
-                                    </div>
+                                <div className="mt-5 flex-1">
+                                  <div className="grid gap-1 rounded-[14px] bg-[#f3f7fb] p-1" style={{ gridTemplateColumns: `repeat(${activityQuickTypes.length}, minmax(0, 1fr))` }}>
+                                    {activityQuickTypes.map((type) => {
+                                      const ActivityIcon = activityIconByType[type] || Columns3
+                                      const active = activityComposerMode === 'note' ? type === 'Note' : activityForm.activityType === type && activityComposerMode === 'activity'
+                                      return (
+                                        <button
+                                          key={type}
+                                          type="button"
+                                          className={`flex min-h-[42px] items-center justify-center gap-1.5 rounded-[12px] px-2 text-xs font-semibold transition ${active ? 'bg-white text-[#123955] shadow-[0_6px_16px_rgba(31,54,78,0.08)]' : 'text-[#60758b] hover:text-[#123955]'}`}
+                                          onClick={() => {
+                                            handleActivityComposerModeChange(type === 'Note' ? 'note' : 'activity')
+                                            setActivityForm((previous) => ({ ...previous, activityType: type, outcome: type === 'Note' ? '' : previous.outcome }))
+                                          }}
+                                        >
+                                          {createElement(ActivityIcon, { className: 'h-4 w-4' })}
+                                          <span className="hidden sm:inline">{type}</span>
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
 
-                                    <form className="mt-5 space-y-4" onSubmit={handleUnifiedActivitySubmit}>
-                                      {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? (
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                          <Field placeholder="Next action title" value={taskForm.title} onChange={(event) => setTaskForm((previous) => ({ ...previous, title: event.target.value }))} />
-                                          <Field type="date" value={taskForm.dueDate} onChange={(event) => setTaskForm((previous) => ({ ...previous, dueDate: event.target.value }))} />
-                                          <Field as="select" value={taskForm.priority} onChange={(event) => setTaskForm((previous) => ({ ...previous, priority: event.target.value }))}>
-                                            {TASK_PRIORITIES.map((option) => (
-                                              <option key={option} value={option}>{option}</option>
-                                            ))}
-                                          </Field>
-                                        </div>
-                                      ) : (
-                                        <div className="grid gap-3 sm:grid-cols-2">
-                                          <Field as="select" value={activityForm.activityType} onChange={(event) => setActivityForm((previous) => ({ ...previous, activityType: event.target.value }))}>
-                                            {ACTIVITY_TYPES.map((option) => (
-                                              <option key={option} value={option}>{option}</option>
-                                            ))}
-                                          </Field>
-                                          <Field as="select" value={activityForm.outcome} onChange={(event) => setActivityForm((previous) => ({ ...previous, outcome: event.target.value }))}>
-                                            {activityOutcomeOptions.map((option) => (
-                                              <option key={option || 'empty-outcome'} value={option}>{option || 'Outcome'}</option>
-                                            ))}
-                                          </Field>
-                                        </div>
-                                      )}
-                                      <Field
-                                        as="textarea"
-                                        rows={5}
-                                        placeholder={activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? 'Describe the next action...' : 'Add notes about this activity...'}
-                                        value={activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? taskForm.description : activityForm.activityNote}
-                                        onChange={(event) => {
-                                          if (activityComposerMode === 'follow_up' || activityComposerMode === 'task') {
-                                            setTaskForm((previous) => ({ ...previous, description: event.target.value }))
-                                          } else {
-                                            setActivityForm((previous) => ({ ...previous, activityNote: event.target.value }))
-                                          }
-                                        }}
-                                      />
-                                      <div className="flex flex-wrap items-center justify-between gap-3">
-                                        <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#60758b]">
-                                          <input
-                                            type="checkbox"
-                                            className="h-4 w-4 rounded border-[#cbd8e6]"
-                                            checked={activityComposerMode === 'follow_up' || activityComposerMode === 'task'}
-                                            onChange={(event) => handleActivityComposerModeChange(event.target.checked ? 'follow_up' : 'activity')}
-                                          />
-                                          Set as next action
-                                        </label>
-                                        <div className="flex flex-wrap gap-2">
-                                          {selectedLeadContact?.phone || selectedLead?.phone ? (
-                                            <a className="inline-flex h-9 items-center justify-center gap-1.5 rounded-[12px] border border-[#dbe7f2] px-3 text-xs font-semibold text-[#20364c]" href={`tel:${selectedLeadContact?.phone || selectedLead?.phone}`}>
-                                              <Phone className="h-4 w-4" />
-                                              Call
-                                            </a>
-                                          ) : null}
-                                          {selectedLeadContact?.email || selectedLead?.email ? (
-                                            <a className="inline-flex h-9 items-center justify-center gap-1.5 rounded-[12px] border border-[#dbe7f2] px-3 text-xs font-semibold text-[#20364c]" href={`mailto:${selectedLeadContact?.email || selectedLead?.email}`}>
-                                              <Mail className="h-4 w-4" />
-                                              Email
-                                            </a>
-                                          ) : null}
-                                          <Button type="submit" size="sm">
-                                            {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? 'Create Follow-up' : 'Log Activity'}
-                                          </Button>
-                                        </div>
+                                  <form className="mt-5 space-y-4" onSubmit={handleUnifiedActivitySubmit}>
+                                    {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? (
+                                      <div className="grid gap-3 sm:grid-cols-3">
+                                        <Field placeholder="Next action title" value={taskForm.title} onChange={(event) => setTaskForm((previous) => ({ ...previous, title: event.target.value }))} />
+                                        <Field type="date" value={taskForm.dueDate} onChange={(event) => setTaskForm((previous) => ({ ...previous, dueDate: event.target.value }))} />
+                                        <Field as="select" value={taskForm.priority} onChange={(event) => setTaskForm((previous) => ({ ...previous, priority: event.target.value }))}>
+                                          {TASK_PRIORITIES.map((option) => (
+                                            <option key={option} value={option}>{option}</option>
+                                          ))}
+                                        </Field>
                                       </div>
-                                    </form>
-                                  </div>
-
-                                  <div className="min-w-0 rounded-[18px] border border-[#e5edf6] bg-[#fbfdff] p-4">
-                                    <div className="flex items-center justify-between gap-3">
-                                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">Recent activity</p>
-                                      <button type="button" className="text-xs font-semibold text-[#2f6f8f]" onClick={() => handleLeadWorkspaceTabSelection('activity')}>View all</button>
+                                    ) : (
+                                      <div className="grid gap-3 sm:grid-cols-2">
+                                        <Field as="select" value={activityForm.activityType} onChange={(event) => setActivityForm((previous) => ({ ...previous, activityType: event.target.value }))}>
+                                          {ACTIVITY_TYPES.map((option) => (
+                                            <option key={option} value={option}>{option}</option>
+                                          ))}
+                                        </Field>
+                                        <Field as="select" value={activityForm.outcome} onChange={(event) => setActivityForm((previous) => ({ ...previous, outcome: event.target.value }))}>
+                                          {activityOutcomeOptions.map((option) => (
+                                            <option key={option || 'empty-outcome'} value={option}>{option || 'Outcome'}</option>
+                                          ))}
+                                        </Field>
+                                      </div>
+                                    )}
+                                    <Field
+                                      as="textarea"
+                                      rows={8}
+                                      placeholder={activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? 'Describe the next action...' : 'Add notes about this activity...'}
+                                      value={activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? taskForm.description : activityForm.activityNote}
+                                      onChange={(event) => {
+                                        if (activityComposerMode === 'follow_up' || activityComposerMode === 'task') {
+                                          setTaskForm((previous) => ({ ...previous, description: event.target.value }))
+                                        } else {
+                                          setActivityForm((previous) => ({ ...previous, activityNote: event.target.value }))
+                                        }
+                                      }}
+                                    />
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#60758b]">
+                                        <input
+                                          type="checkbox"
+                                          className="h-4 w-4 rounded border-[#cbd8e6]"
+                                          checked={activityComposerMode === 'follow_up' || activityComposerMode === 'task'}
+                                          onChange={(event) => handleActivityComposerModeChange(event.target.checked ? 'follow_up' : 'activity')}
+                                        />
+                                        Set as next action
+                                      </label>
+                                      <div className="flex flex-wrap gap-2">
+                                        {selectedLeadContact?.phone || selectedLead?.phone ? (
+                                          <a className="inline-flex h-9 items-center justify-center gap-1.5 rounded-[12px] border border-[#dbe7f2] px-3 text-xs font-semibold text-[#20364c]" href={`tel:${selectedLeadContact?.phone || selectedLead?.phone}`}>
+                                            <Phone className="h-4 w-4" />
+                                            Call
+                                          </a>
+                                        ) : null}
+                                        {selectedLeadContact?.email || selectedLead?.email ? (
+                                          <a className="inline-flex h-9 items-center justify-center gap-1.5 rounded-[12px] border border-[#dbe7f2] px-3 text-xs font-semibold text-[#20364c]" href={`mailto:${selectedLeadContact?.email || selectedLead?.email}`}>
+                                            <Mail className="h-4 w-4" />
+                                            Email
+                                          </a>
+                                        ) : null}
+                                        <Button type="submit" size="sm">
+                                          {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? 'Create Follow-up' : 'Log Activity'}
+                                        </Button>
+                                      </div>
                                     </div>
-                                    <div className="mt-4 space-y-3">
-                                      {selectedLeadUnifiedTimeline.slice(0, 5).length ? (
-                                        selectedLeadUnifiedTimeline.slice(0, 5).map((row) => {
-                                          const presentation = getLeadActivityPresentation(`${row.sourceLabel} ${row.title} ${row.sourceType}`)
-                                          const ActivityIcon = presentation.Icon
-                                          return (
-                                            <div key={row.id} className="grid grid-cols-[34px_minmax(0,1fr)] gap-3">
-                                              <span className={`grid h-8 w-8 place-items-center rounded-full ${presentation.rail}`}>
-                                                <ActivityIcon className="h-4 w-4" />
-                                              </span>
-                                              <div className="min-w-0 border-b border-[#eef3f8] pb-3 last:border-b-0">
-                                                <div className="flex items-start justify-between gap-3">
-                                                  <p className="min-w-0 truncate text-sm font-semibold text-[#20364c]" title={row.title}>{row.title || row.sourceLabel || 'Lead update'}</p>
-                                                  <span className="shrink-0 text-[0.68rem] font-semibold text-[#8aa0b7]">{formatDateTime(row.timestamp || row.dueDate)}</span>
-                                                </div>
-                                                <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-[#60758b]">{row.outcome || row.description || row.sourceLabel || 'No note captured.'}</p>
-                                              </div>
-                                            </div>
-                                          )
-                                        })
-                                      ) : (
-                                        <div className="rounded-[14px] border border-dashed border-[#d7e2ef] bg-white px-4 py-7 text-center">
-                                          <p className="text-sm font-semibold text-[#20364c]">No recent activity</p>
-                                          <p className="mt-1 text-sm text-[#6f839c]">Use the activity logger to capture the first interaction.</p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
+                                  </form>
                                 </div>
                               </section>
                             </div>
