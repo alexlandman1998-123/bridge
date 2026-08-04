@@ -1,5 +1,5 @@
 import { createAgencyCrmLeadActivity } from '../lib/agencyCrmRepository'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { recordUniversalAssignmentEvent, UNIVERSAL_ASSIGNMENT_METHODS } from './universalAssignmentService'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -13,6 +13,10 @@ function normalizeText(value) {
 
 function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function normalizeRoleKey(value = '') {
+  return normalizeLower(value).replace(/[\s-]+/g, '_')
 }
 
 function isUuidLike(value) {
@@ -39,6 +43,31 @@ function requireClient() {
     throw new Error('Supabase is required before assigning leads.')
   }
   return supabase
+}
+
+function getAppBaseUrl() {
+  return normalizeText(
+    import.meta?.env?.VITE_PUBLIC_APP_URL ||
+    import.meta?.env?.VITE_APP_BASE_URL ||
+    import.meta?.env?.VITE_CLIENT_APP_URL,
+  ) || 'https://app.arch9.co.za'
+}
+
+function buildLeadActionLink(leadId = '') {
+  const baseUrl = getAppBaseUrl().replace(/\/+$/, '')
+  return `${baseUrl}/agency/leads/${encodeURIComponent(normalizeText(leadId))}`
+}
+
+function memberDisplayName(row = {}, fallback = '') {
+  return normalizeText([row.first_name, row.last_name].filter(Boolean).join(' ')) ||
+    normalizeText(row.name || row.full_name || row.email) ||
+    fallback
+}
+
+function isManagerRole(row = {}) {
+  return ['owner', 'principal', 'agency_principal', 'admin', 'super_admin', 'branch_manager', 'agency_manager', 'manager'].includes(
+    normalizeRoleKey(row.workspace_role || row.organisation_role || row.role || row.app_role),
+  )
 }
 
 function isMissingColumnError(error, columnName = '') {
@@ -220,13 +249,93 @@ async function findAgentIdentity({ organisationId = '', agentId = '' } = {}) {
   if (!normalizedAgentId) return null
   const { data, error } = await client
     .from('organisation_users')
-    .select('user_id, id, email')
+    .select('user_id, id, first_name, last_name, name, full_name, email, role, workspace_role, organisation_role, app_role, branch_id')
     .eq('organisation_id', organisationId)
     .or(`user_id.eq.${normalizedAgentId},id.eq.${normalizedAgentId}`)
     .limit(1)
     .maybeSingle()
   if (error) return null
   return data || null
+}
+
+async function findLeadManagerRecipients({ organisationId = '', branchId = '' } = {}) {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('organisation_users')
+    .select('user_id, id, first_name, last_name, name, full_name, email, role, workspace_role, organisation_role, app_role, branch_id, status')
+    .eq('organisation_id', organisationId)
+    .in('status', ['active', 'accepted'])
+    .limit(50)
+  if (error) return []
+  const rows = Array.isArray(data) ? data : []
+  const scoped = rows.filter((row) => {
+    const email = normalizeText(row.email).toLowerCase()
+    const rowBranch = normalizeText(row.branch_id)
+    return email && isManagerRole(row) && (!branchId || !rowBranch || rowBranch === branchId)
+  })
+  const managers = scoped.length ? scoped : rows.filter((row) => normalizeText(row.email).toLowerCase() && isManagerRole(row))
+  return managers.slice(0, 5)
+}
+
+function buildLeadAssignmentEmailPayloadBase({ organisationId = '', lead = {} } = {}) {
+  return {
+    organisationId,
+    leadId: lead.leadId,
+    branchId: lead.branchId,
+    leadSource: lead.leadSource,
+    leadStatus: lead.status || lead.stage,
+    actionLink: buildLeadActionLink(lead.leadId),
+    source: 'lead_assignment_service',
+  }
+}
+
+async function dispatchLeadAssignmentEmail({ organisationId = '', lead = {}, previous = {}, reason = '' } = {}) {
+  const basePayload = buildLeadAssignmentEmailPayloadBase({ organisationId, lead })
+  const results = []
+  if (lead.assignedAgentId) {
+    const agent = await findAgentIdentity({ organisationId, agentId: lead.assignedAgentId })
+    const agentEmail = normalizeText(agent?.email).toLowerCase()
+    if (!agentEmail) return { attempted: false, reason: 'missing_assigned_agent_email' }
+    const previousAgent = previous.assignedAgentId && previous.assignedAgentId !== lead.assignedAgentId
+      ? await findAgentIdentity({ organisationId, agentId: previous.assignedAgentId })
+      : null
+    const eventType = previous.assignedAgentId && previous.assignedAgentId !== lead.assignedAgentId ? 'lead_reassigned' : 'lead_assigned'
+    results.push(await invokeEdgeFunction('send-email', {
+      body: {
+        ...basePayload,
+        type: eventType,
+        to: agentEmail,
+        recipientName: memberDisplayName(agent, 'Agent'),
+        recipientRole: 'agent',
+        assignedUserId: lead.assignedAgentId,
+        assignedAgentName: memberDisplayName(agent, ''),
+        assignedAgentEmail: agentEmail,
+        previousAgentName: memberDisplayName(previousAgent, ''),
+        previousAgentEmail: normalizeText(previousAgent?.email).toLowerCase(),
+        reason,
+        idempotencyKey: `lead-ops:${lead.leadId}:${eventType}:${lead.assignedAgentId}:${lead.assignedAt || Date.now()}`,
+      },
+    }))
+    return { attempted: true, results }
+  }
+
+  const managers = await findLeadManagerRecipients({ organisationId, branchId: lead.branchId || previous.branchId })
+  for (const manager of managers) {
+    const email = normalizeText(manager.email).toLowerCase()
+    if (!email) continue
+    results.push(await invokeEdgeFunction('send-email', {
+      body: {
+        ...basePayload,
+        type: 'lead_unassigned',
+        to: email,
+        recipientName: memberDisplayName(manager, 'Manager'),
+        recipientRole: 'manager',
+        reason,
+        idempotencyKey: `lead-ops:${lead.leadId}:lead-unassigned:${normalizeText(manager.user_id || manager.id || email)}:${lead.assignedAt || Date.now()}`,
+      },
+    }))
+  }
+  return { attempted: results.length > 0, results }
 }
 
 function queueForLead(lead = {}, listing = null) {
@@ -399,6 +508,17 @@ async function updateLeadAssignment({ organisationId, leadId, patch, reason = ''
     reason,
     actor,
   })
+  let emailNotification = null
+  try {
+    emailNotification = await dispatchLeadAssignmentEmail({
+      organisationId,
+      lead,
+      previous,
+      reason,
+    })
+  } catch (emailError) {
+    console.warn('[leadAssignmentService] assignment email notification skipped', emailError)
+  }
   return {
     lead: {
       ...lead,
@@ -406,6 +526,7 @@ async function updateLeadAssignment({ organisationId, leadId, patch, reason = ''
     },
     history,
     notification,
+    emailNotification,
   }
 }
 

@@ -5,6 +5,10 @@ import {
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
@@ -44,9 +48,16 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
 
-  const sender =
+  const branding = await resolveEmailBranding({
+    payload: payload as Record<string, unknown>,
+    organisationId: normalizeText((payload as Record<string, unknown>).organisationId),
+    defaults: { organisationName, supportEmail, supportPhone },
+  });
+  const sender = formatEmailSender(
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <onboarding@resend.dev>";
+      "Arch9 <onboarding@resend.dev>",
+    branding.fromName || branding.organisationName,
+  );
 
   const subject = `All signed: ${propertyTitle} is ready for the next step`;
   const html = renderBridgeEmailLayout({
@@ -60,7 +71,9 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
           ? "Use the secure download link below to access the signed PDF."
           : "The signed document record is available in Arch9 for authorised users linked to this workflow.",
       ]),
-      renderBridgeCta(`Download signed ${documentLabel}`, downloadLink),
+      renderBridgeCta(`Download signed ${documentLabel}`, downloadLink, {
+        primaryColor: branding.primaryColor,
+      }),
       renderBridgeSummaryCard(
         [
           { label: "Property", value: propertyTitle },
@@ -76,9 +89,10 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
       ? `This download link is secure and time-limited. Authorised users can also access the signed ${documentLabel} from Arch9.`
       : `The signed ${documentLabel} record is retained in Arch9 for authorised users linked to this workflow.`,
     helpBody: "Need help? Reply to this email or review the listing workflow in Arch9.",
-    organisationName,
-    supportEmail,
-    supportPhone,
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
   });
   const text = [
     `Hi ${recipientName || agentName},`,

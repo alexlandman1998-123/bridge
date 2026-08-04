@@ -8,7 +8,8 @@ type SupabaseClientLike = {
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-arch9-inbound-secret",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-arch9-inbound-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -115,7 +116,8 @@ function firstNameFrom(value: unknown) {
 }
 
 function isUuidLike(value: unknown) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value));
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    .test(normalizeText(value));
 }
 
 function createUuid() {
@@ -124,28 +126,44 @@ function createUuid() {
 
 function isMissingColumnError(error: unknown) {
   const code = normalizeText((error as { code?: string })?.code).toUpperCase();
-  const message = normalizeLower((error as { message?: string; details?: string })?.message || (error as { details?: string })?.details);
-  return code === "42703" || code === "PGRST204" || message.includes("column") && message.includes("does not exist");
+  const message = normalizeLower(
+    (error as { message?: string; details?: string })?.message ||
+      (error as { details?: string })?.details,
+  );
+  return code === "42703" || code === "PGRST204" ||
+    message.includes("column") && message.includes("does not exist");
 }
 
 function isMissingTableError(error: unknown, tableName = "") {
   const code = normalizeText((error as { code?: string })?.code).toUpperCase();
-  const message = normalizeLower((error as { message?: string; details?: string })?.message || (error as { details?: string })?.details);
+  const message = normalizeLower(
+    (error as { message?: string; details?: string })?.message ||
+      (error as { details?: string })?.details,
+  );
   const target = normalizeLower(tableName);
-  return code === "42P01" || code === "PGRST205" || message.includes("does not exist") && (!target || message.includes(target));
+  return code === "42P01" || code === "PGRST205" ||
+    message.includes("does not exist") && (!target || message.includes(target));
 }
 
 function isUniqueViolationError(error: unknown) {
   const code = normalizeText((error as { code?: string })?.code).toUpperCase();
-  const message = normalizeLower((error as { message?: string; details?: string })?.message || (error as { details?: string })?.details);
+  const message = normalizeLower(
+    (error as { message?: string; details?: string })?.message ||
+      (error as { details?: string })?.details,
+  );
   return code === "23505" || message.includes("duplicate key");
 }
 
 function missingColumnName(error: unknown, allowedColumns: string[]) {
-  const message = normalizeLower((error as { message?: string; details?: string })?.message || (error as { details?: string })?.details);
+  const message = normalizeLower(
+    (error as { message?: string; details?: string })?.message ||
+      (error as { details?: string })?.details,
+  );
   return allowedColumns.find((column) => {
     const lowerColumn = column.toLowerCase();
-    return message.includes(`'${lowerColumn}'`) || message.includes(`"${lowerColumn}"`) || message.includes(` ${lowerColumn} `);
+    return message.includes(`'${lowerColumn}'`) ||
+      message.includes(`"${lowerColumn}"`) ||
+      message.includes(` ${lowerColumn} `);
   }) || "";
 }
 
@@ -193,7 +211,10 @@ function safeUrl(value: unknown) {
 }
 
 function jobTitleLabel(value: unknown) {
-  const key = normalizeLower(value).replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const key = normalizeLower(value).replace(/[^a-z0-9]+/g, "_").replace(
+    /^_+|_+$/g,
+    "",
+  );
   const labels: Record<string, string> = {
     organisation_owner: "Organisation Owner",
     principal: "Principal",
@@ -217,7 +238,9 @@ function jobTitleLabel(value: unknown) {
 
 function readPath(source: JsonRecord, path: string): unknown {
   return path.split(".").reduce<unknown>((value, key) => {
-    if (value === null || value === undefined || typeof value !== "object") return undefined;
+    if (value === null || value === undefined || typeof value !== "object") {
+      return undefined;
+    }
     return (value as JsonRecord)[key];
   }, source);
 }
@@ -257,7 +280,10 @@ function parseAddressList(value: unknown): string[] {
   }
   if (value && typeof value === "object") {
     const record = value as JsonRecord;
-    return parseAddressList(record.email || record.Email || record.address || record.Address || record.To || record.to || Object.values(record));
+    return parseAddressList(
+      record.email || record.Email || record.address || record.Address ||
+        record.To || record.to || Object.values(record),
+    );
   }
   return normalizeText(value)
     .split(/[,;]/)
@@ -276,13 +302,27 @@ function normalizeProviderName(value: unknown) {
 }
 
 function inferProvider(payload: JsonRecord, headers: Headers) {
-  const explicit = normalizeText(payload.provider || payload.Provider || headers.get("x-arch9-inbound-provider"));
+  const explicit = normalizeText(
+    payload.provider || payload.Provider ||
+      headers.get("x-arch9-inbound-provider"),
+  );
   if (explicit) return normalizeProviderName(explicit);
-  if (payload["body-plain"] || payload["body-html"] || payload["stripped-text"] || payload["Message-Id"]) return "mailgun";
-  if (payload.envelope || payload.charsets || payload.spf || headers.get("x-twilio-email-event-webhook-signature")) return "sendgrid";
-  if (payload.MessageID || payload.FromFull || payload.ToFull || payload.TextBody || payload.HtmlBody) return "postmark";
+  if (
+    payload["body-plain"] || payload["body-html"] || payload["stripped-text"] ||
+    payload["Message-Id"]
+  ) return "mailgun";
+  if (
+    payload.envelope || payload.charsets || payload.spf ||
+    headers.get("x-twilio-email-event-webhook-signature")
+  ) return "sendgrid";
+  if (
+    payload.MessageID || payload.FromFull || payload.ToFull ||
+    payload.TextBody || payload.HtmlBody
+  ) return "postmark";
   if (payload.headers && payload.attachments && payload.to) return "resend";
-  if (payload.mail || payload.Records || payload.Type === "Notification") return "amazon-ses";
+  if (payload.mail || payload.Records || payload.Type === "Notification") {
+    return "amazon-ses";
+  }
   return "inbound-email";
 }
 
@@ -306,50 +346,101 @@ function firstSesRecord(payload: JsonRecord) {
 
 function normalizeProviderPayload(payload: JsonRecord, headers: Headers) {
   const provider = inferProvider(payload, headers);
-  const sesRecord = provider === "amazon-ses" ? firstSesRecord(payload) : payload;
+  const sesRecord = provider === "amazon-ses"
+    ? firstSesRecord(payload)
+    : payload;
   const sesMail = (sesRecord.mail || payload.mail || {}) as JsonRecord;
   const sesCommonHeaders = (sesMail.commonHeaders || {}) as JsonRecord;
   const sendgridEnvelope = parseMaybeJson(payload.envelope) as JsonRecord;
-  const postmarkFromFull = (payload.FromFull || payload.fromFull || {}) as JsonRecord;
+  const postmarkFromFull =
+    (payload.FromFull || payload.fromFull || {}) as JsonRecord;
   const normalized: JsonRecord = { ...payload, provider };
 
   if (provider === "mailgun") {
     normalized.to = pickFirst(payload, ["recipient", "to", "To"]);
     normalized.from = pickFirst(payload, ["sender", "from", "From"]);
     normalized.subject = pickFirst(payload, ["subject", "Subject"]);
-    normalized.text = pickFirst(payload, ["body-plain", "stripped-text", "text", "TextBody"]);
-    normalized.html = pickFirst(payload, ["body-html", "stripped-html", "html", "HtmlBody"]);
-    normalized.messageId = pickFirst(payload, ["Message-Id", "message-id", "message_id", "MessageID"]);
-    normalized.providerEventId = pickFirst(payload, ["event", "event-data.id", "signature.token", "Message-Id", "message-id"]);
-    normalized.receivedAt = pickFirst(payload, ["timestamp", "event-data.timestamp", "Date", "date"]);
+    normalized.text = pickFirst(payload, [
+      "body-plain",
+      "stripped-text",
+      "text",
+      "TextBody",
+    ]);
+    normalized.html = pickFirst(payload, [
+      "body-html",
+      "stripped-html",
+      "html",
+      "HtmlBody",
+    ]);
+    normalized.messageId = pickFirst(payload, [
+      "Message-Id",
+      "message-id",
+      "message_id",
+      "MessageID",
+    ]);
+    normalized.providerEventId = pickFirst(payload, [
+      "event",
+      "event-data.id",
+      "signature.token",
+      "Message-Id",
+      "message-id",
+    ]);
+    normalized.receivedAt = pickFirst(payload, [
+      "timestamp",
+      "event-data.timestamp",
+      "Date",
+      "date",
+    ]);
   } else if (provider === "sendgrid") {
-    normalized.to = parseAddressList(sendgridEnvelope?.to || payload.to || payload.To);
+    normalized.to = parseAddressList(
+      sendgridEnvelope?.to || payload.to || payload.To,
+    );
     normalized.from = pickFirst(payload, ["from", "From", "email"]);
     normalized.subject = pickFirst(payload, ["subject", "Subject"]);
     normalized.text = pickFirst(payload, ["text", "TextBody", "body"]);
     normalized.html = pickFirst(payload, ["html", "HtmlBody"]);
-    normalized.messageId = pickFirst(payload, ["headers.Message-ID", "headers.message-id", "message_id", "messageId"]);
-    normalized.providerEventId = pickFirst(payload, ["sg_message_id", "smtp-id", "message_id", "messageId"]);
+    normalized.messageId = pickFirst(payload, [
+      "headers.Message-ID",
+      "headers.message-id",
+      "message_id",
+      "messageId",
+    ]);
+    normalized.providerEventId = pickFirst(payload, [
+      "sg_message_id",
+      "smtp-id",
+      "message_id",
+      "messageId",
+    ]);
     normalized.receivedAt = pickFirst(payload, ["timestamp", "date", "Date"]);
   } else if (provider === "postmark") {
-    normalized.to = firstAddressFromFull(payload.ToFull || payload.toFull) || parseAddressList(payload.To || payload.to);
-    normalized.from = postmarkFromFull.Email || postmarkFromFull.email || payload.From || payload.from;
-    normalized.from_name = postmarkFromFull.Name || postmarkFromFull.name || payload.FromName || payload.fromName;
+    normalized.to = firstAddressFromFull(payload.ToFull || payload.toFull) ||
+      parseAddressList(payload.To || payload.to);
+    normalized.from = postmarkFromFull.Email || postmarkFromFull.email ||
+      payload.From || payload.from;
+    normalized.from_name = postmarkFromFull.Name || postmarkFromFull.name ||
+      payload.FromName || payload.fromName;
     normalized.subject = payload.Subject || payload.subject;
     normalized.text = payload.TextBody || payload.textBody;
     normalized.html = payload.HtmlBody || payload.htmlBody;
-    normalized.messageId = payload.MessageID || payload.MessageId || payload.messageId;
-    normalized.providerEventId = payload.MessageID || payload.MessageId || payload.messageId;
+    normalized.messageId = payload.MessageID || payload.MessageId ||
+      payload.messageId;
+    normalized.providerEventId = payload.MessageID || payload.MessageId ||
+      payload.messageId;
     normalized.receivedAt = payload.Date || payload.date;
   } else if (provider === "resend") {
     normalized.to = payload.to || readPath(payload, "email.to");
     normalized.from = payload.from || readPath(payload, "email.from");
     normalized.subject = payload.subject || readPath(payload, "email.subject");
-    normalized.text = payload.text || payload.textBody || readPath(payload, "email.text");
-    normalized.html = payload.html || payload.htmlBody || readPath(payload, "email.html");
-    normalized.messageId = payload.email_id || payload.emailId || payload.message_id || payload.messageId || readPath(payload, "email.id");
-    normalized.providerEventId = payload.id || payload.email_id || payload.emailId || readPath(payload, "data.id");
-    normalized.receivedAt = payload.created_at || payload.createdAt || readPath(payload, "created_at");
+    normalized.text = payload.text || payload.textBody ||
+      readPath(payload, "email.text");
+    normalized.html = payload.html || payload.htmlBody ||
+      readPath(payload, "email.html");
+    normalized.messageId = payload.email_id || payload.emailId ||
+      payload.message_id || payload.messageId || readPath(payload, "email.id");
+    normalized.providerEventId = payload.id || payload.email_id ||
+      payload.emailId || readPath(payload, "data.id");
+    normalized.receivedAt = payload.created_at || payload.createdAt ||
+      readPath(payload, "created_at");
   } else if (provider === "amazon-ses") {
     normalized.to = sesMail.destination || sesCommonHeaders.to;
     normalized.from = sesMail.source || sesCommonHeaders.from;
@@ -358,7 +449,8 @@ function normalizeProviderPayload(payload: JsonRecord, headers: Headers) {
     normalized.html = payload.html;
     normalized.messageId = sesMail.messageId || payload.messageId;
     normalized.providerEventId = sesMail.messageId || payload.messageId;
-    normalized.receivedAt = sesMail.timestamp || payload.Timestamp || payload.timestamp;
+    normalized.receivedAt = sesMail.timestamp || payload.Timestamp ||
+      payload.timestamp;
   }
 
   return normalized;
@@ -431,10 +523,17 @@ const KNOWN_LEAD_EMAIL_LABELS = [
 ];
 
 function trimAtNextKnownLabel(value: string) {
-  const safeLabels = KNOWN_LEAD_EMAIL_LABELS.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const nextLabelPattern = new RegExp(`\\s+(?:legend\\s+)?(?:${safeLabels.join("|")})\\s*[:\\-]`, "i");
+  const safeLabels = KNOWN_LEAD_EMAIL_LABELS.map((label) =>
+    label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  );
+  const nextLabelPattern = new RegExp(
+    `\\s+(?:legend\\s+)?(?:${safeLabels.join("|")})\\s*[:\\-]`,
+    "i",
+  );
   const match = value.match(nextLabelPattern);
-  return normalizeText(match?.index === undefined ? value : value.slice(0, match.index));
+  return normalizeText(
+    match?.index === undefined ? value : value.slice(0, match.index),
+  );
 }
 
 function readLabelValue(text: string, labels: string[]) {
@@ -442,7 +541,12 @@ function readLabelValue(text: string, labels: string[]) {
     .sort((left, right) => right.length - left.length)
     .map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   if (!safeLabels.length) return "";
-  const pattern = new RegExp(`(?:^|\\n)\\s*(?:${safeLabels.join("|")})(?:\\s*[:\\-]\\s*|\\s*\\n\\s*)([^\\n\\r]+)`, "i");
+  const pattern = new RegExp(
+    `(?:^|\\n)\\s*(?:${
+      safeLabels.join("|")
+    })(?:\\s*[:\\-]\\s*|\\s*\\n\\s*)([^\\n\\r]+)`,
+    "i",
+  );
   const raw = normalizeText(text.match(pattern)?.[1] || "")
     .replace(/\s*\(\s*mailto:[^)]+\)/gi, " ")
     .replace(/\s*<https?:\/\/[^>]+>/gi, " ")
@@ -451,14 +555,24 @@ function readLabelValue(text: string, labels: string[]) {
 }
 
 function extractEmailAddress(text: string) {
-  return normalizeEmail(readLabelValue(text, ["email address", "email", "e-mail"]) || pickFirstMatch(text, [
-    /(?:email|e-mail)\s*[:\-]\s*([^\s<>,;]+@[^\s<>,;]+)/i,
-    /([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
-  ]));
+  return normalizeEmail(
+    readLabelValue(text, ["email address", "email", "e-mail"]) ||
+      pickFirstMatch(text, [
+        /(?:email|e-mail)\s*[:\-]\s*([^\s<>,;]+@[^\s<>,;]+)/i,
+        /([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
+      ]),
+  );
 }
 
 function extractPhone(text: string) {
-  const labelled = readLabelValue(text, ["phone", "mobile", "cell", "cellphone", "telephone", "contact number"]);
+  const labelled = readLabelValue(text, [
+    "phone",
+    "mobile",
+    "cell",
+    "cellphone",
+    "telephone",
+    "contact number",
+  ]);
   const fallback = labelled || pickFirstMatch(text, [
     /(\+?27[\s.-]?\d{2}[\s.-]?\d{3}[\s.-]?\d{4})/i,
     /(\b0\d{2}[\s.-]?\d{3}[\s.-]?\d{4}\b)/i,
@@ -467,7 +581,19 @@ function extractPhone(text: string) {
 }
 
 function extractName(text: string, fromName = "") {
-  return normalizeText(readLabelValue(text, ["name", "full name", "contact name", "customer", "customer name", "enquiry by", "enquired by", "enquirer", "sender"]) || fromName)
+  return normalizeText(
+    readLabelValue(text, [
+      "name",
+      "full name",
+      "contact name",
+      "customer",
+      "customer name",
+      "enquiry by",
+      "enquired by",
+      "enquirer",
+      "sender",
+    ]) || fromName,
+  )
     .replace(/\s*<[^>]+>\s*/g, "")
     .replace(/\s+\b(?:legend|fieldset|label)\b\s*$/i, "");
 }
@@ -518,16 +644,35 @@ function extractPropertyPrice(text: string) {
 }
 
 function extractMessage(text: string) {
-  const labelled = readLabelValue(text, ["message", "comments", "comment", "enquiry", "enquiry message", "buyer message", "notes"]);
+  const labelled = readLabelValue(text, [
+    "message",
+    "comments",
+    "comment",
+    "enquiry",
+    "enquiry message",
+    "buyer message",
+    "notes",
+  ]);
   if (labelled) return labelled;
-  const lines = normalizeBodyText(text).split("\n").map((line) => normalizeText(line)).filter(Boolean);
-  const messageStart = lines.findIndex((line) => /^(message|comments|comment|enquiry|notes)\s*[:\-]?$/i.test(line));
-  if (messageStart >= 0) return lines.slice(messageStart + 1, messageStart + 4).join("\n");
+  const lines = normalizeBodyText(text).split("\n").map((line) =>
+    normalizeText(line)
+  ).filter(Boolean);
+  const messageStart = lines.findIndex((line) =>
+    /^(message|comments|comment|enquiry|notes)\s*[:\-]?$/i.test(line)
+  );
+  if (messageStart >= 0) {
+    return lines.slice(messageStart + 1, messageStart + 4).join("\n");
+  }
   return "";
 }
 
 function extractBudget(text: string) {
-  const raw = readLabelValue(text, ["budget", "max budget", "price", "asking price"]);
+  const raw = readLabelValue(text, [
+    "budget",
+    "max budget",
+    "price",
+    "asking price",
+  ]);
   const amount = Number(String(raw).replace(/[^0-9.]/g, ""));
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
@@ -535,7 +680,9 @@ function extractBudget(text: string) {
 function normalizeLeadSource(value: unknown) {
   const key = normalizeLower(value).replace(/[^a-z0-9]+/g, "");
   if (key === "property24" || key === "p24") return "Property24";
-  if (key === "privateproperty" || key === "privatepropertysa") return "Private Property";
+  if (key === "privateproperty" || key === "privatepropertysa") {
+    return "Private Property";
+  }
   if (key === "website" || key === "web") return "Website";
   if (key === "facebook") return "Facebook";
   if (key === "whatsapp") return "WhatsApp";
@@ -543,14 +690,28 @@ function normalizeLeadSource(value: unknown) {
   return "Other";
 }
 
-function inferSource(alias: JsonRecord, fromEmail: string, subject: string, body: string) {
+function inferSource(
+  alias: JsonRecord,
+  fromEmail: string,
+  subject: string,
+  body: string,
+) {
   const aliasSource = normalizeText(alias.source);
-  if (aliasSource && aliasSource !== "General") return normalizeLeadSource(aliasSource);
+  if (aliasSource && aliasSource !== "General") {
+    return normalizeLeadSource(aliasSource);
+  }
   const haystack = `${fromEmail} ${subject} ${body}`.toLowerCase();
-  if (haystack.includes("property24") || haystack.includes("property 24")) return "Property24";
-  if (haystack.includes("privateproperty") || haystack.includes("private property")) return "Private Property";
+  if (haystack.includes("property24") || haystack.includes("property 24")) {
+    return "Property24";
+  }
+  if (
+    haystack.includes("privateproperty") ||
+    haystack.includes("private property")
+  ) return "Private Property";
   if (haystack.includes("facebook")) return "Facebook";
-  if (haystack.includes("website") || haystack.includes("web enquiry")) return "Website";
+  if (haystack.includes("website") || haystack.includes("web enquiry")) {
+    return "Website";
+  }
   return "Other";
 }
 
@@ -596,20 +757,29 @@ function buildParseResult({
     message: extractMessage(body) || body || subject,
     budget: extractBudget(body),
     areaInterest: readLabelValue(body, ["area", "suburb", "location"]),
-    propertyInterest: readLabelValue(body, ["property type", "property interest"]),
+    propertyInterest: readLabelValue(body, [
+      "property type",
+      "property interest",
+    ]),
     propertyAddress: extractPropertyAddress(body),
     propertyLink: extractFirstUrl(`${subject}\n${body}`),
     propertyPrice: extractPropertyPrice(body),
   };
-  const cleanFields = Object.fromEntries(Object.entries(fields).filter(([, value]) => {
-    if (typeof value === "number") return value > 0;
-    return normalizeText(value);
-  }));
+  const cleanFields = Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => {
+      if (typeof value === "number") return value > 0;
+      return normalizeText(value);
+    }),
+  );
   const matchedFields = { ...base, ...cleanFields, parserName, source };
   const warnings = [];
-  if (!matchedFields.email && !matchedFields.phone) warnings.push("missing_contact_details");
+  if (!matchedFields.email && !matchedFields.phone) {
+    warnings.push("missing_contact_details");
+  }
   if (!matchedFields.name) warnings.push("missing_contact_name");
-  if (!matchedFields.listingReference && !alias.listing_id) warnings.push("missing_listing_reference");
+  if (!matchedFields.listingReference && !alias.listing_id) {
+    warnings.push("missing_listing_reference");
+  }
   return {
     parserName,
     source,
@@ -629,7 +799,15 @@ function parseLeadEmailBySource(context: {
   source: string;
   input: JsonRecord;
 }) {
-  const source = normalizeLeadSource(context.source || inferSource(context.alias, context.fromEmail, context.subject, context.body));
+  const source = normalizeLeadSource(
+    context.source ||
+      inferSource(
+        context.alias,
+        context.fromEmail,
+        context.subject,
+        context.body,
+      ),
+  );
   const common = {
     ...context,
     source,
@@ -640,13 +818,33 @@ function parseLeadEmailBySource(context: {
       parserName: "property24_email",
       source: "Property24",
       fields: {
-        name: readLabelValue(context.body, ["enquiry by", "enquired by", "name", "contact name", "customer name"]) || extractName(context.body, context.fromName),
-        email: normalizeEmail(readLabelValue(context.body, ["email", "email address"])),
-        phone: (readLabelValue(context.body, ["telephone", "phone", "mobile", "contact number"]) || extractPhone(context.body)).replace(/[^\d+]/g, ""),
-        listingReference: extractListingReference(`${context.subject}\n${context.body}`),
-        message: readLabelValue(context.body, ["message", "comments", "enquiry"]) || extractMessage(context.body),
+        name: readLabelValue(context.body, [
+          "enquiry by",
+          "enquired by",
+          "name",
+          "contact name",
+          "customer name",
+        ]) || extractName(context.body, context.fromName),
+        email: normalizeEmail(
+          readLabelValue(context.body, ["email", "email address"]),
+        ),
+        phone: (readLabelValue(context.body, [
+          "telephone",
+          "phone",
+          "mobile",
+          "contact number",
+        ]) || extractPhone(context.body)).replace(/[^\d+]/g, ""),
+        listingReference: extractListingReference(
+          `${context.subject}\n${context.body}`,
+        ),
+        message:
+          readLabelValue(context.body, ["message", "comments", "enquiry"]) ||
+          extractMessage(context.body),
         areaInterest: readLabelValue(context.body, ["suburb", "area"]),
-        propertyInterest: readLabelValue(context.body, ["property type", "development"]),
+        propertyInterest: readLabelValue(context.body, [
+          "property type",
+          "development",
+        ]),
         propertyAddress: extractPropertyAddress(context.body),
         propertyLink: extractFirstUrl(`${context.subject}\n${context.body}`),
         propertyPrice: extractPropertyPrice(context.body),
@@ -660,11 +858,28 @@ function parseLeadEmailBySource(context: {
       parserName: "private_property_email",
       source: "Private Property",
       fields: {
-        name: readLabelValue(context.body, ["name", "contact name", "customer name", "enquirer"]) || extractName(context.body, context.fromName),
-        email: normalizeEmail(readLabelValue(context.body, ["email", "email address"])),
-        phone: (readLabelValue(context.body, ["cellphone", "cell", "phone", "mobile", "contact number"]) || extractPhone(context.body)).replace(/[^\d+]/g, ""),
-        listingReference: extractListingReference(`${context.subject}\n${context.body}`),
-        message: readLabelValue(context.body, ["message", "enquiry", "comment"]) || extractMessage(context.body),
+        name: readLabelValue(context.body, [
+          "name",
+          "contact name",
+          "customer name",
+          "enquirer",
+        ]) || extractName(context.body, context.fromName),
+        email: normalizeEmail(
+          readLabelValue(context.body, ["email", "email address"]),
+        ),
+        phone: (readLabelValue(context.body, [
+          "cellphone",
+          "cell",
+          "phone",
+          "mobile",
+          "contact number",
+        ]) || extractPhone(context.body)).replace(/[^\d+]/g, ""),
+        listingReference: extractListingReference(
+          `${context.subject}\n${context.body}`,
+        ),
+        message:
+          readLabelValue(context.body, ["message", "enquiry", "comment"]) ||
+          extractMessage(context.body),
         areaInterest: readLabelValue(context.body, ["suburb", "area"]),
         propertyInterest: readLabelValue(context.body, ["property type"]),
         propertyAddress: extractPropertyAddress(context.body),
@@ -682,13 +897,35 @@ function parseLeadEmailBySource(context: {
       parserName: "website_email",
       source: "Website",
       fields: {
-        name: [firstName, lastName].filter(Boolean).join(" ") || extractName(context.body, context.fromName),
-        email: normalizeEmail(readLabelValue(context.body, ["email", "email address"])),
-        phone: (readLabelValue(context.body, ["phone", "mobile", "cell", "contact number"]) || extractPhone(context.body)).replace(/[^\d+]/g, ""),
-        listingReference: extractListingReference(`${context.subject}\n${context.body}`),
-        message: readLabelValue(context.body, ["message", "comments", "enquiry", "notes"]) || extractMessage(context.body),
-        areaInterest: readLabelValue(context.body, ["area", "suburb", "location"]),
-        propertyInterest: readLabelValue(context.body, ["property type", "property interest"]),
+        name: [firstName, lastName].filter(Boolean).join(" ") ||
+          extractName(context.body, context.fromName),
+        email: normalizeEmail(
+          readLabelValue(context.body, ["email", "email address"]),
+        ),
+        phone: (readLabelValue(context.body, [
+          "phone",
+          "mobile",
+          "cell",
+          "contact number",
+        ]) || extractPhone(context.body)).replace(/[^\d+]/g, ""),
+        listingReference: extractListingReference(
+          `${context.subject}\n${context.body}`,
+        ),
+        message: readLabelValue(context.body, [
+          "message",
+          "comments",
+          "enquiry",
+          "notes",
+        ]) || extractMessage(context.body),
+        areaInterest: readLabelValue(context.body, [
+          "area",
+          "suburb",
+          "location",
+        ]),
+        propertyInterest: readLabelValue(context.body, [
+          "property type",
+          "property interest",
+        ]),
         propertyAddress: extractPropertyAddress(context.body),
         propertyLink: extractFirstUrl(`${context.subject}\n${context.body}`),
         propertyPrice: extractPropertyPrice(context.body),
@@ -701,7 +938,9 @@ function parseLeadEmailBySource(context: {
 
 async function parseRequestPayload(req: Request) {
   const contentType = normalizeLower(req.headers.get("content-type"));
-  if (contentType.includes("application/json")) return await req.json() as JsonRecord;
+  if (contentType.includes("application/json")) {
+    return await req.json() as JsonRecord;
+  }
   if (contentType.includes("form")) {
     const form = await req.formData();
     const payload: JsonRecord = {};
@@ -713,7 +952,12 @@ async function parseRequestPayload(req: Request) {
   return { raw: await req.text() };
 }
 
-function normalizeInboundPayload(payload: JsonRecord, headers: Headers, webhookReceivedAt: string, signatureStatus: string) {
+function normalizeInboundPayload(
+  payload: JsonRecord,
+  headers: Headers,
+  webhookReceivedAt: string,
+  signatureStatus: string,
+) {
   const normalizedPayload = normalizeProviderPayload(payload, headers);
   const toAddresses = parseAddressList(pickFirst(payload, [
     "to",
@@ -725,13 +969,45 @@ function normalizeInboundPayload(payload: JsonRecord, headers: Headers, webhookR
     "Envelope.To",
   ]));
   const normalizedToAddresses = parseAddressList(normalizedPayload.to);
-  const ccAddresses = parseAddressList(pickFirst(normalizedPayload, ["cc", "Cc"]));
-  const fromRaw = pickFirst(normalizedPayload, ["from", "From", "sender", "Sender"]);
-  const fromEmail = normalizeEmail(pickFirst(normalizedPayload, ["from_email", "fromEmail", "sender.email"]) || fromRaw);
-  const fromName = normalizeText(pickFirst(normalizedPayload, ["from_name", "fromName", "sender.name"]));
-  const subject = normalizeText(pickFirst(normalizedPayload, ["subject", "Subject"]));
-  const textBody = normalizeText(pickFirst(normalizedPayload, ["text", "TextBody", "text_body", "textBody", "body", "stripped-text"]));
-  const htmlBody = normalizeText(pickFirst(normalizedPayload, ["html", "HtmlBody", "html_body", "htmlBody", "body-html", "stripped-html"]));
+  const ccAddresses = parseAddressList(
+    pickFirst(normalizedPayload, ["cc", "Cc"]),
+  );
+  const fromRaw = pickFirst(normalizedPayload, [
+    "from",
+    "From",
+    "sender",
+    "Sender",
+  ]);
+  const fromEmail = normalizeEmail(
+    pickFirst(normalizedPayload, ["from_email", "fromEmail", "sender.email"]) ||
+      fromRaw,
+  );
+  const fromName = normalizeText(
+    pickFirst(normalizedPayload, ["from_name", "fromName", "sender.name"]),
+  );
+  const subject = normalizeText(
+    pickFirst(normalizedPayload, ["subject", "Subject"]),
+  );
+  const textBody = normalizeText(
+    pickFirst(normalizedPayload, [
+      "text",
+      "TextBody",
+      "text_body",
+      "textBody",
+      "body",
+      "stripped-text",
+    ]),
+  );
+  const htmlBody = normalizeText(
+    pickFirst(normalizedPayload, [
+      "html",
+      "HtmlBody",
+      "html_body",
+      "htmlBody",
+      "body-html",
+      "stripped-html",
+    ]),
+  );
   const providerMessageId = normalizeText(pickFirst(normalizedPayload, [
     "message_id",
     "messageId",
@@ -740,17 +1016,38 @@ function normalizeInboundPayload(payload: JsonRecord, headers: Headers, webhookR
     "MessageID",
     "id",
   ]));
-  const providerEventId = normalizeText(pickFirst(normalizedPayload, ["providerEventId", "eventId", "event_id", "id"]));
-  const providerReceivedAt = normalizeTimestamp(pickFirst(normalizedPayload, ["receivedAt", "received_at", "Date", "date", "timestamp"]));
+  const providerEventId = normalizeText(
+    pickFirst(normalizedPayload, [
+      "providerEventId",
+      "eventId",
+      "event_id",
+      "id",
+    ]),
+  );
+  const providerReceivedAt = normalizeTimestamp(
+    pickFirst(normalizedPayload, [
+      "receivedAt",
+      "received_at",
+      "Date",
+      "date",
+      "timestamp",
+    ]),
+  );
 
   return {
-    provider: normalizeProviderName(normalizedPayload.provider || payload.provider),
+    provider: normalizeProviderName(
+      normalizedPayload.provider || payload.provider,
+    ),
     providerMessageId: providerMessageId || createUuid(),
     providerEventId,
     fromEmail,
     fromName,
-    replyToEmail: normalizeEmail(pickFirst(normalizedPayload, ["reply_to", "replyTo", "Reply-To"])),
-    toAddresses: normalizedToAddresses.length ? normalizedToAddresses : toAddresses,
+    replyToEmail: normalizeEmail(
+      pickFirst(normalizedPayload, ["reply_to", "replyTo", "Reply-To"]),
+    ),
+    toAddresses: normalizedToAddresses.length
+      ? normalizedToAddresses
+      : toAddresses,
     ccAddresses,
     subject,
     textBody,
@@ -764,8 +1061,13 @@ function normalizeInboundPayload(payload: JsonRecord, headers: Headers, webhookR
   };
 }
 
-function buildCanonicalPayload(inbound: ReturnType<typeof normalizeInboundPayload>, alias: JsonRecord) {
-  const body = normalizeBodyText(inbound.textBody || stripHtml(inbound.htmlBody));
+function buildCanonicalPayload(
+  inbound: ReturnType<typeof normalizeInboundPayload>,
+  alias: JsonRecord,
+) {
+  const body = normalizeBodyText(
+    inbound.textBody || stripHtml(inbound.htmlBody),
+  );
   const source = inferSource(alias, inbound.fromEmail, inbound.subject, body);
   const parseResult = parseLeadEmailBySource({
     alias,
@@ -779,15 +1081,19 @@ function buildCanonicalPayload(inbound: ReturnType<typeof normalizeInboundPayloa
   const parsedFields = (parseResult.fields || {}) as JsonRecord;
   const listingReference = normalizeText(parsedFields.listingReference);
   const propertyAddress = normalizeText(parsedFields.propertyAddress);
-  const propertyInterest = normalizeText(parsedFields.propertyInterest) || propertyAddress;
-  const propertyTitle = normalizeText(parsedFields.propertyTitle) || [propertyInterest, listingReference].filter(Boolean).join(" - ");
+  const propertyInterest = normalizeText(parsedFields.propertyInterest) ||
+    propertyAddress;
+  const propertyTitle = normalizeText(parsedFields.propertyTitle) ||
+    [propertyInterest, listingReference].filter(Boolean).join(" - ");
   const propertyPrice = Number(parsedFields.propertyPrice || 0) || 0;
   return {
     organisationId: normalizeText(alias.organisation_id),
     source: normalizeText(parseResult.source) || source,
     externalReference: inbound.providerMessageId,
     name: normalizeText(parsedFields.name),
-    email: normalizeEmail(parsedFields.email || inbound.replyToEmail || inbound.fromEmail),
+    email: normalizeEmail(
+      parsedFields.email || inbound.replyToEmail || inbound.fromEmail,
+    ),
     phone: normalizeText(parsedFields.phone),
     message: normalizeText(parsedFields.message) || body || inbound.subject,
     listingId: normalizeText(alias.listing_id),
@@ -819,15 +1125,28 @@ function buildCanonicalPayload(inbound: ReturnType<typeof normalizeInboundPayloa
   };
 }
 
-async function insertWithColumnFallback(client: SupabaseClientLike, table: string, payload: JsonRecord, optionalColumns: string[]) {
+async function insertWithColumnFallback(
+  client: SupabaseClientLike,
+  table: string,
+  payload: JsonRecord,
+  optionalColumns: string[],
+) {
   const workingPayload = { ...payload };
   const remainingOptionalColumns = new Set(optionalColumns);
   for (let attempt = 0; attempt <= optionalColumns.length; attempt += 1) {
-    const result = await client.from(table).insert(workingPayload).select("*").single();
+    const result = await client.from(table).insert(workingPayload).select("*")
+      .single();
     if (!result.error) return result.data as JsonRecord;
-    if (!isMissingColumnError(result.error) || attempt === optionalColumns.length) throw result.error;
-    const missingColumn = missingColumnName(result.error, [...remainingOptionalColumns]);
-    const columnToRemove = missingColumn || [...remainingOptionalColumns].find((column) => column in workingPayload) || "";
+    if (
+      !isMissingColumnError(result.error) || attempt === optionalColumns.length
+    ) throw result.error;
+    const missingColumn = missingColumnName(result.error, [
+      ...remainingOptionalColumns,
+    ]);
+    const columnToRemove = missingColumn ||
+      [...remainingOptionalColumns].find((column) =>
+        column in workingPayload
+      ) || "";
     if (!columnToRemove) throw result.error;
     delete workingPayload[columnToRemove];
     remainingOptionalColumns.delete(columnToRemove);
@@ -847,9 +1166,16 @@ async function updateWithColumnFallback(
   for (let attempt = 0; attempt <= optionalColumns.length; attempt += 1) {
     const result = await applyFilter(client.from(table).update(workingPayload));
     if (!result.error) return result.data as JsonRecord | null;
-    if (!isMissingColumnError(result.error) || attempt === optionalColumns.length) throw result.error;
-    const missingColumn = missingColumnName(result.error, [...remainingOptionalColumns]);
-    const columnToRemove = missingColumn || [...remainingOptionalColumns].find((column) => column in workingPayload) || "";
+    if (
+      !isMissingColumnError(result.error) || attempt === optionalColumns.length
+    ) throw result.error;
+    const missingColumn = missingColumnName(result.error, [
+      ...remainingOptionalColumns,
+    ]);
+    const columnToRemove = missingColumn ||
+      [...remainingOptionalColumns].find((column) =>
+        column in workingPayload
+      ) || "";
     if (!columnToRemove) throw result.error;
     delete workingPayload[columnToRemove];
     remainingOptionalColumns.delete(columnToRemove);
@@ -857,9 +1183,17 @@ async function updateWithColumnFallback(
   throw new Error(`Unable to update ${table}.`);
 }
 
-async function insertInboundEmail(client: SupabaseClientLike, payload: JsonRecord) {
+async function insertInboundEmail(
+  client: SupabaseClientLike,
+  payload: JsonRecord,
+) {
   try {
-    const row = await insertWithColumnFallback(client, "inbound_lead_emails", payload, OPTIONAL_INBOUND_EMAIL_COLUMNS);
+    const row = await insertWithColumnFallback(
+      client,
+      "inbound_lead_emails",
+      payload,
+      OPTIONAL_INBOUND_EMAIL_COLUMNS,
+    );
     return { row, duplicate: false };
   } catch (error) {
     if (!isUniqueViolationError(error)) throw error;
@@ -878,7 +1212,12 @@ async function insertInboundEmail(client: SupabaseClientLike, payload: JsonRecor
   }
 }
 
-async function findExistingContact(client: SupabaseClientLike, organisationId: string, email: string, phone: string) {
+async function findExistingContact(
+  client: SupabaseClientLike,
+  organisationId: string,
+  email: string,
+  phone: string,
+) {
   if (email) {
     const { data, error } = await client
       .from("contacts")
@@ -904,13 +1243,22 @@ async function findExistingContact(client: SupabaseClientLike, organisationId: s
   return null;
 }
 
-async function createLeadFromEmail(client: SupabaseClientLike, canonical: JsonRecord) {
+async function createLeadFromEmail(
+  client: SupabaseClientLike,
+  canonical: JsonRecord,
+) {
   const organisationId = normalizeText(canonical.organisationId);
   const email = normalizeEmail(canonical.email);
   const phone = normalizeText(canonical.phone);
   const nameParts = normalizeText(canonical.name).split(/\s+/).filter(Boolean);
-  if (!organisationId || !isUuidLike(organisationId)) throw new Error("A valid organisation id is required.");
-  if (!email && !phone) throw new Error("Lead email capture needs a customer email or phone number.");
+  if (!organisationId || !isUuidLike(organisationId)) {
+    throw new Error("A valid organisation id is required.");
+  }
+  if (!email && !phone) {
+    throw new Error(
+      "Lead email capture needs a customer email or phone number.",
+    );
+  }
 
   const existingLog = await client
     .from("lead_ingestion_logs")
@@ -922,16 +1270,27 @@ async function createLeadFromEmail(client: SupabaseClientLike, canonical: JsonRe
     .maybeSingle();
   if (existingLog.error) throw existingLog.error;
   if (existingLog.data?.lead_id) {
-    return { status: "duplicate", leadId: existingLog.data.lead_id, contactId: existingLog.data.contact_id };
+    return {
+      status: "duplicate",
+      leadId: existingLog.data.lead_id,
+      contactId: existingLog.data.contact_id,
+    };
   }
 
-  const existingContact = await findExistingContact(client, organisationId, email, phone);
+  const existingContact = await findExistingContact(
+    client,
+    organisationId,
+    email,
+    phone,
+  );
   const contactId = normalizeText(existingContact?.contact_id) || createUuid();
   if (!existingContact) {
     const contactPayload = {
       contact_id: contactId,
       organisation_id: organisationId,
-      assigned_agent_id: isUuidLike(canonical.assignedAgentId) ? canonical.assignedAgentId : null,
+      assigned_agent_id: isUuidLike(canonical.assignedAgentId)
+        ? canonical.assignedAgentId
+        : null,
       first_name: nameParts[0] || "Lead",
       last_name: nameParts.slice(1).join(" "),
       phone: phone || null,
@@ -960,9 +1319,15 @@ async function createLeadFromEmail(client: SupabaseClientLike, canonical: JsonRe
     lead_id: leadId,
     organisation_id: organisationId,
     branch_id: isUuidLike(canonical.branchId) ? canonical.branchId : null,
-    assigned_user_id: isUuidLike(canonical.assignedAgentId) ? canonical.assignedAgentId : null,
-    created_by: isUuidLike(canonical.assignedAgentId) ? canonical.assignedAgentId : null,
-    assigned_agent_id: isUuidLike(canonical.assignedAgentId) ? canonical.assignedAgentId : null,
+    assigned_user_id: isUuidLike(canonical.assignedAgentId)
+      ? canonical.assignedAgentId
+      : null,
+    created_by: isUuidLike(canonical.assignedAgentId)
+      ? canonical.assignedAgentId
+      : null,
+    assigned_agent_id: isUuidLike(canonical.assignedAgentId)
+      ? canonical.assignedAgentId
+      : null,
     assigned_agent_email: null,
     contact_id: contactId,
     lead_category: "buyer",
@@ -975,16 +1340,27 @@ async function createLeadFromEmail(client: SupabaseClientLike, canonical: JsonRe
     area_interest: normalizeText(canonical.areaInterest) || null,
     property_interest: normalizeText(canonical.propertyInterest) || null,
     listing_id: isUuidLike(canonical.listingId) ? canonical.listingId : null,
-    enquired_listing_id: isUuidLike(canonical.listingId) ? canonical.listingId : null,
-    enquired_property_title: normalizeText(canonical.enquiredPropertyTitle) || null,
-    enquired_property_address: normalizeText(canonical.enquiredPropertyAddress) || null,
-    enquired_property_price: Number(canonical.enquiredPropertyPrice || 0) || null,
-    source_reference_id: normalizeText(canonical.sourceReferenceId) || normalizeText(canonical.externalReference) || null,
+    enquired_listing_id: isUuidLike(canonical.listingId)
+      ? canonical.listingId
+      : null,
+    enquired_property_title: normalizeText(canonical.enquiredPropertyTitle) ||
+      null,
+    enquired_property_address:
+      normalizeText(canonical.enquiredPropertyAddress) || null,
+    enquired_property_price: Number(canonical.enquiredPropertyPrice || 0) ||
+      null,
+    source_reference_id: normalizeText(canonical.sourceReferenceId) ||
+      normalizeText(canonical.externalReference) || null,
     raw_enquiry_payload: canonical.rawPayload || {},
     notes: normalizeText(canonical.message) || null,
     updated_at: now,
   };
-  await insertWithColumnFallback(client, "leads", leadPayload, OPTIONAL_LEAD_COLUMNS);
+  await insertWithColumnFallback(
+    client,
+    "leads",
+    leadPayload,
+    OPTIONAL_LEAD_COLUMNS,
+  );
 
   const logPayload = {
     log_id: createUuid(),
@@ -996,15 +1372,29 @@ async function createLeadFromEmail(client: SupabaseClientLike, canonical: JsonRe
     lead_id: leadId,
     contact_id: contactId,
     listing_id: isUuidLike(canonical.listingId) ? canonical.listingId : null,
-    assigned_agent_id: isUuidLike(canonical.assignedAgentId) ? canonical.assignedAgentId : null,
-    review_status: (Number(canonical.parseConfidence || 0) < 0.65 || canonical.listingReference && !canonical.listingId) ? "needs_review" : null,
+    assigned_agent_id: isUuidLike(canonical.assignedAgentId)
+      ? canonical.assignedAgentId
+      : null,
+    review_status: (Number(canonical.parseConfidence || 0) < 0.65 ||
+        canonical.listingReference && !canonical.listingId)
+      ? "needs_review"
+      : null,
     processed_at: now,
     error: [
-      canonical.listingReference && !canonical.listingId ? "Unknown listing: original enquiry listing could not be resolved." : "",
-      Number(canonical.parseConfidence || 0) < 0.65 ? "Low parser confidence." : "",
+      canonical.listingReference && !canonical.listingId
+        ? "Unknown listing: original enquiry listing could not be resolved."
+        : "",
+      Number(canonical.parseConfidence || 0) < 0.65
+        ? "Low parser confidence."
+        : "",
     ].filter(Boolean).join(" ") || null,
   };
-  await insertWithColumnFallback(client, "lead_ingestion_logs", logPayload, OPTIONAL_LOG_COLUMNS);
+  await insertWithColumnFallback(
+    client,
+    "lead_ingestion_logs",
+    logPayload,
+    OPTIONAL_LOG_COLUMNS,
+  );
 
   return { status: "processed", leadId, contactId };
 }
@@ -1020,7 +1410,9 @@ async function recordFailure(client: SupabaseClientLike, patch: JsonRecord) {
     payload: patch.payload || {},
     parser_name: patch.parserName || null,
     parse_confidence: patch.parseConfidence || null,
-    parse_warnings: Array.isArray(patch.parseWarnings) ? patch.parseWarnings : [],
+    parse_warnings: Array.isArray(patch.parseWarnings)
+      ? patch.parseWarnings
+      : [],
   });
 }
 
@@ -1040,7 +1432,9 @@ async function recordLeadAcknowledgementActivity(
     outcome?: string;
   },
 ) {
-  if (!isUuidLike(organisationId) || !isUuidLike(leadId) || !normalizeText(note)) return;
+  if (
+    !isUuidLike(organisationId) || !isUuidLike(leadId) || !normalizeText(note)
+  ) return;
   const insert = await client.from("lead_activities").insert({
     activity_id: createUuid(),
     organisation_id: organisationId,
@@ -1051,7 +1445,9 @@ async function recordLeadAcknowledgementActivity(
     activity_date: new Date().toISOString(),
     outcome: normalizeText(outcome) || null,
   });
-  if (insert.error && !isMissingTableError(insert.error, "lead_activities")) throw insert.error;
+  if (insert.error && !isMissingTableError(insert.error, "lead_activities")) {
+    throw insert.error;
+  }
 }
 
 async function updateLeadAcknowledgementStatus(
@@ -1076,17 +1472,30 @@ async function updateLeadAcknowledgementStatus(
   }
 }
 
-async function fetchSingleById(client: SupabaseClientLike, table: string, column: string, value: string) {
+async function fetchSingleById(
+  client: SupabaseClientLike,
+  table: string,
+  column: string,
+  value: string,
+) {
   if (!value) return null;
-  const result = await client.from(table).select("*").eq(column, value).limit(1).maybeSingle();
+  const result = await client.from(table).select("*").eq(column, value).limit(1)
+    .maybeSingle();
   if (result.error) {
-    if (isMissingTableError(result.error, table) || isMissingColumnError(result.error)) return null;
+    if (
+      isMissingTableError(result.error, table) ||
+      isMissingColumnError(result.error)
+    ) return null;
     throw result.error;
   }
   return (result.data || null) as JsonRecord | null;
 }
 
-async function fetchOrganisationMember(client: SupabaseClientLike, organisationId: string, userId: string) {
+async function fetchOrganisationMember(
+  client: SupabaseClientLike,
+  organisationId: string,
+  userId: string,
+) {
   if (!isUuidLike(organisationId) || !isUuidLike(userId)) return null;
   const result = await client
     .from("organisation_users")
@@ -1096,7 +1505,10 @@ async function fetchOrganisationMember(client: SupabaseClientLike, organisationI
     .limit(1)
     .maybeSingle();
   if (result.error) {
-    if (isMissingTableError(result.error, "organisation_users") || isMissingColumnError(result.error)) return null;
+    if (
+      isMissingTableError(result.error, "organisation_users") ||
+      isMissingColumnError(result.error)
+    ) return null;
     throw result.error;
   }
   return (result.data || null) as JsonRecord | null;
@@ -1113,21 +1525,128 @@ function resolveOrganisationEmail(organisation: JsonRecord | null) {
 }
 
 function resolveBranchEmail(branch: JsonRecord | null) {
-  return normalizeEmail(pickText(branch?.lead_inbox_email, branch?.email, branch?.branch_email));
+  return normalizeEmail(
+    pickText(branch?.lead_inbox_email, branch?.email, branch?.branch_email),
+  );
 }
 
-function buildAgentContext(profile: JsonRecord | null, membership: JsonRecord | null, organisationName: string) {
-  const firstName = pickText(profile?.first_name, firstNameFrom(profile?.full_name));
+function getAppBaseUrl() {
+  return pickText(
+    Deno.env.get("PUBLIC_APP_URL"),
+    Deno.env.get("CLIENT_APP_URL"),
+    Deno.env.get("APP_BASE_URL"),
+    Deno.env.get("VITE_PUBLIC_APP_URL"),
+    Deno.env.get("VITE_APP_BASE_URL"),
+    "https://app.arch9.co.za",
+  ).replace(/\/+$/, "");
+}
+
+function buildLeadActionLink(leadId: string) {
+  return `${getAppBaseUrl()}/agency/leads/${encodeURIComponent(leadId)}`;
+}
+
+function roleKey(row: JsonRecord | null) {
+  return normalizeLower(
+    row?.workspace_role || row?.organisation_role || row?.role || row?.app_role,
+  ).replace(/[\s-]+/g, "_");
+}
+
+function isManagerRole(row: JsonRecord | null) {
+  return [
+    "owner",
+    "principal",
+    "agency_principal",
+    "admin",
+    "super_admin",
+    "branch_manager",
+    "agency_manager",
+    "manager",
+  ].includes(roleKey(row));
+}
+
+function memberDisplayName(row: JsonRecord | null, fallback = "") {
+  return pickText(
+    [row?.first_name, row?.last_name].map(normalizeText).filter(Boolean).join(
+      " ",
+    ),
+    row?.name,
+    row?.full_name,
+    row?.email,
+    fallback,
+  );
+}
+
+async function fetchLeadManagerRecipients(
+  client: SupabaseClientLike,
+  organisationId: string,
+  branchId = "",
+) {
+  if (!isUuidLike(organisationId)) return [];
+  const result = await client
+    .from("organisation_users")
+    .select("*")
+    .eq("organisation_id", organisationId)
+    .limit(50);
+  if (result.error) {
+    if (
+      isMissingTableError(result.error, "organisation_users") ||
+      isMissingColumnError(result.error)
+    ) return [];
+    throw result.error;
+  }
+  const rows = Array.isArray(result.data) ? result.data as JsonRecord[] : [];
+  const activeRows = rows.filter((row) =>
+    !normalizeText(row.status) ||
+    ["active", "accepted"].includes(normalizeLower(row.status))
+  );
+  const scoped = activeRows.filter((row) => {
+    const email = normalizeEmail(row.email);
+    const rowBranch = normalizeText(row.branch_id);
+    return email && isManagerRole(row) &&
+      (!branchId || !rowBranch || rowBranch === branchId);
+  });
+  const managers = scoped.length
+    ? scoped
+    : activeRows.filter((row) =>
+      normalizeEmail(row.email) && isManagerRole(row)
+    );
+  return managers.slice(0, 5);
+}
+
+function buildAgentContext(
+  profile: JsonRecord | null,
+  membership: JsonRecord | null,
+  organisationName: string,
+) {
+  const firstName = pickText(
+    profile?.first_name,
+    firstNameFrom(profile?.full_name),
+  );
   const lastName = pickText(profile?.last_name);
-  const fullName = pickText(profile?.full_name, [firstName, lastName].filter(Boolean).join(" "), profile?.email);
+  const fullName = pickText(
+    profile?.full_name,
+    [firstName, lastName].filter(Boolean).join(" "),
+    profile?.email,
+  );
   return {
     name: fullName,
     firstName: firstNameFrom(firstName || fullName),
     email: normalizeEmail(profile?.email),
     phone: pickText(profile?.phone_number, profile?.phone, profile?.mobile),
-    avatarUrl: safeUrl(pickText(profile?.avatar_url, profile?.profile_image_url, profile?.photo_url)),
-    jobTitle: jobTitleLabel(pickText(membership?.job_title, profile?.title, profile?.job_title)) || "Property Practitioner",
-    bio: cleanPublicText(profile?.bio, 250) || `${fullName || "The agent"} is a property practitioner at ${organisationName} and will assist you with your enquiry.`,
+    avatarUrl: safeUrl(
+      pickText(
+        profile?.avatar_url,
+        profile?.profile_image_url,
+        profile?.photo_url,
+      ),
+    ),
+    jobTitle: jobTitleLabel(
+      pickText(membership?.job_title, profile?.title, profile?.job_title),
+    ) || "Property Practitioner",
+    bio: cleanPublicText(profile?.bio, 250) ||
+      `${
+        fullName || "The agent"
+      } is a property practitioner at ${organisationName} and will assist you with your enquiry.`,
   };
 }
 
@@ -1143,7 +1662,9 @@ function resolveReplyTo({
   organisationEmail: string;
 }) {
   if (mode === "branch") return branchEmail || organisationEmail || agentEmail;
-  if (mode === "organisation") return organisationEmail || branchEmail || agentEmail;
+  if (mode === "organisation") {
+    return organisationEmail || branchEmail || agentEmail;
+  }
   return agentEmail || organisationEmail || branchEmail;
 }
 
@@ -1257,7 +1778,9 @@ async function markAcknowledgementOutbox(
       updated_at: new Date().toISOString(),
     })
     .eq("id", normalizeText(eventId));
-  if (update.error && !isMissingTableError(update.error, "notification_events")) throw update.error;
+  if (
+    update.error && !isMissingTableError(update.error, "notification_events")
+  ) throw update.error;
 }
 
 async function invokeSendEmailFunction({
@@ -1269,18 +1792,24 @@ async function invokeSendEmailFunction({
   serviceRoleKey: string;
   payload: JsonRecord;
 }) {
-  const response = await fetch(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/send-email`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${serviceRoleKey}`,
-      apikey: serviceRoleKey,
-      "Content-Type": "application/json",
+  const response = await fetch(
+    `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/send-email`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        apikey: serviceRoleKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
+  );
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data?.ok === false || data?.error) {
-    throw new Error(normalizeText(data?.error) || `send-email returned HTTP ${response.status}`);
+    throw new Error(
+      normalizeText(data?.error) ||
+        `send-email returned HTTP ${response.status}`,
+    );
   }
   return data as JsonRecord;
 }
@@ -1305,7 +1834,9 @@ async function dispatchLeadAcknowledgementEmail({
   const organisationId = normalizeText(canonical.organisationId);
   const recipient = normalizeEmail(canonical.email);
   const agentId = normalizeText(canonical.assignedAgentId);
-  const dedupeKey = `lead-acknowledgement:${organisationId}:${normalizeText(inbound.providerMessageId || inboundEmailId || leadId)}`;
+  const dedupeKey = `lead-acknowledgement:${organisationId}:${
+    normalizeText(inbound.providerMessageId || inboundEmailId || leadId)
+  }`;
   const lead = await fetchSingleById(client, "leads", "lead_id", leadId);
   const attemptCount = Number(lead?.acknowledgement_attempt_count || 0) || 0;
 
@@ -1326,42 +1857,81 @@ async function dispatchLeadAcknowledgementEmail({
   };
 
   if (!isValidEmail(recipient)) {
-    return await skip("invalid_lead_email", "Acknowledgement email skipped because the lead did not have a valid email address.");
+    return await skip(
+      "invalid_lead_email",
+      "Acknowledgement email skipped because the lead did not have a valid email address.",
+    );
   }
 
-  if (["sent", "queued"].includes(normalizeLower(lead?.acknowledgement_status))) {
+  if (
+    ["sent", "queued"].includes(normalizeLower(lead?.acknowledgement_status))
+  ) {
     return { status: "duplicate", reason: "acknowledgement_already_processed" };
   }
 
-  const organisation = await fetchSingleById(client, "organisations", "id", organisationId);
+  const organisation = await fetchSingleById(
+    client,
+    "organisations",
+    "id",
+    organisationId,
+  );
   if (!organisation) {
-    return await skip("missing_organisation", "Acknowledgement email skipped because the organisation could not be resolved.");
+    return await skip(
+      "missing_organisation",
+      "Acknowledgement email skipped because the organisation could not be resolved.",
+    );
   }
   if (organisation.automatic_lead_acknowledgement_enabled === false) {
-    return await skip("organisation_disabled", "Acknowledgement email skipped because automatic acknowledgements are disabled for this organisation.");
+    return await skip(
+      "organisation_disabled",
+      "Acknowledgement email skipped because automatic acknowledgements are disabled for this organisation.",
+    );
   }
 
-  const membership = await fetchOrganisationMember(client, organisationId, agentId);
-  const profile = membership ? await fetchSingleById(client, "profiles", "id", agentId) : null;
-  const organisationName = pickText(organisation.name, organisation.display_name, organisation.legal_name, "Arch9");
+  const membership = await fetchOrganisationMember(
+    client,
+    organisationId,
+    agentId,
+  );
+  const profile = membership
+    ? await fetchSingleById(client, "profiles", "id", agentId)
+    : null;
+  const organisationName = pickText(
+    organisation.name,
+    organisation.display_name,
+    organisation.legal_name,
+    "Arch9",
+  );
   const agent = buildAgentContext(profile, membership, organisationName);
   if (!membership || !agent.name || !isValidEmail(agent.email)) {
-    return await skip("missing_assigned_agent", "Acknowledgement email skipped because no valid assigned agent was available.");
+    return await skip(
+      "missing_assigned_agent",
+      "Acknowledgement email skipped because no valid assigned agent was available.",
+    );
   }
 
   const branch = isUuidLike(canonical.branchId)
-    ? await fetchSingleById(client, "organisation_branches", "id", normalizeText(canonical.branchId))
+    ? await fetchSingleById(
+      client,
+      "organisation_branches",
+      "id",
+      normalizeText(canonical.branchId),
+    )
     : null;
   const organisationEmail = resolveOrganisationEmail(organisation);
   const branchEmail = resolveBranchEmail(branch);
   const replyTo = resolveReplyTo({
-    mode: normalizeText(organisation.lead_acknowledgement_reply_to_mode) || "assigned_agent",
+    mode: normalizeText(organisation.lead_acknowledgement_reply_to_mode) ||
+      "assigned_agent",
     agentEmail: agent.email,
     branchEmail,
     organisationEmail,
   });
   if (!isValidEmail(replyTo)) {
-    return await skip("missing_reply_to", "Acknowledgement email skipped because no valid reply-to address was available.");
+    return await skip(
+      "missing_reply_to",
+      "Acknowledgement email skipped because no valid reply-to address was available.",
+    );
   }
 
   const subject = "Thanks for your property enquiry";
@@ -1375,13 +1945,27 @@ async function dispatchLeadAcknowledgementEmail({
     leadId,
     recipientName: normalizeText(canonical.name),
     organisationName,
-    organisationLogoUrl: safeUrl(pickText(organisation.logo_url, organisation.logoUrl, organisation.brand_logo_url)),
+    organisationLogoUrl: safeUrl(
+      pickText(
+        organisation.logo_url,
+        organisation.logoUrl,
+        organisation.brand_logo_url,
+      ),
+    ),
     organisationTagline: pickText(organisation.tagline, organisation.slogan),
     organisationPhone: pickText(organisation.phone, organisation.company_phone),
     organisationEmail: organisationEmail,
     organisationWebsite: pickText(organisation.website),
-    organisationBrandPrimaryColor: pickText(organisation.brand_primary_colour, organisation.primary_colour, organisation.brand_primary_color),
-    organisationBrandSecondaryColor: pickText(organisation.brand_secondary_colour, organisation.secondary_colour, organisation.brand_secondary_color),
+    organisationBrandPrimaryColor: pickText(
+      organisation.brand_primary_colour,
+      organisation.primary_colour,
+      organisation.brand_primary_color,
+    ),
+    organisationBrandSecondaryColor: pickText(
+      organisation.brand_secondary_colour,
+      organisation.secondary_colour,
+      organisation.brand_secondary_color,
+    ),
     enquiryReceivedAt: inbound.receivedAt || new Date().toISOString(),
     timezone: pickText(organisation.timezone, "Africa/Johannesburg"),
     source: normalizeText(canonical.source),
@@ -1393,9 +1977,17 @@ async function dispatchLeadAcknowledgementEmail({
     agentJobTitle: agent.jobTitle,
     agentBio: agent.bio,
     agentAvatarUrl: agent.avatarUrl,
-    responseExpectation: normalizeText(organisation.lead_acknowledgement_response_expectation) || "as_soon_as_possible",
-    customResponseText: cleanPublicText(organisation.lead_acknowledgement_custom_response_text, 240),
-    fromName: pickText(organisation.lead_acknowledgement_sender_name, organisationName),
+    responseExpectation:
+      normalizeText(organisation.lead_acknowledgement_response_expectation) ||
+      "as_soon_as_possible",
+    customResponseText: cleanPublicText(
+      organisation.lead_acknowledgement_custom_response_text,
+      240,
+    ),
+    fromName: pickText(
+      organisation.lead_acknowledgement_sender_name,
+      organisationName,
+    ),
   };
 
   const metadata = {
@@ -1422,11 +2014,22 @@ async function dispatchLeadAcknowledgementEmail({
       metadata,
     });
   } catch (outboxError) {
-    console.warn("[inbound-lead-email] acknowledgement outbox unavailable; continuing with idempotent direct send", outboxError);
+    console.warn(
+      "[inbound-lead-email] acknowledgement outbox unavailable; continuing with idempotent direct send",
+      outboxError,
+    );
   }
-  if (outbox?.alreadyPrepared && ["sent", "delivered", "queued", "prepared"].includes(normalizeLower(outbox.status))) {
+  if (
+    outbox?.alreadyPrepared &&
+    ["sent", "delivered", "queued", "prepared"].includes(
+      normalizeLower(outbox.status),
+    )
+  ) {
     await updateLeadAcknowledgementStatus(client, leadId, {
-      acknowledgement_status: ["sent", "delivered"].includes(normalizeLower(outbox.status)) ? "sent" : "queued",
+      acknowledgement_status:
+        ["sent", "delivered"].includes(normalizeLower(outbox.status))
+          ? "sent"
+          : "queued",
       acknowledgement_sent_at: outbox.sent_at || null,
       acknowledgement_message_id: outbox.provider_message_id || null,
       acknowledgement_failure_reason: null,
@@ -1442,8 +2045,14 @@ async function dispatchLeadAcknowledgementEmail({
   });
 
   try {
-    const sendResult = await invokeSendEmailFunction({ supabaseUrl, serviceRoleKey, payload: emailPayload });
-    const providerMessageId = normalizeText(sendResult.providerMessageId || sendResult.emailId);
+    const sendResult = await invokeSendEmailFunction({
+      supabaseUrl,
+      serviceRoleKey,
+      payload: emailPayload,
+    });
+    const providerMessageId = normalizeText(
+      sendResult.providerMessageId || sendResult.emailId,
+    );
     const sentAt = new Date().toISOString();
     await markAcknowledgementOutbox(client, outbox?.id, {
       status: "sent",
@@ -1463,11 +2072,15 @@ async function dispatchLeadAcknowledgementEmail({
       leadId,
       agentId,
       note: `Acknowledgement email sent to ${recipient}`,
-      outcome: providerMessageId ? `provider_message_id:${providerMessageId}` : "sent",
+      outcome: providerMessageId
+        ? `provider_message_id:${providerMessageId}`
+        : "sent",
     });
     return { status: "sent", providerMessageId };
   } catch (error) {
-    const reason = error instanceof Error ? error.message : "Acknowledgement email failed.";
+    const reason = error instanceof Error
+      ? error.message
+      : "Acknowledgement email failed.";
     await markAcknowledgementOutbox(client, outbox?.id, {
       status: "failed",
       failed_at: new Date().toISOString(),
@@ -1489,25 +2102,167 @@ async function dispatchLeadAcknowledgementEmail({
   }
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { status: 200, headers: corsHeaders });
-  if (req.method !== "POST") return jsonResponse(405, { success: false, error: "Method not allowed." });
+async function dispatchLeadOperationsNotification({
+  client,
+  supabaseUrl,
+  serviceRoleKey,
+  canonical,
+  inboundEmailId,
+  leadId,
+}: {
+  client: SupabaseClientLike;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  canonical: JsonRecord;
+  inboundEmailId: string;
+  leadId: string;
+}) {
+  const organisationId = normalizeText(canonical.organisationId);
+  const branchId = normalizeText(canonical.branchId);
+  const assignedAgentId = normalizeText(canonical.assignedAgentId);
+  const organisation = await fetchSingleById(
+    client,
+    "organisations",
+    "id",
+    organisationId,
+  );
+  const organisationName = pickText(
+    organisation?.name,
+    organisation?.display_name,
+    organisation?.legal_name,
+    "Arch9",
+  );
+  const basePayload: JsonRecord = {
+    organisationId,
+    branchId,
+    assignedUserId: assignedAgentId,
+    leadId,
+    leadName: normalizeText(canonical.name),
+    leadEmail: normalizeEmail(canonical.email),
+    leadPhone: normalizeText(canonical.phone),
+    leadSource: normalizeText(canonical.source) || "Inbound Email",
+    leadCategory: "buyer",
+    leadStatus: "New Lead",
+    propertyLabel: pickText(
+      canonical.enquiredPropertyTitle,
+      canonical.enquiredPropertyAddress,
+      canonical.propertyInterest,
+    ),
+    budgetLabel: normalizeText(canonical.budget)
+      ? String(canonical.budget)
+      : "",
+    actionLink: buildLeadActionLink(leadId),
+    source: "inbound_lead_email",
+    metadata: {
+      inboundEmailId,
+      providerMessageId: normalizeText(canonical.externalReference),
+      organisationName,
+    },
+  };
 
-  const configuredSecret = normalizeText(Deno.env.get("INBOUND_LEAD_EMAIL_WEBHOOK_SECRET"));
-  const requireSecret = normalizeLower(Deno.env.get("INBOUND_LEAD_EMAIL_REQUIRE_SECRET")) === "true";
-  const providedSecret = normalizeText(req.headers.get("x-arch9-inbound-secret") || new URL(req.url).searchParams.get("secret"));
+  if (isUuidLike(assignedAgentId)) {
+    const membership = await fetchOrganisationMember(
+      client,
+      organisationId,
+      assignedAgentId,
+    );
+    const profile = membership
+      ? await fetchSingleById(client, "profiles", "id", assignedAgentId)
+      : null;
+    const agentEmail = normalizeEmail(profile?.email || membership?.email);
+    if (agentEmail) {
+      return await invokeSendEmailFunction({
+        supabaseUrl,
+        serviceRoleKey,
+        payload: {
+          ...basePayload,
+          type: "new_enquiry_assigned_agent",
+          to: agentEmail,
+          recipientName: memberDisplayName(profile || membership, "Agent"),
+          recipientRole: "agent",
+          assignedAgentName: memberDisplayName(profile || membership, ""),
+          assignedAgentEmail: agentEmail,
+          subject: "New enquiry assigned to you",
+          idempotencyKey:
+            `lead-ops:${inboundEmailId}:assigned-agent:${assignedAgentId}`,
+        },
+      });
+    }
+  }
+
+  const managers = await fetchLeadManagerRecipients(
+    client,
+    organisationId,
+    branchId,
+  );
+  const results = [];
+  for (const manager of managers) {
+    const managerEmail = normalizeEmail(manager.email);
+    if (!managerEmail) continue;
+    results.push(
+      await invokeSendEmailFunction({
+        supabaseUrl,
+        serviceRoleKey,
+        payload: {
+          ...basePayload,
+          type: "new_enquiry_unassigned_manager",
+          to: managerEmail,
+          recipientName: memberDisplayName(manager, "Manager"),
+          recipientRole: "manager",
+          subject: "New enquiry needs assignment",
+          idempotencyKey: `lead-ops:${inboundEmailId}:unassigned-manager:${
+            normalizeText(manager.user_id || managerEmail)
+          }`,
+        },
+      }),
+    );
+  }
+  return { status: results.length ? "sent" : "skipped", results };
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { status: 200, headers: corsHeaders });
+  }
+  if (req.method !== "POST") {
+    return jsonResponse(405, { success: false, error: "Method not allowed." });
+  }
+
+  const configuredSecret = normalizeText(
+    Deno.env.get("INBOUND_LEAD_EMAIL_WEBHOOK_SECRET"),
+  );
+  const requireSecret =
+    normalizeLower(Deno.env.get("INBOUND_LEAD_EMAIL_REQUIRE_SECRET")) ===
+      "true";
+  const providedSecret = normalizeText(
+    req.headers.get("x-arch9-inbound-secret") ||
+      new URL(req.url).searchParams.get("secret"),
+  );
   if (requireSecret && !configuredSecret) {
-    return jsonResponse(500, { success: false, error: "Inbound email webhook secret is required but not configured." });
+    return jsonResponse(500, {
+      success: false,
+      error: "Inbound email webhook secret is required but not configured.",
+    });
   }
   if (configuredSecret && configuredSecret !== providedSecret) {
-    return jsonResponse(401, { success: false, error: "Invalid inbound email webhook secret." });
+    return jsonResponse(401, {
+      success: false,
+      error: "Invalid inbound email webhook secret.",
+    });
   }
-  const signatureStatus = configuredSecret ? "shared_secret_valid" : "shared_secret_disabled";
+  const signatureStatus = configuredSecret
+    ? "shared_secret_valid"
+    : "shared_secret_disabled";
 
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
-  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const serviceRoleKey = normalizeText(
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+  );
   if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse(500, { success: false, error: "Supabase service credentials are not configured." });
+    return jsonResponse(500, {
+      success: false,
+      error: "Supabase service credentials are not configured.",
+    });
   }
 
   const client = createClient(supabaseUrl, serviceRoleKey);
@@ -1515,15 +2270,29 @@ Deno.serve(async (req) => {
   try {
     const webhookReceivedAt = new Date().toISOString();
     const payload = await parseRequestPayload(req);
-    const inbound = normalizeInboundPayload(payload, req.headers, webhookReceivedAt, signatureStatus);
-    const allowedProviders = normalizeText(Deno.env.get("INBOUND_LEAD_EMAIL_ALLOWED_PROVIDERS"))
+    const inbound = normalizeInboundPayload(
+      payload,
+      req.headers,
+      webhookReceivedAt,
+      signatureStatus,
+    );
+    const allowedProviders = normalizeText(
+      Deno.env.get("INBOUND_LEAD_EMAIL_ALLOWED_PROVIDERS"),
+    )
       .split(",")
       .map((provider) => normalizeProviderName(provider))
       .filter(Boolean);
-    if (allowedProviders.length && !allowedProviders.includes(inbound.provider)) {
-      return jsonResponse(400, { success: false, error: `Inbound provider ${inbound.provider} is not allowed.` });
+    if (
+      allowedProviders.length && !allowedProviders.includes(inbound.provider)
+    ) {
+      return jsonResponse(400, {
+        success: false,
+        error: `Inbound provider ${inbound.provider} is not allowed.`,
+      });
     }
-    const recipient = inbound.toAddresses.find((address) => address.includes("@")) || "";
+    const recipient = inbound.toAddresses.find((address) =>
+      address.includes("@")
+    ) || "";
     const aliasResult = await client
       .from("lead_capture_aliases")
       .select("*")
@@ -1559,7 +2328,10 @@ Deno.serve(async (req) => {
       normalized_payload: inbound.normalizedPayload,
       received_at: inbound.receivedAt,
     };
-    const inboundEmailInsert = await insertInboundEmail(client, rawEmailPayload);
+    const inboundEmailInsert = await insertInboundEmail(
+      client,
+      rawEmailPayload,
+    );
     const inboundEmail = inboundEmailInsert.row;
 
     if (inboundEmailInsert.duplicate) {
@@ -1575,10 +2347,16 @@ Deno.serve(async (req) => {
     if (!alias) {
       await recordFailure(client, {
         inboundEmailId: inboundEmail.email_id,
-        reason: `No active lead capture alias matched recipient ${recipient || "(none)"}.`,
+        reason: `No active lead capture alias matched recipient ${
+          recipient || "(none)"
+        }.`,
         payload,
       });
-      return jsonResponse(202, { success: false, status: "unmatched", inboundEmailId: inboundEmail.email_id });
+      return jsonResponse(202, {
+        success: false,
+        status: "unmatched",
+        inboundEmailId: inboundEmail.email_id,
+      });
     }
 
     const canonical = buildCanonicalPayload(inbound, alias);
@@ -1593,7 +2371,9 @@ Deno.serve(async (req) => {
           contact_id: result.contactId,
           parser_name: canonical.parserName,
           parse_confidence: canonical.parseConfidence,
-          parse_warnings: Array.isArray(canonical.parseWarnings) ? canonical.parseWarnings : [],
+          parse_warnings: Array.isArray(canonical.parseWarnings)
+            ? canonical.parseWarnings
+            : [],
           matched_fields: canonical.matchedFields || {},
           parsed_at: new Date().toISOString(),
           processed_at: new Date().toISOString(),
@@ -1601,7 +2381,31 @@ Deno.serve(async (req) => {
         .eq("email_id", inboundEmail.email_id);
 
       let acknowledgement: JsonRecord | null = null;
+      let leadOperationsNotification: JsonRecord | null = null;
       if (result.status === "processed") {
+        try {
+          leadOperationsNotification = await dispatchLeadOperationsNotification(
+            {
+              client,
+              supabaseUrl,
+              serviceRoleKey,
+              canonical,
+              inboundEmailId: normalizeText(inboundEmail.email_id),
+              leadId: normalizeText(result.leadId),
+            },
+          ) as JsonRecord;
+        } catch (leadOpsError) {
+          console.warn(
+            "[inbound-lead-email] lead operations notification failed without rolling back lead ingestion",
+            leadOpsError,
+          );
+          leadOperationsNotification = {
+            status: "failed",
+            reason: leadOpsError instanceof Error
+              ? leadOpsError.message
+              : "Lead operations notification failed.",
+          };
+        }
         try {
           acknowledgement = await dispatchLeadAcknowledgementEmail({
             client,
@@ -1613,10 +2417,15 @@ Deno.serve(async (req) => {
             leadId: normalizeText(result.leadId),
           });
         } catch (acknowledgementError) {
-          console.warn("[inbound-lead-email] acknowledgement dispatch failed without rolling back lead ingestion", acknowledgementError);
+          console.warn(
+            "[inbound-lead-email] acknowledgement dispatch failed without rolling back lead ingestion",
+            acknowledgementError,
+          );
           acknowledgement = {
             status: "failed",
-            reason: acknowledgementError instanceof Error ? acknowledgementError.message : "Acknowledgement dispatch failed.",
+            reason: acknowledgementError instanceof Error
+              ? acknowledgementError.message
+              : "Acknowledgement dispatch failed.",
           };
         }
       }
@@ -1628,9 +2437,12 @@ Deno.serve(async (req) => {
         leadId: result.leadId,
         contactId: result.contactId,
         acknowledgement,
+        leadOperationsNotification,
       });
     } catch (error) {
-      const reason = error instanceof Error ? error.message : "Inbound lead email failed.";
+      const reason = error instanceof Error
+        ? error.message
+        : "Inbound lead email failed.";
       await client
         .from("inbound_lead_emails")
         .update({
@@ -1638,7 +2450,9 @@ Deno.serve(async (req) => {
           error: reason,
           parser_name: canonical.parserName,
           parse_confidence: canonical.parseConfidence,
-          parse_warnings: Array.isArray(canonical.parseWarnings) ? canonical.parseWarnings : [],
+          parse_warnings: Array.isArray(canonical.parseWarnings)
+            ? canonical.parseWarnings
+            : [],
           matched_fields: canonical.matchedFields || {},
           parsed_at: new Date().toISOString(),
         })
@@ -1654,12 +2468,19 @@ Deno.serve(async (req) => {
         reason,
         payload: canonical,
       });
-      return jsonResponse(422, { success: false, status: "failed", error: reason, inboundEmailId: inboundEmail.email_id });
+      return jsonResponse(422, {
+        success: false,
+        status: "failed",
+        error: reason,
+        inboundEmailId: inboundEmail.email_id,
+      });
     }
   } catch (error) {
     return jsonResponse(500, {
       success: false,
-      error: error instanceof Error ? error.message : "Inbound lead email webhook failed.",
+      error: error instanceof Error
+        ? error.message
+        : "Inbound lead email webhook failed.",
     });
   }
 });

@@ -7,6 +7,14 @@ import {
   buildReservationDepositEmailHtml,
   buildReservationDepositEmailText,
 } from "./reservationDeposit.ts";
+import { buildAdditionalDocumentRequestEmail } from "../handlers/additionalDocumentRequest.ts";
+import { buildLeadOperationsNotificationEmail } from "../handlers/leadOperationsNotification.ts";
+import { buildPublicDemoEnquiryEmail } from "../handlers/publicDemoEnquiry.ts";
+import { buildTransactionOperationsNotificationEmail } from "../handlers/transactionOperationsNotification.ts";
+import { buildClientSellerPortalNotificationEmail } from "../handlers/clientSellerPortalNotification.ts";
+import { buildBondAttorneyLegalNotificationEmail } from "../handlers/bondAttorneyLegalNotification.ts";
+import { buildWeeklyDigestNotificationEmail } from "../handlers/weeklyDigestNotification.ts";
+import { buildCommercialEnterpriseNotificationEmail } from "../handlers/commercialEnterpriseNotification.ts";
 import { buildSellerOnboardingEmailHtml } from "./sellerOnboarding.ts";
 import { buildSellerOnboardingSubmittedSellerEmailHtml } from "./sellerOnboardingSubmitted.ts";
 
@@ -231,4 +239,227 @@ Deno.test("reservation deposit text preserves upload instructions and support", 
   assertIncludes(text, "Support: support@example.test | +27 21 000 0000");
   assertIncludes(text, "Kingstons Property");
   assertIncludes(text, "Powered by Arch9");
+});
+
+Deno.test("additional document request template uses dedicated branded shell", () => {
+  const { html, text } = buildAdditionalDocumentRequestEmail({
+    recipientName: "Buyer One",
+    title: "Document requested",
+    message: "Please upload proof of residence for your transaction.",
+    transactionId: "TX-12",
+    actionLink: "https://app.example.test/client/documents",
+    metadata: {
+      documentTitle: "Proof of residence",
+      requestedFrom: "buyer",
+      requestedBy: "Agent",
+      propertyLabel: "12 Ocean Road",
+      dueDate: "2026-08-10",
+    },
+    branding,
+  });
+
+  assertIncludes(html, "Kingstons Property");
+  assertIncludes(html, "Document Request");
+  assertIncludes(html, "Proof of residence");
+  assertIncludes(html, "background: #123abc");
+  assertNotIncludes(html, "Bond application update");
+  assertIncludes(text, "Requested document: Proof of residence");
+});
+
+Deno.test("public demo enquiry template uses shared Arch9 shell", () => {
+  const { html, text } = buildPublicDemoEnquiryEmail({
+    fullName: "Demo Lead",
+    role: "Agency Principal",
+    company: "Demo Realty",
+    email: "lead@example.test",
+    phone: "+27 21 000 0000",
+    businessSize: "20 agents",
+    monthlyVolume: "15 deals",
+    demoFocus: ["Lead management", "Transactions"],
+    preferredWindow: ["This week"],
+    biggestFrustration: "Manual follow-up",
+    pageUrl: "https://arch9.co.za/demo",
+    adminUrl: "https://app.arch9.co.za/platform/demo-enquiries",
+    submittedAt: "2026-08-03T10:00:00.000Z",
+  });
+
+  assertIncludes(html, "New Demo Enquiry");
+  assertIncludes(html, "Arch9");
+  assertIncludes(html, "background: #07152f");
+  assertIncludes(html, "Open In Arch9 Admin");
+  assertNotIncludes(html, "border-radius:999px");
+  assertIncludes(text, "New Arch9 demo enquiry: Demo Lead");
+});
+
+Deno.test("lead operations template uses branded shell", () => {
+  const { html, text } = buildLeadOperationsNotificationEmail({
+    eventKind: "new_enquiry_assigned_agent",
+    recipientName: "Agent One",
+    title: "New Enquiry Assigned",
+    message: "A new buyer enquiry has been assigned to you.",
+    actionLink: "https://app.example.test/leads/lead-1",
+    leadName: "Buyer One",
+    leadEmail: "buyer@example.test",
+    leadPhone: "+27 21 000 0000",
+    leadSource: "Website",
+    leadCategory: "buyer",
+    leadStatus: "New Lead",
+    propertyLabel: "12 Ocean Road",
+    assignedAgentName: "Agent One",
+    branding,
+  });
+
+  assertIncludes(html, "Kingstons Property");
+  assertIncludes(html, "New Enquiry Assigned");
+  assertIncludes(html, "Lead Summary");
+  assertIncludes(html, "background: #123abc");
+  assertIncludes(text, "Lead: Buyer One");
+});
+
+Deno.test("transaction operations template uses branded shell", () => {
+  const { html, text } = buildTransactionOperationsNotificationEmail({
+    eventKind: "transaction_partner_declined",
+    recipientName: "Agent One",
+    title: "Partner Declined",
+    message: "Example Attorneys declined the transfer attorney invitation.",
+    actionLink: "https://app.example.test/transactions/tx-1",
+    transactionReference: "TX-12",
+    propertyLabel: "12 Ocean Road",
+    previousStage: "Finance",
+    stage: "Transfer",
+    ownerName: "Agent One",
+    roleLabel: "Transfer Attorney",
+    partnerName: "Example Attorneys",
+    reason: "Capacity unavailable",
+    nextAction: "Nominate a replacement transfer attorney.",
+    branding,
+  });
+
+  assertIncludes(html, "Kingstons Property");
+  assertIncludes(html, "Partner Declined");
+  assertIncludes(html, "Transaction Summary");
+  assertIncludes(html, "background: #123abc");
+  assertIncludes(text, "Transaction: TX-12");
+  assertIncludes(
+    text,
+    "Next action: Nominate a replacement transfer attorney.",
+  );
+});
+
+Deno.test("client seller portal template uses branded shell", () => {
+  const { html, text } = buildClientSellerPortalNotificationEmail({
+    eventKind: "client_portal_document_rejected",
+    recipientName: "Seller One",
+    title: "Document Needs Reupload",
+    message: "Proof of residence needs to be uploaded again.",
+    actionLink: "https://app.example.test/private-listings/listing-1",
+    propertyLabel: "12 Ocean Road",
+    sellerName: "Seller One",
+    agentName: "Agent One",
+    portalLabel: "Seller Portal",
+    documentTitle: "Proof of residence",
+    documentStatus: "Rejected",
+    reason: "The file is unreadable.",
+    nextAction: "Upload a clear copy in the seller portal.",
+    branding,
+  });
+
+  assertIncludes(html, "Kingstons Property");
+  assertIncludes(html, "Document Needs Reupload");
+  assertIncludes(html, "Portal Summary");
+  assertIncludes(html, "background: #123abc");
+  assertIncludes(text, "Document: Proof of residence");
+  assertIncludes(
+    text,
+    "Next action: Upload a clear copy in the seller portal.",
+  );
+});
+
+Deno.test("bond attorney legal template uses branded shell", () => {
+  const { html, text } = buildBondAttorneyLegalNotificationEmail({
+    eventKind: "legal_signing_dispatch_failed",
+    recipientName: "Agent One",
+    title: "Signing Dispatch Failed",
+    message: "Legal signing delivery failed for TX-12.",
+    actionLink: "https://app.example.test/legal/packets/packet-1",
+    transactionReference: "TX-12",
+    propertyLabel: "12 Ocean Road",
+    workflowLabel: "Legal Signing",
+    status: "Failed",
+    packetTitle: "Offer to Purchase",
+    signerName: "Buyer One",
+    signerRole: "Buyer",
+    reason: "Recipient mailbox rejected delivery.",
+    nextAction: "Confirm the signer email and resend the packet.",
+    branding,
+  });
+
+  assertIncludes(html, "Kingstons Property");
+  assertIncludes(html, "Signing Dispatch Failed");
+  assertIncludes(html, "Workflow Summary");
+  assertIncludes(html, "background: #123abc");
+  assertIncludes(text, "Legal packet: Offer to Purchase");
+  assertIncludes(
+    text,
+    "Next action: Confirm the signer email and resend the packet.",
+  );
+});
+
+Deno.test("weekly digest template uses branded shell", () => {
+  const { html, text } = buildWeeklyDigestNotificationEmail({
+    digestKind: "manager_weekly_team_digest",
+    recipientName: "Manager One",
+    title: "Weekly Team Digest",
+    message: "Here is the weekly activity summary for 27 Jul - 02 Aug 2026.",
+    actionLink: "https://app.example.test/leads",
+    reportPeriod: "27 Jul - 02 Aug 2026",
+    summaryFields: [
+      { label: "New Leads", value: "12" },
+      { label: "Active Transactions", value: "8" },
+    ],
+    sections: [{
+      title: "Account Focus",
+      items: [{
+        label: "Lead intake",
+        detail: "12 new / 34 open",
+      }],
+    }],
+    branding,
+  });
+
+  assertIncludes(html, "Kingstons Property");
+  assertIncludes(html, "Weekly Team Digest");
+  assertIncludes(html, "Weekly Summary");
+  assertIncludes(html, "background: #123abc");
+  assertIncludes(text, "New Leads: 12");
+  assertIncludes(text, "Lead intake: 12 new / 34 open");
+});
+
+Deno.test("commercial enterprise template uses branded shell", () => {
+  const { html, text } = buildCommercialEnterpriseNotificationEmail({
+    eventKind: "commercial_deal_stage_changed",
+    recipientName: "Broker One",
+    title: "Commercial Deal Updated",
+    message: "Gateway Lease moved from heads of terms to lease pending.",
+    actionLink: "https://app.example.test/commercial/deals",
+    entityLabel: "Gateway Lease",
+    entityType: "Commercial Deal",
+    previousStatus: "heads_of_terms",
+    status: "lease_pending",
+    brokerName: "Broker One",
+    branchName: "Cape Town",
+    teamName: "Industrial",
+    clientName: "Gateway Logistics",
+    propertyLabel: "Unit 4, Gateway Park",
+    amountLabel: "R 1 200 000",
+    nextAction: "Prepare the lease pack.",
+    branding,
+  });
+
+  assertIncludes(html, "Kingstons Property");
+  assertIncludes(html, "Commercial Deal Updated");
+  assertIncludes(html, "Commercial Summary");
+  assertIncludes(html, "background: #123abc");
+  assertIncludes(text, "Record: Gateway Lease");
+  assertIncludes(text, "Next action: Prepare the lease pack.");
 });

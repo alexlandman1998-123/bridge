@@ -819,6 +819,38 @@ function buildTransactionEventActivityEvents(portalData = {}, clientRole = 'buye
   })
 }
 
+function buildAttorneyLaneUpdateEvents(portalData = {}) {
+  const updates = Array.isArray(portalData?.attorneyLaneUpdates) ? portalData.attorneyLaneUpdates : []
+  return updates.map((update, index) => {
+    const recipients = Array.isArray(update?.clientRecipients) ? update.clientRecipients : []
+    const audience = normalize(update?.audience || (recipients.length === 1 ? recipients[0] : recipients.length > 1 ? 'buyer_and_seller' : 'shared'))
+    const laneLabel = toText(update?.laneLabel || update?.metadata?.laneLabel, 'Legal team')
+    const stage = toText(update?.stage || update?.metadata?.stage)
+    return {
+      id: toText(update?.id || `attorney_update_${index}`),
+      type: 'attorney_lane_update',
+      title: toText(update?.title || update?.metadata?.title, 'Legal update'),
+      description: toText(update?.message || update?.commentBody || update?.metadata?.description, 'Your legal team shared a progress update.'),
+      timestamp: update?.createdAt || update?.created_at || update?.timestamp,
+      actor: toText(update?.actor || laneLabel, 'Legal team'),
+      actorRole: update?.actorRole || update?.attorneyRole || 'Attorney',
+      visibility: 'client_visible',
+      relatedEntityType: 'attorney_lane_update',
+      relatedEntityId: toText(update?.id),
+      metadata: {
+        ...(update?.metadata && typeof update.metadata === 'object' ? update.metadata : {}),
+        audience,
+        laneLabel,
+        stage,
+        title: toText(update?.title || update?.metadata?.title, 'Legal update'),
+        description: toText(update?.message || update?.commentBody || update?.metadata?.description, 'Your legal team shared a progress update.'),
+        displayType: 'update',
+        topic: 'legal',
+      },
+    }
+  })
+}
+
 function buildWorkflowProjectionEvents(context = {}, clientRole = 'buyer') {
   const workflowSummary = context?.workflowSummary || {}
   const milestones = Array.isArray(workflowSummary?.clientVisibleMilestones) ? workflowSummary.clientVisibleMilestones : []
@@ -975,6 +1007,7 @@ function buildRawClientPortalActivityEvents(transactionIdOrContext, clientRole =
     ...buildAppointmentEvents(portalData, resolvedClientRole),
     ...buildStageEvents(portalData),
     ...buildDiscussionEvents(portalData),
+    ...buildAttorneyLaneUpdateEvents(portalData),
     ...buildTransactionEventActivityEvents(portalData, resolvedClientRole),
   ]
 

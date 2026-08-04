@@ -6,6 +6,10 @@ import {
   renderBridgeSteps,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type {
   SendTransactionRoleplayerHandoffPayload,
@@ -379,7 +383,7 @@ export async function handleTransactionRoleplayerIntroEmail(
   let transactionQuery = await supabase
     .from("transactions")
     .select(
-      "id, buyer_id, development_id, unit_id, transaction_reference, finance_type, purchase_price, sales_price, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, property_description, property_address_line_1, suburb, city, province",
+      "id, organisation_id, buyer_id, development_id, unit_id, transaction_reference, finance_type, purchase_price, sales_price, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, property_description, property_address_line_1, suburb, city, province",
     )
     .eq("id", transactionId)
     .maybeSingle();
@@ -388,6 +392,7 @@ export async function handleTransactionRoleplayerIntroEmail(
     transactionQuery.error &&
     (
       isMissingColumnError(transactionQuery.error, "assigned_agent") ||
+      isMissingColumnError(transactionQuery.error, "organisation_id") ||
       isMissingColumnError(transactionQuery.error, "assigned_agent_email") ||
       isMissingColumnError(transactionQuery.error, "assigned_attorney_email") ||
       isMissingColumnError(
@@ -515,8 +520,17 @@ export async function handleTransactionRoleplayerIntroEmail(
     normalizeText(Deno.env.get("SUPPORT_EMAIL"));
   const supportPhone = normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
-  const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <onboarding@resend.dev>";
+  const branding = await resolveEmailBranding({
+    supabase,
+    payload: payload as Record<string, unknown>,
+    organisationId: normalizeText(transaction.organisation_id),
+    defaults: { organisationName, supportEmail, supportPhone },
+  });
+  const sender = formatEmailSender(
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      "Arch9 <onboarding@resend.dev>",
+    branding.fromName || branding.organisationName,
+  );
 
   if (!transferAttorneyName && !transferAttorneyEmail) {
     return jsonResponse(400, {
@@ -593,9 +607,10 @@ export async function handleTransactionRoleplayerIntroEmail(
     securityBody:
       "Your transaction details are shared only with authorised parties involved in your matter.",
     helpBody: "Need help? Reply to this email or contact your agent directly.",
-    organisationName,
-    supportEmail,
-    supportPhone,
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
   });
 
   const text = [
@@ -693,7 +708,7 @@ export async function handleTransactionRoleplayerHandoffEmail(
   let transactionQuery = await supabase
     .from("transactions")
     .select(
-      "id, buyer_id, development_id, unit_id, transaction_reference, finance_type, purchase_price, sales_price, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, seller_name, seller_email, seller_phone, property_description, property_address_line_1, suburb, city, province",
+      "id, organisation_id, buyer_id, development_id, unit_id, transaction_reference, finance_type, purchase_price, sales_price, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, seller_name, seller_email, seller_phone, property_description, property_address_line_1, suburb, city, province",
     )
     .eq("id", transactionId)
     .maybeSingle();
@@ -702,6 +717,7 @@ export async function handleTransactionRoleplayerHandoffEmail(
     transactionQuery.error &&
     (
       isMissingColumnError(transactionQuery.error, "assigned_agent") ||
+      isMissingColumnError(transactionQuery.error, "organisation_id") ||
       isMissingColumnError(transactionQuery.error, "assigned_agent_email") ||
       isMissingColumnError(transactionQuery.error, "assigned_attorney_email") ||
       isMissingColumnError(
@@ -861,8 +877,17 @@ export async function handleTransactionRoleplayerHandoffEmail(
     normalizeText(Deno.env.get("SUPPORT_EMAIL"));
   const supportPhone = normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
-  const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <onboarding@resend.dev>";
+  const branding = await resolveEmailBranding({
+    supabase,
+    payload: payload as Record<string, unknown>,
+    organisationId: normalizeText(transaction.organisation_id),
+    defaults: { organisationName, supportEmail, supportPhone },
+  });
+  const sender = formatEmailSender(
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      "Arch9 <onboarding@resend.dev>",
+    branding.fromName || branding.organisationName,
+  );
 
   const sentRecipients: Array<{
     role: string;
@@ -904,9 +929,10 @@ export async function handleTransactionRoleplayerHandoffEmail(
         "This handoff contains transaction context for authorised roleplayers only. Please handle buyer and seller information confidentially.",
       helpBody:
         "Need anything corrected? Reply to this email so the Arch9 team can update the transaction record.",
-      organisationName,
-      supportEmail,
-      supportPhone,
+      organisationName: branding.organisationName,
+      supportEmail: branding.supportEmail,
+      supportPhone: branding.supportPhone,
+      branding,
     });
     const fullText = [
       `Hi ${recipient.name},`,

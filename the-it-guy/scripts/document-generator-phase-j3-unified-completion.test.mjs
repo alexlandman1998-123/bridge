@@ -3,12 +3,28 @@ import fs from 'node:fs'
 
 const portal = fs.readFileSync('src/pages/SignerPortal.jsx', 'utf8')
 for (const token of [
-  'SigningCompleteScreen',
+  'SimpleSigningShell',
+  'buildSimpleSigningExperienceModel',
   'buildSigningCompletion',
-  'Open completed PDF',
-  'Reopening this link will continue to show this confirmation',
+  'open_completed_pdf',
+  'resolveSignerFinalSignedArtifactAccess',
   'session?.completion',
 ]) assert.match(portal, new RegExp(token.replace(/[?.()]/g, '\\$&')))
+
+const simpleSigningModel = fs.readFileSync('src/core/documents/simpleSigningExperienceModel.js', 'utf8')
+for (const token of [
+  'Open completed PDF',
+  'Finalising PDF',
+  'Signing recorded. The completed PDF is available now.',
+  'Signing recorded. The completed PDF is being prepared and will appear here when it is ready.',
+]) assert.match(simpleSigningModel, new RegExp(token.replace(/[?.()]/g, '\\$&')))
+
+const simpleSigningShell = fs.readFileSync('src/components/documents/SimpleSigningShell.jsx', 'utf8')
+for (const token of [
+  'simple-signing-shell',
+  'simple-signing-complete-state',
+  'SimpleSigningActionCard',
+]) assert.match(simpleSigningShell, new RegExp(token.replace(/[?.()]/g, '\\$&')))
 
 const api = fs.readFileSync('src/lib/api.js', 'utf8')
 for (const token of [

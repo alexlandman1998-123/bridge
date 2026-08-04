@@ -9,25 +9,26 @@ const files = {
 }
 
 for (const token of [
-  'export function renderOrganisationPartnerInvitationEmail',
-  'class="arch9-shell"',
-  'arch9-relationship',
-  'Review invitation&nbsp;&nbsp;&rarr;',
+  'renderBridgeEmailLayout',
+  'renderBridgeCta("Review Invitation"',
+  'resolveEmailBranding',
+  'formatEmailSender',
+  'Partner Invitation',
   'This invitation expires in',
-  'Invitation URL',
-  'About Arch9',
   'What accepting means',
-  'Security and privacy',
-  'Need help?',
-  'Property Transaction Platform',
+  'Security And Privacy',
   'Sign in as your company contact',
   'bring your team in when you are ready',
   'Your organisation will be connected',
 ]) {
-  assert(files.handler.includes(token), `organisation partner invite email should retain premium layout marker: ${token}`)
+  assert(files.handler.includes(token), `organisation partner invite email should retain shared branded layout marker: ${token}`)
 }
 
 for (const legacyToken of [
+  'export function renderOrganisationPartnerInvitationEmail',
+  'class="arch9-shell"',
+  'arch9-relationship',
+  'Review invitation&nbsp;&nbsp;&rarr;',
   'Hi there,',
   'Review Partner Invite',
   'SECURITY & PRIVACY',

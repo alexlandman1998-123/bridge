@@ -1,4 +1,12 @@
 import type { SendLegacyTestPayload } from "../types.ts";
+import {
+  renderBridgeEmailLayout,
+  renderBridgeIntroParagraphs,
+} from "../content/bridgeEmailLayout.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
@@ -15,16 +23,35 @@ export async function handleLegacyTestEmail(payload: SendLegacyTestPayload) {
   }
 
   const name = normalizeText(payload.name) || "there";
-  const sender =
+  const branding = await resolveEmailBranding({
+    payload: payload as Record<string, unknown>,
+    defaults: { organisationName: "Arch9" },
+  });
+  const sender = formatEmailSender(
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <onboarding@resend.dev>";
+      "Arch9 <onboarding@resend.dev>",
+    branding.fromName || branding.organisationName,
+  );
+  const html = renderBridgeEmailLayout({
+    preheader: "Your Arch9 email system is working.",
+    title: "Email Test",
+    greeting: `Hi ${name},`,
+    contentHtml: renderBridgeIntroParagraphs([
+      "Your Arch9 email system is working.",
+    ]),
+    securityBody:
+      "This is a controlled test email from the Arch9 notification system.",
+    helpBody: "No action is needed.",
+    organisationName: branding.organisationName,
+    branding,
+  });
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
     to,
     subject: "Arch9 email test",
-    html: `<p>Hi ${name}, your Arch9 email system is working.</p>`,
+    html,
   });
 
   if (!emailResult.ok) {

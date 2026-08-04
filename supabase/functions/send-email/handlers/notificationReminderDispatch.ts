@@ -5,6 +5,12 @@ import {
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
+import {
+  type EmailBranding,
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
+import { applyNotificationQueueControls } from "../services/notificationControls.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendNotificationReminderDispatchPayload } from "../types.ts";
 import { assessControlledTestRecipient } from "../utils/controlledTestRecipient.ts";
@@ -19,6 +25,12 @@ const REMINDER_AUTOMATION_KEYS = [
   "attorney_invite_reminder",
   "bond_originator_invite_reminder",
   "agent_invite_reminder",
+  "lead_first_response_sla_reminder",
+  "lead_first_response_sla_escalation",
+  "lead_follow_up_due_reminder",
+  "lead_follow_up_missed_escalation",
+  "lead_dormant_reactivation",
+  "lead_no_response_nurture",
 ] as const;
 
 const REMINDER_EVENT_SELECT = [
@@ -190,8 +202,12 @@ function resolveActionLink(event: ReminderEventRow, req: Request) {
     sourceMetadata.seller_workspace_token,
     onboardingToken,
   );
-  if (sellerWorkspaceToken && automationKey === "seller_document_request_reminder") {
-    return `${appBaseUrl}/client/${encodeURIComponent(sellerWorkspaceToken)}/selling/documents`;
+  if (
+    sellerWorkspaceToken && automationKey === "seller_document_request_reminder"
+  ) {
+    return `${appBaseUrl}/client/${
+      encodeURIComponent(sellerWorkspaceToken)
+    }/selling/documents`;
   }
 
   const inviteToken = coalesceText(
@@ -203,6 +219,18 @@ function resolveActionLink(event: ReminderEventRow, req: Request) {
   );
   if (inviteToken) {
     return `${appBaseUrl}/invite/${encodeURIComponent(inviteToken)}`;
+  }
+
+  const leadId = coalesceText(
+    event.lead_id,
+    payload.leadId,
+    payload.lead_id,
+    sourceMetadata.leadId,
+    sourceMetadata.lead_id,
+  );
+  const recipientRole = normalizeText(event.recipient_role).toLowerCase();
+  if (leadId && recipientRole !== "lead") {
+    return `${appBaseUrl}/agency/leads/${encodeURIComponent(leadId)}`;
   }
 
   return "";
@@ -225,7 +253,130 @@ function reminderDisplayName(automationKey: string) {
   if (automationKey === "bond_originator_invite_reminder") {
     return "bond originator invite";
   }
+  if (automationKey === "lead_first_response_sla_reminder") {
+    return "lead first response SLA";
+  }
+  if (automationKey === "lead_first_response_sla_escalation") {
+    return "lead SLA escalation";
+  }
+  if (automationKey === "lead_follow_up_due_reminder") {
+    return "lead follow-up";
+  }
+  if (automationKey === "lead_follow_up_missed_escalation") {
+    return "missed lead follow-up";
+  }
+  if (automationKey === "lead_dormant_reactivation") {
+    return "dormant lead";
+  }
+  if (automationKey === "lead_no_response_nurture") {
+    return "lead update";
+  }
   return "workspace invite";
+}
+
+function leadReminderSummaryFields(
+  payload: Record<string, unknown>,
+  sourceMetadata: Record<string, unknown>,
+) {
+  return [
+    {
+      label: "Lead",
+      value: coalesceText(
+        payload.leadName,
+        payload.lead_name,
+        sourceMetadata.leadName,
+      ),
+    },
+    {
+      label: "Email",
+      value: coalesceText(
+        payload.leadEmail,
+        payload.lead_email,
+        sourceMetadata.leadEmail,
+      ),
+    },
+    {
+      label: "Phone",
+      value: coalesceText(
+        payload.leadPhone,
+        payload.lead_phone,
+        sourceMetadata.leadPhone,
+      ),
+    },
+    {
+      label: "Source",
+      value: coalesceText(
+        payload.leadSource,
+        payload.lead_source,
+        sourceMetadata.leadSource,
+      ),
+    },
+    {
+      label: "Status",
+      value: coalesceText(
+        payload.leadStatus,
+        payload.lead_status,
+        sourceMetadata.leadStatus,
+      ),
+    },
+    {
+      label: "Task",
+      value: coalesceText(
+        payload.taskTitle,
+        payload.task_title,
+        sourceMetadata.taskTitle,
+      ),
+    },
+    {
+      label: "Due",
+      value: coalesceText(
+        payload.dueDate,
+        payload.due_date,
+        payload.slaDueAt,
+        payload.sla_due_at,
+      ),
+    },
+    {
+      label: "Quiet days",
+      value: coalesceText(payload.quietDays, payload.quiet_days),
+    },
+  ].filter((field) => field.value);
+}
+
+function isLeadReminderAutomationKey(automationKey: string) {
+  return [
+    "lead_first_response_sla_reminder",
+    "lead_first_response_sla_escalation",
+    "lead_follow_up_due_reminder",
+    "lead_follow_up_missed_escalation",
+    "lead_dormant_reactivation",
+    "lead_no_response_nurture",
+  ].includes(automationKey);
+}
+
+function isLeadTaskAutomationKey(automationKey: string) {
+  return [
+    "lead_follow_up_due_reminder",
+    "lead_follow_up_missed_escalation",
+  ].includes(automationKey);
+}
+
+function taskStatusIsClosed(value: unknown) {
+  return ["completed", "complete", "done", "cancelled", "canceled", "closed"]
+    .includes(normalizeText(value).toLowerCase());
+}
+
+function leadStatusIsClosed(value: unknown) {
+  return [
+    "closed",
+    "lost",
+    "converted",
+    "archived",
+    "deleted",
+    "cancelled",
+    "canceled",
+  ]
+    .includes(normalizeText(value).toLowerCase());
 }
 
 function resolveTemplate(event: ReminderEventRow, actionLink: string) {
@@ -239,6 +390,8 @@ function resolveTemplate(event: ReminderEventRow, actionLink: string) {
     "Arch9",
   );
   const recipientName = coalesceText(
+    payload.recipientName,
+    payload.recipient_name,
     sourceMetadata.inviteeName,
     sourceMetadata.invitee_name,
     sourceMetadata.contactName,
@@ -250,6 +403,128 @@ function resolveTemplate(event: ReminderEventRow, actionLink: string) {
   const reminderLabel = reminderDay
     ? `Day ${reminderDay} reminder`
     : "Reminder";
+  const leadName = coalesceText(
+    payload.leadName,
+    payload.lead_name,
+    "This lead",
+  );
+  const leadFields = leadReminderSummaryFields(payload, sourceMetadata);
+
+  if (automationKey === "lead_first_response_sla_reminder") {
+    return {
+      title: "First response SLA due soon",
+      ctaLabel: "Open Lead",
+      greeting,
+      organisationName,
+      intro: [
+        `${leadName} is still waiting for first contact and is approaching the first-response SLA.`,
+        "Open the lead, make contact, and record the outcome so the account stays inside its service commitment.",
+      ],
+      summaryTitle: "Lead SLA",
+      summaryFields: leadFields,
+      fallback:
+        "If the secure button is not available, open the lead from your agency workspace.",
+      security:
+        "Lead details are shared only with authorised people in the account.",
+    };
+  }
+
+  if (automationKey === "lead_first_response_sla_escalation") {
+    return {
+      title: "Lead first response SLA missed",
+      ctaLabel: "Open Lead",
+      greeting,
+      organisationName,
+      intro: [
+        `${leadName} has passed the first-response SLA without first contact being recorded.`,
+        "Please review ownership, unblock the agent, or reassign the lead so the client is contacted.",
+      ],
+      summaryTitle: "SLA Breach",
+      summaryFields: leadFields,
+      fallback:
+        "If the secure button is not available, open the lead from your agency workspace.",
+      security:
+        "This escalation is sent only to authorised managers and account administrators.",
+    };
+  }
+
+  if (automationKey === "lead_follow_up_due_reminder") {
+    return {
+      title: "Lead follow-up due",
+      ctaLabel: "Open Lead",
+      greeting,
+      organisationName,
+      intro: [
+        `${leadName} has a follow-up due now.`,
+        "Complete the task or record the next outcome so the lead does not go quiet.",
+      ],
+      summaryTitle: "Follow-Up",
+      summaryFields: leadFields,
+      fallback:
+        "If the secure button is not available, open the lead from your agency workspace.",
+      security:
+        "Lead follow-up details are shared only with authorised people in the account.",
+    };
+  }
+
+  if (automationKey === "lead_follow_up_missed_escalation") {
+    return {
+      title: "Lead follow-up missed",
+      ctaLabel: "Open Lead",
+      greeting,
+      organisationName,
+      intro: [
+        `${leadName} has an overdue follow-up task that has not been completed.`,
+        "Please review the task, confirm ownership, and make sure the next client action is covered.",
+      ],
+      summaryTitle: "Missed Follow-Up",
+      summaryFields: leadFields,
+      fallback:
+        "If the secure button is not available, open the lead from your agency workspace.",
+      security:
+        "This escalation is sent only to authorised managers and account administrators.",
+    };
+  }
+
+  if (automationKey === "lead_dormant_reactivation") {
+    return {
+      title: "Dormant lead needs reactivation",
+      ctaLabel: "Open Lead",
+      greeting,
+      organisationName,
+      intro: [
+        `${leadName} has had no recorded activity for the configured dormant-lead window.`,
+        "Review the lead, decide whether to reactivate, nurture, reassign, or close it with a clear outcome.",
+      ],
+      summaryTitle: "Dormant Lead",
+      summaryFields: leadFields,
+      fallback:
+        "If the secure button is not available, open the lead from your agency workspace.",
+      security:
+        "Dormant lead notifications are shared only with authorised people in the account.",
+    };
+  }
+
+  if (automationKey === "lead_no_response_nurture") {
+    return {
+      title: "We are still working on your enquiry",
+      ctaLabel: "Contact The Team",
+      greeting,
+      organisationName,
+      intro: [
+        "Your enquiry has been received and is still with the property team.",
+        "If your needs have changed or you want to add detail, you can reply to this email and the team will pick it up.",
+      ],
+      summaryTitle: "Enquiry Update",
+      summaryFields: leadFields.filter((field) =>
+        ["Lead", "Source", "Status"].includes(field.label)
+      ),
+      fallback:
+        "Reply to this email if you want to add anything to your enquiry.",
+      security:
+        "This message relates only to the enquiry you submitted to the agency.",
+    };
+  }
 
   if (automationKey === "buyer_onboarding_reminder") {
     return {
@@ -302,9 +577,12 @@ function resolveTemplate(event: ReminderEventRow, actionLink: string) {
       sourceMetadata.requirementName,
       "Requested seller document",
     );
-    const isReupload = payload.isReupload === true || payload.is_reupload === true;
+    const isReupload = payload.isReupload === true ||
+      payload.is_reupload === true;
     return {
-      title: isReupload ? "Please replace a seller document" : "We still need one seller document",
+      title: isReupload
+        ? "Please replace a seller document"
+        : "We still need one seller document",
       ctaLabel: isReupload ? "Replace Document" : "Upload Document",
       greeting,
       organisationName,
@@ -318,7 +596,10 @@ function resolveTemplate(event: ReminderEventRow, actionLink: string) {
       summaryFields: [
         { label: "Document", value: documentName },
         { label: "Reminder", value: reminderLabel },
-        { label: "Due date", value: coalesceText(payload.dueDate, payload.due_date) },
+        {
+          label: "Due date",
+          value: coalesceText(payload.dueDate, payload.due_date),
+        },
       ],
       fallback:
         "If the secure button is not available, contact your agent and ask them to resend your seller portal link.",
@@ -395,9 +676,10 @@ function resolveTemplate(event: ReminderEventRow, actionLink: string) {
   };
 }
 
-function buildReminderEmail(
+export function buildReminderEmail(
   event: ReminderEventRow,
   req: Request,
+  branding: EmailBranding,
 ): ReminderEmailContent {
   const actionLink = resolveActionLink(event, req);
   const template = resolveTemplate(event, actionLink);
@@ -412,7 +694,11 @@ function buildReminderEmail(
   const contentHtml = [
     renderBridgeIntroParagraphs(template.intro),
     renderBridgeSummaryCard(template.summaryFields, template.summaryTitle),
-    actionLink ? renderBridgeCta(template.ctaLabel, actionLink) : "",
+    actionLink
+      ? renderBridgeCta(template.ctaLabel, actionLink, {
+        primaryColor: branding.primaryColor,
+      })
+      : "",
     renderBridgeIntroParagraphs([template.fallback]),
   ].join("");
   const html = renderBridgeEmailLayout({
@@ -423,7 +709,10 @@ function buildReminderEmail(
     securityBody: template.security,
     helpBody:
       "If you have already completed this step, no action is needed and you can ignore this reminder.",
-    organisationName: template.organisationName,
+    organisationName: branding.organisationName || template.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
   });
   const text = [
     template.greeting,
@@ -561,6 +850,85 @@ async function markReminderEventFailed(
     .single();
 }
 
+async function markReminderEventSkipped(
+  supabase: any,
+  event: ReminderEventRow,
+  reason: string,
+) {
+  const metadata = asRecord(event.metadata_json);
+  return await supabase
+    .from("notification_events")
+    .update({
+      status: "skipped",
+      error_message: null,
+      last_dispatch_error: null,
+      metadata_json: {
+        ...metadata,
+        phase: "phase_4_reminder_dispatch",
+        skippedAt: new Date().toISOString(),
+        skippedReason: reason,
+      },
+    })
+    .eq("id", event.id)
+    .select("id, status")
+    .single();
+}
+
+async function leadReminderStopReason(
+  supabase: any,
+  event: ReminderEventRow,
+  automationKey: string,
+) {
+  if (!isLeadReminderAutomationKey(automationKey)) return "";
+  const payload = asRecord(event.payload_json);
+
+  const leadId = normalizeUuid(
+    event.lead_id || payload.leadId || payload.lead_id,
+  );
+  if (leadId) {
+    const currentLead = await supabase
+      .from("leads")
+      .select("first_contacted_at, status, stage")
+      .eq("lead_id", leadId)
+      .maybeSingle();
+    if (!currentLead.error && currentLead.data) {
+      if (
+        leadStatusIsClosed(currentLead.data.status) ||
+        leadStatusIsClosed(currentLead.data.stage)
+      ) {
+        return "lead_no_longer_open";
+      }
+      if (
+        [
+          "lead_first_response_sla_reminder",
+          "lead_first_response_sla_escalation",
+          "lead_no_response_nurture",
+        ].includes(automationKey) && currentLead.data.first_contacted_at
+      ) {
+        return "lead_first_contact_already_logged";
+      }
+    }
+  }
+
+  if (isLeadTaskAutomationKey(automationKey)) {
+    const taskId = normalizeUuid(payload.taskId || payload.task_id);
+    if (!taskId) return "";
+    const currentTask = await supabase
+      .from("tasks")
+      .select("status")
+      .eq("task_id", taskId)
+      .maybeSingle();
+    if (
+      !currentTask.error && currentTask.data &&
+      taskStatusIsClosed(currentTask.data.status)
+    ) {
+      return "lead_task_no_longer_open";
+    }
+  }
+
+  return "";
+}
+
 async function fetchDryRunEvents(
   supabase: any,
   eventId: string,
@@ -596,10 +964,13 @@ function isMissingPhase6QueueRpc(error: unknown) {
 }
 
 function isMissingRpc(error: unknown, rpcName: string) {
-  const record = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const record = error && typeof error === "object"
+    ? error as Record<string, unknown>
+    : {};
   const code = normalizeText(record.code).toUpperCase();
   const message = normalizeText(record.message).toLowerCase();
-  return code === "42883" || message.includes(normalizeText(rpcName).toLowerCase());
+  return code === "42883" ||
+    message.includes(normalizeText(rpcName).toLowerCase());
 }
 
 async function queueDueNotificationReminderEvents(
@@ -651,6 +1022,22 @@ async function queueDueNotificationReminderEvents(
     return sellerDocumentReviewSla;
   }
 
+  const leadFollowUpSla = await supabase.rpc(
+    "bridge_queue_lead_follow_up_sla_events_phase3",
+    {
+      p_limit: queueLimit,
+      p_now: now,
+      p_dry_run: dryRun,
+    },
+  );
+  const leadFollowUpSlaUnavailable = isMissingRpc(
+    leadFollowUpSla.error,
+    "bridge_queue_lead_follow_up_sla_events_phase3",
+  );
+  if (leadFollowUpSla.error && !leadFollowUpSlaUnavailable) {
+    return leadFollowUpSla;
+  }
+
   const phase6 = await supabase.rpc(
     "bridge_queue_notification_reminder_events_phase6",
     {
@@ -666,8 +1053,15 @@ async function queueDueNotificationReminderEvents(
       ...phase6,
       data: {
         ...(asRecord(phase6.data)),
-        sellerDocumentFollowUps: sellerDocuments.error ? null : sellerDocuments.data,
-        sellerDocumentReviewSla: sellerDocumentReviewSla.error ? null : sellerDocumentReviewSla.data,
+        sellerDocumentFollowUps: sellerDocuments.error
+          ? null
+          : sellerDocuments.data,
+        sellerDocumentReviewSla: sellerDocumentReviewSla.error
+          ? null
+          : sellerDocumentReviewSla.data,
+        leadFollowUpSla: leadFollowUpSlaUnavailable
+          ? null
+          : leadFollowUpSla.data,
       },
     };
   }
@@ -695,7 +1089,10 @@ async function queueDueNotificationReminderEvents(
       ...(asRecord(phase3.data)),
       phase6Fallback: true,
       phase: "phase_3_reminder_queue",
-      sellerDocumentReviewSla: sellerDocumentReviewSla.error ? null : sellerDocumentReviewSla.data,
+      sellerDocumentReviewSla: sellerDocumentReviewSla.error
+        ? null
+        : sellerDocumentReviewSla.data,
+      leadFollowUpSla: leadFollowUpSlaUnavailable ? null : leadFollowUpSla.data,
     },
   };
 }
@@ -797,6 +1194,14 @@ export async function handleNotificationReminderDispatchEmail(
     };
   }
 
+  if (!dryRun) {
+    await applyNotificationQueueControls(supabase, {
+      limit,
+      now: normalizeText(payload.now),
+      eventId,
+    });
+  }
+
   const claimed = dryRun
     ? await fetchDryRunEvents(supabase, eventId, limit)
     : await supabase.rpc("bridge_claim_notification_reminder_events_phase4", {
@@ -814,8 +1219,6 @@ export async function handleNotificationReminderDispatchEmail(
   }
 
   const events = (claimed.data || []) as ReminderEventRow[];
-  const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <no-reply@arch9.co.za>";
   const results = [];
 
   for (const event of events) {
@@ -825,7 +1228,24 @@ export async function handleNotificationReminderDispatchEmail(
     }
 
     const recipientEmail = normalizeText(event.recipient_email).toLowerCase();
-    const content = buildReminderEmail(event, req);
+    const template = resolveTemplate(event, resolveActionLink(event, req));
+    const branding = await resolveEmailBranding({
+      supabase,
+      payload: {
+        ...asRecord(event.payload_json),
+        ...asRecord(event.metadata_json),
+      },
+      organisationId: normalizeUuid(event.organisation_id),
+      defaults: {
+        organisationName: template.organisationName || "Arch9",
+      },
+    });
+    const from = formatEmailSender(
+      normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+        "Arch9 <no-reply@arch9.co.za>",
+      branding.fromName || branding.organisationName,
+    );
+    const content = buildReminderEmail(event, req, branding);
     const recipientSafety = assessControlledTestRecipient({
       email: recipientEmail,
       recipientName: asRecord(event.payload_json).recipientName,
@@ -857,10 +1277,29 @@ export async function handleNotificationReminderDispatchEmail(
           automationKey,
           ok: true,
           skipped: true,
-          reason: currentEvent.error ? "stop_condition_check_failed" : "document_request_no_longer_open",
+          reason: currentEvent.error
+            ? "stop_condition_check_failed"
+            : "document_request_no_longer_open",
         });
         continue;
       }
+    }
+
+    const stopReason = await leadReminderStopReason(
+      supabase,
+      event,
+      automationKey,
+    );
+    if (stopReason) {
+      await markReminderEventSkipped(supabase, event, stopReason);
+      results.push({
+        eventId: event.id,
+        automationKey,
+        ok: true,
+        skipped: true,
+        reason: stopReason,
+      });
+      continue;
     }
 
     if (!recipientEmail) {
@@ -879,21 +1318,11 @@ export async function handleNotificationReminderDispatchEmail(
     }
 
     if (recipientSafety.suppressed) {
-      const metadata = asRecord(event.metadata_json);
-      await supabase
-        .from("notification_events")
-        .update({
-          status: "skipped",
-          error_message: null,
-          last_dispatch_error: null,
-          metadata_json: {
-            ...metadata,
-            notificationSuppressed: true,
-            notificationSuppressionReason: recipientSafety.reason,
-            notificationSuppressedAt: new Date().toISOString(),
-          },
-        })
-        .eq("id", event.id);
+      await markReminderEventSkipped(
+        supabase,
+        event,
+        recipientSafety.reason || "controlled_test_recipient_suppressed",
+      );
       results.push({
         eventId: event.id,
         automationKey,

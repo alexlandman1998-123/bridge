@@ -1,4 +1,5 @@
 import { resolveLegalDocumentScenarioProfile } from './legalDocumentScenarioProfile.js'
+import { normalizeOtpDocumentVariant } from './otpRouteUniverse.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -70,16 +71,32 @@ export function resolveLegalDocumentTemplateRoutingMetadata(template = {}) {
     'finance_clause_profiles',
     'financeClauseProfiles',
   ])
+  const otpDocumentVariants = packetType === 'otp'
+    ? uniqueKeys([
+        ...readMetadataValues(metadata, [
+          'otp_document_variant',
+          'otpDocumentVariant',
+          'document_variant',
+          'documentVariant',
+          'supported_otp_document_variants',
+          'supportedOtpDocumentVariants',
+          'supported_document_variants',
+          'supportedDocumentVariants',
+        ]).map((value) => normalizeOtpDocumentVariant(value) || value),
+      ]).map((value) => normalizeOtpDocumentVariant(value) || value)
+    : []
 
   return {
     packetType,
     scenarios,
+    otpDocumentVariants,
     sellerProfiles,
     buyerProfiles,
     propertyProfiles,
     financeProfiles,
     hasRoutingMetadata: Boolean(
       scenarios.length ||
+      otpDocumentVariants.length ||
       sellerProfiles.length ||
       buyerProfiles.length ||
       propertyProfiles.length ||
@@ -97,6 +114,9 @@ export function scoreLegalDocumentTemplateCandidate(template = {}, options = {})
   const metadata = resolveLegalDocumentTemplateRoutingMetadata(template)
   const scenarioKey = normalizeKey(profile.scenarioKey)
   const checks = [
+    ...(profile.packetType === 'otp'
+      ? [['otp_document_variant', metadata.otpDocumentVariants, profile.otpDocumentVariant, 700, 'otp_document_variant_metadata']]
+      : []),
     ['scenario', metadata.scenarios, scenarioKey, 500, 'exact_scenario_metadata'],
     ['seller', metadata.sellerProfiles, profile.sellerClauseProfile, 100, 'seller_profile_metadata'],
     ['buyer', metadata.buyerProfiles, profile.buyerClauseProfile, 100, 'buyer_profile_metadata'],
@@ -157,6 +177,8 @@ export function buildLegalDocumentTemplateRoutingAudit(selection = null, options
   return {
     packetType: profile.packetType,
     legalDocumentScenarioKey: profile.scenarioKey,
+    otpDocumentVariant: profile.otpDocumentVariant || '',
+    otpTemplateRouteVariants: [...(selection?.metadata?.otpDocumentVariants || [])],
     scenarioComplete: Boolean(profile.complete),
     missingRoutingFacts: [...(profile.missingRoutingFacts || [])],
     sellerClauseProfile: profile.sellerClauseProfile,
@@ -184,6 +206,7 @@ export function buildLegalDocumentTemplateRouteSignature(template = {}) {
   const metadata = resolveLegalDocumentTemplateRoutingMetadata(template)
   const segment = (values = []) => values.length ? [...values].sort().join(',') : '*'
   return [
+    `otp_variant:${segment(metadata.otpDocumentVariants)}`,
     `scenario:${segment(metadata.scenarios)}`,
     `seller:${segment(metadata.sellerProfiles)}`,
     `buyer:${segment(metadata.buyerProfiles)}`,

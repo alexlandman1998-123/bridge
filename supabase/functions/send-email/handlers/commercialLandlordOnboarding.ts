@@ -1,5 +1,15 @@
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendCommercialLandlordOnboardingPayload } from "../types.ts";
+import {
+  renderBridgeBullets,
+  renderBridgeCta,
+  renderBridgeEmailLayout,
+  renderBridgeIntroParagraphs,
+} from "../content/bridgeEmailLayout.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 
@@ -79,37 +89,46 @@ function buildMessageCopy(
 
 function buildHtml(
   payload: SendCommercialLandlordOnboardingPayload,
+  branding: Awaited<ReturnType<typeof resolveEmailBranding>>,
 ) {
   const copy = buildMessageCopy(payload);
   const secureLink = normalizeText(copy.secureLink);
   const checklist = Array.isArray(copy.checklist) ? copy.checklist : [];
-  return `
-    <div style="background:#f4f7fb;padding:32px 16px;font-family:Inter,Arial,sans-serif;color:#102236;">
-      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #dbe3ee;border-radius:24px;padding:32px;">
-        <p style="margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#6b7d93;">Arch9 Commercial</p>
-        <h1 style="margin:0;font-size:28px;line-height:1.15;font-weight:700;color:#102236;">${copy.headline}</h1>
-        <p style="margin:16px 0 0;font-size:15px;line-height:1.8;color:#4a5a6f;">${copy.body}</p>
-        ${copy.progressLabel ? `<p style="margin:12px 0 0;font-size:14px;line-height:1.7;color:#4a5a6f;">${copy.progressLabel}</p>` : ""}
-        ${checklist.length ? `
-          <div style="margin-top:20px;border:1px solid #fde68a;background:#fffbeb;border-radius:18px;padding:18px 20px;">
-            <p style="margin:0 0 10px;font-size:14px;font-weight:700;color:#8a5a00;">Outstanding items</p>
-            <ul style="margin:0;padding-left:18px;color:#6a4a00;font-size:14px;line-height:1.7;">
-              ${checklist.map((item) => `<li>${item}</li>`).join("")}
-            </ul>
-          </div>
-        ` : ""}
-        ${secureLink ? `
-          <div style="margin-top:24px;">
-            <a href="${secureLink}" style="display:inline-block;background:#102b46;color:#ffffff;text-decoration:none;padding:14px 20px;border-radius:16px;font-size:14px;font-weight:700;">Open secure onboarding</a>
-          </div>
-          <p style="margin:14px 0 0;font-size:13px;line-height:1.7;color:#6b7d93;">If the button does not open, copy this secure link into your browser:<br /><a href="${secureLink}" style="color:#1267a3;word-break:break-all;">${secureLink}</a></p>
-        ` : ""}
-        <div style="margin-top:24px;border-top:1px solid #e2e8f0;padding-top:18px;">
-          <p style="margin:0;font-size:14px;line-height:1.8;color:#4a5a6f;">${copy.closing || ""}</p>
-        </div>
-      </div>
-    </div>
-  `;
+  const contentHtml = [
+    renderBridgeIntroParagraphs([
+      copy.body,
+      copy.progressLabel || "",
+    ]),
+    checklist.length
+      ? `<div style="margin: 0 0 16px; padding: 14px; border: 1px solid #dbe6f2; border-radius: 12px; background: #ffffff;">
+           <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">Outstanding items</p>
+           ${renderBridgeBullets(checklist)}
+         </div>`
+      : "",
+    secureLink
+      ? renderBridgeCta("Open Secure Onboarding", secureLink, {
+        primaryColor: branding.primaryColor,
+      })
+      : "",
+    renderBridgeIntroParagraphs([copy.closing || ""]),
+  ].join("");
+
+  return renderBridgeEmailLayout({
+    preheader: copy.body,
+    title: copy.headline,
+    greeting:
+      `Hi ${normalizeText(payload.recipientName) || normalizeText(payload.landlordName) || "there"},`,
+    contentHtml,
+    securityTitle: "Secure Commercial Onboarding",
+    securityBody:
+      "Your onboarding information and documents are handled through Arch9 so your broker can review them securely.",
+    helpBody:
+      "Need help? Reply to this email or contact your broker directly.",
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
+  });
 }
 
 function buildText(payload: SendCommercialLandlordOnboardingPayload) {
@@ -148,13 +167,26 @@ export async function handleCommercialLandlordOnboardingEmail(
   );
   const replyTo = normalizeText(payload.brokerEmail) || undefined;
   const copy = buildMessageCopy(payload);
+  const branding = await resolveEmailBranding({
+    payload: payload as Record<string, unknown>,
+    defaults: {
+      organisationName: normalizeText(payload.brokerageName) ||
+        "Arch9 Commercial",
+      supportEmail: normalizeText(payload.brokerEmail),
+      supportPhone: normalizeText(payload.brokerPhone),
+      replyTo,
+    },
+  });
 
   const delivery = await sendViaResendApi({
     apiKey: resendApiKey,
-    from: fromAddress,
+    from: formatEmailSender(
+      fromAddress,
+      branding.fromName || branding.organisationName,
+    ),
     to,
     subject: copy.subject,
-    html: buildHtml(payload),
+    html: buildHtml(payload, branding),
     text: buildText(payload),
     replyTo,
   });

@@ -4,6 +4,10 @@ import {
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendCommercialAccessNotificationPayload } from "../types.ts";
 import { jsonResponse } from "../utils/http.ts";
@@ -49,13 +53,22 @@ export async function handleCommercialAccessNotificationEmail(
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
   }
 
-  const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <no-reply@arch9.co.za>";
   const recipientName = normalizeText(payload.recipientName || payload.recipient_name) || "there";
   const requesterName = normalizeText(payload.requesterName || payload.requester_name) || "A workspace user";
   const requesterEmail = normalizeText(payload.requesterEmail || payload.requester_email);
   const organisationName = normalizeText(payload.organisationName || payload.organisation_name) || "your Arch9 workspace";
   const actionLink = normalizeText(payload.actionLink || payload.action_link);
+  const rawPayload = payload as Record<string, unknown>;
+  const branding = await resolveEmailBranding({
+    payload: rawPayload,
+    organisationId: normalizeText(rawPayload.organisationId || rawPayload.organisation_id),
+    defaults: { organisationName },
+  });
+  const from = formatEmailSender(
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      "Arch9 <no-reply@arch9.co.za>",
+    branding.fromName || branding.organisationName,
+  );
 
   const isDecision = eventKind === "decision";
   const isReminder = eventKind === "reminder";
@@ -90,13 +103,18 @@ export async function handleCommercialAccessNotificationEmail(
     contentHtml: [
       renderBridgeIntroParagraphs([message]),
       renderBridgeSummaryCard(summary, "Commercial Access"),
-      renderBridgeCta(resolveActionLabel(eventKind, decision), actionLink),
+      renderBridgeCta(resolveActionLabel(eventKind, decision), actionLink, {
+        primaryColor: branding.primaryColor,
+      }),
     ].join(""),
     securityBody:
       "Commercial workspace access can only be approved by authorised principals and workspace administrators.",
     helpBody:
       "Open Arch9 to review Commercial access and keep workspace permissions aligned with your brokerage process.",
-    organisationName,
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
   });
 
   const text = [

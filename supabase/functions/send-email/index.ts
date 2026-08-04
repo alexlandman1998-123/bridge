@@ -11,10 +11,13 @@ import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
 import { handleLeadPropertyShareEmail } from "./handlers/leadPropertyShare.ts";
 import { handleLeadAcknowledgementEmail } from "./handlers/leadAcknowledgement.ts";
+import { handleLeadOperationsNotificationEmail } from "./handlers/leadOperationsNotification.ts";
+import { handleAdditionalDocumentRequestEmail } from "./handlers/additionalDocumentRequest.ts";
 import {
   handleArch9LaunchConfirmationEmail,
   handleArch9LaunchInternalNotificationEmail,
 } from "./handlers/arch9LaunchConfirmation.ts";
+import { handlePublicDemoEnquiryNotificationEmail } from "./handlers/publicDemoEnquiry.ts";
 import { handleBondIntakeNotificationEmail } from "./handlers/bondIntakeNotification.ts";
 import { handleBondOriginatorBuyerIntroEmail } from "./handlers/bondOriginatorBuyerIntro.ts";
 import { handleCommercialAccessNotificationEmail } from "./handlers/commercialAccessNotification.ts";
@@ -29,35 +32,50 @@ import {
 import { handleTransactionPartnerInvitationEmail } from "./handlers/transactionPartnerInvitation.ts";
 import { handleNotificationReminderDispatchEmail } from "./handlers/notificationReminderDispatch.ts";
 import { handleAttorneyQuoteEmail } from "./handlers/attorneyQuote.ts";
+import { handleTransactionOperationsNotificationEmail } from "./handlers/transactionOperationsNotification.ts";
+import { handleClientSellerPortalNotificationEmail } from "./handlers/clientSellerPortalNotification.ts";
+import { handleBondAttorneyLegalNotificationEmail } from "./handlers/bondAttorneyLegalNotification.ts";
+import { handleWeeklyDigestNotificationEmail } from "./handlers/weeklyDigestNotification.ts";
+import { handleCommercialEnterpriseNotificationEmail } from "./handlers/commercialEnterpriseNotification.ts";
 import { handleTransactionProgressDispatchEmail } from "./handlers/transactionProgressDispatch.ts";
+import { handleNotificationControlsOperation } from "./handlers/notificationControlsOperations.ts";
 import type {
+  SendAdditionalDocumentRequestPayload,
   SendAppointmentEmailPayload,
-  SendAttorneyQuotePayload,
   SendArch9LaunchConfirmationPayload,
   SendArch9LaunchInternalNotificationPayload,
+  SendAttorneyQuotePayload,
+  SendBondAttorneyLegalNotificationPayload,
   SendBondIntakeNotificationPayload,
   SendBondOriginatorBuyerIntroPayload,
   SendBuyerOfferLinkPayload,
   SendBuyerOfferSubmittedAgentPayload,
   SendClientOnboardingPayload,
+  SendClientSellerPortalNotificationPayload,
   SendCommercialAccessNotificationPayload,
+  SendCommercialEnterpriseNotificationPayload,
   SendCommercialLandlordOnboardingPayload,
-  SendLeadPropertySharePayload,
   SendLeadAcknowledgementPayload,
+  SendLeadOperationsNotificationPayload,
+  SendLeadPropertySharePayload,
   SendLegacyTestPayload,
+  SendNotificationControlsPayload,
   SendNotificationReminderDispatchPayload,
   SendOfferDecisionNotificationPayload,
   SendOnboardingSubmittedPayload,
   SendOrganisationPartnerInvitationPayload,
+  SendPublicDemoEnquiryNotificationPayload,
   SendReservationDepositPayload,
   SendReservationDepositReceivedPayload,
   SendSellerOfferReviewPayload,
   SendSellerOnboardingPayload,
   SendSellerOnboardingSubmittedPayload,
+  SendTransactionOperationsNotificationPayload,
   SendTransactionPartnerInvitationPayload,
+  SendTransactionProgressDispatchPayload,
   SendTransactionRoleplayerHandoffPayload,
   SendTransactionRoleplayerIntroPayload,
-  SendTransactionProgressDispatchPayload,
+  SendWeeklyDigestNotificationPayload,
   SendWorkspaceInvitePayload,
 } from "./types.ts";
 import { corsHeaders, jsonResponse } from "./utils/http.ts";
@@ -130,14 +148,16 @@ Deno.serve(async (req: Request) => {
     if (isRetiredFinalSignedLegalDocumentEmailType(type)) {
       return jsonResponse(409, {
         success: false,
-        error: "Final signed legal documents must be delivered through the packet-bound canonical final-delivery endpoint.",
+        error:
+          "Final signed legal documents must be delivered through the packet-bound canonical final-delivery endpoint.",
         errorCode: FINAL_SIGNED_LEGAL_DOCUMENT_DELIVERY_ROUTE_RETIRED,
       });
     }
 
     const recipientSafety = assessControlledTestRecipient({
       email: recipient,
-      recipientName: payload.recipientName ?? payload.recipient_name ?? payload.buyerName ?? payload.sellerName,
+      recipientName: payload.recipientName ?? payload.recipient_name ??
+        payload.buyerName ?? payload.sellerName,
       metadata: payload.metadata,
     });
 
@@ -283,7 +303,9 @@ Deno.serve(async (req: Request) => {
             ? "seller_portal_link"
             : (payload as SendSellerOnboardingPayload).type,
           emailKind: type === "seller_portal_link"
-            ? normalizeText((payload as SendSellerOnboardingPayload).emailKind) || "portal_documents"
+            ? normalizeText(
+              (payload as SendSellerOnboardingPayload).emailKind,
+            ) || "portal_documents"
             : (payload as SendSellerOnboardingPayload).emailKind,
         },
       );
@@ -310,14 +332,17 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if (["seller_mandate_sent", "seller_mandate", "otp_signing"].includes(type)) {
+    if (
+      ["seller_mandate_sent", "seller_mandate", "otp_signing"].includes(type)
+    ) {
       // Signing invitations must be authorised against the packet, its exact
       // generated PDF, and its active signer token. The generic email router
       // has none of that context, so retaining this route would let callers
       // bypass the guarded send-mandate-signing-email endpoint.
       return jsonResponse(409, {
         success: false,
-        error: "Signing invitations must be sent through the packet-bound delivery endpoint.",
+        error:
+          "Signing invitations must be sent through the packet-bound delivery endpoint.",
         errorCode: type === "otp_signing"
           ? "OTP_SIGNING_DELIVERY_ROUTE_RETIRED"
           : "MANDATE_SIGNING_DELIVERY_ROUTE_RETIRED",
@@ -356,6 +381,29 @@ Deno.serve(async (req: Request) => {
 
     if (
       [
+        "new_enquiry_assigned_agent",
+        "new_enquiry_unassigned_manager",
+        "lead_assigned",
+        "lead_reassigned",
+        "lead_unassigned",
+        "lead_claimed_confirmation",
+        "lead_operations_notification",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "lead_operations_notification",
+        requestedType: type,
+        recipient: recipient || null,
+        leadId: normalizeText(payload.leadId ?? payload.lead_id) || null,
+      });
+      return await handleLeadOperationsNotificationEmail({
+        ...(payload as SendLeadOperationsNotificationPayload),
+        type: type as SendLeadOperationsNotificationPayload["type"],
+      });
+    }
+
+    if (
+      [
         "lead_property_share",
         "property_collection",
         "property_collection_email",
@@ -369,6 +417,25 @@ Deno.serve(async (req: Request) => {
       return await handleLeadPropertyShareEmail(
         payload as SendLeadPropertySharePayload,
       );
+    }
+
+    if (
+      [
+        "additional_document_request",
+        "document_request",
+        "transaction_document_request",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "additional_document_request",
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
+      return await handleAdditionalDocumentRequestEmail({
+        ...(payload as SendAdditionalDocumentRequestPayload),
+        type: "additional_document_request",
+        transactionId,
+      });
     }
 
     if (
@@ -567,6 +634,26 @@ Deno.serve(async (req: Request) => {
 
     if (
       [
+        "notification_controls_apply_queue",
+        "notification_preferences_apply_queue",
+        "notification_queue_controls",
+        "notification_observability_snapshot",
+        "notification_controls_snapshot",
+        "notification_health_snapshot",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing operation", {
+        route: "notification_controls",
+        type,
+      });
+      return await handleNotificationControlsOperation(
+        req,
+        payload as SendNotificationControlsPayload,
+      );
+    }
+
+    if (
+      [
         "notification_reminder_dispatch",
         "notification_reminder_dispatcher",
         "dispatch_notification_reminders",
@@ -587,7 +674,9 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
-      ["transaction_progress_dispatch", "transaction_progress_resend"].includes(type)
+      ["transaction_progress_dispatch", "transaction_progress_resend"].includes(
+        type,
+      )
     ) {
       console.log("[send-email] routing template", {
         route: "transaction_progress_dispatch",
@@ -604,7 +693,202 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
-      ["workspace_invite", "team_invite", "branch_invite", "agent_invite", "developer_access_invite"]
+      [
+        "transaction_operations_notification",
+        "transaction_operations_dispatch",
+        "transaction_operations_resend",
+        "transaction_operations_notifications_dispatch",
+        "transaction_created",
+        "transaction_owner_changed",
+        "transaction_roleplayer_assigned",
+        "transaction_roleplayer_reassigned",
+        "transaction_partner_accepted",
+        "transaction_partner_declined",
+        "attorney_invite_accepted",
+        "bond_originator_invite_accepted",
+        "transaction_stage_changed",
+        "transaction_stalled",
+        "transaction_cancelled",
+        "transaction_archived",
+        "transaction_reactivated",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "transaction_operations_notification",
+        type,
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
+      return await handleTransactionOperationsNotificationEmail(
+        req,
+        {
+          ...(payload as SendTransactionOperationsNotificationPayload),
+          type: type as SendTransactionOperationsNotificationPayload["type"],
+          transactionId,
+        },
+      );
+    }
+
+    if (
+      [
+        "client_seller_portal_notification",
+        "client_seller_portal_dispatch",
+        "client_seller_portal_resend",
+        "client_seller_portal_notifications_dispatch",
+        "offer_viewed_by_seller",
+        "offer_not_reviewed_reminder",
+        "offer_review_overdue_escalation",
+        "seller_mandate_viewed_unsigned_reminder",
+        "seller_mandate_signing_overdue_escalation",
+        "buyer_onboarding_opened",
+        "buyer_onboarding_started_not_submitted_reminder",
+        "buyer_onboarding_overdue_escalation",
+        "buyer_onboarding_submitted_confirmation",
+        "client_portal_message_received",
+        "client_portal_document_uploaded",
+        "client_portal_document_rejected",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "client_seller_portal_notification",
+        type,
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
+      return await handleClientSellerPortalNotificationEmail(
+        req,
+        {
+          ...(payload as SendClientSellerPortalNotificationPayload),
+          type: type as SendClientSellerPortalNotificationPayload["type"],
+          transactionId,
+        },
+      );
+    }
+
+    if (
+      [
+        "bond_attorney_legal_notification",
+        "bond_attorney_legal_dispatch",
+        "bond_attorney_legal_resend",
+        "bond_attorney_legal_notifications_dispatch",
+        "bond_application_submitted",
+        "bond_application_status_changed",
+        "bond_additional_documents_requested",
+        "bond_document_uploaded",
+        "bond_bank_offer_received",
+        "bond_bank_offer_buyer_decision",
+        "bond_grant_received",
+        "bond_grant_published",
+        "bond_delivery_failed",
+        "attorney_instruction_ready",
+        "attorney_instruction_accepted",
+        "attorney_instruction_declined",
+        "attorney_assignment_changed",
+        "attorney_matter_stage_changed",
+        "attorney_client_financial_document_published",
+        "legal_packet_generated",
+        "legal_packet_sent_for_signing",
+        "legal_signer_viewed",
+        "legal_signer_signed",
+        "legal_packet_completed",
+        "legal_signing_dispatch_failed",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "bond_attorney_legal_notification",
+        type,
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
+      return await handleBondAttorneyLegalNotificationEmail(
+        req,
+        {
+          ...(payload as SendBondAttorneyLegalNotificationPayload),
+          type: type as SendBondAttorneyLegalNotificationPayload["type"],
+          transactionId,
+        },
+      );
+    }
+
+    if (
+      [
+        "weekly_digest_notification",
+        "weekly_digest_dispatch",
+        "weekly_digest_resend",
+        "weekly_digest_notifications_dispatch",
+        "agent_weekly_lead_digest",
+        "agent_weekly_transaction_digest",
+        "agent_weekly_task_digest",
+        "manager_weekly_team_digest",
+        "principal_weekly_business_digest",
+        "seller_weekly_listing_digest",
+        "buyer_weekly_transaction_digest",
+        "attorney_weekly_matter_digest",
+        "bond_originator_weekly_pipeline_digest",
+        "commercial_weekly_pipeline_digest",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "weekly_digest_notification",
+        type,
+        recipient: recipient || null,
+      });
+      return await handleWeeklyDigestNotificationEmail(
+        req,
+        {
+          ...(payload as SendWeeklyDigestNotificationPayload),
+          type: type as SendWeeklyDigestNotificationPayload["type"],
+        },
+      );
+    }
+
+    if (
+      [
+        "commercial_enterprise_notification",
+        "commercial_enterprise_dispatch",
+        "commercial_enterprise_resend",
+        "commercial_enterprise_notifications_dispatch",
+        "agency_public_intake_received",
+        "commercial_access_requested",
+        "commercial_access_decision",
+        "commercial_broker_assigned",
+        "commercial_canvassing_prospect_created",
+        "commercial_requirement_created",
+        "commercial_requirement_stage_changed",
+        "commercial_deal_created",
+        "commercial_deal_stage_changed",
+        "commercial_viewing_scheduled",
+        "commercial_viewing_status_changed",
+        "commercial_document_request_created",
+        "commercial_document_uploaded",
+        "commercial_heads_of_terms_status_changed",
+        "commercial_transaction_status_changed",
+        "enterprise_member_scope_changed",
+        "enterprise_branch_team_assignment_changed",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "commercial_enterprise_notification",
+        type,
+        recipient: recipient || null,
+      });
+      return await handleCommercialEnterpriseNotificationEmail(
+        req,
+        {
+          ...(payload as SendCommercialEnterpriseNotificationPayload),
+          type: type as SendCommercialEnterpriseNotificationPayload["type"],
+        },
+      );
+    }
+
+    if (
+      [
+        "workspace_invite",
+        "team_invite",
+        "branch_invite",
+        "agent_invite",
+        "developer_access_invite",
+      ]
         .includes(type) &&
       (payload as SendWorkspaceInvitePayload).to
     ) {
@@ -656,6 +940,18 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
+      ["public_demo_enquiry", "demo_enquiry_notification"].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "public_demo_enquiry",
+        recipient: recipient || null,
+      });
+      return await handlePublicDemoEnquiryNotificationEmail(
+        payload as SendPublicDemoEnquiryNotificationPayload,
+      );
+    }
+
+    if (
       ["legacy_test", "test_email", "bridge_email_test"].includes(type) &&
       (payload as SendLegacyTestPayload).to
     ) {
@@ -682,8 +978,17 @@ Deno.serve(async (req: Request) => {
           "seller_onboarding",
           "seller_onboarding_submitted",
           "seller_mandate_sent",
+          "new_enquiry_assigned_agent",
+          "new_enquiry_unassigned_manager",
+          "lead_assigned",
+          "lead_reassigned",
+          "lead_unassigned",
+          "lead_claimed_confirmation",
+          "lead_operations_notification",
           "lead_property_share",
           "property_collection",
+          "additional_document_request",
+          "document_request",
           "buyer_offer_link",
           "buyer_offer_submitted_agent",
           "seller_offer_review",
@@ -697,9 +1002,108 @@ Deno.serve(async (req: Request) => {
           "branch_invite",
           "agent_invite",
           "developer_access_invite",
+          "notification_controls_apply_queue",
+          "notification_preferences_apply_queue",
+          "notification_queue_controls",
+          "notification_observability_snapshot",
+          "notification_controls_snapshot",
+          "notification_health_snapshot",
           "notification_reminder_dispatch",
           "transaction_progress_dispatch",
           "transaction_progress_resend",
+          "transaction_operations_notification",
+          "transaction_operations_dispatch",
+          "transaction_operations_resend",
+          "transaction_operations_notifications_dispatch",
+          "transaction_created",
+          "transaction_owner_changed",
+          "transaction_roleplayer_assigned",
+          "transaction_roleplayer_reassigned",
+          "transaction_partner_accepted",
+          "transaction_partner_declined",
+          "attorney_invite_accepted",
+          "bond_originator_invite_accepted",
+          "transaction_stage_changed",
+          "transaction_stalled",
+          "transaction_cancelled",
+          "transaction_archived",
+          "transaction_reactivated",
+          "client_seller_portal_notification",
+          "client_seller_portal_dispatch",
+          "client_seller_portal_resend",
+          "client_seller_portal_notifications_dispatch",
+          "offer_viewed_by_seller",
+          "offer_not_reviewed_reminder",
+          "offer_review_overdue_escalation",
+          "seller_mandate_viewed_unsigned_reminder",
+          "seller_mandate_signing_overdue_escalation",
+          "buyer_onboarding_opened",
+          "buyer_onboarding_started_not_submitted_reminder",
+          "buyer_onboarding_overdue_escalation",
+          "buyer_onboarding_submitted_confirmation",
+          "client_portal_message_received",
+          "client_portal_document_uploaded",
+          "client_portal_document_rejected",
+          "bond_attorney_legal_notification",
+          "bond_attorney_legal_dispatch",
+          "bond_attorney_legal_resend",
+          "bond_attorney_legal_notifications_dispatch",
+          "bond_application_submitted",
+          "bond_application_status_changed",
+          "bond_additional_documents_requested",
+          "bond_document_uploaded",
+          "bond_bank_offer_received",
+          "bond_bank_offer_buyer_decision",
+          "bond_grant_received",
+          "bond_grant_published",
+          "bond_delivery_failed",
+          "attorney_instruction_ready",
+          "attorney_instruction_accepted",
+          "attorney_instruction_declined",
+          "attorney_assignment_changed",
+          "attorney_matter_stage_changed",
+          "attorney_client_financial_document_published",
+          "legal_packet_generated",
+          "legal_packet_sent_for_signing",
+          "legal_signer_viewed",
+          "legal_signer_signed",
+          "legal_packet_completed",
+          "legal_signing_dispatch_failed",
+          "weekly_digest_notification",
+          "weekly_digest_dispatch",
+          "weekly_digest_resend",
+          "weekly_digest_notifications_dispatch",
+          "agent_weekly_lead_digest",
+          "agent_weekly_transaction_digest",
+          "agent_weekly_task_digest",
+          "manager_weekly_team_digest",
+          "principal_weekly_business_digest",
+          "seller_weekly_listing_digest",
+          "buyer_weekly_transaction_digest",
+          "attorney_weekly_matter_digest",
+          "bond_originator_weekly_pipeline_digest",
+          "commercial_weekly_pipeline_digest",
+          "commercial_enterprise_notification",
+          "commercial_enterprise_dispatch",
+          "commercial_enterprise_resend",
+          "commercial_enterprise_notifications_dispatch",
+          "agency_public_intake_received",
+          "commercial_access_requested",
+          "commercial_access_decision",
+          "commercial_broker_assigned",
+          "commercial_canvassing_prospect_created",
+          "commercial_requirement_created",
+          "commercial_requirement_stage_changed",
+          "commercial_deal_created",
+          "commercial_deal_stage_changed",
+          "commercial_viewing_scheduled",
+          "commercial_viewing_status_changed",
+          "commercial_document_request_created",
+          "commercial_document_uploaded",
+          "commercial_heads_of_terms_status_changed",
+          "commercial_transaction_status_changed",
+          "enterprise_member_scope_changed",
+          "enterprise_branch_team_assignment_changed",
           "appointment_scheduled",
           "appointment_confirmed",
           "appointment_updated",
@@ -711,6 +1115,7 @@ Deno.serve(async (req: Request) => {
           "arch9_launch_confirmation",
           "arch9_launch_internal_notification",
           "arch9_training_request",
+          "public_demo_enquiry",
           "legacy_test",
         ],
       });
@@ -732,6 +1137,17 @@ Deno.serve(async (req: Request) => {
         "seller_onboarding",
         "seller_onboarding_submitted",
         "seller_mandate_sent",
+        "new_enquiry_assigned_agent",
+        "new_enquiry_unassigned_manager",
+        "lead_assigned",
+        "lead_reassigned",
+        "lead_unassigned",
+        "lead_claimed_confirmation",
+        "lead_operations_notification",
+        "lead_property_share",
+        "property_collection",
+        "additional_document_request",
+        "document_request",
         "buyer_offer_link",
         "buyer_offer_submitted_agent",
         "seller_offer_review",
@@ -745,9 +1161,108 @@ Deno.serve(async (req: Request) => {
         "branch_invite",
         "agent_invite",
         "developer_access_invite",
+        "notification_controls_apply_queue",
+        "notification_preferences_apply_queue",
+        "notification_queue_controls",
+        "notification_observability_snapshot",
+        "notification_controls_snapshot",
+        "notification_health_snapshot",
         "notification_reminder_dispatch",
         "transaction_progress_dispatch",
         "transaction_progress_resend",
+        "transaction_operations_notification",
+        "transaction_operations_dispatch",
+        "transaction_operations_resend",
+        "transaction_operations_notifications_dispatch",
+        "transaction_created",
+        "transaction_owner_changed",
+        "transaction_roleplayer_assigned",
+        "transaction_roleplayer_reassigned",
+        "transaction_partner_accepted",
+        "transaction_partner_declined",
+        "attorney_invite_accepted",
+        "bond_originator_invite_accepted",
+        "transaction_stage_changed",
+        "transaction_stalled",
+        "transaction_cancelled",
+        "transaction_archived",
+        "transaction_reactivated",
+        "client_seller_portal_notification",
+        "client_seller_portal_dispatch",
+        "client_seller_portal_resend",
+        "client_seller_portal_notifications_dispatch",
+        "offer_viewed_by_seller",
+        "offer_not_reviewed_reminder",
+        "offer_review_overdue_escalation",
+        "seller_mandate_viewed_unsigned_reminder",
+        "seller_mandate_signing_overdue_escalation",
+        "buyer_onboarding_opened",
+        "buyer_onboarding_started_not_submitted_reminder",
+        "buyer_onboarding_overdue_escalation",
+        "buyer_onboarding_submitted_confirmation",
+        "client_portal_message_received",
+        "client_portal_document_uploaded",
+        "client_portal_document_rejected",
+        "bond_attorney_legal_notification",
+        "bond_attorney_legal_dispatch",
+        "bond_attorney_legal_resend",
+        "bond_attorney_legal_notifications_dispatch",
+        "bond_application_submitted",
+        "bond_application_status_changed",
+        "bond_additional_documents_requested",
+        "bond_document_uploaded",
+        "bond_bank_offer_received",
+        "bond_bank_offer_buyer_decision",
+        "bond_grant_received",
+        "bond_grant_published",
+        "bond_delivery_failed",
+        "attorney_instruction_ready",
+        "attorney_instruction_accepted",
+        "attorney_instruction_declined",
+        "attorney_assignment_changed",
+        "attorney_matter_stage_changed",
+        "attorney_client_financial_document_published",
+        "legal_packet_generated",
+        "legal_packet_sent_for_signing",
+        "legal_signer_viewed",
+        "legal_signer_signed",
+        "legal_packet_completed",
+        "legal_signing_dispatch_failed",
+        "weekly_digest_notification",
+        "weekly_digest_dispatch",
+        "weekly_digest_resend",
+        "weekly_digest_notifications_dispatch",
+        "agent_weekly_lead_digest",
+        "agent_weekly_transaction_digest",
+        "agent_weekly_task_digest",
+        "manager_weekly_team_digest",
+        "principal_weekly_business_digest",
+        "seller_weekly_listing_digest",
+        "buyer_weekly_transaction_digest",
+        "attorney_weekly_matter_digest",
+        "bond_originator_weekly_pipeline_digest",
+        "commercial_weekly_pipeline_digest",
+        "commercial_enterprise_notification",
+        "commercial_enterprise_dispatch",
+        "commercial_enterprise_resend",
+        "commercial_enterprise_notifications_dispatch",
+        "agency_public_intake_received",
+        "commercial_access_requested",
+        "commercial_access_decision",
+        "commercial_broker_assigned",
+        "commercial_canvassing_prospect_created",
+        "commercial_requirement_created",
+        "commercial_requirement_stage_changed",
+        "commercial_deal_created",
+        "commercial_deal_stage_changed",
+        "commercial_viewing_scheduled",
+        "commercial_viewing_status_changed",
+        "commercial_document_request_created",
+        "commercial_document_uploaded",
+        "commercial_heads_of_terms_status_changed",
+        "commercial_transaction_status_changed",
+        "enterprise_member_scope_changed",
+        "enterprise_branch_team_assignment_changed",
         "appointment_scheduled",
         "appointment_confirmed",
         "appointment_updated",
@@ -759,6 +1274,7 @@ Deno.serve(async (req: Request) => {
         "arch9_launch_confirmation",
         "arch9_launch_internal_notification",
         "arch9_training_request",
+        "public_demo_enquiry",
         "legacy_test",
       ],
     });

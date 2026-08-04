@@ -1,4 +1,5 @@
 import {
+  fetchClientPortalAttorneyLaneUpdatesByToken,
   fetchClientPortalByToken,
   fetchClientPortalContextsByToken,
   fetchClientPortalCoreByToken,
@@ -3295,9 +3296,25 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     hasSellingContext: context.hasSellingContext,
   })
 
+  const clientRole = workspaceMode === 'selling' ? 'seller' : 'buyer'
   let portalData = await fetchPortalDataForWorkspace(token, mode, {
     sellerPortalAccessToken: options?.sellerPortalAccessToken,
+    clientRole,
   })
+  if (!isSellerOnboardingToken(token) && portalData?.transaction?.id) {
+    const attorneyLaneUpdates = await fetchClientPortalAttorneyLaneUpdatesByToken(token, clientRole, { limit: 12 }).catch((error) => {
+      console.warn('[client-portal-attorney-updates] Failed to resolve attorney updates', {
+        token,
+        clientRole,
+        error,
+      })
+      return []
+    })
+    portalData = {
+      ...portalData,
+      attorneyLaneUpdates,
+    }
+  }
   const resolvedSellingContext = (Array.isArray(context.contexts) ? context.contexts : []).find((item) => {
     const type = String(item?.contextType || item?.context_type || '').trim().toLowerCase()
     const status = String(item?.status || '').trim().toLowerCase()
@@ -3351,7 +3368,6 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   const appointments = Array.isArray(portalData?.appointments) ? portalData.appointments : []
   const lifecycle = buildLifecycle(portalData)
   const timeline = buildTimeline(portalData)
-  const clientRole = workspaceMode === 'selling' ? 'seller' : 'buyer'
   let workflowReadModel = null
   try {
     if (mode !== 'core' && portalData?.transaction?.id) {
@@ -3516,6 +3532,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     workflowSummary,
     mvpControlBoard: workflowReadModel?.mvpControlBoard || null,
     mvpTransactionHealth: workflowReadModel?.mvpTransactionHealth || null,
+    attorneyUpdates: Array.isArray(portalData?.attorneyLaneUpdates) ? portalData.attorneyLaneUpdates : [],
     activityFeed,
     groupedActivityFeed,
     activityFeedSummary: activityFeedModel.summary,

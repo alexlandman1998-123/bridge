@@ -10,7 +10,7 @@ import {
   updateLeadTask,
 } from './agencyPipelineService'
 import { isUnsafeFallbackAllowed } from './envValidation'
-import { isSupabaseConfigured, supabase } from './supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from './supabaseClient'
 import { assertResolvedWorkspaceContext } from '../services/workspaceResolutionService'
 import { inferLeadCategoryFromRecord, normalizeLeadCategory } from './leadCategory'
 
@@ -385,6 +385,144 @@ async function lookupOrganisationUserScope(workspaceId = '', { userId = '', emai
   }
 
   return null
+}
+
+function getAppBaseUrl() {
+  return normalizeText(
+    import.meta?.env?.VITE_PUBLIC_APP_URL ||
+    import.meta?.env?.VITE_APP_BASE_URL ||
+    import.meta?.env?.VITE_CLIENT_APP_URL,
+  ) || 'https://app.arch9.co.za'
+}
+
+function buildLeadActionLink(leadId = '') {
+  const normalizedLeadId = normalizeText(leadId)
+  const baseUrl = getAppBaseUrl().replace(/\/+$/, '')
+  return normalizedLeadId ? `${baseUrl}/agency/leads/${encodeURIComponent(normalizedLeadId)}` : `${baseUrl}/agency/leads`
+}
+
+function normalizeRoleKey(value = '') {
+  return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function isLeadManagerRole(row = {}) {
+  const role = normalizeRoleKey(row.workspace_role || row.organisation_role || row.role || row.app_role)
+  return ['owner', 'principal', 'agency_principal', 'admin', 'super_admin', 'branch_manager', 'agency_manager', 'manager'].includes(role)
+}
+
+function memberDisplayName(row = {}, fallback = '') {
+  return normalizeText([row.first_name, row.last_name].filter(Boolean).join(' ')) ||
+    normalizeText(row.name || row.full_name || row.email) ||
+    fallback
+}
+
+async function fetchOrganisationUserById(workspaceId = '', userId = '') {
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(workspaceId) || !isUuidLike(userId)) return null
+  const query = await supabase
+    .from('organisation_users')
+    .select('user_id, first_name, last_name, name, full_name, email, role, workspace_role, organisation_role, app_role, branch_id, status')
+    .eq('organisation_id', workspaceId)
+    .eq('user_id', userId)
+    .in('status', ['active', 'accepted'])
+    .limit(1)
+    .maybeSingle()
+  if (!query.error && query.data) return query.data
+  return null
+}
+
+async function fetchLeadManagerRecipients(workspaceId = '', branchId = '') {
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(workspaceId)) return []
+  const query = await supabase
+    .from('organisation_users')
+    .select('user_id, first_name, last_name, name, full_name, email, role, workspace_role, organisation_role, app_role, branch_id, status')
+    .eq('organisation_id', workspaceId)
+    .in('status', ['active', 'accepted'])
+    .limit(50)
+  if (query.error) return []
+  const rows = Array.isArray(query.data) ? query.data : []
+  const scoped = rows.filter((row) => {
+    const email = normalizeText(row.email).toLowerCase()
+    const rowBranch = normalizeText(row.branch_id)
+    return email && isLeadManagerRole(row) && (!branchId || !rowBranch || rowBranch === branchId)
+  })
+  const managers = scoped.length ? scoped : rows.filter((row) => normalizeText(row.email).toLowerCase() && isLeadManagerRole(row))
+  return managers.slice(0, 5)
+}
+
+function buildLeadAssignmentEmailBase(organisationId = '', lead = {}, patch = {}) {
+  const leadId = normalizeText(lead?.lead_id || lead?.leadId)
+  return {
+    organisationId,
+    leadId,
+    branchId: normalizeText(patch.branchId || lead?.branch_id || lead?.branchId),
+    leadName: normalizeText(patch.leadName || lead?.contact_name || lead?.sellerName || lead?.seller_name || lead?.lead_name),
+    leadEmail: normalizeText(patch.leadEmail || lead?.email || lead?.sellerEmail || lead?.seller_email).toLowerCase(),
+    leadPhone: normalizeText(patch.leadPhone || lead?.phone || lead?.sellerPhone || lead?.seller_phone),
+    leadSource: normalizeText(patch.leadSource || lead?.lead_source || lead?.leadSource),
+    leadCategory: normalizeText(patch.leadCategory || lead?.lead_category || lead?.leadCategory),
+    leadStatus: normalizeText(patch.status || patch.stage || lead?.status || lead?.stage),
+    propertyLabel: normalizeText(patch.propertyLabel || lead?.enquired_property_title || lead?.enquired_property_address || lead?.seller_property_address || lead?.property_interest),
+    budgetLabel: normalizeText(patch.budgetLabel || (lead?.budget ? String(lead.budget) : '')),
+    actionLink: buildLeadActionLink(leadId),
+    source: 'agency_crm_assignment',
+  }
+}
+
+async function dispatchLeadAssignmentNotification({ organisationId = '', leadId = '', previousLead = {}, patch = {}, actor = null } = {}) {
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId) || !isUuidLike(leadId)) return { attempted: false, reason: 'not_configured' }
+  const assignmentTouched = ['assignedAgentId', 'assignedUserId', 'assignedAgentEmail', 'assignedQueueId', 'ownershipStatus'].some((key) => hasOwn(patch, key))
+  if (!assignmentTouched) return { attempted: false, reason: 'assignment_not_changed' }
+
+  const nextAgentId = normalizeText(patch.assignedAgentId || patch.assignedUserId)
+  const previousAgentId = normalizeText(previousLead?.assigned_agent_id || previousLead?.assigned_user_id)
+  const branchId = normalizeText(patch.branchId || previousLead?.branch_id)
+  const reason = normalizeText(patch.reason || patch.assignmentReason || patch.activityNote)
+  const basePayload = buildLeadAssignmentEmailBase(organisationId, { ...previousLead, lead_id: leadId }, patch)
+  const results = []
+
+  if (nextAgentId) {
+    const nextAgent = await fetchOrganisationUserById(organisationId, nextAgentId)
+    const nextEmail = normalizeText(patch.assignedAgentEmail || nextAgent?.email).toLowerCase()
+    if (nextEmail) {
+      const eventType = previousAgentId && previousAgentId !== nextAgentId ? 'lead_reassigned' : 'lead_assigned'
+      const previousAgent = previousAgentId && previousAgentId !== nextAgentId ? await fetchOrganisationUserById(organisationId, previousAgentId) : null
+      results.push(await invokeEdgeFunction('send-email', {
+        body: {
+          ...basePayload,
+          type: eventType,
+          to: nextEmail,
+          recipientName: memberDisplayName(nextAgent, 'Agent'),
+          recipientRole: 'agent',
+          assignedUserId: nextAgentId,
+          assignedAgentName: memberDisplayName(nextAgent, ''),
+          assignedAgentEmail: nextEmail,
+          previousAgentName: memberDisplayName(previousAgent, ''),
+          previousAgentEmail: normalizeText(previousAgent?.email).toLowerCase(),
+          reason,
+          idempotencyKey: `lead-ops:${leadId}:${eventType}:${nextAgentId}:${Date.now()}`,
+        },
+      }))
+    }
+    return { attempted: results.length > 0, results }
+  }
+
+  const managers = await fetchLeadManagerRecipients(organisationId, branchId)
+  for (const manager of managers) {
+    const email = normalizeText(manager.email).toLowerCase()
+    if (!email) continue
+    results.push(await invokeEdgeFunction('send-email', {
+      body: {
+        ...basePayload,
+        type: 'lead_unassigned',
+        to: email,
+        recipientName: memberDisplayName(manager, 'Manager'),
+        recipientRole: 'manager',
+        reason,
+        idempotencyKey: `lead-ops:${leadId}:lead-unassigned:${normalizeText(manager.user_id || email)}:${Date.now()}`,
+      },
+    }))
+  }
+  return { attempted: results.length > 0, results }
 }
 
 async function resolveLeadScopeContext(workspaceId = '', payload = {}, actor = null, lookupScope = lookupOrganisationUserScope) {
@@ -1210,6 +1348,9 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
     return updatedLead
   }
 
+  const previousLeadQuery = await fetchLeadRowById(normalizedOrganisationId, dbLeadId)
+  const previousLead = previousLeadQuery?.data || null
+
   try {
     let updateResult = await supabase
       .from('leads')
@@ -1272,6 +1413,17 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
   } catch (error) {
     console.error('[agencyCrmRepository] update lead failed without local fallback', error)
     throw error
+  }
+
+  try {
+    await dispatchLeadAssignmentNotification({
+      organisationId: normalizedOrganisationId,
+      leadId: dbLeadId,
+      previousLead,
+      patch,
+    })
+  } catch (notificationError) {
+    console.warn('[agencyCrmRepository] lead assignment notification failed without rolling back update', notificationError)
   }
 
   return updatedLead

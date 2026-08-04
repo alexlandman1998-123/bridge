@@ -57,6 +57,26 @@ export type SendBondIntakeNotificationPayload = {
   metadata?: JsonRecord;
 };
 
+export type SendAdditionalDocumentRequestPayload = {
+  type:
+    | "additional_document_request"
+    | "document_request"
+    | "transaction_document_request";
+  transactionId?: string;
+  transaction_id?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  to: string;
+  recipientName?: string;
+  recipient_name?: string;
+  subject?: string;
+  title?: string;
+  message?: string;
+  actionLink?: string;
+  action_link?: string;
+  metadata?: JsonRecord;
+} & DeliveryContextPayload;
+
 export type SendBondOriginatorBuyerIntroPayload = {
   type: "bond_originator_buyer_intro";
   transactionId?: string;
@@ -117,8 +137,30 @@ export type SendLegacyTestPayload = {
   name?: string;
 };
 
+export type SendNotificationControlsPayload = {
+  type:
+    | "notification_controls_apply_queue"
+    | "notification_preferences_apply_queue"
+    | "notification_queue_controls"
+    | "notification_observability_snapshot"
+    | "notification_controls_snapshot"
+    | "notification_health_snapshot";
+  limit?: number;
+  dryRun?: boolean;
+  dry_run?: boolean;
+  eventId?: string;
+  event_id?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  since?: string;
+  now?: string;
+};
+
 export type SendLeadAcknowledgementPayload = {
-  type: "lead_acknowledgement" | "lead_acknowledgement_email" | "property_enquiry_acknowledgement";
+  type:
+    | "lead_acknowledgement"
+    | "lead_acknowledgement_email"
+    | "property_enquiry_acknowledgement";
   to: string;
   subject?: string;
   replyTo?: string;
@@ -177,6 +219,99 @@ export type SendLeadAcknowledgementPayload = {
   custom_response_text?: string;
 };
 
+export type SendLeadOperationsNotificationPayload = {
+  type:
+    | "new_enquiry_assigned_agent"
+    | "new_enquiry_unassigned_manager"
+    | "lead_assigned"
+    | "lead_reassigned"
+    | "lead_unassigned"
+    | "lead_claimed_confirmation"
+    | "lead_operations_notification";
+  to: string;
+  recipientName?: string;
+  recipient_name?: string;
+  recipientRole?: string;
+  recipient_role?: string;
+  eventKind?: string;
+  event_kind?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  leadId?: string;
+  lead_id?: string;
+  branchId?: string;
+  branch_id?: string;
+  assignedUserId?: string;
+  assigned_user_id?: string;
+  subject?: string;
+  title?: string;
+  message?: string;
+  actionLink?: string;
+  action_link?: string;
+  leadName?: string;
+  lead_name?: string;
+  leadEmail?: string;
+  lead_email?: string;
+  leadPhone?: string;
+  lead_phone?: string;
+  leadSource?: string;
+  lead_source?: string;
+  leadCategory?: string;
+  lead_category?: string;
+  leadStatus?: string;
+  lead_status?: string;
+  propertyLabel?: string;
+  property_label?: string;
+  budgetLabel?: string;
+  budget_label?: string;
+  assignedAgentName?: string;
+  assigned_agent_name?: string;
+  assignedAgentEmail?: string;
+  assigned_agent_email?: string;
+  previousAgentName?: string;
+  previous_agent_name?: string;
+  previousAgentEmail?: string;
+  previous_agent_email?: string;
+  reason?: string;
+  source?: string;
+  idempotencyKey?: string;
+  idempotency_key?: string;
+  metadata?: JsonRecord;
+} & DeliveryContextPayload;
+
+export type SendPublicDemoEnquiryNotificationPayload = {
+  type: "public_demo_enquiry" | "demo_enquiry_notification";
+  to?: string;
+  fullName?: string;
+  full_name?: string;
+  firstName?: string;
+  first_name?: string;
+  lastName?: string;
+  last_name?: string;
+  email?: string | null;
+  phone?: string | null;
+  company?: string | null;
+  role?: string | null;
+  businessSize?: string | null;
+  business_size?: string | null;
+  monthlyVolume?: string | null;
+  monthly_volume?: string | null;
+  demoFocus?: string[] | string | null;
+  demo_focus?: string[] | string | null;
+  preferredWindow?: string[] | string | null;
+  preferred_window?: string[] | string | null;
+  biggestFrustration?: string | null;
+  biggest_frustration?: string | null;
+  pageUrl?: string;
+  page_url?: string;
+  adminUrl?: string;
+  admin_url?: string;
+  submittedAt?: string;
+  submitted_at?: string;
+};
+
 export type SendArch9LaunchConfirmationPayload = {
   type:
     | "arch9_launch_confirmation"
@@ -222,7 +357,12 @@ export type SendArch9LaunchInternalNotificationPayload = {
 };
 
 export type SendWorkspaceInvitePayload = {
-  type: "workspace_invite" | "team_invite" | "branch_invite" | "agent_invite" | "developer_access_invite";
+  type:
+    | "workspace_invite"
+    | "team_invite"
+    | "branch_invite"
+    | "agent_invite"
+    | "developer_access_invite";
   to: string;
   inviteLink?: string;
   invite_link?: string;
@@ -281,6 +421,384 @@ export type SendTransactionProgressDispatchPayload = {
   eventId?: string;
   event_id?: string;
   resend?: boolean;
+  limit?: number;
+};
+
+export type SendTransactionOperationsNotificationPayload = {
+  type:
+    | "transaction_operations_notification"
+    | "transaction_operations_dispatch"
+    | "transaction_operations_resend"
+    | "transaction_operations_notifications_dispatch"
+    | "transaction_created"
+    | "transaction_owner_changed"
+    | "transaction_roleplayer_assigned"
+    | "transaction_roleplayer_reassigned"
+    | "transaction_partner_accepted"
+    | "transaction_partner_declined"
+    | "attorney_invite_accepted"
+    | "bond_originator_invite_accepted"
+    | "transaction_stage_changed"
+    | "transaction_stalled"
+    | "transaction_cancelled"
+    | "transaction_archived"
+    | "transaction_reactivated";
+  to?: string;
+  eventKind?: string;
+  event_kind?: string;
+  transactionId?: string;
+  transaction_id?: string;
+  eventId?: string;
+  event_id?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  recipientName?: string;
+  recipient_name?: string;
+  recipientRole?: string;
+  recipient_role?: string;
+  subject?: string;
+  title?: string;
+  message?: string;
+  actionLink?: string;
+  action_link?: string;
+  transactionReference?: string;
+  transaction_reference?: string;
+  propertyLabel?: string;
+  property_label?: string;
+  stage?: string;
+  currentStage?: string;
+  previousStage?: string;
+  previous_stage?: string;
+  status?: string;
+  ownerName?: string;
+  owner_name?: string;
+  ownerEmail?: string;
+  owner_email?: string;
+  previousOwnerName?: string;
+  previous_owner_name?: string;
+  previousOwnerEmail?: string;
+  previous_owner_email?: string;
+  roleLabel?: string;
+  role_label?: string;
+  partnerName?: string;
+  partner_name?: string;
+  partnerEmail?: string;
+  partner_email?: string;
+  reason?: string;
+  nextAction?: string;
+  next_action?: string;
+  metadata?: Record<string, unknown>;
+  limit?: number;
+  queueDue?: boolean;
+  queue_due?: boolean;
+  queueLimit?: number;
+  queue_limit?: number;
+  dryRun?: boolean;
+  dry_run?: boolean;
+  now?: string;
+  stalledAfterDays?: number;
+  stalled_after_days?: number;
+};
+
+export type SendClientSellerPortalNotificationPayload = {
+  type:
+    | "client_seller_portal_notification"
+    | "client_seller_portal_dispatch"
+    | "client_seller_portal_resend"
+    | "client_seller_portal_notifications_dispatch"
+    | "offer_viewed_by_seller"
+    | "offer_not_reviewed_reminder"
+    | "offer_review_overdue_escalation"
+    | "seller_mandate_viewed_unsigned_reminder"
+    | "seller_mandate_signing_overdue_escalation"
+    | "buyer_onboarding_opened"
+    | "buyer_onboarding_started_not_submitted_reminder"
+    | "buyer_onboarding_overdue_escalation"
+    | "buyer_onboarding_submitted_confirmation"
+    | "client_portal_message_received"
+    | "client_portal_document_uploaded"
+    | "client_portal_document_rejected";
+  to?: string;
+  eventKind?: string;
+  event_kind?: string;
+  eventId?: string;
+  event_id?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  transactionId?: string;
+  transaction_id?: string;
+  transactionReference?: string;
+  transaction_reference?: string;
+  listingId?: string;
+  listing_id?: string;
+  offerId?: string;
+  offer_id?: string;
+  offerReference?: string;
+  offer_reference?: string;
+  recipientName?: string;
+  recipient_name?: string;
+  recipientRole?: string;
+  recipient_role?: string;
+  subject?: string;
+  title?: string;
+  message?: string;
+  actionLink?: string;
+  action_link?: string;
+  ctaLabel?: string;
+  cta_label?: string;
+  propertyLabel?: string;
+  property_label?: string;
+  buyerName?: string;
+  buyer_name?: string;
+  buyerEmail?: string;
+  buyer_email?: string;
+  sellerName?: string;
+  seller_name?: string;
+  sellerEmail?: string;
+  seller_email?: string;
+  agentName?: string;
+  agent_name?: string;
+  agentEmail?: string;
+  agent_email?: string;
+  portalLabel?: string;
+  portal_label?: string;
+  documentTitle?: string;
+  document_title?: string;
+  documentStatus?: string;
+  document_status?: string;
+  reason?: string;
+  nextAction?: string;
+  next_action?: string;
+  metadata?: Record<string, unknown>;
+  limit?: number;
+  queueDue?: boolean;
+  queue_due?: boolean;
+  queueLimit?: number;
+  queue_limit?: number;
+  dryRun?: boolean;
+  dry_run?: boolean;
+  now?: string;
+};
+
+export type SendBondAttorneyLegalNotificationPayload = {
+  type:
+    | "bond_attorney_legal_notification"
+    | "bond_attorney_legal_dispatch"
+    | "bond_attorney_legal_resend"
+    | "bond_attorney_legal_notifications_dispatch"
+    | "bond_application_submitted"
+    | "bond_application_status_changed"
+    | "bond_additional_documents_requested"
+    | "bond_document_uploaded"
+    | "bond_bank_offer_received"
+    | "bond_bank_offer_buyer_decision"
+    | "bond_grant_received"
+    | "bond_grant_published"
+    | "bond_delivery_failed"
+    | "attorney_instruction_ready"
+    | "attorney_instruction_accepted"
+    | "attorney_instruction_declined"
+    | "attorney_assignment_changed"
+    | "attorney_matter_stage_changed"
+    | "attorney_client_financial_document_published"
+    | "legal_packet_generated"
+    | "legal_packet_sent_for_signing"
+    | "legal_signer_viewed"
+    | "legal_signer_signed"
+    | "legal_packet_completed"
+    | "legal_signing_dispatch_failed";
+  to?: string;
+  eventKind?: string;
+  event_kind?: string;
+  eventId?: string;
+  event_id?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  transactionId?: string;
+  transaction_id?: string;
+  transactionReference?: string;
+  transaction_reference?: string;
+  packetId?: string;
+  packet_id?: string;
+  packetTitle?: string;
+  packet_title?: string;
+  packetType?: string;
+  packet_type?: string;
+  recipientName?: string;
+  recipient_name?: string;
+  recipientRole?: string;
+  recipient_role?: string;
+  subject?: string;
+  title?: string;
+  message?: string;
+  actionLink?: string;
+  action_link?: string;
+  ctaLabel?: string;
+  cta_label?: string;
+  propertyLabel?: string;
+  property_label?: string;
+  workflowLabel?: string;
+  workflow_label?: string;
+  status?: string;
+  previousStatus?: string;
+  previous_status?: string;
+  institutionName?: string;
+  institution_name?: string;
+  partyName?: string;
+  party_name?: string;
+  partyEmail?: string;
+  party_email?: string;
+  documentTitle?: string;
+  document_title?: string;
+  signerName?: string;
+  signer_name?: string;
+  signerRole?: string;
+  signer_role?: string;
+  amountLabel?: string;
+  amount_label?: string;
+  reason?: string;
+  nextAction?: string;
+  next_action?: string;
+  metadata?: Record<string, unknown>;
+  limit?: number;
+};
+
+export type SendWeeklyDigestNotificationPayload = {
+  type:
+    | "weekly_digest_notification"
+    | "weekly_digest_dispatch"
+    | "weekly_digest_resend"
+    | "weekly_digest_notifications_dispatch"
+    | "agent_weekly_lead_digest"
+    | "agent_weekly_transaction_digest"
+    | "agent_weekly_task_digest"
+    | "manager_weekly_team_digest"
+    | "principal_weekly_business_digest"
+    | "seller_weekly_listing_digest"
+    | "buyer_weekly_transaction_digest"
+    | "attorney_weekly_matter_digest"
+    | "bond_originator_weekly_pipeline_digest"
+    | "commercial_weekly_pipeline_digest";
+  to?: string;
+  eventKind?: string;
+  event_kind?: string;
+  eventId?: string;
+  event_id?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  recipientName?: string;
+  recipient_name?: string;
+  recipientRole?: string;
+  recipient_role?: string;
+  subject?: string;
+  title?: string;
+  message?: string;
+  actionLink?: string;
+  action_link?: string;
+  ctaLabel?: string;
+  cta_label?: string;
+  reportPeriod?: string;
+  report_period?: string;
+  periodStart?: string;
+  period_start?: string;
+  periodEnd?: string;
+  period_end?: string;
+  summaryItems?: Array<Record<string, unknown>>;
+  summary_items?: Array<Record<string, unknown>>;
+  sections?: Array<Record<string, unknown>>;
+  metrics?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  limit?: number;
+  queueDue?: boolean;
+  queue_due?: boolean;
+  queueLimit?: number;
+  queue_limit?: number;
+  dryRun?: boolean;
+  dry_run?: boolean;
+  now?: string;
+};
+
+export type SendCommercialEnterpriseNotificationPayload = {
+  type:
+    | "commercial_enterprise_notification"
+    | "commercial_enterprise_dispatch"
+    | "commercial_enterprise_resend"
+    | "commercial_enterprise_notifications_dispatch"
+    | "agency_public_intake_received"
+    | "commercial_access_requested"
+    | "commercial_access_decision"
+    | "commercial_broker_assigned"
+    | "commercial_canvassing_prospect_created"
+    | "commercial_requirement_created"
+    | "commercial_requirement_stage_changed"
+    | "commercial_deal_created"
+    | "commercial_deal_stage_changed"
+    | "commercial_viewing_scheduled"
+    | "commercial_viewing_status_changed"
+    | "commercial_document_request_created"
+    | "commercial_document_uploaded"
+    | "commercial_heads_of_terms_status_changed"
+    | "commercial_transaction_status_changed"
+    | "enterprise_member_scope_changed"
+    | "enterprise_branch_team_assignment_changed";
+  to?: string;
+  eventKind?: string;
+  event_kind?: string;
+  eventId?: string;
+  event_id?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  recipientName?: string;
+  recipient_name?: string;
+  recipientRole?: string;
+  recipient_role?: string;
+  subject?: string;
+  title?: string;
+  message?: string;
+  actionLink?: string;
+  action_link?: string;
+  ctaLabel?: string;
+  cta_label?: string;
+  entityId?: string;
+  entity_id?: string;
+  entityType?: string;
+  entity_type?: string;
+  entityLabel?: string;
+  entity_label?: string;
+  status?: string;
+  previousStatus?: string;
+  previous_status?: string;
+  brokerName?: string;
+  broker_name?: string;
+  brokerEmail?: string;
+  broker_email?: string;
+  branchName?: string;
+  branch_name?: string;
+  teamName?: string;
+  team_name?: string;
+  requesterName?: string;
+  requester_name?: string;
+  requesterEmail?: string;
+  requester_email?: string;
+  clientName?: string;
+  client_name?: string;
+  propertyLabel?: string;
+  property_label?: string;
+  amountLabel?: string;
+  amount_label?: string;
+  nextAction?: string;
+  next_action?: string;
+  metadata?: Record<string, unknown>;
   limit?: number;
 };
 
@@ -387,8 +905,19 @@ export type SendSellerOnboardingPayload = {
   onboarding_url?: string;
   onboardingLink?: string;
   portalLink?: string;
-  emailKind?: "onboarding" | "portal_documents" | "existing_listing" | "seller_lead" | string;
-  activationSource?: "seller_lead" | "existing_listing" | "manual_listing" | "bulk_import" | "agent_invitation" | string;
+  emailKind?:
+    | "onboarding"
+    | "portal_documents"
+    | "existing_listing"
+    | "seller_lead"
+    | string;
+  activationSource?:
+    | "seller_lead"
+    | "existing_listing"
+    | "manual_listing"
+    | "bulk_import"
+    | "agent_invitation"
+    | string;
   transactionReference?: string;
   agentName?: string;
   agentEmail?: string;
@@ -711,6 +1240,10 @@ export type OnboardingSubmittedEmailPayload = {
   unitLabel: string;
   transactionReference: string;
   clientPortalLink: string;
+  organisationName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
+  branding?: JsonRecord;
 };
 
 export type ReservationDepositReceivedEmailPayload = {
@@ -720,4 +1253,8 @@ export type ReservationDepositReceivedEmailPayload = {
   unitLabel: string;
   transactionReference: string;
   clientPortalLink: string;
+  organisationName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
+  branding?: JsonRecord;
 };

@@ -95,12 +95,12 @@ for (const token of [
   'communicationType: "organisation_partner_invitation"',
   'partnerInvitationId',
   'deliveryId: delivery?.id || null',
-  'renderOrganisationPartnerInvitationEmail',
-  'table role="presentation"',
-  'Invitation URL',
-  'About Arch9',
+  'renderBridgeEmailLayout',
+  'renderBridgeCta("Review Invitation"',
+  'resolveEmailBranding',
+  'formatEmailSender',
   'What accepting means',
-  'Security and privacy',
+  'Security And Privacy',
   'expiryDays',
 ]) {
   assert(files.sendEmailOrganisationPartnerHandler.includes(token), `organisation partner invite email should log delivery state: ${token}`)

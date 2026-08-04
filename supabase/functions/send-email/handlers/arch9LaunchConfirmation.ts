@@ -1,4 +1,10 @@
 import { sendViaResendApi } from "../services/resend.ts";
+import {
+  renderBridgeEmailLayout,
+  renderBridgeIntroParagraphs,
+  renderBridgeSteps,
+  renderBridgeSummaryCard,
+} from "../content/bridgeEmailLayout.ts";
 import type {
   SendArch9LaunchConfirmationPayload,
   SendArch9LaunchInternalNotificationPayload,
@@ -6,29 +12,10 @@ import type {
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 
-function escapeHtml(value: string) {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
 function envEnabled(value: string | undefined, fallback = true) {
   const normalized = normalizeText(value).toLowerCase();
   if (!normalized) return fallback;
   return ["1", "true", "yes", "on", "enabled"].includes(normalized);
-}
-
-function renderDetail(label: string, value: string) {
-  if (!value) return "";
-  return `
-    <tr>
-      <td style="padding: 10px 0; font-size: 12px; line-height: 1.4; color: #6d746f; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">${escapeHtml(label)}</td>
-      <td style="padding: 10px 0; font-size: 14px; line-height: 1.5; color: #111817; text-align: right; font-weight: 600;">${escapeHtml(value)}</td>
-    </tr>
-  `;
 }
 
 function renderEmailHtml({
@@ -43,52 +30,38 @@ function renderEmailHtml({
   preferredTime: string;
 }) {
   const greeting = recipientName ? `Hi ${recipientName},` : "Hi,";
-  const details = [
-    renderDetail("Profile", roleType),
-    renderDetail("Focus", discussionFocus),
-    renderDetail("Preferred time", preferredTime),
-  ].filter(Boolean).join("");
-
-  return `
-    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-      Thank you for your Arch9 request. We will be in contact shortly.
-    </div>
-    <div style="margin:0;padding:24px 12px;background:#f3f0ea;">
-      <div style="max-width:560px;margin:0 auto;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#111817;">
-        <div style="padding:26px 8px 20px;text-align:center;">
-          <p style="margin:0;font-size:24px;line-height:1.1;letter-spacing:0.36em;color:#123a34;font-weight:300;">ARCH9</p>
-        </div>
-        <div style="background:#fbfaf7;border:1px solid #ded8ce;border-radius:22px;padding:30px 24px;box-shadow:0 24px 60px rgba(17,24,23,0.08);">
-          <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#5d6361;">${escapeHtml(greeting)}</p>
-          <h1 style="margin:0 0 18px;font-family:Georgia,'Times New Roman',serif;font-size:34px;line-height:1.08;letter-spacing:-0.03em;color:#123a34;">
-            Thank you. We’ll be in contact shortly.
-          </h1>
-          <p style="margin:0 0 14px;font-size:16px;line-height:1.7;color:#313b39;">
-            We’ve received your request for a private Arch9 strategy session.
-          </p>
-          <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#5d6361;">
-            Our team will review your details and come back to you with a time that suits your schedule.
-          </p>
-          ${details ? `
-            <div style="margin:0 0 24px;padding:4px 18px;border:1px solid #ded8ce;border-radius:14px;background:#ffffff;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-                ${details}
-              </table>
-            </div>
-          ` : ""}
-          <div style="margin:0 0 4px;padding:18px;border-radius:16px;background:#eef0ea;border:1px solid #d8d5ca;">
-            <p style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:20px;line-height:1.25;color:#111817;">What happens next?</p>
-            <p style="margin:0 0 8px;font-size:14px;line-height:1.6;color:#313b39;">1. We review your details.</p>
-            <p style="margin:0 0 8px;font-size:14px;line-height:1.6;color:#313b39;">2. We prepare a tailored walkthrough.</p>
-            <p style="margin:0;font-size:14px;line-height:1.6;color:#313b39;">3. We confirm a time that suits you.</p>
-          </div>
-        </div>
-        <p style="margin:18px 0 0;text-align:center;font-size:12px;line-height:1.6;color:#7b817d;">
-          Arch9 Concierge · Private launch follow-up
-        </p>
-      </div>
-    </div>
-  `;
+  return renderBridgeEmailLayout({
+    preheader: "Thank you for your Arch9 request. We will be in contact shortly.",
+    title: "Thank You. We Will Be In Contact Shortly.",
+    greeting,
+    contentHtml: [
+      renderBridgeIntroParagraphs([
+        "We have received your request for a private Arch9 strategy session.",
+        "Our team will review your details and come back to you with a time that suits your schedule.",
+      ]),
+      renderBridgeSummaryCard(
+        [
+          { label: "Profile", value: roleType },
+          { label: "Focus", value: discussionFocus },
+          { label: "Preferred Time", value: preferredTime },
+        ],
+        "Request Details",
+      ),
+      `<div style="margin: 0 0 16px; padding: 14px; border: 1px solid #dbe6f2; border-radius: 12px; background: #ffffff;">
+         <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What happens next</p>
+         ${renderBridgeSteps([
+        "We review your details.",
+        "We prepare a tailored walkthrough.",
+        "We confirm a time that suits you.",
+      ])}
+       </div>`,
+    ].join(""),
+    securityBody:
+      "Your request details are used only by the Arch9 team to prepare the follow-up.",
+    helpBody:
+      "Need help? Reply to this email and the Arch9 team will assist.",
+    organisationName: "Arch9",
+  });
 }
 
 function renderInternalNotificationHtml({
@@ -126,54 +99,33 @@ function renderInternalNotificationHtml({
   const heading = requestHeading || `${fullName || "A launch guest"} requested a follow-up.`;
   const body = requestBody || "They scanned the Arch9 launch QR flow and asked to be contacted after the event.";
   const hidden = hiddenSummary || `New Arch9 launch concierge request from ${fullName || "a launch guest"}.`;
-  const details = [
-    renderDetail("Name", fullName),
-    renderDetail("Email", email),
-    renderDetail("Phone", phone),
-    renderDetail("Company", company),
-    renderDetail("Profile", roleType),
-    renderDetail("Focus", discussionFocus),
-    renderDetail("Preferred time", preferredTime),
-    renderDetail("Submitted", submittedAt),
-  ].filter(Boolean).join("");
-
-  return `
-    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-      ${escapeHtml(hidden)}
-    </div>
-    <div style="margin:0;padding:24px 12px;background:#f3f0ea;">
-      <div style="max-width:620px;margin:0 auto;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#111817;">
-        <div style="padding:24px 8px 18px;text-align:center;">
-          <p style="margin:0;font-size:22px;line-height:1.1;letter-spacing:0.34em;color:#123a34;font-weight:300;">ARCH9</p>
-        </div>
-        <div style="background:#fbfaf7;border:1px solid #ded8ce;border-radius:22px;padding:30px 24px;box-shadow:0 24px 60px rgba(17,24,23,0.08);">
-          <p style="margin:0 0 14px;font-size:12px;line-height:1.4;color:#6d746f;text-transform:uppercase;letter-spacing:0.12em;font-weight:700;">${escapeHtml(label)}</p>
-          <h1 style="margin:0 0 18px;font-family:Georgia,'Times New Roman',serif;font-size:34px;line-height:1.08;letter-spacing:-0.03em;color:#123a34;">
-            ${escapeHtml(heading)}
-          </h1>
-          <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#5d6361;">
-            ${escapeHtml(body)}
-          </p>
-          ${details ? `
-            <div style="margin:0 0 22px;padding:4px 18px;border:1px solid #ded8ce;border-radius:14px;background:#ffffff;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-                ${details}
-              </table>
-            </div>
-          ` : ""}
-          ${note ? `
-            <div style="margin:0 0 22px;padding:18px;border-radius:16px;background:#eef0ea;border:1px solid #d8d5ca;">
-              <p style="margin:0 0 8px;font-size:12px;line-height:1.4;color:#6d746f;text-transform:uppercase;letter-spacing:0.08em;font-weight:700;">Note</p>
-              <p style="margin:0;font-size:14px;line-height:1.6;color:#313b39;">${escapeHtml(note)}</p>
-            </div>
-          ` : ""}
-          ${pageUrl ? `
-            <p style="margin:0;font-size:12px;line-height:1.6;color:#7b817d;word-break:break-word;">Source page: ${escapeHtml(pageUrl)}</p>
-          ` : ""}
-        </div>
-      </div>
-    </div>
-  `;
+  return renderBridgeEmailLayout({
+    preheader: hidden,
+    title: label,
+    greeting: heading,
+    contentHtml: [
+      renderBridgeIntroParagraphs([body, note ? `Note: ${note}` : ""]),
+      renderBridgeSummaryCard(
+        [
+          { label: "Name", value: fullName },
+          { label: "Email", value: email },
+          { label: "Phone", value: phone },
+          { label: "Company", value: company },
+          { label: "Profile", value: roleType },
+          { label: "Focus", value: discussionFocus },
+          { label: "Preferred Time", value: preferredTime },
+          { label: "Submitted", value: submittedAt },
+          { label: "Source Page", value: pageUrl },
+        ],
+        "Request Details",
+      ),
+    ].join(""),
+    securityBody:
+      "This internal notification contains submitted contact details and should be handled by authorised Arch9 team members only.",
+    helpBody:
+      "Reply to this email if ownership or routing needs to change.",
+    organisationName: "Arch9",
+  });
 }
 
 export async function handleArch9LaunchConfirmationEmail(

@@ -4,6 +4,10 @@ import {
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendBondIntakeNotificationPayload } from "../types.ts";
 import { jsonResponse } from "../utils/http.ts";
@@ -43,8 +47,6 @@ export async function handleBondIntakeNotificationEmail(
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
   }
 
-  const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <no-reply@arch9.co.za>";
   const subject = normalizeText(payload.subject) || "Bond application update";
   const title = normalizeText(payload.title) || "Bond application update";
   const recipientName = normalizeText(payload.recipientName) || "there";
@@ -53,6 +55,24 @@ export async function handleBondIntakeNotificationEmail(
   const metadata = payload.metadata && typeof payload.metadata === "object"
     ? payload.metadata
     : {};
+  const branding = await resolveEmailBranding({
+    payload: payload as Record<string, unknown>,
+    organisationId: normalizeText(
+      metadata.organisationId as string || metadata.organisation_id as string,
+    ),
+    defaults: {
+      organisationName: normalizeText(metadata.organisationName as string) ||
+        normalizeText(metadata.agencyName as string) ||
+        "Arch9",
+      supportEmail: normalizeText(metadata.supportEmail as string),
+      supportPhone: normalizeText(metadata.supportPhone as string),
+    },
+  });
+  const from = formatEmailSender(
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      "Arch9 <no-reply@arch9.co.za>",
+    branding.fromName || branding.organisationName,
+  );
 
   const fields = [
     { label: "Transaction", value: transactionId },
@@ -81,7 +101,10 @@ export async function handleBondIntakeNotificationEmail(
       "Bond application information is available only to authorised parties on the transaction.",
     helpBody:
       "Please open Arch9 to review the application and continue with the next action.",
-    organisationName: "Arch9",
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
   });
 
   const text = [

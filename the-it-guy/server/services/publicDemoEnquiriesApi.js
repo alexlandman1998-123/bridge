@@ -180,109 +180,60 @@ function mapPayloadToRow(payload = {}) {
   }
 }
 
-function escapeHtml(value = '') {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-function buildNotificationContent(row, enquiryId = '') {
-  const fullName = [row.first_name, row.last_name].filter(Boolean).join(' ')
-  const adminUrl = `https://app.arch9.co.za/platform/demo-enquiries${enquiryId ? `?enquiry=${encodeURIComponent(enquiryId)}` : ''}`
-  const focus = normalizeArray(row.demo_focus).join(', ')
-  const preferredWindow = normalizeArray(row.preferred_window).join(', ')
-
-  const text = [
-    `New Arch9 demo enquiry: ${fullName || row.company || 'Website lead'}`,
-    '',
-    `Role: ${row.role}`,
-    `Company: ${row.company}`,
-    `Email: ${row.email}`,
-    `Phone: ${row.phone}`,
-    row.business_size ? `Business size: ${row.business_size}` : '',
-    row.monthly_volume ? `Monthly volume: ${row.monthly_volume}` : '',
-    focus ? `Demo focus: ${focus}` : '',
-    preferredWindow ? `Preferred window: ${preferredWindow}` : '',
-    row.biggest_frustration ? `Frustration: ${row.biggest_frustration}` : '',
-    row.page_url ? `Source page: ${row.page_url}` : '',
-    `Admin: ${adminUrl}`,
-  ].filter(Boolean).join('\n')
-
-  const html = `
-    <div style="font-family:Inter,Arial,sans-serif;line-height:1.6;color:#10231d">
-      <h1 style="font-size:22px;margin:0 0 16px">New Arch9 demo enquiry</h1>
-      <p style="margin:0 0 18px;color:#51645d">A new book-demo request was submitted from the Arch9 website.</p>
-      <table style="border-collapse:collapse;width:100%;max-width:640px">
-        ${[
-          ['Name', fullName],
-          ['Role', row.role],
-          ['Company', row.company],
-          ['Email', row.email],
-          ['Phone', row.phone],
-          ['Business size', row.business_size],
-          ['Monthly volume', row.monthly_volume],
-          ['Demo focus', focus],
-          ['Preferred window', preferredWindow],
-          ['Biggest frustration', row.biggest_frustration],
-          ['Source page', row.page_url],
-        ]
-          .filter(([, value]) => normalizeText(value))
-          .map(([label, value]) => `
-            <tr>
-              <td style="border-bottom:1px solid #e6eee9;padding:8px 12px 8px 0;font-weight:700;color:#0a4d3d">${escapeHtml(label)}</td>
-              <td style="border-bottom:1px solid #e6eee9;padding:8px 0">${escapeHtml(value)}</td>
-            </tr>
-          `).join('')}
-      </table>
-      <p style="margin:22px 0 0">
-        <a href="${escapeHtml(adminUrl)}" style="display:inline-block;border-radius:999px;background:#064537;color:#fff;padding:12px 18px;text-decoration:none;font-weight:700">Open in Arch9 admin</a>
-      </p>
-    </div>
-  `
-
-  return { html, text, adminUrl }
-}
-
 async function sendNotificationEmail(row, enquiryId) {
   const env = getRuntimeEnv()
-  const apiKey = normalizeText(env.RESEND_API_KEY)
+  const supabaseUrl = normalizeText(env.SUPABASE_URL || env.VITE_SUPABASE_URL)
+  const serviceRoleKey = normalizeText(env.SUPABASE_SERVICE_ROLE_KEY)
   const to = normalizeText(env.DEMO_ENQUIRY_NOTIFY_EMAIL || env.ARCH9_DEMO_NOTIFY_EMAIL || DEFAULT_NOTIFICATION_EMAIL)
 
-  if (!apiKey) {
-    return { sent: false, skipped: true, reason: 'missing_resend_api_key' }
+  if (!supabaseUrl || !serviceRoleKey) {
+    return { sent: false, skipped: true, reason: 'missing_send_email_configuration' }
   }
   if (!to) {
     return { sent: false, skipped: true, reason: 'missing_notification_recipient' }
   }
 
-  const from = normalizeText(env.ARCH9_RESEND_FROM_EMAIL || env.RESEND_FROM_EMAIL) || 'Arch9 <onboarding@resend.dev>'
-  const replyTo = row.email || undefined
-  const { html, text } = buildNotificationContent(row, enquiryId)
-  const response = await fetch('https://api.resend.com/emails', {
+  const fullName = [row.first_name, row.last_name].filter(Boolean).join(' ')
+  const adminUrl = `https://app.arch9.co.za/platform/demo-enquiries${enquiryId ? `?enquiry=${encodeURIComponent(enquiryId)}` : ''}`
+  const response = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/functions/v1/send-email`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from,
+      type: 'public_demo_enquiry',
       to,
-      subject: `New Arch9 demo enquiry: ${row.company || row.email}`,
-      html,
-      text,
-      reply_to: replyTo,
+      fullName,
+      firstName: row.first_name,
+      lastName: row.last_name,
+      email: row.email,
+      phone: row.phone,
+      company: row.company,
+      role: row.role,
+      businessSize: row.business_size,
+      monthlyVolume: row.monthly_volume,
+      demoFocus: normalizeArray(row.demo_focus),
+      preferredWindow: normalizeArray(row.preferred_window),
+      biggestFrustration: row.biggest_frustration,
+      pageUrl: row.page_url,
+      adminUrl,
+      submittedAt: row.submitted_at,
     }),
   })
 
   const data = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    return { sent: false, error: data?.message || data?.error || 'resend_rejected_email', status: response.status }
+  if (!response.ok || data?.ok === false || data?.error) {
+    return { sent: false, error: data?.message || data?.error || 'send_email_rejected', status: response.status }
   }
 
-  return { sent: true, provider: 'resend', id: data?.id || null }
+  return {
+    sent: data?.sent !== false,
+    provider: 'send-email',
+    id: data?.providerResponse?.id || data?.emailId || null,
+    result: data,
+  }
 }
 
 async function updateNotificationStatus(client, enquiryId, notificationResult) {

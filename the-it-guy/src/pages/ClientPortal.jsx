@@ -7312,6 +7312,7 @@ function SellerPortalDashboard({
   sellerChatUpdates,
   sellerDocumentTracker,
   sellerListingUrl,
+  latestAttorneyUpdate,
   commentDraft,
   savingComment,
   onCommentDraftChange,
@@ -7339,6 +7340,7 @@ function SellerPortalDashboard({
         workspaceNavigationScope={workspaceNavigationScope}
       />
       <SellerTransactionHealthCard health={sellerHealth} />
+      <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={sellerStatusLabel} />
       <SellerProgressJourney
         listingProgressModel={sellerListingProgressModel}
         saleProgressModel={sellerSaleProgressModel}
@@ -7690,6 +7692,35 @@ function BuyerProgressJourney({
   )
 }
 
+function AttorneySaysCard({ update = null, fallbackStageLabel = '' }) {
+  if (!update) return null
+  const message = pickFirstText(update.message, update.commentBody, update.description, update.metadata?.description)
+  if (!message) return null
+  const laneLabel = pickFirstText(update.laneLabel, update.metadata?.laneLabel, 'Legal team')
+  const stage = pickFirstText(update.stage, update.metadata?.stage, fallbackStageLabel)
+
+  return (
+    <article className={`${PORTAL_DESIGN_TOKENS.surface.card} p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Attorney says</p>
+          <h3 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">
+            {pickFirstText(update.title, update.metadata?.title, 'Legal update')}
+          </h3>
+        </div>
+        <span className="inline-flex min-h-[28px] items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#64748b]">
+          {formatShortPortalDate(update.createdAt || update.timestamp, 'Today')}
+        </span>
+      </div>
+      <div className="mt-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{laneLabel}</span>
+        <strong className="mt-1 block text-sm font-semibold text-[#142132]">{stage || 'Current legal workflow'}</strong>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-[#566b82]">{message}</p>
+    </article>
+  )
+}
+
 function BuyerPortalDashboard({
   buyerFirstName,
   buyerName,
@@ -7712,6 +7743,7 @@ function BuyerPortalDashboard({
   journeySteps,
   updates,
   latestUpdatesSubtitle,
+  latestAttorneyUpdate,
   commentDraft,
   saving,
   onCommentDraftChange,
@@ -7757,6 +7789,7 @@ function BuyerPortalDashboard({
         workspaceNavigationScope={workspaceNavigationScope}
       />
       <BuyerOverviewMetricGrid cards={metricCards} token={token} workspaceNavigationScope={workspaceNavigationScope} />
+      <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={currentStageLabel} />
       <section className="grid gap-5 xl:grid-cols-2">
         <BuyerProgressJourney
           progressPercent={progressPercent}
@@ -10302,6 +10335,9 @@ function ClientPortal() {
   const latestUpdates = Array.isArray(workspaceData?.activityFeed) && workspaceData.activityFeed.length
     ? workspaceData.activityFeed.slice(0, 8)
     : (portal?.discussion || []).slice(0, 5)
+  const latestAttorneyUpdate = Array.isArray(workspaceData?.attorneyUpdates) && workspaceData.attorneyUpdates.length
+    ? workspaceData.attorneyUpdates[0]
+    : null
   const activityFeedSummary = workspaceData?.activityFeedSummary || {}
   const latestUpdatesSubtitle = (() => {
     const actionRequired = Number(activityFeedSummary?.actionRequired || 0)
@@ -12461,6 +12497,7 @@ function ClientPortal() {
                       sellerChatUpdates={sellerActivityItems}
                       sellerDocumentTracker={sellerDocumentTracker}
                       sellerListingUrl={sellerListingUrl}
+                      latestAttorneyUpdate={latestAttorneyUpdate}
                       commentDraft={commentDraft}
                       savingComment={saving}
                       onCommentDraftChange={setCommentDraft}
@@ -12555,6 +12592,7 @@ function ClientPortal() {
                   }
                   updates={latestJourneyFeedItems}
                   latestUpdatesSubtitle={latestUpdatesSubtitle}
+                  latestAttorneyUpdate={latestAttorneyUpdate}
                   commentDraft={commentDraft}
                   saving={saving}
                   onCommentDraftChange={setCommentDraft}

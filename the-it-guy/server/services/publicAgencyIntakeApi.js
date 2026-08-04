@@ -133,6 +133,88 @@ function createServiceClient() {
   })
 }
 
+function getAppBaseUrl() {
+  const env = getRuntimeEnv()
+  return normalizeText(env.PUBLIC_APP_URL || env.CLIENT_APP_URL || env.APP_BASE_URL || env.VITE_PUBLIC_APP_URL || env.VITE_APP_BASE_URL) ||
+    'https://app.arch9.co.za'
+}
+
+function buildLeadActionLink(leadId = '') {
+  const normalizedLeadId = normalizeText(leadId)
+  const baseUrl = getAppBaseUrl().replace(/\/+$/, '')
+  return normalizedLeadId ? `${baseUrl}/agency/leads/${encodeURIComponent(normalizedLeadId)}` : `${baseUrl}/agency/leads`
+}
+
+function normalizeRoleKey(value = '') {
+  return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function isManagerRole(row = {}) {
+  const role = normalizeRoleKey(row.workspace_role || row.organisation_role || row.role || row.app_role)
+  return ['owner', 'principal', 'agency_principal', 'admin', 'super_admin', 'branch_manager', 'agency_manager', 'manager'].includes(role)
+}
+
+function displayName(row = {}, fallback = '') {
+  return normalizeText([row.first_name, row.last_name].filter(Boolean).join(' ')) ||
+    normalizeText(row.name || row.full_name || row.email) ||
+    fallback
+}
+
+async function fetchOrganisationUserById(client, organisationId = '', userId = '') {
+  if (!organisationId || !userId) return null
+  const query = await client
+    .from('organisation_users')
+    .select('user_id, first_name, last_name, name, full_name, email, role, workspace_role, organisation_role, app_role, branch_id, status')
+    .eq('organisation_id', organisationId)
+    .eq('user_id', userId)
+    .in('status', ['active', 'accepted'])
+    .limit(1)
+    .maybeSingle()
+  if (!query.error && query.data) return query.data
+  return null
+}
+
+async function fetchLeadManagerRecipients(client, organisationId = '', branchId = '') {
+  if (!organisationId) return []
+  const query = await client
+    .from('organisation_users')
+    .select('user_id, first_name, last_name, name, full_name, email, role, workspace_role, organisation_role, app_role, branch_id, status')
+    .eq('organisation_id', organisationId)
+    .in('status', ['active', 'accepted'])
+    .limit(50)
+  if (query.error) return []
+  const rows = Array.isArray(query.data) ? query.data : []
+  const scoped = rows.filter((row) => {
+    if (!normalizeEmail(row.email) || !isManagerRole(row)) return false
+    const rowBranch = normalizeText(row.branch_id)
+    return !branchId || !rowBranch || rowBranch === branchId
+  })
+  const managers = scoped.length ? scoped : rows.filter((row) => normalizeEmail(row.email) && isManagerRole(row))
+  return managers.slice(0, 5)
+}
+
+async function invokeLeadOperationsEmail(payload = {}) {
+  const env = getRuntimeEnv()
+  const supabaseUrl = normalizeText(env.SUPABASE_URL || env.VITE_SUPABASE_URL)
+  const serviceRoleKey = normalizeText(env.SUPABASE_SERVICE_ROLE_KEY)
+  if (!supabaseUrl || !serviceRoleKey) return { sent: false, skipped: true, reason: 'missing_send_email_configuration' }
+
+  const response = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/functions/v1/send-email`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok || data?.ok === false || data?.error) {
+    return { sent: false, error: data?.message || data?.error || 'send_email_rejected', status: response.status }
+  }
+  return { sent: data?.sent !== false, result: data }
+}
+
 function buildJsonResponse(status, body, headers = {}) {
   return {
     status,
@@ -1068,6 +1150,84 @@ async function persistAgencyPublicIntakeAutomation(client, rows, submission = {}
   }
 }
 
+function buildLeadOperationBasePayload(rows = {}, submission = {}, normalized = {}) {
+  const selectedListings = mergeListingSummaries(rows.selectedListings, submission.selected_listings_json, submission.payload_json?.selectedListings, normalized.selectedListings)
+  const selectedListing = selectedListings[0] || {}
+  const leadName = normalizeText(normalized.contactName || submission.contact_name || [
+    rows.contactRow?.first_name,
+    rows.contactRow?.last_name,
+  ].filter(Boolean).join(' '))
+  const budgetMin = normalized.budgetMin ?? toFiniteNumber(submission.budget_min)
+  const budgetMax = normalized.budgetMax ?? toFiniteNumber(submission.budget_max)
+  const budgetLabel = budgetMin !== null || budgetMax !== null
+    ? `${budgetMin ?? 0}${budgetMax !== null ? `-${budgetMax}` : '+'}`
+    : ''
+  return {
+    organisationId: rows.organisationId,
+    leadId: rows.leadId,
+    branchId: normalizeText(rows.leadRow?.branch_id),
+    assignedUserId: normalizeText(rows.leadRow?.assigned_agent_id || rows.leadRow?.assigned_user_id),
+    leadName,
+    leadEmail: normalizeEmail(normalized.contactEmail || submission.contact_email || rows.contactRow?.email),
+    leadPhone: normalizeText(normalized.contactPhone || submission.contact_phone || rows.contactRow?.phone),
+    leadSource: normalizeText(rows.leadSource || rows.leadRow?.lead_source || 'Public Intake'),
+    leadCategory: normalizeText(rows.leadRow?.lead_category || rows.intent),
+    leadStatus: normalizeText(rows.leadRow?.status || rows.leadRow?.stage || 'New Lead'),
+    propertyLabel: normalizeText(selectedListing.title || selectedListing.address || rows.leadRow?.seller_property_address || rows.leadRow?.property_interest),
+    budgetLabel,
+    actionLink: buildLeadActionLink(rows.leadId),
+    source: 'agency_public_intake',
+    metadata: {
+      submissionId: normalizeText(submission.id) || null,
+      idempotencyKey: normalizeText(submission.idempotency_key || normalized.idempotencyKey) || null,
+      taskId: normalizeText(rows.task?.task_id) || null,
+      activityId: normalizeText(rows.activity?.activity_id) || null,
+    },
+  }
+}
+
+async function dispatchAgencyPublicIntakeLeadOperationsEmail(client, rows, submission = {}, normalized = {}) {
+  const basePayload = buildLeadOperationBasePayload(rows, submission, normalized)
+  const assignedUserId = normalizeText(basePayload.assignedUserId)
+  const dedupeSeed = normalizeText(submission.id || submission.idempotency_key || rows.leadId)
+  const results = []
+
+  if (assignedUserId) {
+    const agent = await fetchOrganisationUserById(client, rows.organisationId, assignedUserId)
+    const agentEmail = normalizeEmail(agent?.email)
+    if (agentEmail) {
+      results.push(await invokeLeadOperationsEmail({
+        ...basePayload,
+        type: 'new_enquiry_assigned_agent',
+        to: agentEmail,
+        recipientName: displayName(agent, 'Agent'),
+        recipientRole: 'agent',
+        assignedAgentName: displayName(agent, ''),
+        assignedAgentEmail: agentEmail,
+        subject: 'New enquiry assigned to you',
+        idempotencyKey: `lead-ops:${dedupeSeed}:assigned-agent:${assignedUserId}`,
+      }))
+    }
+    return { attempted: results.length > 0, results }
+  }
+
+  const managers = await fetchLeadManagerRecipients(client, rows.organisationId, normalizeText(rows.leadRow?.branch_id))
+  for (const manager of managers) {
+    const managerEmail = normalizeEmail(manager.email)
+    if (!managerEmail) continue
+    results.push(await invokeLeadOperationsEmail({
+      ...basePayload,
+      type: 'new_enquiry_unassigned_manager',
+      to: managerEmail,
+      recipientName: displayName(manager, 'Manager'),
+      recipientRole: 'manager',
+      subject: 'New enquiry needs assignment',
+      idempotencyKey: `lead-ops:${dedupeSeed}:unassigned-manager:${normalizeText(manager.user_id || managerEmail)}`,
+    }))
+  }
+  return { attempted: results.length > 0, results }
+}
+
 async function persistIngestionLog(client, rows, submission = {}) {
   const result = await client
     .from('lead_ingestion_logs')
@@ -1151,6 +1311,20 @@ async function hydrateAgencyPublicIntakeSubmission(client, { link = {}, submissi
     rows = await persistListingInterests(client, rows)
     rows = await persistLeadActivityAndTask(client, rows, submission)
     rows = await persistAgencyPublicIntakeAutomation(client, rows, submission, normalized)
+    try {
+      rows = {
+        ...rows,
+        leadOperationsEmail: await dispatchAgencyPublicIntakeLeadOperationsEmail(client, rows, submission, normalized),
+      }
+    } catch (notificationError) {
+      rows = {
+        ...rows,
+        leadOperationsEmail: {
+          attempted: false,
+          error: normalizeText(notificationError?.message || 'Lead operations notification failed.'),
+        },
+      }
+    }
     rows = await persistIngestionLog(client, rows, submission)
 
     const processedSubmission = await updateSubmissionProcessingState(client, submission.id, {
@@ -1169,6 +1343,7 @@ async function hydrateAgencyPublicIntakeSubmission(client, { link = {}, submissi
         created: true,
         followUpPrepared: Boolean(rows.automation?.created || rows.automation?.duplicate),
         automation: summarizeAutomationHandoff(rows),
+        leadOperationsEmail: rows.leadOperationsEmail || null,
       },
     }
   } catch (error) {

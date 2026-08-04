@@ -10,6 +10,10 @@ import {
   markEmailDeliverySent,
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendAttorneyQuotePayload } from "../types.ts";
 import { jsonResponse } from "../utils/http.ts";
@@ -135,6 +139,24 @@ export async function handleAttorneyQuoteEmail(req: Request, payload: SendAttorn
   const quoteUrl = `${appBaseUrl}/quote/${normalizeText(envelope.token)}`;
   const subject = `${firmName} sent you quote ${quoteNumber}`;
   const total = formatMoney(envelope.total_amount, currency);
+  const branding = await resolveEmailBranding({
+    supabase: createServiceClient() || undefined,
+    payload: {
+      ...(payload as Record<string, unknown>),
+      organisationName: firmName,
+      organisationLogoUrl: firmLogoUrl,
+      supportEmail,
+      supportPhone,
+    },
+    organisationId: normalizeText(envelope.organisation_id) || organisationId,
+    defaults: {
+      organisationName: firmName,
+      logoUrl: firmLogoUrl,
+      supportEmail,
+      supportPhone,
+      replyTo: supportEmail,
+    },
+  });
   const contentHtml = [
     renderBridgeIntroParagraphs([
       `${firmName} has prepared a secure property legal services quote for you.`,
@@ -158,10 +180,10 @@ export async function handleAttorneyQuoteEmail(req: Request, payload: SendAttorn
     securityTitle: "Private Bearer Link",
     securityBody: "This secure link can record your quote decision. Please do not forward it. Accepting the quote does not itself create a legal Matter or attorney-client mandate.",
     helpBody: "Questions about the quote? Reply to this email or contact the firm before deciding.",
-    senderOrganisationName: firmName,
-    senderOrganisationLogoUrl: firmLogoUrl,
-    supportEmail,
-    supportPhone,
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
   });
   const text = [
     `Hi ${recipientName},`,
@@ -203,7 +225,11 @@ export async function handleAttorneyQuoteEmail(req: Request, payload: SendAttorn
     },
   });
 
-  const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) || "Arch9 <no-reply@arch9.co.za>";
+  const from = formatEmailSender(
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      "Arch9 <no-reply@arch9.co.za>",
+    branding.fromName || branding.organisationName,
+  );
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from,

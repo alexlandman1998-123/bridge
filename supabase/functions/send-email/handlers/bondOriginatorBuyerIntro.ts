@@ -5,6 +5,10 @@ import {
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendBondOriginatorBuyerIntroPayload } from "../types.ts";
 import { jsonResponse } from "../utils/http.ts";
@@ -46,8 +50,23 @@ export async function handleBondOriginatorBuyerIntroEmail(
     `Meet Your Bond Originator - ${organisationName}`;
   const title = normalizeText(payload.title) ||
     "Your bond application has been assigned";
-  const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <no-reply@arch9.co.za>";
+  const branding = await resolveEmailBranding({
+    payload: payload as Record<string, unknown>,
+    organisationId: normalizeText(
+      metadata.organisationId as string || metadata.organisation_id as string,
+    ),
+    defaults: {
+      organisationName,
+      supportEmail: consultantEmail,
+      supportPhone: consultantPhone,
+      replyTo: consultantEmail,
+    },
+  });
+  const from = formatEmailSender(
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      "Arch9 <no-reply@arch9.co.za>",
+    branding.fromName || branding.organisationName,
+  );
 
   const fields = [
     { label: "Bond Originator", value: consultantName },
@@ -84,7 +103,10 @@ export async function handleBondOriginatorBuyerIntroEmail(
       "Your bond application information is available only to authorised parties involved in your transaction.",
     helpBody:
       "Please respond quickly to any document requests so the bond team can keep your application moving.",
-    organisationName: "Arch9",
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
   });
 
   const text = [

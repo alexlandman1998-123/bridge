@@ -6,6 +6,10 @@ import {
 } from "../content/reservationDepositReceived.ts";
 import { logReservationDepositReceivedSideEffects } from "../services/reservationDepositReceivedLogging.ts";
 import { buildReservationDepositReceivedEmailPayload } from "../services/reservationDepositReceivedPayload.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendReservationDepositReceivedPayload } from "../types.ts";
 import { isMissingSchemaError, isMissingTableError } from "../utils/db.ts";
@@ -48,7 +52,7 @@ export async function handleReservationDepositReceivedEmail(
   const transactionQuery = await supabase
     .from("transactions")
     .select(
-      "id, buyer_id, development_id, unit_id, transaction_reference, reservation_required, reservation_status",
+      "id, buyer_id, development_id, unit_id, transaction_reference, organisation_id, reservation_required, reservation_status",
     )
     .eq("id", transactionId)
     .maybeSingle();
@@ -188,10 +192,31 @@ export async function handleReservationDepositReceivedEmail(
     transactionReference,
     clientPortalLink,
   });
+  const organisationId = normalizeText(transaction.organisation_id);
+  const branding = await resolveEmailBranding({
+    supabase,
+    payload: payload as Record<string, unknown>,
+    organisationId,
+    defaults: {
+      organisationName: normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
+        normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
+        "Arch9",
+      supportEmail: normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
+        normalizeText(Deno.env.get("SUPPORT_EMAIL")),
+      supportPhone: normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
+        normalizeText(Deno.env.get("SUPPORT_PHONE")),
+    },
+  });
+  payloadModel.organisationName = branding.organisationName;
+  payloadModel.supportEmail = branding.supportEmail;
+  payloadModel.supportPhone = branding.supportPhone;
+  payloadModel.branding = branding;
 
-  const sender =
+  const sender = formatEmailSender(
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <onboarding@resend.dev>";
+      "Arch9 <onboarding@resend.dev>",
+    branding.fromName || branding.organisationName,
+  );
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,

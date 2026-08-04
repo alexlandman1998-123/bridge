@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, FileText, MessageSquarePlus } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, FileText, MessageSquarePlus, UploadCloud } from 'lucide-react'
 import {
   addAttorneyTransactionUpdate,
   generateMissingAttorneyDocumentRequests,
   getAttorneyWorkflowOperationsForTransaction,
   requestAttorneyWorkflowLaneDocument,
   reviewAttorneyDocumentRequest,
+  uploadAttorneyWorkflowLaneDocument,
   updateAttorneyWorkflowLaneStage,
 } from '../../../services/attorneyWorkflow/attorneyWorkflowLaneService'
 import {
@@ -83,6 +84,12 @@ function getFirstUpdateOption(updateOptions = {}) {
   return flattenUpdateOptions(updateOptions)[0] || null
 }
 
+function normalizeDraftRecipients(recipients = [], visibility = 'internal') {
+  if (visibility !== 'client_visible') return []
+  const normalized = new Set((Array.isArray(recipients) ? recipients : [recipients]).filter((item) => ['buyer', 'seller'].includes(item)))
+  return normalized.size ? [...normalized] : ['buyer', 'seller']
+}
+
 function visibilityLabel(value) {
   if (value === 'client_visible') return 'Client Visible'
   if (value === 'professional_shared') return 'Professional Shared'
@@ -109,6 +116,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
   const [stageDraft, setStageDraft] = useState(null)
   const [noteDraft, setNoteDraft] = useState(null)
   const [documentDraft, setDocumentDraft] = useState(null)
+  const [uploadDraft, setUploadDraft] = useState(null)
   const [reviewDraft, setReviewDraft] = useState(null)
   const [blockerDraft, setBlockerDraft] = useState(null)
   const [readiness, setReadiness] = useState(null)
@@ -197,6 +205,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
         laneKey: noteDraft.laneKey,
         updateType: noteDraft.updateType,
         visibility: noteDraft.visibility,
+        clientRecipients: normalizeDraftRecipients(noteDraft.clientRecipients, noteDraft.visibility),
         message: noteDraft.message,
       })
       setNoteDraft(null)
@@ -265,6 +274,32 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
       await refreshAfterChange(next)
     } catch (error) {
       setState((previous) => ({ ...previous, error: error?.message || 'Unable to request document.' }))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleUploadSubmit(event) {
+    event.preventDefault()
+    if (!uploadDraft) return
+    const file = event.currentTarget.documentFile.files?.[0]
+    setSaving(true)
+    setState((previous) => ({ ...previous, error: '' }))
+    try {
+      const next = await uploadAttorneyWorkflowLaneDocument({
+        transactionId,
+        laneKey: uploadDraft.laneKey,
+        file,
+        title: uploadDraft.title,
+        category: uploadDraft.category,
+        stageKey: uploadDraft.stageKey,
+        visibility: uploadDraft.visibility,
+        note: uploadDraft.note,
+      })
+      setUploadDraft(null)
+      await refreshAfterChange(next)
+    } catch (error) {
+      setState((previous) => ({ ...previous, error: error?.message || 'Unable to upload document.' }))
     } finally {
       setSaving(false)
     }
@@ -605,6 +640,10 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                                   updateOptions: lane.updateOptions,
                                   updateType: firstOption?.id || '',
                                   visibility: firstOption?.defaultVisibility || getDefaultUpdateVisibility(lane.permissions),
+                                  clientRecipients:
+                                    (firstOption?.defaultVisibility || getDefaultUpdateVisibility(lane.permissions)) === 'client_visible'
+                                      ? ['buyer', 'seller']
+                                      : [],
                                   message: '',
                                 })
                               }}
@@ -625,6 +664,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                                     updateOptions: lane.updateOptions,
                                     updateType: 'internal_note',
                                     visibility: 'internal',
+                                    clientRecipients: [],
                                     message: '',
                                   })
                                 }
@@ -643,6 +683,24 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                           >
                             <FileText size={16} />
                             Request Document
+                          </Button>
+                        ) : null}
+                        {lane.permissions?.canUploadDocuments ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="w-full"
+                            onClick={() => setUploadDraft({
+                              laneKey: lane.laneKey,
+                              stageKey: lane.currentStage || '',
+                              title: '',
+                              category: lane.currentStageLabel || `${lane.label} document`,
+                              visibility: 'professional_shared',
+                              note: '',
+                            })}
+                          >
+                            <UploadCloud size={16} />
+                            Upload Document
                           </Button>
                         ) : null}
                         {lane.permissions?.canManageSigning ? (
@@ -791,6 +849,10 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                       ...previous,
                       updateType: event.target.value,
                       visibility: selected?.defaultVisibility || previous.visibility,
+                      clientRecipients: normalizeDraftRecipients(
+                        previous.clientRecipients,
+                        selected?.defaultVisibility || previous.visibility,
+                      ),
                     }))
                   }}
                 >
@@ -811,7 +873,13 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
               <Field
                 as="select"
                 value={noteDraft.visibility}
-                onChange={(event) => setNoteDraft((previous) => ({ ...previous, visibility: event.target.value }))}
+                onChange={(event) =>
+                  setNoteDraft((previous) => ({
+                    ...previous,
+                    visibility: event.target.value,
+                    clientRecipients: normalizeDraftRecipients(previous.clientRecipients, event.target.value),
+                  }))
+                }
                 disabled={noteDraft.mode === 'internal_note'}
               >
                 {noteDraft.permissions?.canAddInternalNote ? (
@@ -826,9 +894,40 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
               </Field>
             </label>
             {noteDraft.visibility === 'client_visible' ? (
-              <p className="rounded-control border border-warning/30 bg-warningSoft px-4 py-3 text-sm text-warning">
-                Client-visible updates may appear in the buyer/seller portal. Keep the message simple and professional.
-              </p>
+              <div className="grid gap-3 rounded-control border border-warning/30 bg-warningSoft px-4 py-3 text-sm text-warning">
+                <p className="m-0">Client-visible updates may appear in the buyer/seller portal. Keep the message simple and professional.</p>
+                <fieldset className="grid gap-2 text-textStrong">
+                  <legend className="text-xs font-semibold uppercase tracking-[0.08em] text-warning">Visible To</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { value: 'buyer', label: 'Buyer' },
+                      { value: 'seller', label: 'Seller' },
+                    ].map((option) => {
+                      const selected = normalizeDraftRecipients(noteDraft.clientRecipients, noteDraft.visibility).includes(option.value)
+                      return (
+                        <label key={option.value} className="inline-flex min-h-[36px] items-center gap-2 rounded-control border border-warning/30 bg-white/80 px-3 py-1.5 text-sm font-semibold text-textStrong">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={(event) =>
+                              setNoteDraft((previous) => {
+                                const current = new Set(normalizeDraftRecipients(previous.clientRecipients, previous.visibility))
+                                if (event.target.checked) current.add(option.value)
+                                else current.delete(option.value)
+                                return {
+                                  ...previous,
+                                  clientRecipients: current.size ? [...current] : ['buyer', 'seller'],
+                                }
+                              })
+                            }
+                          />
+                          {option.label}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </fieldset>
+              </div>
             ) : null}
             <label className="grid gap-1.5 text-sm font-medium text-textStrong">
               Message
@@ -888,6 +987,77 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
               </Button>
               <Button type="submit" disabled={saving || !documentDraft.title.trim()}>
                 {saving ? 'Requesting…' : 'Request Document'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
+      {uploadDraft ? (
+        <Modal open title="Upload Lane Document" onClose={() => setUploadDraft(null)}>
+          <form onSubmit={handleUploadSubmit} className="grid gap-4">
+            <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+              File
+              <input
+                type="file"
+                name="documentFile"
+                className="rounded-control border border-borderSoft bg-surface px-3 py-2 text-sm text-textStrong file:mr-3 file:rounded-full file:border-0 file:bg-surfaceAlt file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-textStrong"
+                onChange={(event) => {
+                  const fileName = event.target.files?.[0]?.name || ''
+                  if (!fileName) return
+                  setUploadDraft((previous) => previous && previous.title.trim() ? previous : { ...previous, title: fileName })
+                }}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+              Document Title
+              <Field
+                value={uploadDraft.title}
+                onChange={(event) => setUploadDraft((previous) => ({ ...previous, title: event.target.value }))}
+                placeholder="e.g. Guarantees letter, rates clearance, signed bond documents"
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+              Category / Label
+              <Field
+                value={uploadDraft.category}
+                onChange={(event) => setUploadDraft((previous) => ({ ...previous, category: event.target.value }))}
+                placeholder="Use the wording your firm uses for this document"
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+              Visibility
+              <Field
+                as="select"
+                value={uploadDraft.visibility}
+                onChange={(event) => setUploadDraft((previous) => ({ ...previous, visibility: event.target.value }))}
+              >
+                <option value="professional_shared">Shared with transaction team</option>
+                <option value="internal">Internal attorney file</option>
+                <option value="client_visible">Client visible</option>
+              </Field>
+            </label>
+            {uploadDraft.visibility === 'client_visible' ? (
+              <p className="rounded-control border border-warning/30 bg-warningSoft px-4 py-3 text-sm text-warning">
+                Client-visible documents may appear in the buyer/seller portal. Use this only when the file is suitable for client access.
+              </p>
+            ) : null}
+            <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+              Comment
+              <Field
+                as="textarea"
+                rows={4}
+                value={uploadDraft.note}
+                onChange={(event) => setUploadDraft((previous) => ({ ...previous, note: event.target.value }))}
+                placeholder="Optional context for the transaction team."
+              />
+            </label>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setUploadDraft(null)} disabled={saving}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving || !uploadDraft.title.trim()}>
+                {saving ? 'Uploading...' : 'Upload Document'}
               </Button>
             </div>
           </form>

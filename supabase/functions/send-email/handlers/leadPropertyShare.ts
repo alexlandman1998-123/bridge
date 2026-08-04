@@ -1,26 +1,25 @@
 import type { SendLeadPropertySharePayload } from "../types.ts";
+import {
+  renderBridgeEmailLayout,
+  renderBridgeIntroParagraphs,
+} from "../content/bridgeEmailLayout.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 
-function escapeHtml(value: string) {
+function stripHtml(value: string) {
   return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function renderFallbackHtml({ subject, message }: { subject: string; message: string }) {
-  return `
-    <div style="margin:0;padding:24px;background:#f6f8fb;">
-      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:20px;padding:28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#0f172a;">
-        <h1 style="margin:0 0 16px;font-size:26px;line-height:1.2;">${escapeHtml(subject || "Property update")}</h1>
-        <div style="font-size:15px;line-height:1.7;color:#334155;white-space:pre-wrap;">${escapeHtml(message)}</div>
-      </div>
-    </div>
-  `;
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 export async function handleLeadPropertyShareEmail(payload: SendLeadPropertySharePayload) {
@@ -35,12 +34,42 @@ export async function handleLeadPropertyShareEmail(payload: SendLeadPropertyShar
   }
 
   const subject = normalizeText(payload.subject) || "Your matched property collection";
-  const message = normalizeText(payload.message || payload.text);
-  const html = normalizeText(payload.html) || renderFallbackHtml({ subject, message });
-  const text = normalizeText(payload.text || payload.message) || subject;
-  const sender =
+  const message = normalizeText(payload.message || payload.text) ||
+    stripHtml(normalizeText(payload.html)) ||
+    "Your property representative has shared a property update with you.";
+  const text = normalizeText(payload.text || payload.message) || message;
+  const branding = await resolveEmailBranding({
+    payload: payload as Record<string, unknown>,
+    organisationId: normalizeText(payload.organisationId || payload.organisation_id),
+    defaults: {
+      organisationName: normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
+        normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
+        "Arch9",
+      supportEmail: normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
+        normalizeText(Deno.env.get("SUPPORT_EMAIL")),
+      supportPhone: normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
+        normalizeText(Deno.env.get("SUPPORT_PHONE")),
+    },
+  });
+  const html = renderBridgeEmailLayout({
+    preheader: message,
+    title: subject,
+    greeting: "Hi,",
+    contentHtml: renderBridgeIntroParagraphs(message.split(/\n{2,}/)),
+    securityBody:
+      "Property information is shared through Arch9 so your enquiry and follow-up can stay connected.",
+    helpBody:
+      "Need help? Reply to this email or contact your property representative directly.",
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
+  });
+  const sender = formatEmailSender(
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <onboarding@resend.dev>";
+      "Arch9 <onboarding@resend.dev>",
+    branding.fromName || branding.organisationName,
+  );
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,

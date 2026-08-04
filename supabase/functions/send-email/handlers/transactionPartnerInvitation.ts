@@ -9,6 +9,10 @@ import {
   markEmailDeliverySent,
   prepareEmailDelivery,
 } from "../services/communicationDeliveryLogging.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendTransactionPartnerInvitationPayload } from "../types.ts";
 import { jsonResponse } from "../utils/http.ts";
@@ -79,8 +83,16 @@ export async function handleTransactionPartnerInvitationEmail(
         payload.partnerProspectId ?? payload.partner_prospect_id ?? "",
       ),
     );
-  const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <no-reply@arch9.co.za>";
+  const branding = await resolveEmailBranding({
+    payload: payload as Record<string, unknown>,
+    organisationId: normalizeText(payload.organisationId ?? payload.organisation_id),
+    defaults: { organisationName },
+  });
+  const from = formatEmailSender(
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+      "Arch9 <no-reply@arch9.co.za>",
+    branding.fromName || branding.organisationName,
+  );
   const subject = isResend
     ? `${organisationName} has resent your Arch9 transaction invite`
     : reusedProspect
@@ -117,13 +129,18 @@ export async function handleTransactionPartnerInvitationEmail(
         ].filter((field) => field.value),
         "Invitation Details",
       ),
-      renderBridgeCta("Open Secure Invite", invitationLink),
+      renderBridgeCta("Open Secure Invite", invitationLink, {
+        primaryColor: branding.primaryColor,
+      }),
     ].join(""),
     securityBody:
       "This invitation grants access only to the transaction that generated the link. It does not grant access to the inviting organisation's wider workspace.",
     helpBody:
       "If you were not expecting this invitation, contact the transaction owner before accepting.",
-    organisationName,
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
   });
 
   const text = [

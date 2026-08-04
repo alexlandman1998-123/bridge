@@ -1089,6 +1089,7 @@ function ExternalTransactionPortal() {
 
   const latestUpdate = safePortal.presentation.latestUpdate
   const latestCommentTime = latestUpdate?.createdAt ? formatDateTime(latestUpdate.createdAt) : 'Not yet'
+  const latestAttorneyUpdate = safePortal.presentation.latestAttorneyUpdate || safePortal.attorneyLaneUpdates?.[0] || null
   const latestDocument = safePortal.presentation.latestDocument
   const purchasePrice =
     safePortal.transaction?.purchase_price ?? safePortal.transaction?.sales_price ?? safePortal.unit?.price ?? null
@@ -1366,6 +1367,23 @@ function ExternalTransactionPortal() {
                     <p>{stageExplainer.nextStepText}</p>
                   </div>
                 </article>
+
+                {latestAttorneyUpdate ? (
+                  <article className="external-client-block external-client-attorney-note">
+                    <div className="external-client-attorney-note-head">
+                      <div>
+                        <span>Attorney says</span>
+                        <h3>{latestAttorneyUpdate.title || 'Legal update'}</h3>
+                      </div>
+                      <em>{formatShortDate(latestAttorneyUpdate.createdAt || latestAttorneyUpdate.timestamp)}</em>
+                    </div>
+                    <div className="external-client-attorney-note-stage">
+                      <span>{latestAttorneyUpdate.laneLabel || 'Legal team'}</span>
+                      <strong>{latestAttorneyUpdate.stage || stageLabel}</strong>
+                    </div>
+                    <p>{toClientSafeUpdateMessage(latestAttorneyUpdate.message || latestAttorneyUpdate.commentBody || '')}</p>
+                  </article>
+                ) : null}
 
                 <article className="external-client-block">
                   <h3>Shared Workspace</h3>

@@ -50,6 +50,12 @@ function isClientVisibleDiscussion(item = {}) {
   return scope !== 'internal'
 }
 
+function isClientVisibleAttorneyUpdate(item = {}) {
+  return String(item?.visibility || item?.metadata?.visibility || '')
+    .trim()
+    .toLowerCase() === 'client_visible'
+}
+
 export function getExternalRolePresentation(roleKey) {
   const normalizedRoleKey = String(roleKey || '').toLowerCase()
   return {
@@ -62,6 +68,7 @@ export function buildClientSafeExternalWorkspace(rawPortal) {
   const portal = rawPortal || {}
   const safeDocuments = (portal.documents || []).filter(isClientVisibleDocument)
   const safeDiscussion = (portal.discussion || []).filter(isClientVisibleDiscussion)
+  const safeAttorneyUpdates = (portal.attorneyLaneUpdates || []).filter(isClientVisibleAttorneyUpdate)
 
   const completeCount = (portal.requiredDocumentChecklist || []).filter((item) => item.complete).length
   const totalRequired = (portal.requiredDocumentChecklist || []).length
@@ -105,6 +112,7 @@ export function buildClientSafeExternalWorkspace(rawPortal) {
     ...portal,
     documents: safeDocuments,
     discussion: safeDiscussion,
+    attorneyLaneUpdates: safeAttorneyUpdates,
     presentation: {
       mainStage,
       stageLabel,
@@ -115,6 +123,7 @@ export function buildClientSafeExternalWorkspace(rawPortal) {
       completion,
       latestUpdate,
       latestDocument,
+      latestAttorneyUpdate: safeAttorneyUpdates[0] || null,
       guidedNextSteps,
     },
   }

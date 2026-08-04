@@ -1,9 +1,18 @@
 import type { SendLeadAcknowledgementPayload } from "../types.ts";
 import {
-  buildLeadAcknowledgementEmailHtml,
   buildLeadAcknowledgementEmailText,
   buildLeadAcknowledgementSubject,
 } from "../content/leadAcknowledgement.ts";
+import {
+  renderBridgeCta,
+  renderBridgeEmailLayout,
+  renderBridgeIntroParagraphs,
+  renderBridgeSummaryCard,
+} from "../content/bridgeEmailLayout.ts";
+import {
+  formatEmailSender,
+  resolveEmailBranding,
+} from "../services/emailBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
@@ -12,11 +21,6 @@ function normalizeEmail(value: unknown) {
   const text = normalizeText(value).toLowerCase();
   const match = text.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
   return match?.[0] || "";
-}
-
-function formatSender(name: string, email: string) {
-  const cleanName = normalizeText(name).replace(/[<>\r\n"]/g, "");
-  return cleanName ? `${cleanName} <${email}>` : email;
 }
 
 export async function handleLeadAcknowledgementEmail(payload: SendLeadAcknowledgementPayload) {
@@ -34,13 +38,6 @@ export async function handleLeadAcknowledgementEmail(payload: SendLeadAcknowledg
     normalizeText(Deno.env.get("RESEND_LEAD_ACK_FROM_EMAIL")) ||
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Arch9 <onboarding@resend.dev>";
-  const senderEmail = normalizeEmail(centralSender);
-  const sender = senderEmail && !centralSender.includes("<")
-    ? formatSender(
-      normalizeText(payload.fromName || payload.from_name || payload.organisationName || payload.organisation_name || "Arch9"),
-      senderEmail,
-    )
-    : centralSender;
   const replyTo = normalizeEmail(payload.replyTo || payload.reply_to);
   const subject = normalizeText(payload.subject) || buildLeadAcknowledgementSubject();
 
@@ -68,13 +65,76 @@ export async function handleLeadAcknowledgementEmail(payload: SendLeadAcknowledg
     responseExpectation: normalizeText(payload.responseExpectation || payload.response_expectation),
     customResponseText: normalizeText(payload.customResponseText || payload.custom_response_text),
   };
+  const branding = await resolveEmailBranding({
+    payload: payload as Record<string, unknown>,
+    organisationId: normalizeText(payload.organisationId || payload.organisation_id),
+    defaults: {
+      organisationName: content.organisationName || "Arch9",
+      logoUrl: content.organisationLogoUrl,
+      tagline: content.organisationTagline,
+      supportEmail: content.organisationEmail,
+      supportPhone: content.organisationPhone,
+      website: content.organisationWebsite,
+      primaryColor: content.organisationBrandPrimaryColor,
+      secondaryColor: content.organisationBrandSecondaryColor,
+      fromName: normalizeText(payload.fromName || payload.from_name),
+      replyTo,
+    },
+  });
+  const agentName = content.agentName || "your property practitioner";
+  const agentFirstName = content.agentFirstName ||
+    agentName.split(/\s+/).filter(Boolean)[0] ||
+    "the agent";
+  const responseExpectation = content.customResponseText ||
+    content.responseExpectation ||
+    `${agentFirstName} will review your enquiry and contact you shortly.`;
+  const contentHtml = [
+    renderBridgeIntroParagraphs([
+      "Thank you for your interest in one of our properties. We have received your enquiry and our team will be in touch with you shortly.",
+      "Buying a home is a big decision, and we are here to make the process as smooth and straightforward as possible.",
+      responseExpectation,
+    ]),
+    renderBridgeSummaryCard(
+      [
+        { label: "Agent", value: agentName },
+        { label: "Agent Email", value: content.agentEmail },
+        { label: "Agent Phone", value: content.agentPhone },
+        { label: "Source", value: content.source },
+        { label: "Message", value: content.originalMessage },
+      ],
+      "Enquiry Details",
+    ),
+    content.agentEmail
+      ? renderBridgeCta(`Email ${agentFirstName}`, `mailto:${content.agentEmail}`, {
+        primaryColor: branding.primaryColor,
+      })
+      : "",
+  ].join("");
+  const html = renderBridgeEmailLayout({
+    preheader: "We have received your property enquiry.",
+    title: "Thanks For Your Enquiry",
+    greeting: `Hi ${content.recipientName || "there"},`,
+    contentHtml,
+    securityBody:
+      "Your enquiry details are shared only with the property team handling your request.",
+    helpBody:
+      "Need help? Reply to this email or contact the listed property practitioner directly.",
+    organisationName: branding.organisationName,
+    supportEmail: branding.supportEmail,
+    supportPhone: branding.supportPhone,
+    branding,
+  });
+  const sender = formatEmailSender(
+    centralSender,
+    branding.fromName || branding.organisationName,
+  );
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
     to,
     subject,
-    html: buildLeadAcknowledgementEmailHtml(content),
+    html,
     text: buildLeadAcknowledgementEmailText(content),
     replyTo: replyTo || undefined,
     idempotencyKey: normalizeText(payload.idempotencyKey || payload.idempotency_key) || undefined,

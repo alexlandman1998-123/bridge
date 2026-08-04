@@ -12437,6 +12437,59 @@ body.sidebar-compact .legacy-shell .legacy-shell .sidebar-divider {
   color: #123458;
 }
 
+.external-client-attorney-note {
+  border-color: #cbdcf1;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+}
+
+.external-client-attorney-note-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.external-client-attorney-note-head span,
+.external-client-attorney-note-stage span {
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.external-client-attorney-note-head h3 {
+  margin-top: 0.12rem;
+}
+
+.external-client-attorney-note-head em {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.external-client-attorney-note-stage {
+  border: 1px solid #dce7f4;
+  border-radius: 10px;
+  background: #fbfdff;
+  padding: 0.54rem 0.58rem;
+  display: grid;
+  gap: 0.14rem;
+}
+
+.external-client-attorney-note-stage strong {
+  color: #123458;
+  font-size: 0.9rem;
+}
+
+.external-client-attorney-note > p {
+  margin: 0;
+  color: #334155;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .external-client-updates-list {
   display: grid;
   gap: 0.48rem;

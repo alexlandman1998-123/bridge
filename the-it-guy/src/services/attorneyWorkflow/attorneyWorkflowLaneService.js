@@ -3,10 +3,13 @@ import {
   assertCanPublishVisibility,
   canReviewAttorneyDocuments,
   canRequestAttorneyDocuments,
+  canUploadAttorneyDocuments,
   canSeeAttorneyUpdateVisibility,
   canUpdateAttorneyLanePermission,
   getAttorneyLegalPermissionContext,
 } from '../permissions/attorneyPermissionService'
+import { DOCUMENTS_BUCKET_CANDIDATES } from '../../lib/supabaseClient'
+import { uploadToStorageCandidateBuckets } from '../../lib/storageFallbacks.js'
 import { getTransactionAttorneyAssignments } from '../transactionAttorneyAssignments'
 import {
   getAttorneyUpdateType,
@@ -272,6 +275,52 @@ function normalizeVisibility(value, fallback = 'internal') {
   if (normalized === 'shared') return 'professional_shared'
   if (normalized === 'client') return 'client_visible'
   return ['internal', 'professional_shared', 'client_visible'].includes(normalized) ? normalized : fallback
+}
+
+function normalizeClientRecipients(recipients = [], visibility = 'internal') {
+  if (visibility !== 'client_visible') return []
+
+  const source = Array.isArray(recipients) ? recipients : [recipients]
+  const normalized = new Set()
+  for (const recipient of source) {
+    const value = String(recipient || '')
+      .trim()
+      .toLowerCase()
+      .replaceAll('-', '_')
+      .replaceAll(' ', '_')
+    if (value === 'buyer' || value === 'purchaser') normalized.add('buyer')
+    if (value === 'seller' || value === 'vendor') normalized.add('seller')
+    if (['client', 'clients', 'both', 'shared', 'buyer_and_seller', 'seller_and_buyer'].includes(value)) {
+      normalized.add('buyer')
+      normalized.add('seller')
+    }
+  }
+
+  return normalized.size ? [...normalized] : ['buyer', 'seller']
+}
+
+function normalizeDocumentVisibilityScope(value, fallback = 'professional_shared') {
+  const normalized = normalizeVisibility(value, fallback)
+  if (normalized === 'professional_shared') return 'shared'
+  return normalized
+}
+
+function safeDocumentName(value = '') {
+  return String(value || 'document')
+    .trim()
+    .replace(/[^a-zA-Z0-9._ -]/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 140) || 'document'
+}
+
+function normalizeDocumentTypeKey(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 120) || 'attorney_supporting_document'
 }
 
 function buildWorkPacketMetadata(workPacket = null) {
@@ -1233,6 +1282,14 @@ async function assertCanReviewLaneDocument({ user, transactionId, laneKey }) {
   }
 }
 
+async function assertCanUploadLaneDocument({ user, transactionId, laneKey }) {
+  const meta = LANE_META[laneKey]
+  const allowed = await canUploadAttorneyDocuments(user?.id || user, transactionId, meta.attorneyRole)
+  if (!allowed) {
+    throw new Error('This document upload is restricted to the assigned attorney team.')
+  }
+}
+
 function buildDocumentRequestPayload({
   transactionId,
   actorId,
@@ -1300,6 +1357,107 @@ async function insertDocumentRequest(client, payload) {
   }
   if (insert.error) throw insert.error
   return insert.data
+}
+
+async function uploadAttorneyDocumentFile(client, filePath, file) {
+  const { bucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: DOCUMENTS_BUCKET_CANDIDATES,
+    upload: (bucketName) => client.storage.from(bucketName).upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file?.type || undefined,
+    }),
+    missingBucketMessage: `Storage bucket not found for attorney document upload. Checked: ${DOCUMENTS_BUCKET_CANDIDATES.join(', ')}.`,
+    accessDeniedMessage: 'Document storage is not ready for this attorney account yet. Please retry after storage access is refreshed.',
+    accessDeniedCode: 'attorney_document_storage_access_not_ready',
+    genericMessage: 'Unable to upload attorney document.',
+  })
+  return bucket
+}
+
+async function insertAttorneyUploadedDocument(client, payload) {
+  const selectColumns = 'id, transaction_id, name, file_path, category, document_type, visibility_scope, stage_key, lane_key, attorney_role, file_bucket, created_at'
+  let insert = await client.from('documents').insert(payload).select(selectColumns).maybeSingle()
+  if (
+    insert.error &&
+    (isMissingColumnError(insert.error, 'document_type') ||
+      isMissingColumnError(insert.error, 'visibility_scope') ||
+      isMissingColumnError(insert.error, 'stage_key') ||
+      isMissingColumnError(insert.error, 'uploaded_by_user_id') ||
+      isMissingColumnError(insert.error, 'uploaded_by_role') ||
+      isMissingColumnError(insert.error, 'uploaded_by_email') ||
+      isMissingColumnError(insert.error, 'lane_key') ||
+      isMissingColumnError(insert.error, 'attorney_role') ||
+      isMissingColumnError(insert.error, 'file_bucket') ||
+      isMissingColumnError(insert.error, 'bucket_key') ||
+      isMissingColumnError(insert.error, 'review_status') ||
+      isMissingColumnError(insert.error, 'status') ||
+      isMissingColumnError(insert.error, 'source'))
+  ) {
+    const fallback = {
+      transaction_id: payload.transaction_id,
+      name: payload.name,
+      file_path: payload.file_path,
+      category: payload.category,
+    }
+    insert = await client.from('documents').insert(fallback).select('id, transaction_id, name, file_path, category, created_at').maybeSingle()
+  }
+  if (insert.error) throw insert.error
+  return insert.data
+}
+
+async function insertAttorneyUploadUpdate(client, {
+  transactionId,
+  lane,
+  laneKey,
+  actorId,
+  visibility = 'professional_shared',
+  document = null,
+  note = '',
+  title = '',
+  category = '',
+} = {}) {
+  const normalizedLaneKey = normalizeLaneKey(laneKey)
+  const normalizedVisibility = normalizeVisibility(visibility, 'professional_shared')
+  const updateType = UPDATE_TYPE_BY_VISIBILITY[normalizedVisibility] || UPDATE_TYPE_BY_VISIBILITY.professional_shared
+  const message = String(note || `${title || document?.name || 'Document'} uploaded to ${LANE_META[normalizedLaneKey].label}.`).trim()
+  const payload = {
+    transaction_id: transactionId,
+    subprocess_id: lane?.id || null,
+    lane_key: normalizedLaneKey,
+    attorney_role: LANE_META[normalizedLaneKey].attorneyRole,
+    update_type: updateType,
+    visibility: normalizedVisibility,
+    message,
+    created_by: actorId,
+    related_document_id: document?.id || null,
+    related_signing_packet_id: null,
+    client_recipients: [],
+    metadata: {
+      updateTypeLabel: getUpdateTypeLabel(updateType),
+      updateCategory: 'document_upload',
+      documentId: document?.id || null,
+      documentName: document?.name || title || null,
+      category: category || document?.category || null,
+    },
+  }
+
+  let insert = await client.from('transaction_attorney_lane_updates').insert(payload)
+  if (
+    insert.error &&
+    (isMissingColumnError(insert.error, 'related_document_id') ||
+      isMissingColumnError(insert.error, 'related_signing_packet_id') ||
+      isMissingColumnError(insert.error, 'client_recipients') ||
+      isMissingColumnError(insert.error, 'metadata'))
+  ) {
+    const fallback = { ...payload }
+    delete fallback.related_document_id
+    delete fallback.related_signing_packet_id
+    delete fallback.client_recipients
+    delete fallback.metadata
+    insert = await client.from('transaction_attorney_lane_updates').insert(fallback)
+  }
+  if (insert.error && !isMissingSchemaError(insert.error)) throw insert.error
 }
 
 async function insertFollowUpActionMarker(client, {
@@ -1662,6 +1820,7 @@ export async function addAttorneyTransactionUpdate({
 
   const defaultVisibility = isGenericInternalNote ? 'internal' : registryType.defaultVisibility || 'internal'
   const normalizedVisibility = normalizeVisibility(visibility || defaultVisibility)
+  const normalizedClientRecipients = normalizeClientRecipients(clientRecipients, normalizedVisibility)
   if (isGenericInternalNote && normalizedVisibility === 'client_visible') {
     throw new Error('Internal notes cannot be made client-visible.')
   }
@@ -1688,11 +1847,12 @@ export async function addAttorneyTransactionUpdate({
     created_by: actor.id,
     related_document_id: documentId || null,
     related_signing_packet_id: signingPacketId || null,
-    client_recipients: Array.isArray(clientRecipients) ? clientRecipients : [],
+    client_recipients: normalizedClientRecipients,
     metadata: {
       updateTypeLabel: isGenericInternalNote ? getUpdateTypeLabel(UPDATE_TYPE_BY_VISIBILITY[normalizedVisibility]) : registryType.label,
       updateCategory: isGenericInternalNote ? 'note' : registryType.category,
       clientVisibleAllowed: Boolean(registryType?.clientVisibleAllowed),
+      clientRecipients: normalizedClientRecipients,
       documentId: documentId || null,
       signingPacketId: signingPacketId || null,
       ...workPacketMetadata,
@@ -1732,9 +1892,16 @@ export async function addAttorneyTransactionUpdate({
       updateType: payload.update_type,
       title: payload.metadata.updateTypeLabel,
       message: normalizedMessage,
+      visibility: normalizedVisibility,
       relatedDocumentId: documentId || null,
       relatedSigningPacketId: signingPacketId || null,
       clientRecipients: payload.client_recipients,
+      audience:
+        payload.client_recipients.length === 1
+          ? payload.client_recipients[0]
+          : payload.client_recipients.length > 1
+            ? 'buyer_and_seller'
+            : '',
       ...workPacketMetadata,
     },
   })
@@ -1869,6 +2036,97 @@ export async function generateMissingAttorneyDocumentRequests(transactionId, { l
       },
     }).catch(() => null)
   }
+
+  return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
+}
+
+export async function uploadAttorneyWorkflowLaneDocument({
+  transactionId,
+  laneKey,
+  file,
+  title = '',
+  category = '',
+  stageKey = '',
+  visibility = 'professional_shared',
+  note = '',
+} = {}) {
+  const client = requireClient()
+  const actor = await getAuthenticatedUser(client)
+  const normalizedTransactionId = String(transactionId || '').trim()
+  const normalizedLaneKey = normalizeLaneKey(laneKey)
+  const normalizedTitle = String(title || file?.name || '').trim()
+  const normalizedCategory = String(category || normalizedTitle || 'Attorney Supporting Document').trim()
+  const normalizedStageKey = stageKey ? normalizeAttorneyStageKey(stageKey, normalizedLaneKey) : null
+  const normalizedVisibility = normalizeVisibility(visibility, 'professional_shared')
+  const normalizedNote = String(note || '').trim()
+  if (!normalizedTransactionId) throw new Error('Transaction id is required.')
+  if (!file) throw new Error('Choose a document to upload.')
+  if (!normalizedTitle) throw new Error('Document title is required.')
+
+  await assertCanUploadLaneDocument({ user: actor, transactionId: normalizedTransactionId, laneKey: normalizedLaneKey })
+  assertCanPublishVisibility(
+    await getAttorneyLegalPermissionContext({
+      userId: actor.id,
+      transactionId: normalizedTransactionId,
+      attorneyRole: LANE_META[normalizedLaneKey].attorneyRole,
+    }),
+    normalizedVisibility,
+  )
+  const lane = await fetchLaneForUpdate(client, normalizedTransactionId, normalizedLaneKey)
+  const fileName = safeDocumentName(file?.name || normalizedTitle)
+  const filePath = `attorney-workflow/${normalizedTransactionId}/${normalizedLaneKey}/${Date.now()}-${fileName}`
+  const fileBucket = await uploadAttorneyDocumentFile(client, filePath, file)
+  const documentType = normalizeDocumentTypeKey(normalizedCategory || normalizedTitle)
+  const documentVisibilityScope = normalizeDocumentVisibilityScope(normalizedVisibility)
+  const document = await insertAttorneyUploadedDocument(client, {
+    transaction_id: normalizedTransactionId,
+    name: normalizedTitle,
+    file_path: filePath,
+    category: normalizedCategory,
+    document_type: documentType,
+    visibility_scope: documentVisibilityScope,
+    stage_key: normalizedStageKey,
+    uploaded_by_user_id: actor.id,
+    uploaded_by_role: LANE_META[normalizedLaneKey].attorneyRole,
+    uploaded_by_email: actor.email || null,
+    lane_key: normalizedLaneKey,
+    attorney_role: LANE_META[normalizedLaneKey].attorneyRole,
+    file_bucket: fileBucket,
+    bucket_key: normalizedLaneKey === 'bond' ? 'finance' : 'transfer',
+    status: 'uploaded',
+    review_status: 'uploaded',
+    source: 'attorney_workflow_upload',
+    is_client_visible: normalizedVisibility === 'client_visible',
+  })
+
+  await insertAttorneyUploadUpdate(client, {
+    transactionId: normalizedTransactionId,
+    lane,
+    laneKey: normalizedLaneKey,
+    actorId: actor.id,
+    visibility: normalizedVisibility,
+    document,
+    note: normalizedNote,
+    title: normalizedTitle,
+    category: normalizedCategory,
+  }).catch(() => null)
+
+  await insertTransactionEvent(client, {
+    transactionId: normalizedTransactionId,
+    eventType: 'AttorneyDocumentUploaded',
+    actorId: actor.id,
+    visibility: normalizedVisibility,
+    eventData: {
+      laneKey: normalizedLaneKey,
+      attorneyRole: LANE_META[normalizedLaneKey].attorneyRole,
+      documentId: document?.id || null,
+      documentName: normalizedTitle,
+      category: normalizedCategory,
+      stageKey: normalizedStageKey,
+      visibility: normalizedVisibility,
+      fileBucket,
+    },
+  })
 
   return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
 }

@@ -13958,6 +13958,7 @@ function buildAdditionalDocumentRequestEmailCopy({ actorRole, request, transacti
       requestId: request?.id || null,
       requestType: request?.request_type || request?.requestType || 'additional_document_request',
       requestedFrom: request?.requested_from || request?.requestedFrom || null,
+      requestedBy: actorLabel,
       priority: request?.priority || null,
       dueDate,
       transactionReference: reference || null,
@@ -14074,7 +14075,7 @@ async function sendAdditionalDocumentRequestEmails(client, { transactionId, acto
       const { data, error } = await invokeEdgeFunction('send-email', {
         client,
         body: {
-          type: 'bond_intake_notification',
+          type: 'additional_document_request',
           transactionId,
           to: recipient.email,
           recipientName: recipient.name,
@@ -36180,6 +36181,142 @@ export async function fetchTransactionDiscussion(transactionId, options = {}) {
   })
 }
 
+function normalizeAttorneyUpdateAudience(value = '') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replaceAll('-', '_')
+    .replaceAll(' ', '_')
+  if (normalized === 'purchaser') return 'buyer'
+  if (normalized === 'vendor') return 'seller'
+  if (['buyer', 'seller'].includes(normalized)) return normalized
+  return ''
+}
+
+function normalizeAttorneyUpdateRecipients(recipients = []) {
+  const source = Array.isArray(recipients) ? recipients : [recipients]
+  const normalized = new Set()
+  for (const recipient of source) {
+    const audience = normalizeAttorneyUpdateAudience(recipient)
+    if (audience) normalized.add(audience)
+    const value = String(recipient || '').trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_')
+    if (['client', 'clients', 'both', 'shared', 'buyer_and_seller', 'seller_and_buyer'].includes(value)) {
+      normalized.add('buyer')
+      normalized.add('seller')
+    }
+  }
+  return normalized.size ? [...normalized] : ['buyer', 'seller']
+}
+
+function attorneyLaneLabel(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized.includes('bond')) return 'Bond attorney'
+  if (normalized.includes('cancellation')) return 'Cancellation attorney'
+  return 'Transfer attorney'
+}
+
+function mapAttorneyLaneUpdateForClient(row = {}, subprocessById = {}) {
+  const recipients = normalizeAttorneyUpdateRecipients(row.client_recipients || row.metadata?.clientRecipients || [])
+  const stage = subprocessById[row.subprocess_id]?.current_stage || row.metadata?.stageLabel || row.metadata?.stage || ''
+  const laneKey = String(row.lane_key || row.attorney_role || 'transfer').trim().toLowerCase()
+  return {
+    id: row.id || null,
+    transactionId: row.transaction_id || null,
+    source: 'attorney_lane_update',
+    type: 'attorney_lane_update',
+    visibility: 'client_visible',
+    laneKey,
+    laneLabel: attorneyLaneLabel(laneKey || row.attorney_role),
+    attorneyRole: row.attorney_role || null,
+    updateType: row.update_type || null,
+    title: row.metadata?.updateTypeLabel || row.metadata?.title || 'Legal update',
+    message: row.message || '',
+    commentBody: row.message || '',
+    createdAt: row.created_at || null,
+    timestamp: row.created_at || null,
+    stage,
+    clientRecipients: recipients,
+    audience: recipients.length === 1 ? recipients[0] : 'buyer_and_seller',
+    actor: 'Legal team',
+    actorRole: 'Attorney',
+    metadata: {
+      ...(row.metadata && typeof row.metadata === 'object' ? row.metadata : {}),
+      title: row.metadata?.updateTypeLabel || row.metadata?.title || 'Legal update',
+      description: row.message || 'Your legal team shared a progress update.',
+      laneKey,
+      laneLabel: attorneyLaneLabel(laneKey || row.attorney_role),
+      stage,
+      audience: recipients.length === 1 ? recipients[0] : 'buyer_and_seller',
+      clientRecipients: recipients,
+      visibility: 'client_visible',
+      displayType: 'update',
+      topic: 'legal',
+    },
+  }
+}
+
+async function fetchClientVisibleAttorneyLaneUpdates(client, transactionId, viewerRole = 'buyer', options = {}) {
+  const normalizedTransactionId = String(transactionId || '').trim()
+  const normalizedViewerRole = normalizeAttorneyUpdateAudience(viewerRole) || (String(viewerRole || '').toLowerCase() === 'client' ? 'buyer' : '')
+  if (!normalizedTransactionId || !normalizedViewerRole) return []
+
+  let query = await client
+    .from('transaction_attorney_lane_updates')
+    .select('id, transaction_id, subprocess_id, lane_key, attorney_role, update_type, visibility, message, created_by, created_at, metadata, related_document_id, related_signing_packet_id, client_recipients')
+    .eq('transaction_id', normalizedTransactionId)
+    .eq('visibility', 'client_visible')
+    .order('created_at', { ascending: false })
+    .limit(options.limit || 20)
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'metadata') ||
+      isMissingColumnError(query.error, 'related_document_id') ||
+      isMissingColumnError(query.error, 'related_signing_packet_id') ||
+      isMissingColumnError(query.error, 'client_recipients'))
+  ) {
+    query = await client
+      .from('transaction_attorney_lane_updates')
+      .select('id, transaction_id, subprocess_id, lane_key, attorney_role, update_type, visibility, message, created_by, created_at')
+      .eq('transaction_id', normalizedTransactionId)
+      .eq('visibility', 'client_visible')
+      .order('created_at', { ascending: false })
+      .limit(options.limit || 20)
+  }
+
+  if (query.error) {
+    if (isMissingSchemaError(query.error) || isPermissionDeniedError(query.error)) return []
+    throw query.error
+  }
+
+  const rows = (query.data || []).filter((row) =>
+    normalizeAttorneyUpdateRecipients(row.client_recipients || row.metadata?.clientRecipients || []).includes(normalizedViewerRole),
+  )
+  if (!rows.length) return []
+
+  const subprocessIds = [...new Set(rows.map((row) => row.subprocess_id).filter(Boolean))]
+  let subprocessById = {}
+  if (subprocessIds.length) {
+    const subprocessQuery = await client
+      .from('transaction_subprocesses')
+      .select('id, current_stage, process_type, attorney_role')
+      .in('id', subprocessIds)
+    if (!subprocessQuery.error) {
+      subprocessById = Object.fromEntries((subprocessQuery.data || []).map((row) => [row.id, row]))
+    } else if (!isMissingSchemaError(subprocessQuery.error) && !isPermissionDeniedError(subprocessQuery.error)) {
+      throw subprocessQuery.error
+    }
+  }
+
+  return rows.map((row) => mapAttorneyLaneUpdateForClient(row, subprocessById))
+}
+
+export async function fetchClientPortalAttorneyLaneUpdatesByToken(token, clientRole = 'buyer', options = {}) {
+  const client = requireClientPortalTokenClient(token)
+  const link = await resolveClientPortalLinkByToken(client, token)
+  return fetchClientVisibleAttorneyLaneUpdates(client, link.transaction_id, clientRole, options)
+}
+
 export async function addTransactionDiscussionComment({
   transactionId,
   authorName,
@@ -37171,6 +37308,9 @@ async function fetchExternalTransactionWorkspace(client, transactionId, { viewer
     includeLegacy: true,
     limit: 120,
   })
+  const attorneyLaneUpdates = await fetchClientVisibleAttorneyLaneUpdates(client, transaction.id, viewerRole, {
+    limit: 12,
+  })
   const onboardingFormData = transaction?.id
     ? await fetchOnboardingFormDataForTransaction(client, transaction.id, transaction.purchaser_type)
     : null
@@ -37204,6 +37344,7 @@ async function fetchExternalTransactionWorkspace(client, transactionId, { viewer
     buyer,
     onboardingFormData,
     discussion,
+    attorneyLaneUpdates,
     documents,
     handover,
     requiredDocuments,

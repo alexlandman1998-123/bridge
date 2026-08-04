@@ -10,16 +10,54 @@ function assertNotIncludes(source: string, expected: string, message?: string) {
   }
 }
 
+function assertUsesSharedShell(source: string, fileName: string) {
+  if (
+    source.includes("renderBridgeEmailLayout") ||
+    /build[A-Za-z]+EmailHtml/.test(source)
+  ) {
+    return;
+  }
+  throw new Error(`${fileName} should use the shared dark-header email layout`);
+}
+
 const brandedHandlerFiles = [
   "appointment.ts",
+  "attorneyQuote.ts",
+  "bondAttorneyLegalNotification.ts",
+  "bondIntakeNotification.ts",
+  "bondOriginatorBuyerIntro.ts",
   "buyerOfferLink.ts",
   "buyerOfferSubmittedAgent.ts",
+  "clientSellerPortalNotification.ts",
   "clientOnboarding.ts",
+  "commercialEnterpriseNotification.ts",
+  "commercialAccessNotification.ts",
+  "commercialLandlordOnboarding.ts",
+  "leadAcknowledgement.ts",
+  "leadOperationsNotification.ts",
+  "leadPropertyShare.ts",
+  "legacyTest.ts",
+  "notificationReminderDispatch.ts",
   "offerDecisionNotification.ts",
+  "onboardingSubmitted.ts",
+  "organisationPartnerInvitation.ts",
   "reservationDeposit.ts",
+  "reservationDepositReceived.ts",
+  "sellerMandateSigned.ts",
   "sellerOfferReview.ts",
   "sellerOnboarding.ts",
   "sellerOnboardingSubmitted.ts",
+  "transactionPartnerInvitation.ts",
+  "transactionOperationsNotification.ts",
+  "transactionProgressDispatch.ts",
+  "transactionRoleplayerIntro.ts",
+  "weeklyDigestNotification.ts",
+  "workspaceInvite.ts",
+];
+
+const sharedLayoutHandlerFiles = [
+  ...brandedHandlerFiles,
+  "arch9LaunchConfirmation.ts",
 ];
 
 Deno.test({
@@ -51,6 +89,19 @@ Deno.test({
         "normalizeEmailBranding",
         `${fileName} should not normalize handler-local branding directly`,
       );
+    }
+  },
+});
+
+Deno.test({
+  name: "notification handlers render through the shared email shell",
+  permissions: { read: true },
+  async fn() {
+    for (const fileName of sharedLayoutHandlerFiles) {
+      const source = await Deno.readTextFile(
+        new URL(fileName, import.meta.url),
+      );
+      assertUsesSharedShell(source, fileName);
     }
   },
 });
