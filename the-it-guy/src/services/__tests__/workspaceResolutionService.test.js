@@ -196,6 +196,7 @@ try {
 
   for (const resolution of [organisationMembershipSortsFirst, attorneyMembershipSortsFirst]) {
     assert.equal(resolution.currentWorkspace.id, attorneyWorkspaceId)
+    assert.equal(resolution.profile.primaryAttorneyFirmId, attorneyWorkspaceId)
     assert.equal(resolution.currentWorkspace.logoUrl, attorneyFirm.logo_url)
     assert.equal(resolution.currentWorkspace.brandingSource, 'attorney_firm_members')
     assert.equal(resolution.currentMembership.source, 'attorney_firm_members')
