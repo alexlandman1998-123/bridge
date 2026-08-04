@@ -1010,7 +1010,7 @@ function isStaleMandateGenerationRecoveryMessage(value = '') {
 }
 
 const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity', 'listing_journey'])
-const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'properties', 'activity', 'appointments', 'documents', 'offers', 'insights', 'mapping'])
+const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'properties', 'appointments', 'activity', 'offers'])
 
 function resolveLeadWorkspaceTabFromSearch(search = '') {
   if (!search) return 'overview'
@@ -2377,6 +2377,7 @@ function getBuyerUrgencyClassName(label = '') {
 function resolveBuyerWorkspaceTabKey(tabKey = '') {
   const normalized = normalizeText(tabKey)
   if (normalized === 'activities') return 'activity'
+  if (['documents', 'insights', 'mapping'].includes(normalized)) return 'overview'
   return normalized
 }
 
@@ -7041,11 +7042,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLead) return
     if (selectedLeadIsSeller && ['offers', 'tasks'].includes(leadWorkspaceTab)) {
       setLeadWorkspaceTab('overview')
+      if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
     }
-    if (!selectedLeadIsSeller && ['seller', 'property', 'mandate', 'listing_journey'].includes(leadWorkspaceTab)) {
+    if (!selectedLeadIsSeller && ['seller', 'property', 'mandate', 'listing_journey', 'documents', 'insights', 'mapping'].includes(leadWorkspaceTab)) {
       setLeadWorkspaceTab('overview')
+      if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
     }
-  }, [leadWorkspaceTab, selectedLead, selectedLeadIsSeller])
+  }, [isLeadWorkspaceRoute, leadWorkspaceTab, selectedLead, selectedLeadIsSeller])
 
   useEffect(() => {
     if (!routeLeadId || hasExplicitLeadWorkspaceTab || !selectedLeadIsSeller) return
@@ -17178,16 +17181,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                 {selectedLead && !selectedLeadIsSeller ? (
                   <div className="mx-5 mb-5 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)] sm:mx-7 lg:mx-8" role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
-                    <div className="grid min-w-[980px] grid-cols-8 gap-2">
+                    <div className="grid min-w-[680px] grid-cols-5 gap-2">
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
-                        { key: 'documents', label: 'Documents', meta: '' },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                         { key: 'offers', label: 'Offers', meta: selectedLeadOfferSummary.total },
-                        { key: 'insights', label: 'Insights', meta: '' },
-                        { key: 'mapping', label: 'Mapping', meta: '' },
                       ].map((tab) => {
                         const isActive = resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === tab.key
                         return (
@@ -17462,15 +17462,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </section>
 
 	                  <section className="scroll-mt-4 overflow-x-auto rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_10px_30px_rgba(31,54,78,0.045)]" role="tablist" aria-label="Buyer workspace sections" data-testid="lead-workspace-tabs">
-	                    <div className="grid min-w-[880px] grid-cols-7">
+	                    <div className="grid min-w-[680px] grid-cols-5">
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
-                        { key: 'activity', label: 'Activities', meta: selectedLeadUnifiedTimeline.length },
-                        { key: 'documents', label: 'Documents', meta: '' },
+                        { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+                        { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                         { key: 'offers', label: 'Offers', meta: selectedLeadOfferSummary.total },
-                        { key: 'insights', label: 'Insights', meta: '' },
-                        { key: 'mapping', label: 'Mapping', meta: '' },
                       ].map((tab) => {
                         const isActive = resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === tab.key
                         return (
@@ -17732,8 +17730,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                         return (
                           <>
-                            <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)]">
-                              <form className="flex h-full flex-col rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6" onSubmit={handleSaveBuyerQualification}>
+                            <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)]">
+                              <form className="flex h-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" onSubmit={handleSaveBuyerQualification}>
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Buyer Qualification</p>
@@ -17759,7 +17757,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                                 {buyerQualificationEditing ? (
                                   <>
-                                    <div className="mt-5 grid flex-1 gap-4">
+                                    <div className="mt-4 grid gap-3.5">
                                       <div className="grid gap-4 md:grid-cols-2">
                                         <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                           What is your budget?
@@ -17832,7 +17830,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       </label>
                                     </div>
 
-                                    <div className="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-[#edf3f8] pt-4">
+                                    <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-[#edf3f8] pt-4">
                                       <Button type="button" size="sm" variant="secondary" onClick={() => setBuyerQualificationForm(buildBuyerQualificationFormFromLead(selectedLead))}>
                                         Reset
                                       </Button>
@@ -17844,20 +17842,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   </>
                                 ) : (
                                   <>
-                                    <div className="mt-5 grid flex-1 gap-3 md:grid-cols-2">
+                                    <div className="mt-4 grid gap-2.5 md:grid-cols-2">
                                       {qualificationQuestionRows.map((row) => {
                                         const isMissing = row.value === 'Not captured'
                                         return (
-                                          <div key={row.label} className={`rounded-[14px] border border-[#edf3f8] bg-[#fbfdff] px-4 py-3 ${row.wide ? 'md:col-span-2' : ''}`}>
+                                          <div key={row.label} className={`rounded-[12px] border border-[#edf3f8] bg-[#fbfdff] px-3.5 py-2.5 ${row.wide ? 'md:col-span-2' : ''}`}>
                                             <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7c91a8]">{row.label}</p>
-                                            <p className={`mt-1 whitespace-pre-wrap text-sm leading-6 tracking-normal ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`}>{row.value}</p>
+                                            <p className={`mt-1 whitespace-pre-wrap text-sm leading-5 tracking-normal ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`}>{row.value}</p>
                                           </div>
                                         )
                                       })}
                                     </div>
 
                                     {buyerOverviewQualification.hasQualificationSignal && !buyerOverviewQualification.hasViewingBooked ? (
-                                      <div className="mt-5 flex justify-end border-t border-[#edf3f8] pt-4">
+                                      <div className="mt-4 flex justify-end border-t border-[#edf3f8] pt-4">
                                         <Button type="button" size="sm" onClick={() => handleOpenAppointmentModal()}>
                                           <CalendarDays className="h-4 w-4" />
                                           Book viewing
@@ -17868,7 +17866,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 )}
                               </form>
 
-                              <section className="flex h-full flex-col rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6">
+                              <section className="flex h-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Activity Logger</p>
@@ -17877,7 +17875,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <Zap className="h-5 w-5 text-[#2f7b9e]" />
                                 </div>
 
-                                <div className="mt-5 flex-1">
+                                <div className="mt-4">
                                   <div className="grid gap-1 rounded-[14px] bg-[#f3f7fb] p-1" style={{ gridTemplateColumns: `repeat(${activityQuickTypes.length}, minmax(0, 1fr))` }}>
                                     {activityQuickTypes.map((type) => {
                                       const ActivityIcon = activityIconByType[type] || Columns3
@@ -17899,7 +17897,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     })}
                                   </div>
 
-                                  <form className="mt-5 space-y-4" onSubmit={handleUnifiedActivitySubmit}>
+                                  <form className="mt-4 space-y-3" onSubmit={handleUnifiedActivitySubmit}>
                                     {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? (
                                       <div className="grid gap-3 sm:grid-cols-3">
                                         <Field placeholder="Next action title" value={taskForm.title} onChange={(event) => setTaskForm((previous) => ({ ...previous, title: event.target.value }))} />
@@ -17926,7 +17924,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     )}
                                     <Field
                                       as="textarea"
-                                      rows={8}
+                                      rows={5}
                                       placeholder={activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? 'Describe the next action...' : 'Add notes about this activity...'}
                                       value={activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? taskForm.description : activityForm.activityNote}
                                       onChange={(event) => {
@@ -17967,7 +17965,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     </div>
                                   </form>
 
-                                  <div className="mt-6 border-t border-[#edf3f8] pt-5">
+                                  <div className="mt-5 border-t border-[#edf3f8] pt-4">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                       <div>
                                         <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Completed activity</p>
@@ -17982,18 +17980,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       </button>
                                     </div>
                                     <div className="mt-3 space-y-2">
-                                      {selectedLeadActivities.slice(0, 4).length ? (
-                                        selectedLeadActivities.slice(0, 4).map((activity) => {
+                                      {selectedLeadActivities.slice(0, 3).length ? (
+                                        selectedLeadActivities.slice(0, 3).map((activity) => {
                                           const ActivityIcon = activityIconByType[activity.activityType] || Columns3
                                           const activityDate = activity.activityDate || activity.createdAt
                                           return (
                                             <button
                                               key={activity.activityId || `${activity.activityType}-${activityDate}`}
                                               type="button"
-                                              className="grid w-full grid-cols-[32px_minmax(0,1fr)_auto] items-start gap-3 rounded-[14px] border border-[#e7eef6] bg-[#fbfdff] px-3 py-3 text-left transition hover:border-[#d5e2ef] hover:bg-white"
+                                              className="grid w-full grid-cols-[30px_minmax(0,1fr)_auto] items-start gap-3 rounded-[12px] border border-[#e7eef6] bg-[#fbfdff] px-3 py-2.5 text-left transition hover:border-[#d5e2ef] hover:bg-white"
                                               onClick={() => handleLeadWorkspaceTabSelection('activity')}
                                             >
-                                              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#eaf3fb] text-[#285b7d]">
+                                              <span className="grid h-7 w-7 place-items-center rounded-full bg-[#eaf3fb] text-[#285b7d]">
                                                 <ActivityIcon className="h-4 w-4" />
                                               </span>
                                               <span className="min-w-0">
@@ -18005,7 +18003,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           )
                                         })
                                       ) : (
-                                        <div className="rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-5 text-center">
+                                        <div className="rounded-[12px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-4 text-center">
                                           <p className="text-sm font-semibold text-[#20364c]">No activity logged yet</p>
                                           <p className="mt-1 text-xs text-[#6f839c]">Logged calls, messages, emails, and notes will appear here.</p>
                                         </div>

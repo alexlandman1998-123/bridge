@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Clock3,
   Download,
+  MapPin,
   MessageSquareText,
   RefreshCw,
   Search,
@@ -252,6 +253,34 @@ function TrendList({ title, rows = [] }) {
   )
 }
 
+function BuyerMapSignalList({ title, rows = [], icon: Icon = MapPin }) {
+  const max = Math.max(...rows.map((row) => Number(row.count || 0)), 1)
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+        <Icon size={16} className="text-slate-400" />
+      </div>
+      <div className="mt-4 space-y-3">
+        {rows.length ? rows.slice(0, 8).map((row) => {
+          const width = Math.max(6, (Number(row.count || 0) / max) * 100)
+          return (
+            <div key={row.label}>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="truncate font-medium text-slate-700">{row.label}</span>
+                <span className="font-semibold text-slate-950">{formatNumber(row.count)}</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-emerald-600" style={{ width: `${width}%` }} />
+              </div>
+            </div>
+          )
+        }) : <p className="text-sm text-slate-500">No buyer demand signal yet.</p>}
+      </div>
+    </article>
+  )
+}
+
 function AgentReportingPage() {
   const workspaceContext = useWorkspace()
   const organisationId = getOrganisationId(workspaceContext)
@@ -363,6 +392,31 @@ function AgentReportingPage() {
           </section>
 
           <FunnelSection stages={analytics.funnel} />
+
+          <section className={`${panelClass} overflow-hidden p-5`}>
+            <SectionHeader
+              eyebrow="Buyer Intelligence"
+              title="Buyer Insights & Mapping"
+              copy="Buyer demand, qualification, activity, and area signals moved out of the individual lead workspace and into reporting."
+            />
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              <MetricCard label="Qualified Buyers" value={formatNumber((analytics.funnel || []).find((stage) => stage.key === 'qualified')?.volume)} icon={CheckCircle2} tone="green" />
+              <MetricCard label="Viewings Booked" value={formatNumber(analytics.overview.totalViewings)} icon={CalendarDays} tone="amber" />
+              <MetricCard label="Offers Created" value={formatNumber(analytics.overview.totalOffers)} icon={BriefcaseBusiness} tone="amber" />
+              <MetricCard label="Transactions" value={formatNumber(analytics.overview.totalTransactions)} icon={BarChart3} tone="green" />
+              <MetricCard label="Avg Response" value={formatHours(analytics.response.averageResponseHours)} icon={MessageSquareText} tone="blue" />
+              <MetricCard label="Overdue Leads" value={formatNumber(analytics.response.overdueLeads)} icon={TrendingUp} tone="red" />
+            </div>
+            <div className="mt-5 grid gap-5 xl:grid-cols-2">
+              <BuyerMapSignalList title="Buyer Demand by Suburb" rows={analytics.requirements.topSuburbs || []} />
+              <BuyerMapSignalList title="Buyer Demand by Area" rows={analytics.requirements.topAreas || []} />
+            </div>
+            <div className="mt-5 grid gap-5 xl:grid-cols-3">
+              <TrendList title="Budget Bands" rows={analytics.requirements.budgetBands || []} />
+              <TrendList title="Property Types" rows={analytics.requirements.topPropertyTypes || []} />
+              <TrendList title="Bedrooms" rows={analytics.requirements.bedroomDemand || []} />
+            </div>
+          </section>
 
           <section className={`${panelClass} overflow-hidden p-5`}>
             <SectionHeader
