@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../../components/location/AreaAutocomplete'
+import AreaMultiSelect from '../../components/location/AreaMultiSelect'
 import AppointmentDashboardSection from '../../components/appointments/dashboard/AppointmentDashboardSection'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
 import LegalDocumentWorkspace from '../../components/documents/LegalDocumentWorkspace'
@@ -4838,6 +4839,9 @@ const BUYER_FINANCE_TYPE_OPTIONS = ['', 'Bond', 'Cash', 'Cash + bond', 'Not sure
 const BUYER_SUBJECT_TO_FINANCE_OPTIONS = ['', 'Yes', 'No', 'Unsure']
 const BUYER_PRE_APPROVAL_OPTIONS = ['', 'Not started', 'Pre-approved', 'Submitted', 'Needs bond originator', 'Cash buyer']
 const BUYER_PROPERTY_TO_SELL_OPTIONS = ['', 'No', 'Yes', 'Unsure']
+const BUYER_QUALIFICATION_LABEL_CLASS = 'grid gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-[#60758b]'
+const BUYER_QUALIFICATION_FIELD_CLASS = 'h-11 rounded-[12px] px-3 text-sm font-medium tracking-normal placeholder:font-medium placeholder:tracking-normal'
+const BUYER_QUALIFICATION_TEXTAREA_CLASS = 'min-h-[132px] rounded-[12px] px-3 py-3 text-sm font-medium leading-6 tracking-normal placeholder:font-medium placeholder:tracking-normal'
 
 function stripBuyerQualificationNoteBlock(notes = '') {
   const raw = String(notes || '').trim()
@@ -4900,6 +4904,13 @@ function buildBuyerQualificationNotes(form = {}) {
     ...rows,
     BUYER_QUALIFICATION_NOTE_END,
   ].join('\n')
+}
+
+function parseBuyerQualificationAreas(value = '') {
+  return normalizeText(value)
+    .split(/[,;\n]/)
+    .map(normalizeText)
+    .filter(Boolean)
 }
 
 function formatBuyerQualificationBudget(value = '') {
@@ -17721,7 +17732,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                         return (
                           <>
-                            <div className="grid items-start gap-6 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)]">
+                            <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)]">
                               <form className="flex h-full flex-col rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6" onSubmit={handleSaveBuyerQualification}>
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
@@ -17750,72 +17761,74 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <>
                                     <div className="mt-5 grid flex-1 gap-4">
                                       <div className="grid gap-4 md:grid-cols-2">
-                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                           What is your budget?
-                                          <Field placeholder="R 2 500 000" value={buyerQualificationForm.budget} onChange={(event) => updateBuyerQualificationField('budget', event.target.value)} />
+                                          <Field className={BUYER_QUALIFICATION_FIELD_CLASS} placeholder="R 2 500 000" value={buyerQualificationForm.budget} onChange={(event) => updateBuyerQualificationField('budget', event.target.value)} />
                                         </label>
-                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                           When would you like to move?
-                                          <Field as="select" value={buyerQualificationForm.moveTimeframe} onChange={(event) => updateBuyerQualificationField('moveTimeframe', event.target.value)}>
+                                          <Field as="select" className={BUYER_QUALIFICATION_FIELD_CLASS} value={buyerQualificationForm.moveTimeframe} onChange={(event) => updateBuyerQualificationField('moveTimeframe', event.target.value)}>
                                             {BUYER_MOVE_TIMEFRAME_OPTIONS.map((option) => (
                                               <option key={option || 'empty-timeframe'} value={option}>{option || 'Select timeframe'}</option>
                                             ))}
                                           </Field>
                                         </label>
                                       </div>
-                                      <AreaAutocomplete
+                                      <AreaMultiSelect
                                         label="Which areas should we focus on?"
-                                        value={buyerQualificationForm.areaInterest}
-                                        onChange={(nextArea) => updateBuyerQualificationField('areaInterest', nextArea)}
-                                        placeholder="Bedfordview, Bartlett, Sandton..."
+                                        value={parseBuyerQualificationAreas(buyerQualificationForm.areaInterest)}
+                                        onChange={(areas) => updateBuyerQualificationField('areaInterest', areas.join(', '))}
+                                        placeholder="Search or add an area"
+                                        description="Press Enter or + to add more than one area."
+                                        className="text-sm font-semibold normal-case tracking-normal text-[#29435d] [&>div]:min-h-[44px] [&>div]:rounded-[12px] [&>div]:border-[#dbe7f2] [&>div]:shadow-none [&_input]:text-sm [&_input]:font-medium"
                                       />
                                       <div className="grid gap-4 md:grid-cols-2">
-                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                           Cash buyer or bond?
-                                          <Field as="select" value={buyerQualificationForm.financeType} onChange={(event) => updateBuyerQualificationField('financeType', event.target.value)}>
+                                          <Field as="select" className={BUYER_QUALIFICATION_FIELD_CLASS} value={buyerQualificationForm.financeType} onChange={(event) => updateBuyerQualificationField('financeType', event.target.value)}>
                                             {BUYER_FINANCE_TYPE_OPTIONS.map((option) => (
                                               <option key={option || 'empty-finance'} value={option}>{option || 'Select finance type'}</option>
                                             ))}
                                           </Field>
                                         </label>
-                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                           Is the purchase subject to finance?
-                                          <Field as="select" value={buyerQualificationForm.subjectToFinance} onChange={(event) => updateBuyerQualificationField('subjectToFinance', event.target.value)}>
+                                          <Field as="select" className={BUYER_QUALIFICATION_FIELD_CLASS} value={buyerQualificationForm.subjectToFinance} onChange={(event) => updateBuyerQualificationField('subjectToFinance', event.target.value)}>
                                             {BUYER_SUBJECT_TO_FINANCE_OPTIONS.map((option) => (
                                               <option key={option || 'empty-subject-to-finance'} value={option}>{option || 'Select answer'}</option>
                                             ))}
                                           </Field>
                                         </label>
                                       </div>
-                                      <div className="grid gap-4 md:grid-cols-3">
-                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                           Deposit available?
-                                          <Field placeholder="R 400 000" value={buyerQualificationForm.depositAvailable} onChange={(event) => updateBuyerQualificationField('depositAvailable', event.target.value)} />
+                                          <Field className={BUYER_QUALIFICATION_FIELD_CLASS} placeholder="R 400 000" value={buyerQualificationForm.depositAvailable} onChange={(event) => updateBuyerQualificationField('depositAvailable', event.target.value)} />
                                         </label>
-                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                           Bond pre-approval status?
-                                          <Field as="select" value={buyerQualificationForm.preApprovalStatus} onChange={(event) => updateBuyerQualificationField('preApprovalStatus', event.target.value)}>
+                                          <Field as="select" className={BUYER_QUALIFICATION_FIELD_CLASS} value={buyerQualificationForm.preApprovalStatus} onChange={(event) => updateBuyerQualificationField('preApprovalStatus', event.target.value)}>
                                             {BUYER_PRE_APPROVAL_OPTIONS.map((option) => (
                                               <option key={option || 'empty-pre-approval'} value={option}>{option || 'Select status'}</option>
                                             ))}
                                           </Field>
                                         </label>
-                                        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                           Do you need to sell a property first?
-                                          <Field as="select" value={buyerQualificationForm.propertyToSell} onChange={(event) => updateBuyerQualificationField('propertyToSell', event.target.value)}>
+                                          <Field as="select" className={BUYER_QUALIFICATION_FIELD_CLASS} value={buyerQualificationForm.propertyToSell} onChange={(event) => updateBuyerQualificationField('propertyToSell', event.target.value)}>
                                             {BUYER_PROPERTY_TO_SELL_OPTIONS.map((option) => (
                                               <option key={option || 'empty-property-to-sell'} value={option}>{option || 'Select answer'}</option>
                                             ))}
                                           </Field>
                                         </label>
                                       </div>
-                                      <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                      <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                         What type of property do you need?
-                                        <Field placeholder="Property type, bedrooms, must-haves" value={buyerQualificationForm.propertyNeed} onChange={(event) => updateBuyerQualificationField('propertyNeed', event.target.value)} />
+                                        <Field className={BUYER_QUALIFICATION_FIELD_CLASS} placeholder="Property type, bedrooms, must-haves" value={buyerQualificationForm.propertyNeed} onChange={(event) => updateBuyerQualificationField('propertyNeed', event.target.value)} />
                                       </label>
-                                      <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.11em] text-[#6d839b]">
+                                      <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                         What did the buyer say on the call?
-                                        <Field as="textarea" rows={5} placeholder="Capture affordability, urgency, must-haves, exclusions, and next step..." value={buyerQualificationForm.additionalNotes} onChange={(event) => updateBuyerQualificationField('additionalNotes', event.target.value)} />
+                                        <Field as="textarea" className={BUYER_QUALIFICATION_TEXTAREA_CLASS} rows={5} placeholder="Capture affordability, urgency, must-haves, exclusions, and next step..." value={buyerQualificationForm.additionalNotes} onChange={(event) => updateBuyerQualificationField('additionalNotes', event.target.value)} />
                                       </label>
                                     </div>
 
@@ -17835,9 +17848,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       {qualificationQuestionRows.map((row) => {
                                         const isMissing = row.value === 'Not captured'
                                         return (
-                                          <div key={row.label} className={`rounded-[16px] border border-[#edf3f8] bg-[#fbfdff] px-4 py-3 ${row.wide ? 'md:col-span-2' : ''}`}>
-                                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7c91a8]">{row.label}</p>
-                                            <p className={`mt-1 whitespace-pre-wrap text-sm font-semibold leading-6 ${isMissing ? 'text-[#9aa9b8]' : 'text-[#102033]'}`}>{row.value}</p>
+                                          <div key={row.label} className={`rounded-[14px] border border-[#edf3f8] bg-[#fbfdff] px-4 py-3 ${row.wide ? 'md:col-span-2' : ''}`}>
+                                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7c91a8]">{row.label}</p>
+                                            <p className={`mt-1 whitespace-pre-wrap text-sm leading-6 tracking-normal ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`}>{row.value}</p>
                                           </div>
                                         )
                                       })}
@@ -17953,6 +17966,52 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       </div>
                                     </div>
                                   </form>
+
+                                  <div className="mt-6 border-t border-[#edf3f8] pt-5">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div>
+                                        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Completed activity</p>
+                                        <p className="mt-1 text-sm font-semibold text-[#102033]">What has already been done</p>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        className="text-xs font-semibold text-[#0f7b4e] hover:text-[#0b5f3c]"
+                                        onClick={() => handleLeadWorkspaceTabSelection('activity')}
+                                      >
+                                        View all
+                                      </button>
+                                    </div>
+                                    <div className="mt-3 space-y-2">
+                                      {selectedLeadActivities.slice(0, 4).length ? (
+                                        selectedLeadActivities.slice(0, 4).map((activity) => {
+                                          const ActivityIcon = activityIconByType[activity.activityType] || Columns3
+                                          const activityDate = activity.activityDate || activity.createdAt
+                                          return (
+                                            <button
+                                              key={activity.activityId || `${activity.activityType}-${activityDate}`}
+                                              type="button"
+                                              className="grid w-full grid-cols-[32px_minmax(0,1fr)_auto] items-start gap-3 rounded-[14px] border border-[#e7eef6] bg-[#fbfdff] px-3 py-3 text-left transition hover:border-[#d5e2ef] hover:bg-white"
+                                              onClick={() => handleLeadWorkspaceTabSelection('activity')}
+                                            >
+                                              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#eaf3fb] text-[#285b7d]">
+                                                <ActivityIcon className="h-4 w-4" />
+                                              </span>
+                                              <span className="min-w-0">
+                                                <span className="block truncate text-sm font-semibold text-[#20364c]">{activity.activityType || 'Lead update'}</span>
+                                                <span className="mt-0.5 block line-clamp-2 text-xs leading-5 text-[#60758b]">{activity.activityNote || activity.outcome || 'No note captured'}</span>
+                                              </span>
+                                              <span className="whitespace-nowrap pt-0.5 text-[0.7rem] font-semibold text-[#91a2b5]">{formatDateShort(activityDate)}</span>
+                                            </button>
+                                          )
+                                        })
+                                      ) : (
+                                        <div className="rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-5 text-center">
+                                          <p className="text-sm font-semibold text-[#20364c]">No activity logged yet</p>
+                                          <p className="mt-1 text-xs text-[#6f839c]">Logged calls, messages, emails, and notes will appear here.</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
                               </section>
                             </div>
