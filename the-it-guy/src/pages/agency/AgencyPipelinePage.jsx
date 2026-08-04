@@ -7494,7 +7494,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     )
     const hasViewingStarted = hasAppointment || stage.includes('viewing')
     const hasViewingCompleted = hasCompletedAppointment || stage.includes('viewing completed')
-    const hasOfferAccepted = Boolean(selectedLeadAcceptedOffer) || hasTransaction || stage.includes('offer accepted')
+    const hasOfferAccepted = selectedLeadOfferSummary.accepted > 0 || hasTransaction || stage.includes('offer accepted')
     const hasListing = Boolean(
       normalizeText(selectedLead?.listingId || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
     )
@@ -7532,12 +7532,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [
     mandatePacketStatus?.packet,
     selectedLead,
-    selectedLeadAcceptedOffer,
     selectedLeadActivities.length,
     selectedLeadAppointments,
     selectedLeadEffectiveLifecycleStage,
     selectedLeadLinkedTransaction,
     selectedLeadMandateSignedEvidence,
+    selectedLeadOfferSummary.accepted,
     selectedLeadOfferSummary.total,
   ])
 
