@@ -16011,6 +16011,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function handleOpenBuyerQualificationAction() {
+    setBuyerJourneyActionStage('qualification')
+    setBuyerQualificationEditing(true)
+    handleLeadWorkspaceTabSelection('overview')
+  }
+
+  function handleOpenBuyerViewingDoneAction() {
+    setBuyerJourneyActionStage('viewing')
+    const latestViewing = selectedLeadViewingAppointments
+      .slice()
+      .reverse()
+      .find((appointment) => normalizeText(appointment?.status).toLowerCase() !== 'completed') ||
+      selectedLeadActiveViewing ||
+      selectedLeadViewingAppointments.slice().reverse()[0] ||
+      null
+    if (latestViewing) {
+      handleLeadWorkspaceTabSelection('appointments')
+      void handleOpenLeadCompletionPanel(latestViewing)
+      return
+    }
+    handleOpenAppointmentModal()
+  }
+
   function getLeadViewingOfferReadyListing(form = {}) {
     const viewedListings = Array.isArray(form?.viewedListings) ? form.viewedListings : []
     return viewedListings.find((row) => VIEWING_POSITIVE_OUTCOMES.includes(normalizeText(row?.outcome))) || viewedListings[0] || null
@@ -19503,7 +19526,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ) : buyerJourneyActionStage === 'viewing' ? (
                             <>
                               <Button type="button" size="sm" onClick={() => handleOpenAppointmentModal()}>Schedule Viewing</Button>
-                              <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab('activity')}>Manage Viewings</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={handleOpenBuyerViewingDoneAction}>Viewing Done</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => handleLeadWorkspaceTabSelection('appointments')}>Manage Viewings</Button>
                             </>
                           ) : buyerJourneyActionStage === 'offer' ? (
                             <>
@@ -19519,8 +19543,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </>
                           ) : buyerJourneyActionStage === 'qualification' ? (
                             <>
-                              <Button type="button" size="sm" onClick={() => void handleUpdateLeadStage(selectedLead.leadId, 'Qualified', { successMessage: 'Buyer marked as qualified.' })}>Mark Qualified</Button>
-                              <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab('overview')}>Update Brief</Button>
+                              <Button type="button" size="sm" onClick={handleOpenBuyerQualificationAction}>Qualify Buyer</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => void handleUpdateLeadStage(selectedLead.leadId, 'Qualified', { successMessage: 'Buyer marked as qualified.' })}>Mark Qualified</Button>
                             </>
                           ) : (
                             <>
