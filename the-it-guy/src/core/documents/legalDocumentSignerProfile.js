@@ -33,6 +33,9 @@ export function resolveLegalDocumentSignerProfile(options = {}) {
   const context = asRecord(options.context)
   const buyer = asRecord(options.buyer || context.buyer || context.purchaser)
   const seller = asRecord(options.seller || context.seller || context.sellerDetails || context.seller_details)
+  const development = asRecord(options.development || context.development || context.developmentSetup || context.development_setup)
+  const contractor = asRecord(options.contractor || context.contractor || development.contractor)
+  const agent = asRecord(options.agent || context.agent || context.assignedAgent || context.assigned_agent)
   const transaction = asRecord(options.transaction || context.transaction)
   const onboarding = asRecord(context.onboardingFormData || context.onboarding_form_data)
   const scenarioProfile = options.scenarioProfile || resolveLegalDocumentScenarioProfile({
@@ -54,6 +57,7 @@ export function resolveLegalDocumentSignerProfile(options = {}) {
     }
   }
 
+  const documentVariant = normalizeText(scenarioProfile.otpDocumentVariant || placeholders.otp_document_variant)
   const buyerIsEntity = ['company', 'trust'].includes(scenarioProfile.buyerClauseProfile)
   const sellerIsEntity = ['company', 'trust'].includes(scenarioProfile.sellerClauseProfile)
   const signers = [
@@ -108,6 +112,43 @@ export function resolveLegalDocumentSignerProfile(options = {}) {
       email: firstText(placeholders.buyer_spouse_email, buyer.spouseEmail, buyer.spouse_email),
       reason: 'Buyer is married in community of property',
     }))
+  }
+
+  if (documentVariant === 'new_development') {
+    signers.push(buildSigner({
+      role: 'developer_authorised_signatory',
+      label: 'Developer authorised signatory',
+      name: firstText(placeholders.developer_representative, placeholders.developer_signatory_name, seller.representativeName, seller.representative_name, development.developerRepresentative, development.representativeName),
+      email: firstText(placeholders.developer_contact_email, placeholders.developer_signatory_email, seller.representativeEmail, seller.representative_email, seller.email, development.developerContactEmail, development.representativeEmail, development.email),
+      reason: 'Authorised developer signatory for the new-development OTP',
+    }))
+    signers.push(buildSigner({
+      role: 'contractor_authorised_signatory',
+      label: 'Contractor authorised signatory',
+      name: firstText(placeholders.contractor_representative, placeholders.contractor_signatory_name, contractor.representativeName, contractor.signatoryName, development.contractorRepresentative, placeholders.contractor_company_name, contractor.companyName, development.contractorCompanyName),
+      email: firstText(placeholders.contractor_contact_email, placeholders.contractor_email, contractor.email, contractor.contactEmail, contractor.signatoryEmail, development.contractorEmail, development.contractorContactEmail, onboarding.buildingContractorEmail),
+      reason: 'Contractor acknowledgement required for the new-development OTP',
+    }))
+    signers.push(buildSigner({
+      role: 'agent',
+      label: 'Agent',
+      name: firstText(placeholders.agent_full_name, agent.fullName, agent.full_name, agent.name, transaction.assigned_agent),
+      email: firstText(placeholders.agent_email, agent.email, transaction.assigned_agent_email),
+      reason: 'Agent acknowledgement required for the new-development OTP',
+    }))
+
+    const missingRequiredSignerFacts = signers.flatMap((signer) => [
+      ...(!signer.signerName ? [{ role: signer.role, field: 'name', label: `${signer.label} name` }] : []),
+      ...(!signer.signerEmail ? [{ role: signer.role, field: 'email', label: `${signer.label} email` }] : []),
+    ])
+
+    return {
+      packetType: 'otp',
+      scenarioProfile,
+      signers,
+      missingRequiredSignerFacts,
+      complete: missingRequiredSignerFacts.length === 0,
+    }
   }
 
   signers.push(buildSigner({

@@ -12,7 +12,7 @@ export const SIMPLE_SIGNING_DOCUMENT_TYPES = [
     packetType: 'otp',
     title: 'Offer to Purchase',
     defaultFileName: 'Offer_To_Purchase.pdf',
-    supportedSignerRoles: ['purchaser_1', 'purchaser_2', 'buyer', 'buyer_representative', 'buyer_trustee', 'seller'],
+    supportedSignerRoles: ['purchaser_1', 'purchaser_2', 'buyer', 'buyer_representative', 'buyer_trustee', 'seller', 'developer_authorised_signatory', 'contractor_authorised_signatory', 'agent'],
   },
 ]
 

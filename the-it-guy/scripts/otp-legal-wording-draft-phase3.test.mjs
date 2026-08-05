@@ -21,8 +21,8 @@ assert.equal(
   'package.json should expose the OTP legal wording draft Phase 3 contract.',
 )
 assert.ok(
-  packageJson.scripts?.['verify:otp-template-vnext']?.startsWith('npm run test:otp-template-target-freeze-phase0 && npm run test:otp-template-shell-target-phase1 && npm run test:otp-template-route-split-phase2 && npm run test:otp-legal-wording-draft-phase3'),
-  'OTP vNext verification should run the Phase 3 wording draft after the Phase 2 route split.',
+  packageJson.scripts?.['verify:otp-template-vnext']?.startsWith('npm run test:otp-template-target-freeze-phase0 && npm run test:otp-reference-extraction-phase1 && npm run test:otp-template-shell-target-phase1 && npm run test:otp-template-route-split-phase2 && npm run test:otp-field-registry-phase3 && npm run test:otp-legal-wording-draft-phase3'),
+  'OTP vNext verification should run the Phase 3 wording draft after the Phase 3 field registry.',
 )
 
 assert.equal(OTP_LEGAL_WORDING_DRAFT_VERSION, 'otp_legal_wording_draft_phase3_v1')

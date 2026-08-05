@@ -67,6 +67,7 @@ assert.ok(ownersByKey.has('conveyancer_transfer_assignment'))
 assert.ok(ownersByKey.has('organisation_agent_settings'))
 assert.ok(ownersByKey.has('legal_template_registry'))
 assert.ok(ownersByKey.has('signing_runtime'))
+assert.ok(ownersByKey.has('rendering_runtime'))
 
 assert.ok(
   ownersByKey.get('buyer_onboarding').mustNotOwn.includes('seller facts'),
@@ -83,6 +84,10 @@ assert.ok(
 assert.ok(
   ownersByKey.get('legal_template_registry').owns.includes('definitions'),
   'legal template registry should own definitions.',
+)
+assert.ok(
+  ownersByKey.get('rendering_runtime').owns.includes('page numbers'),
+  'rendering runtime should own generated page numbers.',
 )
 
 assert.equal(normalizeOtpDocumentVariant('normal sale'), 'resale_existing_property')
@@ -125,4 +130,3 @@ assert.equal(audit.variantOwnerGaps.length, 0)
 assert.equal(audit.blockerCodes.length, 0)
 
 console.log('OTP route universe Phase 2 contract passed.')
-

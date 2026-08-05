@@ -1,7 +1,9 @@
 import { getCanonicalMergeFieldDefinition } from './mergeFieldRegistry.js'
+import { listOtpResaleReferenceFieldFamilies } from './otpReferenceExtraction.js'
 import { OTP_DATA_SOURCE_OWNERS } from './otpRouteUniverse.js'
 
 export const OTP_FIELD_REGISTRY_VERSION = 'otp_field_registry_phase4_v1'
+export const OTP_FIELD_REGISTRY_PHASE3_VERSION = 'otp_field_registry_phase3_v1'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -60,6 +62,114 @@ export const OTP_FIELD_POLICIES = Object.freeze({
   runtimeGenerated: 'runtime_generated',
   reviewRequired: 'review_required',
 })
+
+export const OTP_PHASE3_REFERENCE_FIELD_FAMILY_BINDINGS = Object.freeze([
+  Object.freeze({
+    familyKey: 'purchaser_identity_capacity',
+    fieldKeys: Object.freeze([
+      'buyer_full_name',
+      'buyer_id_number',
+      'buyer_domicilium_address',
+      'buyer_income_tax_number',
+      'buyer_vat_number',
+      'buyer_marital_status',
+      'buyer_marital_regime',
+    ]),
+  }),
+  Object.freeze({
+    familyKey: 'property_identity',
+    fieldKeys: Object.freeze([
+      'property_address',
+      'erf_number',
+      'property_township',
+      'homeowners_association_name',
+    ]),
+  }),
+  Object.freeze({
+    familyKey: 'commercial_offer_terms',
+    fieldKeys: Object.freeze([
+      'purchase_price',
+      'purchase_price_words',
+      'deposit_amount',
+      'deposit_due_date',
+      'cash_amount',
+      'irrevocable_offer_expiry',
+    ]),
+  }),
+  Object.freeze({
+    familyKey: 'structured_suspensive_conditions',
+    fieldKeys: Object.freeze([
+      'structured_suspensive_conditions',
+      'bond_amount',
+      'bond_approval_deadline',
+      'subject_sale_property',
+      'subject_sale_minimum_price',
+      'subject_sale_fulfilment_date',
+    ]),
+  }),
+  Object.freeze({
+    familyKey: 'occupation_rental_guarantees',
+    fieldKeys: Object.freeze([
+      'occupation_date',
+      'occupational_rent_payable',
+      'occupational_rent_amount',
+      'guarantee_delivery_deadline',
+      'guarantee_delivery_period',
+    ]),
+  }),
+  Object.freeze({
+    familyKey: 'fixtures_fittings',
+    fieldKeys: Object.freeze([
+      'fixtures_included',
+      'fixtures_excluded',
+    ]),
+  }),
+  Object.freeze({
+    familyKey: 'agent_agency_commission',
+    fieldKeys: Object.freeze([
+      'organisation_trading_name',
+      'agent_full_name',
+      'agent_ffc_number',
+      'gross_commission_amount',
+    ]),
+  }),
+  Object.freeze({
+    familyKey: 'seller_identity_admin',
+    fieldKeys: Object.freeze([
+      'seller_full_name',
+      'seller_id_number',
+      'seller_domicilium_address',
+      'seller_vat_number',
+      'seller_bond_institution',
+      'seller_bond_account_number',
+      'seller_outstanding_bond_amount',
+      'seller_rates_taxes_up_to_date',
+      'rates_and_taxes_account_number',
+    ]),
+  }),
+  Object.freeze({
+    familyKey: 'conveyancing_attorneys',
+    fieldKeys: Object.freeze([
+      'transfer_attorney_company_name',
+      'transfer_attorney_contact_person',
+      'transfer_attorney_email',
+      'transfer_attorney_phone',
+      'trust_account_recipient',
+    ]),
+  }),
+  Object.freeze({
+    familyKey: 'bond_originator_documents',
+    fieldKeys: Object.freeze([
+      'buyer_employment_type',
+      'buyer_employer_name',
+      'buyer_occupation',
+      'buyer_gross_monthly_income',
+      'buyer_banking_institution',
+      'bond_documents_required',
+      'bond_originator_acknowledgement',
+    ]),
+  }),
+])
 
 export const OTP_FIELD_REGISTRY = Object.freeze([
   field({
@@ -125,6 +235,86 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
     sourcePaths: ['buyer.person.marital_status', 'onboarding_form_data.maritalStatus'],
   }),
   field({
+    key: 'buyer_spouse_full_name',
+    label: 'Buyer spouse full name',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['resale_existing_property', 'new_development'],
+    clauseFamilies: ['parties', 'signatures'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.person.spouse_full_name', 'onboarding_form_data.spouseFullName'],
+  }),
+  field({
+    key: 'buyer_spouse_consent_required',
+    label: 'Buyer spouse consent required',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['resale_existing_property', 'new_development'],
+    clauseFamilies: ['parties', 'signatures'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.person.spouse_consent_required', 'onboarding_form_data.spouseConsentRequired'],
+  }),
+  field({
+    key: 'buyer_representative_name',
+    label: 'Buyer representative name',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['resale_existing_property', 'new_development'],
+    clauseFamilies: ['capacity_authority', 'parties', 'signatures'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.company.authorised_signatory.name', 'buyer.trust.authorised_trustee.name', 'onboarding_form_data.representativeName'],
+  }),
+  field({
+    key: 'buyer_representative_capacity',
+    label: 'Buyer representative capacity',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['resale_existing_property', 'new_development'],
+    clauseFamilies: ['capacity_authority', 'parties', 'signatures'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.company.authorised_signatory.capacity', 'buyer.trust.authorised_trustee.capacity', 'onboarding_form_data.representativeCapacity'],
+  }),
+  field({
+    key: 'buyer_marital_regime',
+    label: 'Buyer marital regime',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['capacity_authority', 'signatures'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.person.marital_regime', 'onboarding_form_data.maritalRegime'],
+  }),
+  field({
+    key: 'buyer_domicilium_address',
+    label: 'Buyer domicilium address',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['resale_existing_property', 'new_development'],
+    clauseFamilies: ['parties', 'domicilium_notices'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.person.residential_address', 'onboarding_form_data.residentialAddress'],
+  }),
+  field({
+    key: 'buyer_income_tax_number',
+    label: 'Buyer income tax number',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['parties'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.taxNumber', 'residentialOfferTerms.buyer.incomeTaxNumber'],
+  }),
+  field({
+    key: 'buyer_vat_number',
+    label: 'Buyer VAT number',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['parties', 'purchase_price'],
+    definitionTerms: ['purchaser', 'vat'],
+    sourcePaths: ['buyer.vatNumber', 'residentialOfferTerms.buyer.vatNumber'],
+  }),
+  field({
     key: 'seller_full_name',
     label: 'Seller legal name',
     owner: 'seller_onboarding',
@@ -175,6 +365,76 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
     sourcePaths: ['seller.entityType', 'seller_onboarding.ownershipType'],
   }),
   field({
+    key: 'seller_domicilium_address',
+    label: 'Seller domicilium address',
+    owner: 'seller_onboarding',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['parties', 'domicilium_notices'],
+    definitionTerms: ['seller'],
+    sourcePaths: ['seller.domiciliumAddress', 'seller_onboarding.currentAddress'],
+  }),
+  field({
+    key: 'seller_vat_number',
+    label: 'Seller VAT number',
+    owner: 'seller_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['parties', 'purchase_price'],
+    definitionTerms: ['seller', 'vat'],
+    sourcePaths: ['seller.vatNumber', 'seller_onboarding.vatNumber'],
+  }),
+  field({
+    key: 'seller_bond_institution',
+    label: 'Seller bond institution',
+    owner: 'seller_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['rates_taxes_consumption_charges'],
+    definitionTerms: ['property'],
+    sourcePaths: ['seller.bondInstitution', 'seller_onboarding.bondInstitution'],
+  }),
+  field({
+    key: 'seller_bond_account_number',
+    label: 'Seller bond account number',
+    owner: 'seller_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['rates_taxes_consumption_charges'],
+    definitionTerms: ['property'],
+    sourcePaths: ['seller.bondAccountNumber', 'seller_onboarding.bondAccountNumber'],
+  }),
+  field({
+    key: 'seller_outstanding_bond_amount',
+    label: 'Seller outstanding bond amount',
+    owner: 'seller_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['rates_taxes_consumption_charges'],
+    definitionTerms: ['property'],
+    sourcePaths: ['seller.outstandingBondAmount', 'seller_onboarding.outstandingBondAmount'],
+  }),
+  field({
+    key: 'seller_rates_taxes_up_to_date',
+    label: 'Seller rates and taxes up to date',
+    owner: 'seller_onboarding',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['rates_taxes_consumption_charges'],
+    definitionTerms: ['property'],
+    sourcePaths: ['seller.ratesTaxesUpToDate', 'seller_onboarding.ratesTaxesUpToDate'],
+  }),
+  field({
+    key: 'rates_and_taxes_account_number',
+    label: 'Rates and taxes account number',
+    owner: 'seller_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['rates_taxes_consumption_charges'],
+    definitionTerms: ['property'],
+    sourcePaths: ['seller.ratesTaxesAccountNumber', 'seller_onboarding.ratesTaxesAccountNumber'],
+  }),
+  field({
     key: 'developer_name',
     label: 'Developer seller',
     owner: 'development_setup',
@@ -195,6 +455,26 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
     sourcePaths: ['development.developerRegistrationNumber', 'developer.registration_number'],
   }),
   field({
+    key: 'developer_representative',
+    label: 'Developer representative',
+    owner: 'development_setup',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['new_development'],
+    clauseFamilies: ['parties', 'capacity_authority', 'signatures'],
+    definitionTerms: ['seller', 'development'],
+    sourcePaths: ['development.developerRepresentative', 'developer.representative_name'],
+  }),
+  field({
+    key: 'developer_contact_email',
+    label: 'Developer contact email',
+    owner: 'development_setup',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['new_development'],
+    clauseFamilies: ['parties', 'domicilium_notices'],
+    definitionTerms: ['seller', 'development'],
+    sourcePaths: ['development.developerContactEmail', 'developer.contact_email'],
+  }),
+  field({
     key: 'contractor_company_name',
     label: 'Contractor company',
     owner: 'development_setup',
@@ -205,6 +485,16 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
     sourcePaths: ['development.contractorCompanyName', 'contractor.company_name'],
   }),
   field({
+    key: 'contractor_registration_number',
+    label: 'Contractor registration',
+    owner: 'development_setup',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['new_development'],
+    clauseFamilies: ['development_unit', 'compliance_certificates', 'signatures'],
+    definitionTerms: ['contractor', 'nhbrc'],
+    sourcePaths: ['development.contractorRegistrationNumber', 'contractor.registration_number'],
+  }),
+  field({
     key: 'property_address',
     label: 'Property address',
     owner: 'listing_property_record',
@@ -213,6 +503,36 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
     clauseFamilies: ['property'],
     definitionTerms: ['property'],
     sourcePaths: ['listing.propertyAddress', 'property.address'],
+  }),
+  field({
+    key: 'erf_number',
+    label: 'Erf number',
+    owner: 'listing_property_record',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['property'],
+    definitionTerms: ['property'],
+    sourcePaths: ['listing.erfNumber', 'property.erf_number', 'seller_onboarding.erfNumber'],
+  }),
+  field({
+    key: 'property_township',
+    label: 'Property township',
+    owner: 'listing_property_record',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['property'],
+    definitionTerms: ['property'],
+    sourcePaths: ['listing.township', 'property.township', 'seller_onboarding.township'],
+  }),
+  field({
+    key: 'homeowners_association_name',
+    label: 'Homeowners association',
+    owner: 'listing_property_record',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['property', 'rates_taxes_consumption_charges'],
+    definitionTerms: ['property'],
+    sourcePaths: ['listing.homeownersAssociationName', 'property.hoaName', 'seller_onboarding.homeownersAssociationName'],
   }),
   field({
     key: 'property_title_type',
@@ -362,7 +682,7 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
   field({
     key: 'bond_amount',
     label: 'Bond amount',
-    owner: 'buyer_onboarding',
+    owner: 'transaction_offer_terms',
     policy: OTP_FIELD_POLICIES.conditionalRequired,
     clauseFamilies: ['finance', 'suspensive_conditions'],
     definitionTerms: ['suspensive_conditions'],
@@ -380,7 +700,7 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
   field({
     key: 'cash_amount',
     label: 'Cash contribution',
-    owner: 'buyer_onboarding',
+    owner: 'transaction_offer_terms',
     policy: OTP_FIELD_POLICIES.conditionalRequired,
     clauseFamilies: ['finance', 'suspensive_conditions'],
     definitionTerms: ['suspensive_conditions'],
@@ -430,6 +750,76 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
     clauseFamilies: ['suspensive_conditions'],
     definitionTerms: ['suspensive_conditions'],
     sourcePaths: ['residentialOfferTerms.conditionRequests.structuredConditions'],
+  }),
+  field({
+    key: 'buyer_employment_type',
+    label: 'Buyer employment type',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['finance'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.employment.type', 'buyer_onboarding.employmentType'],
+  }),
+  field({
+    key: 'buyer_employer_name',
+    label: 'Buyer employer name',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['finance'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.employment.employerName', 'buyer_onboarding.employerName'],
+  }),
+  field({
+    key: 'buyer_occupation',
+    label: 'Buyer occupation',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['finance'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.employment.occupation', 'buyer_onboarding.occupation'],
+  }),
+  field({
+    key: 'buyer_gross_monthly_income',
+    label: 'Buyer gross monthly income',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['finance'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.finance.grossMonthlyIncome', 'buyer_onboarding.grossMonthlyIncome'],
+  }),
+  field({
+    key: 'buyer_banking_institution',
+    label: 'Buyer banking institution',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['finance'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.finance.bankingInstitution', 'buyer_onboarding.bankingInstitution'],
+  }),
+  field({
+    key: 'bond_documents_required',
+    label: 'Bond documents required',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['finance', 'annexures'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.bondDocumentsRequired', 'bondOriginator.requiredDocuments'],
+  }),
+  field({
+    key: 'bond_originator_acknowledgement',
+    label: 'Bond originator acknowledgement',
+    owner: 'buyer_onboarding',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['finance'],
+    definitionTerms: ['purchaser'],
+    sourcePaths: ['buyer.bondOriginatorAcknowledgement', 'residentialOfferTerms.acknowledgements.bondOriginator'],
   }),
   field({
     key: 'subject_sale_property',
@@ -545,9 +935,20 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
     label: 'Compliance certificate schedule',
     owner: 'seller_onboarding',
     policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['resale_existing_property'],
     clauseFamilies: ['compliance_certificates'],
     definitionTerms: ['compliance_certificates'],
-    sourcePaths: ['seller.complianceCertificates', 'development.complianceCertificates'],
+    sourcePaths: ['seller.complianceCertificates'],
+  }),
+  field({
+    key: 'development_compliance_certificate_schedule',
+    label: 'Development compliance certificate schedule',
+    owner: 'development_setup',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    variants: ['new_development'],
+    clauseFamilies: ['compliance_certificates', 'body_corporate'],
+    definitionTerms: ['compliance_certificates', 'development'],
+    sourcePaths: ['development.complianceCertificateSchedule', 'development.complianceCertificates'],
   }),
   field({
     key: 'property_nhbrc_certificate_number',
@@ -609,6 +1010,33 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
     sourcePaths: ['transaction.transferAttorneyCompanyName'],
   }),
   field({
+    key: 'transfer_attorney_contact_person',
+    label: 'Transfer attorney contact',
+    owner: 'conveyancer_transfer_assignment',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    clauseFamilies: ['transfer_conveyancer'],
+    definitionTerms: ['conveyancer'],
+    sourcePaths: ['transaction.transferAttorneyContactPerson', 'conveyancer.contactPerson'],
+  }),
+  field({
+    key: 'transfer_attorney_email',
+    label: 'Transfer attorney email',
+    owner: 'conveyancer_transfer_assignment',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    clauseFamilies: ['transfer_conveyancer'],
+    definitionTerms: ['conveyancer'],
+    sourcePaths: ['transaction.transferAttorneyEmail', 'conveyancer.email'],
+  }),
+  field({
+    key: 'transfer_attorney_phone',
+    label: 'Transfer attorney phone',
+    owner: 'conveyancer_transfer_assignment',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    clauseFamilies: ['transfer_conveyancer'],
+    definitionTerms: ['conveyancer'],
+    sourcePaths: ['transaction.transferAttorneyPhone', 'conveyancer.phone'],
+  }),
+  field({
     key: 'trust_account_recipient',
     label: 'Trust account recipient',
     owner: 'conveyancer_transfer_assignment',
@@ -625,6 +1053,51 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
     clauseFamilies: ['parties', 'agency_commission', 'document_shell'],
     definitionTerms: ['agent'],
     sourcePaths: ['organisation.tradingName', 'organisation.displayName'],
+  }),
+  field({
+    key: 'organisation_legal_name',
+    label: 'Organisation legal name',
+    owner: 'organisation_agent_settings',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    clauseFamilies: ['parties', 'document_shell'],
+    definitionTerms: ['agent'],
+    sourcePaths: ['organisation.legalName', 'agency.legalName'],
+  }),
+  field({
+    key: 'organisation_registration_number',
+    label: 'Organisation registration number',
+    owner: 'organisation_agent_settings',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    clauseFamilies: ['parties', 'document_shell'],
+    definitionTerms: ['agent'],
+    sourcePaths: ['organisation.registrationNumber', 'agency.registrationNumber'],
+  }),
+  field({
+    key: 'organisation_vat_number',
+    label: 'Organisation VAT number',
+    owner: 'organisation_agent_settings',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    clauseFamilies: ['parties', 'document_shell'],
+    definitionTerms: ['agent', 'vat'],
+    sourcePaths: ['organisation.vatNumber', 'agency.vatNumber'],
+  }),
+  field({
+    key: 'organisation_registered_address',
+    label: 'Organisation registered address',
+    owner: 'organisation_agent_settings',
+    policy: OTP_FIELD_POLICIES.conditionalRequired,
+    clauseFamilies: ['parties', 'document_shell'],
+    definitionTerms: ['agent'],
+    sourcePaths: ['organisation.registeredAddress', 'organisation.physicalAddress', 'agency.address'],
+  }),
+  field({
+    key: 'organisation_website',
+    label: 'Organisation website',
+    owner: 'organisation_agent_settings',
+    policy: OTP_FIELD_POLICIES.optionalHideWhenEmpty,
+    clauseFamilies: ['document_shell'],
+    definitionTerms: ['agent'],
+    sourcePaths: ['organisation.website', 'agency.website'],
   }),
   field({
     key: 'agent_full_name',
@@ -733,6 +1206,14 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
     sourcePaths: ['document_signing_fields.buyer_signature'],
   }),
   field({
+    key: 'buyer_initials',
+    label: 'Buyer initials',
+    owner: 'signing_runtime',
+    policy: OTP_FIELD_POLICIES.runtimeGenerated,
+    clauseFamilies: ['signatures'],
+    sourcePaths: ['document_signing_fields.buyer_initials'],
+  }),
+  field({
     key: 'seller_signature',
     label: 'Seller signature',
     owner: 'signing_runtime',
@@ -742,6 +1223,15 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
     sourcePaths: ['document_signing_fields.seller_signature'],
   }),
   field({
+    key: 'seller_initials',
+    label: 'Seller initials',
+    owner: 'signing_runtime',
+    policy: OTP_FIELD_POLICIES.runtimeGenerated,
+    variants: ['resale_existing_property'],
+    clauseFamilies: ['signatures'],
+    sourcePaths: ['document_signing_fields.seller_initials'],
+  }),
+  field({
     key: 'developer_signature',
     label: 'Developer signature',
     owner: 'signing_runtime',
@@ -749,6 +1239,51 @@ export const OTP_FIELD_REGISTRY = Object.freeze([
     variants: ['new_development'],
     clauseFamilies: ['signatures'],
     sourcePaths: ['document_signing_fields.developer_signature'],
+  }),
+  field({
+    key: 'developer_initials',
+    label: 'Developer initials',
+    owner: 'signing_runtime',
+    policy: OTP_FIELD_POLICIES.runtimeGenerated,
+    variants: ['new_development'],
+    clauseFamilies: ['signatures'],
+    sourcePaths: ['document_signing_fields.developer_initials'],
+  }),
+  field({
+    key: 'contractor_signature',
+    label: 'Contractor signature',
+    owner: 'signing_runtime',
+    policy: OTP_FIELD_POLICIES.runtimeGenerated,
+    variants: ['new_development'],
+    clauseFamilies: ['signatures'],
+    sourcePaths: ['document_signing_fields.contractor_signature'],
+  }),
+  field({
+    key: 'contractor_initials',
+    label: 'Contractor initials',
+    owner: 'signing_runtime',
+    policy: OTP_FIELD_POLICIES.runtimeGenerated,
+    variants: ['new_development'],
+    clauseFamilies: ['signatures'],
+    sourcePaths: ['document_signing_fields.contractor_initials'],
+  }),
+  field({
+    key: 'agent_signature',
+    label: 'Agent signature',
+    owner: 'signing_runtime',
+    policy: OTP_FIELD_POLICIES.runtimeGenerated,
+    variants: ['new_development'],
+    clauseFamilies: ['signatures'],
+    sourcePaths: ['document_signing_fields.agent_signature'],
+  }),
+  field({
+    key: 'agent_initials',
+    label: 'Agent initials',
+    owner: 'signing_runtime',
+    policy: OTP_FIELD_POLICIES.runtimeGenerated,
+    variants: ['new_development'],
+    clauseFamilies: ['signatures'],
+    sourcePaths: ['document_signing_fields.agent_initials'],
   }),
   field({
     key: 'signed_date',
@@ -870,6 +1405,107 @@ export function listOtpFieldRegistry({ variant = '', owner = '', clauseFamily = 
 export function getOtpFieldDefinition(key = '') {
   const normalized = normalizeKey(key)
   return OTP_FIELD_REGISTRY.find((definition) => definition.key === normalized) || null
+}
+
+function cloneReferenceBinding(binding = {}) {
+  return {
+    ...binding,
+    fieldKeys: [...(binding.fieldKeys || [])],
+  }
+}
+
+export function listOtpPhase3ReferenceFieldFamilyBindings() {
+  return OTP_PHASE3_REFERENCE_FIELD_FAMILY_BINDINGS.map(cloneReferenceBinding)
+}
+
+export function buildOtpFieldRegistryPhase3Audit({ checkedAt = new Date().toISOString() } = {}) {
+  const referenceFamilies = listOtpResaleReferenceFieldFamilies()
+  const bindings = listOtpPhase3ReferenceFieldFamilyBindings()
+  const bindingByFamily = new Map(bindings.map((binding) => [binding.familyKey, binding]))
+  const missingFamilyBindings = referenceFamilies
+    .filter((family) => !bindingByFamily.has(family.key))
+    .map((family) => family.key)
+  const orphanBindings = bindings
+    .filter((binding) => !referenceFamilies.some((family) => family.key === binding.familyKey))
+    .map((binding) => binding.familyKey)
+  const missingRegistryFields = []
+  const ownerMismatches = []
+  const routeGaps = []
+  const sourcePathGaps = []
+  const mergeRegistryGaps = []
+  const policyGaps = []
+
+  for (const family of referenceFamilies) {
+    const binding = bindingByFamily.get(family.key)
+    if (!binding) continue
+    for (const fieldKey of binding.fieldKeys || []) {
+      const definition = getOtpFieldDefinition(fieldKey)
+      if (!definition) {
+        missingRegistryFields.push({ familyKey: family.key, fieldKey })
+        continue
+      }
+      if (definition.owner !== family.owner) {
+        ownerMismatches.push({ familyKey: family.key, fieldKey, expectedOwner: family.owner, actualOwner: definition.owner })
+      }
+      if (!definition.variants.includes('resale_existing_property')) {
+        routeGaps.push({ familyKey: family.key, fieldKey, requiredVariant: 'resale_existing_property', variants: definition.variants })
+      }
+      if (!definition.sourcePaths?.length) {
+        sourcePathGaps.push({ familyKey: family.key, fieldKey })
+      }
+      if (!Object.values(OTP_FIELD_POLICIES).includes(definition.policy)) {
+        policyGaps.push({ familyKey: family.key, fieldKey, policy: definition.policy })
+      }
+      if (definition.renderable !== false && !getCanonicalMergeFieldDefinition(definition.key, { packetType: 'otp' })) {
+        mergeRegistryGaps.push({ familyKey: family.key, fieldKey })
+      }
+    }
+  }
+
+  const buyerOwnedForbiddenKeys = listOtpFieldRegistry({ owner: 'buyer_onboarding' })
+    .filter((definition) => (
+      /^(seller|developer|transfer_attorney|trust_account|agent|organisation|property_|homeowners_association)/.test(definition.key) ||
+      definition.clauseFamilies.includes('agency_commission') ||
+      definition.clauseFamilies.includes('transfer_conveyancer')
+    ))
+    .map((definition) => definition.key)
+
+  const blockerCodes = [
+    missingFamilyBindings.length ? 'OTP_PHASE3_REFERENCE_FAMILY_BINDING_GAPS' : '',
+    orphanBindings.length ? 'OTP_PHASE3_ORPHAN_REFERENCE_BINDINGS' : '',
+    missingRegistryFields.length ? 'OTP_PHASE3_REFERENCE_FIELD_REGISTRY_GAPS' : '',
+    ownerMismatches.length ? 'OTP_PHASE3_REFERENCE_OWNER_MISMATCHES' : '',
+    routeGaps.length ? 'OTP_PHASE3_REFERENCE_ROUTE_GAPS' : '',
+    sourcePathGaps.length ? 'OTP_PHASE3_REFERENCE_SOURCE_PATH_GAPS' : '',
+    policyGaps.length ? 'OTP_PHASE3_REFERENCE_POLICY_GAPS' : '',
+    mergeRegistryGaps.length ? 'OTP_PHASE3_REFERENCE_MERGE_REGISTRY_GAPS' : '',
+    buyerOwnedForbiddenKeys.length ? 'OTP_PHASE3_BUYER_OWNERSHIP_BOUNDARY_VIOLATION' : '',
+  ].filter(Boolean)
+
+  return {
+    version: OTP_FIELD_REGISTRY_PHASE3_VERSION,
+    checkedAt,
+    mutatedData: false,
+    status: blockerCodes.length ? 'OTP_FIELD_REGISTRY_PHASE3_REMEDIATION_REQUIRED' : 'OTP_FIELD_REGISTRY_PHASE3_READY_FOR_DATA_LOCK',
+    blockerCodes,
+    summary: {
+      referenceFamilyCount: referenceFamilies.length,
+      boundFamilyCount: bindings.length,
+      boundFieldCount: bindings.reduce((sum, binding) => sum + binding.fieldKeys.length, 0),
+      blockerCount: blockerCodes.length,
+    },
+    referenceFamilies,
+    bindings,
+    missingFamilyBindings,
+    orphanBindings,
+    missingRegistryFields,
+    ownerMismatches,
+    routeGaps,
+    sourcePathGaps,
+    policyGaps,
+    mergeRegistryGaps,
+    buyerOwnedForbiddenKeys,
+  }
 }
 
 export function listOtpDefinitionTerms({ variant = '' } = {}) {

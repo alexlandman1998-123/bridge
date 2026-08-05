@@ -398,7 +398,7 @@ Rules Annexure: {{body_corporate_rules_annexure}}
 Estimated Levy: {{development_levy_estimate}}
 Estimated Rates: {{development_rates_estimate}}
 Utility Connection Charges: {{utility_connection_charges}}
-Compliance Certificate Schedule: {{compliance_certificate_schedule}}
+Compliance Certificate Schedule: {{development_compliance_certificate_schedule}}
 
 The Purchaser acknowledges that the unit is subject to the body-corporate rules, conduct rules, management rules, architectural guidelines, development specifications and annexures applicable to the Development.
 

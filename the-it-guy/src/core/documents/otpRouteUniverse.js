@@ -321,6 +321,17 @@ export const OTP_DATA_SOURCE_OWNERS = Object.freeze([
     ]),
     mustNotOwn: Object.freeze(['clause selection without route metadata']),
   }),
+  Object.freeze({
+    key: 'rendering_runtime',
+    label: 'Rendering runtime',
+    owns: Object.freeze([
+      'page numbers',
+      'total page count',
+      'generated PDF chrome',
+      'render-only layout marks',
+    ]),
+    mustNotOwn: Object.freeze(['party facts', 'commercial terms', 'legal wording']),
+  }),
 ])
 
 export const OTP_VARIANT_ALIASES = Object.freeze({

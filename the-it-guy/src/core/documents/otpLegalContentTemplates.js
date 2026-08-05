@@ -444,7 +444,7 @@ The seller disclosure, defects, fixtures, fittings and compliance certificate sc
       'development_levy_estimate',
       'development_rates_estimate',
       'utility_connection_charges',
-      'compliance_certificate_schedule',
+      'development_compliance_certificate_schedule',
     ],
     legalText: `DEVELOPMENT COMPLIANCE AND BODY CORPORATE
 
@@ -453,7 +453,7 @@ Rules Annexure: {{body_corporate_rules_annexure}}
 Estimated Levy: {{development_levy_estimate}}
 Estimated Rates: {{development_rates_estimate}}
 Utility Connection Charges: {{utility_connection_charges}}
-Compliance Certificate Schedule: {{compliance_certificate_schedule}}
+Compliance Certificate Schedule: {{development_compliance_certificate_schedule}}
 
 Body-corporate rules, levies, rates, utility charges and development compliance documents must be rendered from development setup and unit records.`,
   }),
@@ -465,6 +465,9 @@ Body-corporate rules, levies, rates, utility charges and development compliance 
     clauseFamily: 'transfer_conveyancer',
     placeholderKeys: [
       'transfer_attorney_company_name',
+      'transfer_attorney_contact_person',
+      'transfer_attorney_email',
+      'transfer_attorney_phone',
       'trust_account_recipient',
       'guarantee_delivery_deadline',
       'guarantee_delivery_period',
@@ -472,6 +475,9 @@ Body-corporate rules, levies, rates, utility charges and development compliance 
     legalText: `TRANSFER AND CONVEYANCER
 
 Transfer Attorney / Conveyancer: {{transfer_attorney_company_name}}
+Transfer Contact Person: {{transfer_attorney_contact_person}}
+Transfer Contact Email: {{transfer_attorney_email}}
+Transfer Contact Telephone: {{transfer_attorney_phone}}
 Trust Account Recipient: {{trust_account_recipient}}
 Guarantee Delivery Deadline: {{guarantee_delivery_deadline}}
 Guarantee Delivery Period: {{guarantee_delivery_period}}
@@ -641,7 +647,7 @@ function buildChecks({ routeAudits = [], shellAudit = {} } = {}) {
   const resaleKeys = sectionKeysByVariant.get('resale_existing_property') || new Set()
   const developmentKeys = sectionKeysByVariant.get('new_development') || new Set()
 
-  push(shellAudit.status === 'OTP_BRANDED_SHELL_READY_FOR_CONTENT_RULES', 'PHASE6_BRANDED_SHELL_READY', 'Legal content templates depend on the Phase 5 branded shell being ready.')
+  push(shellAudit.status === 'OTP_BRANDED_SHELL_READY_FOR_CONTENT_RULES', 'PHASE6_BRANDED_SHELL_READY', 'Legal content templates depend on the Phase 6 branded PDF shell being ready.')
   push(routeAudits.length === 2, 'PHASE6_BOTH_PRIMARY_ROUTES_PRESENT', 'Legal content templates render both resale and new-development route sets.')
   push(resaleKeys.has('resale_disclosure_fixtures_compliance') && resaleKeys.has('subject_to_sale') && resaleKeys.has('resale_occupation_rent'), 'PHASE6_RESALE_REQUIRED_CLAUSES_PRESENT', 'Resale OTP includes disclosure, fixtures, subject-to-sale and occupation/rent clauses.')
   push(developmentKeys.has('development_unit') && developmentKeys.has('development_handover') && developmentKeys.has('development_compliance_body_corporate'), 'PHASE6_DEVELOPMENT_REQUIRED_CLAUSES_PRESENT', 'New-development OTP includes development unit, handover/snagging and body-corporate compliance clauses.')

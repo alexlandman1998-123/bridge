@@ -29,7 +29,7 @@ assert.equal(
   'package.json should expose the OTP route split Phase 2 contract.',
 )
 assert.ok(
-  packageJson.scripts?.['verify:otp-template-vnext']?.startsWith('npm run test:otp-template-target-freeze-phase0 && npm run test:otp-template-shell-target-phase1 && npm run test:otp-template-route-split-phase2'),
+  packageJson.scripts?.['verify:otp-template-vnext']?.startsWith('npm run test:otp-template-target-freeze-phase0 && npm run test:otp-reference-extraction-phase1 && npm run test:otp-template-shell-target-phase1 && npm run test:otp-template-route-split-phase2'),
   'OTP vNext verification should run the Phase 2 route split after the Phase 1 shell target.',
 )
 

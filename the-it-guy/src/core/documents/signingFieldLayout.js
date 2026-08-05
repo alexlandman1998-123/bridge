@@ -1,5 +1,5 @@
 const FIELD_TYPES = new Set(['signature', 'initial'])
-const SIGNER_ROLES = new Set(['purchaser_1', 'purchaser_2', 'buyer_spouse', 'seller', 'seller_spouse', 'agent', 'contractor', 'witness_1', 'witness_2', 'other'])
+const SIGNER_ROLES = new Set(['purchaser_1', 'purchaser_2', 'buyer_spouse', 'seller', 'seller_spouse', 'developer_authorised_signatory', 'contractor_authorised_signatory', 'agent', 'contractor', 'witness_1', 'witness_2', 'other'])
 const PAGE_WIDTH = 595
 const PAGE_HEIGHT = 842
 

@@ -35,6 +35,8 @@ test('normalises buyer and agency role aliases', () => {
   assert.equal(normalizeSigningRole('primary purchaser'), 'purchaser_1')
   assert.equal(normalizeSigningRole('agency representative'), 'agent')
   assert.equal(normalizeSigningRole('co-seller'), 'seller_spouse')
+  assert.equal(normalizeSigningRole('developer signatory'), 'developer_authorised_signatory')
+  assert.equal(normalizeSigningRole('contractor'), 'contractor_authorised_signatory')
 })
 
 test('binds a signer to one exact PDF version', () => {

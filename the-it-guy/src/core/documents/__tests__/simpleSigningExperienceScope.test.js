@@ -14,6 +14,8 @@ test('locks mandate and OTP as the generated document coverage', () => {
   assert.deepEqual(scope.coveredDocumentTypes.map((item) => item.packetType), ['mandate', 'otp'])
   assert.ok(getSimpleSigningDocumentType('mandate').supportedSignerRoles.includes('seller'))
   assert.ok(getSimpleSigningDocumentType('otp').supportedSignerRoles.includes('purchaser_1'))
+  assert.ok(getSimpleSigningDocumentType('otp').supportedSignerRoles.includes('developer_authorised_signatory'))
+  assert.ok(getSimpleSigningDocumentType('otp').supportedSignerRoles.includes('contractor_authorised_signatory'))
 })
 
 test('maps signer sessions into the simple review sign finish completed states', () => {

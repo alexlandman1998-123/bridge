@@ -30,8 +30,8 @@ assert.equal(
   'package.json should expose the OTP template shell target Phase 1 contract.',
 )
 assert.ok(
-  packageJson.scripts?.['verify:otp-template-vnext']?.startsWith('npm run test:otp-template-target-freeze-phase0 && npm run test:otp-template-shell-target-phase1'),
-  'OTP vNext verification should run the Phase 1 shell target after the Phase 0 target freeze.',
+  packageJson.scripts?.['verify:otp-template-vnext']?.startsWith('npm run test:otp-template-target-freeze-phase0 && npm run test:otp-reference-extraction-phase1 && npm run test:otp-template-shell-target-phase1'),
+  'OTP vNext verification should run the Phase 1 shell target after the Phase 1 reference extraction.',
 )
 
 assert.equal(OTP_TEMPLATE_SHELL_TARGET_VERSION, 'otp_template_shell_target_phase1_v1')
@@ -94,9 +94,10 @@ const resaleSignature = resaleTarget.shellManifest.slots.find((slot) => slot.slo
 assert.ok(resaleSignature.placeholderKeys.includes('seller_signature'))
 assert.equal(resaleSignature.placeholderKeys.includes('developer_signature'), false)
 assert.deepEqual(
-  resaleSignature.signing.planned_fields.map((field) => field.signer_role),
+  Array.from(new Set(resaleSignature.signing.planned_fields.map((field) => field.signer_role))),
   ['purchaser_1', 'seller'],
 )
+assert.equal(resaleSignature.signing.planned_fields.some((field) => field.field_type === 'initial' && field.repeat === 'every_page'), true)
 
 assert.equal(developmentTarget.routeKey, 'new_development')
 assert.equal(developmentTarget.targetTemplateKey, 'otp_new_development_v1')
@@ -124,9 +125,10 @@ const developmentSignature = developmentTarget.shellManifest.slots.find((slot) =
 assert.ok(developmentSignature.placeholderKeys.includes('developer_signature'))
 assert.equal(developmentSignature.placeholderKeys.includes('seller_signature'), false)
 assert.deepEqual(
-  developmentSignature.signing.planned_fields.map((field) => field.signer_role),
-  ['purchaser_1', 'developer_authorised_signatory'],
+  Array.from(new Set(developmentSignature.signing.planned_fields.map((field) => field.signer_role))),
+  ['purchaser_1', 'developer_authorised_signatory', 'contractor_authorised_signatory', 'agent'],
 )
+assert.equal(developmentSignature.signing.planned_fields.some((field) => field.field_type === 'initial' && field.repeat === 'every_page'), true)
 
 assert.equal(buildOtpTemplateShellTarget({ routeKey: 'unknown' }), null)
 

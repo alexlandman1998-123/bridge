@@ -36,6 +36,10 @@ export function normalizeSigningRole(value = '') {
     seller_2: 'seller_spouse',
     buyer_spouse: 'purchaser_spouse',
     purchaser_spouse: 'purchaser_spouse',
+    developer: 'developer_authorised_signatory',
+    developer_signatory: 'developer_authorised_signatory',
+    contractor: 'contractor_authorised_signatory',
+    contractor_signatory: 'contractor_authorised_signatory',
   }
   return aliases[normalized] || normalized || 'signer'
 }
@@ -49,6 +53,8 @@ export function getSigningRoleLabel(value = '') {
     purchaser_1: 'First purchaser',
     purchaser_2: 'Second purchaser',
     purchaser_spouse: "Purchaser's spouse",
+    developer_authorised_signatory: 'Developer authorised signatory',
+    contractor_authorised_signatory: 'Contractor authorised signatory',
     witness_1: 'First witness',
     witness_2: 'Second witness',
     attorney: 'Attorney',

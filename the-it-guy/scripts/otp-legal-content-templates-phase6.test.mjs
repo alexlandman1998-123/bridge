@@ -97,7 +97,7 @@ for (const token of ['mandatory_disclosure_annexure', 'fixtures_included', 'fixt
 assert.equal(resaleDisclosure.source_owners.includes('buyer_onboarding'), false)
 
 const developmentCompliance = allSections.find((section) => section.section_key === 'development_compliance_body_corporate')
-for (const token of ['body_corporate_rules_annexure', 'development_levy_estimate', 'utility_connection_charges']) {
+for (const token of ['body_corporate_rules_annexure', 'development_levy_estimate', 'utility_connection_charges', 'development_compliance_certificate_schedule']) {
   assert.ok(developmentCompliance.placeholder_keys.includes(token), `development compliance should include ${token}.`)
 }
 

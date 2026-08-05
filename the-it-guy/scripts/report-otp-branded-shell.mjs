@@ -8,7 +8,7 @@ import {
 const report = buildOtpBrandedShellAudit({
   checkedAt: process.env.OTP_BRANDED_SHELL_REPORT_TIME || new Date().toISOString(),
 })
-const outputUrl = new URL('../docs/otp-template-vnext-phase5-branded-shell.md', import.meta.url)
+const outputUrl = new URL('../docs/otp-template-vnext-phase6-branded-pdf-shell.md', import.meta.url)
 
 await writeFile(outputUrl, formatOtpBrandedShellAuditMarkdown(report), 'utf8')
 

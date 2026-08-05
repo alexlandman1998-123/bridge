@@ -99,3 +99,33 @@ test('reports missing signer contact facts before a signing journey starts', () 
   ])
   assert.equal(profile.complete, false)
 })
+
+test('uses development signing roles for new-development OTPs', () => {
+  const profile = resolveLegalDocumentSignerProfile({
+    packetType: 'otp',
+    placeholders: {
+      otp_document_variant: 'new_development',
+      buyer_entity_type: 'individual',
+      buyer_marital_regime: 'single',
+      buyer_full_name: 'Buyer One',
+      buyer_email: 'buyer@example.com',
+      developer_representative: 'Dev Signatory',
+      developer_contact_email: 'developer@example.com',
+      contractor_representative: 'Contractor Signatory',
+      contractor_contact_email: 'contractor@example.com',
+      agent_full_name: 'Agent One',
+      agent_email: 'agent@example.com',
+      property_title_type: 'sectional_title',
+      finance_type: 'cash',
+    },
+  })
+
+  assert.deepEqual(profile.signers.map((signer) => signer.role), [
+    'purchaser_1',
+    'developer_authorised_signatory',
+    'contractor_authorised_signatory',
+    'agent',
+  ])
+  assert.equal(profile.signers.some((signer) => signer.role === 'seller'), false)
+  assert.equal(profile.complete, true)
+})
