@@ -102,6 +102,15 @@ assert.match(
   /routeLeadWorkspaceSnapshotRef\.current = \{[\s\S]*?requestedLeadId: normalizeText\(routeLeadId\)[\s\S]*?resolvedLeadId: resolvedRouteLeadId/,
   'successful direct lead hydration should pin the requested and resolved lead ids',
 )
+const selectedLeadIsSellerDeclarationIndex = pipelineSource.indexOf('const selectedLeadIsSeller = resolveLeadCategoryView(selectedLead) === \'seller\'')
+const buyerViewingReloadIndex = pipelineSource.indexOf('const reloadBuyerViewingPreferenceLinks = useCallback')
+const sellerViewingReloadIndex = pipelineSource.indexOf('const reloadSellerViewingCoordinationLinks = useCallback')
+assert.ok(selectedLeadIsSellerDeclarationIndex !== -1, 'selected lead seller classification should remain declared.')
+assert.ok(
+  selectedLeadIsSellerDeclarationIndex < buyerViewingReloadIndex &&
+    selectedLeadIsSellerDeclarationIndex < sellerViewingReloadIndex,
+  'selectedLeadIsSeller must be initialized before viewing reload callbacks use it in hook dependencies.',
+)
 
 assert.match(
   agencyCrmRepositorySource,

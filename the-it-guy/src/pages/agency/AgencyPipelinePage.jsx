@@ -7436,6 +7436,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       .sort((a, b) => new Date(a.dueDate || a.createdAt || 0) - new Date(b.dueDate || b.createdAt || 0))
   }, [records.tasks, selectedLead])
 
+  const selectedLeadIsSeller = resolveLeadCategoryView(selectedLead) === 'seller'
+
   const reloadBuyerViewingPreferenceLinks = useCallback(async ({ showMessage = false } = {}) => {
     if (!organisationId || !selectedLead || selectedLeadIsSeller || !normalizeLeadUuid(selectedLead?.leadId)) {
       setBuyerViewingPreferenceLinks([])
@@ -7758,7 +7760,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setBuyerQualificationEditing(false)
   }, [selectedLead, selectedLeadContact])
 
-  const selectedLeadIsSeller = resolveLeadCategoryView(selectedLead) === 'seller'
   const selectedLeadRecordId = normalizeText(selectedLead?.leadId)
   const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id || selectedLead?.mandatePacket?.id)
   const selectedLeadPropertyArea = normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest)
