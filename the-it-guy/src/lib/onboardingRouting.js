@@ -1,6 +1,7 @@
 import { normalizeAppRole } from './appRoleMetadata'
 
 const ONBOARDING_PATHS = [
+  '/setup',
   '/onboarding',
   '/onboarding/profile',
   '/onboarding/persona',

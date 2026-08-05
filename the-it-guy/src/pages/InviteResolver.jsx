@@ -144,20 +144,20 @@ function isCommercialInvite(invite = {}) {
   return COMMERCIAL_INVITE_MARKERS.has(moduleContext) || role.startsWith('commercial_') || role.includes('commercial broker')
 }
 
-function getRedirectTarget(result = {}) {
+export function getRedirectTarget(result = {}) {
   const portalRedirect = getInvitePortalRedirect(result.invite)
   if (portalRedirect) return portalRedirect
-  if (isPrincipalClaimInvite(result.invite)) return '/onboarding/profile'
+  if (isPrincipalClaimInvite(result.invite)) return '/setup'
   if (isCommercialInvite(result.invite)) return '/commercial'
   if (result.redirect_to) return result.redirect_to
   if (result.transaction_id) return `/transactions/${result.transaction_id}`
   return '/dashboard'
 }
 
-function getInviteTarget(invite = {}) {
+export function getInviteTarget(invite = {}) {
   const portalRedirect = getInvitePortalRedirect(invite)
   if (portalRedirect) return portalRedirect
-  if (isPrincipalClaimInvite(invite)) return '/onboarding/profile'
+  if (isPrincipalClaimInvite(invite)) return '/setup'
   if (isCommercialInvite(invite)) return '/commercial'
   if (invite.targetTransactionId) return `/transactions/${invite.targetTransactionId}`
   return '/dashboard'
@@ -571,7 +571,7 @@ export default function InviteResolver() {
           <InviteHeader
             icon={<CheckCircle2 size={22} />}
             title={principalClaimInvite ? 'Principal claim started' : 'Invite accepted'}
-            subtitle={principalClaimInvite ? 'Your claim invite has been accepted. Continue to onboarding so Arch9 can capture the organisation details before access is finalised.' : 'Your access has been created and verified.'}
+            subtitle={principalClaimInvite ? 'Your claim invite has been accepted. Continue to claim setup so Arch9 can capture the organisation details before access is finalised.' : 'Your access has been created and verified.'}
             tone="success"
           />
           <InviteActionPanel>
@@ -593,7 +593,7 @@ export default function InviteResolver() {
           <InviteHeader
             icon={<CheckCircle2 size={22} />}
             title={principalClaimInvite ? 'Principal claim already started' : 'You’re already connected'}
-            subtitle={principalClaimInvite ? `This claim invite has already been accepted for ${invitedEmail || 'your account'}. Continue to onboarding to finish the claim.` : `This invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Arch9 to access the workspace.`}
+            subtitle={principalClaimInvite ? `This claim invite has already been accepted for ${invitedEmail || 'your account'}. Continue to claim setup to finish the claim.` : `This invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Arch9 to access the workspace.`}
             tone="success"
           />
           <InviteActionPanel>

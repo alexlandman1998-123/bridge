@@ -55,6 +55,8 @@ try {
     WORKSPACE_PLAN_KEYS.team,
   )
   assert.equal(getWorkspacePlanDefinition('enterprise').entitlements[ENTITLEMENT_KEYS.apiAccess], true)
+  assert.equal(getWorkspacePlanDefinition('solo').entitlements[ENTITLEMENT_KEYS.maxUsers], null)
+  assert.equal(getWorkspacePlanDefinition('team').entitlements[ENTITLEMENT_KEYS.monthlyBondApplications], null)
 
   const teamSummary = buildBillingSummary({
     subscription: {
@@ -67,21 +69,19 @@ try {
     },
     usage: { activeUsers: 4, activeBranches: 1, monthlyBondApplications: 88 },
   })
-  assert.equal(teamSummary.includedUsers, 8)
+  assert.equal(teamSummary.includedUsers, null)
   assert.equal(teamSummary.activeUsers, 4)
   assert.deepEqual(evaluateEntitlementLimit(teamSummary.entitlements, { activeUsers: 4 }, ENTITLEMENT_KEYS.maxUsers), {
-    limited: true,
-    limit: 8,
+    limited: false,
+    limit: null,
     used: 4,
-    remaining: 4,
-    exceeded: false,
+    remaining: null,
   })
   assert.deepEqual(evaluateEntitlementLimit(teamSummary.entitlements, { maxUsers: 4 }, ENTITLEMENT_KEYS.maxUsers), {
-    limited: true,
-    limit: 8,
+    limited: false,
+    limit: null,
     used: 4,
-    remaining: 4,
-    exceeded: false,
+    remaining: null,
   })
 
   console.log('workspace entitlements phase 4 tests passed')

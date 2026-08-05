@@ -17609,6 +17609,7 @@ function AttorneyTransactionDetail() {
             {isAgentTransactionView ? (
               <BondOriginatorAgentProgressView
                 progressView={bondOriginatorAgentProgressView}
+                financeWorkflow={transactionFinanceWorkflow}
                 transaction={transaction}
                 onOpenDocuments={() => openWorkspaceMenu('documents')}
                 onOpenActivity={() => openWorkspaceMenu('activity')}

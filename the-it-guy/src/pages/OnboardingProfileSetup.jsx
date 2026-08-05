@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthSession } from '../context/AuthSessionContext'
@@ -9,6 +10,7 @@ import { SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
 import { buildSignupIntent, persistSignupIntent, resolveSignupIntentRoute } from '../lib/signupIntent'
 
 const PROFILE_BOOTSTRAP_TIMEOUT_MS = 12000
+const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
 
 function resolveOnboardingPathForRole(role) {
   const normalizedRole = normalizeAppRole(role)
@@ -17,6 +19,49 @@ function resolveOnboardingPathForRole(role) {
   if (normalizedRole === 'developer') return '/developer/onboarding'
   if (normalizedRole === 'bond_originator') return '/bond-originator/onboarding'
   return ''
+}
+
+function resolveDashboardPathForRole(role) {
+  const normalizedRole = normalizeAppRole(role)
+  if (normalizedRole === 'attorney') return '/attorney/dashboard'
+  if (normalizedRole === 'client') return '/client-access'
+  return '/dashboard'
+}
+
+function getPendingInviteToken() {
+  if (typeof window === 'undefined') return ''
+  return String(window.sessionStorage.getItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY) || '').trim()
+}
+
+export function isExistingWorkspaceJoinProfileStep({
+  signupIntent = null,
+  activeMemberships = [],
+  currentMembership = null,
+  pendingInviteToken = '',
+} = {}) {
+  const workspaceAction = signupIntent?.workspace_action || signupIntent?.workspaceAction || ''
+  return Boolean(
+    workspaceAction === SIGNUP_WORKSPACE_ACTIONS.acceptInvite ||
+      (workspaceAction === SIGNUP_WORKSPACE_ACTIONS.joinOrRequestWorkspace && String(pendingInviteToken || '').trim()) ||
+      currentMembership?.id ||
+      (Array.isArray(activeMemberships) && activeMemberships.length > 0),
+  )
+}
+
+export function resolveExistingWorkspaceJoinProfileRoute({
+  role = '',
+  signupIntent = null,
+  activeMemberships = [],
+  currentMembership = null,
+  pendingInviteToken = '',
+} = {}) {
+  const intentToken = String(signupIntent?.invite_token || signupIntent?.inviteToken || '').trim()
+  const inviteToken = intentToken || String(pendingInviteToken || '').trim()
+  const hasMembership = Boolean(currentMembership?.id || (Array.isArray(activeMemberships) && activeMemberships.length > 0))
+  if (!hasMembership && inviteToken) {
+    return `/invite/${encodeURIComponent(inviteToken)}?accept=1`
+  }
+  return resolveDashboardPathForRole(role)
 }
 
 function isOutOfSyncSessionError(message) {
@@ -33,6 +78,8 @@ function OnboardingProfileSetup() {
     profileLoading,
     profileError,
     workspaceReady,
+    activeMemberships,
+    currentMembership,
     retryWorkspaceBootstrap,
     saveProfileDraft,
   } = useWorkspace()
@@ -90,6 +137,26 @@ function OnboardingProfileSetup() {
   const needsIntentRecovery = !signupIntent && selectedRole === 'viewer'
   const recoveryPositionOptions = POSITION_OPTIONS_BY_BUSINESS_TYPE[recoveryBusinessType] || []
   const isPrincipalClaimIntent = effectiveIntent?.workspace_action === SIGNUP_WORKSPACE_ACTIONS.claimExistingWorkspace
+  const pendingInviteToken = getPendingInviteToken()
+  const isExistingWorkspaceJoin = !isPrincipalClaimIntent && isExistingWorkspaceJoinProfileStep({
+    signupIntent: effectiveIntent,
+    activeMemberships,
+    currentMembership,
+    pendingInviteToken,
+  })
+  const showCompanyName = !isExistingWorkspaceJoin
+  const cardTitle = isPrincipalClaimIntent
+    ? 'Before We Claim the Workspace'
+    : isExistingWorkspaceJoin
+      ? 'Before You Join'
+      : 'Before We Continue'
+  const cardDescription = isPrincipalClaimIntent
+    ? 'We found a principal claim. Confirm your profile details before Arch9 captures the workspace as yours.'
+    : isExistingWorkspaceJoin
+      ? 'Your invite is accepted. Confirm your personal details before opening the agency workspace.'
+      : signupIntent
+        ? 'We found your signup path. Confirm your profile details before workspace setup.'
+        : 'Confirm your business type and position so Arch9 can recover the correct onboarding path.'
 
   async function handleSignOut() {
     console.debug('[AUTH] onboarding-profile:signout')
@@ -138,15 +205,28 @@ function OnboardingProfileSetup() {
           status: 'ready_for_onboarding',
         })
       }
-      await saveProfileDraft({
+      const profilePayload = {
         firstName: String(firstName || '').trim(),
         lastName: String(lastName || '').trim(),
-        companyName: String(companyName || '').trim(),
         phoneNumber: String(phoneNumber || '').trim(),
         role: effectiveAppRole,
-        onboardingCompleted: false,
-      })
-      const route = signupIntent || recoveryIntent ? resolveSignupIntentRoute(effectiveIntent) : resolveOnboardingPathForRole(effectiveAppRole)
+        onboardingCompleted: isExistingWorkspaceJoin,
+      }
+      if (showCompanyName) {
+        profilePayload.companyName = String(companyName || '').trim()
+      }
+      await saveProfileDraft(profilePayload)
+      const route = isExistingWorkspaceJoin
+        ? resolveExistingWorkspaceJoinProfileRoute({
+            role: effectiveAppRole,
+            signupIntent: effectiveIntent,
+            activeMemberships,
+            currentMembership,
+            pendingInviteToken,
+          })
+        : signupIntent || recoveryIntent
+          ? resolveSignupIntentRoute(effectiveIntent)
+          : resolveOnboardingPathForRole(effectiveAppRole)
       if (!route) {
         throw new Error('Could not determine onboarding route for the selected role.')
       }
@@ -234,20 +314,14 @@ function OnboardingProfileSetup() {
         <section className="auth-hero onboarding-hero agency-onboarding-hero">
           <p className="auth-brand">Arch9</p>
           <h1 style={{ color: '#ffffff' }}>Complete Your Profile</h1>
-          <p>Set your details and choose the module you want to onboard into first.</p>
+          <p>{isExistingWorkspaceJoin ? 'Confirm your details before opening your workspace.' : 'Set your details and choose the module you want to onboard into first.'}</p>
         </section>
 
         <section className="auth-card onboarding-card agency-onboarding-card">
           <div className="auth-card-head">
             <span className="auth-card-eyebrow">Profile Setup</span>
-            <h2>{isPrincipalClaimIntent ? 'Before We Claim the Workspace' : 'Before We Continue'}</h2>
-            <p>
-              {isPrincipalClaimIntent
-                ? 'We found a principal claim. Confirm your profile details before Arch9 captures the workspace as yours.'
-                : signupIntent
-                  ? 'We found your signup path. Confirm your profile details before workspace setup.'
-                  : 'Confirm your business type and position so Arch9 can recover the correct onboarding path.'}
-            </p>
+            <h2>{cardTitle}</h2>
+            <p>{cardDescription}</p>
           </div>
 
           <form className="auth-form onboarding-form agency-onboarding-form" onSubmit={handleContinue}>
@@ -260,17 +334,23 @@ function OnboardingProfileSetup() {
                 Last Name
                 <input type="text" value={lastName} onChange={(event) => setLastName(event.target.value)} />
               </label>
-              <label>
-                Company Name
-                <input type="text" value={companyName} onChange={(event) => setCompanyName(event.target.value)} />
-              </label>
+              {showCompanyName ? (
+                <label>
+                  Company Name
+                  <input type="text" value={companyName} onChange={(event) => setCompanyName(event.target.value)} />
+                </label>
+              ) : null}
               <label>
                 Phone Number
                 <input type="text" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} />
               </label>
             </section>
 
-            {signupIntent ? (
+            {isExistingWorkspaceJoin ? (
+              <section className="mt-4 rounded-[16px] border border-[#dbe8f3] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#48627d]">
+                Arch9 will use the agency details from your accepted invite. You only need to confirm your own profile.
+              </section>
+            ) : signupIntent ? (
               <section className="mt-4 rounded-[16px] border border-[#dbe8f3] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#48627d]">
                 Arch9 will continue with {APP_ROLE_LABELS[signupIntent.app_role] || 'workspace'} setup.
                 {signupIntent.workspace_action === 'create_workspace'
@@ -333,7 +413,11 @@ function OnboardingProfileSetup() {
 
             <div className="auth-actions">
               <button type="submit" className="auth-primary-cta" disabled={saving || !profileComplete || !roleSelected}>
-                {saving ? 'Saving…' : `Continue to ${APP_ROLE_LABELS[effectiveAppRole] || 'Workspace'} Setup`}
+                {saving
+                  ? 'Saving…'
+                  : isExistingWorkspaceJoin
+                    ? 'Continue to Dashboard'
+                    : `Continue to ${APP_ROLE_LABELS[effectiveAppRole] || 'Workspace'} Setup`}
               </button>
               <button type="button" className="auth-secondary-cta" onClick={handleSignOut} disabled={saving}>
                 Sign out

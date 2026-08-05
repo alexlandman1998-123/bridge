@@ -28,6 +28,12 @@ export const ENTITLEMENT_KEYS = Object.freeze({
   supportLevel: 'supportLevel',
 })
 
+export const WORKSPACE_CAPACITY_ENTITLEMENT_KEYS = Object.freeze([
+  ENTITLEMENT_KEYS.maxUsers,
+  ENTITLEMENT_KEYS.maxBranches,
+  ENTITLEMENT_KEYS.monthlyBondApplications,
+])
+
 export const REPORTING_LEVELS = Object.freeze({
   basic: 'basic',
   advanced: 'advanced',
@@ -65,9 +71,9 @@ export const WORKSPACE_PLAN_CATALOG = Object.freeze({
     description: 'For independent originators and single-operator professional workspaces.',
     monthlyAmount: 490,
     entitlements: Object.freeze({
-      [ENTITLEMENT_KEYS.maxUsers]: 1,
+      [ENTITLEMENT_KEYS.maxUsers]: null,
       [ENTITLEMENT_KEYS.maxBranches]: null,
-      [ENTITLEMENT_KEYS.monthlyBondApplications]: 75,
+      [ENTITLEMENT_KEYS.monthlyBondApplications]: null,
       [ENTITLEMENT_KEYS.reportingLevel]: REPORTING_LEVELS.basic,
       [ENTITLEMENT_KEYS.integrations]: false,
       [ENTITLEMENT_KEYS.customBranding]: true,
@@ -82,9 +88,9 @@ export const WORKSPACE_PLAN_CATALOG = Object.freeze({
     description: 'For small originator teams with shared pipeline operations.',
     monthlyAmount: 1490,
     entitlements: Object.freeze({
-      [ENTITLEMENT_KEYS.maxUsers]: 8,
+      [ENTITLEMENT_KEYS.maxUsers]: null,
       [ENTITLEMENT_KEYS.maxBranches]: null,
-      [ENTITLEMENT_KEYS.monthlyBondApplications]: 250,
+      [ENTITLEMENT_KEYS.monthlyBondApplications]: null,
       [ENTITLEMENT_KEYS.reportingLevel]: REPORTING_LEVELS.advanced,
       [ENTITLEMENT_KEYS.integrations]: true,
       [ENTITLEMENT_KEYS.customBranding]: true,
@@ -99,9 +105,9 @@ export const WORKSPACE_PLAN_CATALOG = Object.freeze({
     description: 'For multi-branch organisations with managers, processors, and reporting needs.',
     monthlyAmount: 3990,
     entitlements: Object.freeze({
-      [ENTITLEMENT_KEYS.maxUsers]: 40,
+      [ENTITLEMENT_KEYS.maxUsers]: null,
       [ENTITLEMENT_KEYS.maxBranches]: null,
-      [ENTITLEMENT_KEYS.monthlyBondApplications]: 1200,
+      [ENTITLEMENT_KEYS.monthlyBondApplications]: null,
       [ENTITLEMENT_KEYS.reportingLevel]: REPORTING_LEVELS.advanced,
       [ENTITLEMENT_KEYS.integrations]: true,
       [ENTITLEMENT_KEYS.customBranding]: true,
@@ -151,6 +157,16 @@ export function mergeEntitlements(base = {}, override = {}) {
     ...(base || {}),
     ...(override || {}),
   }
+}
+
+export function removeWorkspaceCapacityLimits(entitlements = {}) {
+  return WORKSPACE_CAPACITY_ENTITLEMENT_KEYS.reduce(
+    (next, key) => ({
+      ...next,
+      [key]: null,
+    }),
+    { ...(entitlements || {}) },
+  )
 }
 
 export function formatEntitlementValue(value) {

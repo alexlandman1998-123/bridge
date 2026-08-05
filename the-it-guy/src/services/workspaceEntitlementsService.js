@@ -1,10 +1,12 @@
 import {
   ENTITLEMENT_KEYS,
+  WORKSPACE_CAPACITY_ENTITLEMENT_KEYS,
   WORKSPACE_PLAN_KEYS,
   WORKSPACE_SUBSCRIPTION_STATUSES,
   getWorkspacePlanDefinition,
   mergeEntitlements,
   normalizePlanKey,
+  removeWorkspaceCapacityLimits,
   resolveDefaultWorkspacePlanKey,
 } from '../constants/workspaceEntitlements'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
@@ -70,7 +72,7 @@ function normalizeSubscriptionRow(row = {}, workspace = {}) {
   })
   const planKey = normalizePlanKey(row.plan_key || row.planKey, fallbackPlanKey)
   const plan = getWorkspacePlanDefinition(planKey)
-  const entitlements = mergeEntitlements(plan.entitlements, row.entitlements || row.entitlement_overrides || {})
+  const entitlements = removeWorkspaceCapacityLimits(mergeEntitlements(plan.entitlements, row.entitlements || row.entitlement_overrides || {}))
   return {
     id: normalizeText(row.id),
     workspaceId: normalizeText(row.organisation_id || row.organisationId || workspace.workspaceId),
@@ -96,7 +98,7 @@ function normalizePlanCatalogRow(row = {}) {
     description: normalizeText(row.description) || localPlan.description,
     billingModel: normalizeText(row.billing_model || row.billingModel) || (planKey === WORKSPACE_PLAN_KEYS.enterprise ? 'contract' : 'subscription'),
     monthlyAmount: row.monthly_amount !== undefined ? Number(row.monthly_amount || 0) / 100 : localPlan.monthlyAmount,
-    entitlements: row.default_entitlements || row.entitlements || localPlan.entitlements,
+    entitlements: removeWorkspaceCapacityLimits(row.default_entitlements || row.entitlements || localPlan.entitlements),
     active: row.active !== false,
     sortOrder: Number(row.sort_order || row.sortOrder || 100),
   }
@@ -145,7 +147,7 @@ function applyOverrideRows(subscription, rows = []) {
   }, {})
   return {
     ...subscription,
-    entitlements: mergeEntitlements(subscription.entitlements, overrides),
+    entitlements: removeWorkspaceCapacityLimits(mergeEntitlements(subscription.entitlements, overrides)),
     overrideCount: rows.length,
   }
 }
@@ -362,6 +364,15 @@ export async function cancelWorkspacePlanChange({ requestId = '' } = {}) {
 }
 
 export function evaluateEntitlementLimit(entitlements = {}, usage = {}, entitlementKey = '') {
+  if (WORKSPACE_CAPACITY_ENTITLEMENT_KEYS.includes(entitlementKey)) {
+    const usageKeyByEntitlement = {
+      [ENTITLEMENT_KEYS.maxUsers]: 'activeUsers',
+      [ENTITLEMENT_KEYS.maxBranches]: 'activeBranches',
+      [ENTITLEMENT_KEYS.monthlyBondApplications]: 'monthlyBondApplications',
+    }
+    const used = Number(usage[entitlementKey] ?? usage[usageKeyByEntitlement[entitlementKey]] ?? 0)
+    return { limited: false, limit: null, used, remaining: null }
+  }
   const limit = entitlements[entitlementKey]
   const usageKeyByEntitlement = {
     [ENTITLEMENT_KEYS.maxUsers]: 'activeUsers',
@@ -443,6 +454,7 @@ export async function assertWorkspaceEntitlementLimit({
 
 export function buildBillingSummary(entitlementContext = {}) {
   const subscription = entitlementContext.subscription || buildFallbackSubscription()
+  const entitlements = removeWorkspaceCapacityLimits(subscription.entitlements || {})
   const usage = entitlementContext.usage || {}
   return {
     planName: subscription.planName,
@@ -455,10 +467,10 @@ export function buildBillingSummary(entitlementContext = {}) {
     activeUsers: usage.activeUsers || 0,
     activeBranches: usage.activeBranches || 0,
     monthlyBondApplications: usage.monthlyBondApplications || 0,
-    includedUsers: subscription.entitlements?.[ENTITLEMENT_KEYS.maxUsers] ?? null,
-    includedBranches: subscription.entitlements?.[ENTITLEMENT_KEYS.maxBranches] ?? null,
-    includedMonthlyBondApplications: subscription.entitlements?.[ENTITLEMENT_KEYS.monthlyBondApplications] ?? null,
-    entitlements: subscription.entitlements || {},
+    includedUsers: entitlements[ENTITLEMENT_KEYS.maxUsers] ?? null,
+    includedBranches: entitlements[ENTITLEMENT_KEYS.maxBranches] ?? null,
+    includedMonthlyBondApplications: entitlements[ENTITLEMENT_KEYS.monthlyBondApplications] ?? null,
+    entitlements,
     source: entitlementContext.source || subscription.source,
   }
 }

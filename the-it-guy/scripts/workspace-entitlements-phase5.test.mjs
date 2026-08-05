@@ -5,6 +5,7 @@ import { createServer } from 'vite'
 
 const root = resolve(import.meta.dirname, '../..')
 const migration = readFileSync(resolve(root, 'supabase/migrations/202606040004_workspace_entitlement_enforcement_phase5.sql'), 'utf8')
+const unlimitedMigration = readFileSync(resolve(root, 'supabase/migrations/202608050012_workspace_entitlement_unlimited_capacity.sql'), 'utf8')
 
 function assertIncludes(source, token, label = token) {
   assert(source.includes(token), `Expected ${label}`)
@@ -17,6 +18,10 @@ assertIncludes(migration, 'workspace_units_enforce_workspace_entitlements', 'bon
 assertIncludes(migration, 'transaction_bond_applications_enforce_workspace_entitlements', 'bond application trigger')
 assertIncludes(migration, "lower(coalesce(ou.status, 'active')) in ('active', 'invited', 'pending')", 'billable seat statuses')
 assertIncludes(migration, "date_trunc('month', now())", 'monthly application window')
+assertIncludes(unlimitedMigration, "'maxUsers', null", 'unlimited user capacity migration')
+assertIncludes(unlimitedMigration, "'maxBranches', null", 'unlimited branch capacity migration')
+assertIncludes(unlimitedMigration, "'monthlyBondApplications', null", 'unlimited application capacity migration')
+assertIncludes(unlimitedMigration, 'return;', 'database capacity assertion bypass')
 
 const entitlementService = readFileSync(resolve(root, 'the-it-guy/src/services/workspaceEntitlementsService.js'), 'utf8')
 assertIncludes(entitlementService, 'WorkspaceEntitlementLimitError', 'structured entitlement error')
@@ -57,16 +62,15 @@ try {
     evaluateEntitlementLimit,
   } = await server.ssrLoadModule('/src/services/workspaceEntitlementsService.js')
 
-  await assert.rejects(
-    () =>
-      assertWorkspaceEntitlementLimit({
-        workspaceId: '',
-        workspaceType: 'bond_originator',
-        workspaceKind: 'bond_company',
-        entitlementKey: ENTITLEMENT_KEYS.maxUsers,
-        usage: { activeUsers: 8 },
-      }),
-    (error) => error instanceof WorkspaceEntitlementLimitError && error.code === 'WORKSPACE_ENTITLEMENT_LIMIT_EXCEEDED',
+  assert.equal(WorkspaceEntitlementLimitError.name, 'WorkspaceEntitlementLimitError')
+  await assert.doesNotReject(() =>
+    assertWorkspaceEntitlementLimit({
+      workspaceId: '',
+      workspaceType: 'bond_originator',
+      workspaceKind: 'bond_company',
+      entitlementKey: ENTITLEMENT_KEYS.maxUsers,
+      usage: { activeUsers: 8 },
+    }),
   )
 
   await assert.doesNotReject(() =>
@@ -82,6 +86,10 @@ try {
   const enterpriseEntitlements = getWorkspacePlanDefinition(WORKSPACE_PLAN_KEYS.enterprise).entitlements
   assert.equal(
     evaluateEntitlementLimit(enterpriseEntitlements, { activeUsers: 500 }, ENTITLEMENT_KEYS.maxUsers).limited,
+    false,
+  )
+  assert.equal(
+    evaluateEntitlementLimit({ [ENTITLEMENT_KEYS.maxUsers]: 3 }, { activeUsers: 9 }, ENTITLEMENT_KEYS.maxUsers).limited,
     false,
   )
 
