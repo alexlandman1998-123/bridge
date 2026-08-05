@@ -931,6 +931,14 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   }
 
   const reason = authState.onboardingRequiredReason
+  const hasResolvedWorkspaceMembership = Boolean(
+    baseRole === 'client' ||
+      (
+        authState.activeMemberships.length > 0 &&
+        authState.currentMembership?.id &&
+        authState.currentWorkspace?.id
+      ),
+  )
   const hasCommercialAccess =
     hasCommercialAccessMarker(authState.currentMembership) ||
     (authState.activeMemberships || []).some((membership) => hasCommercialAccessMarker(membership))
@@ -992,7 +1000,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
     return <Outlet />
   }
 
-  if (onAnyOnboardingRoute && onboardingCompleted) {
+  if (onAnyOnboardingRoute && onboardingCompleted && hasResolvedWorkspaceMembership) {
     const pendingPartnerInvitePath = readPendingPartnerInvitePath()
     const target = pendingPartnerInvitePath
       ? buildPartnerInviteAutoAcceptPath(pendingPartnerInvitePath)

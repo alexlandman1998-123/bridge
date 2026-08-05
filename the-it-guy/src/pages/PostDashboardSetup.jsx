@@ -588,11 +588,16 @@ export default function PostDashboardSetup() {
     [activeMemberships, currentMembership],
   )
   const hasActiveMembership = activeMemberships.length > 0
+  const hasResolvedWorkspaceMembership = Boolean(
+    hasActiveMembership &&
+      currentMembership?.id &&
+      currentWorkspace?.id,
+  )
   const recoveryReasons = [onboardingRequiredReason, onboardingState?.recoveryReason]
     .map((reason) => normalizeText(reason))
     .filter(Boolean)
   const hasBlockingRecoveryReason = recoveryReasons.length > 0
-  const canOpenActiveWorkspace = hasActiveMembership && !hasBlockingRecoveryReason
+  const canOpenActiveWorkspace = hasResolvedWorkspaceMembership && !hasBlockingRecoveryReason
   const pageTitle = useMemo(() => {
     if (canClaimExistingWorkspace) return 'Claim your agency workspace'
     if (isAgencyPrincipalSetup) return getAgencySetupTitle(agencySetupType)
