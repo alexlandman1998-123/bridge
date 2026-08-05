@@ -6519,7 +6519,7 @@ function ArchlineTransferWorkspace({
 
   return (
     <>
-      <section className="grid gap-4 xl:sticky xl:top-24 xl:h-[calc(100dvh-150px)] xl:min-h-[560px] xl:grid-cols-[minmax(300px,360px)_minmax(0,1fr)] xl:overflow-hidden">
+      <section className="grid gap-4 xl:sticky xl:top-24 xl:h-[calc(100dvh-120px)] xl:min-h-[600px] xl:grid-cols-[minmax(320px,390px)_minmax(0,1fr)] xl:overflow-hidden">
           <aside className="min-h-0">
             <ArchlinePanel className="flex h-full min-h-0 flex-col overflow-hidden">
               <div className="shrink-0 border-b border-slate-200 px-4 py-4">
@@ -7060,16 +7060,262 @@ function ArchlineTransferWorkspace({
   )
 }
 
-function ArchlineDocumentsWorkspace({
+const ATTORNEY_DOCUMENT_DASHBOARD_CATEGORY_DEFINITIONS = {
+  buyer: [
+    { key: 'buyer_fica_id', label: 'Buyer FICA & ID Documents', icon: FileCheck2, tokens: ['fica', 'identity', ' id ', '_id', 'passport', 'marriage', 'spouse', 'trust', 'company', 'authority'] },
+    { key: 'buyer_proof_of_residence', label: 'Proof of Residence', icon: Building2, tokens: ['proof of residence', 'proof_of_residence', 'proof of address', 'proof_of_address', 'utility', 'municipal', 'lease'] },
+    { key: 'buyer_employment_income', label: 'Employment & Income', icon: BriefcaseBusiness, tokens: ['employment', 'income', 'payslip', 'salary', 'tax', 'bank statement'] },
+    { key: 'buyer_finance_bond', label: 'Finance & Bond Documents', icon: FileText, tokens: ['finance', 'bond', 'loan', 'guarantee', 'approval', 'pre-approval', 'proof of funds', 'deposit'] },
+    { key: 'buyer_other', label: 'Other Buyer Documents', icon: FileText, tokens: [] },
+  ],
+  seller: [
+    { key: 'seller_property', label: 'Property Documents', icon: FileCheck2, tokens: ['property', 'title deed', 'building plan', 'sectional', 'body corporate', 'compliance', 'disclosure'] },
+    { key: 'seller_sale', label: 'Sale Documents', icon: Building2, tokens: ['sale', 'otp', 'offer to purchase', 'agreement', 'mandate', 'addenda', 'addendum', 'suspensive'] },
+    { key: 'seller_fica_id', label: 'FICA & ID Documents', icon: UserCircle, tokens: ['fica', 'identity', ' id ', '_id', 'passport', 'marriage', 'spouse', 'trust', 'company', 'tax'] },
+    { key: 'seller_rates_levies', label: 'Rates & Levies', icon: CircleDollarSign, tokens: ['rates', 'levy', 'levies', 'clearance', 'municipal'] },
+    { key: 'seller_other', label: 'Other Seller Documents', icon: FileText, tokens: [] },
+  ],
+}
+
+const ATTORNEY_DOCUMENT_DASHBOARD_PARTIES = [
+  { key: 'buyer', label: 'Buyer Documents', description: 'Manage documents provided by the buyer.' },
+  { key: 'seller', label: 'Seller Documents', description: 'Manage documents provided by the seller.' },
+]
+
+const ATTORNEY_DOCUMENT_RECEIVED_STATUSES = new Set(['uploaded', 'pending_review', 'verified', 'generated'])
+const ATTORNEY_DOCUMENT_MISSING_STATUSES = new Set(['missing', 'requested', 'rejected', 'expired'])
+
+function getAttorneyDashboardRowStatus(row = {}) {
+  return normalizeDocumentCommandStatus(row.status || row.requiredDocumentStatus, {
+    hasDocument: Boolean(row.fileUrl || row.linkedDocument || row.raw),
+  })
+}
+
+function getAttorneyDashboardRowParty(row = {}) {
+  const canonicalCategory = String(row.canonicalCategory || row.category || '').trim().toLowerCase()
+  if (canonicalCategory === 'buyer' || canonicalCategory === 'seller') return canonicalCategory
+  const haystack = [
+    row.requiredParty,
+    row.ownerLabel,
+    row.uploadedBy,
+    row.displayName,
+    row.categoryLabel,
+    row.documentTypeLabel,
+    row.requiredDocumentKey,
+    row.requirement?.groupKey,
+    row.requirement?.expectedFromRole,
+    row.requiredDocument?.expectedFromRole,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+  if (/\bseller\b/.test(haystack)) return 'seller'
+  if (/\bbuyer\b|\bclient\b|purchaser/.test(haystack)) return 'buyer'
+  return ''
+}
+
+function getAttorneyDashboardCategoryKey(row = {}, party = '') {
+  const definitions = ATTORNEY_DOCUMENT_DASHBOARD_CATEGORY_DEFINITIONS[party] || []
+  const haystack = [
+    row.displayName,
+    row.category,
+    row.categoryLabel,
+    row.categoryGroup,
+    row.categoryGroupLabel,
+    row.documentType,
+    row.documentTypeLabel,
+    row.requiredDocumentKey,
+    row.linkedToLabel,
+    row.relatedWorkflow,
+    row.requirement?.key,
+    row.requirement?.label,
+    row.requirement?.groupKey,
+    row.requiredDocument?.key,
+    row.requiredDocument?.label,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+  const matched = definitions.find((definition) => definition.tokens.some((token) => haystack.includes(token)))
+  return matched?.key || definitions.at(-1)?.key || ''
+}
+
+function dedupeAttorneyDocumentDashboardRows(rows = []) {
+  const seen = new Set()
+  return rows.filter((row) => {
+    const key = String(row?.canonicalRequirementInstanceId || row?.requiredDocumentCanonicalId || row?.requiredDocumentId || row?.id || `${row?.displayName || ''}:${row?.source || ''}`)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function getAttorneyDocumentDashboardStatusTone(status = '') {
+  if (status === 'complete') return { icon: 'bg-emerald-50 text-emerald-700', pill: 'bg-emerald-50 text-emerald-700' }
+  if (status === 'pending_review') return { icon: 'bg-blue-50 text-blue-700', pill: 'bg-blue-50 text-blue-700' }
+  if (status === 'partial') return { icon: 'bg-amber-50 text-amber-700', pill: 'bg-amber-50 text-amber-700' }
+  if (status === 'missing') return { icon: 'bg-red-50 text-red-700', pill: 'bg-red-50 text-red-700' }
+  return { icon: 'bg-slate-100 text-slate-600', pill: 'bg-slate-100 text-slate-600' }
+}
+
+function getAttorneyDocumentDashboardCategoryStatus({ requiredCount = 0, receivedCount = 0, pendingReviewCount = 0, missingCount = 0 } = {}) {
+  if (!requiredCount) return { status: 'not_applicable', label: 'Not applicable' }
+  if (missingCount >= requiredCount && !receivedCount) return { status: 'missing', label: 'Missing' }
+  if (pendingReviewCount) return { status: 'pending_review', label: 'Pending review' }
+  if (receivedCount >= requiredCount && !missingCount) return { status: 'complete', label: 'Complete' }
+  if (receivedCount) return { status: 'partial', label: 'Partially complete' }
+  return { status: 'missing', label: 'Missing' }
+}
+
+function getAttorneyDocumentActivityType(row = {}) {
+  const tokens = `${row.id || ''} ${row.detail || ''} ${row.label || ''}`.toLowerCase()
+  if (tokens.includes('request')) return 'request'
+  if (tokens.includes('verified') || tokens.includes('approved') || tokens.includes('rejected') || tokens.includes('review')) return 'status'
+  return 'upload'
+}
+
+function getAttorneyDocumentActivityTimeLabel(value = '') {
+  const timestamp = new Date(value || 0).getTime()
+  if (!timestamp) return ''
+  const diff = Date.now() - timestamp
+  const minutes = Math.max(1, Math.round(diff / 60000))
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  return formatDateTime(value, '')
+}
+
+function buildAttorneyDocumentsDashboardModel({
   documentHealthSummary = {},
   ficaSummary = {},
-  categorySummaries = [],
   requiredRows = [],
   libraryRows = [],
   missingRows = [],
   recentActivity = [],
-  filters = DOCUMENT_LIBRARY_FILTERS,
-  activeFilter = 'all',
+} = {}) {
+  const totalRequired = documentHealthSummary.requiredCount || requiredRows.length || 0
+  const verified = documentHealthSummary.approvedCount || 0
+  const received = documentHealthSummary.uploadedCount || 0
+  const missing = documentHealthSummary.missingCount || missingRows.length || 0
+  const pendingReview = documentHealthSummary.pendingReviewCount || 0
+  const completionPercent = totalRequired ? Math.round((verified / totalRequired) * 100) : 0
+  const summaryCards = [
+    { label: 'Complete', value: `${completionPercent}%`, helper: `${verified} of ${totalRequired} required`, icon: FileCheck2, tone: 'bg-red-50 text-red-700', filter: 'verified' },
+    { label: 'Required', value: totalRequired, helper: `${Math.max(totalRequired - received, 0)} outstanding`, icon: FileText, tone: 'bg-blue-50 text-blue-700', filter: 'all' },
+    { label: 'Received', value: received, helper: 'Recently updated', icon: Upload, tone: 'bg-emerald-50 text-emerald-700', filter: 'all' },
+    { label: 'Missing', value: missing, helper: 'Need attention', icon: AlertTriangle, tone: 'bg-orange-50 text-orange-700', filter: 'missing' },
+    { label: 'Pending Review', value: pendingReview, helper: 'Awaiting verification', icon: FileText, tone: 'bg-blue-50 text-blue-700', filter: 'pending_review' },
+    { label: 'Verified', value: verified, helper: 'All good', icon: FileCheck2, tone: 'bg-emerald-50 text-emerald-700', filter: 'verified' },
+  ]
+
+  const parties = ATTORNEY_DOCUMENT_DASHBOARD_PARTIES.map((party) => {
+    const definitions = ATTORNEY_DOCUMENT_DASHBOARD_CATEGORY_DEFINITIONS[party.key]
+    const categories = definitions.map((definition) => {
+      const requirements = dedupeAttorneyDocumentDashboardRows(requiredRows.filter((row) =>
+        getAttorneyDashboardRowParty(row) === party.key && getAttorneyDashboardCategoryKey(row, party.key) === definition.key,
+      ))
+      const requirementKeys = new Set(requirements.map((row) => String(row.canonicalRequirementInstanceId || row.requiredDocumentId || row.requiredDocumentKey || row.id || '')).filter(Boolean))
+      const documents = dedupeAttorneyDocumentDashboardRows(libraryRows.filter((row) => {
+        if (getAttorneyDashboardRowParty(row) !== party.key) return false
+        if (getAttorneyDashboardCategoryKey(row, party.key) !== definition.key) return false
+        const requirementKey = String(row.requiredDocumentCanonicalId || row.requiredDocumentId || row.requiredDocumentKey || '')
+        return !requirementKey || !requirementKeys.has(requirementKey) || row.fileUrl
+      }))
+      const basisRows = requirements.length ? requirements : documents
+      const receivedCount = basisRows.filter((row) => ATTORNEY_DOCUMENT_RECEIVED_STATUSES.has(getAttorneyDashboardRowStatus(row))).length
+      const pendingReviewCount = basisRows.filter((row) => getAttorneyDashboardRowStatus(row) === 'pending_review').length
+      const missingCount = requirements.filter((row) => ATTORNEY_DOCUMENT_MISSING_STATUSES.has(getAttorneyDashboardRowStatus(row))).length
+      const requiredCount = requirements.length || documents.length
+      const status = getAttorneyDocumentDashboardCategoryStatus({ requiredCount, receivedCount, pendingReviewCount, missingCount })
+      return {
+        ...definition,
+        party: party.key,
+        partyLabel: party.label,
+        requirements,
+        documents,
+        requiredCount,
+        receivedCount,
+        pendingReviewCount,
+        missingCount,
+        status: status.status,
+        statusLabel: status.label,
+      }
+    })
+    const fica = ficaSummary?.[party.key]
+    if (fica?.totalCount) {
+      const ficaCategory = categories.find((category) => category.key.includes('fica'))
+      if (ficaCategory && !ficaCategory.requiredCount) {
+        ficaCategory.requiredCount = fica.totalCount
+        ficaCategory.receivedCount = fica.receivedCount
+        ficaCategory.pendingReviewCount = fica.pendingReviewCount
+        ficaCategory.missingCount = fica.missingCount
+        const status = getAttorneyDocumentDashboardCategoryStatus(ficaCategory)
+        ficaCategory.status = status.status
+        ficaCategory.statusLabel = status.label
+      }
+    }
+    return { ...party, categories }
+  })
+
+  const activityRows = recentActivity.map((row) => {
+    const type = getAttorneyDocumentActivityType(row)
+    const iconMap = { upload: Upload, request: FileText, status: FileCheck2 }
+    const toneMap = {
+      upload: 'bg-emerald-50 text-emerald-700',
+      request: 'bg-blue-50 text-blue-700',
+      status: 'bg-slate-100 text-slate-700',
+    }
+    const badgeMap = {
+      upload: ['Upload', 'bg-emerald-50 text-emerald-700'],
+      request: ['Request', 'bg-blue-50 text-blue-700'],
+      status: ['Status', 'bg-slate-100 text-slate-700'],
+    }
+    const [badge, badgeTone] = badgeMap[type]
+    return {
+      ...row,
+      type,
+      icon: iconMap[type],
+      iconTone: toneMap[type],
+      badge,
+      badgeTone,
+      timeLabel: getAttorneyDocumentActivityTimeLabel(row.timestamp),
+    }
+  })
+
+  return { totalRequired, verified, received, missing, pendingReview, completionPercent, summaryCards, parties, activityRows }
+}
+
+function buildDocumentHealthDonutSegments({ total = 0, verified = 0, pending = 0, missing = 0, outstanding = 0 } = {}) {
+  if (!total) {
+    return {
+      gradient: 'conic-gradient(#e2e8f0 0deg 360deg)',
+      receivedPercent: 0,
+      pendingPercent: 0,
+      missingPercent: 0,
+      outstandingPercent: 0,
+    }
+  }
+  const clampCount = (value) => Math.max(0, Math.min(total, Number(value || 0)))
+  const verifiedCount = clampCount(verified)
+  const pendingCount = clampCount(pending)
+  const missingCount = clampCount(missing)
+  const outstandingCount = clampCount(outstanding)
+  const toDegrees = (value) => (clampCount(value) / total) * 360
+  const verifiedEnd = toDegrees(verifiedCount)
+  const pendingEnd = verifiedEnd + toDegrees(pendingCount)
+  const missingEnd = pendingEnd + toDegrees(missingCount)
+  const outstandingEnd = Math.min(360, missingEnd + toDegrees(outstandingCount))
+  return {
+    gradient: `conic-gradient(#059669 0deg ${verifiedEnd}deg, #2563eb ${verifiedEnd}deg ${pendingEnd}deg, #ea580c ${pendingEnd}deg ${missingEnd}deg, #cbd5e1 ${missingEnd}deg ${outstandingEnd}deg, #e2e8f0 ${outstandingEnd}deg 360deg)`,
+    receivedPercent: Math.round((clampCount(verified + pending) / total) * 100),
+    pendingPercent: Math.round((pendingCount / total) * 100),
+    missingPercent: Math.round((missingCount / total) * 100),
+    outstandingPercent: Math.round((outstandingCount / total) * 100),
+  }
+}
+
+function ArchlineDocumentsWorkspace({
+  documentHealthSummary = {},
+  ficaSummary = {},
+  requiredRows = [],
+  libraryRows = [],
+  allLibraryRows = [],
+  missingRows = [],
+  recentActivity = [],
   search = '',
   onFilterChange,
   onSearchChange,
@@ -7079,476 +7325,410 @@ function ArchlineDocumentsWorkspace({
   onReplace,
   onReview,
 }) {
-  const categoryIcons = {
-    buyer: UserRound,
-    seller: UserCircle,
-    finance: CircleDollarSign,
-    transfer: Workflow,
-    bond: Landmark,
-    cancellation: AlertTriangle,
-    general: FileText,
-  }
-  const kpis = [
-    ['Required', documentHealthSummary.requiredCount || requiredRows.length || 0, FileText, 'bg-blue-50 text-blue-700'],
-    ['Received', documentHealthSummary.uploadedCount || 0, Upload, 'bg-emerald-50 text-emerald-700'],
-    ['Missing', documentHealthSummary.missingCount || missingRows.length || 0, AlertTriangle, 'bg-red-50 text-red-700'],
-    ['Verified', documentHealthSummary.approvedCount || 0, FileCheck2, 'bg-emerald-50 text-emerald-700'],
-  ]
-  const ficaCards = ['buyer', 'seller']
-    .map((party) => ficaSummary?.[party])
-    .filter((item) => item && item.totalCount > 0)
-  const [activeCategoryGroup, setActiveCategoryGroup] = useState('all')
-  const systemCategoryKeys = ['buyer', 'seller', 'finance', 'transfer', 'bond', 'cancellation', 'general']
-  const activeCategorySummary = systemCategoryKeys.includes(activeFilter)
-    ? categorySummaries.find((category) => category.key === activeFilter)
-    : null
-  const categoryGroupSummaries = activeCategorySummary?.groupSummaries || []
-  const visibleLibraryRows = activeCategoryGroup === 'all'
-    ? libraryRows
-    : libraryRows.filter((row) => row.categoryGroup === activeCategoryGroup)
+  const [activePartyView, setActivePartyView] = useState('all')
+  const [activeCategory, setActiveCategory] = useState(null)
+  const [activeActivityFilter, setActiveActivityFilter] = useState('all')
 
-  useEffect(() => {
-    setActiveCategoryGroup('all')
-  }, [activeFilter])
+  const dashboardModel = useMemo(
+    () =>
+      buildAttorneyDocumentsDashboardModel({
+        documentHealthSummary,
+        ficaSummary,
+        requiredRows,
+        libraryRows: allLibraryRows.length ? allLibraryRows : libraryRows,
+        missingRows,
+        recentActivity,
+      }),
+    [allLibraryRows, documentHealthSummary, ficaSummary, libraryRows, missingRows, recentActivity, requiredRows],
+  )
+  const visibleParties = activePartyView === 'all'
+    ? dashboardModel.parties
+    : dashboardModel.parties.filter((party) => party.key === activePartyView)
+  const visibleActivityRows = dashboardModel.activityRows.filter((row) => activeActivityFilter === 'all' || row.type === activeActivityFilter)
+  const attentionCount = (documentHealthSummary.missingCount || missingRows.length || 0) + (documentHealthSummary.pendingReviewCount || 0)
+  const healthTotal = documentHealthSummary.requiredCount || requiredRows.length || dashboardModel.totalRequired || 0
+  const healthReceived = documentHealthSummary.uploadedCount || dashboardModel.received || 0
+  const healthPending = documentHealthSummary.pendingReviewCount || dashboardModel.pendingReview || 0
+  const healthMissing = documentHealthSummary.missingCount || missingRows.length || dashboardModel.missing || 0
+  const healthVerified = documentHealthSummary.approvedCount || dashboardModel.verified || 0
+  const healthOutstanding = Math.max(healthTotal - healthReceived, 0)
+  const healthSegments = buildDocumentHealthDonutSegments({
+    total: healthTotal,
+    verified: healthVerified,
+    pending: healthPending,
+    missing: healthMissing,
+    outstanding: healthOutstanding,
+  })
+  const activeCategoryFiles = activeCategory?.documents || []
+  const activeCategoryRequirements = activeCategory?.requirements || []
 
   return (
-    <section className="space-y-4">
-      {categorySummaries.length ? (
-        <ArchlinePanel title="Document Category Overview" className="p-4">
-          <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-            {categorySummaries.map((category) => {
-              const Icon = categoryIcons[category.key] || FileText
-              const active = activeFilter === category.key
-              return (
-                <button
-                  key={category.key}
-                  type="button"
-                  className={`rounded-lg border p-4 text-left transition ${
-                    active
-                      ? 'border-emerald-700 bg-emerald-50 shadow-[0_12px_26px_rgba(8,123,75,0.10)]'
-                      : 'border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40'
-                  }`}
-                  aria-pressed={active}
-                  onClick={() => onFilterChange?.(category.key)}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                      <Icon size={16} />
-                    </span>
-                    <span className="text-right text-xs font-semibold text-slate-500">{category.requiredCount} required</span>
-                  </div>
-                  <strong className="mt-3 block text-sm font-semibold text-slate-950">{category.label}</strong>
-                  <span className="mt-1 block text-xs font-semibold text-slate-500">
-                    {category.totalDocuments} document{category.totalDocuments === 1 ? '' : 's'}
+    <>
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-950">Documents</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-600">Manage, review and request documents for this matter.</p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          {dashboardModel.summaryCards.map((card) => {
+            const Icon = card.icon
+            return (
+              <button
+                key={card.label}
+                type="button"
+                className="min-h-[112px] rounded-lg border border-slate-200 bg-white p-4 text-left shadow-[0_14px_30px_rgba(15,23,42,0.035)] transition hover:border-emerald-200 hover:bg-emerald-50/30"
+                onClick={() => onFilterChange?.(card.filter)}
+              >
+                <div className="flex items-start gap-3">
+                  <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-full ${card.tone}`}>
+                    <Icon size={17} />
                   </span>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs" aria-label={`${category.label} status summary`}>
-                    <span className="font-semibold text-emerald-700">{category.verifiedCount} Verified</span>
-                    <span className="font-semibold text-amber-700">{category.pendingReviewCount} Pending Review</span>
-                    <span className="font-semibold text-red-700">{category.missingCount} Missing</span>
-                    <span className="font-semibold text-blue-700">{category.uploadedOrUnreviewedCount ?? category.uploadedCount} Uploaded</span>
-                  </div>
-                  {category.groupSummaries?.length ? (
-                    <div className="mt-3 flex flex-wrap gap-1.5 text-[0.68rem] font-semibold text-slate-500" aria-label={`${category.label} category groups`}>
-                      {category.groupSummaries.slice(0, 3).map((group) => (
-                        <span key={group.key} className="rounded-md bg-slate-100 px-2 py-1">{group.label} ({group.count})</span>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200" aria-label={`${category.progressPercent}% complete`}>
-                    <div className="h-full rounded-full bg-emerald-700" style={{ width: `${category.progressPercent}%` }} />
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        </ArchlinePanel>
-      ) : null}
+                  <span className="min-w-0">
+                    <strong className="block text-xl font-semibold leading-6 text-slate-950">{card.value}</strong>
+                    <span className="mt-1 block text-xs font-semibold text-slate-950">{card.label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">{card.helper}</span>
+                  </span>
+                </div>
+              </button>
+            )
+          })}
+        </div>
 
-      {ficaCards.length ? (
-        <ArchlinePanel title="FICA Review" className="p-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            {ficaCards.map((item) => {
-              const receivedTone = item.allReceived ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'
-              const acceptedTone = item.allAccepted ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-700'
-              return (
-                <article key={item.party} className="rounded-lg border border-slate-200 bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <strong className="block text-sm font-semibold text-slate-950">{item.label}</strong>
-                      <span className="mt-1 block text-xs font-semibold text-slate-500">{item.missingCount} missing - {item.pendingReviewCount} pending review</span>
-                    </div>
-                    <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold ${receivedTone}`}>
-                      {item.allReceived ? 'Received' : item.receivedLabel}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold ${acceptedTone}`}>
-                      {item.allAccepted ? 'FICA checked and accepted' : item.acceptedLabel}
-                    </span>
-                    {item.rejectedCount ? (
-                      <span className="inline-flex rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
-                        {item.rejectedCount} rejected
-                      </span>
-                    ) : null}
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        </ArchlinePanel>
-      ) : null}
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.34fr)]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.25fr)]">
         <div className="space-y-4">
-          <ArchlinePanel title="Document Toolbar" className="p-4">
-            <div className="grid gap-3 lg:grid-cols-[minmax(260px,0.34fr)_minmax(0,1fr)_auto] lg:items-center">
-              <label className="relative min-w-0">
-                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <Field value={search} onChange={(event) => onSearchChange?.(event.target.value)} placeholder="Search documents..." className="h-10 pl-9 text-sm" />
-              </label>
-              <div className="flex gap-2 overflow-x-auto pb-1 lg:pb-0">
-                {filters.map((filter) => (
+          <ArchlinePanel className="overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="inline-flex w-full rounded-lg border border-slate-200 bg-slate-50 p-1 sm:w-auto">
+                {[
+                  ['all', 'All'],
+                  ['buyer', 'Buyer'],
+                  ['seller', 'Seller'],
+                ].map(([keyValue, label]) => (
                   <button
-                    key={filter.key}
+                    key={keyValue}
                     type="button"
-                    className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${activeFilter === filter.key ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600'}`}
-                    onClick={() => onFilterChange?.(filter.key)}
-                  >
-                    {filter.label}
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
-                <Button type="button" variant="secondary" size="sm" onClick={onRequest}>
-                  <FileText size={14} />
-                  Request
-                </Button>
-                <Button type="button" size="sm" onClick={onUpload}>
-                  <Upload size={14} />
-                  Upload
-                </Button>
-              </div>
-            </div>
-          </ArchlinePanel>
-
-          {categoryGroupSummaries.length > 1 ? (
-            <ArchlinePanel title="Category Groups" className="p-4">
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                <button
-                  type="button"
-                  className={`shrink-0 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition ${
-                    activeCategoryGroup === 'all'
-                      ? 'border-emerald-700 bg-emerald-50 text-emerald-800'
-                      : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:bg-emerald-50/40'
-                  }`}
-                  aria-pressed={activeCategoryGroup === 'all'}
-                  onClick={() => setActiveCategoryGroup('all')}
-                >
-                  <span className="block">{activeCategorySummary?.shortLabel || activeCategorySummary?.label || 'Category'}</span>
-                  <span className="mt-1 block font-medium text-slate-500">{libraryRows.length} document{libraryRows.length === 1 ? '' : 's'}</span>
-                </button>
-                {categoryGroupSummaries.map((group) => (
-                  <button
-                    key={group.key}
-                    type="button"
-                    className={`shrink-0 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition ${
-                      activeCategoryGroup === group.key
-                        ? 'border-emerald-700 bg-emerald-50 text-emerald-800'
-                        : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:bg-emerald-50/40'
+                    className={`min-w-[96px] flex-1 rounded-md px-3 py-2 text-sm font-semibold transition sm:flex-none ${
+                      activePartyView === keyValue ? 'bg-white text-emerald-800 shadow-sm ring-1 ring-emerald-100' : 'text-slate-600 hover:text-slate-950'
                     }`}
-                    aria-pressed={activeCategoryGroup === group.key}
-                    onClick={() => setActiveCategoryGroup(group.key)}
+                    onClick={() => setActivePartyView(keyValue)}
                   >
-                    <span className="block">{group.label}</span>
-                    <span className="mt-1 block font-medium text-slate-500">{group.count} document{group.count === 1 ? '' : 's'}</span>
-                    <span className="mt-1 block font-medium text-slate-500">{group.verifiedCount} verified - {group.missingCount} missing</span>
+                    {label}
                   </button>
                 ))}
               </div>
-            </ArchlinePanel>
-          ) : null}
 
-          <ArchlinePanel title="Document Library" className="overflow-hidden">
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[1120px] text-left text-sm">
-                <thead className="border-y border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">Document</th>
-                    <th className="px-4 py-3">Category</th>
-                    <th className="px-4 py-3">Document Type</th>
-                    <th className="px-4 py-3">Party / Owner</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Uploaded</th>
-                    <th className="px-4 py-3">Linked To</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {visibleLibraryRows.slice(0, 12).map((row) => {
-                    const document = row.raw || {}
-                    const canUploadRow = !row.fileUrl && (row.source === 'requirement' || row.source === 'document_request')
-                    const isPendingReview = row.status === 'pending_review'
-                    const ownerLabel = row.ownerLabel || row.requiredParty || row.uploadedBy || 'Matter team'
-                    const linkedToLabel = row.linkedToLabel || row.relatedWorkflow || row.requiredDocumentKey || 'Matter library'
-                    const documentMeta = [row.versionLabel, row.fileSizeLabel].filter(Boolean).join(' - ')
-                    const moreActionsLabel = row.fileUrl
-                      ? 'More document actions: preview, verify, reject, replace, upload new version, link to task, change category, add tag, rename, request replacement, mark not applicable, archive, delete'
-                      : 'More document actions: upload, request replacement, link to task, change category, add tag, rename, mark not applicable, archive, delete'
-                    return (
-                      <tr key={row.id}>
-                        <td className="max-w-[340px] px-4 py-4">
-                          <div className="flex items-start gap-3">
-                            <span className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                              <FileText size={16} />
-                            </span>
-                            <div className="min-w-0">
-                              <div className="flex min-w-0 items-center gap-2">
-                                <strong className="block truncate text-sm font-semibold text-slate-950">{row.displayName}</strong>
-                                <button
-                                  type="button"
-                                  className={`shrink-0 rounded-full p-1 ${row.isFavourite ? 'text-amber-500' : 'text-slate-300 hover:text-amber-500'}`}
-                                  aria-label={row.isFavourite ? 'Favourite document' : 'Mark document as favourite'}
-                                  title={row.isFavourite ? 'Favourite document' : 'Mark document as favourite'}
-                                >
-                                  <Star size={14} fill={row.isFavourite ? 'currentColor' : 'none'} />
-                                </button>
-                              </div>
-                              <span className="mt-1 block truncate text-xs text-slate-500">{documentMeta || row.requiredDocumentKey || row.source || 'Matter document'}</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-slate-700">{row.categoryLabel || getDocumentCommandCategoryLabel(row.category)}</td>
-                        <td className="px-4 py-4 text-slate-700">{row.documentTypeLabel || row.documentType || 'Document'}</td>
-                        <td className="px-4 py-4">
-                          <span className="block text-slate-700">{ownerLabel}</span>
-                          {row.uploadedBy && row.uploadedBy !== ownerLabel ? <span className="mt-1 block text-xs text-slate-500">Uploaded by {row.uploadedBy}</span> : null}
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
-                            {getDocumentCommandStatusLabel(row.status)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-slate-700">{formatDate(row.uploadedAt || row.updatedAt, 'Pending')}</td>
-                        <td className="max-w-[180px] px-4 py-4">
-                          <span className="block truncate text-slate-700">{linkedToLabel}</span>
-                          {row.priority ? <span className="mt-1 block text-xs text-slate-500">{row.priority} priority</span> : null}
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex justify-end gap-1.5">
-                            {row.fileUrl ? (
-                              <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800">Preview</a>
-                            ) : null}
-                            {canUploadRow ? (
-                              <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}>
-                                Upload
-                              </Button>
-                            ) : null}
-                            {isPendingReview && row.fileUrl && onReview ? (
-                              <Button type="button" variant="secondary" size="sm" onClick={() => onReview('approve', document, row.requiredDocument)}>
-                                Verify
-                              </Button>
-                            ) : null}
-                            {row.fileUrl ? (
-                              <a href={row.fileUrl} download className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-2.5 text-xs font-semibold text-slate-700" title="Download document" aria-label={`Download ${row.displayName}`}>
-                                <Download size={14} />
-                              </a>
-                            ) : null}
-                            {row.fileUrl ? (
-                              <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(document, row.requiredDocument)}>
-                                Replace
-                              </Button>
-                            ) : null}
-                            <button type="button" className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50" title={moreActionsLabel} aria-label={`More document actions for ${row.displayName}`}>
-                              <MoreHorizontal size={15} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                  {!visibleLibraryRows.length ? (
-                    <tr>
-                      <td colSpan="8" className="px-4 py-8 text-center text-sm text-slate-500">No documents match this filter.</td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <label className="relative min-w-0 sm:w-[310px]">
+                  <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Field value={search} onChange={(event) => onSearchChange?.(event.target.value)} placeholder="Search documents..." className="h-10 pl-9 text-sm" />
+                </label>
+                <Button type="button" variant="secondary" size="sm" onClick={onRequest} className="justify-center">
+                  <FileText size={14} />
+                  Request Document
+                </Button>
+                <Button type="button" size="sm" onClick={onUpload} className="justify-center">
+                  <Upload size={14} />
+                  Upload Document
+                </Button>
+              </div>
             </div>
-            <div className="grid gap-3 p-4 md:hidden">
-              {visibleLibraryRows.slice(0, 12).map((row) => (
-                <article key={row.id} className="rounded-lg border border-slate-200 bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <FileText size={15} className="shrink-0 text-slate-500" />
-                        <strong className="block truncate text-sm font-semibold text-slate-950">{row.displayName}</strong>
-                        <Star size={13} className={row.isFavourite ? 'shrink-0 text-amber-500' : 'shrink-0 text-slate-300'} fill={row.isFavourite ? 'currentColor' : 'none'} />
-                      </div>
-                      <span className="mt-1 block text-xs text-slate-500">{row.categoryLabel} - {row.documentTypeLabel || 'Document'}</span>
-                      <span className="mt-1 block text-xs text-slate-500">{row.ownerLabel || row.requiredParty || row.uploadedBy || 'Matter team'} - {row.linkedToLabel || row.relatedWorkflow || 'Matter library'}</span>
-                      {row.versionLabel || row.fileSizeLabel ? <span className="mt-1 block text-xs text-slate-500">{[row.versionLabel, row.fileSizeLabel].filter(Boolean).join(' - ')}</span> : null}
-                    </div>
-                    <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
-                      {getDocumentCommandStatusLabel(row.status)}
-                    </span>
+
+            <div className={`grid gap-4 p-4 ${visibleParties.length > 1 ? 'lg:grid-cols-2' : ''}`}>
+              {visibleParties.map((party) => (
+                <section key={party.key} className="min-w-0">
+                  <div className="mb-3">
+                    <h3 className="text-base font-semibold text-slate-950">{party.label}</h3>
+                    <p className="mt-1 text-sm text-slate-500">{party.description}</p>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {row.fileUrl ? <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800">Preview</a> : null}
-                    {!row.fileUrl ? (
-                      <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}>
-                        Upload
-                      </Button>
-                    ) : null}
-                    {row.status === 'pending_review' && row.fileUrl && onReview ? (
-                      <Button type="button" variant="secondary" size="sm" onClick={() => onReview('approve', row.raw || {}, row.requiredDocument)}>
-                        Verify
-                      </Button>
-                    ) : null}
-                    {row.fileUrl ? <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(row.raw || {}, row.requiredDocument)}>Replace</Button> : null}
-                    <button type="button" className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600" title="More document actions" aria-label={`More document actions for ${row.displayName}`}>
-                      <MoreHorizontal size={15} />
-                    </button>
+                  <div className="space-y-2">
+                    {party.categories.map((category) => {
+                      const CategoryIcon = category.icon
+                      const statusTone = getAttorneyDocumentDashboardStatusTone(category.status)
+                      return (
+                        <button
+                          key={category.key}
+                          type="button"
+                          className="flex w-full items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-emerald-200 hover:bg-emerald-50/30"
+                          onClick={() => {
+                            setActiveCategory(category)
+                            onFilterChange?.(party.key)
+                          }}
+                        >
+                          <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg ${statusTone.icon}`}>
+                            <CategoryIcon size={16} />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <strong className="block truncate text-sm font-semibold text-slate-950">{category.label}</strong>
+                            <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              <span>{category.receivedCount} of {category.requiredCount} received</span>
+                              <span className={`rounded-full px-2 py-0.5 font-semibold ${statusTone.pill}`}>{category.statusLabel}</span>
+                            </span>
+                          </span>
+                          <ChevronRight size={16} className="shrink-0 text-slate-400" />
+                        </button>
+                      )
+                    })}
                   </div>
-                </article>
+                </section>
               ))}
-              {!visibleLibraryRows.length ? <p className="px-4 py-8 text-sm text-slate-500">No documents match this filter.</p> : null}
             </div>
           </ArchlinePanel>
 
-          <ArchlinePanel title="Required Documents" className="overflow-hidden">
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full text-left text-sm">
-                <thead className="border-y border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">Document</th>
-                    <th className="px-4 py-3">Owner</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {requiredRows.slice(0, 8).map((row) => {
-                    const document = row.linkedDocument || row.raw || {}
-                    return (
-                      <tr key={row.id}>
-                        <td className="px-4 py-4">
-                          <strong className="block text-sm font-semibold text-slate-950">{row.displayName}</strong>
-                          <span className="mt-1 block text-xs text-slate-500">{row.categoryLabel || row.category || 'Requirement'}</span>
-                        </td>
-                        <td className="px-4 py-4 text-slate-700">{row.requiredParty || 'Matter team'}</td>
-                        <td className="px-4 py-4">
-                          <span className={`inline-flex rounded-lg border px-2.5 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
-                            {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex justify-end gap-2">
-                            {row.fileUrl ? (
-                              <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800">View</a>
-                            ) : (
-                              <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}>
-                                Upload
-                              </Button>
-                            )}
-                            {row.fileUrl ? (
-                              <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(document, row.requirement || row.requiredDocument)}>
-                                Replace
-                              </Button>
-                            ) : null}
-                            {row.fileUrl && onReview ? (
-                              <Button type="button" variant="ghost" size="sm" onClick={() => onReview('approve', document, row.requirement || row.requiredDocument)}>
-                                Approve
-                              </Button>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+          <ArchlinePanel className="overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-sm font-semibold text-slate-950">Document Activity</h3>
+              <div className="flex gap-1 overflow-x-auto">
+                {[
+                  ['all', 'All Activity'],
+                  ['upload', 'Uploads'],
+                  ['request', 'Requests'],
+                  ['status', 'Status Changes'],
+                ].map(([keyValue, label]) => (
+                  <button
+                    key={keyValue}
+                    type="button"
+                    className={`shrink-0 border-b-2 px-3 py-2 text-xs font-semibold ${
+                      activeActivityFilter === keyValue ? 'border-emerald-700 text-emerald-800' : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                    onClick={() => setActiveActivityFilter(keyValue)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="grid gap-3 p-4 md:hidden">
-              {requiredRows.slice(0, 8).map((row) => (
-                <article key={row.id} className="rounded-lg border border-slate-200 bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <strong className="block text-sm font-semibold text-slate-950">{row.displayName}</strong>
-                      <span className="mt-1 block text-xs text-slate-500">{row.requiredParty || 'Matter team'}</span>
-                    </div>
-                    <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
-                      {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
+            <div className="divide-y divide-slate-100">
+              {visibleActivityRows.slice(0, 6).map((row) => {
+                const ActivityIcon = row.icon
+                return (
+                  <article key={row.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg ${row.iconTone}`}>
+                      <ActivityIcon size={14} />
                     </span>
-                  </div>
-                  <Button type="button" variant="secondary" size="sm" className="mt-3 w-full justify-center" onClick={() => onUploadRequirement?.(row)}>
-                    {row.fileUrl ? 'Replace' : 'Upload'}
-                  </Button>
-                </article>
-              ))}
+                    <span className="min-w-0 flex-1">
+                      <strong className="block truncate text-sm font-semibold text-slate-950">{row.label}</strong>
+                      <span className="mt-0.5 block truncate text-xs text-slate-500">{row.detail}</span>
+                    </span>
+                    <span className="hidden shrink-0 text-xs text-slate-500 sm:block">{row.timeLabel}</span>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-[0.68rem] font-semibold ${row.badgeTone}`}>{row.badge}</span>
+                  </article>
+                )
+              })}
+              {!visibleActivityRows.length ? (
+                <p className="px-4 py-8 text-sm text-slate-500">No document activity matches this filter.</p>
+              ) : null}
             </div>
+            {dashboardModel.activityRows.length ? (
+              <div className="border-t border-slate-100 px-4 py-3">
+                <Button type="button" variant="ghost" size="sm" onClick={() => onFilterChange?.('all')}>
+                  View all activity
+                  <ChevronRight size={14} />
+                </Button>
+              </div>
+            ) : null}
           </ArchlinePanel>
         </div>
 
         <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-          <ArchlinePanel title="Document Overview" className="p-4">
-            <strong className="block text-lg font-semibold text-slate-950">{documentHealthSummary.score || 0}% {documentHealthSummary.scoreLabel || 'Ready'}</strong>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{documentHealthSummary.summaryText || 'Document status is being prepared.'}</p>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              {kpis.map(([label, value, Icon, tone]) => (
-                <article key={label} className="rounded-lg border border-slate-200 bg-white p-3">
-                  <span className={`inline-flex size-8 items-center justify-center rounded-lg ${tone}`}>
-                    {createElement(Icon, { size: 15 })}
-                  </span>
-                  <strong className="mt-2 block text-lg font-semibold text-slate-950">{value}</strong>
-                  <span className="text-xs font-medium text-slate-500">{label}</span>
-                </article>
-              ))}
+          <ArchlinePanel title="Document Health" className="p-4">
+            <div className="flex flex-col items-center gap-4 sm:flex-row xl:flex-col">
+              <div
+                className="grid size-32 shrink-0 place-items-center rounded-full"
+                style={{ background: healthSegments.gradient }}
+                aria-label={`${healthTotal} total required documents`}
+              >
+                <div className="grid size-24 place-items-center rounded-full bg-white text-center shadow-inner">
+                  <strong className="block text-2xl font-semibold text-slate-950">{healthTotal}</strong>
+                  <span className="block text-[0.68rem] font-semibold text-slate-500">Total Required</span>
+                </div>
+              </div>
+              <div className="grid w-full gap-2">
+                {[
+                  ['Received', healthReceived, healthSegments.receivedPercent, 'bg-emerald-600'],
+                  ['Pending Review', healthPending, healthSegments.pendingPercent, 'bg-blue-600'],
+                  ['Missing', healthMissing, healthSegments.missingPercent, 'bg-orange-600'],
+                  ['Outstanding', healthOutstanding, healthSegments.outstandingPercent, 'bg-slate-300'],
+                ].map(([label, value, percent, dot]) => (
+                  <div key={label} className="flex items-center gap-2 text-xs text-slate-600">
+                    <span className={`size-2 rounded-full ${dot}`} />
+                    <span className="min-w-0 flex-1 truncate">{value} {label}</span>
+                    <span className="font-semibold text-slate-500">{percent}%</span>
+                  </div>
+                ))}
+              </div>
             </div>
+            {attentionCount ? (
+              <div className="mt-4 rounded-lg border border-red-100 bg-red-50 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-600" />
+                    <div>
+                      <strong className="block text-xs font-semibold text-red-700">{attentionCount} document{attentionCount === 1 ? '' : 's'} need your attention</strong>
+                      <p className="mt-1 text-xs leading-5 text-red-700">Review and request outstanding items.</p>
+                    </div>
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => onFilterChange?.('missing')}>
+                    View
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </ArchlinePanel>
 
           <ArchlinePanel title="Quick Actions" className="p-4">
-            <div className="grid gap-2">
-              <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onUpload}>
-                <Upload size={14} />
-                Upload Document
-              </Button>
-              <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={onRequest}>
-                <FileText size={14} />
-                Request Document
-              </Button>
-              <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={() => onFilterChange?.('missing')}>
-                <AlertTriangle size={14} />
-                View Missing
-              </Button>
-            </div>
-          </ArchlinePanel>
-
-          <ArchlinePanel title="Missing Documents" className="p-4">
-            <div className="space-y-2">
-              {missingRows.slice(0, 5).map((row) => (
-                <button key={row.id} type="button" className="w-full rounded-lg border border-amber-100 bg-amber-50 p-3 text-left" onClick={() => onUploadRequirement?.(row)}>
-                  <strong className="block text-sm font-semibold text-amber-950">{row.displayName}</strong>
-                  <span className="mt-1 block text-xs text-amber-800">{row.requiredParty || 'Matter team'}</span>
+            <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
+              {[
+                ['Upload Document', 'Upload files to this matter', Upload, onUpload],
+                ['Request Document', 'Request from buyer, seller or bank', FileText, onRequest],
+                ['Bulk Download', 'Review received files', Download, () => onFilterChange?.('verified')],
+                ['Document Checklist', 'View required document list', ListChecks, () => onFilterChange?.('missing')],
+              ].map(([label, helper, Icon, action]) => (
+                <button key={label} type="button" className="flex w-full items-center gap-3 bg-white px-3 py-3 text-left transition hover:bg-slate-50" onClick={action}>
+                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600">
+                    {createElement(Icon, { size: 14 })}
+                  </span>
+                  <span className="min-w-0">
+                    <strong className="block truncate text-sm font-semibold text-slate-950">{label}</strong>
+                    <span className="mt-0.5 block truncate text-xs text-slate-500">{helper}</span>
+                  </span>
                 </button>
               ))}
-              {!missingRows.length ? <p className="text-sm text-slate-500">No critical missing documents.</p> : null}
             </div>
           </ArchlinePanel>
 
-          <ArchlinePanel title="Recent Activity" className="p-4">
-            <div className="space-y-2">
-              {recentActivity.slice(0, 5).map((row) => (
-                <article key={row.id} className="rounded-lg bg-slate-50 p-3">
-                  <strong className="block truncate text-sm font-semibold text-slate-950">{row.label}</strong>
-                  <span className="mt-1 block text-xs text-slate-500">{formatDateTime(row.timestamp, '')}</span>
-                </article>
-              ))}
-              {!recentActivity.length ? <p className="text-sm text-slate-500">No document activity yet.</p> : null}
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+            <div className="flex gap-3">
+              <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-blue-700">
+                <AtSign size={15} />
+              </span>
+              <p className="text-xs leading-5 text-blue-900">
+                <strong className="block text-sm text-blue-950">Tip</strong>
+                Use document categories to keep files organised and ensure nothing is missed.
+              </p>
             </div>
-          </ArchlinePanel>
+          </div>
         </aside>
       </div>
-    </section>
+      </section>
+
+      <Modal
+        open={Boolean(activeCategory)}
+        onClose={() => setActiveCategory(null)}
+        title={activeCategory?.label || 'Document Category'}
+        subtitle={activeCategory ? `${activeCategory.partyLabel} - ${activeCategory.receivedCount} of ${activeCategory.requiredCount} received` : ''}
+        className="max-w-5xl"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button type="button" variant="secondary" onClick={onRequest}>
+              <FileText size={14} />
+              Request Document
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                const firstMissing = activeCategoryRequirements.find((row) => !row.fileUrl)
+                if (firstMissing) onUploadRequirement?.(firstMissing)
+                else onUpload?.()
+              }}
+            >
+              <Upload size={14} />
+              Upload Document
+            </Button>
+          </div>
+        )}
+      >
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+          <section className="rounded-lg border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 px-4 py-3">
+              <h3 className="text-sm font-semibold text-slate-950">Required Documents</h3>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {activeCategoryRequirements.map((row) => {
+                const document = row.linkedDocument || row.raw || {}
+                return (
+                  <article key={row.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className={`inline-flex size-8 shrink-0 items-center justify-center rounded-full border ${getDocumentCommandStatusTone(row.status)}`}>
+                      {row.status === 'verified' ? <CheckCircle2 size={14} /> : row.status === 'missing' ? <AlertTriangle size={14} /> : <FileText size={14} />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <strong className="block truncate text-sm font-semibold text-slate-950">{row.displayName}</strong>
+                      <span className="mt-0.5 block truncate text-xs text-slate-500">{row.requiredParty || row.ownerLabel || 'Matter team'}</span>
+                    </span>
+                    <span className={`hidden shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold sm:inline-flex ${getDocumentCommandStatusTone(row.status)}`}>
+                      {row.statusLabel || getDocumentCommandStatusLabel(row.status)}
+                    </span>
+                    {row.fileUrl ? (
+                      <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(document, row.requirement || row.requiredDocument)}>
+                        Replace
+                      </Button>
+                    ) : (
+                      <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}>
+                        Upload
+                      </Button>
+                    )}
+                  </article>
+                )
+              })}
+              {!activeCategoryRequirements.length ? (
+                <p className="px-4 py-8 text-sm text-slate-500">No checklist requirements are configured for this category.</p>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 px-4 py-3">
+              <h3 className="text-sm font-semibold text-slate-950">Uploaded Files</h3>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {activeCategoryFiles.map((row) => {
+                const document = row.raw || row.linkedDocument || {}
+                const documentMeta = [row.versionLabel, row.fileSizeLabel].filter(Boolean).join(' - ')
+                return (
+                  <article key={row.id} className="px-4 py-3">
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                        <FileText size={16} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <strong className="block truncate text-sm font-semibold text-slate-950">{row.displayName}</strong>
+                        <span className="mt-1 block truncate text-xs text-slate-500">{row.documentTypeLabel || row.requiredDocumentKey || 'Matter document'}</span>
+                        <span className="mt-1 block truncate text-xs text-slate-500">
+                          {(row.uploadedBy || row.ownerLabel || 'Matter team')} {row.uploadedAt ? `- ${formatDateTime(row.uploadedAt, '')}` : ''}{documentMeta ? ` - ${documentMeta}` : ''}
+                        </span>
+                      </span>
+                      <span className={`shrink-0 rounded-lg border px-2 py-1 text-xs font-semibold ${getDocumentCommandStatusTone(row.status)}`}>
+                        {getDocumentCommandStatusLabel(row.status)}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap justify-end gap-2">
+                      {row.fileUrl ? <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-emerald-800">Preview</a> : null}
+                      {row.fileUrl ? <a href={row.fileUrl} download className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700"><Download size={13} /> Download</a> : null}
+                      {row.status === 'pending_review' && row.fileUrl && onReview ? (
+                        <Button type="button" variant="secondary" size="sm" onClick={() => onReview('approve', document, row.requiredDocument)}>
+                          Verify
+                        </Button>
+                      ) : null}
+                      {row.fileUrl ? (
+                        <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(document, row.requiredDocument)}>
+                          Replace
+                        </Button>
+                      ) : null}
+                      <button type="button" className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50" title="More document actions" aria-label={`More document actions for ${row.displayName}`}>
+                        <MoreHorizontal size={15} />
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+              {!activeCategoryFiles.length ? (
+                <p className="px-4 py-8 text-sm text-slate-500">No files have been uploaded to this category yet.</p>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      </Modal>
+    </>
   )
 }
 
@@ -15096,6 +15276,7 @@ function AttorneyTransactionDetail() {
               categorySummaries={matterDocumentWorkspaceModel.categorySummaries}
               requiredRows={documentHealthSummary.requiredDocuments.length ? documentHealthSummary.requiredDocuments : requiredDocumentRows}
               libraryRows={documentLibraryRows}
+              allLibraryRows={allDocumentLibraryRows}
               missingRows={documentReadiness.missingDocuments || []}
               recentActivity={documentHealthSummary.recentActivity}
               filters={matterDocumentWorkspaceModel.filters}

@@ -3157,6 +3157,28 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
     ])
 
     const organisation = organisationResult.error ? null : organisationResult.data
+    let organisationBrandingResult = await client
+      .from('organisation_branding')
+      .select('organisation_id, organisation_display_name, logo_light_url, logo_dark_url, logo_icon_url, primary_brand_color, secondary_brand_color, accent_brand_color')
+      .eq('organisation_id', normalizedOrganisationId)
+      .maybeSingle()
+    if (
+      organisationBrandingResult.error &&
+      (
+        isMissingColumnError(organisationBrandingResult.error, 'organisation_display_name') ||
+        isMissingColumnError(organisationBrandingResult.error, 'logo_icon_url') ||
+        isMissingColumnError(organisationBrandingResult.error, 'primary_brand_color') ||
+        isMissingColumnError(organisationBrandingResult.error, 'secondary_brand_color') ||
+        isMissingColumnError(organisationBrandingResult.error, 'accent_brand_color')
+      )
+    ) {
+      organisationBrandingResult = await client
+        .from('organisation_branding')
+        .select('organisation_id, logo_light_url, logo_dark_url, primary_color, secondary_color, metadata_json')
+        .eq('organisation_id', normalizedOrganisationId)
+        .maybeSingle()
+    }
+    const organisationBranding = organisationBrandingResult.error ? {} : organisationBrandingResult.data
     const settings = settingsResult.error ? null : settingsResult.data?.settings_json
     const onboarding = settings?.agencyOnboarding && typeof settings.agencyOnboarding === 'object'
       ? settings.agencyOnboarding
@@ -3172,6 +3194,7 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
       : {}
     const resolvedBranding = resolveOnboardingBranding(
       branding,
+      organisationBranding,
       settingsBranding,
       settings,
       {

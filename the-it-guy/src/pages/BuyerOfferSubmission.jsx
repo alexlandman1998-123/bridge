@@ -5,16 +5,21 @@ import {
   BadgeCheck,
   BedDouble,
   Bookmark,
+  Briefcase,
   Car,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  FileText,
   Home,
+  Landmark,
   LockKeyhole,
+  PenLine,
   Ruler,
   ShieldCheck,
   UserRound,
+  Users,
 } from 'lucide-react'
 import { createElement, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
@@ -25,6 +30,7 @@ import {
   submitCanonicalBuyerOffer,
 } from '../lib/buyerLifecycleService'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
+import { buildOfferBuyerVerificationModel } from '../lib/offerBuyerOnboardingBridge'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
   getOfferInviteContext,
@@ -37,14 +43,12 @@ import { resolveOtpDocumentVariant } from '../core/documents/otpRouteUniverse'
 const ARCH_GREEN = '#0F7A5A'
 const WARM_WHITE = '#FAFAF8'
 const PRIMARY_TEXT = '#111827'
-const INTEREST_RATE = 0.1175
-const LOAN_TERM_MONTHS = 240
 const BUYER_OFFER_DRAFT_VERSION = 1
 const BUYER_OFFER_STAGES = ['landing', 'offer', 'onboarding', 'review', 'complete']
 const BUYER_OFFER_PROGRESS = [
   { key: 'offer', label: 'Offer' },
-  { key: 'onboarding', label: 'Buyer' },
-  { key: 'review', label: 'Review' },
+  { key: 'onboarding', label: 'Buyer Verification' },
+  { key: 'review', label: 'Review & Sign' },
 ]
 
 function formatCurrency(value) {
@@ -194,12 +198,6 @@ function getListingType(listing = {}) {
   return firstText(safeListing.propertyType, safeListing.property_type, safeListing.propertyStructureType, safeListing.listingCategory) || 'Residential Property'
 }
 
-function calculateMonthlyRepayment(loanAmount = 0) {
-  if (!loanAmount) return 0
-  const monthlyRate = INTEREST_RATE / 12
-  return loanAmount * (monthlyRate * ((1 + monthlyRate) ** LOAN_TERM_MONTHS)) / (((1 + monthlyRate) ** LOAN_TERM_MONTHS) - 1)
-}
-
 function TextInput({ label, value, onChange, type = 'text', placeholder = '', inputMode, autoComplete }) {
   return (
     <label className="grid gap-2">
@@ -213,21 +211,6 @@ function TextInput({ label, value, onChange, type = 'text', placeholder = '', in
         autoComplete={autoComplete}
         className="min-h-12 rounded-[16px] border border-[#E5E7EB] bg-white px-4 text-base font-semibold text-[#111827] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
       />
-    </label>
-  )
-}
-
-function SelectInput({ label, value, onChange, children }) {
-  return (
-    <label className="grid gap-2">
-      <span className="text-[0.78rem] font-semibold text-[#4B5563]">{label}</span>
-      <select
-        value={value}
-        onChange={onChange}
-        className="min-h-12 rounded-[16px] border border-[#E5E7EB] bg-white px-4 text-base font-semibold text-[#111827] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
-      >
-        {children}
-      </select>
     </label>
   )
 }
@@ -266,6 +249,40 @@ function TrustItem({ children }) {
   )
 }
 
+function ChoicePill({ label, selected, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-[16px] border px-4 text-sm font-semibold transition ${
+        selected
+          ? 'border-[#0F7A5A] bg-[#F0FAF5] text-[#111827] shadow-[0_10px_22px_rgba(15,122,90,0.12)]'
+          : 'border-[#E5E7EB] bg-white text-[#111827] hover:border-[#B8D8C9]'
+      }`}
+    >
+      <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full border ${selected ? 'border-[#0F7A5A] bg-[#0F7A5A]' : 'border-[#9CA3AF]'}`}>
+        {selected ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
+      </span>
+      {label}
+    </button>
+  )
+}
+
+function ConditionButton({ label, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-[16px] border px-4 text-sm font-semibold transition ${
+        active ? 'border-[#0F7A5A] bg-[#F0FAF5] text-[#0F7A5A]' : 'border-[#E5E7EB] bg-white text-[#374151] hover:border-[#B8D8C9]'
+      }`}
+    >
+      <span className="text-xl leading-none">+</span>
+      {label}
+    </button>
+  )
+}
+
 function ProgressDots({ stage }) {
   const activeIndex = Math.max(0, BUYER_OFFER_PROGRESS.findIndex((item) => item.key === stage))
   return (
@@ -289,6 +306,16 @@ function ProgressDots({ stage }) {
   )
 }
 
+const BUYER_VERIFICATION_ICONS = {
+  about: UserRound,
+  household: Users,
+  employment: Briefcase,
+  finance: Landmark,
+  documents: FileText,
+  compliance: ShieldCheck,
+  signature: PenLine,
+}
+
 function BuyerOfferSubmission() {
   const { token = '' } = useParams()
   const [refreshKey, setRefreshKey] = useState(0)
@@ -299,7 +326,7 @@ function BuyerOfferSubmission() {
   const [submitting, setSubmitting] = useState(false)
   const [flowStage, setFlowStage] = useState('landing')
   const [draftLoaded, setDraftLoaded] = useState(false)
-  const [activeBuyerSection, setActiveBuyerSection] = useState('overview')
+  const [activeBuyerSection, setActiveBuyerSection] = useState('about')
   const [confirmedAccuracy, setConfirmedAccuracy] = useState(false)
   const [form, setForm] = useState({
     fullName: '',
@@ -337,6 +364,8 @@ function BuyerOfferSubmission() {
     acknowledgeBodyCorporateRules: false,
     acknowledgeUtilityConnectionCharges: false,
     expiryDate: '',
+    conditionBondApproval: false,
+    conditionOther: false,
     acknowledgeSellerReview: true,
     acknowledgeLegalDisclaimer: true,
     acknowledgeInfoAccuracy: true,
@@ -397,10 +426,15 @@ function BuyerOfferSubmission() {
   const offerAmount = moneyNumber(form.offerAmount)
   const depositAmount = moneyNumber(form.depositAmount)
   const loanAmount = financeType === 'cash' ? 0 : Math.max(0, offerAmount - depositAmount)
-  const ltv = offerAmount > 0 && loanAmount > 0 ? Math.round((loanAmount / offerAmount) * 100) : 0
-  const belowAskingPercent = askingPrice > 0 && offerAmount > 0 ? ((askingPrice - offerAmount) / askingPrice) * 100 : 0
-  const monthlyRepayment = calculateMonthlyRepayment(loanAmount)
-  const expiryLabel = formatDate(form.expiryDate || invite?.expiresAt)
+  const financeLabel = financeType === 'cash' ? 'Cash' : financeType === 'hybrid' || financeType === 'combination' ? 'Combination' : 'Bond'
+  const bondConditionSelected = Boolean(form.conditionBondApproval || form.bondApprovalDeadline || ['bond', 'hybrid', 'combination'].includes(financeType))
+  const otherConditionSelected = Boolean(form.conditionOther || form.suspensiveConditions || form.specialConditions || form.includedFixtures || form.excludedFixtures)
+  const selectedConditionCount = [
+    bondConditionSelected,
+    form.subjectToSale,
+    form.occupationalRent,
+    otherConditionSelected,
+  ].filter(Boolean).length
   const propertyImageUrl = getListingImageUrl(listing)
   const agentName = firstText(context?.canonicalOffer?.conditions?.agentName, invite?.agentName) || 'Assigned agent'
   const agencyName = firstText(context?.canonicalOffer?.conditions?.organisationName, context?.canonicalOffer?.conditions?.agencyName) || 'Arch9 Partner Agency'
@@ -413,61 +447,24 @@ function BuyerOfferSubmission() {
     }
   }, [agencyName, context?.canonicalOffer?.conditions, invite, listing])
   const submitButtonLabel = counterPendingBuyer ? 'Submit Revised Offer' : 'Submit Offer + Onboarding'
-  const buyerSectionCards = useMemo(() => {
-    const personalComplete = Boolean(form.fullName && form.idNumber)
-    const contactComplete = Boolean(form.email && form.phone)
-    const financeComplete = Boolean(form.financeType && (financeType === 'cash' || form.bondAmount || loanAmount))
-    const complianceComplete = Boolean(confirmedAccuracy)
-    return [
-      {
-        key: 'personal',
-        title: 'Personal Details',
-        description: 'Your legal name and ID or passport number.',
-        complete: personalComplete,
-        fields: ['fullName', 'idNumber'],
-      },
-      {
-        key: 'contact',
-        title: 'Contact Information',
-        description: 'How your agent can reach you about this offer.',
-        complete: contactComplete,
-        fields: ['email', 'phone'],
-      },
-      {
-        key: 'finance',
-        title: 'Finance Readiness',
-        description: 'Finance route and buyer-side funding signals.',
-        complete: financeComplete,
-        fields: ['financeType', 'bondAmount', 'cashContribution', 'proofOfFundsUrl'],
-      },
-      {
-        key: 'compliance',
-        title: 'ID & FICA',
-        description: 'A light compliance check before review.',
-        complete: complianceComplete,
-        fields: ['confirmedAccuracy'],
-      },
-    ]
-  }, [confirmedAccuracy, financeType, form.bondAmount, form.cashContribution, form.email, form.financeType, form.fullName, form.idNumber, form.phone, form.proofOfFundsUrl, loanAmount])
-  const buyerCompletion = buyerSectionCards.filter((item) => item.complete).length
+  const buyerVerificationModel = useMemo(
+    () =>
+      buildOfferBuyerVerificationModel(form, {
+        confirmedAccuracy,
+        reviewReady: flowStage === 'review' || flowStage === 'complete',
+        offerAmount,
+        depositAmount,
+        loanAmount,
+        financeType,
+        transaction: canonicalOffer || latestOffer || {},
+      }),
+    [canonicalOffer, confirmedAccuracy, depositAmount, financeType, flowStage, form, latestOffer, loanAmount, offerAmount],
+  )
+  const buyerSectionCards = buyerVerificationModel.sections
   const hasDraft = useMemo(() => Boolean(readBuyerOfferDraft(token)), [token, draftLoaded])
   const stageIndex = BUYER_OFFER_STAGES.indexOf(flowStage)
   const previousStage = stageIndex > 1 ? BUYER_OFFER_STAGES[stageIndex - 1] : 'offer'
   const offerAmountLabel = offerAmount > 0 ? formatCurrency(offerAmount) : 'Pending'
-  const offerStrength = useMemo(() => {
-    const hasBuyerDetails = Boolean(form.fullName && form.email && form.phone)
-    const checks = [
-      { label: depositAmount > 0 ? 'Deposit Included' : 'Low Deposit', good: depositAmount > 0 },
-      { label: financeType === 'cash' ? 'Cash Offer' : 'Bond Required', good: true },
-      { label: hasBuyerDetails ? 'Buyer Details Ready' : 'Buyer Details Needed', good: hasBuyerDetails },
-    ]
-    const score = checks.filter((item) => item.good).length + (offerAmount > 0 && belowAskingPercent <= 5 ? 1 : 0)
-    return {
-      label: score >= 4 ? 'Excellent Offer' : score >= 2 ? 'Moderate Offer' : 'Needs Detail',
-      tone: score >= 4 ? 'green' : score >= 2 ? 'amber' : 'slate',
-      checks,
-    }
-  }, [belowAskingPercent, depositAmount, financeType, form.email, form.fullName, form.phone, offerAmount])
 
   const canonicalBanner = useMemo(() => {
     if (!canonicalLifecycle) return null
@@ -504,7 +501,7 @@ function BuyerOfferSubmission() {
     }))
     setConfirmedAccuracy(Boolean(draft?.confirmedAccuracy))
     setFlowStage(normalizeStage(draft?.stage, 'landing'))
-    setActiveBuyerSection(normalizeText(draft?.activeBuyerSection) || 'overview')
+    setActiveBuyerSection(normalizeText(draft?.activeBuyerSection) === 'overview' ? 'about' : normalizeText(draft?.activeBuyerSection) || 'about')
     setDraftLoaded(true)
   }, [canonicalOffer, context?.canonicalOffer?.conditions, context?.ok, draftLoaded, invite?.buyerLeadName, invite?.otpDocumentVariant, listing, token])
 
@@ -528,7 +525,7 @@ function BuyerOfferSubmission() {
   useEffect(() => {
     setDraftLoaded(false)
     setFlowStage('landing')
-    setActiveBuyerSection('overview')
+    setActiveBuyerSection('about')
   }, [token])
 
   useEffect(() => {
@@ -546,12 +543,14 @@ function BuyerOfferSubmission() {
   }
 
   function updateFinanceType(value) {
+    const normalizedValue = value === 'combination' ? 'hybrid' : value
     setForm((previous) => ({
       ...previous,
-      financeType: value,
-      bondAmount: value === 'hybrid' ? previous.bondAmount : '',
-      cashContribution: value === 'hybrid' ? previous.cashContribution : '',
-      needsBondAssistance: ['bond', 'hybrid'].includes(value) ? previous.needsBondAssistance : false,
+      financeType: normalizedValue,
+      bondAmount: ['bond', 'hybrid'].includes(normalizedValue) ? previous.bondAmount : '',
+      cashContribution: normalizedValue === 'hybrid' ? previous.cashContribution : '',
+      needsBondAssistance: ['bond', 'hybrid'].includes(normalizedValue) ? previous.needsBondAssistance : false,
+      conditionBondApproval: ['bond', 'hybrid'].includes(normalizedValue) ? true : previous.conditionBondApproval,
     }))
   }
 
@@ -606,7 +605,12 @@ function BuyerOfferSubmission() {
       if (!confirmedAccuracy) {
         throw new Error('Please confirm the information is accurate before submitting.')
       }
-      const submission = { ...form, otpDocumentVariant }
+      const derivedBondAmount = ['bond', 'hybrid', 'combination'].includes(financeType) ? loanAmount : 0
+      const submission = {
+        ...form,
+        bondAmount: derivedBondAmount ? String(derivedBondAmount) : '',
+        otpDocumentVariant,
+      }
       setSubmitting(true)
       let submittedOffer = null
       if (context?.source === 'canonical') {
@@ -700,106 +704,76 @@ function BuyerOfferSubmission() {
     </aside>
   )
 
-  const offerHero = (
-    <section className="relative overflow-hidden rounded-[28px] bg-[#111827] p-6 text-white shadow-[0_22px_60px_rgba(17,24,39,0.16)] md:p-8">
-      <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/55">Your Offer</p>
-          <p className="mt-3 text-[3rem] font-semibold leading-none tracking-[-0.07em] md:text-[4rem]">{formatCurrency(offerAmount)}</p>
-          <p className="mt-4 text-sm font-semibold text-white/65">
-            {askingPrice && offerAmount
-              ? belowAskingPercent > 0
-                ? `${Math.abs(belowAskingPercent).toFixed(1)}% below asking price`
-                : `${Math.abs(belowAskingPercent).toFixed(1)}% above asking price`
-              : 'Enter your offer amount to calculate price position'}
-          </p>
-        </div>
-        <div className={`rounded-[22px] border p-4 ${offerStrength.tone === 'green' ? 'border-emerald-300/30 bg-emerald-400/10' : offerStrength.tone === 'amber' ? 'border-amber-300/30 bg-amber-400/10' : 'border-white/10 bg-white/5'}`}>
-          <p className="text-sm font-bold">{offerStrength.label}</p>
-          <div className="mt-3 grid gap-2">
-            {offerStrength.checks.map((item) => (
-              <div key={item.label} className="flex items-center gap-2 text-xs font-semibold text-white/75">
-                {item.good ? <CheckCircle2 size={14} color="#34D399" /> : <AlertTriangle size={14} color="#FBBF24" />}
-                <span>{item.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="mt-8 grid gap-3 sm:grid-cols-4">
-        {[
-          ['Deposit Amount', formatCurrency(depositAmount)],
-          ['Finance Type', financeType === 'cash' ? 'Cash' : financeType === 'hybrid' ? 'Hybrid' : 'Bond'],
-          ['OTP Route', isDevelopmentOffer ? 'New Development' : 'Normal Sale'],
-          ['Expiry Date', expiryLabel],
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-[18px] bg-white/8 p-4">
-            <p className="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-white/45">{label}</p>
-            <p className="mt-2 text-sm font-bold text-white">{value}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  )
+  const activeBuyerCard = buyerSectionCards.find((section) => section.key === activeBuyerSection) || buyerSectionCards[0]
+  const offerIdentityCount = [form.fullName, form.idNumber, form.email, form.phone].filter(Boolean).length
+  const activeBuyerProgressLabel = activeBuyerSection === 'about'
+    ? `${offerIdentityCount} of 4 offer identity fields captured`
+    : activeBuyerSection === 'finance'
+      ? `${financeLabel} route seeded from your offer`
+      : activeBuyerSection === 'documents'
+        ? `${buyerVerificationModel.requiredDocuments.length} downstream document requirements`
+        : 'Buyer onboarding rule set'
 
   const buyerOnboardingWorkspace = (
     <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 md:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0F7A5A]">Buyer onboarding</p>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0F7A5A]">Buyer verification</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#111827]">Tell us about yourself.</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-            Complete each section before review. Your progress is saved on this device.
+            This follows the buyer onboarding rules for the selected offer structure. Your progress is saved on this device.
           </p>
         </div>
-        <span className="w-fit rounded-full bg-[#EEF6F2] px-3 py-1.5 text-xs font-bold text-[#0F7A5A]">{buyerCompletion} of {buyerSectionCards.length} complete</span>
+        <span className="w-fit rounded-full bg-[#EEF6F2] px-3 py-1.5 text-xs font-bold text-[#0F7A5A]">{buyerSectionCards.length} sections</span>
       </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
+      <div className="mt-5 overflow-hidden rounded-[22px] border border-[#E5E7EB]">
         {buyerSectionCards.map((section) => (
           <button
             key={section.key}
             type="button"
             onClick={() => setActiveBuyerSection(section.key)}
-            className={`rounded-[20px] border p-4 text-left transition ${activeBuyerSection === section.key ? 'border-[#0F7A5A] bg-[#F2FBF7]' : 'border-[#E5E7EB] bg-[#FAFAF8] hover:border-[#B8D8C9]'}`}
+            className={`flex min-h-[92px] w-full items-center gap-4 border-b border-[#E5E7EB] px-4 py-4 text-left transition last:border-b-0 ${
+              activeBuyerSection === section.key ? 'bg-[#F2FBF7]' : 'bg-white hover:bg-[#FAFAF8]'
+            }`}
           >
-            <div className="flex items-start justify-between gap-3">
-              <div>
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#EEF6F2] text-[#0F7A5A]">
+              {createElement(BUYER_VERIFICATION_ICONS[section.key] || UserRound, { size: 20 })}
+            </span>
+            <span className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-[#111827]">{section.title}</p>
                 <p className="mt-1 text-xs leading-5 text-[#6B7280]">{section.description}</p>
-              </div>
-              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold ${section.complete ? 'bg-[#DCFCE7] text-[#166534]' : 'bg-white text-[#6B7280]'}`}>
-                {section.complete ? 'Complete' : 'Not started'}
-              </span>
-            </div>
+            </span>
+            <ChevronRight className="shrink-0 text-[#6B7280]" size={20} />
           </button>
         ))}
       </div>
 
       <div className="mt-5 rounded-[22px] border border-[#E5E7EB] bg-white p-4">
-        {activeBuyerSection === 'overview' ? (
-          <p className="text-sm leading-6 text-[#6B7280]">Choose a section above to complete or update your buyer details.</p>
-        ) : null}
-        {activeBuyerSection === 'personal' ? (
+        <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-base font-bold text-[#111827]">{activeBuyerCard?.title || 'Buyer Verification'}</p>
+            <p className="text-xs font-semibold text-[#6B7280]">{activeBuyerProgressLabel}</p>
+          </div>
+        </div>
+        {activeBuyerSection === 'about' ? (
           <div className="grid gap-4 md:grid-cols-2">
             <TextInput label="Full Name" value={form.fullName} onChange={(event) => updateForm('fullName', event.target.value)} placeholder="Full legal name" autoComplete="name" />
             <TextInput label="ID / Passport" value={form.idNumber} onChange={(event) => updateForm('idNumber', event.target.value)} placeholder="ID or passport number" />
-          </div>
-        ) : null}
-        {activeBuyerSection === 'contact' ? (
-          <div className="grid gap-4 md:grid-cols-2">
             <TextInput label="Email" type="email" value={form.email} onChange={(event) => updateForm('email', event.target.value)} placeholder="name@email.com" autoComplete="email" />
             <TextInput label="Phone" value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} placeholder="082..." inputMode="tel" autoComplete="tel" />
           </div>
         ) : null}
         {activeBuyerSection === 'finance' ? (
           <div className="grid gap-4 md:grid-cols-2">
-            <SelectInput label="Finance Type" value={form.financeType} onChange={(event) => updateFinanceType(event.target.value)}>
-              <option value="cash">Cash</option>
-              <option value="bond">Bond</option>
-              <option value="hybrid">Hybrid</option>
-            </SelectInput>
-            {financeType !== 'cash' ? <TextInput label="Bond Amount" value={form.bondAmount} onChange={(event) => updateForm('bondAmount', event.target.value)} placeholder="2250000" inputMode="decimal" /> : null}
+            <div className="rounded-[18px] bg-[#F7F7F4] p-4">
+              <p className="text-xs font-semibold text-[#6B7280]">Finance Route</p>
+              <p className="mt-1 text-lg font-bold text-[#111827]">{financeLabel}</p>
+            </div>
+            <div className="rounded-[18px] bg-[#F7F7F4] p-4">
+              <p className="text-xs font-semibold text-[#6B7280]">Bond Required</p>
+              <p className="mt-1 text-lg font-bold text-[#111827]">{formatCurrency(loanAmount)}</p>
+            </div>
             {financeType !== 'bond' ? <TextInput label="Cash Contribution" value={form.cashContribution} onChange={(event) => updateForm('cashContribution', event.target.value)} placeholder="250000" inputMode="decimal" /> : null}
             <TextInput label="Proof of Funds URL" value={form.proofOfFundsUrl} onChange={(event) => updateForm('proofOfFundsUrl', event.target.value)} placeholder="Optional document link" />
           </div>
@@ -809,6 +783,15 @@ function BuyerOfferSubmission() {
             <input type="checkbox" checked={confirmedAccuracy} onChange={(event) => setConfirmedAccuracy(event.target.checked)} className="mt-1" />
             <span>I confirm the information captured so far is accurate.</span>
           </label>
+        ) : null}
+        {['household', 'employment', 'documents', 'signature'].includes(activeBuyerSection) ? (
+          <div className="rounded-[18px] bg-[#F7F7F4] p-4 text-sm leading-6 text-[#4B5563]">
+            {activeBuyerSection === 'documents'
+              ? `${buyerVerificationModel.requiredDocuments.length} supporting document requirement${buyerVerificationModel.requiredDocuments.length === 1 ? '' : 's'} will follow from the buyer onboarding rules.`
+              : activeBuyerSection === 'signature'
+                ? 'Your offer can be reviewed and signed after the offer facts and buyer verification details are checked.'
+                : 'This section is governed by the buyer onboarding rules and remains part of the full buyer onboarding record.'}
+          </div>
         ) : null}
       </div>
 
@@ -820,65 +803,68 @@ function BuyerOfferSubmission() {
   )
 
   const offerDetails = (
-    <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 md:p-6">
-      <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Offer Details</h2>
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <TextInput label="Offer Amount" value={form.offerAmount} onChange={(event) => updateForm('offerAmount', event.target.value)} placeholder="2500000" inputMode="decimal" />
-        <TextInput label="Deposit Amount" value={form.depositAmount} onChange={(event) => updateForm('depositAmount', event.target.value)} placeholder="250000" inputMode="decimal" />
-        <TextInput label="Deposit Due Date" type="date" value={form.depositDueDate} onChange={(event) => updateForm('depositDueDate', event.target.value)} />
-        <SelectInput label="Finance Type" value={form.financeType} onChange={(event) => updateFinanceType(event.target.value)}>
-          <option value="cash">Cash</option>
-          <option value="bond">Bond</option>
-          <option value="hybrid">Hybrid</option>
-        </SelectInput>
-        {financeType !== 'cash' ? (
-          <>
-            <TextInput label="Bond Amount" value={form.bondAmount} onChange={(event) => updateForm('bondAmount', event.target.value)} placeholder="2250000" inputMode="decimal" />
+    <div className="space-y-4">
+      <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 shadow-[0_18px_45px_rgba(17,24,39,0.04)] md:p-6">
+        <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Your Offer</h2>
+        <div className="mt-5 grid gap-4">
+          <TextInput label="Offer Amount" value={form.offerAmount} onChange={(event) => updateForm('offerAmount', event.target.value)} placeholder="2500000" inputMode="decimal" />
+          <TextInput label="Deposit Amount (Optional)" value={form.depositAmount} onChange={(event) => updateForm('depositAmount', event.target.value)} placeholder="0" inputMode="decimal" />
+          <div className="grid gap-2">
+            <span className="text-[0.78rem] font-semibold text-[#4B5563]">Finance Type</span>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <ChoicePill label="Cash" selected={financeType === 'cash'} onClick={() => updateFinanceType('cash')} />
+              <ChoicePill label="Bond" selected={financeType === 'bond'} onClick={() => updateFinanceType('bond')} />
+              <ChoicePill label="Combination" selected={financeType === 'hybrid' || financeType === 'combination'} onClick={() => updateFinanceType('hybrid')} />
+            </div>
+          </div>
+          <TextInput label="Offer Expiry Date" type="date" value={form.expiryDate} onChange={(event) => updateForm('expiryDate', event.target.value)} />
+          <div className="rounded-[18px] bg-[#F7F7F4] p-4">
+            <p className="text-xs font-semibold text-[#6B7280]">Bond Required</p>
+            <p className="mt-1 text-lg font-bold text-[#111827]">{formatCurrency(loanAmount)}</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 shadow-[0_18px_45px_rgba(17,24,39,0.04)] md:p-6">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Conditions <span className="text-base font-medium text-[#6B7280]">(Optional)</span></h2>
+          {selectedConditionCount ? <span className="rounded-full bg-[#EEF6F2] px-2.5 py-1 text-xs font-bold text-[#0F7A5A]">{selectedConditionCount} selected</span> : null}
+        </div>
+        <p className="mt-2 text-sm leading-6 text-[#6B7280]">Add only the conditions that apply to your offer.</p>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <ConditionButton label="Bond Approval" active={bondConditionSelected} onClick={() => updateForm('conditionBondApproval', !form.conditionBondApproval)} />
+          <ConditionButton label="Sale of Existing Property" active={Boolean(form.subjectToSale)} onClick={() => updateForm('subjectToSale', !form.subjectToSale)} />
+          <ConditionButton label="Occupational Rent" active={Boolean(form.occupationalRent)} onClick={() => updateForm('occupationalRent', !form.occupationalRent)} />
+          <ConditionButton label="Other Condition" active={otherConditionSelected} onClick={() => updateForm('conditionOther', !form.conditionOther)} />
+        </div>
+        {bondConditionSelected ? (
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
             <TextInput label="Bond Approval Deadline" type="date" value={form.bondApprovalDeadline} onChange={(event) => updateForm('bondApprovalDeadline', event.target.value)} />
-          </>
+            <TextInput label="Guarantee Delivery Deadline" type="date" value={form.guaranteeDeliveryDeadline} onChange={(event) => updateForm('guaranteeDeliveryDeadline', event.target.value)} />
+          </div>
         ) : null}
-        {financeType !== 'bond' ? (
-          <TextInput label="Cash Proof Deadline" type="date" value={form.cashProofDeadline} onChange={(event) => updateForm('cashProofDeadline', event.target.value)} />
+        {form.subjectToSale ? (
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <TextInput label="Property To Be Sold" value={form.subjectSaleProperty} onChange={(event) => updateForm('subjectSaleProperty', event.target.value)} placeholder="Address or property description" />
+            <TextInput label="Minimum Sale Price" value={form.subjectSaleMinimumPrice} onChange={(event) => updateForm('subjectSaleMinimumPrice', event.target.value)} placeholder="2000000" inputMode="decimal" />
+            <TextInput label="Fulfilment Date" type="date" value={form.subjectSaleFulfilmentDate} onChange={(event) => updateForm('subjectSaleFulfilmentDate', event.target.value)} />
+            <TextInput label="Timeline Note" value={form.subjectSaleTimeline} onChange={(event) => updateForm('subjectSaleTimeline', event.target.value)} placeholder="For example, within 90 days" />
+          </div>
         ) : null}
-        <TextInput label="Guarantee Delivery Deadline" type="date" value={form.guaranteeDeliveryDeadline} onChange={(event) => updateForm('guaranteeDeliveryDeadline', event.target.value)} />
-        <TextInput label="Occupation Date" type="date" value={form.occupationDate} onChange={(event) => updateForm('occupationDate', event.target.value)} />
-        <TextInput label="Expiry Date" type="date" value={form.expiryDate} onChange={(event) => updateForm('expiryDate', event.target.value)} />
-      </div>
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <label className="flex min-h-12 items-center gap-3 rounded-[16px] border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#374151]">
-          <input type="checkbox" checked={form.occupationalRent} onChange={(event) => updateForm('occupationalRent', event.target.checked)} />
-          <span>Occupational rent applies</span>
-        </label>
         {form.occupationalRent ? (
-          <TextInput label="Occupational Rent Amount" value={form.occupationalRentAmount} onChange={(event) => updateForm('occupationalRentAmount', event.target.value)} placeholder="18000" inputMode="decimal" />
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <TextInput label="Occupation Date" type="date" value={form.occupationDate} onChange={(event) => updateForm('occupationDate', event.target.value)} />
+            <TextInput label="Occupational Rent Amount" value={form.occupationalRentAmount} onChange={(event) => updateForm('occupationalRentAmount', event.target.value)} placeholder="18000" inputMode="decimal" />
+          </div>
         ) : null}
-        <label className="flex min-h-12 items-center gap-3 rounded-[16px] border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#374151]">
-          <input type="checkbox" checked={form.subjectToSale} onChange={(event) => updateForm('subjectToSale', event.target.checked)} />
-          <span>Subject to sale of another property</span>
-        </label>
-      </div>
-      {form.subjectToSale ? (
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <TextInput label="Property To Be Sold" value={form.subjectSaleProperty} onChange={(event) => updateForm('subjectSaleProperty', event.target.value)} placeholder="Address or property description" />
-          <TextInput label="Minimum Sale Price" value={form.subjectSaleMinimumPrice} onChange={(event) => updateForm('subjectSaleMinimumPrice', event.target.value)} placeholder="2000000" inputMode="decimal" />
-          <TextInput label="Fulfilment Date" type="date" value={form.subjectSaleFulfilmentDate} onChange={(event) => updateForm('subjectSaleFulfilmentDate', event.target.value)} />
-          <TextInput label="Timeline Note" value={form.subjectSaleTimeline} onChange={(event) => updateForm('subjectSaleTimeline', event.target.value)} placeholder="For example, within 90 days" />
-        </div>
-      ) : null}
-      <details className="mt-5 rounded-[22px] border border-[#E5E7EB] bg-[#FBFCFA] p-4">
-        <summary className="cursor-pointer list-none text-sm font-bold text-[#111827]">
-          Conditions
-          <span className="ml-2 rounded-full bg-[#EEF6F2] px-2 py-1 text-[0.68rem] font-bold text-[#0F7A5A]">
-            {[form.includedFixtures, form.excludedFixtures, form.suspensiveConditions, form.specialConditions].filter((value) => normalizeText(value)).length} added
-          </span>
-        </summary>
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <TextAreaInput label="Included Fixtures" value={form.includedFixtures} onChange={(event) => updateForm('includedFixtures', event.target.value)} placeholder="Fixtures the buyer wants included" />
-          <TextAreaInput label="Excluded Fixtures" value={form.excludedFixtures} onChange={(event) => updateForm('excludedFixtures', event.target.value)} placeholder="Fixtures the seller may remove" />
-          <TextAreaInput label="Other Suspensive Conditions" value={form.suspensiveConditions} onChange={(event) => updateForm('suspensiveConditions', event.target.value)} placeholder="Only add deal-specific conditions that need agent review" />
-          <TextAreaInput label="Special Conditions" value={form.specialConditions} onChange={(event) => updateForm('specialConditions', event.target.value)} placeholder="Only add deal-specific special conditions" />
-        </div>
-      </details>
+        {otherConditionSelected ? (
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <TextAreaInput label="Included Fixtures" value={form.includedFixtures} onChange={(event) => updateForm('includedFixtures', event.target.value)} placeholder="Fixtures the buyer wants included" />
+            <TextAreaInput label="Excluded Fixtures" value={form.excludedFixtures} onChange={(event) => updateForm('excludedFixtures', event.target.value)} placeholder="Fixtures the seller may remove" />
+            <TextAreaInput label="Other Suspensive Conditions" value={form.suspensiveConditions} onChange={(event) => updateForm('suspensiveConditions', event.target.value)} placeholder="Deal-specific conditions for agent review" />
+            <TextAreaInput label="Special Conditions" value={form.specialConditions} onChange={(event) => updateForm('specialConditions', event.target.value)} placeholder="Deal-specific special conditions" />
+          </div>
+        ) : null}
       {isDevelopmentOffer ? (
         <div className="mt-5 grid gap-3 rounded-[22px] bg-[#F7F7F4] p-5">
           {[
@@ -894,24 +880,8 @@ function BuyerOfferSubmission() {
           ))}
         </div>
       ) : null}
-      <div className="mt-5 rounded-[22px] bg-[#F7F7F4] p-5">
-        <p className="text-sm font-bold text-[#111827]">Financial Insights</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-4">
-          {[
-            ['Estimated Repayment', formatCurrency(monthlyRepayment), '/ month'],
-            ['Loan Amount', formatCurrency(loanAmount), ''],
-            ['Loan to Value', ltv ? `${ltv}%` : '0%', ''],
-            ['Interest Rate', `${(INTEREST_RATE * 100).toFixed(2)}%`, 'estimate'],
-          ].map(([label, value, suffix]) => (
-            <div key={label}>
-              <p className="text-xs font-semibold text-[#6B7280]">{label}</p>
-              <p className="mt-1 text-lg font-bold text-[#111827]">{value}</p>
-              {suffix ? <p className="text-[0.68rem] font-semibold text-[#9CA3AF]">{suffix}</p> : null}
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
+      </section>
+    </div>
   )
 
   const trustSection = (
@@ -949,7 +919,8 @@ function BuyerOfferSubmission() {
           ['Property', getListingTitle(listing)],
           ['Offer Amount', formatCurrency(offerAmount)],
           ['Deposit', formatCurrency(depositAmount)],
-          ['Finance', financeType === 'cash' ? 'Cash' : financeType === 'hybrid' ? 'Hybrid' : 'Bond'],
+          ['Finance', financeLabel],
+          ['Bond Required', formatCurrency(loanAmount)],
           ['OTP Route', isDevelopmentOffer ? 'New Development' : 'Normal Sale'],
           ['Bond Deadline', form.bondApprovalDeadline ? formatDate(form.bondApprovalDeadline) : 'Not set'],
           ['Guarantee Deadline', form.guaranteeDeliveryDeadline ? formatDate(form.guaranteeDeliveryDeadline) : 'Not set'],
@@ -1011,10 +982,7 @@ function BuyerOfferSubmission() {
   )
 
   const activeStageContent = flowStage === 'offer' ? (
-    <>
-      {offerHero}
-      {offerDetails}
-    </>
+    offerDetails
   ) : flowStage === 'onboarding' ? (
     buyerOnboardingWorkspace
   ) : flowStage === 'review' ? (
@@ -1028,7 +996,7 @@ function BuyerOfferSubmission() {
   ) : null
 
   const stageCtaLabel = flowStage === 'offer'
-    ? 'Continue to Buyer Details'
+    ? 'Continue to Buyer Verification'
     : flowStage === 'onboarding'
       ? 'Continue to Review'
       : flowStage === 'review'
@@ -1038,6 +1006,21 @@ function BuyerOfferSubmission() {
   const stageCtaIcon = flowStage === 'review' ? <ShieldCheck size={16} /> : <ArrowRight size={16} />
   const canShowFooter = flowStage !== 'complete'
   const canGoBack = ['onboarding', 'review'].includes(flowStage)
+  const showPropertyAside = flowStage === 'offer'
+  const pageTitle = flowStage === 'onboarding'
+    ? 'Almost there!'
+    : flowStage === 'review'
+      ? 'Review & Sign'
+      : flowStage === 'complete'
+        ? 'Offer Submitted'
+        : 'Make an Offer'
+  const pageSubtitle = flowStage === 'onboarding'
+    ? 'Now we need a few details from you to complete your buyer profile.'
+    : flowStage === 'review'
+      ? 'Check your offer and buyer details before submitting.'
+      : flowStage === 'complete'
+        ? ''
+        : 'Submit your offer on this property in a few simple steps.'
 
   if (canonicalLoading && !context?.ok) {
     return (
@@ -1107,27 +1090,10 @@ function BuyerOfferSubmission() {
     <main style={{ background: WARM_WHITE, color: PRIMARY_TEXT }} className="min-h-screen pb-32 md:pb-28">
       <ProgressDots stage={flowStage} />
       <form onSubmit={handleSubmitOffer}>
-        <div className="mx-auto w-full max-w-[1360px] px-4 py-5 md:px-8 md:py-8">
-          <header className="rounded-[26px] border border-[#E5E7EB] bg-white p-5 md:p-6">
-            <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#0F7A5A]">Secure Offer + Onboarding</p>
-                <h1 className="mt-2 text-3xl font-semibold tracking-[-0.055em] text-[#111827] md:text-5xl">Make an Offer</h1>
-                <p className="mt-2 text-base font-medium text-[#6B7280]">Complete your buyer details, finance route and residential offer terms in one secure flow.</p>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-3 md:flex md:flex-wrap md:justify-end">
-                {[
-                  [ShieldCheck, 'Secure Token Active'],
-                  [LockKeyhole, 'Encrypted'],
-                  [Clock3, 'Time Stamped'],
-                ].map(([icon, label]) => (
-                  <div key={label} className="inline-flex items-center gap-2 rounded-full border border-[#E5E7EB] bg-[#FAFAF8] px-3 py-2 text-xs font-bold text-[#374151]">
-                    {createElement(icon, { size: 14, color: ARCH_GREEN })}
-                    {label}
-                  </div>
-                ))}
-              </div>
-            </div>
+        <div className="mx-auto w-full max-w-[980px] px-4 py-8 md:px-8 md:py-10">
+          <header className="mb-7">
+            <h1 className="text-4xl font-semibold tracking-[-0.055em] text-[#111827] md:text-5xl">{pageTitle}</h1>
+            {pageSubtitle ? <p className="mt-3 max-w-[560px] text-lg leading-8 text-[#374151]">{pageSubtitle}</p> : null}
           </header>
 
           {counterPendingBuyer || canonicalBanner || errorMessage || successMessage ? (
@@ -1147,16 +1113,16 @@ function BuyerOfferSubmission() {
             </div>
           ) : null}
 
-          <div className="mt-5 grid gap-6 md:grid-cols-[0.4fr_0.6fr]">
-            <div className={flowStage === 'complete' ? 'hidden md:block' : ''}>{propertySummary}</div>
+          <div className={`mt-5 grid gap-5 ${showPropertyAside ? 'md:grid-cols-[minmax(0,0.48fr)_minmax(0,0.52fr)]' : ''}`}>
+            {showPropertyAside ? <div>{propertySummary}</div> : null}
             <div className="space-y-5">
               {activeStageContent}
             </div>
           </div>
         </div>
 
-        {canShowFooter ? <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#E5E7EB] bg-white/95 px-4 py-3 shadow-[0_-16px_40px_rgba(17,24,39,0.08)] backdrop-blur supports-[padding:max(0px)]:pb-[max(12px,env(safe-area-inset-bottom))]">
-          <div className="mx-auto flex max-w-[1360px] items-center gap-3">
+        {canShowFooter ? <div className="fixed inset-x-0 bottom-0 z-40 rounded-t-[22px] border border-b-0 border-[#E5E7EB] bg-white/95 px-4 py-3 shadow-[0_-16px_40px_rgba(17,24,39,0.08)] backdrop-blur supports-[padding:max(0px)]:pb-[max(12px,env(safe-area-inset-bottom))]">
+          <div className="mx-auto flex max-w-[980px] items-center gap-3">
             <button
               type="button"
               onClick={() => goToStage(previousStage)}
@@ -1165,9 +1131,17 @@ function BuyerOfferSubmission() {
             >
               <ChevronLeft size={20} />
             </button>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#6B7280]">Current Offer</p>
-              <p className="truncate text-xl font-bold tracking-[-0.04em] text-[#111827]">{offerAmountLabel}</p>
+            <div className="grid min-w-0 flex-1 grid-cols-3 gap-3">
+              {[
+                ['Offer', offerAmountLabel],
+                ['Deposit', formatCurrency(depositAmount)],
+                ['Bond Required', formatCurrency(loanAmount)],
+              ].map(([label, value]) => (
+                <div key={label} className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-[#4B5563]">{label}</p>
+                  <p className="truncate text-sm font-bold text-[#111827] md:text-base">{value}</p>
+                </div>
+              ))}
             </div>
             <button
               type={flowStage === 'review' ? 'submit' : 'button'}

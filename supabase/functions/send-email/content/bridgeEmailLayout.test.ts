@@ -44,7 +44,7 @@ Deno.test("renderBridgeEmailLayout renders canonical branding", () => {
   assertIncludes(html, "Kingstons Property · Powered by Arch9");
 });
 
-Deno.test("renderBridgeEmailLayout prefers dark-header logo on dark header", () => {
+Deno.test("renderBridgeEmailLayout prefers light logo on dark header", () => {
   const html = renderBridgeEmailLayout({
     title: "Mandate Ready",
     greeting: "Hi Agent,",
@@ -52,15 +52,15 @@ Deno.test("renderBridgeEmailLayout prefers dark-header logo on dark header", () 
     branding: {
       organisationName: "Kingstons Property",
       logoUrl: "https://cdn.example.test/logo-generic.png",
-      logoLightUrl: "https://cdn.example.test/logo-light-background.png",
-      logoDarkUrl: "https://cdn.example.test/logo-dark-header.png",
+      logoLightUrl: "https://cdn.example.test/logo-light-for-dark-header.png",
+      logoDarkUrl: "https://cdn.example.test/logo-dark-for-light-background.png",
       primaryColor: "#123abc",
       secondaryColor: "#fedcba",
     },
   });
 
-  assertIncludes(html, "https://cdn.example.test/logo-dark-header.png");
-  assertNotIncludes(html, "https://cdn.example.test/logo-light-background.png");
+  assertIncludes(html, "https://cdn.example.test/logo-light-for-dark-header.png");
+  assertNotIncludes(html, "https://cdn.example.test/logo-dark-for-light-background.png");
 });
 
 Deno.test("renderBridgeEmailLayout remains backward compatible with legacy props", () => {

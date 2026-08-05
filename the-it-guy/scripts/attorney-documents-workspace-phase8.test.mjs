@@ -48,15 +48,27 @@ for (const expected of [
 }
 
 for (const expected of [
-  'Category Groups',
-  'activeCategoryGroup',
-  'setActiveCategoryGroup',
-  'categoryGroupSummaries',
-  'visibleLibraryRows',
-  'category.groupSummaries.slice(0, 3)',
-  'row.categoryGroup === activeCategoryGroup',
-  'group.verifiedCount',
-  'group.missingCount',
+  'ATTORNEY_DOCUMENT_DASHBOARD_CATEGORY_DEFINITIONS',
+  'ATTORNEY_DOCUMENT_DASHBOARD_PARTIES',
+  'buildAttorneyDocumentsDashboardModel',
+  'buildDocumentHealthDonutSegments',
+]) {
+  assert.ok(source.includes(expected), `Phase 8 dashboard helpers should include ${expected}`)
+}
+
+for (const expected of [
+  'activePartyView',
+  'activeCategory',
+  'activeActivityFilter',
+  'Document Health',
+  'Quick Actions',
+  'Document Activity',
+  'Uploaded Files',
+  'Required Documents',
+  'activeCategoryRequirements',
+  'activeCategoryFiles',
+  'Bulk Download',
+  'Document Checklist',
 ]) {
   assert.ok(component.includes(expected), `Phase 8 workspace should include ${expected}`)
 }

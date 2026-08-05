@@ -60,14 +60,25 @@ assert.match(
 )
 assert.match(
   attorneyDetailSource,
-  /categorySummaries\.map\(\(category\)/,
-  'active attorney documents workspace should render the category summary cards',
+  /buildAttorneyDocumentsDashboardModel/,
+  'active attorney documents workspace should build the dashboard view model from existing document rows',
 )
 assert.match(
   attorneyDetailSource,
-  /onFilterChange\?\.\(category\.key\)/,
-  'category cards should filter the document library through existing filter state',
+  /onFilterChange\?\.\(party\.key\)/,
+  'party category rows should keep filtering through existing filter state',
 )
+
+for (const expected of [
+  'Buyer Documents',
+  'Seller Documents',
+  'Buyer FICA & ID Documents',
+  'Proof of Residence',
+  'Sale Documents',
+  'Document Health',
+]) {
+  assert.ok(attorneyDetailSource.includes(expected), `Documents dashboard should include: ${expected}`)
+}
 
 for (const expected of [
   "normalizeMatterDocumentCategory('generated'), 'general'",

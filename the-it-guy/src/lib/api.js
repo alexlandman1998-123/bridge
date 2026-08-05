@@ -38725,6 +38725,52 @@ async function fetchOrganisationBrandContext(client, organisationId) {
     return null
   }
 
+  let organisationBranding = {}
+  try {
+    let brandingQuery = await client
+      .from('organisation_branding')
+      .select('organisation_id, organisation_display_name, logo_light_url, logo_dark_url, logo_icon_url, primary_brand_color, secondary_brand_color, accent_brand_color')
+      .eq('organisation_id', normalizedOrganisationId)
+      .maybeSingle()
+
+    if (
+      brandingQuery.error &&
+      (
+        isMissingColumnError(brandingQuery.error, 'organisation_display_name') ||
+        isMissingColumnError(brandingQuery.error, 'logo_icon_url') ||
+        isMissingColumnError(brandingQuery.error, 'primary_brand_color') ||
+        isMissingColumnError(brandingQuery.error, 'secondary_brand_color') ||
+        isMissingColumnError(brandingQuery.error, 'accent_brand_color')
+      )
+    ) {
+      brandingQuery = await client
+        .from('organisation_branding')
+        .select('organisation_id, logo_light_url, logo_dark_url, primary_color, secondary_color, metadata_json')
+        .eq('organisation_id', normalizedOrganisationId)
+        .maybeSingle()
+    }
+
+    if (brandingQuery.error) {
+      if (
+        !isMissingTableError(brandingQuery.error, 'organisation_branding') &&
+        !isMissingSchemaError(brandingQuery.error) &&
+        !isPermissionDeniedError(brandingQuery.error)
+      ) {
+        throw brandingQuery.error
+      }
+    } else if (brandingQuery.data && typeof brandingQuery.data === 'object') {
+      organisationBranding = brandingQuery.data
+    }
+  } catch (brandingError) {
+    if (
+      !isMissingTableError(brandingError, 'organisation_branding') &&
+      !isMissingSchemaError(brandingError) &&
+      !isPermissionDeniedError(brandingError)
+    ) {
+      throw brandingError
+    }
+  }
+
   let settingsJson = {}
   try {
     const settingsQuery = await client
@@ -38758,6 +38804,7 @@ async function fetchOrganisationBrandContext(client, organisationId) {
 
   return {
     ...organisationQuery.data,
+    branding: organisationBranding,
     settingsJson,
   }
 }

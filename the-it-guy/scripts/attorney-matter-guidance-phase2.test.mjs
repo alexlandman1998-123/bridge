@@ -104,7 +104,9 @@ assert.doesNotMatch(overviewSource, /<ArchlinePanel title="Tasks"/)
 
 for (const expected of [
   'xl:sticky xl:top-24',
-  'xl:h-[calc(100dvh-150px)]',
+  'xl:h-[calc(100dvh-120px)]',
+  'xl:min-h-[600px]',
+  'xl:grid-cols-[minmax(320px,390px)_minmax(0,1fr)]',
   'xl:overflow-hidden',
   'flex h-full min-h-0 flex-col overflow-hidden',
   'overflow-y-auto overscroll-contain',
