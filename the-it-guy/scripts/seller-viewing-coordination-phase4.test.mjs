@@ -6,6 +6,7 @@ const appSource = await fs.readFile(new URL('../src/App.jsx', import.meta.url), 
 const publicPageSource = await fs.readFile(new URL('../src/pages/SellerViewingCoordinationPage.jsx', import.meta.url), 'utf8')
 const repositorySource = await fs.readFile(new URL('../src/lib/agencyCrmRepository.js', import.meta.url), 'utf8')
 const functionSource = await fs.readFile(new URL('../../supabase/functions/seller-viewing-coordination/index.ts', import.meta.url), 'utf8')
+const functionConfig = await fs.readFile(new URL('../../supabase/config.toml', import.meta.url), 'utf8')
 const migrationSource = await fs.readFile(new URL('../../supabase/migrations/202608040003_seller_viewing_coordination_links.sql', import.meta.url), 'utf8')
 const emailTemplateSource = await fs.readFile(new URL('../../supabase/functions/send-email/content/sellerViewingAvailabilityRequest.ts', import.meta.url), 'utf8')
 
@@ -34,6 +35,14 @@ for (const contract of [
   /Seller Viewing Response Captured/,
 ]) {
   assert.match(functionSource, contract, `seller coordination function should include ${contract}`)
+}
+
+for (const contract of [
+  /\[functions\.seller-viewing-coordination\]/,
+  /verify_jwt = false/,
+  /entrypoint = "\.\/functions\/seller-viewing-coordination\/index\.ts"/,
+]) {
+  assert.match(functionConfig, contract, `Supabase config should include ${contract}`)
 }
 
 for (const contract of [

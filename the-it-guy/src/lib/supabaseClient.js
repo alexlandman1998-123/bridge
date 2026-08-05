@@ -221,6 +221,17 @@ function isGenericInvokeNon2xxError(error) {
   return message.includes('edge function returned a non-2xx status code')
 }
 
+function isGenericInvokeTransportError(error) {
+  const message = String(error?.message || error || '').toLowerCase()
+  const name = String(error?.name || '').toLowerCase()
+  return (
+    name.includes('functionsfetcherror') ||
+    message.includes('functionsfetcherror') ||
+    message.includes('failed to send a request to the edge function') ||
+    message.includes('failed to fetch')
+  )
+}
+
 async function invokeEdgeFunctionWithAccessToken(functionName, body, accessToken, headers = {}) {
   if (!isSupabaseConfigured || !accessToken) {
     return {
@@ -286,7 +297,7 @@ export async function invokeEdgeFunction(functionName, { body, headers = {}, cli
     return primaryResult
   }
 
-  if (isGenericInvokeNon2xxError(primaryResult.error)) {
+  if (isGenericInvokeNon2xxError(primaryResult.error) || isGenericInvokeTransportError(primaryResult.error)) {
     try {
       const sessionResult = await client.auth.getSession()
       const accessToken = sessionResult?.data?.session?.access_token || ''
@@ -299,6 +310,10 @@ export async function invokeEdgeFunction(functionName, { body, headers = {}, cli
       }
     } catch {
       // Continue with existing fallback logic.
+    }
+
+    if (isGenericInvokeTransportError(primaryResult.error)) {
+      return invokeEdgeFunctionWithAnonAuth(functionName, body, headers)
     }
   }
 

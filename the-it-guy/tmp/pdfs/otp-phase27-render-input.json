@@ -1,0 +1,2554 @@
+{
+  "outputDir": "/Users/alexanderlandman/the-it-guy/the-it-guy/output/pdf",
+  "routes": [
+    {
+      "fileName": "OTP_Phase27_Resale_Proof.pdf",
+      "routeVariant": "resale_existing_property",
+      "routeLabel": "Existing / resale property OTP",
+      "agencyName": "Arch9 Realty",
+      "website": "www.arch9.co.za",
+      "companyDetails": {
+        "tradingName": "Arch9 Realty",
+        "legalName": "Arch9 Property Group (Pty) Ltd",
+        "registration": "Reg: 2026/000001/07",
+        "address": "1 Sandton Drive, Johannesburg"
+      },
+      "summary": {
+        "buyer": "Resale Buyer",
+        "seller": "Resale Seller",
+        "property": "27 Proof Avenue, Sandton",
+        "purchasePrice": "R 2 850 000",
+        "buyerInfo": {
+          "fullName": "Resale Buyer",
+          "idNumber": "8001015009087",
+          "email": "buyer.resale@example.com",
+          "phone": "+27 82 000 2701",
+          "capacity": "Purchaser in personal capacity"
+        },
+        "sellerInfo": {
+          "fullName": "Resale Seller",
+          "idNumber": "7501015009088",
+          "email": "seller.resale@example.com",
+          "phone": "+27 82 000 2702",
+          "capacity": "Registered owner / seller"
+        },
+        "propertyInfo": {
+          "description": "27 Proof Avenue, Sandton",
+          "titleType": "Freehold residential property",
+          "purchasePrice": "R 2 850 000",
+          "purchasePriceWords": "Two million eight hundred and fifty thousand rand",
+          "deposit": "R 142 500 payable to trust",
+          "depositDueDate": "Within 3 business days after acceptance",
+          "financeType": "Bond finance",
+          "bondAmount": "R 2 280 000",
+          "bondApprovalDeadline": "21 days after acceptance",
+          "cashAmount": "R 570 000",
+          "cashProofDeadline": "7 days after acceptance",
+          "guaranteeDeliveryDeadline": "14 days after bond approval",
+          "guaranteeDeliveryPeriod": "14 days",
+          "offerExpiry": "17:00 on the fifth business day after signature",
+          "structuredConditions": "Subject to bond approval and standard transfer requirements"
+        }
+      },
+      "mergeFields": {
+        "gross_commission_amount": 128250,
+        "mandate_commission_snapshot": "5%",
+        "otp_commission_proposal": "4.5%",
+        "otp_commission_variation_status": "approved",
+        "otp_commission_approval_reference": "OTP-P27-COMM-APPROVED",
+        "otp_buyer_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending; Municipal rates and taxes - estimated - R 1 950; Body corporate levy estimate - estimated - R 2 400",
+        "otp_pending_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending",
+        "matter_attorney_cost_quote_status": "uploaded",
+        "transfer_attorney_company_name": "Phase 27 Transfer Attorneys",
+        "transfer_attorney_contact_person": "",
+        "transfer_attorney_email": "",
+        "transfer_attorney_phone": ""
+      },
+      "costItems": [
+        {
+          "key": "buyer_transfer_cost_quote",
+          "category": "transfer_costs",
+          "label": "Buyer transfer-cost quote or invoice",
+          "amount": null,
+          "amountStatus": "pending",
+          "payerRole": "buyer",
+          "payeeRole": "transfer_attorney",
+          "payeeName": "",
+          "dueEvent": "on_conveyancer_demand",
+          "source": "transfer_attorney_assignment",
+          "includeInOtp": true,
+          "routeVariants": [
+            "resale_existing_property"
+          ],
+          "documentKeys": [
+            "buyer_transfer_cost_invoice"
+          ],
+          "notes": "",
+          "id": "",
+          "visibleStatus": "pending"
+        },
+        {
+          "key": "buyer_transfer_duty",
+          "category": "transfer_duty",
+          "label": "Transfer duty or VAT treatment",
+          "amount": null,
+          "amountStatus": "pending",
+          "payerRole": "buyer",
+          "payeeRole": "sars_or_seller",
+          "payeeName": "",
+          "dueEvent": "before_lodgement",
+          "source": "transaction_offer_terms",
+          "includeInOtp": true,
+          "routeVariants": [
+            "resale_existing_property"
+          ],
+          "documentKeys": [],
+          "notes": "",
+          "id": "",
+          "visibleStatus": "pending"
+        },
+        {
+          "key": "municipal_rates_estimate",
+          "category": "municipal_rates",
+          "label": "Municipal rates and taxes",
+          "amount": 1950,
+          "amountStatus": "estimated",
+          "payerRole": "seller_until_transfer_buyer_after_occupation_or_transfer",
+          "payeeRole": "municipality",
+          "payeeName": "",
+          "dueEvent": "apportioned_on_occupation_or_transfer",
+          "source": "seller_onboarding",
+          "includeInOtp": true,
+          "routeVariants": [
+            "resale_existing_property"
+          ],
+          "documentKeys": [
+            "rates_account"
+          ],
+          "notes": "",
+          "id": "",
+          "visibleStatus": "estimated"
+        },
+        {
+          "key": "scheme_levy_estimate",
+          "category": "levies",
+          "label": "Body corporate levy estimate",
+          "amount": 2400,
+          "amountStatus": "estimated",
+          "payerRole": "seller_until_transfer_buyer_after_occupation_or_transfer",
+          "payeeRole": "body_corporate",
+          "payeeName": "Phase 27 Body Corporate",
+          "dueEvent": "apportioned_on_occupation_or_transfer",
+          "source": "seller_onboarding",
+          "includeInOtp": true,
+          "routeVariants": [
+            "resale_existing_property"
+          ],
+          "documentKeys": [
+            "levy_statement"
+          ],
+          "notes": "",
+          "id": "",
+          "visibleStatus": "estimated"
+        }
+      ],
+      "legalSections": [
+        {
+          "sectionNumber": "Section 3",
+          "key": "definitions_shared",
+          "label": "Definitions",
+          "legalText": "DEFINITIONS\n\nIn this Offer to Purchase, the defined terms include Agreement, Agent, Conveyancer, Deposit, Guarantees, Occupation Date, Purchase Price, Property, Purchaser, Seller, Suspensive Conditions, VAT and Compliance Certificates. Route-specific definitions are included only in the applicable resale or new-development section."
+        },
+        {
+          "sectionNumber": "Section 4",
+          "key": "resale_parties",
+          "label": "Parties",
+          "legalText": "PARTIES\n\nPurchaser: Resale Buyer\nPurchaser ID / Registration: 8001015009087\nPurchaser Email: buyer.resale@example.com\nPurchaser Telephone: +27 82 000 2701\n\nSeller: Resale Seller\nSeller ID / Registration: 7501015009088\nSeller Email: seller.resale@example.com\nSeller Telephone: +27 82 000 2702\n\nAgency: Arch9 Realty\nAgent: Alex Agent\nAgent FFC Number: FFC-PHASE27"
+        },
+        {
+          "sectionNumber": "Section 5",
+          "key": "resale_property",
+          "label": "Property",
+          "legalText": "PROPERTY\n\nProperty Address: 27 Proof Avenue, Sandton\nTitle Type: Freehold residential property\n\nThe Property described above is the existing immovable property forming the subject of this offer, together with those fixtures and fittings expressly included in this Agreement."
+        },
+        {
+          "sectionNumber": "Section 6",
+          "key": "purchase_price",
+          "label": "Purchase Price and Deposit",
+          "legalText": "PURCHASE PRICE AND DEPOSIT\n\nPurchase Price: R 2 850 000\nPurchase Price in Words: Two million eight hundred and fifty thousand rand\nDeposit: R 142 500 payable to trust\nDeposit Due Date: Within 3 business days after acceptance\nTrust Account Recipient: Phase 27 Transfer Attorneys trust account\n\nThe purchase price and deposit are those recorded above. Any deposit must be paid only to the approved trust account recipient recorded for this transaction."
+        },
+        {
+          "sectionNumber": "Section 7",
+          "key": "finance_suspensive_conditions",
+          "label": "Finance and Suspensive Conditions",
+          "legalText": "FINANCE AND SUSPENSIVE CONDITIONS\n\nFinance Type: Bond finance\nBond Amount: R 2 280 000\nBond Approval Deadline: 21 days after acceptance\nCash Contribution: R 570 000\nCash Proof Deadline: 7 days after acceptance\nGuarantee Delivery Deadline: 14 days after bond approval\nGuarantee Delivery Period: 14 days\nIrrevocable Offer Expiry: 17:00 on the fifth business day after signature\nStructured Conditions: Subject to bond approval and standard transfer requirements\n\nThe finance route and suspensive conditions recorded above govern whether the offer remains subject to fulfilment, waiver or lapse. Structured conditions must be rendered from the approved condition records, not from free-text buyer onboarding notes."
+        },
+        {
+          "sectionNumber": "Section 8",
+          "key": "subject_to_sale",
+          "label": "Subject-to-Sale Condition",
+          "legalText": "SUBJECT-TO-SALE CONDITION\n\nPurchaser Property: To be completed\nMinimum Sale Price: To be completed\nFulfilment Date: To be completed\n\nThis condition applies only where the purchaser property sale condition is captured and approved for this resale OTP route."
+        },
+        {
+          "sectionNumber": "Section 9",
+          "key": "resale_occupation_rent",
+          "label": "Occupation and Occupational Rent",
+          "legalText": "OCCUPATION AND OCCUPATIONAL RENT\n\nOccupation Date: To be completed\nOccupational Rent Payable: To be completed\nOccupational Rent Amount: To be completed\n\nOccupation, risk, utilities and occupational rent must follow the route captured for the resale transaction and any special conditions approved for the offer."
+        },
+        {
+          "sectionNumber": "Section 10",
+          "key": "resale_disclosure_fixtures_compliance",
+          "label": "Disclosure, Fixtures and Compliance",
+          "legalText": "DISCLOSURE, FIXTURES AND COMPLIANCE\n\nMandatory Disclosure Status: To be completed\nDisclosure Annexure: To be completed\nDisclosure Comments: To be completed\nFixtures Included: To be completed\nFixtures Excluded: To be completed\nCompliance Certificate Schedule: To be completed\n\nThe seller disclosure, defects, fixtures, fittings and compliance certificate schedule must be sourced from seller/property records and attached annexures, not from buyer onboarding."
+        },
+        {
+          "sectionNumber": "Section 11",
+          "key": "transfer_conveyancer",
+          "label": "Transfer and Conveyancer",
+          "legalText": "TRANSFER AND CONVEYANCER\n\nTransfer Attorney / Conveyancer: Phase 27 Transfer Attorneys\nTransfer Contact Person: To be completed\nTransfer Contact Email: To be completed\nTransfer Contact Telephone: To be completed\nTrust Account Recipient: Phase 27 Transfer Attorneys trust account\nGuarantee Delivery Deadline: 14 days after bond approval\nGuarantee Delivery Period: 14 days\nMatter Attorney Cost Quote Status: uploaded\n\nTransfer administration, guarantee delivery and deposit/trust-account handling must follow the appointed transfer attorney or conveyancer assignment."
+        },
+        {
+          "sectionNumber": "Section 12",
+          "key": "buyer_cost_obligations",
+          "label": "Buyer Cost Obligations",
+          "legalText": "BUYER COST OBLIGATIONS\n\nBuyer Cost Obligations: Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending; Municipal rates and taxes - estimated - R 1 950; Body corporate levy estimate - estimated - R 2 400\nPending Cost Obligations: Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending\nMatter Attorney Cost Quote Status: uploaded\n\nThe Purchaser is responsible for the buyer cost obligations recorded in the structured schedule for this transaction, including any transfer costs, transfer duty, tax-related charges, rates or levy apportionments, scheme or community charges, and other route-specific charges marked as payable by the Purchaser.\n\nEach obligation must render as known, estimated, pending or not applicable. An estimated or pending amount is not omitted merely because the final amount is unavailable at signature. It remains payable once confirmed by the appointed conveyancer, municipality, scheme managing body, homeowners association, developer, utility provider, SARS or other competent authority for the route.\n\nTransaction attorney cost quotes or statements are matter-level records supplied through Phase 27 Transfer Attorneys and must remain separate from public attorney-lead quote workflows. A final statement or revised quote supersedes an earlier estimate only to the extent that the later statement identifies the updated charge."
+        },
+        {
+          "sectionNumber": "Section 13",
+          "key": "otp_commission_variation",
+          "label": "Agency Commission",
+          "legalText": "AGENCY COMMISSION\n\nAgency: Arch9 Realty\nAgent: Alex Agent\nAgent FFC Number: FFC-PHASE27\nGross Commission Amount: 128250\nMandate Commission Snapshot: 5%\nOTP Commission Proposal: 4.5%\nOTP Commission Variation Status: approved\nOTP Commission Approval Reference: OTP-P27-COMM-APPROVED\n\nThe original mandate commission must remain a preserved snapshot. Any negotiated OTP commission proposal must carry approval status and an approval reference before it can be used to lock transaction commission allocations."
+        },
+        {
+          "sectionNumber": "Section 14",
+          "key": "special_conditions_annexures",
+          "label": "Special Conditions and Annexures",
+          "legalText": "SPECIAL CONDITIONS AND ANNEXURES\n\nSpecial Conditions: To be completed\nAnnexures: To be completed"
+        },
+        {
+          "sectionNumber": "Section 15",
+          "key": "popia_fica",
+          "label": "POPIA and FICA",
+          "legalText": "POPIA AND FICA\n\nThe Purchaser consents to the lawful processing and sharing of personal information reasonably required for offer administration, FICA, transfer, finance, compliance, signing and transaction records.\n\nPurchaser: Resale Buyer"
+        },
+        {
+          "sectionNumber": "Section 16",
+          "key": "offer_validity_and_acceptance",
+          "label": "Offer validity and acceptance",
+          "legalText": "This offer remains open for acceptance until the expiry date recorded in the property information. Acceptance must be communicated in writing and signed by the authorised party before expiry."
+        },
+        {
+          "sectionNumber": "Section 17",
+          "key": "occupation_and_possession",
+          "label": "Occupation and possession",
+          "legalText": "Occupation, possession and any occupational consideration are governed by the dates and amounts recorded in the structured terms. Risk and benefit do not pass merely because occupation is granted unless this agreement expressly says so."
+        },
+        {
+          "sectionNumber": "Section 18",
+          "key": "risk_and_benefit",
+          "label": "Risk and benefit",
+          "legalText": "Risk in the property remains with the seller until the transfer date unless a route-specific clause provides otherwise. Each party must preserve the property and transaction records required for transfer."
+        },
+        {
+          "sectionNumber": "Section 19",
+          "key": "compliance_certificates",
+          "label": "Compliance certificates",
+          "legalText": "The seller must provide the compliance certificates required by law, municipal authority, body corporate rules or this agreement. The purchaser may not be required to accept transfer without the certificates required for the applicable route."
+        },
+        {
+          "sectionNumber": "Section 20",
+          "key": "disclosure_and_warranties",
+          "label": "Disclosure and warranties",
+          "legalText": "The seller must disclose known defects and provide the mandatory disclosure record where applicable. The purchaser acknowledges receipt of the disclosure information recorded for the property before signature."
+        },
+        {
+          "sectionNumber": "Section 21",
+          "key": "fixtures_and_exclusions",
+          "label": "Fixtures and exclusions",
+          "legalText": "Fixtures, fittings, appliances and exclusions are only included if recorded in the structured property terms or annexures. No verbal assurance varies the written included or excluded item schedule."
+        },
+        {
+          "sectionNumber": "Section 22",
+          "key": "breach_and_remedies",
+          "label": "Breach and remedies",
+          "legalText": "If either party breaches this agreement and fails to remedy the breach after written notice, the aggrieved party may pursue the remedies available in law and under this agreement, including cancellation or specific performance where applicable."
+        },
+        {
+          "sectionNumber": "Section 23",
+          "key": "notices_and_domicilium",
+          "label": "Notices and domicilium",
+          "legalText": "The parties choose the physical and electronic addresses recorded in the transaction records for notices. A notice sent to the recorded address is treated as validly delivered unless a party has given written notice of a changed address."
+        },
+        {
+          "sectionNumber": "Section 24",
+          "key": "popia_and_fica",
+          "label": "POPIA and FICA",
+          "legalText": "The parties consent to the processing of personal information required for FICA, transfer, bond, agency, conveyancing, compliance and signature purposes. Information may be shared only with transaction participants who require it for the matter."
+        },
+        {
+          "sectionNumber": "Section 25",
+          "key": "annexures",
+          "label": "Annexures",
+          "legalText": "All annexures referenced in this agreement form part of the agreement once identified and signed or initialled where required. If an annexure conflicts with a typed special condition, the stricter signed condition applies unless expressly varied."
+        },
+        {
+          "sectionNumber": "Section 26",
+          "key": "signing_counterparts",
+          "label": "Signing counterparts",
+          "legalText": "This agreement may be signed in counterparts and by electronic signature where the signing workflow records signer identity, role, date, document version and completion evidence."
+        },
+        {
+          "sectionNumber": "Section 27",
+          "key": "initials_on_every_page",
+          "label": "Initials on every page",
+          "legalText": "Each required signatory must initial every page. Initials are evidence that the party has had sight of the page but do not replace the signature required on the signature page."
+        },
+        {
+          "sectionNumber": "Section 28",
+          "key": "route_specific_special_conditions",
+          "label": "Route-specific special conditions",
+          "legalText": "Resale special conditions apply only to the existing property, seller disclosures, occupation, rates, levies, fixtures and transfer arrangements recorded for this route."
+        },
+        {
+          "sectionNumber": "Section 29",
+          "key": "costs_pending_attorney_quote",
+          "label": "Costs pending attorney quote",
+          "legalText": "Where transfer costs, duty, rates clearance, levy clearance or attorney charges are pending, the purchaser remains responsible for the buyer cost obligations recorded as pending until the matter attorney quote or final statement replaces the estimate."
+        },
+        {
+          "sectionNumber": "Section 30",
+          "key": "final_statement_handling",
+          "label": "Final statement handling",
+          "legalText": "The matter attorney may issue a final statement once charges are known. Any previous quote or estimate is superseded only to the extent that the final statement identifies the updated charge."
+        }
+      ],
+      "signatureRoles": [
+        "Purchaser",
+        "Seller"
+      ],
+      "initialRoles": [
+        "purchaser_1",
+        "seller"
+      ],
+      "expectedMarkers": [
+        "Existing / resale property OTP",
+        "OTP-P27-COMM-APPROVED",
+        "Municipal rates and taxes",
+        "Body corporate levy estimate",
+        "Seller",
+        "Page 1 of",
+        "Section 30"
+      ],
+      "forbiddenMarkers": [
+        "Development levy estimate",
+        "Utility connection charges",
+        "Developer authorised signatory",
+        "Contractor authorised signatory",
+        "Route marker",
+        "Logo top left",
+        "Generated PDF proof"
+      ],
+      "runtime": {
+        "version": "otp_commercial_terms_runtime_phase26_v1",
+        "contract": "otp-vnext-commercial-terms-runtime-phase26-v1",
+        "wiredAt": "2026-08-05T15:00:00.000Z",
+        "transactionId": "tx-phase27-resale",
+        "routeVariant": "resale_existing_property",
+        "reviewInput": {
+          "transactionId": "tx-phase27-resale",
+          "routeVariant": "resale_existing_property",
+          "commissionVariation": {
+            "contract": "otp_commercial_terms_record_phase1_v1",
+            "version": "otp_commercial_terms_phase1_v1",
+            "transactionId": "tx-phase27-resale",
+            "routeVariant": "resale_existing_property",
+            "mandateCommissionSnapshot": {
+              "basis": "percentage",
+              "percentage": 5,
+              "amount": null,
+              "vatIncluded": null,
+              "source": "mandate"
+            },
+            "proposedOtpCommission": {
+              "basis": "percentage",
+              "percentage": 4.5,
+              "amount": 128250,
+              "vatIncluded": null,
+              "source": "otp_offer_terms"
+            },
+            "approval": {
+              "status": "approved",
+              "approverId": "",
+              "approvalReference": "OTP-P27-COMM-APPROVED",
+              "approvedAt": "",
+              "rejectedAt": "",
+              "reason": ""
+            },
+            "variationRequired": true,
+            "finalOtpCommission": {
+              "basis": "percentage",
+              "percentage": 4.5,
+              "amount": 128250,
+              "vatIncluded": null,
+              "source": "otp_offer_terms"
+            },
+            "lockState": "ready_to_lock",
+            "blocksTransactionCommissionLock": false,
+            "preservesMandateCommission": true,
+            "auditEvents": [
+              {
+                "type": "otp_commission_variation_requested",
+                "actorId": "",
+                "occurredAt": "",
+                "reason": ""
+              },
+              {
+                "type": "otp_commission_variation_approved",
+                "actorId": "",
+                "occurredAt": "",
+                "reason": ""
+              }
+            ]
+          },
+          "costObligationItems": [
+            {
+              "key": "buyer_transfer_cost_quote",
+              "category": "transfer_costs",
+              "label": "Buyer transfer-cost quote or invoice",
+              "amount": null,
+              "amountStatus": "pending",
+              "payerRole": "buyer",
+              "payeeRole": "transfer_attorney",
+              "payeeName": "",
+              "dueEvent": "on_conveyancer_demand",
+              "source": "transfer_attorney_assignment",
+              "includeInOtp": true,
+              "routeVariants": [
+                "resale_existing_property",
+                "new_development"
+              ],
+              "documentKeys": [
+                "buyer_transfer_cost_invoice"
+              ],
+              "notes": "",
+              "route_variant": "resale_existing_property"
+            },
+            {
+              "key": "buyer_transfer_duty",
+              "category": "transfer_duty",
+              "label": "Transfer duty or VAT treatment",
+              "amount": null,
+              "amountStatus": "pending",
+              "payerRole": "buyer",
+              "payeeRole": "sars_or_seller",
+              "payeeName": "",
+              "dueEvent": "before_lodgement",
+              "source": "transaction_offer_terms",
+              "includeInOtp": true,
+              "routeVariants": [
+                "resale_existing_property",
+                "new_development"
+              ],
+              "documentKeys": [],
+              "notes": "",
+              "route_variant": "resale_existing_property"
+            },
+            {
+              "key": "municipal_rates_estimate",
+              "category": "municipal_rates",
+              "label": "Municipal rates and taxes",
+              "amount": 1950,
+              "amountStatus": "estimated",
+              "payerRole": "seller_until_transfer_buyer_after_occupation_or_transfer",
+              "payeeRole": "municipality",
+              "payeeName": "",
+              "dueEvent": "apportioned_on_occupation_or_transfer",
+              "source": "seller_onboarding",
+              "includeInOtp": true,
+              "routeVariants": [
+                "resale_existing_property",
+                "new_development"
+              ],
+              "documentKeys": [
+                "rates_account"
+              ],
+              "notes": "",
+              "route_variant": "resale_existing_property"
+            },
+            {
+              "key": "scheme_levy_estimate",
+              "category": "levies",
+              "label": "Body corporate levy estimate",
+              "amount": 2400,
+              "amountStatus": "estimated",
+              "payerRole": "seller_until_transfer_buyer_after_occupation_or_transfer",
+              "payeeRole": "body_corporate",
+              "payeeName": "Phase 27 Body Corporate",
+              "dueEvent": "apportioned_on_occupation_or_transfer",
+              "source": "seller_onboarding",
+              "includeInOtp": true,
+              "routeVariants": [
+                "resale_existing_property",
+                "new_development"
+              ],
+              "documentKeys": [
+                "levy_statement"
+              ],
+              "notes": "",
+              "route_variant": "resale_existing_property"
+            }
+          ],
+          "matterAttorneyQuoteState": {
+            "transaction_id": "tx-phase27-resale",
+            "transaction_attorney_assignment_id": "assignment-phase27-resale",
+            "route_variant": "resale_existing_property",
+            "quote_status": "uploaded",
+            "source_scope": "transaction_matter",
+            "amount": 42000,
+            "updated_at": "2026-08-05T14:59:00.000Z"
+          },
+          "sellerFacts": {
+            "source": "seller_onboarding",
+            "property": {
+              "rates_taxes": 1950,
+              "levies": 2400,
+              "estate_or_hoa": false,
+              "levies_not_applicable": false,
+              "scheme": {
+                "body_corporate_name": "Phase 27 Body Corporate",
+                "levies": 2400
+              },
+              "estate": {
+                "name": ""
+              }
+            },
+            "sourceKeys": [
+              "seller_onboarding",
+              "rates_account",
+              "levy_statement",
+              "hoa_levy_statement"
+            ]
+          },
+          "developmentUnit": {},
+          "readiness": {},
+          "reviewedAt": "2026-08-05T15:00:00.000Z"
+        },
+        "reviewModel": {
+          "version": "otp_commercial_terms_review_phase25_v1",
+          "contract": "otp-vnext-commercial-terms-review-phase25-v1",
+          "reviewedAt": "2026-08-05T15:00:00.000Z",
+          "transactionId": "tx-phase27-resale",
+          "routeVariant": "resale_existing_property",
+          "routeLabel": "Resale OTP Review",
+          "screenKey": "otp_review_resale_existing_property",
+          "status": "OTP_REVIEW_READY_FOR_GENERATION",
+          "canGenerateOtp": true,
+          "generationBlockers": [],
+          "warningCodes": [
+            "pending_cost_obligation:buyer_transfer_cost_quote",
+            "pending_cost_obligation:buyer_transfer_duty"
+          ],
+          "sections": {
+            "commissionApproval": {
+              "key": "commission_approval",
+              "label": "Commission approval",
+              "status": "approved",
+              "statusLabel": "approved",
+              "visibleBeforeGeneration": true,
+              "blocksGeneration": false,
+              "blockerCode": "",
+              "lockState": "ready_to_lock",
+              "preservesMandateCommission": true,
+              "mandateCommission": "5% percentage",
+              "proposedOtpCommission": "4.5% percentage",
+              "finalOtpCommission": "4.5% percentage",
+              "approvalReference": "OTP-P27-COMM-APPROVED",
+              "approverId": "",
+              "reason": "",
+              "actions": [
+                "review_locked_commission"
+              ]
+            },
+            "buyerCostObligations": {
+              "key": "buyer_cost_obligations",
+              "label": "Buyer cost obligations",
+              "visibleBeforeGeneration": true,
+              "items": [
+                {
+                  "key": "buyer_transfer_cost_quote",
+                  "category": "transfer_costs",
+                  "label": "Buyer transfer-cost quote or invoice",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "transfer_attorney",
+                  "payeeName": "",
+                  "dueEvent": "on_conveyancer_demand",
+                  "source": "transfer_attorney_assignment",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [
+                    "buyer_transfer_cost_invoice"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                },
+                {
+                  "key": "buyer_transfer_duty",
+                  "category": "transfer_duty",
+                  "label": "Transfer duty or VAT treatment",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "sars_or_seller",
+                  "payeeName": "",
+                  "dueEvent": "before_lodgement",
+                  "source": "transaction_offer_terms",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                },
+                {
+                  "key": "municipal_rates_estimate",
+                  "category": "municipal_rates",
+                  "label": "Municipal rates and taxes",
+                  "amount": 1950,
+                  "amountStatus": "estimated",
+                  "payerRole": "seller_until_transfer_buyer_after_occupation_or_transfer",
+                  "payeeRole": "municipality",
+                  "payeeName": "",
+                  "dueEvent": "apportioned_on_occupation_or_transfer",
+                  "source": "seller_onboarding",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [
+                    "rates_account"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "estimated"
+                },
+                {
+                  "key": "scheme_levy_estimate",
+                  "category": "levies",
+                  "label": "Body corporate levy estimate",
+                  "amount": 2400,
+                  "amountStatus": "estimated",
+                  "payerRole": "seller_until_transfer_buyer_after_occupation_or_transfer",
+                  "payeeRole": "body_corporate",
+                  "payeeName": "Phase 27 Body Corporate",
+                  "dueEvent": "apportioned_on_occupation_or_transfer",
+                  "source": "seller_onboarding",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [
+                    "levy_statement"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "estimated"
+                }
+              ],
+              "known": [],
+              "estimated": [
+                {
+                  "key": "municipal_rates_estimate",
+                  "category": "municipal_rates",
+                  "label": "Municipal rates and taxes",
+                  "amount": 1950,
+                  "amountStatus": "estimated",
+                  "payerRole": "seller_until_transfer_buyer_after_occupation_or_transfer",
+                  "payeeRole": "municipality",
+                  "payeeName": "",
+                  "dueEvent": "apportioned_on_occupation_or_transfer",
+                  "source": "seller_onboarding",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [
+                    "rates_account"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "estimated"
+                },
+                {
+                  "key": "scheme_levy_estimate",
+                  "category": "levies",
+                  "label": "Body corporate levy estimate",
+                  "amount": 2400,
+                  "amountStatus": "estimated",
+                  "payerRole": "seller_until_transfer_buyer_after_occupation_or_transfer",
+                  "payeeRole": "body_corporate",
+                  "payeeName": "Phase 27 Body Corporate",
+                  "dueEvent": "apportioned_on_occupation_or_transfer",
+                  "source": "seller_onboarding",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [
+                    "levy_statement"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "estimated"
+                }
+              ],
+              "pending": [
+                {
+                  "key": "buyer_transfer_cost_quote",
+                  "category": "transfer_costs",
+                  "label": "Buyer transfer-cost quote or invoice",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "transfer_attorney",
+                  "payeeName": "",
+                  "dueEvent": "on_conveyancer_demand",
+                  "source": "transfer_attorney_assignment",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [
+                    "buyer_transfer_cost_invoice"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                },
+                {
+                  "key": "buyer_transfer_duty",
+                  "category": "transfer_duty",
+                  "label": "Transfer duty or VAT treatment",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "sars_or_seller",
+                  "payeeName": "",
+                  "dueEvent": "before_lodgement",
+                  "source": "transaction_offer_terms",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                }
+              ],
+              "notApplicable": [],
+              "statusCounts": {
+                "known": 0,
+                "estimated": 2,
+                "pending": 2,
+                "notApplicable": 0
+              },
+              "warnings": [
+                "pending_cost_obligation:buyer_transfer_cost_quote",
+                "pending_cost_obligation:buyer_transfer_duty"
+              ],
+              "actions": [
+                "edit_cost_obligation",
+                "mark_cost_not_applicable",
+                "request_matter_attorney_quote"
+              ]
+            },
+            "matterAttorneyQuote": {
+              "key": "matter_attorney_cost_quote",
+              "label": "Matter attorney cost quote",
+              "status": "uploaded",
+              "statusLabel": "uploaded",
+              "visibleBeforeGeneration": true,
+              "transactionScoped": true,
+              "separatedFromAttorneyLeadQuote": true,
+              "blocksGeneration": false,
+              "blockerCode": "",
+              "transactionAttorneyAssignmentId": "assignment-phase27-resale",
+              "documentDefinitionKey": "buyer_transfer_cost_invoice",
+              "documentAmount": 42000,
+              "clientPortalVisible": true,
+              "warnings": [],
+              "actions": [
+                "open_matter_quote",
+                "request_matter_quote_revision",
+                "acknowledge_matter_quote"
+              ]
+            }
+          },
+          "routeManifest": {
+            "key": "resale_existing_property",
+            "label": "Resale OTP Review",
+            "screenKey": "otp_review_resale_existing_property",
+            "costSourceScopes": [
+              "seller_onboarding",
+              "rates_account",
+              "levy_statement",
+              "hoa_levy_statement",
+              "transfer_attorney_assignment",
+              "transaction_offer_terms",
+              "manual"
+            ],
+            "expectedCostKeys": [
+              "buyer_transfer_cost_quote",
+              "buyer_transfer_duty",
+              "municipal_rates_estimate",
+              "scheme_levy_estimate"
+            ],
+            "prohibitedCostKeys": [
+              "development_levy_estimate",
+              "utility_connection_charges"
+            ]
+          },
+          "routeSeparation": {
+            "separateScreen": true,
+            "expectedCostKeysPresent": true,
+            "prohibitedCostKeysAbsent": true,
+            "sourceScopes": [
+              "transfer_attorney_assignment",
+              "transaction_offer_terms",
+              "seller_onboarding"
+            ]
+          },
+          "source": {
+            "persistenceReadinessStatus": "",
+            "mutatedData": false
+          }
+        },
+        "commercialTerms": {
+          "commission": {
+            "mandateCommissionSnapshot": {
+              "basis": "percentage",
+              "percentage": 5,
+              "amount": null,
+              "vatIncluded": null,
+              "source": "mandate"
+            },
+            "proposedOtpCommission": {
+              "basis": "percentage",
+              "percentage": 4.5,
+              "amount": 128250,
+              "vatIncluded": null,
+              "source": "otp_offer_terms"
+            },
+            "finalOtpCommission": {
+              "basis": "percentage",
+              "percentage": 4.5,
+              "amount": 128250,
+              "vatIncluded": null,
+              "source": "otp_offer_terms"
+            },
+            "approval": {
+              "status": "approved",
+              "approverId": "",
+              "approvalReference": "OTP-P27-COMM-APPROVED",
+              "approvedAt": "",
+              "rejectedAt": "",
+              "reason": ""
+            },
+            "lockDecision": {
+              "canLock": true,
+              "lockState": "ready_to_lock",
+              "approvalStatus": "approved",
+              "finalOtpCommission": {
+                "basis": "percentage",
+                "percentage": 4.5,
+                "amount": 128250,
+                "vatIncluded": null,
+                "source": "otp_offer_terms"
+              },
+              "mandateCommissionSnapshot": {
+                "basis": "percentage",
+                "percentage": 5,
+                "amount": null,
+                "vatIncluded": null,
+                "source": "mandate"
+              },
+              "preservesMandateCommission": true,
+              "blockerCodes": []
+            },
+            "canFinalizeTransactionCommission": true
+          },
+          "costObligations": {
+            "buyerVisibleItems": [
+              {
+                "key": "buyer_transfer_cost_quote",
+                "category": "transfer_costs",
+                "label": "Buyer transfer-cost quote or invoice",
+                "amount": null,
+                "amountStatus": "pending",
+                "payerRole": "buyer",
+                "payeeRole": "transfer_attorney",
+                "payeeName": "",
+                "dueEvent": "on_conveyancer_demand",
+                "source": "transfer_attorney_assignment",
+                "includeInOtp": true,
+                "routeVariants": [
+                  "resale_existing_property"
+                ],
+                "documentKeys": [
+                  "buyer_transfer_cost_invoice"
+                ],
+                "notes": "",
+                "id": "",
+                "visibleStatus": "pending"
+              },
+              {
+                "key": "buyer_transfer_duty",
+                "category": "transfer_duty",
+                "label": "Transfer duty or VAT treatment",
+                "amount": null,
+                "amountStatus": "pending",
+                "payerRole": "buyer",
+                "payeeRole": "sars_or_seller",
+                "payeeName": "",
+                "dueEvent": "before_lodgement",
+                "source": "transaction_offer_terms",
+                "includeInOtp": true,
+                "routeVariants": [
+                  "resale_existing_property"
+                ],
+                "documentKeys": [],
+                "notes": "",
+                "id": "",
+                "visibleStatus": "pending"
+              },
+              {
+                "key": "municipal_rates_estimate",
+                "category": "municipal_rates",
+                "label": "Municipal rates and taxes",
+                "amount": 1950,
+                "amountStatus": "estimated",
+                "payerRole": "seller_until_transfer_buyer_after_occupation_or_transfer",
+                "payeeRole": "municipality",
+                "payeeName": "",
+                "dueEvent": "apportioned_on_occupation_or_transfer",
+                "source": "seller_onboarding",
+                "includeInOtp": true,
+                "routeVariants": [
+                  "resale_existing_property"
+                ],
+                "documentKeys": [
+                  "rates_account"
+                ],
+                "notes": "",
+                "id": "",
+                "visibleStatus": "estimated"
+              },
+              {
+                "key": "scheme_levy_estimate",
+                "category": "levies",
+                "label": "Body corporate levy estimate",
+                "amount": 2400,
+                "amountStatus": "estimated",
+                "payerRole": "seller_until_transfer_buyer_after_occupation_or_transfer",
+                "payeeRole": "body_corporate",
+                "payeeName": "Phase 27 Body Corporate",
+                "dueEvent": "apportioned_on_occupation_or_transfer",
+                "source": "seller_onboarding",
+                "includeInOtp": true,
+                "routeVariants": [
+                  "resale_existing_property"
+                ],
+                "documentKeys": [
+                  "levy_statement"
+                ],
+                "notes": "",
+                "id": "",
+                "visibleStatus": "estimated"
+              }
+            ],
+            "pendingItems": [
+              {
+                "key": "buyer_transfer_cost_quote",
+                "category": "transfer_costs",
+                "label": "Buyer transfer-cost quote or invoice",
+                "amount": null,
+                "amountStatus": "pending",
+                "payerRole": "buyer",
+                "payeeRole": "transfer_attorney",
+                "payeeName": "",
+                "dueEvent": "on_conveyancer_demand",
+                "source": "transfer_attorney_assignment",
+                "includeInOtp": true,
+                "routeVariants": [
+                  "resale_existing_property"
+                ],
+                "documentKeys": [
+                  "buyer_transfer_cost_invoice"
+                ],
+                "notes": "",
+                "id": "",
+                "visibleStatus": "pending"
+              },
+              {
+                "key": "buyer_transfer_duty",
+                "category": "transfer_duty",
+                "label": "Transfer duty or VAT treatment",
+                "amount": null,
+                "amountStatus": "pending",
+                "payerRole": "buyer",
+                "payeeRole": "sars_or_seller",
+                "payeeName": "",
+                "dueEvent": "before_lodgement",
+                "source": "transaction_offer_terms",
+                "includeInOtp": true,
+                "routeVariants": [
+                  "resale_existing_property"
+                ],
+                "documentKeys": [],
+                "notes": "",
+                "id": "",
+                "visibleStatus": "pending"
+              }
+            ]
+          },
+          "matterAttorneyCostQuote": {
+            "status": "uploaded",
+            "transactionAttorneyAssignmentId": "assignment-phase27-resale",
+            "documentDefinitionKey": "buyer_transfer_cost_invoice",
+            "amount": 42000,
+            "attorneyFirmId": "firm-phase27",
+            "sourceScope": "transaction_matter"
+          },
+          "mergeFields": {
+            "gross_commission_amount": 128250,
+            "mandate_commission_snapshot": "5%",
+            "otp_commission_proposal": "4.5%",
+            "otp_commission_variation_status": "approved",
+            "otp_commission_approval_reference": "OTP-P27-COMM-APPROVED",
+            "otp_buyer_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending; Municipal rates and taxes - estimated - R 1 950; Body corporate levy estimate - estimated - R 2 400",
+            "otp_pending_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending",
+            "matter_attorney_cost_quote_status": "uploaded",
+            "transfer_attorney_company_name": "Phase 27 Transfer Attorneys",
+            "transfer_attorney_contact_person": "",
+            "transfer_attorney_email": "",
+            "transfer_attorney_phone": ""
+          }
+        },
+        "generatorInput": {
+          "commercialTerms": {
+            "commission": {
+              "mandateCommissionSnapshot": {
+                "basis": "percentage",
+                "percentage": 5,
+                "amount": null,
+                "vatIncluded": null,
+                "source": "mandate"
+              },
+              "proposedOtpCommission": {
+                "basis": "percentage",
+                "percentage": 4.5,
+                "amount": 128250,
+                "vatIncluded": null,
+                "source": "otp_offer_terms"
+              },
+              "finalOtpCommission": {
+                "basis": "percentage",
+                "percentage": 4.5,
+                "amount": 128250,
+                "vatIncluded": null,
+                "source": "otp_offer_terms"
+              },
+              "approval": {
+                "status": "approved",
+                "approverId": "",
+                "approvalReference": "OTP-P27-COMM-APPROVED",
+                "approvedAt": "",
+                "rejectedAt": "",
+                "reason": ""
+              },
+              "lockDecision": {
+                "canLock": true,
+                "lockState": "ready_to_lock",
+                "approvalStatus": "approved",
+                "finalOtpCommission": {
+                  "basis": "percentage",
+                  "percentage": 4.5,
+                  "amount": 128250,
+                  "vatIncluded": null,
+                  "source": "otp_offer_terms"
+                },
+                "mandateCommissionSnapshot": {
+                  "basis": "percentage",
+                  "percentage": 5,
+                  "amount": null,
+                  "vatIncluded": null,
+                  "source": "mandate"
+                },
+                "preservesMandateCommission": true,
+                "blockerCodes": []
+              },
+              "canFinalizeTransactionCommission": true
+            },
+            "costObligations": {
+              "buyerVisibleItems": [
+                {
+                  "key": "buyer_transfer_cost_quote",
+                  "category": "transfer_costs",
+                  "label": "Buyer transfer-cost quote or invoice",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "transfer_attorney",
+                  "payeeName": "",
+                  "dueEvent": "on_conveyancer_demand",
+                  "source": "transfer_attorney_assignment",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [
+                    "buyer_transfer_cost_invoice"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                },
+                {
+                  "key": "buyer_transfer_duty",
+                  "category": "transfer_duty",
+                  "label": "Transfer duty or VAT treatment",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "sars_or_seller",
+                  "payeeName": "",
+                  "dueEvent": "before_lodgement",
+                  "source": "transaction_offer_terms",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                },
+                {
+                  "key": "municipal_rates_estimate",
+                  "category": "municipal_rates",
+                  "label": "Municipal rates and taxes",
+                  "amount": 1950,
+                  "amountStatus": "estimated",
+                  "payerRole": "seller_until_transfer_buyer_after_occupation_or_transfer",
+                  "payeeRole": "municipality",
+                  "payeeName": "",
+                  "dueEvent": "apportioned_on_occupation_or_transfer",
+                  "source": "seller_onboarding",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [
+                    "rates_account"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "estimated"
+                },
+                {
+                  "key": "scheme_levy_estimate",
+                  "category": "levies",
+                  "label": "Body corporate levy estimate",
+                  "amount": 2400,
+                  "amountStatus": "estimated",
+                  "payerRole": "seller_until_transfer_buyer_after_occupation_or_transfer",
+                  "payeeRole": "body_corporate",
+                  "payeeName": "Phase 27 Body Corporate",
+                  "dueEvent": "apportioned_on_occupation_or_transfer",
+                  "source": "seller_onboarding",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [
+                    "levy_statement"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "estimated"
+                }
+              ],
+              "pendingItems": [
+                {
+                  "key": "buyer_transfer_cost_quote",
+                  "category": "transfer_costs",
+                  "label": "Buyer transfer-cost quote or invoice",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "transfer_attorney",
+                  "payeeName": "",
+                  "dueEvent": "on_conveyancer_demand",
+                  "source": "transfer_attorney_assignment",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [
+                    "buyer_transfer_cost_invoice"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                },
+                {
+                  "key": "buyer_transfer_duty",
+                  "category": "transfer_duty",
+                  "label": "Transfer duty or VAT treatment",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "sars_or_seller",
+                  "payeeName": "",
+                  "dueEvent": "before_lodgement",
+                  "source": "transaction_offer_terms",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "resale_existing_property"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                }
+              ]
+            },
+            "matterAttorneyCostQuote": {
+              "status": "uploaded",
+              "transactionAttorneyAssignmentId": "assignment-phase27-resale",
+              "documentDefinitionKey": "buyer_transfer_cost_invoice",
+              "amount": 42000,
+              "attorneyFirmId": "firm-phase27",
+              "sourceScope": "transaction_matter"
+            },
+            "mergeFields": {
+              "gross_commission_amount": 128250,
+              "mandate_commission_snapshot": "5%",
+              "otp_commission_proposal": "4.5%",
+              "otp_commission_variation_status": "approved",
+              "otp_commission_approval_reference": "OTP-P27-COMM-APPROVED",
+              "otp_buyer_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending; Municipal rates and taxes - estimated - R 1 950; Body corporate levy estimate - estimated - R 2 400",
+              "otp_pending_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending",
+              "matter_attorney_cost_quote_status": "uploaded",
+              "transfer_attorney_company_name": "Phase 27 Transfer Attorneys",
+              "transfer_attorney_contact_person": "",
+              "transfer_attorney_email": "",
+              "transfer_attorney_phone": ""
+            }
+          },
+          "routeVariant": "resale_existing_property",
+          "otpDocumentVariant": "resale_existing_property",
+          "mergeFields": {
+            "gross_commission_amount": 128250,
+            "mandate_commission_snapshot": "5%",
+            "otp_commission_proposal": "4.5%",
+            "otp_commission_variation_status": "approved",
+            "otp_commission_approval_reference": "OTP-P27-COMM-APPROVED",
+            "otp_buyer_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending; Municipal rates and taxes - estimated - R 1 950; Body corporate levy estimate - estimated - R 2 400",
+            "otp_pending_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending",
+            "matter_attorney_cost_quote_status": "uploaded",
+            "transfer_attorney_company_name": "Phase 27 Transfer Attorneys",
+            "transfer_attorney_contact_person": "",
+            "transfer_attorney_email": "",
+            "transfer_attorney_phone": ""
+          }
+        },
+        "gates": {
+          "canGenerateOtp": true,
+          "canFinalizeTransactionCommission": true,
+          "generationBlockers": [],
+          "warnings": [
+            "pending_cost_obligation:buyer_transfer_cost_quote",
+            "pending_cost_obligation:buyer_transfer_duty"
+          ]
+        },
+        "routeSeparation": {
+          "resaleSellerFactsIncluded": true,
+          "developmentFactsIncluded": false,
+          "prohibitedCostKeysAbsent": true,
+          "attorneyLeadQuotesExcluded": true
+        },
+        "mutatedData": false
+      }
+    },
+    {
+      "fileName": "OTP_Phase27_New_Development_Proof.pdf",
+      "routeVariant": "new_development",
+      "routeLabel": "New development OTP",
+      "agencyName": "Arch9 Realty",
+      "website": "www.arch9.co.za",
+      "companyDetails": {
+        "tradingName": "Arch9 Realty",
+        "legalName": "Arch9 Property Group (Pty) Ltd",
+        "registration": "Reg: 2026/000001/07",
+        "address": "1 Sandton Drive, Johannesburg"
+      },
+      "summary": {
+        "buyer": "Development Buyer (Pty) Ltd",
+        "seller": "Phase 27 Developer (Pty) Ltd",
+        "property": "Unit 1402, Phase 27 Heights",
+        "purchasePrice": "R 3 150 000 VAT inclusive",
+        "buyerInfo": {
+          "fullName": "Development Buyer (Pty) Ltd",
+          "idNumber": "2026/123456/07",
+          "email": "buyer.development@example.com",
+          "phone": "+27 82 000 2701",
+          "capacity": "Purchaser represented by authorised signatory"
+        },
+        "sellerInfo": {
+          "fullName": "Phase 27 Developer (Pty) Ltd",
+          "idNumber": "2026/654321/07",
+          "email": "sales@phase27developer.example",
+          "phone": "+27 82 000 2702",
+          "capacity": "Developer represented by authorised signatory"
+        },
+        "propertyInfo": {
+          "description": "Unit 1402, Phase 27 Heights",
+          "titleType": "Sectional title development unit",
+          "purchasePrice": "R 3 150 000 VAT inclusive",
+          "purchasePriceWords": "Three million one hundred and fifty thousand rand VAT inclusive",
+          "deposit": "R 157 500 payable to trust",
+          "depositDueDate": "Within 3 business days after acceptance",
+          "financeType": "Bond finance",
+          "bondAmount": "R 2 520 000",
+          "bondApprovalDeadline": "21 days after acceptance",
+          "cashAmount": "R 630 000",
+          "cashProofDeadline": "7 days after acceptance",
+          "guaranteeDeliveryDeadline": "14 days after bond approval",
+          "guaranteeDeliveryPeriod": "14 days",
+          "offerExpiry": "17:00 on the fifth business day after signature",
+          "structuredConditions": "Subject to bond approval and standard transfer requirements"
+        }
+      },
+      "mergeFields": {
+        "gross_commission_amount": 157500,
+        "mandate_commission_snapshot": "5%",
+        "otp_commission_proposal": "5%",
+        "otp_commission_variation_status": "not_required",
+        "otp_commission_approval_reference": "",
+        "otp_buyer_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending; Development levy estimate - estimated - R 2 200; Utility connection charges - estimated - R 14 500",
+        "otp_pending_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending",
+        "matter_attorney_cost_quote_status": "pending_upload",
+        "transfer_attorney_company_name": "Phase 27 Transfer Attorneys",
+        "transfer_attorney_contact_person": "",
+        "transfer_attorney_email": "",
+        "transfer_attorney_phone": ""
+      },
+      "costItems": [
+        {
+          "key": "buyer_transfer_cost_quote",
+          "category": "transfer_costs",
+          "label": "Buyer transfer-cost quote or invoice",
+          "amount": null,
+          "amountStatus": "pending",
+          "payerRole": "buyer",
+          "payeeRole": "transfer_attorney",
+          "payeeName": "",
+          "dueEvent": "on_conveyancer_demand",
+          "source": "transfer_attorney_assignment",
+          "includeInOtp": true,
+          "routeVariants": [
+            "new_development"
+          ],
+          "documentKeys": [
+            "buyer_transfer_cost_invoice"
+          ],
+          "notes": "",
+          "id": "",
+          "visibleStatus": "pending"
+        },
+        {
+          "key": "buyer_transfer_duty",
+          "category": "transfer_duty",
+          "label": "Transfer duty or VAT treatment",
+          "amount": null,
+          "amountStatus": "pending",
+          "payerRole": "buyer",
+          "payeeRole": "sars_or_seller",
+          "payeeName": "",
+          "dueEvent": "before_lodgement",
+          "source": "transaction_offer_terms",
+          "includeInOtp": true,
+          "routeVariants": [
+            "new_development"
+          ],
+          "documentKeys": [],
+          "notes": "",
+          "id": "",
+          "visibleStatus": "pending"
+        },
+        {
+          "key": "development_levy_estimate",
+          "category": "levies",
+          "label": "Development levy estimate",
+          "amount": 2200,
+          "amountStatus": "estimated",
+          "payerRole": "buyer",
+          "payeeRole": "body_corporate",
+          "payeeName": "",
+          "dueEvent": "from_registration_or_project_schedule",
+          "source": "development_unit_setup",
+          "includeInOtp": true,
+          "routeVariants": [
+            "new_development"
+          ],
+          "documentKeys": [],
+          "notes": "",
+          "id": "",
+          "visibleStatus": "estimated"
+        },
+        {
+          "key": "utility_connection_charges",
+          "category": "development_charges",
+          "label": "Utility connection charges",
+          "amount": 14500,
+          "amountStatus": "estimated",
+          "payerRole": "buyer",
+          "payeeRole": "developer_or_utility_provider",
+          "payeeName": "",
+          "dueEvent": "project_schedule_or_on_demand",
+          "source": "development_unit_setup",
+          "includeInOtp": true,
+          "routeVariants": [
+            "new_development"
+          ],
+          "documentKeys": [],
+          "notes": "",
+          "id": "",
+          "visibleStatus": "estimated"
+        }
+      ],
+      "legalSections": [
+        {
+          "sectionNumber": "Section 3",
+          "key": "definitions_shared",
+          "label": "Definitions",
+          "legalText": "DEFINITIONS\n\nIn this Offer to Purchase, the defined terms include Agreement, Agent, Conveyancer, Deposit, Guarantees, Occupation Date, Purchase Price, Property, Purchaser, Seller, Suspensive Conditions, VAT and Compliance Certificates. Route-specific definitions are included only in the applicable resale or new-development section."
+        },
+        {
+          "sectionNumber": "Section 4",
+          "key": "development_parties",
+          "label": "Parties",
+          "legalText": "PARTIES\n\nPurchaser: Development Buyer (Pty) Ltd\nPurchaser ID / Registration: 2026/123456/07\nPurchaser Email: buyer.development@example.com\nPurchaser Telephone: +27 82 000 2701\n\nDeveloper / Seller: Phase 27 Developer (Pty) Ltd\nDeveloper Registration Number: 2026/654321/07\n\nAgency: Arch9 Realty\nAgent: Alex Agent\nAgent FFC Number: FFC-PHASE27"
+        },
+        {
+          "sectionNumber": "Section 5",
+          "key": "development_unit",
+          "label": "Development Unit",
+          "legalText": "DEVELOPMENT UNIT\n\nDevelopment: To be completed\nSection / Unit Number: To be completed\nSectional Plan Status: To be completed\nParticipation Quota: To be completed\nParking Bay: To be completed\nGarage Allocation: To be completed\n\nThe unit, exclusive-use areas and appurtenant rights are recorded subject to the development, sectional-plan and body-corporate documents applicable to the new-development route."
+        },
+        {
+          "sectionNumber": "Section 6",
+          "key": "purchase_price",
+          "label": "Purchase Price and Deposit",
+          "legalText": "PURCHASE PRICE AND DEPOSIT\n\nPurchase Price: R 3 150 000 VAT inclusive\nPurchase Price in Words: Three million one hundred and fifty thousand rand VAT inclusive\nDeposit: R 157 500 payable to trust\nDeposit Due Date: Within 3 business days after acceptance\nTrust Account Recipient: Phase 27 Transfer Attorneys trust account\n\nThe purchase price and deposit are those recorded above. Any deposit must be paid only to the approved trust account recipient recorded for this transaction."
+        },
+        {
+          "sectionNumber": "Section 7",
+          "key": "development_vat_purchase_price",
+          "label": "VAT Treatment",
+          "legalText": "VAT TREATMENT\n\nVAT-Inclusive Purchase Price: R 3 150 000 VAT inclusive\n\nThe VAT treatment for a new-development OTP must be rendered from the approved development setup and transaction offer terms."
+        },
+        {
+          "sectionNumber": "Section 8",
+          "key": "finance_suspensive_conditions",
+          "label": "Finance and Suspensive Conditions",
+          "legalText": "FINANCE AND SUSPENSIVE CONDITIONS\n\nFinance Type: Bond finance\nBond Amount: R 2 520 000\nBond Approval Deadline: 21 days after acceptance\nCash Contribution: R 630 000\nCash Proof Deadline: 7 days after acceptance\nGuarantee Delivery Deadline: 14 days after bond approval\nGuarantee Delivery Period: 14 days\nIrrevocable Offer Expiry: 17:00 on the fifth business day after signature\nStructured Conditions: Subject to bond approval and standard transfer requirements\n\nThe finance route and suspensive conditions recorded above govern whether the offer remains subject to fulfilment, waiver or lapse. Structured conditions must be rendered from the approved condition records, not from free-text buyer onboarding notes."
+        },
+        {
+          "sectionNumber": "Section 9",
+          "key": "development_handover",
+          "label": "Handover and Snagging",
+          "legalText": "HANDOVER AND SNAGGING\n\nAnticipated Occupation / Handover Date: To be completed\nSnagging Period: To be completed\nContractor: To be completed\nNHBRC Certificate Number: To be completed\n\nDevelopment handover, inspection, snagging and defect processes are dealt with under the new-development route and must align with the approved development documents."
+        },
+        {
+          "sectionNumber": "Section 10",
+          "key": "development_compliance_body_corporate",
+          "label": "Development Compliance and Body Corporate",
+          "legalText": "DEVELOPMENT COMPLIANCE AND BODY CORPORATE\n\nBody Corporate: To be completed\nRules Annexure: To be completed\nEstimated Levy: R 2 200 per month estimated\nEstimated Rates: To be completed\nUtility Connection Charges: R 14 500 estimated\nCompliance Certificate Schedule: To be completed\n\nBody-corporate rules, levies, rates, utility charges and development compliance documents must be rendered from development setup and unit records."
+        },
+        {
+          "sectionNumber": "Section 11",
+          "key": "transfer_conveyancer",
+          "label": "Transfer and Conveyancer",
+          "legalText": "TRANSFER AND CONVEYANCER\n\nTransfer Attorney / Conveyancer: Phase 27 Transfer Attorneys\nTransfer Contact Person: To be completed\nTransfer Contact Email: To be completed\nTransfer Contact Telephone: To be completed\nTrust Account Recipient: Phase 27 Transfer Attorneys trust account\nGuarantee Delivery Deadline: 14 days after bond approval\nGuarantee Delivery Period: 14 days\nMatter Attorney Cost Quote Status: pending_upload\n\nTransfer administration, guarantee delivery and deposit/trust-account handling must follow the appointed transfer attorney or conveyancer assignment."
+        },
+        {
+          "sectionNumber": "Section 12",
+          "key": "buyer_cost_obligations",
+          "label": "Buyer Cost Obligations",
+          "legalText": "BUYER COST OBLIGATIONS\n\nBuyer Cost Obligations: Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending; Development levy estimate - estimated - R 2 200; Utility connection charges - estimated - R 14 500\nPending Cost Obligations: Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending\nMatter Attorney Cost Quote Status: pending_upload\n\nThe Purchaser is responsible for the buyer cost obligations recorded in the structured schedule for this transaction, including any transfer costs, transfer duty, tax-related charges, rates or levy apportionments, scheme or community charges, and other route-specific charges marked as payable by the Purchaser.\n\nEach obligation must render as known, estimated, pending or not applicable. An estimated or pending amount is not omitted merely because the final amount is unavailable at signature. It remains payable once confirmed by the appointed conveyancer, municipality, scheme managing body, homeowners association, developer, utility provider, SARS or other competent authority for the route.\n\nTransaction attorney cost quotes or statements are matter-level records supplied through Phase 27 Transfer Attorneys and must remain separate from public attorney-lead quote workflows. A final statement or revised quote supersedes an earlier estimate only to the extent that the later statement identifies the updated charge."
+        },
+        {
+          "sectionNumber": "Section 13",
+          "key": "otp_commission_variation",
+          "label": "Agency Commission",
+          "legalText": "AGENCY COMMISSION\n\nAgency: Arch9 Realty\nAgent: Alex Agent\nAgent FFC Number: FFC-PHASE27\nGross Commission Amount: 157500\nMandate Commission Snapshot: 5%\n\nThe mandate commission applies for this route."
+        },
+        {
+          "sectionNumber": "Section 14",
+          "key": "special_conditions_annexures",
+          "label": "Special Conditions and Annexures",
+          "legalText": "SPECIAL CONDITIONS AND ANNEXURES\n\nSpecial Conditions: To be completed\nAnnexures: To be completed"
+        },
+        {
+          "sectionNumber": "Section 15",
+          "key": "popia_fica",
+          "label": "POPIA and FICA",
+          "legalText": "POPIA AND FICA\n\nThe Purchaser consents to the lawful processing and sharing of personal information reasonably required for offer administration, FICA, transfer, finance, compliance, signing and transaction records.\n\nPurchaser: Development Buyer (Pty) Ltd"
+        },
+        {
+          "sectionNumber": "Section 16",
+          "key": "offer_validity_and_acceptance",
+          "label": "Offer validity and acceptance",
+          "legalText": "This offer remains open for acceptance until the expiry date recorded in the property information. Acceptance must be communicated in writing and signed by the authorised party before expiry."
+        },
+        {
+          "sectionNumber": "Section 17",
+          "key": "occupation_and_possession",
+          "label": "Occupation and possession",
+          "legalText": "Occupation, possession and any occupational consideration are governed by the dates and amounts recorded in the structured terms. Risk and benefit do not pass merely because occupation is granted unless this agreement expressly says so."
+        },
+        {
+          "sectionNumber": "Section 18",
+          "key": "risk_and_benefit",
+          "label": "Risk and benefit",
+          "legalText": "Risk in the property remains with the seller until the transfer date unless a route-specific clause provides otherwise. Each party must preserve the property and transaction records required for transfer."
+        },
+        {
+          "sectionNumber": "Section 19",
+          "key": "compliance_certificates",
+          "label": "Compliance certificates",
+          "legalText": "The seller must provide the compliance certificates required by law, municipal authority, body corporate rules or this agreement. The purchaser may not be required to accept transfer without the certificates required for the applicable route."
+        },
+        {
+          "sectionNumber": "Section 20",
+          "key": "disclosure_and_warranties",
+          "label": "Disclosure and warranties",
+          "legalText": "The developer warrants only those matters expressly stated in this agreement and the approved development disclosure documents. The purchaser acknowledges that development specifications, levies and occupation dates may be subject to the approved development programme."
+        },
+        {
+          "sectionNumber": "Section 21",
+          "key": "fixtures_and_exclusions",
+          "label": "Fixtures and exclusions",
+          "legalText": "Fixtures, fittings, appliances and exclusions are only included if recorded in the structured property terms or annexures. No verbal assurance varies the written included or excluded item schedule."
+        },
+        {
+          "sectionNumber": "Section 22",
+          "key": "breach_and_remedies",
+          "label": "Breach and remedies",
+          "legalText": "If either party breaches this agreement and fails to remedy the breach after written notice, the aggrieved party may pursue the remedies available in law and under this agreement, including cancellation or specific performance where applicable."
+        },
+        {
+          "sectionNumber": "Section 23",
+          "key": "notices_and_domicilium",
+          "label": "Notices and domicilium",
+          "legalText": "The parties choose the physical and electronic addresses recorded in the transaction records for notices. A notice sent to the recorded address is treated as validly delivered unless a party has given written notice of a changed address."
+        },
+        {
+          "sectionNumber": "Section 24",
+          "key": "popia_and_fica",
+          "label": "POPIA and FICA",
+          "legalText": "The parties consent to the processing of personal information required for FICA, transfer, bond, agency, conveyancing, compliance and signature purposes. Information may be shared only with transaction participants who require it for the matter."
+        },
+        {
+          "sectionNumber": "Section 25",
+          "key": "annexures",
+          "label": "Annexures",
+          "legalText": "All annexures referenced in this agreement form part of the agreement once identified and signed or initialled where required. If an annexure conflicts with a typed special condition, the stricter signed condition applies unless expressly varied."
+        },
+        {
+          "sectionNumber": "Section 26",
+          "key": "signing_counterparts",
+          "label": "Signing counterparts",
+          "legalText": "This agreement may be signed in counterparts and by electronic signature where the signing workflow records signer identity, role, date, document version and completion evidence."
+        },
+        {
+          "sectionNumber": "Section 27",
+          "key": "initials_on_every_page",
+          "label": "Initials on every page",
+          "legalText": "Each required signatory must initial every page. Initials are evidence that the party has had sight of the page but do not replace the signature required on the signature page."
+        },
+        {
+          "sectionNumber": "Section 28",
+          "key": "route_specific_special_conditions",
+          "label": "Route-specific special conditions",
+          "legalText": "New-development special conditions apply only to the development unit, developer obligations, estimated levies, utility connection charges, snagging and handover arrangements recorded for this route."
+        },
+        {
+          "sectionNumber": "Section 29",
+          "key": "costs_pending_attorney_quote",
+          "label": "Costs pending attorney quote",
+          "legalText": "Where transfer costs, duty, rates clearance, levy clearance or attorney charges are pending, the purchaser remains responsible for the buyer cost obligations recorded as pending until the matter attorney quote or final statement replaces the estimate."
+        },
+        {
+          "sectionNumber": "Section 30",
+          "key": "final_statement_handling",
+          "label": "Final statement handling",
+          "legalText": "The matter attorney may issue a final statement once charges are known. Any previous quote or estimate is superseded only to the extent that the final statement identifies the updated charge."
+        }
+      ],
+      "signatureRoles": [
+        "Purchaser",
+        "Developer authorised signatory",
+        "Contractor authorised signatory",
+        "Agent"
+      ],
+      "initialRoles": [
+        "purchaser_1",
+        "developer_authorised_signatory",
+        "contractor_authorised_signatory",
+        "agent"
+      ],
+      "expectedMarkers": [
+        "New development OTP",
+        "Development levy estimate",
+        "Utility connection charges",
+        "Developer authorised signatory",
+        "Contractor authorised signatory",
+        "Page 1 of",
+        "Section 30"
+      ],
+      "forbiddenMarkers": [
+        "Municipal rates and taxes",
+        "Body corporate levy estimate",
+        "seller_signature",
+        "Route marker",
+        "Logo top left",
+        "Generated PDF proof"
+      ],
+      "runtime": {
+        "version": "otp_commercial_terms_runtime_phase26_v1",
+        "contract": "otp-vnext-commercial-terms-runtime-phase26-v1",
+        "wiredAt": "2026-08-05T15:05:00.000Z",
+        "transactionId": "tx-phase27-development",
+        "routeVariant": "new_development",
+        "reviewInput": {
+          "transactionId": "tx-phase27-development",
+          "routeVariant": "new_development",
+          "commissionVariation": {
+            "contract": "otp_commercial_terms_record_phase1_v1",
+            "version": "otp_commercial_terms_phase1_v1",
+            "transactionId": "tx-phase27-development",
+            "routeVariant": "new_development",
+            "mandateCommissionSnapshot": {
+              "basis": "percentage",
+              "percentage": 5,
+              "amount": null,
+              "vatIncluded": null,
+              "source": "mandate"
+            },
+            "proposedOtpCommission": {
+              "basis": "percentage",
+              "percentage": 5,
+              "amount": 157500,
+              "vatIncluded": null,
+              "source": "transaction_offer_terms"
+            },
+            "approval": {
+              "status": "not_required",
+              "approverId": "",
+              "approvalReference": "",
+              "approvedAt": "",
+              "rejectedAt": "",
+              "reason": "runtime_data_wiring"
+            },
+            "variationRequired": true,
+            "finalOtpCommission": {
+              "basis": "percentage",
+              "percentage": 5,
+              "amount": 157500,
+              "vatIncluded": null,
+              "source": "transaction_offer_terms"
+            },
+            "lockState": "ready_to_lock",
+            "blocksTransactionCommissionLock": false,
+            "preservesMandateCommission": true,
+            "auditEvents": [
+              {
+                "type": "otp_commission_variation_requested",
+                "actorId": "",
+                "occurredAt": "",
+                "reason": "runtime_data_wiring"
+              }
+            ]
+          },
+          "costObligationItems": [
+            {
+              "key": "buyer_transfer_cost_quote",
+              "category": "transfer_costs",
+              "label": "Buyer transfer-cost quote or invoice",
+              "amount": null,
+              "amountStatus": "pending",
+              "payerRole": "buyer",
+              "payeeRole": "transfer_attorney",
+              "payeeName": "",
+              "dueEvent": "on_conveyancer_demand",
+              "source": "transfer_attorney_assignment",
+              "includeInOtp": true,
+              "routeVariants": [
+                "resale_existing_property",
+                "new_development"
+              ],
+              "documentKeys": [
+                "buyer_transfer_cost_invoice"
+              ],
+              "notes": "",
+              "route_variant": "new_development"
+            },
+            {
+              "key": "buyer_transfer_duty",
+              "category": "transfer_duty",
+              "label": "Transfer duty or VAT treatment",
+              "amount": null,
+              "amountStatus": "pending",
+              "payerRole": "buyer",
+              "payeeRole": "sars_or_seller",
+              "payeeName": "",
+              "dueEvent": "before_lodgement",
+              "source": "transaction_offer_terms",
+              "includeInOtp": true,
+              "routeVariants": [
+                "resale_existing_property",
+                "new_development"
+              ],
+              "documentKeys": [],
+              "notes": "",
+              "route_variant": "new_development"
+            },
+            {
+              "key": "development_levy_estimate",
+              "category": "levies",
+              "label": "Development levy estimate",
+              "amount": 2200,
+              "amountStatus": "estimated",
+              "payerRole": "buyer",
+              "payeeRole": "body_corporate",
+              "payeeName": "",
+              "dueEvent": "from_registration_or_project_schedule",
+              "source": "development_unit_setup",
+              "includeInOtp": true,
+              "routeVariants": [
+                "resale_existing_property",
+                "new_development"
+              ],
+              "documentKeys": [],
+              "notes": "",
+              "route_variant": "new_development"
+            },
+            {
+              "key": "utility_connection_charges",
+              "category": "development_charges",
+              "label": "Utility connection charges",
+              "amount": 14500,
+              "amountStatus": "estimated",
+              "payerRole": "buyer",
+              "payeeRole": "developer_or_utility_provider",
+              "payeeName": "",
+              "dueEvent": "project_schedule_or_on_demand",
+              "source": "development_unit_setup",
+              "includeInOtp": true,
+              "routeVariants": [
+                "resale_existing_property",
+                "new_development"
+              ],
+              "documentKeys": [],
+              "notes": "",
+              "route_variant": "new_development"
+            }
+          ],
+          "matterAttorneyQuoteState": {
+            "contract": "otp_commercial_terms_record_phase1_v1",
+            "version": "otp_commercial_terms_phase1_v1",
+            "transactionId": "tx-phase27-development",
+            "transactionAttorneyAssignmentId": "assignment-phase27-development",
+            "routeVariant": "new_development",
+            "status": "pending_upload",
+            "document": {
+              "documentDefinitionKey": "buyer_transfer_cost_invoice",
+              "fileUrl": "",
+              "uploadedBy": "",
+              "uploadedAt": "",
+              "amount": null
+            },
+            "buyerQueryCount": 0,
+            "revisionCount": 0,
+            "transactionScoped": true,
+            "separatedFromAttorneyLeadQuote": true,
+            "attorneyLeadQuoteId": "",
+            "clientPortalVisible": false,
+            "buyerCanQuery": false,
+            "canAcknowledge": false,
+            "updatedAt": "",
+            "blockers": []
+          },
+          "sellerFacts": {},
+          "developmentUnit": {
+            "source": "development_unit_setup",
+            "levyEstimate": 2200,
+            "utilityConnectionCharges": 14500,
+            "developmentRatesEstimate": null,
+            "sourceKeys": [
+              "development_unit_setup",
+              "developer_sale_schedule"
+            ]
+          },
+          "readiness": {},
+          "reviewedAt": "2026-08-05T15:05:00.000Z"
+        },
+        "reviewModel": {
+          "version": "otp_commercial_terms_review_phase25_v1",
+          "contract": "otp-vnext-commercial-terms-review-phase25-v1",
+          "reviewedAt": "2026-08-05T15:05:00.000Z",
+          "transactionId": "tx-phase27-development",
+          "routeVariant": "new_development",
+          "routeLabel": "New-Development OTP Review",
+          "screenKey": "otp_review_new_development",
+          "status": "OTP_REVIEW_READY_FOR_GENERATION",
+          "canGenerateOtp": true,
+          "generationBlockers": [],
+          "warningCodes": [
+            "pending_cost_obligation:buyer_transfer_cost_quote",
+            "pending_cost_obligation:buyer_transfer_duty"
+          ],
+          "sections": {
+            "commissionApproval": {
+              "key": "commission_approval",
+              "label": "Commission approval",
+              "status": "not_required",
+              "statusLabel": "not required",
+              "visibleBeforeGeneration": true,
+              "blocksGeneration": false,
+              "blockerCode": "",
+              "lockState": "ready_to_lock",
+              "preservesMandateCommission": true,
+              "mandateCommission": "5% percentage",
+              "proposedOtpCommission": "5% percentage",
+              "finalOtpCommission": "5% percentage",
+              "approvalReference": "",
+              "approverId": "",
+              "reason": "runtime_data_wiring",
+              "actions": [
+                "review_locked_commission"
+              ]
+            },
+            "buyerCostObligations": {
+              "key": "buyer_cost_obligations",
+              "label": "Buyer cost obligations",
+              "visibleBeforeGeneration": true,
+              "items": [
+                {
+                  "key": "buyer_transfer_cost_quote",
+                  "category": "transfer_costs",
+                  "label": "Buyer transfer-cost quote or invoice",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "transfer_attorney",
+                  "payeeName": "",
+                  "dueEvent": "on_conveyancer_demand",
+                  "source": "transfer_attorney_assignment",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [
+                    "buyer_transfer_cost_invoice"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                },
+                {
+                  "key": "buyer_transfer_duty",
+                  "category": "transfer_duty",
+                  "label": "Transfer duty or VAT treatment",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "sars_or_seller",
+                  "payeeName": "",
+                  "dueEvent": "before_lodgement",
+                  "source": "transaction_offer_terms",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                },
+                {
+                  "key": "development_levy_estimate",
+                  "category": "levies",
+                  "label": "Development levy estimate",
+                  "amount": 2200,
+                  "amountStatus": "estimated",
+                  "payerRole": "buyer",
+                  "payeeRole": "body_corporate",
+                  "payeeName": "",
+                  "dueEvent": "from_registration_or_project_schedule",
+                  "source": "development_unit_setup",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "estimated"
+                },
+                {
+                  "key": "utility_connection_charges",
+                  "category": "development_charges",
+                  "label": "Utility connection charges",
+                  "amount": 14500,
+                  "amountStatus": "estimated",
+                  "payerRole": "buyer",
+                  "payeeRole": "developer_or_utility_provider",
+                  "payeeName": "",
+                  "dueEvent": "project_schedule_or_on_demand",
+                  "source": "development_unit_setup",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "estimated"
+                }
+              ],
+              "known": [],
+              "estimated": [
+                {
+                  "key": "development_levy_estimate",
+                  "category": "levies",
+                  "label": "Development levy estimate",
+                  "amount": 2200,
+                  "amountStatus": "estimated",
+                  "payerRole": "buyer",
+                  "payeeRole": "body_corporate",
+                  "payeeName": "",
+                  "dueEvent": "from_registration_or_project_schedule",
+                  "source": "development_unit_setup",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "estimated"
+                },
+                {
+                  "key": "utility_connection_charges",
+                  "category": "development_charges",
+                  "label": "Utility connection charges",
+                  "amount": 14500,
+                  "amountStatus": "estimated",
+                  "payerRole": "buyer",
+                  "payeeRole": "developer_or_utility_provider",
+                  "payeeName": "",
+                  "dueEvent": "project_schedule_or_on_demand",
+                  "source": "development_unit_setup",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "estimated"
+                }
+              ],
+              "pending": [
+                {
+                  "key": "buyer_transfer_cost_quote",
+                  "category": "transfer_costs",
+                  "label": "Buyer transfer-cost quote or invoice",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "transfer_attorney",
+                  "payeeName": "",
+                  "dueEvent": "on_conveyancer_demand",
+                  "source": "transfer_attorney_assignment",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [
+                    "buyer_transfer_cost_invoice"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                },
+                {
+                  "key": "buyer_transfer_duty",
+                  "category": "transfer_duty",
+                  "label": "Transfer duty or VAT treatment",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "sars_or_seller",
+                  "payeeName": "",
+                  "dueEvent": "before_lodgement",
+                  "source": "transaction_offer_terms",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                }
+              ],
+              "notApplicable": [],
+              "statusCounts": {
+                "known": 0,
+                "estimated": 2,
+                "pending": 2,
+                "notApplicable": 0
+              },
+              "warnings": [
+                "pending_cost_obligation:buyer_transfer_cost_quote",
+                "pending_cost_obligation:buyer_transfer_duty"
+              ],
+              "actions": [
+                "edit_cost_obligation",
+                "mark_cost_not_applicable",
+                "request_matter_attorney_quote"
+              ]
+            },
+            "matterAttorneyQuote": {
+              "key": "matter_attorney_cost_quote",
+              "label": "Matter attorney cost quote",
+              "status": "pending_upload",
+              "statusLabel": "pending upload",
+              "visibleBeforeGeneration": true,
+              "transactionScoped": true,
+              "separatedFromAttorneyLeadQuote": true,
+              "blocksGeneration": false,
+              "blockerCode": "",
+              "transactionAttorneyAssignmentId": "assignment-phase27-development",
+              "documentDefinitionKey": "buyer_transfer_cost_invoice",
+              "documentAmount": null,
+              "clientPortalVisible": false,
+              "warnings": [],
+              "actions": [
+                "open_matter_quote",
+                "request_matter_quote_revision",
+                "acknowledge_matter_quote"
+              ]
+            }
+          },
+          "routeManifest": {
+            "key": "new_development",
+            "label": "New-Development OTP Review",
+            "screenKey": "otp_review_new_development",
+            "costSourceScopes": [
+              "development_unit_setup",
+              "developer_sale_schedule",
+              "transfer_attorney_assignment",
+              "transaction_offer_terms",
+              "manual"
+            ],
+            "expectedCostKeys": [
+              "buyer_transfer_cost_quote",
+              "buyer_transfer_duty",
+              "development_levy_estimate",
+              "utility_connection_charges"
+            ],
+            "prohibitedCostKeys": [
+              "municipal_rates_estimate",
+              "scheme_levy_estimate"
+            ]
+          },
+          "routeSeparation": {
+            "separateScreen": true,
+            "expectedCostKeysPresent": true,
+            "prohibitedCostKeysAbsent": true,
+            "sourceScopes": [
+              "transfer_attorney_assignment",
+              "transaction_offer_terms",
+              "development_unit_setup"
+            ]
+          },
+          "source": {
+            "persistenceReadinessStatus": "",
+            "mutatedData": false
+          }
+        },
+        "commercialTerms": {
+          "commission": {
+            "mandateCommissionSnapshot": {
+              "basis": "percentage",
+              "percentage": 5,
+              "amount": null,
+              "vatIncluded": null,
+              "source": "mandate"
+            },
+            "proposedOtpCommission": {
+              "basis": "percentage",
+              "percentage": 5,
+              "amount": 157500,
+              "vatIncluded": null,
+              "source": "transaction_offer_terms"
+            },
+            "finalOtpCommission": {
+              "basis": "percentage",
+              "percentage": 5,
+              "amount": 157500,
+              "vatIncluded": null,
+              "source": "transaction_offer_terms"
+            },
+            "approval": {
+              "status": "not_required",
+              "approverId": "",
+              "approvalReference": "",
+              "approvedAt": "",
+              "rejectedAt": "",
+              "reason": "runtime_data_wiring"
+            },
+            "lockDecision": {
+              "canLock": true,
+              "lockState": "ready_to_lock",
+              "approvalStatus": "not_required",
+              "finalOtpCommission": {
+                "basis": "percentage",
+                "percentage": 5,
+                "amount": 157500,
+                "vatIncluded": null,
+                "source": "transaction_offer_terms"
+              },
+              "mandateCommissionSnapshot": {
+                "basis": "percentage",
+                "percentage": 5,
+                "amount": null,
+                "vatIncluded": null,
+                "source": "mandate"
+              },
+              "preservesMandateCommission": true,
+              "blockerCodes": []
+            },
+            "canFinalizeTransactionCommission": true
+          },
+          "costObligations": {
+            "buyerVisibleItems": [
+              {
+                "key": "buyer_transfer_cost_quote",
+                "category": "transfer_costs",
+                "label": "Buyer transfer-cost quote or invoice",
+                "amount": null,
+                "amountStatus": "pending",
+                "payerRole": "buyer",
+                "payeeRole": "transfer_attorney",
+                "payeeName": "",
+                "dueEvent": "on_conveyancer_demand",
+                "source": "transfer_attorney_assignment",
+                "includeInOtp": true,
+                "routeVariants": [
+                  "new_development"
+                ],
+                "documentKeys": [
+                  "buyer_transfer_cost_invoice"
+                ],
+                "notes": "",
+                "id": "",
+                "visibleStatus": "pending"
+              },
+              {
+                "key": "buyer_transfer_duty",
+                "category": "transfer_duty",
+                "label": "Transfer duty or VAT treatment",
+                "amount": null,
+                "amountStatus": "pending",
+                "payerRole": "buyer",
+                "payeeRole": "sars_or_seller",
+                "payeeName": "",
+                "dueEvent": "before_lodgement",
+                "source": "transaction_offer_terms",
+                "includeInOtp": true,
+                "routeVariants": [
+                  "new_development"
+                ],
+                "documentKeys": [],
+                "notes": "",
+                "id": "",
+                "visibleStatus": "pending"
+              },
+              {
+                "key": "development_levy_estimate",
+                "category": "levies",
+                "label": "Development levy estimate",
+                "amount": 2200,
+                "amountStatus": "estimated",
+                "payerRole": "buyer",
+                "payeeRole": "body_corporate",
+                "payeeName": "",
+                "dueEvent": "from_registration_or_project_schedule",
+                "source": "development_unit_setup",
+                "includeInOtp": true,
+                "routeVariants": [
+                  "new_development"
+                ],
+                "documentKeys": [],
+                "notes": "",
+                "id": "",
+                "visibleStatus": "estimated"
+              },
+              {
+                "key": "utility_connection_charges",
+                "category": "development_charges",
+                "label": "Utility connection charges",
+                "amount": 14500,
+                "amountStatus": "estimated",
+                "payerRole": "buyer",
+                "payeeRole": "developer_or_utility_provider",
+                "payeeName": "",
+                "dueEvent": "project_schedule_or_on_demand",
+                "source": "development_unit_setup",
+                "includeInOtp": true,
+                "routeVariants": [
+                  "new_development"
+                ],
+                "documentKeys": [],
+                "notes": "",
+                "id": "",
+                "visibleStatus": "estimated"
+              }
+            ],
+            "pendingItems": [
+              {
+                "key": "buyer_transfer_cost_quote",
+                "category": "transfer_costs",
+                "label": "Buyer transfer-cost quote or invoice",
+                "amount": null,
+                "amountStatus": "pending",
+                "payerRole": "buyer",
+                "payeeRole": "transfer_attorney",
+                "payeeName": "",
+                "dueEvent": "on_conveyancer_demand",
+                "source": "transfer_attorney_assignment",
+                "includeInOtp": true,
+                "routeVariants": [
+                  "new_development"
+                ],
+                "documentKeys": [
+                  "buyer_transfer_cost_invoice"
+                ],
+                "notes": "",
+                "id": "",
+                "visibleStatus": "pending"
+              },
+              {
+                "key": "buyer_transfer_duty",
+                "category": "transfer_duty",
+                "label": "Transfer duty or VAT treatment",
+                "amount": null,
+                "amountStatus": "pending",
+                "payerRole": "buyer",
+                "payeeRole": "sars_or_seller",
+                "payeeName": "",
+                "dueEvent": "before_lodgement",
+                "source": "transaction_offer_terms",
+                "includeInOtp": true,
+                "routeVariants": [
+                  "new_development"
+                ],
+                "documentKeys": [],
+                "notes": "",
+                "id": "",
+                "visibleStatus": "pending"
+              }
+            ]
+          },
+          "matterAttorneyCostQuote": {
+            "status": "pending_upload",
+            "transactionAttorneyAssignmentId": "assignment-phase27-development",
+            "documentDefinitionKey": "buyer_transfer_cost_invoice",
+            "amount": null,
+            "attorneyFirmId": "",
+            "sourceScope": "transaction_matter"
+          },
+          "mergeFields": {
+            "gross_commission_amount": 157500,
+            "mandate_commission_snapshot": "5%",
+            "otp_commission_proposal": "5%",
+            "otp_commission_variation_status": "not_required",
+            "otp_commission_approval_reference": "",
+            "otp_buyer_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending; Development levy estimate - estimated - R 2 200; Utility connection charges - estimated - R 14 500",
+            "otp_pending_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending",
+            "matter_attorney_cost_quote_status": "pending_upload",
+            "transfer_attorney_company_name": "Phase 27 Transfer Attorneys",
+            "transfer_attorney_contact_person": "",
+            "transfer_attorney_email": "",
+            "transfer_attorney_phone": ""
+          }
+        },
+        "generatorInput": {
+          "commercialTerms": {
+            "commission": {
+              "mandateCommissionSnapshot": {
+                "basis": "percentage",
+                "percentage": 5,
+                "amount": null,
+                "vatIncluded": null,
+                "source": "mandate"
+              },
+              "proposedOtpCommission": {
+                "basis": "percentage",
+                "percentage": 5,
+                "amount": 157500,
+                "vatIncluded": null,
+                "source": "transaction_offer_terms"
+              },
+              "finalOtpCommission": {
+                "basis": "percentage",
+                "percentage": 5,
+                "amount": 157500,
+                "vatIncluded": null,
+                "source": "transaction_offer_terms"
+              },
+              "approval": {
+                "status": "not_required",
+                "approverId": "",
+                "approvalReference": "",
+                "approvedAt": "",
+                "rejectedAt": "",
+                "reason": "runtime_data_wiring"
+              },
+              "lockDecision": {
+                "canLock": true,
+                "lockState": "ready_to_lock",
+                "approvalStatus": "not_required",
+                "finalOtpCommission": {
+                  "basis": "percentage",
+                  "percentage": 5,
+                  "amount": 157500,
+                  "vatIncluded": null,
+                  "source": "transaction_offer_terms"
+                },
+                "mandateCommissionSnapshot": {
+                  "basis": "percentage",
+                  "percentage": 5,
+                  "amount": null,
+                  "vatIncluded": null,
+                  "source": "mandate"
+                },
+                "preservesMandateCommission": true,
+                "blockerCodes": []
+              },
+              "canFinalizeTransactionCommission": true
+            },
+            "costObligations": {
+              "buyerVisibleItems": [
+                {
+                  "key": "buyer_transfer_cost_quote",
+                  "category": "transfer_costs",
+                  "label": "Buyer transfer-cost quote or invoice",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "transfer_attorney",
+                  "payeeName": "",
+                  "dueEvent": "on_conveyancer_demand",
+                  "source": "transfer_attorney_assignment",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [
+                    "buyer_transfer_cost_invoice"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                },
+                {
+                  "key": "buyer_transfer_duty",
+                  "category": "transfer_duty",
+                  "label": "Transfer duty or VAT treatment",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "sars_or_seller",
+                  "payeeName": "",
+                  "dueEvent": "before_lodgement",
+                  "source": "transaction_offer_terms",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                },
+                {
+                  "key": "development_levy_estimate",
+                  "category": "levies",
+                  "label": "Development levy estimate",
+                  "amount": 2200,
+                  "amountStatus": "estimated",
+                  "payerRole": "buyer",
+                  "payeeRole": "body_corporate",
+                  "payeeName": "",
+                  "dueEvent": "from_registration_or_project_schedule",
+                  "source": "development_unit_setup",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "estimated"
+                },
+                {
+                  "key": "utility_connection_charges",
+                  "category": "development_charges",
+                  "label": "Utility connection charges",
+                  "amount": 14500,
+                  "amountStatus": "estimated",
+                  "payerRole": "buyer",
+                  "payeeRole": "developer_or_utility_provider",
+                  "payeeName": "",
+                  "dueEvent": "project_schedule_or_on_demand",
+                  "source": "development_unit_setup",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "estimated"
+                }
+              ],
+              "pendingItems": [
+                {
+                  "key": "buyer_transfer_cost_quote",
+                  "category": "transfer_costs",
+                  "label": "Buyer transfer-cost quote or invoice",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "transfer_attorney",
+                  "payeeName": "",
+                  "dueEvent": "on_conveyancer_demand",
+                  "source": "transfer_attorney_assignment",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [
+                    "buyer_transfer_cost_invoice"
+                  ],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                },
+                {
+                  "key": "buyer_transfer_duty",
+                  "category": "transfer_duty",
+                  "label": "Transfer duty or VAT treatment",
+                  "amount": null,
+                  "amountStatus": "pending",
+                  "payerRole": "buyer",
+                  "payeeRole": "sars_or_seller",
+                  "payeeName": "",
+                  "dueEvent": "before_lodgement",
+                  "source": "transaction_offer_terms",
+                  "includeInOtp": true,
+                  "routeVariants": [
+                    "new_development"
+                  ],
+                  "documentKeys": [],
+                  "notes": "",
+                  "id": "",
+                  "visibleStatus": "pending"
+                }
+              ]
+            },
+            "matterAttorneyCostQuote": {
+              "status": "pending_upload",
+              "transactionAttorneyAssignmentId": "assignment-phase27-development",
+              "documentDefinitionKey": "buyer_transfer_cost_invoice",
+              "amount": null,
+              "attorneyFirmId": "",
+              "sourceScope": "transaction_matter"
+            },
+            "mergeFields": {
+              "gross_commission_amount": 157500,
+              "mandate_commission_snapshot": "5%",
+              "otp_commission_proposal": "5%",
+              "otp_commission_variation_status": "not_required",
+              "otp_commission_approval_reference": "",
+              "otp_buyer_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending; Development levy estimate - estimated - R 2 200; Utility connection charges - estimated - R 14 500",
+              "otp_pending_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending",
+              "matter_attorney_cost_quote_status": "pending_upload",
+              "transfer_attorney_company_name": "Phase 27 Transfer Attorneys",
+              "transfer_attorney_contact_person": "",
+              "transfer_attorney_email": "",
+              "transfer_attorney_phone": ""
+            }
+          },
+          "routeVariant": "new_development",
+          "otpDocumentVariant": "new_development",
+          "mergeFields": {
+            "gross_commission_amount": 157500,
+            "mandate_commission_snapshot": "5%",
+            "otp_commission_proposal": "5%",
+            "otp_commission_variation_status": "not_required",
+            "otp_commission_approval_reference": "",
+            "otp_buyer_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending; Development levy estimate - estimated - R 2 200; Utility connection charges - estimated - R 14 500",
+            "otp_pending_cost_obligations": "Buyer transfer-cost quote or invoice - pending; Transfer duty or VAT treatment - pending",
+            "matter_attorney_cost_quote_status": "pending_upload",
+            "transfer_attorney_company_name": "Phase 27 Transfer Attorneys",
+            "transfer_attorney_contact_person": "",
+            "transfer_attorney_email": "",
+            "transfer_attorney_phone": ""
+          }
+        },
+        "gates": {
+          "canGenerateOtp": true,
+          "canFinalizeTransactionCommission": true,
+          "generationBlockers": [],
+          "warnings": [
+            "pending_cost_obligation:buyer_transfer_cost_quote",
+            "pending_cost_obligation:buyer_transfer_duty"
+          ]
+        },
+        "routeSeparation": {
+          "resaleSellerFactsIncluded": false,
+          "developmentFactsIncluded": true,
+          "prohibitedCostKeysAbsent": true,
+          "attorneyLeadQuotesExcluded": true
+        },
+        "mutatedData": false
+      }
+    }
+  ]
+}

@@ -111,6 +111,7 @@ const ORGANISATION_SUCCESS_MESSAGE = 'Organisation settings updated successfully
 const BRANDING_SUCCESS_MESSAGE = 'Branding updated successfully.'
 const ORGANISATION_UNSAVED_PROMPT = 'You have unsaved organisation changes. Leave without saving?'
 const BRANDING_UNSAVED_PROMPT = "You have unsaved branding changes. Leave without saving?"
+const BRAND_ASSET_APPLY_TIMEOUT_MS = 60000
 const BRAND_ASSET_MAX_BYTES = 10 * 1024 * 1024
 const BRAND_ASSET_ALLOWED_EXTENSIONS = new Set(['png', 'svg', 'jpg', 'jpeg', 'webp'])
 const BRAND_ASSET_ALLOWED_TYPES = new Set(['image/png', 'image/svg+xml', 'image/jpeg', 'image/webp'])
@@ -403,6 +404,18 @@ function validateBrandAssetFile(file) {
   return ''
 }
 
+function withBrandAssetTimeout(promise, timeoutMs = BRAND_ASSET_APPLY_TIMEOUT_MS) {
+  let timeoutId
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Logo upload is taking longer than expected. Please retry with a smaller image or check your connection.'))
+      }, timeoutMs)
+    }),
+  ]).finally(() => clearTimeout(timeoutId))
+}
+
 function getBrandColourValue(brandColours = {}, key = '', fallback = '#274C69') {
   const value = normalizeText(brandColours?.[key])
   return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback
@@ -548,19 +561,6 @@ function VerificationBadge({ children, verified = false }) {
   )
 }
 
-function OrganisationPageHeader({ sectionTitle = 'Organisation', description = 'Manage your agency information, branding, permissions and operational defaults.' }) {
-  return (
-    <header className="pb-1">
-      <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold leading-tight text-[#17233a]">
-        <span className="text-[#6b7d93]">Settings</span>
-        <ChevronRight className="h-4 w-4 text-[#9aa8b8]" strokeWidth={2} />
-        <span>{sectionTitle}</span>
-      </h1>
-      <p className="mt-2 text-sm leading-6 text-[#60758d]">{description}</p>
-    </header>
-  )
-}
-
 function OrganisationCard({ title, description, actions, children }) {
   return (
     <section className={CARD_CLASS}>
@@ -594,6 +594,26 @@ function SettingsToast({ message }) {
     <div className="fixed bottom-6 right-6 z-40 max-w-sm rounded-[14px] border border-[#ccead8] bg-white px-4 py-3 text-sm font-semibold text-[#1f7a45] shadow-[0_18px_42px_rgba(15,23,42,0.14)]" role="status">
       {message}
     </div>
+  )
+}
+
+function BrandImage({ src, alt = '', className = '', fallback = null }) {
+  const resolvedSrc = normalizeText(src)
+  const [failedSrc, setFailedSrc] = useState('')
+
+  if (!resolvedSrc || failedSrc === resolvedSrc) {
+    return fallback
+  }
+
+  return (
+    <img
+      src={resolvedSrc}
+      alt={alt}
+      className={className}
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailedSrc(resolvedSrc)}
+    />
   )
 }
 
@@ -686,7 +706,7 @@ function StatTile({ label, value, children }) {
 function LogoMark({ logoUrl, name }) {
   return (
     <span className="inline-flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-[24px] border border-[#d7e2ef] bg-[#f1f6f9] text-2xl font-semibold text-[#244e70] shadow-[0_10px_24px_rgba(15,23,42,0.08)]">
-      {logoUrl ? <img src={logoUrl} alt="" className="h-full w-full object-contain p-3" /> : getInitials(name)}
+      <BrandImage src={logoUrl} alt="" className="h-full w-full object-contain p-3" fallback={getInitials(name)} />
     </span>
   )
 }
@@ -864,7 +884,7 @@ function BrandAssetTile({
           if (file) void onFile?.(file)
         }}
       >
-        {previewUrl ? <img className="h-full max-h-[104px] w-full object-contain" src={previewUrl} alt={`${title} preview`} /> : fallback}
+        <BrandImage src={previewUrl} alt={`${title} preview`} className="h-full max-h-[104px] w-full object-contain" fallback={fallback} />
       </div>
       <div>
         <div className="flex items-start justify-between gap-3">
@@ -1029,7 +1049,7 @@ function BrandPreviewSurface({ activeTab, organisationName, logoUrl, iconUrl, co
         <div className="p-4 text-white" style={{ backgroundColor: secondary }}>
           <div className="flex items-center gap-3">
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-white/15">
-              {iconUrl ? <img src={iconUrl} alt="" className="h-full w-full object-contain p-2" /> : getInitials(organisationName)}
+              <BrandImage src={iconUrl} alt="" className="h-full w-full object-contain p-2" fallback={getInitials(organisationName)} />
             </span>
             <span className="text-sm font-semibold">{organisationName}</span>
           </div>
@@ -1054,7 +1074,7 @@ function BrandPreviewSurface({ activeTab, organisationName, logoUrl, iconUrl, co
             <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#60758d]">PDF Preview</p>
             <p className="mt-1 text-sm font-semibold text-[#17233a]">{organisationName}</p>
           </div>
-          {logoUrl ? <img src={logoUrl} alt="" className="h-10 max-w-[160px] object-contain" /> : null}
+          <BrandImage src={logoUrl} alt="" className="h-10 max-w-[160px] object-contain" />
         </div>
         <div className="mt-5 grid gap-3">
           <span className="h-3 rounded-full" style={{ backgroundColor: primary }} />
@@ -1072,7 +1092,7 @@ function BrandPreviewSurface({ activeTab, organisationName, logoUrl, iconUrl, co
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-white/15 text-sm font-semibold">
-              {iconUrl ? <img src={iconUrl} alt="" className="h-full w-full object-contain p-2" /> : getInitials(organisationName)}
+              <BrandImage src={iconUrl} alt="" className="h-full w-full object-contain p-2" fallback={getInitials(organisationName)} />
             </span>
             <div>
               <p className="text-sm font-semibold">{organisationName}</p>
@@ -1157,7 +1177,7 @@ function BrandPreviewPanel({ organisationName, logoUrl, iconUrl, colours, brandH
                   </span>
                 ) : (
                   <span className="flex h-full w-full items-center justify-center" style={{ background: `linear-gradient(135deg, ${hexToRgba(item.accent, 0.95)}, ${hexToRgba(colours.neutral, 0.95)})` }}>
-                    {iconUrl || logoUrl ? <img src={iconUrl || logoUrl} alt="" className="h-8 w-8 object-contain" /> : <span className="text-xs font-semibold text-white">{getInitials(organisationName)}</span>}
+                    <BrandImage src={iconUrl || logoUrl} alt="" className="h-8 w-8 object-contain" fallback={<span className="text-xs font-semibold text-white">{getInitials(organisationName)}</span>} />
                   </span>
                 )}
               </span>
@@ -1199,7 +1219,7 @@ function OnboardingLandingLogoRow({ title, description, previewUrl, previewTone 
               : 'border-[#d9e3ef] bg-white text-[#60758d]',
           ].join(' ')}
         >
-          {previewUrl ? <img src={previewUrl} alt="" className="h-full w-full object-contain" /> : 'Logo'}
+          <BrandImage src={previewUrl} alt="" className="h-full w-full object-contain" fallback="Logo" />
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-[#17233a]">{title}</span>
@@ -1241,7 +1261,7 @@ function OnboardingLandingPreviewSurface({ portalType = 'buyer', organisationNam
         <div className="flex items-center gap-3">
           <div className="flex min-w-0 items-center">
             <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-white/15 bg-white/10 p-2 text-sm font-semibold text-white">
-              {logoUrl || iconUrl ? <img src={logoUrl || iconUrl} alt="" className="h-full w-full object-contain" /> : getInitials(organisationName)}
+              <BrandImage src={logoUrl || iconUrl} alt="" className="h-full w-full object-contain" fallback={getInitials(organisationName)} />
             </span>
           </div>
         </div>
@@ -1796,7 +1816,7 @@ function BrandingEssentialsCard({
         <div className="flex flex-col gap-4 p-4 text-white sm:flex-row sm:items-center sm:justify-between" style={{ background: `linear-gradient(135deg, ${colours.primary}, ${colours.secondary})` }}>
           <div className="flex min-w-0 items-center gap-3">
             <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[14px] bg-white/15 p-2 text-sm font-semibold">
-              {iconUrl ? <img src={iconUrl} alt="" className="h-full w-full object-contain" /> : getInitials(organisationName)}
+              <BrandImage src={iconUrl} alt="" className="h-full w-full object-contain" fallback={getInitials(organisationName)} />
             </span>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">{organisationName}</p>
@@ -2460,42 +2480,43 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   }
 
   async function handleLogoUpload(file, targetKey) {
-    if (!file || !canEdit || !state) return
+    if (!file || !canEdit || !state || uploadingLogoTarget) return
     const validationError = validateBrandAssetFile(file)
     if (validationError) {
       setError(validationError)
       return
     }
+    const resolvedTargetKey = BRAND_ASSET_TARGETS[targetKey] ? targetKey : 'logoLight'
+    const assetConfig = BRAND_ASSET_TARGETS[resolvedTargetKey]
     try {
-      const assetConfig = BRAND_ASSET_TARGETS[targetKey] || BRAND_ASSET_TARGETS.logoLight
-      setUploadingLogoTarget(targetKey)
+      setUploadingLogoTarget(resolvedTargetKey)
       setError('')
       setMessage('')
-      const upload = await uploadOrganisationBrandingAsset({
+      const upload = await withBrandAssetTimeout(uploadOrganisationBrandingAsset({
         file,
         variant: assetConfig.variant,
-      })
+      }))
       const assetUrl = upload.resolvedUrl || upload.signedUrl || upload.publicUrl || ''
       const previousBranding = state.onboarding?.branding || {}
-      const previousUrl = normalizeText(previousBranding[targetKey])
-      const previousName = normalizeText(previousBranding[`${targetKey}Name`])
-      const currentHistory = getBrandAssetHistory(previousBranding, targetKey)
+      const previousUrl = normalizeText(previousBranding[resolvedTargetKey])
+      const previousName = normalizeText(previousBranding[`${resolvedTargetKey}Name`])
+      const currentHistory = getBrandAssetHistory(previousBranding, resolvedTargetKey)
       const nextHistory = previousUrl
         ? [{ url: previousUrl, fileName: previousName || assetConfig.title, replacedAt: new Date().toISOString() }, ...currentHistory].slice(0, 3)
         : currentHistory
       const nextBranding = {
         ...previousBranding,
-        [targetKey]: assetUrl || previousBranding[targetKey] || '',
-        [`${targetKey}Name`]: file.name,
+        [resolvedTargetKey]: assetUrl || previousBranding[resolvedTargetKey] || '',
+        [`${resolvedTargetKey}Name`]: file.name,
         [assetConfig.bucketField]: upload.bucket || previousBranding[assetConfig.bucketField] || '',
         [assetConfig.pathField]: upload.path || previousBranding[assetConfig.pathField] || '',
         assetHistory: {
           ...(previousBranding.assetHistory || {}),
-          [targetKey]: nextHistory,
+          [resolvedTargetKey]: nextHistory,
         },
       }
 
-      if (targetKey === 'logoIcon') {
+      if (resolvedTargetKey === 'logoIcon') {
         for (const generatedTarget of ['favicon', 'portalIcon', 'mobileIcon', 'browserTile']) {
           if (!normalizeText(nextBranding[generatedTarget])) {
             const generatedConfig = BRAND_ASSET_TARGETS[generatedTarget]
@@ -2514,7 +2535,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
           ...state.onboarding,
           branding: nextBranding,
         },
-        organisation: targetKey === 'logoLight'
+        organisation: resolvedTargetKey === 'logoLight'
           ? {
               ...state.organisation,
               logoUrl: assetUrl || state.organisation?.logoUrl || '',
@@ -2525,17 +2546,17 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
       setState(nextState)
 
       const saveTasks = [saveAgencyOnboardingDraft(nextState.onboarding)]
-      if (targetKey === 'logoLight') {
+      if (resolvedTargetKey === 'logoLight') {
         saveTasks.push(updateOrganisationSettings(nextState.organisation))
       }
-      await Promise.all(saveTasks)
+      await withBrandAssetTimeout(Promise.all(saveTasks))
 
       applyOrganisationState(nextState)
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('itg:organisation-branding-updated'))
       }
 
-      setMessage(targetKey === 'logoIcon' ? 'Icon logo uploaded and applied.' : targetKey === 'logoDark' ? 'Dark logo uploaded and applied.' : `${assetConfig.title} uploaded and applied.`)
+      setMessage(resolvedTargetKey === 'logoIcon' ? 'Icon logo uploaded and applied.' : resolvedTargetKey === 'logoDark' ? 'Dark logo uploaded and applied.' : `${assetConfig.title} uploaded and applied.`)
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the selected logo. Please try again.')
     } finally {
@@ -2608,7 +2629,6 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   if (!form || !onboarding) {
     return (
       <div className={settingsPageClass}>
-        <OrganisationPageHeader sectionTitle={showBrandingOnly ? 'Branding' : 'Organisation'} />
         <SettingsBanner tone="warning">{error || copy.unavailable}</SettingsBanner>
       </div>
     )
@@ -2929,11 +2949,6 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
 
   return (
     <div className={settingsPageClass}>
-      <OrganisationPageHeader
-        sectionTitle={showBrandingOnly ? 'Branding' : 'Organisation'}
-        description={showBrandingOnly ? 'Manage logos, colours, and brand assets used across Arch9.' : isAttorneyWorkspace ? 'Manage your firm information, branding, permissions and platform modules.' : 'Manage your agency information, branding, permissions and operational defaults.'}
-      />
-
       {!canEdit ? <SettingsBanner tone="warning">{copy.readOnly}</SettingsBanner> : null}
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {message && !isSaveSuccessMessage ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}

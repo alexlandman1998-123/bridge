@@ -32,7 +32,7 @@ assert.equal(OTP_LEGAL_CONTENT_TEMPLATE_VERSION, 'otp_legal_content_templates_ph
 assert.equal(OTP_LEGAL_CONTENT_LAYOUT_CONTRACT, 'otp_legal_content_section_phase6_v1')
 
 const allSections = listOtpLegalContentTemplateSections()
-assert.equal(allSections.length, 16)
+assert.equal(allSections.length, 18)
 assert.deepEqual(
   allSections.map((section) => section.section_key),
   [
@@ -50,6 +50,8 @@ assert.deepEqual(
     'development_compliance_body_corporate',
     'resale_disclosure_fixtures_compliance',
     'transfer_conveyancer',
+    'buyer_cost_obligations',
+    'otp_commission_variation',
     'special_conditions_annexures',
     'popia_fica',
   ],
@@ -69,8 +71,8 @@ const developmentSections = listOtpLegalContentTemplateSections({ variant: 'new_
 const resaleKeys = new Set(resaleSections.map((section) => section.section_key))
 const developmentKeys = new Set(developmentSections.map((section) => section.section_key))
 
-assert.equal(resaleSections.length, 11)
-assert.equal(developmentSections.length, 11)
+assert.equal(resaleSections.length, 13)
+assert.equal(developmentSections.length, 13)
 assert.equal(resaleKeys.has('resale_disclosure_fixtures_compliance'), true)
 assert.equal(resaleKeys.has('subject_to_sale'), true)
 assert.equal(resaleKeys.has('resale_occupation_rent'), true)
@@ -82,6 +84,10 @@ assert.equal(developmentKeys.has('development_handover'), true)
 assert.equal(developmentKeys.has('development_compliance_body_corporate'), true)
 assert.equal(developmentKeys.has('resale_disclosure_fixtures_compliance'), false)
 assert.equal(developmentKeys.has('subject_to_sale'), false)
+assert.equal(resaleKeys.has('buyer_cost_obligations'), true)
+assert.equal(resaleKeys.has('otp_commission_variation'), true)
+assert.equal(developmentKeys.has('buyer_cost_obligations'), true)
+assert.equal(developmentKeys.has('otp_commission_variation'), true)
 
 const subjectToSale = allSections.find((section) => section.section_key === 'subject_to_sale')
 assert.equal(subjectToSale.is_required, false)
@@ -105,14 +111,24 @@ const developmentVat = allSections.find((section) => section.section_key === 'de
 assert.deepEqual(developmentVat.variants, ['new_development'])
 assert.deepEqual(developmentVat.placeholder_keys, ['vat_inclusive_purchase_price'])
 
+const buyerCosts = allSections.find((section) => section.section_key === 'buyer_cost_obligations')
+for (const token of ['otp_buyer_cost_obligations', 'otp_pending_cost_obligations', 'matter_attorney_cost_quote_status']) {
+  assert.ok(buyerCosts.placeholder_keys.includes(token), `buyer cost obligations should include ${token}.`)
+}
+
+const commissionVariation = allSections.find((section) => section.section_key === 'otp_commission_variation')
+for (const token of ['mandate_commission_snapshot', 'otp_commission_proposal', 'otp_commission_variation_status', 'otp_commission_approval_reference']) {
+  assert.ok(commissionVariation.placeholder_keys.includes(token), `commission variation should include ${token}.`)
+}
+
 const report = buildOtpLegalContentTemplateReport({ generatedAt: '2026-08-03T00:00:00.000Z' })
 assert.equal(report.version, OTP_LEGAL_CONTENT_TEMPLATE_VERSION)
 assert.equal(report.mutatedData, false)
 assert.equal(report.status, 'OTP_LEGAL_CONTENT_READY_FOR_COUNSEL_REVIEW')
 assert.equal(report.summary.routeCount, 2)
-assert.equal(report.summary.sectionCount, 16)
-assert.equal(report.summary.resaleSectionCount, 11)
-assert.equal(report.summary.developmentSectionCount, 11)
+assert.equal(report.summary.sectionCount, 18)
+assert.equal(report.summary.resaleSectionCount, 13)
+assert.equal(report.summary.developmentSectionCount, 13)
 assert.equal(report.summary.blockerCount, 0)
 assert.deepEqual(report.blockers, [])
 assert.equal(report.shellAudit.status, 'OTP_BRANDED_SHELL_READY_FOR_CONTENT_RULES')

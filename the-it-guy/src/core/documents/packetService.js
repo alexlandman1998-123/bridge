@@ -66,6 +66,24 @@ import {
   formatOtpTemplateLaunchReadinessIssue,
 } from './otpTemplateLaunchReadiness'
 import {
+  OTP_AGENT_REVIEW_UI_CONTRACT,
+} from './otpAgentReviewUiPhase31'
+import {
+  buildOtpAgentReviewSigningEnvelopeAlignment,
+} from './otpAgentReviewSigningEnvelopeAlignmentPhase33'
+import {
+  assertOtpAgentReviewDispatchGuard,
+  buildOtpAgentReviewDispatchGuardForSigningSummary,
+} from './otpAgentReviewDispatchGuardPhase34'
+import {
+  assertOtpAgentReviewCompletionGuard,
+  buildOtpAgentReviewCompletionGuardDecision,
+} from './otpAgentReviewCompletionGuardPhase36'
+import {
+  assertOtpFinalSignedArtifactProof,
+  buildOtpFinalSignedArtifactProof,
+} from './otpFinalSignedArtifactProofPhase37'
+import {
   NATIVE_RENDERER_VERSION,
   normalizeTemplateRenderMode,
   resolveTemplateStorageConfig as resolveStructuredTemplateStorageConfig,
@@ -391,6 +409,51 @@ function buildContentFingerprint(value) {
   return hashString(stableSerialize(value))
 }
 
+function resolveOtpAgentReviewRecordForGeneration(context = {}) {
+  const sourceContext = context?.sourceContext && typeof context.sourceContext === 'object'
+    ? context.sourceContext
+    : {}
+  const direct = context?.otpAgentReviewRecord && typeof context.otpAgentReviewRecord === 'object'
+    ? context.otpAgentReviewRecord
+    : null
+  const camel = sourceContext?.otpAgentReviewRecord && typeof sourceContext.otpAgentReviewRecord === 'object'
+    ? sourceContext.otpAgentReviewRecord
+    : null
+  const snake = sourceContext?.otp_agent_review_record && typeof sourceContext.otp_agent_review_record === 'object'
+    ? sourceContext.otp_agent_review_record
+    : null
+  return direct || camel || snake || null
+}
+
+function buildOtpAgentReviewRuntimeProof({ packetType = '', reviewRecord = null } = {}) {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  const record = reviewRecord && typeof reviewRecord === 'object' ? reviewRecord : null
+  const required = normalizedPacketType === 'otp'
+  const present = Boolean(record)
+  const confirmed = Boolean(
+    record?.confirmed === true &&
+      normalizeText(record?.contract) === OTP_AGENT_REVIEW_UI_CONTRACT &&
+      Array.isArray(record?.blockerCodes) &&
+      record.blockerCodes.length === 0,
+  )
+  return {
+    required,
+    present,
+    confirmed,
+    contract: normalizeText(record?.contract) || null,
+    version: normalizeText(record?.version) || null,
+    phase30Contract: normalizeText(record?.phase30Contract) || null,
+    routeVariant: normalizeText(record?.routeVariant) || null,
+    confirmedAt: normalizeText(record?.confirmedAt) || null,
+    confirmedByRole: normalizeText(record?.confirmedByRole) || null,
+    blockerCodes: Array.isArray(record?.blockerCodes) ? record.blockerCodes : [],
+    termsFingerprint: record?.termsSnapshot && typeof record.termsSnapshot === 'object'
+      ? buildContentFingerprint(record.termsSnapshot)
+      : null,
+    reviewRecordFingerprint: record ? buildContentFingerprint(record) : null,
+  }
+}
+
 function sanitizeTemplatePlaceholders(placeholders = {}) {
   return Object.entries(placeholders && typeof placeholders === 'object' ? placeholders : {}).reduce(
     (acc, [key, value]) => {
@@ -469,6 +532,11 @@ function buildGenerationPayload({
           frozenAt: normalizeText(context.editableRenderFreeze.frozenAt) || null,
         }
       : null
+  const otpAgentReviewRecord = resolveOtpAgentReviewRecordForGeneration(context)
+  const otpAgentReviewRuntimeProof = buildOtpAgentReviewRuntimeProof({
+    packetType: packet?.packet_type || context?.packetType || validation?.packetType,
+    reviewRecord: otpAgentReviewRecord,
+  })
   return {
     packetId: normalizeText(packet?.id) || null,
     mandateData,
@@ -488,6 +556,8 @@ function buildGenerationPayload({
     mandateTemplateLaunchReadiness: validation?.mandateTemplateLaunchReadiness || null,
     otpTemplateContentGate: validation?.otpTemplateContentGate || null,
     otpTemplateLaunchReadiness: validation?.otpTemplateLaunchReadiness || null,
+    otpAgentReviewRecord,
+    otpAgentReviewRuntimeProof,
     validation: mandateValidation || buildValidationSummary(validation),
     template: template
       ? {
@@ -4726,6 +4796,15 @@ export async function prepareSigningFields({
   } else {
     seed.layoutSource = 'default'
   }
+  const otpAgentReviewSigningAlignment =
+    normalizeText(resolvedPacketType).toLowerCase() === 'otp'
+      ? buildOtpAgentReviewSigningEnvelopeAlignment({
+          packet,
+          version: targetVersion,
+          seed,
+          pageCount: seed.pageCount,
+        })
+      : null
 
   if (currentSummary.fieldCount > 0 || currentSummary.signerCount > 0) {
     const currentSigners = Array.isArray(currentSummary.signers) ? currentSummary.signers : []
@@ -4782,6 +4861,7 @@ export async function prepareSigningFields({
         version: targetVersion,
         summary: repairedSummary,
         seed,
+        otpAgentReviewSigningAlignment,
       }
     }
 
@@ -4806,6 +4886,7 @@ export async function prepareSigningFields({
         version: targetVersion,
         summary: repairedSummary,
         seed,
+        otpAgentReviewSigningAlignment,
       }
     }
 
@@ -4815,6 +4896,7 @@ export async function prepareSigningFields({
       version: targetVersion,
       summary: currentSummary,
       seed,
+      otpAgentReviewSigningAlignment,
     }
   }
 
@@ -4857,6 +4939,7 @@ export async function prepareSigningFields({
           reason: signer.reason,
         })) || [],
       signingLayoutSource: seed.layoutSource,
+      otpAgentReviewSigningAlignment,
     },
   })
 
@@ -4872,6 +4955,7 @@ export async function prepareSigningFields({
     version: targetVersion,
     summary: updatedSummary,
     seed,
+    otpAgentReviewSigningAlignment,
   }
 }
 
@@ -4970,7 +5054,34 @@ export async function generateSigningLinks({
   if (isPilotDocumentFallbackVersion(targetVersion)) {
     throw createPacketError('PILOT_FALLBACK_REVIEW_REQUIRED', 'This pilot review draft cannot be sent for signature. Generate a verified document first.')
   }
-  return generatePacketSigningLinksRecord({
+  let otpAgentReviewDispatchGuard = null
+  if (normalizeText(packet?.packet_type).toLowerCase() === 'otp') {
+    const signingSummary = await getPacketSigningSummaryRecord({
+      packetId: resolvedPacketId,
+      packetVersionId: targetVersion.id,
+      organisationId,
+    })
+    otpAgentReviewDispatchGuard = buildOtpAgentReviewDispatchGuardForSigningSummary({
+      packet,
+      version: targetVersion,
+      signingSummary,
+      targetSignerRole,
+      regenerate,
+    })
+    try {
+      assertOtpAgentReviewDispatchGuard(otpAgentReviewDispatchGuard)
+    } catch (error) {
+      throw createPacketError(
+        error?.code || 'OTP_AGENT_REVIEW_DISPATCH_GUARD_BLOCKED',
+        error?.message || 'OTP signing dispatch is blocked by the agent-review dispatch guard.',
+        {
+          ...(error?.details || {}),
+          otpAgentReviewDispatchGuard,
+        },
+      )
+    }
+  }
+  const linkResult = await generatePacketSigningLinksRecord({
     packetId: resolvedPacketId,
     packetVersionId: targetVersion.id,
     expiresInHours,
@@ -4979,6 +5090,24 @@ export async function generateSigningLinks({
     regenerate,
     targetSignerRole,
   })
+  if (otpAgentReviewDispatchGuard) {
+    await addPacketEvent({
+      packetId: resolvedPacketId,
+      organisationId: packet.organisation_id,
+      versionId: targetVersion.id,
+      eventType: 'otp_agent_review_dispatch_guard_passed',
+      eventPayload: {
+        otpAgentReviewDispatchGuard,
+        targetSignerRole: otpAgentReviewDispatchGuard.targetSignerRole,
+        routeVariant: otpAgentReviewDispatchGuard.routeVariant,
+        receiptFingerprint: otpAgentReviewDispatchGuard.receiptFingerprint,
+      },
+    })
+  }
+  return {
+    ...linkResult,
+    otpAgentReviewDispatchGuard,
+  }
 }
 
 export async function generateFinalSignedPacketDocument({
@@ -5060,6 +5189,31 @@ export async function generateFinalSignedPacketDocument({
     throw createPacketError('MISSING_SIGNATURE_ASSETS', 'Required signature assets are missing for one or more fields.')
   }
 
+  let otpAgentReviewCompletionGuard = null
+  if (normalizeText(packet?.packet_type).toLowerCase() === 'otp') {
+    otpAgentReviewCompletionGuard = buildOtpAgentReviewCompletionGuardDecision({
+      packet,
+      version: targetVersion,
+      signingSummary: {
+        ...signingSummary,
+        signers: relevantSigners,
+        fields: relevantFields,
+      },
+    })
+    try {
+      assertOtpAgentReviewCompletionGuard(otpAgentReviewCompletionGuard)
+    } catch (error) {
+      throw createPacketError(
+        error?.code || 'OTP_AGENT_REVIEW_COMPLETION_GUARD_BLOCKED',
+        error?.message || 'OTP finalisation is blocked by the agent-review completion guard.',
+        {
+          ...(error?.details || {}),
+          otpAgentReviewCompletionGuard,
+        },
+      )
+    }
+  }
+
   const result = await withPacketTimeout(
     generateFinalSignedDocumentRecord({
       packetId: resolvedPacketId,
@@ -5071,6 +5225,38 @@ export async function generateFinalSignedPacketDocument({
     FINAL_SIGNED_GENERATION_TIMEOUT_MS,
   )
 
+  let otpFinalSignedArtifactProof = null
+  if (otpAgentReviewCompletionGuard) {
+    const finalArtifactRecord = asPlainObject(result?.finalArtifact)
+    otpFinalSignedArtifactProof = buildOtpFinalSignedArtifactProof({
+      completionGuard: otpAgentReviewCompletionGuard,
+      packet,
+      version: targetVersion,
+      finalArtifact: {
+        ...finalArtifactRecord,
+        packetId: finalArtifactRecord.packetId || finalArtifactRecord.packet_id || result?.packetId || resolvedPacketId,
+        packetVersionId:
+          finalArtifactRecord.packetVersionId ||
+          finalArtifactRecord.packet_version_id ||
+          result?.packetVersionId ||
+          targetVersion.id,
+        sourceFormat: finalArtifactRecord.sourceFormat || result?.sourceFormat,
+      },
+    })
+    try {
+      assertOtpFinalSignedArtifactProof(otpFinalSignedArtifactProof)
+    } catch (error) {
+      throw createPacketError(
+        error?.code || 'OTP_FINAL_SIGNED_ARTIFACT_PROOF_BLOCKED',
+        error?.message || 'OTP final signed artifact is blocked by the artifact proof guard.',
+        {
+          ...(error?.details || {}),
+          otpFinalSignedArtifactProof,
+        },
+      )
+    }
+  }
+
   await addPacketEvent({
     packetId: resolvedPacketId,
     organisationId: packet.organisation_id,
@@ -5078,8 +5264,41 @@ export async function generateFinalSignedPacketDocument({
     eventType: 'final_signed_document_requested',
     eventPayload: {
       packetVersionId: targetVersion.id,
+      otpAgentReviewCompletionGuard,
+      otpFinalSignedArtifactProof,
     },
   })
+
+  if (otpAgentReviewCompletionGuard) {
+    await addPacketEvent({
+      packetId: resolvedPacketId,
+      organisationId: packet.organisation_id,
+      versionId: targetVersion.id,
+      eventType: 'otp_agent_review_completion_guard_passed',
+      eventPayload: {
+        otpAgentReviewCompletionGuard,
+        routeVariant: otpAgentReviewCompletionGuard.routeVariant,
+        reviewRecordFingerprint: otpAgentReviewCompletionGuard.reviewRecordFingerprint,
+        termsFingerprint: otpAgentReviewCompletionGuard.termsFingerprint,
+      },
+    })
+  }
+
+  if (otpFinalSignedArtifactProof) {
+    await addPacketEvent({
+      packetId: resolvedPacketId,
+      organisationId: packet.organisation_id,
+      versionId: targetVersion.id,
+      eventType: 'otp_final_signed_artifact_proof_recorded',
+      eventPayload: {
+        otpFinalSignedArtifactProof,
+        routeVariant: otpFinalSignedArtifactProof.routeVariant,
+        finalArtifactDocumentId: otpFinalSignedArtifactProof.finalArtifactDocumentId,
+        finalArtifactSha256: otpFinalSignedArtifactProof.finalArtifactSha256,
+        storageMode: otpFinalSignedArtifactProof.storageMode,
+      },
+    })
+  }
 
   const refreshedPacket = await fetchDocumentPacket(resolvedPacketId, {
     includeVersions: true,
@@ -5088,6 +5307,7 @@ export async function generateFinalSignedPacketDocument({
 
   return {
     ...result,
+    otpFinalSignedArtifactProof,
     packet: refreshedPacket || packet,
   }
 }

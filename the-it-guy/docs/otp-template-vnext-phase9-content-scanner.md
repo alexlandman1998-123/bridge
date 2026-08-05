@@ -1,6 +1,6 @@
 # OTP Template vNext Phase 9 Content Scanner
 
-Generated: 2026-08-05T09:58:50.547Z
+Generated: 2026-08-05T11:03:15.143Z
 Version: otp_content_scanner_phase9_v1
 Status: OTP_CONTENT_SCANNER_PHASE9_READY_FOR_RENDERER_WIRING
 Mutated data: false
@@ -10,9 +10,9 @@ Mutated data: false
 | Metric | Value |
 | --- | --- |
 | Routes | 2 |
-| Legal sections scanned | 22 |
+| Legal sections scanned | 26 |
 | Shell sections scanned | 16 |
-| Unique scanned tokens | 86 |
+| Unique scanned tokens | 94 |
 | Blockers | 0 |
 
 ## Checks
@@ -34,8 +34,8 @@ Mutated data: false
 
 | Route | Legal Scan | Full Surface Scan | Signals | Tokens |
 | --- | --- | --- | --- | --- |
-| Existing / resale property OTP | pass | pass | finance_conditions, occupation_rent, parties, resale_disclosure_fixtures, resale_property, shared_offer, subject_to_sale, transfer_conveyancer | 62 |
-| New development OTP | pass | pass | development_body_corporate, development_handover, development_unit, development_vat, finance_conditions, parties, shared_offer, transfer_conveyancer | 67 |
+| Existing / resale property OTP | pass | pass | finance_conditions, occupation_rent, parties, resale_disclosure_fixtures, resale_property, shared_offer, subject_to_sale, transfer_conveyancer | 70 |
+| New development OTP | pass | pass | development_body_corporate, development_handover, development_unit, development_vat, finance_conditions, parties, shared_offer, transfer_conveyancer | 75 |
 
 ## Boundary
 

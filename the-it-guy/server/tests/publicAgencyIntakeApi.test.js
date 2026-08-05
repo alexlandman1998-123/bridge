@@ -3,8 +3,10 @@ import {
   buildAgencyPublicIntakeAutomationEvent,
   buildAgencyPublicIntakeCrmRows,
   buildAgencyPublicIntakeContract,
+  buildPublicIntakeSupervisorLeadOperationsPayload,
   createPublicAgencyIntakeResponse,
   normalizeAgencyIntakeSlug,
+  selectPublicIntakeFallbackOwner,
   validateAgencyIntakeSubmission,
 } from '../services/publicAgencyIntakeApi.js'
 
@@ -112,6 +114,73 @@ assert.deepEqual(buyerCrmRows.requirementRow.areas, ['Bedfordview', 'Edenvale'])
 assert.deepEqual(buyerCrmRows.requirementRow.property_types, ['House'])
 assert.equal(buyerCrmRows.requirementRow.finance_status, 'pre_approved')
 assert.equal(buyerCrmRows.requirementRow.timeline, '0_3_months')
+
+const fallbackOwner = selectPublicIntakeFallbackOwner([
+  {
+    user_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    role: 'branch_manager',
+    branch_id: '22222222-2222-4222-8222-222222222222',
+    status: 'active',
+  },
+  {
+    user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    role: 'Principal / Owner',
+    branch_id: '',
+    status: 'active',
+  },
+  {
+    user_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    role: 'admin',
+    branch_id: '22222222-2222-4222-8222-222222222222',
+    status: 'active',
+  },
+], { branchId: '22222222-2222-4222-8222-222222222222' })
+
+assert.equal(fallbackOwner.user_id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+
+const branchScopedFallbackOwner = selectPublicIntakeFallbackOwner([
+  {
+    user_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    role: 'principal',
+    branch_id: '99999999-9999-4999-8999-999999999999',
+    status: 'active',
+  },
+  {
+    user_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    role: 'principal',
+    branch_id: '22222222-2222-4222-8222-222222222222',
+    status: 'active',
+  },
+], { branchId: '22222222-2222-4222-8222-222222222222' })
+
+assert.equal(branchScopedFallbackOwner.user_id, 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')
+
+const supervisorNotificationPayload = buildPublicIntakeSupervisorLeadOperationsPayload({
+  basePayload: {
+    organisationId: '11111111-1111-4111-8111-111111111111',
+    leadId: buyerCrmRows.leadId,
+    assignedUserId: fallbackOwner.user_id,
+    leadName: 'Avery Buyer',
+    leadSource: 'Public Intake',
+    actionLink: 'https://app.arch9.co.za/agency/leads/example',
+  },
+  supervisor: {
+    ...fallbackOwner,
+    first_name: 'Priya',
+    last_name: 'Principal',
+    email: 'principal@example.com',
+  },
+  dedupeSeed: 'buyer-intake-0001',
+})
+
+assert.equal(supervisorNotificationPayload.type, 'new_enquiry_unassigned_manager')
+assert.equal(supervisorNotificationPayload.to, 'principal@example.com')
+assert.equal(supervisorNotificationPayload.recipientName, 'Priya Principal')
+assert.equal(supervisorNotificationPayload.recipientRole, 'principal')
+assert.equal(supervisorNotificationPayload.subject, 'New lead needs assignment')
+assert.equal(supervisorNotificationPayload.message, 'Avery Buyer is ready for review. Please assign it to the right agent for follow-up.')
+assert.equal(supervisorNotificationPayload.assignedAgentName, '')
+assert.equal(supervisorNotificationPayload.idempotencyKey, `lead-ops:buyer-intake-0001:fallback-supervisor:${fallbackOwner.user_id}`)
 
 const buyerAutomationEvent = buildAgencyPublicIntakeAutomationEvent({
   rows: {

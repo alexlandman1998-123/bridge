@@ -1,4 +1,5 @@
 import { normalizeRoleType } from '../../src/core/transactions/permissions.js'
+import { buildRegistrationReadinessShortcut } from '../../src/core/transactions/registrationReadinessShortcut.js'
 import { getTransactionWorkflowDefinition } from '../workflows/transactionWorkflowDefinitions.js'
 import { isGateWorkflowAction } from '../workflows/transactionWorkflowGates.js'
 import { resolveFinanceWorkflowKey } from './financeWorkflowResolver.js'
@@ -201,6 +202,14 @@ const ACTION_DEFINITIONS = Object.freeze({
     targetStatus: 'complete',
     prerequisiteParentStage: 'TRANSFER',
     targetParentStage: 'REGISTRATION',
+    reason(state = {}) {
+      const shortcut = buildRegistrationReadinessShortcut({
+        transaction: state.transaction || {},
+        workflows: state.workflows || {},
+        rollup: state.rollup || null,
+      })
+      return shortcut.ready ? null : shortcut.blockers[0]?.message || 'Registration readiness is blocked.'
+    },
   },
   MARK_REGISTERED: {
     label: 'Mark Registered',
@@ -214,6 +223,14 @@ const ACTION_DEFINITIONS = Object.freeze({
     prerequisiteParentStage: 'REGISTRATION',
     targetParentStage: 'COMPLETE',
     reason(state = {}) {
+      const shortcut = buildRegistrationReadinessShortcut({
+        transaction: state.transaction || {},
+        workflows: state.workflows || {},
+        rollup: state.rollup || null,
+      })
+      if (!shortcut.ready) {
+        return shortcut.blockers[0]?.message || 'Registration readiness is blocked.'
+      }
       const transaction = state.transaction || {}
       if (!normalizeText(transaction.registration_date)) {
         return 'Registration date is required before the transaction can be marked as Registered.'

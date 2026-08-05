@@ -1,4 +1,4 @@
-# Arch9 | Command
+# Arch9 | Operating Console
 
 Internal admin dashboard for `admin.arch9.co.za`.
 
@@ -43,6 +43,30 @@ VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
 ```
 
+## Active shell
+
+The current shell is intentionally small:
+
+```txt
+Dashboard
+Support
+Search
+Settings
+```
+
+Dashboard and support data should come from Supabase RPC contracts:
+
+```txt
+arch9_admin_dashboard_snapshot
+arch9_admin_support_snapshot
+```
+
+Dashboard V1 includes the operating KPI strip, revenue path, support summary, pipeline table, registered-this-month table, and attention queue.
+Support V1 includes urgent, stalled, and missing-revenue lanes plus a filterable work queue.
+Phase 6 adds dashboard KPI drilldowns and selectable support item detail.
+Phase 7 adds a read-only real-data QA script at `scripts/admin-portal-phase7-real-data-qa.mjs`.
+Phase 8 cut over production to the rebuilt Operating Console on `admin.arch9.co.za`.
+
 ## Access levels
 
 The admin app uses two access levels:
@@ -64,7 +88,7 @@ or
 { "role": "customer_support" }
 ```
 
-Executive level can access Dashboard, Growth, Revenue, Ecosystem, Platform Health, Operations, Service Desk, Audit Log, Search, and Settings.
-Customer support level can access Service Desk and Search only.
+Executive level can access Dashboard, Support, Search, and Settings.
+Customer support level can access Support, Search, and Settings.
 
 Roles are read from Supabase app metadata, user metadata, and common profile fields. Legacy internal roles still map into these two levels so existing staff access continues to work.

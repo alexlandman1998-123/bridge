@@ -1,5 +1,6 @@
 import { requireClient } from '../../src/services/attorneyFirmServiceShared.js'
 import { normalizeRoleType } from '../../src/core/transactions/permissions.js'
+import { buildRegistrationReadinessBlockers } from '../../src/core/transactions/registrationReadinessShortcut.js'
 import { getTransactionWorkflowDefinition } from '../workflows/transactionWorkflowDefinitions.js'
 import {
   attachWorkflowEvidence,
@@ -246,9 +247,28 @@ function validateWorkflowAction(descriptor, state = {}, rollup = {}, payload = {
   }
 
   if (descriptor.actionKey === 'MARK_REGISTERED') {
+    const readinessBlockers = buildRegistrationReadinessBlockers({
+      transaction: state.transaction || {},
+      workflows: rollup?.workflows || state.workflowMap || {},
+      rollup,
+    })
+    if (readinessBlockers.length) {
+      return readinessBlockers
+    }
     const registrationBlockers = validateRegistrationPayload(state.transaction || {}, payload)
     if (registrationBlockers.length) {
       return registrationBlockers
+    }
+  }
+
+  if (descriptor.actionKey === 'MARK_READY_FOR_REGISTRATION') {
+    const readinessBlockers = buildRegistrationReadinessBlockers({
+      transaction: state.transaction || {},
+      workflows: rollup?.workflows || state.workflowMap || {},
+      rollup,
+    })
+    if (readinessBlockers.length) {
+      return readinessBlockers
     }
   }
 

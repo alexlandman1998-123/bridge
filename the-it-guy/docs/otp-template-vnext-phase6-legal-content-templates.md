@@ -1,6 +1,6 @@
 # OTP Template vNext Phase 6 Legal Content Templates
 
-Generated: 2026-08-05T09:56:18.261Z
+Generated: 2026-08-05T11:02:41.613Z
 Version: otp_legal_content_templates_phase6_v1
 Status: OTP_LEGAL_CONTENT_READY_FOR_COUNSEL_REVIEW
 Mutated data: false
@@ -10,10 +10,10 @@ Mutated data: false
 | Metric | Value |
 | --- | --- |
 | Routes | 2 |
-| Template sections | 16 |
-| Resale sections | 11 |
-| New-development sections | 11 |
-| Content tokens | 63 |
+| Template sections | 18 |
+| Resale sections | 13 |
+| New-development sections | 13 |
+| Content tokens | 71 |
 | Blockers | 0 |
 | Warnings | 0 |
 
@@ -40,8 +40,8 @@ Mutated data: false
 
 | Route | Sections | Clause Families | Unknown Tokens | Route Field Gaps |
 | --- | --- | --- | --- | --- |
-| resale_existing_property | 11 | definitions, fixtures_defects_disclosure, occupation_rent, offer_acceptance, parties, property, purchase_price, special_conditions, suspensive_conditions, transfer_conveyancer | 0 | 0 |
-| new_development | 11 | body_corporate, definitions, development_defects, development_unit, offer_acceptance, parties, purchase_price, special_conditions, suspensive_conditions, transfer_conveyancer | 0 | 0 |
+| resale_existing_property | 13 | agency_commission, costs, definitions, fixtures_defects_disclosure, occupation_rent, offer_acceptance, parties, property, purchase_price, special_conditions, suspensive_conditions, transfer_conveyancer | 0 | 0 |
+| new_development | 13 | agency_commission, body_corporate, costs, definitions, development_defects, development_unit, offer_acceptance, parties, purchase_price, special_conditions, suspensive_conditions, transfer_conveyancer | 0 | 0 |
 
 ## Sections
 
@@ -60,7 +60,9 @@ Mutated data: false
 | 50 | resale_occupation_rent | resale_existing_property | occupation_rent | yes | occupation_date, occupational_rent_payable, occupational_rent_amount |
 | 60 | development_compliance_body_corporate | new_development | body_corporate | yes | body_corporate_name, body_corporate_rules_annexure, development_levy_estimate, development_rates_estimate, utility_connection_charges, development_compliance_certificate_schedule |
 | 60 | resale_disclosure_fixtures_compliance | resale_existing_property | fixtures_defects_disclosure | yes | mandatory_disclosure_status, mandatory_disclosure_annexure, mandatory_disclosure_comments, fixtures_included, fixtures_excluded, compliance_certificate_schedule |
-| 70 | transfer_conveyancer | resale_existing_property, new_development | transfer_conveyancer | yes | transfer_attorney_company_name, transfer_attorney_contact_person, transfer_attorney_email, transfer_attorney_phone, trust_account_recipient, guarantee_delivery_deadline, guarantee_delivery_period |
+| 70 | transfer_conveyancer | resale_existing_property, new_development | transfer_conveyancer | yes | transfer_attorney_company_name, transfer_attorney_contact_person, transfer_attorney_email, transfer_attorney_phone, trust_account_recipient, guarantee_delivery_deadline, guarantee_delivery_period, matter_attorney_cost_quote_status |
+| 72 | buyer_cost_obligations | resale_existing_property, new_development | costs | yes | otp_buyer_cost_obligations, otp_pending_cost_obligations, matter_attorney_cost_quote_status, transfer_attorney_company_name |
+| 74 | otp_commission_variation | resale_existing_property, new_development | agency_commission | yes | organisation_trading_name, agent_full_name, agent_ffc_number, gross_commission_amount, mandate_commission_snapshot, otp_commission_proposal, otp_commission_variation_status, otp_commission_approval_reference |
 | 80 | special_conditions_annexures | resale_existing_property, new_development | special_conditions | no | special_conditions, annexures_list |
 | 90 | popia_fica | resale_existing_property, new_development | offer_acceptance | yes | buyer_full_name |
 

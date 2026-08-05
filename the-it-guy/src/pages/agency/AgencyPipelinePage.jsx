@@ -162,6 +162,12 @@ import {
   shouldShowFinanceReadinessSection,
 } from '../../services/financeReadinessService'
 import {
+  buildAcceptedOfferConversionPreflight,
+  formatAcceptedOfferConversionPreflightMessage,
+} from '../../core/transactions/acceptedOfferConversionPreflight'
+import { buildTransactionHandoffHealth } from '../../core/transactions/transactionHandoffHealth'
+import { resolveTransactionRoutingProfile } from '../../services/transactionRoutingProfileService'
+import {
   calculateApprovalProbability,
   calculateOperationalRisk,
   calculateTransactionVelocity,
@@ -2894,6 +2900,22 @@ function formatDateShort(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function formatViewingRequestUserError(error, fallback = "We couldn't send the availability request.") {
+  const message = normalizeText(error?.message || error)
+  const lower = message.toLowerCase()
+  if (!message) return fallback
+  if (lower.includes('edge function') || lower.includes('functionsfetcherror') || lower.includes('failed to send a request')) {
+    return `${fallback} Please check the buyer's email address and try again.`
+  }
+  if (lower.includes('not_authenticated') || lower.includes('sign in')) {
+    return `${fallback} Please refresh your session and try again.`
+  }
+  if (lower.includes('missing required field') || lower.includes('email')) {
+    return `${fallback} Please check the recipient email address and try again.`
+  }
+  return message
 }
 
 const AGENT_KANBAN_COLORS = ['#32a9e0', '#30bf73', '#f26b4f', '#8b6ce8', '#f0a92e', '#1f6f9f', '#d64c7f']
@@ -5819,6 +5841,191 @@ function mergeLeadAddress(previous = {}, value = null) {
     googlePlaceId: normalizeText(value.placeId),
     areaInterest: normalizeText(previous.areaInterest) || suburb,
   }
+}
+
+function TransactionHandoffHealthPanel({ health = null }) {
+  const checks = Array.isArray(health?.checks) ? health.checks : []
+  const summary = health?.summary || {}
+  const statusMeta = {
+    clear: {
+      label: 'Clear',
+      className: 'border-[#cfe8dc] bg-[#eefbf4] text-[#17643a]',
+    },
+    attention: {
+      label: 'Needs action',
+      className: 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]',
+    },
+    blocked: {
+      label: 'Blocked',
+      className: 'border-[#f4d4d4] bg-[#fff5f5] text-[#b42318]',
+    },
+    pending: {
+      label: 'Pending',
+      className: 'border-[#dfe9f4] bg-[#f7faff] text-[#607891]',
+    },
+  }[health?.status] || {
+    label: 'Pending',
+    className: 'border-[#dfe9f4] bg-[#f7faff] text-[#607891]',
+  }
+  const checkMeta = {
+    complete: {
+      label: 'OK',
+      icon: CheckCircle2,
+      dotClassName: 'bg-[#dff5e8] text-[#17643a]',
+      textClassName: 'text-[#17643a]',
+    },
+    attention: {
+      label: 'Fix',
+      icon: AlertTriangle,
+      dotClassName: 'bg-[#fff0cf] text-[#8a641d]',
+      textClassName: 'text-[#8a641d]',
+    },
+    blocked: {
+      label: 'Stop',
+      icon: AlertTriangle,
+      dotClassName: 'bg-[#ffe3e3] text-[#b42318]',
+      textClassName: 'text-[#b42318]',
+    },
+    pending: {
+      label: 'Open',
+      icon: Clock3,
+      dotClassName: 'bg-[#eef3f7] text-[#607891]',
+      textClassName: 'text-[#607891]',
+    },
+    not_applicable: {
+      label: 'N/A',
+      icon: CheckCircle2,
+      dotClassName: 'bg-[#eef3f7] text-[#7890a8]',
+      textClassName: 'text-[#7890a8]',
+    },
+  }
+  const nextAction = health?.nextAction
+
+  return (
+    <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Gauge className="h-4 w-4 text-[#385977]" />
+          <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Transaction Handoff Health</h4>
+        </div>
+        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.className}`}>
+          {statusMeta.label}
+        </span>
+      </div>
+      <div className="mt-4 rounded-[16px] border border-[#e2edf7] bg-[#fbfdff] p-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#607891]">Path coverage</span>
+          <span className="text-sm font-semibold text-[#18324b]">
+            {Number(summary.completeCount || 0)} / {Number(summary.totalActionable || 0)}
+          </span>
+        </div>
+        {nextAction ? (
+          <div className="mt-3 border-t border-[#e6eef7] pt-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#607891]">Next fix</p>
+            <p className="mt-1 text-sm font-semibold text-[#18324b]">{nextAction.label}</p>
+            <p className="mt-1 text-xs leading-5 text-[#607891]">{nextAction.action}</p>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-4 grid gap-2">
+        {checks.map((check) => {
+          const meta = checkMeta[check.status] || checkMeta.pending
+          const Icon = meta.icon
+          return (
+            <div key={check.key} className="rounded-[12px] border border-[#e6eef7] bg-white px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[#203a54]">
+                  <Icon className={`h-4 w-4 shrink-0 ${meta.textClassName}`} />
+                  <span className="truncate">{check.label}</span>
+                </span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${meta.dotClassName}`}>
+                  {meta.label}
+                </span>
+              </div>
+              {check.detail ? (
+                <p className="mt-1 pl-6 text-xs leading-5 text-[#6f849b]">{check.detail}</p>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function AcceptedOfferConversionPreflightPanel({ preflight = null, loading = false }) {
+  const checks = Array.isArray(preflight?.checks) ? preflight.checks : []
+  const summary = preflight?.summary || {}
+  const statusMeta = {
+    ready: {
+      label: 'Ready',
+      className: 'border-[#cfe8dc] bg-[#eefbf4] text-[#17643a]',
+    },
+    reusable: {
+      label: 'Reusable',
+      className: 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]',
+    },
+    blocked: {
+      label: 'Fix first',
+      className: 'border-[#f4d4d4] bg-[#fff5f5] text-[#b42318]',
+    },
+    pending: {
+      label: 'Pending',
+      className: 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]',
+    },
+  }[preflight?.status] || {
+    label: 'Pending',
+    className: 'border-[#dfe9f4] bg-[#f7faff] text-[#607891]',
+  }
+  const checkMeta = {
+    complete: { label: 'OK', icon: CheckCircle2, className: 'bg-[#eaf7ef] text-[#1e7a46]', iconClassName: 'text-[#17643a]' },
+    blocked: { label: 'Fix', icon: AlertTriangle, className: 'bg-[#ffe3e3] text-[#b42318]', iconClassName: 'text-[#b42318]' },
+    out_of_scope: { label: 'Manual', icon: AlertTriangle, className: 'bg-[#ffe3e3] text-[#b42318]', iconClassName: 'text-[#b42318]' },
+    pending: { label: 'Open', icon: Clock3, className: 'bg-[#eef3f7] text-[#607891]', iconClassName: 'text-[#607891]' },
+  }
+  const nextFix = preflight?.nextFix
+
+  return (
+    <div className={`mt-4 rounded-[16px] border p-4 ${statusMeta.className}`}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em]">
+          <ShieldCheck className="h-4 w-4" />
+          Conversion Preflight
+        </span>
+        <span className="rounded-full bg-white/75 px-3 py-1 text-xs font-semibold ring-1 ring-current/10">
+          {loading ? 'Checking' : statusMeta.label}
+        </span>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3 rounded-[12px] bg-white/70 px-3 py-2">
+        <span className="text-xs font-semibold">Required facts</span>
+        <span className="text-xs font-semibold">{Number(summary.completeCount || 0)} / {Number(summary.total || 0)}</span>
+      </div>
+      {nextFix ? (
+        <div className="mt-3 rounded-[12px] bg-white/75 px-3 py-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em]">Next fix</p>
+          <p className="mt-1 text-sm font-semibold">{nextFix.label}</p>
+          <p className="mt-1 text-xs leading-5">{nextFix.action || nextFix.detail}</p>
+        </div>
+      ) : null}
+      <div className="mt-3 grid gap-2">
+        {checks.map((item) => {
+          const meta = checkMeta[item.status] || checkMeta.pending
+          const Icon = meta.icon
+          return (
+            <div key={item.key} className="flex items-center justify-between gap-3 rounded-[10px] bg-white/75 px-3 py-2">
+              <span className="flex min-w-0 items-center gap-2 text-xs font-semibold">
+                <Icon className={`h-4 w-4 shrink-0 ${meta.iconClassName}`} />
+                <span className="truncate">{item.label}</span>
+              </span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${meta.className}`}>
+                {meta.label}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 const FINANCE_READINESS_FORM_DEFAULTS = {
@@ -10334,6 +10541,89 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadOffers,
   ])
 
+  const selectedLeadTransactionHandoffHealth = useMemo(() => {
+    const diagnosticTransaction = selectedLeadLifecycleDiagnostic?.transaction || {}
+    const hasTransactionContext = Boolean(selectedLeadLinkedTransaction || selectedLeadLifecycleDiagnostic?.transaction)
+    const transaction = hasTransactionContext
+      ? {
+          ...diagnosticTransaction,
+          ...(selectedLeadLinkedTransaction || {}),
+        }
+      : {}
+    const diagnosticOffer = selectedLeadLifecycleDiagnostic?.offer || {}
+    const hasOfferContext = Boolean(selectedLeadAcceptedOffer || selectedLeadLifecycleDiagnosticOffer || selectedLeadLifecycleDiagnostic?.offer)
+    const offer = hasOfferContext
+      ? {
+          ...diagnosticOffer,
+          ...(selectedLeadLifecycleDiagnosticOffer || {}),
+          ...(selectedLeadAcceptedOffer || {}),
+        }
+      : {}
+    return buildTransactionHandoffHealth({
+      lead: selectedLead || {},
+      offer,
+      transaction,
+      onboarding: selectedLeadLifecycleDiagnostic?.onboarding || {},
+      diagnostic: selectedLeadLifecycleDiagnostic || {},
+      legalHandoff: selectedLeadLifecycleDiagnostic?.legalHandoff || {},
+    })
+  }, [
+    selectedLead,
+    selectedLeadAcceptedOffer,
+    selectedLeadLifecycleDiagnostic,
+    selectedLeadLifecycleDiagnosticOffer,
+    selectedLeadLinkedTransaction,
+  ])
+
+  const selectedLeadAcceptedOfferConversionPreflight = useMemo(() => {
+    const offer = selectedLeadAcceptedOffer || {}
+    const listingId = normalizeText(offer?.listingId || offer?.listing_id || offerLinkForm.listingId || selectedLeadOfferCentreProperty?.id || selectedLead?.listingId)
+    const listing = (
+      (listingId && appointmentListingById.get(listingId)) ||
+      selectedLeadLinkedListing ||
+      selectedLeadOfferCentreProperty ||
+      {}
+    )
+    const lead = {
+      ...(selectedLead || {}),
+      email: selectedLeadContact?.email || selectedLead?.email,
+      phone: selectedLeadContact?.phone || selectedLead?.phone,
+      firstName: selectedLeadContact?.firstName || selectedLead?.firstName,
+      lastName: selectedLeadContact?.lastName || selectedLead?.lastName,
+    }
+    const routingProfile = resolveTransactionRoutingProfile({
+      transaction: {
+        financeType: normalizeText(offer?.financeType || offer?.finance_type || selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLead?.finance_type),
+        purchaserType: normalizeText(offer?.conditions?.buyerType || offer?.conditions?.purchaserType || selectedLead?.buyerType || selectedLead?.purchaserType || 'individual'),
+        buyerEntityType: normalizeText(offer?.conditions?.buyerType || offer?.conditions?.purchaserType || selectedLead?.buyerType || selectedLead?.purchaserType || 'individual'),
+        purchasePrice: offer?.offerAmount || offer?.offer_amount,
+      },
+      listing,
+      offer,
+      buyerLead: lead,
+      sellerOnboarding: listing?.sellerOnboarding || listing?.seller_onboarding,
+    })
+    return buildAcceptedOfferConversionPreflight({
+      organisationId,
+      offer,
+      lead,
+      listing,
+      actor: { id: currentAgent.id, email: currentAgent.email },
+      routingProfile,
+    })
+  }, [
+    appointmentListingById,
+    currentAgent.email,
+    currentAgent.id,
+    offerLinkForm.listingId,
+    organisationId,
+    selectedLead,
+    selectedLeadAcceptedOffer,
+    selectedLeadContact,
+    selectedLeadLinkedListing,
+    selectedLeadOfferCentreProperty,
+  ])
+
   const selectedLeadOfferPortalSessionByAppointmentId = useMemo(() => {
     const entries = new Map()
     for (const session of Array.isArray(selectedLeadOfferPortalSessions) ? selectedLeadOfferPortalSessions : []) {
@@ -11661,6 +11951,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const failedAt = new Date().toISOString()
       const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
       const deliveryFailure = sendError?.message || 'Unable to send the buyer viewing availability email.'
+      const userFacingFailure = formatViewingRequestUserError(sendError)
+      console.error('[viewing-planner] buyer availability request failed', sendError)
       const failureNotes = buildBuyerViewingPlanNotes(
         {
           status: savedPlan.status || viewingPlanStatus || 'draft',
@@ -11708,7 +12000,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setViewingPlanSelectedPropertyIds(selectedPropertyIds)
       scheduleRecordsReload(organisationId, 850)
 
-      setError(`${deliveryFailure} No email draft was opened. Use Resend request to try again after email delivery is available.`)
+      setError(`${userFacingFailure} No email draft was opened. Use Resend request to try again.`)
     } finally {
       setIsLeadDetailSaving(false)
     }
@@ -12242,10 +12534,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	      )
 	      setError('')
 	    } catch (sendError) {
-	      const failedAt = new Date().toISOString()
-	      const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
-	      const deliveryFailure = sendError?.message || 'Unable to send the seller viewing availability email.'
-	      const sellerRecipientEmails = sellerEmails.join(', ')
+		      const failedAt = new Date().toISOString()
+		      const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+		      const deliveryFailure = sendError?.message || 'Unable to send the seller viewing availability email.'
+		      const userFacingFailure = formatViewingRequestUserError(sendError, "We couldn't send the seller availability request.")
+		      console.error('[viewing-planner] seller availability request failed', sendError)
+		      const sellerRecipientEmails = sellerEmails.join(', ')
 	      const sellerCoordinationNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes) ||
           buildSellerViewingAvailabilityNoteForProperties(confirmedProperties.length ? confirmedProperties : selectedProperties)
 	      const failureNotes = buildBuyerViewingPlanNotes(
@@ -12292,8 +12586,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	      patchSelectedLeadRecord(failurePatch, selectedLead.leadId)
 	      scheduleRecordsReload(organisationId, 850)
 
-	      setError(`${deliveryFailure} No email draft was opened. Use Resend request to try again after email delivery is available.`)
-	    } finally {
+		      setError(`${userFacingFailure} No email draft was opened. Use Resend request to try again.`)
+		    } finally {
       setIsLeadDetailSaving(false)
     }
   }
@@ -16794,6 +17088,53 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setCanonicalOfferActionId(`${offer.id}:convert`)
       const currentStatus = normalizeText(offer.status).toLowerCase()
+      const listingId = normalizeText(offer?.listingId || offer?.listing_id || selectedLead?.listingId)
+      const sellerRecipient = await resolveLeadOfferSellerRecipient(offer)
+      const conversionListing = sellerRecipient.listing ||
+        (listingId && appointmentListingById.get(listingId)) ||
+        selectedLeadLinkedListing ||
+        selectedLeadOfferCentreProperty ||
+        (listingId
+          ? {
+              id: listingId,
+              organisationId,
+              listingTitle: resolveAppointmentListingLabel(listingId) || selectedLead?.propertyInterest || 'Listing',
+              propertyAddress: selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest || '',
+            }
+          : null)
+      const conversionLead = {
+        ...selectedLead,
+        email: selectedLeadContact?.email || selectedLead?.email,
+        phone: selectedLeadContact?.phone || selectedLead?.phone,
+        firstName: selectedLeadContact?.firstName || selectedLead?.firstName,
+        lastName: selectedLeadContact?.lastName || selectedLead?.lastName,
+      }
+      const conversionRoutingProfile = resolveTransactionRoutingProfile({
+        transaction: {
+          financeType: normalizeText(offer?.financeType || offer?.finance_type || selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLead?.finance_type),
+          purchaserType: normalizeText(offer?.conditions?.buyerType || offer?.conditions?.purchaserType || selectedLead?.buyerType || selectedLead?.purchaserType || 'individual'),
+          buyerEntityType: normalizeText(offer?.conditions?.buyerType || offer?.conditions?.purchaserType || selectedLead?.buyerType || selectedLead?.purchaserType || 'individual'),
+          purchasePrice: offer?.offerAmount || offer?.offer_amount,
+        },
+        listing: conversionListing || {},
+        offer,
+        buyerLead: conversionLead,
+        sellerOnboarding: conversionListing?.sellerOnboarding || conversionListing?.seller_onboarding,
+      })
+      const conversionPreflight = buildAcceptedOfferConversionPreflight({
+        organisationId,
+        offer,
+        lead: conversionLead,
+        listing: conversionListing || {},
+        actor: { id: currentAgent.id, email: currentAgent.email },
+        routingProfile: conversionRoutingProfile,
+      })
+      if (!conversionPreflight.canConvert) {
+        const error = new Error(formatAcceptedOfferConversionPreflightMessage(conversionPreflight))
+        error.code = 'ACCEPTED_OFFER_CONVERSION_PREFLIGHT_BLOCKED'
+        error.details = conversionPreflight
+        throw error
+      }
       const acceptedOffer = ['accepted', 'converted_to_transaction'].includes(currentStatus)
         ? offer
         : await updateCanonicalOfferStatus(offer.id, 'accepted', {
@@ -16801,26 +17142,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
             patch: buildCanonicalOfferActionPatch(offer, 'Accepted for transaction conversion', canonicalOfferNotesById[offer.id] || ''),
           })
-      const listingId = normalizeText(acceptedOffer?.listingId || offer?.listingId || selectedLead?.listingId)
+      const conversionListingPayload = conversionListing || listingId
+        ? {
+            ...(conversionListing || {}),
+            id: normalizeText(conversionListing?.id || conversionListing?.listingId || listingId),
+            organisationId,
+            listingTitle: conversionListing?.listingTitle || conversionListing?.title || resolveAppointmentListingLabel(listingId) || selectedLead?.propertyInterest || 'Listing',
+            propertyAddress: conversionListing?.propertyAddress || conversionListing?.address || selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest || '',
+          }
+        : null
       const createdTransaction = await createTransactionFromAcceptedCanonicalOffer({
         organisationId,
         offerId: acceptedOffer?.id || offer.id,
         offer: acceptedOffer || offer,
-        lead: {
-          ...selectedLead,
-          email: selectedLeadContact?.email || selectedLead?.email,
-          phone: selectedLeadContact?.phone || selectedLead?.phone,
-          firstName: selectedLeadContact?.firstName || selectedLead?.firstName,
-          lastName: selectedLeadContact?.lastName || selectedLead?.lastName,
-        },
-        listing: listingId
-          ? {
-              id: listingId,
-              organisationId,
-              listingTitle: resolveAppointmentListingLabel(listingId) || selectedLead?.propertyInterest || 'Listing',
-              propertyAddress: selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest || '',
-            }
-          : null,
+        lead: conversionLead,
+        listing: conversionListingPayload,
         actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         payload: {
           listingId,
@@ -19953,18 +20289,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           },
                           {
                             key: 'request',
-                            label: savedViewingPlan.requestedAt ? 'Resend request' : 'Send request',
-                            meta: savedViewingPlan.requestedAt ? 'Resend buyer link' : 'Send buyer link',
+                            label: 'Buyer availability',
+                            meta: savedViewingPlan.requestedAt ? 'Resend buyer link' : 'Send buyer request',
                           },
                           {
                             key: 'seller',
-                            label: 'Confirm with sellers',
+                            label: 'Seller confirmation',
                             meta: 'Check access and availability',
                           },
                           {
                             key: 'book',
-                            label: 'Book appointments',
-                            meta: 'Schedule and notify parties',
+                            label: 'Schedule viewings',
+                            meta: 'Confirm appointments',
                           },
                         ]
                         const viewingPlannerActiveIndex = viewingPlanStatus === 'booked' || (viewingPlanStatus === 'seller_coordination' && savedViewingPlan.sellerRequestedAt)
@@ -20073,6 +20409,63 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           properties: viewingPlanSelectedProperties,
                           origin: typeof window !== 'undefined' ? window.location?.origin || '' : '',
                         })
+                        const viewingPlannerSelectedPreviewProperties = viewingPlanSelectedProperties.slice(0, 4)
+                        const viewingPlannerSelectedOverflowCount = Math.max(0, viewingPlanSelectedProperties.length - viewingPlannerSelectedPreviewProperties.length)
+                        const viewingPlannerBuyerPhone = normalizeText(selectedLeadContact?.phone || selectedLead?.phone)
+                        const viewingPlannerBookedAppointments = selectedLeadAppointments.filter((appointment) => {
+                          const appointmentId = normalizeText(appointment?.appointmentId || appointment?.id)
+                          if (viewingPlanBookedAppointmentIds.length) return viewingPlanBookedAppointmentIds.includes(appointmentId)
+                          return normalizeText(appointment?.appointmentType || appointment?.appointmentTypeLabel || appointment?.title).toLowerCase().includes('viewing')
+                        })
+                        const viewingPlannerNextStageLabel = viewingPlannerActiveStepKey === 'request'
+                          ? (viewingPlannerBuyerHasRequest ? 'Waiting for buyer response' : 'Ready to send buyer link')
+                          : viewingPlannerActiveStepKey === 'seller'
+                            ? (viewingPlannerSellerHasRequest ? 'Waiting for seller access' : 'Ready to confirm seller access')
+                            : viewingPlannerActiveStepKey === 'book'
+                              ? (viewingPlannerBookedAppointments.length ? 'Viewing itinerary active' : 'Ready to schedule viewings')
+                              : 'Choose properties'
+                        const viewingPlannerActionLabel = viewingPlannerActiveStepKey === 'request'
+                          ? (viewingPlannerBuyerHasRequest ? 'Resend availability request' : 'Send availability request')
+                          : viewingPlannerActiveStepKey === 'seller'
+                            ? (viewingPlannerSellerHasRequest ? 'Resend seller request' : 'Request seller availability')
+                            : viewingPlannerActiveStepKey === 'book'
+                              ? 'Book viewing appointment'
+                              : 'Continue to buyer availability'
+                        const viewingPlannerActionDisabled = viewingPlannerActiveStepKey === 'request'
+                          ? (!viewingPlanSelectedProperties.length || !viewingPlanBuyerEmail || isLeadDetailSaving)
+                          : viewingPlannerActiveStepKey === 'seller'
+                            ? (!viewingPlanConfirmedProperties.length || !viewingPlannerBuyerAvailability || !viewingPlanSellerRecipientCount || isLeadDetailSaving)
+                            : viewingPlannerActiveStepKey === 'book'
+                              ? (!viewingPlanBookingProperty || !viewingPlannerBuyerAvailability || isLeadDetailSaving)
+                              : (!viewingPlanSelectedProperties.length || isLeadDetailSaving)
+                        const handleViewingPlannerBack = () => {
+                          if (viewingPlannerActiveStepKey === 'request') {
+                            setViewingPlanStatus('draft')
+                            return
+                          }
+                          if (viewingPlannerActiveStepKey === 'seller') {
+                            setViewingPlanStatus('buyer_availability')
+                            return
+                          }
+                          if (viewingPlannerActiveStepKey === 'book') {
+                            setViewingPlanStatus('seller_coordination')
+                          }
+                        }
+                        const handleViewingPlannerPrimaryAction = () => {
+                          if (viewingPlannerActiveStepKey === 'request') {
+                            void handleSendBuyerViewingAvailabilityRequest(viewingPlanSelectedProperties)
+                            return
+                          }
+                          if (viewingPlannerActiveStepKey === 'seller') {
+                            void handleSendSellerViewingAvailabilityRequest(viewingPlanConfirmedProperties)
+                            return
+                          }
+                          if (viewingPlannerActiveStepKey === 'book') {
+                            handleOpenViewingPlanBookingModal(viewingPlanBookingProperty)
+                            return
+                          }
+                          void handleSaveBuyerViewingPlan('buyer_availability')
+                        }
                         const showLegacyViewingPlanWorkspace = Boolean(selectedLead?.showLegacyViewingPlanWorkspace)
                         const findViewingAutomationTask = (title = '') => {
                           const normalizedTitle = normalizeText(title).toLowerCase()
@@ -20444,33 +20837,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             </div>
 
-                            <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6">
+                            <section className="rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5">
                               <div className="flex flex-wrap items-start justify-between gap-4">
-                                <div>
-                                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Viewing Planner</p>
-                                  <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#102033]">Schedule buyer viewings</h3>
-                                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#60758b]">
-                                    <span className="font-semibold text-[#20364c]">{selectedLeadDisplayName}</span>
-                                    {(selectedLeadContact?.phone || selectedLead?.phone) ? (
-                                      <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />{selectedLeadContact?.phone || selectedLead?.phone}</span>
-                                    ) : null}
-                                    {viewingPlanBuyerEmail ? (
-                                      <span className="inline-flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{viewingPlanBuyerEmail}</span>
-                                    ) : null}
-                                  </div>
+                                <div className="min-w-[220px]">
+                                  <h3 className="text-xl font-semibold tracking-[-0.02em] text-[#102033]">Viewing Planner</h3>
+                                  <p className="mt-1 text-sm leading-6 text-[#60758b]">Schedule and coordinate buyer viewings with ease.</p>
                                 </div>
-                                <span className="rounded-full border border-[#d7e6f2] bg-[#f8fbfd] px-3 py-1 text-xs font-semibold text-[#60758b]">
-                                  {viewingPlanStatusLabel}
-                                </span>
+                                <div className="flex min-w-[260px] flex-1 flex-wrap items-center justify-end gap-3">
+                                  <div className="flex min-w-[260px] max-w-full items-center gap-3 rounded-[14px] border border-[#e3ecf5] bg-[#fbfdff] px-3 py-2">
+                                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-[#315b7a] ring-1 ring-[#dce7f2]">
+                                      <UserRound className="h-4 w-4" />
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Buyer</p>
+                                      <p className="truncate text-sm font-semibold text-[#102033]" title={selectedLeadDisplayName}>{selectedLeadDisplayName || 'Buyer'}</p>
+                                      <p className="truncate text-xs text-[#60758b]" title={[viewingPlanBuyerEmail, viewingPlannerBuyerPhone].filter(Boolean).join(' • ')}>
+                                        {[viewingPlanBuyerEmail, viewingPlannerBuyerPhone].filter(Boolean).join(' • ') || 'Contact details pending'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 rounded-[14px] border border-[#e3ecf5] bg-[#fbfdff] px-3 py-2">
+                                    <span className="grid h-8 w-8 place-items-center rounded-full bg-[#157a4d] text-xs font-semibold text-white">{viewingPlanSelectedProperties.length}</span>
+                                    <span className="whitespace-nowrap text-sm font-semibold text-[#20364c]">Properties selected</span>
+                                  </div>
+                                  <Button type="button" size="sm" variant="secondary" onClick={() => setViewingPlanStatus('draft')}>
+                                    <Pencil className="h-4 w-4" />
+                                    Edit selection
+                                  </Button>
+                                </div>
                               </div>
 
-                              <div className="mt-5 grid gap-3 rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-3 lg:grid-cols-4">
+                              <div className="mt-4 grid gap-2 rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] p-2 md:grid-cols-4">
                                 {viewingPlannerSteps.map((step, index) => {
                                   const isActive = index === viewingPlannerActiveIndex
                                   const isComplete = index < viewingPlannerActiveIndex
                                   return (
-                                    <div key={step.key} className="flex min-w-0 items-center gap-3">
-                                      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-semibold ${isComplete ? 'bg-[#157a4d] text-white' : isActive ? 'border border-[#9bcdb4] bg-white text-[#157a4d] shadow-[0_6px_16px_rgba(21,122,77,0.08)]' : 'bg-[#eaf1f7] text-[#7c91a8]'}`}>
+                                    <div key={step.key} className={`flex min-w-0 items-center gap-3 rounded-[12px] px-3 py-2 ${isActive ? 'bg-white shadow-[0_8px_20px_rgba(31,54,78,0.06)]' : ''}`} aria-current={isActive ? 'step' : undefined}>
+                                      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-semibold ${isComplete ? 'bg-[#157a4d] text-white' : isActive ? 'border border-[#9bcdb4] bg-[#157a4d] text-white shadow-[0_6px_16px_rgba(21,122,77,0.14)]' : 'bg-[#eaf1f7] text-[#7c91a8]'}`}>
                                         {isComplete ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
                                       </span>
                                       <span className="min-w-0">
@@ -20482,8 +20885,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 })}
                               </div>
 
-                              <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-                                <div className="min-w-0">
+                              <div className="mt-4">
+                                <div className="min-w-0 pb-4">
                                   {viewingPlannerActiveStepKey === 'select' ? (
                                     <>
                                       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -20498,29 +20901,38 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         </Button>
                                       </div>
                                       {selectedLeadViewingPlanProperties.length ? (
-                                        <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                        <div className="mt-4 grid gap-4 lg:grid-cols-2">
                                           {selectedLeadViewingPlanProperties.map((property) => {
                                             const propertyId = normalizeText(property?.id)
                                             const isSelected = viewingPlanSelectedPropertyIds.includes(propertyId)
+                                            const propertyPlanLabel = property.planLabel === 'Original enquiry' ? 'Primary match' : property.planLabel
                                             return (
                                               <button
                                                 key={propertyId}
                                                 type="button"
-                                                className={`group grid min-w-0 grid-cols-[104px_minmax(0,1fr)] items-center gap-3 rounded-[14px] border p-2.5 text-left transition ${isSelected ? 'border-[#157a4d] bg-[#f4fbf7] shadow-[0_10px_24px_rgba(21,122,77,0.08)]' : 'border-[#e3ecf5] bg-white hover:border-[#cbdbea]'}`}
+                                                className={`group grid min-h-[150px] min-w-0 gap-4 rounded-[14px] border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#157a4d] sm:grid-cols-[minmax(150px,0.38fr)_minmax(0,1fr)] ${isSelected ? 'border-[#157a4d] bg-[#f4fbf7] shadow-[0_10px_24px_rgba(21,122,77,0.08)]' : 'border-[#e3ecf5] bg-white hover:border-[#cbdbea] hover:bg-[#fbfdff]'}`}
                                                 onClick={() => handleToggleViewingPlanProperty(propertyId)}
                                                 aria-pressed={isSelected}
                                               >
-                                                <span className="relative h-24 overflow-hidden rounded-[10px] bg-[#edf4fb]">
+                                                <span className="relative h-32 overflow-hidden rounded-[10px] bg-[#edf4fb] sm:h-full">
                                                   <img src={property.image} alt={property.title} className="h-full w-full object-cover" />
-                                                  <span className={`absolute left-2 top-2 grid h-6 w-6 place-items-center rounded-[8px] border text-[0.65rem] ${isSelected ? 'border-[#157a4d] bg-[#157a4d] text-white' : 'border-white/80 bg-white/90 text-[#7d93aa]'}`}>
-                                                    {isSelected ? <CheckCircle2 className="h-4 w-4" /> : null}
+                                                  <span className={`absolute left-2 top-2 grid h-7 w-7 place-items-center rounded-full border text-[0.65rem] ${isSelected ? 'border-white/80 bg-[#157a4d] text-white shadow-sm' : 'border-white/80 bg-white/90 text-[#7d93aa]'}`}>
+                                                    {isSelected ? <CheckCircle2 className="h-4 w-4" /> : <span className="sr-only">Not selected</span>}
                                                   </span>
                                                 </span>
-                                                <span className="min-w-0">
-                                                  <span className="inline-flex rounded-full bg-[#e8f4ee] px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.06em] text-[#17643a]">{property.planLabel}</span>
+                                                <span className="flex min-w-0 flex-col justify-center">
+                                                  <span className="flex flex-wrap items-center gap-2">
+                                                    <span className="inline-flex rounded-full bg-[#e8f4ee] px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.06em] text-[#17643a]">{propertyPlanLabel}</span>
+                                                    <span className="inline-flex rounded-full bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-[#17643a] ring-1 ring-[#d8eadf]">{property.match}% match</span>
+                                                  </span>
                                                   <span className="mt-2 block truncate text-base font-semibold text-[#102033]" title={property.title}>{property.title}</span>
                                                   <span className="mt-1 block truncate text-sm text-[#60758b]" title={property.area}>{property.area || 'Area pending'}</span>
-                                                  <span className="mt-2 inline-flex rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#17643a] ring-1 ring-[#d8eadf]">{property.match}% match</span>
+                                                  <span className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-semibold text-[#60758b]">
+                                                    {property.bedrooms ? <span className="inline-flex items-center gap-1"><BedDouble className="h-4 w-4 text-[#7890a8]" />{property.bedrooms} Beds</span> : null}
+                                                    {property.bathrooms ? <span className="inline-flex items-center gap-1"><Bath className="h-4 w-4 text-[#7890a8]" />{property.bathrooms} Baths</span> : null}
+                                                    {property.parking ? <span className="inline-flex items-center gap-1"><Car className="h-4 w-4 text-[#7890a8]" />{property.parking} Parking</span> : null}
+                                                  </span>
+                                                  {property.price ? <span className="mt-3 block text-sm font-semibold text-[#102033]">{property.price}</span> : null}
                                                 </span>
                                               </button>
                                             )
@@ -20536,43 +20948,76 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   ) : null}
 
                                   {viewingPlannerActiveStepKey === 'request' ? (
-                                    <div className="rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
-                                      <div className="flex flex-wrap items-start justify-between gap-3">
-                                        <div>
-                                          <p className="text-sm font-semibold text-[#60758b]">Step 2 of 4</p>
-                                          <h4 className="mt-1 text-lg font-semibold text-[#102033]">{viewingPlannerBuyerHasRequest ? 'Resend availability request' : 'Send availability request'}</h4>
-                                          <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758b]">
-                                            {viewingPlannerBuyerHasRequest
-                                              ? 'Resend the same buyer availability link. The message is handled by the Resend email template and cannot be edited here.'
-                                              : 'Send one availability link covering the selected properties. The buyer chooses suitable times from the link.'}
+                                    <div className="grid gap-4 xl:grid-cols-[minmax(0,0.76fr)_minmax(240px,0.24fr)]">
+                                      <div className="rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                          <div>
+                                            <p className="text-sm font-semibold text-[#60758b]">Step 2 of 4</p>
+                                            <h4 className="mt-1 text-lg font-semibold text-[#102033]">{viewingPlannerBuyerHasRequest ? 'Resend buyer availability request' : 'Send buyer availability request'}</h4>
+                                            <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758b]">
+                                              Send one link for the buyer to choose their preferred viewing times.
+                                            </p>
+                                          </div>
+                                          {viewingPlannerBuyerEmailDeliveryLabel ? (
+                                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${viewingPlannerBuyerEmailDeliveryClass}`}>{viewingPlannerBuyerEmailDeliveryLabel}</span>
+                                          ) : null}
+                                        </div>
+
+                                        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                                          <div className="rounded-[12px] border border-[#dce7f2] bg-white px-3 py-3">
+                                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Buyer</p>
+                                            <p className="mt-1 truncate text-sm font-semibold text-[#102033]" title={selectedLeadDisplayName}>{selectedLeadDisplayName || 'Buyer'}</p>
+                                            <p className="mt-0.5 truncate text-xs text-[#60758b]" title={viewingPlanBuyerEmail || undefined}>{viewingPlanBuyerEmail || 'Email needed'}</p>
+                                            {viewingPlannerBuyerPhone ? <p className="mt-0.5 truncate text-xs text-[#60758b]">{viewingPlannerBuyerPhone}</p> : null}
+                                          </div>
+                                          <div className="rounded-[12px] border border-[#dce7f2] bg-white px-3 py-3">
+                                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Properties included</p>
+                                            <p className="mt-1 text-sm font-semibold text-[#102033]">{viewingPlannerSelectedCountLabel}</p>
+                                            <p className="mt-0.5 text-xs text-[#60758b]">One availability link</p>
+                                            <div className="mt-3 flex items-center gap-1.5">
+                                              {viewingPlannerSelectedPreviewProperties.map((property) => (
+                                                <img key={`request-preview-${property.id}`} src={property.image} alt="" className="h-8 w-8 rounded-[7px] object-cover ring-1 ring-white" />
+                                              ))}
+                                              {viewingPlannerSelectedOverflowCount ? (
+                                                <span className="grid h-8 min-w-8 place-items-center rounded-full bg-[#eef4f9] px-2 text-[0.68rem] font-semibold text-[#60758b]">+{viewingPlannerSelectedOverflowCount}</span>
+                                              ) : null}
+                                            </div>
+                                          </div>
+                                          <div className="rounded-[12px] border border-[#dce7f2] bg-white px-3 py-3">
+                                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Delivery</p>
+                                            <p className="mt-1 text-sm font-semibold text-[#102033]">{viewingPlannerBuyerHasRequest ? `Last sent ${formatDateShort(savedViewingPlan.requestedAt)}` : 'Email to buyer'}</p>
+                                            <div className="mt-2 space-y-1 text-xs leading-5 text-[#60758b]">
+                                              <p className="flex gap-1.5"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#157a4d]" />Buyer chooses preferred times</p>
+                                              <p className="flex gap-1.5"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#157a4d]" />Follow-up task after send</p>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {viewingPlannerBuyerEmailDeliveryStatus === 'failed' && savedViewingPlan.buyerEmailDeliveryFailure ? (
+                                          <p className="mt-3 rounded-[12px] border border-[#f3d1c9] bg-[#fff4f2] px-3 py-2 text-sm font-semibold text-[#a43f2c]">
+                                            {formatViewingRequestUserError(savedViewingPlan.buyerEmailDeliveryFailure)}
                                           </p>
-                                        </div>
-                                        {viewingPlannerBuyerEmailDeliveryLabel ? (
-                                          <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${viewingPlannerBuyerEmailDeliveryClass}`}>{viewingPlannerBuyerEmailDeliveryLabel}</span>
                                         ) : null}
-                                      </div>
 
-                                      <div className="mt-4 grid gap-3 md:grid-cols-3">
-                                        <div className="rounded-[12px] border border-[#dce7f2] bg-white px-3 py-3">
-                                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Buyer</p>
-                                          <p className="mt-1 truncate text-sm font-semibold text-[#102033]" title={selectedLeadDisplayName}>{selectedLeadDisplayName || 'Buyer'}</p>
-                                          <p className="mt-0.5 truncate text-xs text-[#60758b]" title={viewingPlanBuyerEmail || undefined}>{viewingPlanBuyerEmail || 'Email needed'}</p>
+                                        <div className="mt-4 rounded-[14px] border border-[#dce7f2] bg-white p-4">
+                                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Email preview</p>
+                                          <div className="mt-3 rounded-[12px] border border-dashed border-[#cfe0ee] bg-[#fbfdff] p-4">
+                                            <p className="whitespace-pre-wrap text-sm leading-6 text-[#29435d]">{viewingPlannerEmailPreview}</p>
+                                            {viewingPlannerSelectedPreviewProperties.length ? (
+                                              <div className="mt-4 flex flex-wrap gap-2">
+                                                {viewingPlannerSelectedPreviewProperties.map((property) => (
+                                                  <div key={`email-property-${property.id}`} className="grid min-w-[150px] grid-cols-[42px_minmax(0,1fr)] items-center gap-2 rounded-[10px] bg-white p-2 ring-1 ring-[#e4edf6]">
+                                                    <img src={property.image} alt="" className="h-10 w-10 rounded-[8px] object-cover" />
+                                                    <span className="min-w-0">
+                                                      <span className="block truncate text-xs font-semibold text-[#20364c]" title={property.title}>{property.title}</span>
+                                                      <span className="block truncate text-[0.68rem] text-[#7c91a8]">{property.area || property.price}</span>
+                                                    </span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            ) : null}
+                                          </div>
                                         </div>
-                                        <div className="rounded-[12px] border border-[#dce7f2] bg-white px-3 py-3">
-                                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Included</p>
-                                          <p className="mt-1 text-sm font-semibold text-[#102033]">{viewingPlannerSelectedCountLabel}</p>
-                                          <p className="mt-0.5 text-xs text-[#60758b]">One buyer availability link</p>
-                                        </div>
-                                        <div className="rounded-[12px] border border-[#dce7f2] bg-white px-3 py-3">
-                                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">{viewingPlannerBuyerHasRequest ? 'Last sent' : 'Delivery'}</p>
-                                          <p className="mt-1 text-sm font-semibold text-[#102033]">{viewingPlannerBuyerHasRequest ? formatDateShort(savedViewingPlan.requestedAt) : 'Ready to send'}</p>
-                                          <p className="mt-0.5 text-xs text-[#60758b]">{viewingPlannerBuyerHasRequest ? 'Follow-up task active' : 'Sent via Resend'}</p>
-                                        </div>
-                                      </div>
-
-                                      {viewingPlannerBuyerEmailDeliveryStatus === 'failed' && savedViewingPlan.buyerEmailDeliveryFailure ? (
-                                        <p className="mt-3 rounded-[12px] border border-[#f3d1c9] bg-[#fff4f2] px-3 py-2 text-xs font-semibold text-[#a43f2c]">{savedViewingPlan.buyerEmailDeliveryFailure}</p>
-                                      ) : null}
 
                                       {latestBuyerViewingPreferenceLink ? (
                                         <div className={`mt-4 rounded-[14px] border p-4 ${latestBuyerViewingPreferenceApplied ? 'border-[#cbe7d7] bg-[#f4fbf7]' : 'border-[#d8e6f2] bg-white'}`}>
@@ -20614,41 +21059,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       ) : buyerViewingPreferenceLinksError ? (
                                         <p className="mt-3 rounded-[12px] border border-[#f3d1c9] bg-[#fff4f2] px-3 py-2 text-xs font-semibold text-[#a43f2c]">{buyerViewingPreferenceLinksError}</p>
                                       ) : null}
-                                      <div className="mt-4 flex flex-wrap items-center gap-2">
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          disabled={!viewingPlanSelectedProperties.length || !viewingPlanBuyerEmail || isLeadDetailSaving}
-                                          onClick={() => void handleSendBuyerViewingAvailabilityRequest(viewingPlanSelectedProperties)}
-                                        >
-                                          <Send className="h-4 w-4" />
-                                          {viewingPlannerBuyerHasRequest ? 'Resend availability request' : 'Send availability request'}
-                                        </Button>
-                                        <Button type="button" size="sm" variant="secondary" onClick={() => setViewingPlanStatus('draft')}>
-                                          <ArrowLeft className="h-4 w-4" />
-                                          Edit selection
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => {
-                                            if (typeof navigator !== 'undefined') {
-                                              void navigator.clipboard?.writeText(viewingPlannerEmailPreview)
-                                            }
-                                            setMessage('Buyer availability request copied.')
-                                          }}
-                                        >
-                                          <Copy className="h-4 w-4" />
-                                          Copy email copy
-                                        </Button>
-                                        {viewingPlannerBuyerHasRequest ? (
+                                      {viewingPlannerBuyerHasRequest ? (
+                                        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
                                           <Button type="button" size="sm" variant="secondary" disabled={buyerViewingPreferenceLinksLoading} onClick={() => void reloadBuyerViewingPreferenceLinks({ showMessage: true })}>
                                             <RefreshCw className={`h-4 w-4 ${buyerViewingPreferenceLinksLoading ? 'animate-spin' : ''}`} />
                                             Check responses
                                           </Button>
-                                        ) : null}
-                                      </div>
+                                        </div>
+                                      ) : null}
                                       {!viewingPlanBuyerEmail ? (
                                         <p className="mt-3 text-sm font-semibold text-[#b45309]">Add a buyer email before sending the request.</p>
                                       ) : null}
@@ -20687,6 +21105,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           </div>
                                         </div>
                                       ) : null}
+                                      </div>
+
+                                      <aside className="rounded-[16px] border border-[#e3ecf5] bg-white p-4 shadow-[0_10px_26px_rgba(31,54,78,0.045)]">
+                                        <p className="text-sm font-semibold text-[#102033]">What happens next?</p>
+                                        <div className="mt-4 space-y-4">
+                                          {[
+                                            ['Buyer receives email', 'With a link to choose preferred times', Mail],
+                                            ['Buyer selects availability', 'Across the selected properties', CheckSquare],
+                                            ['Sellers confirm access', 'The agent coordinates with all parties', UserRound],
+                                            ['Viewings are scheduled', 'A confirmed itinerary is created', CalendarDays],
+                                          ].map(([title, detail, Icon]) => (
+                                            <div key={title} className="flex gap-3">
+                                              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#e8f4ee] text-[#157a4d]">
+                                                {createElement(Icon, { className: 'h-4 w-4' })}
+                                              </span>
+                                              <span>
+                                                <span className="block text-sm font-semibold text-[#20364c]">{title}</span>
+                                                <span className="mt-0.5 block text-xs leading-5 text-[#60758b]">{detail}</span>
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                        <div className="mt-5 rounded-[12px] border border-[#e3ecf5] bg-[#fbfdff] px-3 py-3">
+                                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Next stage</p>
+                                          <p className="mt-1 text-sm font-semibold text-[#102033]">{viewingPlannerNextStageLabel}</p>
+                                        </div>
+                                      </aside>
                                     </div>
                                   ) : null}
 
@@ -20700,7 +21145,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                        ) : null}
 	                                      </div>
 	                                      {viewingPlannerSellerEmailDeliveryStatus === 'failed' && savedViewingPlan.sellerEmailDeliveryFailure ? (
-	                                        <p className="mt-2 text-xs font-semibold text-[#a43f2c]">{savedViewingPlan.sellerEmailDeliveryFailure}</p>
+	                                        <p className="mt-2 rounded-[12px] border border-[#f3d1c9] bg-[#fff4f2] px-3 py-2 text-sm font-semibold text-[#a43f2c]">
+	                                          {formatViewingRequestUserError(savedViewingPlan.sellerEmailDeliveryFailure, "We couldn't send the seller availability request.")}
+	                                        </p>
 	                                      ) : null}
                                       {latestSellerViewingCoordinationLink ? (
                                         <div className={`mt-3 rounded-[14px] border p-4 ${latestSellerViewingCoordinationApplied ? 'border-[#cbe7d7] bg-[#f4fbf7]' : 'border-[#d8e6f2] bg-white'}`}>
@@ -20767,18 +21214,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         <Field placeholder={viewingPlanSuggestedSellerEmails.length ? viewingPlanSuggestedSellerEmails.join(', ') : 'seller@example.com'} value={viewingPlanSellerForm.sellerRecipientEmails} onChange={(event) => updateViewingPlanSellerField('sellerRecipientEmails', event.target.value)} />
                                         <Field placeholder="Access notes or preferred order..." value={viewingPlanSellerForm.sellerCoordinationNotes} onChange={(event) => updateViewingPlanSellerField('sellerCoordinationNotes', event.target.value)} />
                                       </div>
-                                      <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-                                        <Button type="button" size="sm" disabled={!viewingPlanConfirmedProperties.length || !viewingPlannerBuyerAvailability || !viewingPlanSellerRecipientCount || isLeadDetailSaving} onClick={() => void handleSendSellerViewingAvailabilityRequest(viewingPlanConfirmedProperties)}>
-                                          <Send className="h-4 w-4" />
-                                          {viewingPlannerSellerHasRequest ? 'Resend seller request' : 'Request seller availability'}
-                                        </Button>
-                                        {viewingPlannerSellerHasRequest ? (
+                                      {viewingPlannerSellerHasRequest ? (
+                                        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
                                           <Button type="button" size="sm" variant="secondary" disabled={sellerViewingCoordinationLinksLoading} onClick={() => void reloadSellerViewingCoordinationLinks({ showMessage: true })}>
                                             <RefreshCw className={`h-4 w-4 ${sellerViewingCoordinationLinksLoading ? 'animate-spin' : ''}`} />
                                             Check seller responses
                                           </Button>
-                                        ) : null}
-                                      </div>
+                                        </div>
+                                      ) : null}
                                     </div>
                                   ) : null}
 
@@ -20787,6 +21230,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       <p className="text-sm font-semibold text-[#60758b]">Step 4 of 4</p>
                                       <h4 className="mt-1 text-lg font-semibold text-[#102033]">Book appointments</h4>
                                       <p className="mt-1 text-sm leading-6 text-[#60758b]">Create the viewing appointments once seller access is confirmed.</p>
+                                      {viewingPlannerBookedAppointments.length ? (
+                                        <div className="mt-4 rounded-[14px] border border-[#cbe7d7] bg-[#f4fbf7] p-4">
+                                          <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <p className="text-sm font-semibold text-[#102033]">Viewing itinerary</p>
+                                            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#17643a] ring-1 ring-[#d8eadf]">{viewingPlannerBookedAppointments.length} booked</span>
+                                          </div>
+                                          <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                                            {viewingPlannerBookedAppointments.slice(0, 4).map((appointment) => (
+                                              <article key={`booked-viewing-${appointment.appointmentId || appointment.id}`} className="rounded-[12px] border border-[#d8eadf] bg-white px-3 py-2">
+                                                <p className="truncate text-sm font-semibold text-[#102033]" title={appointment.title}>{appointment.title || 'Viewing appointment'}</p>
+                                                <p className="mt-0.5 text-xs text-[#60758b]">{formatDateTime(appointment.dateTime || appointment.startTime || appointment.createdAt)}</p>
+                                                {appointment.location ? <p className="mt-0.5 truncate text-xs text-[#60758b]" title={appointment.location}>{appointment.location}</p> : null}
+                                              </article>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ) : null}
                                       <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
                                         <div className="space-y-2">
                                           {viewingPlanConfirmedProperties.length ? (
@@ -20831,10 +21291,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             </div>
                                           ) : null}
                                           {viewingPlannerSellerNotes ? <p className="text-xs leading-5 text-[#60758b]">{viewingPlannerSellerNotes}</p> : null}
-                                          <Button type="button" size="sm" className="w-full" disabled={!viewingPlanBookingProperty || !viewingPlannerBuyerAvailability} onClick={() => handleOpenViewingPlanBookingModal(viewingPlanBookingProperty)}>
-                                            <CalendarDays className="h-4 w-4" />
-                                            Book viewing appointment
-                                          </Button>
                                           {viewingPlanStatus === 'booked' ? (
                                             <Button type="button" size="sm" variant="secondary" className="w-full" onClick={() => handleLeadWorkspaceTabSelection('appointments')}>
                                               View appointments
@@ -20846,64 +21302,49 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   ) : null}
                                 </div>
 
-                                <aside className="rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-3">
-                                  <div className="flex items-center justify-between gap-3">
-                                    <h4 className="text-sm font-semibold text-[#102033]">Selected properties</h4>
-                                    <span className="grid h-7 w-7 place-items-center rounded-full bg-[#157a4d] text-xs font-semibold text-white">{viewingPlanSelectedProperties.length}</span>
-                                  </div>
-                                  <div className="mt-3 space-y-1.5">
-                                    {viewingPlanSelectedProperties.length ? (
-                                      viewingPlanSelectedProperties.map((property) => (
-                                        <div key={`selected-plan-${property.id}`} className={`grid min-w-0 items-center gap-2 rounded-[10px] bg-white p-2 ring-1 ring-[#edf3f8] ${viewingPlannerActiveStepKey === 'select' ? 'grid-cols-[40px_minmax(0,1fr)_28px]' : 'grid-cols-[40px_minmax(0,1fr)]'}`}>
-                                          <img src={property.image} alt="" className="h-10 w-10 rounded-[8px] object-cover" />
-                                          <div className="min-w-0">
-                                            <p className="truncate text-xs font-semibold text-[#20364c]" title={property.title}>{property.title}</p>
-                                            <p className="truncate text-[0.68rem] text-[#7c91a8]">{property.area || property.price}</p>
-                                          </div>
-                                          {viewingPlannerActiveStepKey === 'select' ? (
-                                            <button type="button" className="grid h-7 w-7 place-items-center rounded-full text-[#60758b] hover:bg-[#eef4f9] hover:text-[#102033]" onClick={() => handleToggleViewingPlanProperty(normalizeText(property.id))} aria-label={`Remove ${property.title} from viewing plan`}>
-                                              <X className="h-4 w-4" />
-                                            </button>
+                                <div className="sticky bottom-0 z-10 -mx-4 mt-4 border-t border-[#dce7f2] bg-white/95 px-4 py-3 shadow-[0_-14px_32px_rgba(31,54,78,0.08)] backdrop-blur sm:-mx-5 sm:px-5">
+                                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+                                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#157a4d] text-sm font-semibold text-white ring-4 ring-[#e8f4ee]">{viewingPlanSelectedProperties.length}</span>
+                                      <div className="min-w-[150px]">
+                                        <p className="text-sm font-semibold text-[#102033]">{viewingPlannerSelectedCountLabel}</p>
+                                        <p className="text-xs text-[#60758b]">{viewingPlannerNextStageLabel}</p>
+                                      </div>
+                                      {viewingPlanSelectedProperties.length ? (
+                                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                                          {viewingPlannerSelectedPreviewProperties.map((property) => (
+                                            <div key={`selected-tray-${property.id}`} className="grid min-w-[138px] max-w-[180px] grid-cols-[36px_minmax(0,1fr)] items-center gap-2 rounded-[10px] border border-[#e3ecf5] bg-[#fbfdff] p-1.5">
+                                              <img src={property.image} alt="" className="h-9 w-9 rounded-[8px] object-cover" />
+                                              <span className="min-w-0">
+                                                <span className="block truncate text-xs font-semibold text-[#20364c]" title={property.title}>{property.title}</span>
+                                                <span className="block truncate text-[0.66rem] text-[#7c91a8]">{property.area || property.price || 'Viewing property'}</span>
+                                              </span>
+                                            </div>
+                                          ))}
+                                          {viewingPlannerSelectedOverflowCount ? (
+                                            <span className="rounded-full border border-[#dce7f2] bg-[#fbfdff] px-3 py-2 text-xs font-semibold text-[#60758b]">+{viewingPlannerSelectedOverflowCount} more</span>
                                           ) : null}
                                         </div>
-                                      ))
-                                    ) : (
-                                      <div className="rounded-[12px] border border-dashed border-[#d7e2ef] bg-white px-3 py-5 text-center">
-                                        <p className="text-sm font-semibold text-[#20364c]">No properties selected</p>
-                                        <p className="mt-1 text-xs text-[#6f839c]">Pick one or more matches to begin.</p>
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="mt-3 border-t border-[#e6eef6] pt-3">
-                                    {viewingPlannerActiveStepKey === 'select' ? (
-                                      <>
-                                        <p className="text-sm font-semibold text-[#102033]">What happens next?</p>
-                                        <div className="mt-3 space-y-2.5 text-sm leading-5 text-[#60758b]">
-                                          <p className="flex gap-2"><Mail className="mt-0.5 h-4 w-4 shrink-0 text-[#157a4d]" />Send the buyer one email with these properties.</p>
-                                          <p className="flex gap-2"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-[#157a4d]" />They reply with suitable viewing times.</p>
-                                          <p className="flex gap-2"><UserRound className="mt-0.5 h-4 w-4 shrink-0 text-[#157a4d]" />Then confirm access and book the appointments.</p>
-                                        </div>
-                                        <Button type="button" size="sm" className="mt-4 w-full" disabled={!viewingPlanSelectedProperties.length || isLeadDetailSaving} onClick={() => void handleSaveBuyerViewingPlan('buyer_availability')}>
-                                          Continue to request availability
-                                          <ChevronRight className="h-4 w-4" />
-                                        </Button>
-                                      </>
-                                    ) : (
-                                      <div className="space-y-2 text-sm leading-5 text-[#60758b]">
-                                        <p><span className="font-semibold text-[#102033]">{viewingPlannerSelectedCountLabel}</span></p>
-                                        {savedViewingPlan.requestedAt ? <p>Buyer requested {formatDateShort(savedViewingPlan.requestedAt)}.</p> : null}
-                                        {savedViewingPlan.respondedAt ? <p>Buyer response captured {formatDateShort(savedViewingPlan.respondedAt)}.</p> : null}
-	                                        {savedViewingPlan.sellerRequestedAt ? <p>Seller access requested {formatDateShort(savedViewingPlan.sellerRequestedAt)}.</p> : null}
-	                                        {viewingPlannerSellerEmailDeliveryLabel ? <p>Seller email status: {viewingPlannerSellerEmailDeliveryLabel}.</p> : null}
-	                                        {viewingPlanStatus === 'booked' ? <p className="font-semibold text-[#17643a]">Viewing appointment created.</p> : null}
-                                        <Button type="button" size="sm" variant="secondary" className="mt-2 h-9 w-full text-xs" onClick={() => setViewingPlanStatus('draft')}>
+                                      ) : (
+                                        <p className="text-sm text-[#60758b]">Pick one or more matches to begin.</p>
+                                      )}
+                                    </div>
+                                    <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+                                      {viewingPlannerActiveStepKey !== 'select' ? (
+                                        <Button type="button" size="sm" variant="secondary" onClick={handleViewingPlannerBack}>
                                           <ArrowLeft className="h-4 w-4" />
-                                          Edit selection
+                                          Back
                                         </Button>
-                                      </div>
-                                    )}
+                                      ) : null}
+                                      <Button type="button" size="sm" disabled={viewingPlannerActionDisabled} onClick={handleViewingPlannerPrimaryAction}>
+                                        {viewingPlannerActiveStepKey === 'request' || viewingPlannerActiveStepKey === 'seller' ? <Send className="h-4 w-4" /> : null}
+                                        {viewingPlannerActiveStepKey === 'book' ? <CalendarDays className="h-4 w-4" /> : null}
+                                        {viewingPlannerActionLabel}
+                                        {viewingPlannerActiveStepKey === 'select' ? <ChevronRight className="h-4 w-4" /> : null}
+                                      </Button>
+                                    </div>
                                   </div>
-                                </aside>
+                                </div>
                               </div>
                             </section>
 
@@ -22957,9 +23398,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       : statusKey === 'changes_requested' || statusKey === 'countered'
                                         ? 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]'
                                         : 'border-[#dbe6f2] bg-white text-[#35546c]'
-                                const offerToken = normalizeText(offer.offerToken || offer.id)
-                                const offerLink = offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
-                                return (
+	                                const offerToken = normalizeText(offer.offerToken || offer.id)
+	                                const offerLink = offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
+                                const offerPreflightBlocked = normalizeText(offer.id) === normalizeText(selectedLeadAcceptedOffer?.id) && !selectedLeadAcceptedOfferConversionPreflight?.canConvert
+	                                return (
                                   <article key={offer.id} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                                       <div>
@@ -23035,7 +23477,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           </>
                                         ) : null}
                                         {statusKey === 'accepted' || (statusKey === 'converted_to_transaction' && offer.transactionId) ? (
-                                          <Button type="button" size="sm" disabled={canonicalOfferActionId === `${offer.id}:convert`} onClick={() => void handleLeadCanonicalOfferConversion(offer)}>
+                                          <Button type="button" size="sm" disabled={canonicalOfferActionId === `${offer.id}:convert` || offerPreflightBlocked} onClick={() => void handleLeadCanonicalOfferConversion(offer)}>
                                             {statusKey === 'converted_to_transaction' ? 'Resend Onboarding' : 'Create Transaction'}
                                           </Button>
                                         ) : null}
@@ -23127,9 +23569,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               {selectedLeadAcceptedOffer ? 'Ready to create transaction.' : 'Once the buyer accepts the offer, you can create the transaction.'}
                             </p>
                           </div>
+                          <AcceptedOfferConversionPreflightPanel
+                            preflight={selectedLeadAcceptedOfferConversionPreflight}
+                            loading={selectedLeadLifecycleDiagnosticLoading}
+                          />
                           <Button
                             type="button"
-                            disabled={!selectedLeadAcceptedOffer || canonicalOfferActionId === `${selectedLeadAcceptedOffer?.id}:convert`}
+                            disabled={!selectedLeadAcceptedOffer || !selectedLeadAcceptedOfferConversionPreflight?.canConvert || canonicalOfferActionId === `${selectedLeadAcceptedOffer?.id}:convert`}
                             className="mt-4 w-full rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]"
                             onClick={() => selectedLeadAcceptedOffer ? void handleLeadCanonicalOfferConversion(selectedLeadAcceptedOffer) : null}
                           >
@@ -23155,6 +23601,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             ))}
                           </div>
                         </section>
+
+                        <TransactionHandoffHealthPanel health={selectedLeadTransactionHandoffHealth} />
                       </aside>
                     </div>
                   </div>

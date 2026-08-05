@@ -348,8 +348,8 @@ body {
 
 .settings-workspace {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   align-items: start;
 }
 
@@ -459,7 +459,7 @@ body {
 }
 
 .settings-dashboard-header {
-  padding: 4px 0 10px;
+  padding: 4px 0 14px;
 }
 
 .settings-dashboard-header h1 {
@@ -473,7 +473,11 @@ body {
 
 .settings-dashboard-groups {
   display: grid;
-  gap: 30px;
+  gap: 34px;
+}
+
+.settings-dashboard-page {
+  max-width: none;
 }
 
 .settings-dashboard-group-label {
@@ -487,17 +491,17 @@ body {
 
 .settings-dashboard-card-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px;
 }
 
 .settings-dashboard-card {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr) auto;
   align-items: center;
-  min-height: 132px;
-  gap: 18px;
-  padding: 18px;
+  min-height: 148px;
+  gap: 20px;
+  padding: 22px;
   border: 1px solid rgba(218, 226, 236, 0.96);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.96);
@@ -643,7 +647,7 @@ body {
   }
 
   .settings-dashboard-card-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   }
 }
 

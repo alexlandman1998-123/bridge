@@ -37,7 +37,7 @@ assert.equal(audit.version, OTP_CONTENT_SCANNER_PHASE9_VERSION)
 assert.equal(audit.status, 'OTP_CONTENT_SCANNER_PHASE9_READY_FOR_RENDERER_WIRING')
 assert.equal(audit.mutatedData, false)
 assert.equal(audit.summary.routeCount, 2)
-assert.equal(audit.summary.legalSectionCount, 22)
+assert.equal(audit.summary.legalSectionCount, 26)
 assert.equal(audit.summary.shellSectionCount, 16)
 assert.equal(audit.summary.blockerCount, 0)
 assert.deepEqual(audit.blockers, [])
@@ -77,6 +77,19 @@ assert.equal(developmentScan.allContentTokens.includes('seller_signature'), fals
 assert.equal(developmentScan.allContentTokens.includes('developer_signature'), true)
 assert.equal(developmentScan.allContentTokens.includes('contractor_initials'), true)
 assert.equal(developmentScan.allContentTokens.includes('development_compliance_certificate_schedule'), true)
+
+for (const token of [
+  'mandate_commission_snapshot',
+  'otp_commission_proposal',
+  'otp_commission_variation_status',
+  'otp_commission_approval_reference',
+  'otp_buyer_cost_obligations',
+  'otp_pending_cost_obligations',
+  'matter_attorney_cost_quote_status',
+]) {
+  assert.equal(resaleScan.allContentTokens.includes(token), true, `resale scan should include ${token}.`)
+  assert.equal(developmentScan.allContentTokens.includes(token), true, `development scan should include ${token}.`)
+}
 
 const resaleSections = listOtpLegalContentTemplateSections({ variant: 'resale_existing_property' })
 const developmentSections = listOtpLegalContentTemplateSections({ variant: 'new_development' })

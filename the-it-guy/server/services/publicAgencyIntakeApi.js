@@ -23,6 +23,20 @@ const DEFAULT_PRIVACY_POLICY_VERSION = 'agency-public-intake-v1'
 const MAX_SELECTED_LISTINGS = 24
 const PUBLIC_INTAKE_AUTOMATION_KEY = 'agency_public_intake_received'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const PUBLIC_INTAKE_OWNER_ROLE_PRIORITY = new Map([
+  ['principal', 0],
+  ['owner', 0],
+  ['agency_principal', 0],
+  ['principal_/_owner', 0],
+  ['super_admin', 1],
+  ['superadmin', 1],
+  ['admin', 2],
+  ['administrator', 2],
+  ['branch_manager', 3],
+  ['branch_admin', 3],
+  ['agency_manager', 4],
+  ['manager', 4],
+])
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -151,13 +165,101 @@ function normalizeRoleKey(value = '') {
 
 function isManagerRole(row = {}) {
   const role = normalizeRoleKey(row.workspace_role || row.organisation_role || row.role || row.app_role)
-  return ['owner', 'principal', 'agency_principal', 'admin', 'super_admin', 'branch_manager', 'agency_manager', 'manager'].includes(role)
+  return PUBLIC_INTAKE_OWNER_ROLE_PRIORITY.has(role)
+}
+
+export function selectPublicIntakeFallbackOwner(rows = [], { branchId = '' } = {}) {
+  const scopedBranchId = normalizeText(branchId)
+  return (Array.isArray(rows) ? rows : [])
+    .map((row, index) => ({
+      row,
+      index,
+      role: normalizeRoleKey(row?.workspace_role || row?.organisation_role || row?.role || row?.app_role),
+      userId: normalizeText(row?.user_id || row?.id),
+      branchId: normalizeText(row?.branch_id),
+      status: normalizeLower(row?.status),
+    }))
+    .filter((item) => item.userId && isUuidLike(item.userId))
+    .filter((item) => ['active', 'accepted'].includes(item.status || 'active'))
+    .filter((item) => PUBLIC_INTAKE_OWNER_ROLE_PRIORITY.has(item.role))
+    .sort((left, right) => {
+      const roleDelta = PUBLIC_INTAKE_OWNER_ROLE_PRIORITY.get(left.role) - PUBLIC_INTAKE_OWNER_ROLE_PRIORITY.get(right.role)
+      if (roleDelta) return roleDelta
+
+      const branchRank = (item) => {
+        if (!scopedBranchId) return 0
+        if (item.branchId === scopedBranchId) return 0
+        if (!item.branchId) return 1
+        return 2
+      }
+      const branchDelta = branchRank(left) - branchRank(right)
+      if (branchDelta) return branchDelta
+
+      return left.index - right.index
+    })[0]?.row || null
+}
+
+async function resolvePublicIntakeFallbackOwner(client, organisationId = '', branchId = '') {
+  if (!organisationId) return null
+  const query = await client
+    .from('organisation_users')
+    .select('user_id, first_name, last_name, name, full_name, email, role, workspace_role, organisation_role, app_role, branch_id, status')
+    .eq('organisation_id', organisationId)
+    .in('status', ['active', 'accepted'])
+    .limit(100)
+  if (query.error) throw query.error
+  return selectPublicIntakeFallbackOwner(query.data || [], { branchId })
+}
+
+async function resolvePublicIntakeAssignmentLink(client, link = {}) {
+  if (normalizeText(link.default_assigned_agent_id)) return link
+
+  try {
+    const fallbackOwner = await resolvePublicIntakeFallbackOwner(
+      client,
+      normalizeText(link.organisation_id),
+      normalizeText(link.default_branch_id),
+    )
+    const fallbackOwnerId = normalizeText(fallbackOwner?.user_id)
+    if (!fallbackOwnerId) return link
+
+    return {
+      ...link,
+      default_assigned_agent_id: fallbackOwnerId,
+      default_branch_id: normalizeText(link.default_branch_id) || normalizeText(fallbackOwner?.branch_id) || null,
+      public_intake_assignment_source: 'fallback_owner',
+    }
+  } catch (error) {
+    console.warn('[agency-public-intake] fallback owner lookup failed; lead will remain unassigned', {
+      organisationId: normalizeText(link.organisation_id),
+      message: normalizeText(error?.message),
+    })
+    return link
+  }
 }
 
 function displayName(row = {}, fallback = '') {
   return normalizeText([row.first_name, row.last_name].filter(Boolean).join(' ')) ||
     normalizeText(row.name || row.full_name || row.email) ||
     fallback
+}
+
+export function buildPublicIntakeSupervisorLeadOperationsPayload({ basePayload = {}, supervisor = {}, dedupeSeed = '' } = {}) {
+  const supervisorId = normalizeText(supervisor.user_id || supervisor.id || basePayload.assignedUserId)
+  const supervisorEmail = normalizeEmail(supervisor.email)
+  return {
+    ...basePayload,
+    type: 'new_enquiry_unassigned_manager',
+    to: supervisorEmail,
+    recipientName: displayName(supervisor, 'Principal'),
+    recipientRole: 'principal',
+    assignedAgentName: '',
+    assignedAgentEmail: '',
+    subject: 'New lead needs assignment',
+    message: `${normalizeText(basePayload.leadName) || 'A new public intake lead'} is ready for review. Please assign it to the right agent for follow-up.`,
+    reason: 'Public intake fallback routed to principal for assignment.',
+    idempotencyKey: `lead-ops:${normalizeText(dedupeSeed)}:fallback-supervisor:${supervisorId || supervisorEmail}`,
+  }
 }
 
 async function fetchOrganisationUserById(client, organisationId = '', userId = '') {
@@ -1189,6 +1291,7 @@ function buildLeadOperationBasePayload(rows = {}, submission = {}, normalized = 
 async function dispatchAgencyPublicIntakeLeadOperationsEmail(client, rows, submission = {}, normalized = {}) {
   const basePayload = buildLeadOperationBasePayload(rows, submission, normalized)
   const assignedUserId = normalizeText(basePayload.assignedUserId)
+  const fallbackSupervisorAssignment = normalizeText(rows.assignmentSource) === 'fallback_owner'
   const dedupeSeed = normalizeText(submission.id || submission.idempotency_key || rows.leadId)
   const results = []
 
@@ -1196,17 +1299,24 @@ async function dispatchAgencyPublicIntakeLeadOperationsEmail(client, rows, submi
     const agent = await fetchOrganisationUserById(client, rows.organisationId, assignedUserId)
     const agentEmail = normalizeEmail(agent?.email)
     if (agentEmail) {
-      results.push(await invokeLeadOperationsEmail({
-        ...basePayload,
-        type: 'new_enquiry_assigned_agent',
-        to: agentEmail,
-        recipientName: displayName(agent, 'Agent'),
-        recipientRole: 'agent',
-        assignedAgentName: displayName(agent, ''),
-        assignedAgentEmail: agentEmail,
-        subject: 'New enquiry assigned to you',
-        idempotencyKey: `lead-ops:${dedupeSeed}:assigned-agent:${assignedUserId}`,
-      }))
+      const payload = fallbackSupervisorAssignment
+        ? buildPublicIntakeSupervisorLeadOperationsPayload({
+            basePayload,
+            supervisor: agent,
+            dedupeSeed,
+          })
+        : {
+            ...basePayload,
+            type: 'new_enquiry_assigned_agent',
+            to: agentEmail,
+            recipientName: displayName(agent, 'Agent'),
+            recipientRole: 'agent',
+            assignedAgentName: displayName(agent, ''),
+            assignedAgentEmail: agentEmail,
+            subject: 'New enquiry assigned to you',
+            idempotencyKey: `lead-ops:${dedupeSeed}:assigned-agent:${assignedUserId}`,
+          }
+      results.push(await invokeLeadOperationsEmail(payload))
     }
     return { attempted: results.length > 0, results }
   }
@@ -1304,7 +1414,11 @@ async function hydrateAgencyPublicIntakeSubmission(client, { link = {}, submissi
   await updateSubmissionProcessingState(client, submission.id, { status: 'processing' })
 
   try {
-    let rows = buildAgencyPublicIntakeCrmRows({ link, submission, normalized })
+    const assignmentLink = await resolvePublicIntakeAssignmentLink(client, link)
+    let rows = {
+      ...buildAgencyPublicIntakeCrmRows({ link: assignmentLink, submission, normalized }),
+      assignmentSource: normalizeText(assignmentLink.public_intake_assignment_source),
+    }
     rows = await persistContact(client, rows)
     rows = await persistLead(client, rows)
     rows = await persistRequirement(client, rows)

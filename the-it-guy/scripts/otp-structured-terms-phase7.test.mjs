@@ -42,6 +42,8 @@ assert.deepEqual(
     'structured_suspensive_conditions',
     'offer_validity',
     'transfer_conveyancer',
+    'otp_commission_variation',
+    'buyer_cost_obligations',
     'resale_subject_to_sale',
     'resale_occupation_rent',
     'resale_disclosure_fixtures',
@@ -58,9 +60,13 @@ assert.equal(resaleManifest.recordContract, OTP_STRUCTURED_TERMS_RECORD_CONTRACT
 assert.equal(developmentManifest.recordContract, OTP_STRUCTURED_TERMS_RECORD_CONTRACT)
 assert.ok(resaleManifest.groups.some((group) => group.key === 'resale_subject_to_sale'))
 assert.ok(resaleManifest.groups.some((group) => group.key === 'resale_occupation_rent'))
+assert.ok(resaleManifest.groups.some((group) => group.key === 'otp_commission_variation'))
+assert.ok(resaleManifest.groups.some((group) => group.key === 'buyer_cost_obligations'))
 assert.equal(resaleManifest.groups.some((group) => group.key === 'development_vat_pricing'), false)
 assert.ok(developmentManifest.groups.some((group) => group.key === 'development_vat_pricing'))
 assert.ok(developmentManifest.groups.some((group) => group.key === 'development_handover'))
+assert.ok(developmentManifest.groups.some((group) => group.key === 'otp_commission_variation'))
+assert.ok(developmentManifest.groups.some((group) => group.key === 'buyer_cost_obligations'))
 assert.equal(developmentManifest.groups.some((group) => group.key === 'resale_occupation_rent'), false)
 
 const suspensiveGroup = listOtpStructuredTermGroups().find((group) => group.key === 'structured_suspensive_conditions')
@@ -109,6 +115,24 @@ const normalizedResale = normalizeOtpStructuredTerms({
     transferAttorneyEmail: 'transfer@example.test',
     transferAttorneyPhone: '+27 11 000 0000',
     trustAccountRecipient: 'Tuckers Trust Account',
+    grossCommissionAmount: 'R 92 500',
+  },
+  commercialTerms: {
+    commission: {
+      mandateCommissionSnapshot: '5.00% mandate commission',
+      proposedOtpCommission: '5.00% OTP commission',
+      approval: {
+        status: 'not_required',
+        approvalReference: 'NOT_REQUIRED',
+      },
+    },
+    costObligations: {
+      buyerVisibleItems: ['Transfer costs pending attorney quote', 'Levies estimated R 2 150'],
+      pendingItems: ['Transfer duty pending SARS calculation'],
+    },
+    matterAttorneyCostQuote: {
+      status: 'pending_upload',
+    },
   },
   computed: {
     purchasePriceWords: 'One million eight hundred and fifty thousand rand',
@@ -167,6 +191,24 @@ const normalizedDevelopment = normalizeOtpStructuredTerms({
     purchase_price: 'R 2 450 000',
     transferAttorneyCompanyName: 'Tuckers Inc.',
     trustAccountRecipient: 'Tuckers Trust Account',
+    grossCommissionAmount: 'R 122 500',
+  },
+  commercialTerms: {
+    commission: {
+      mandateCommissionSnapshot: 'Project commission instruction',
+      proposedOtpCommission: 'Project commission instruction',
+      approval: {
+        status: 'not_required',
+        approvalReference: 'NOT_REQUIRED',
+      },
+    },
+    costObligations: {
+      buyerVisibleItems: ['Utility connection charges estimated R 15 000'],
+      pendingItems: ['Transfer costs pending attorney quote'],
+    },
+    matterAttorneyCostQuote: {
+      status: 'pending_upload',
+    },
   },
   computed: {
     purchasePriceWords: 'Two million four hundred and fifty thousand rand',
@@ -210,9 +252,9 @@ assert.equal(audit.recordContract, OTP_STRUCTURED_TERMS_RECORD_CONTRACT)
 assert.equal(audit.status, 'OTP_STRUCTURED_TERMS_READY_FOR_RENDERER_WIRING')
 assert.equal(audit.mutatedData, false)
 assert.equal(audit.summary.routeCount, 2)
-assert.equal(audit.summary.groupCount, 11)
-assert.equal(audit.summary.resaleGroupCount, 8)
-assert.equal(audit.summary.developmentGroupCount, 8)
+assert.equal(audit.summary.groupCount, 13)
+assert.equal(audit.summary.resaleGroupCount, 10)
+assert.equal(audit.summary.developmentGroupCount, 10)
 assert.equal(audit.summary.blockerCount, 0)
 assert.deepEqual(audit.blockers, [])
 assert.deepEqual(audit.fieldRegistryGaps, [])

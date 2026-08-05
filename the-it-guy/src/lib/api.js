@@ -78,6 +78,13 @@ import {
   isBondFinanceType,
   normalizeFinanceType,
 } from '../core/transactions/financeType'
+import { buildBuyerOnboardingCompletionHook } from '../core/transactions/buyerOnboardingCompletionHook.js'
+import { buildBondFallbackQueueCandidate } from '../core/transactions/bondFallbackQueue.js'
+import { buildAttorneyHandoffRepairQueueCandidate } from '../core/transactions/attorneyHandoffRepairQueue.js'
+import {
+  INFORMATION_SHEET_DOCUMENT_KEY,
+  buildOnboardingInformationSheetCapture,
+} from '../core/transactions/documentCaptureEvidence.js'
 import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import {
@@ -38456,6 +38463,91 @@ async function acceptBuyerPlatformFeeConsent(client, {
   return data
 }
 
+async function fetchTransactionRequiredDocumentByKeyIfPossible(client, { transactionId, documentKey }) {
+  if (!transactionId || !documentKey) return null
+
+  const fullSelect =
+    'id, transaction_id, document_key, document_label, is_uploaded, status, uploaded_document_id, uploaded_at, notes, updated_at'
+  const legacySelect = 'id, transaction_id, document_key, document_label, is_uploaded, uploaded_document_id, updated_at'
+  let query = await client
+    .from('transaction_required_documents')
+    .select(fullSelect)
+    .eq('transaction_id', transactionId)
+    .eq('document_key', documentKey)
+    .maybeSingle()
+
+  if (
+    query.error &&
+    (isMissingColumnError(query.error, 'status') ||
+      isMissingColumnError(query.error, 'uploaded_at') ||
+      isMissingColumnError(query.error, 'notes'))
+  ) {
+    query = await client
+      .from('transaction_required_documents')
+      .select(legacySelect)
+      .eq('transaction_id', transactionId)
+      .eq('document_key', documentKey)
+      .maybeSingle()
+  }
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_required_documents') || isMissingSchemaError(query.error)) {
+      return null
+    }
+    throw query.error
+  }
+
+  return query.data || null
+}
+
+async function updateTransactionRequiredDocumentCaptureIfPossible(
+  client,
+  { transactionId, documentKey, requirementId = null, patch = {} } = {},
+) {
+  if (!transactionId || !documentKey || !patch || !Object.keys(patch).length) return null
+
+  const select = 'id, transaction_id, document_key, is_uploaded, status, uploaded_document_id, uploaded_at, notes, updated_at'
+  if (requirementId) {
+    return updateRecordByIdWithMissingColumnFallback(
+      client,
+      'transaction_required_documents',
+      requirementId,
+      patch,
+      select,
+    )
+  }
+
+  let currentPatch = { ...patch }
+  let update = await client
+    .from('transaction_required_documents')
+    .update(currentPatch)
+    .eq('transaction_id', transactionId)
+    .eq('document_key', documentKey)
+  let attempts = 0
+
+  while (update.error && attempts < 12) {
+    const missingKey = Object.keys(currentPatch).find((key) => isMissingColumnError(update.error, key))
+    if (!missingKey) break
+    delete currentPatch[missingKey]
+    if (!Object.keys(currentPatch).length) return null
+    update = await client
+      .from('transaction_required_documents')
+      .update(currentPatch)
+      .eq('transaction_id', transactionId)
+      .eq('document_key', documentKey)
+    attempts += 1
+  }
+
+  if (update.error) {
+    if (isMissingTableError(update.error, 'transaction_required_documents') || isMissingSchemaError(update.error)) {
+      return null
+    }
+    throw update.error
+  }
+
+  return null
+}
+
 async function markTransactionSignedOtpReceived(client, { transactionId, nextAction = '' } = {}) {
   const normalizedTransactionId = normalizeNullableUuid(transactionId)
   if (!normalizedTransactionId) return null
@@ -39428,6 +39520,11 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     throw new Error('Buyer onboarding state could not be saved.')
   }
 
+  let buyerOnboardingCompletionHook = null
+  let bondFallbackQueueCandidate = null
+  let attorneyHandoffRepairQueueCandidate = null
+  let informationSheetCapture = null
+
   if (submit) {
     await acceptBuyerPlatformFeeConsent(client, {
       transaction,
@@ -39437,20 +39534,66 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       acceptedAt: now,
     })
 
-    const { error: informationSheetUpdateError } = await client
-      .from('transaction_required_documents')
-      .update({
-        is_uploaded: true,
-        updated_at: now,
-      })
-      .eq('transaction_id', transaction.id)
-      .eq('document_key', 'information_sheet')
+    const existingInformationSheetRequirement = await fetchTransactionRequiredDocumentByKeyIfPossible(client, {
+      transactionId: transaction.id,
+      documentKey: INFORMATION_SHEET_DOCUMENT_KEY,
+    })
+    informationSheetCapture = buildOnboardingInformationSheetCapture({
+      transaction,
+      onboarding: updatedOnboarding,
+      formData: formDataForPersistence,
+      existingRequirement: existingInformationSheetRequirement,
+      capturedAt: now,
+      source: 'buyer_onboarding_completed',
+    })
 
-    if (
-      informationSheetUpdateError &&
-      !isMissingTableError(informationSheetUpdateError, 'transaction_required_documents')
-    ) {
-      throw informationSheetUpdateError
+    await updateTransactionRequiredDocumentCaptureIfPossible(client, {
+      transactionId: transaction.id,
+      documentKey: informationSheetCapture.documentKey,
+      requirementId: informationSheetCapture.requirementId,
+      patch: informationSheetCapture.requirementPatch,
+    })
+
+    if (informationSheetCapture.workflowEvidence) {
+      try {
+        await processWorkflowEvidenceIfPossible(client, {
+          transactionId: transaction.id,
+          ...informationSheetCapture.workflowEvidence,
+          createdBy: null,
+          payload: {
+            captureKind: informationSheetCapture.captureKind,
+            documentKey: informationSheetCapture.documentKey,
+            onboardingId: updatedOnboarding.id,
+            uploadedDocumentId: informationSheetCapture.uploadedDocumentId,
+          },
+        })
+      } catch (informationSheetEvidenceError) {
+        if (!isPermissionDeniedError(informationSheetEvidenceError) && !isMissingSchemaError(informationSheetEvidenceError)) {
+          throw informationSheetEvidenceError
+        }
+        console.warn('Information sheet workflow evidence projection skipped', informationSheetEvidenceError)
+      }
+    }
+
+    if (informationSheetCapture.event) {
+      try {
+        await logTransactionEventIfPossible(client, {
+          transactionId: transaction.id,
+          eventType: informationSheetCapture.event.type,
+          createdByRole: 'client',
+          eventData: {
+            ...informationSheetCapture.event.data,
+            version: informationSheetCapture.version,
+            status: informationSheetCapture.status,
+            isUploaded: informationSheetCapture.isUploaded,
+          },
+        })
+      } catch (informationSheetEventError) {
+        if (!isPermissionDeniedError(informationSheetEventError) && !isMissingSchemaError(informationSheetEventError)) {
+          throw informationSheetEventError
+        }
+        console.warn('Information sheet document capture event skipped', informationSheetEventError)
+      }
     }
 
     try {
@@ -39504,6 +39647,149 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       formData: formDataForPersistence,
       completedAt: now,
     })
+
+    buyerOnboardingCompletionHook = buildBuyerOnboardingCompletionHook({
+      transaction,
+      onboarding: updatedOnboarding,
+      previousTransaction: transaction,
+      previousOnboarding: onboarding,
+      formData: formDataForPersistence,
+      financeSnapshot,
+      rolePlayerPolicy,
+      buyerBondOriginatorRequest,
+      completedAt: otpPendingState?.completedAt || now,
+      nextAction: otpPendingState?.nextAction || onboardingNextAction,
+      submit: true,
+    })
+
+    let completionRolePlayers = []
+    try {
+      completionRolePlayers = await fetchTransactionRolePlayersIfPossible(client, transaction.id)
+    } catch (rolePlayerLookupError) {
+      if (!isPermissionDeniedError(rolePlayerLookupError) && !isMissingSchemaError(rolePlayerLookupError)) {
+        throw rolePlayerLookupError
+      }
+      console.warn('Bond fallback queue roleplayer lookup skipped', rolePlayerLookupError)
+    }
+
+    bondFallbackQueueCandidate = buildBondFallbackQueueCandidate({
+      transaction,
+      onboarding: updatedOnboarding,
+      formData: formDataForPersistence,
+      financeSnapshot,
+      rolePlayers: completionRolePlayers,
+      buyerBondOriginatorRequest,
+      completionHook: buyerOnboardingCompletionHook,
+      completedAt: otpPendingState?.completedAt || now,
+      source: 'buyer_onboarding_completed',
+    })
+    attorneyHandoffRepairQueueCandidate = buildAttorneyHandoffRepairQueueCandidate({
+      transaction,
+      onboarding: updatedOnboarding,
+      rolePlayers: completionRolePlayers,
+      routingProfile: transaction?.routing_profile_json || transaction?.routingProfile || transaction?.routing_profile || {},
+      completionHook: buyerOnboardingCompletionHook,
+      completedAt: otpPendingState?.completedAt || now,
+      source: 'buyer_onboarding_completed',
+    })
+
+    try {
+      await logTransactionEventIfPossible(client, {
+        transactionId: transaction.id,
+        eventType: buyerOnboardingCompletionHook.event.type,
+        createdByRole: 'client',
+        eventData: {
+          ...buyerOnboardingCompletionHook.event.data,
+          version: buyerOnboardingCompletionHook.version,
+          onboardingId: buyerOnboardingCompletionHook.onboardingId,
+          completedAt: buyerOnboardingCompletionHook.completedAt,
+          nextOperationalActions: buyerOnboardingCompletionHook.nextOperationalActions,
+          steps: buyerOnboardingCompletionHook.steps,
+        },
+      })
+    } catch (completionHookEventError) {
+      if (!isPermissionDeniedError(completionHookEventError) && !isMissingSchemaError(completionHookEventError)) {
+        throw completionHookEventError
+      }
+      console.warn('Buyer onboarding completion hook event skipped', completionHookEventError)
+    }
+
+    if (bondFallbackQueueCandidate?.required && bondFallbackQueueCandidate.event) {
+      try {
+        await logTransactionEventIfPossible(client, {
+          transactionId: transaction.id,
+          eventType: bondFallbackQueueCandidate.event.type,
+          createdByRole: 'client',
+          eventData: {
+            ...bondFallbackQueueCandidate.event.data,
+            onboardingId: bondFallbackQueueCandidate.onboardingId,
+            completedAt: bondFallbackQueueCandidate.completedAt,
+            reasons: bondFallbackQueueCandidate.reasons,
+          },
+        })
+        await notifyRolesForTransaction(client, {
+          transactionId: transaction.id,
+          roleTypes: ['agent', 'developer'],
+          title: 'Bond fallback queue',
+          message:
+            bondFallbackQueueCandidate.nextAction ||
+            'Bond finance needs manual originator assignment before post-OTP handoff can continue.',
+          notificationType: 'readiness_updated',
+          eventType: 'TransactionUpdated',
+          eventData: {
+            source: 'bond_fallback_queue_candidate',
+            queueKey: bondFallbackQueueCandidate.queueKey,
+            priority: bondFallbackQueueCandidate.priority,
+            reasonKeys: bondFallbackQueueCandidate.reasons.map((item) => item.key),
+          },
+          dedupePrefix: 'bond-fallback-queue',
+        })
+      } catch (bondFallbackError) {
+        if (!isPermissionDeniedError(bondFallbackError) && !isMissingSchemaError(bondFallbackError)) {
+          throw bondFallbackError
+        }
+        console.warn('Bond fallback queue projection skipped', bondFallbackError)
+      }
+    }
+
+    if (attorneyHandoffRepairQueueCandidate?.required && attorneyHandoffRepairQueueCandidate.event) {
+      try {
+        await logTransactionEventIfPossible(client, {
+          transactionId: transaction.id,
+          eventType: attorneyHandoffRepairQueueCandidate.event.type,
+          createdByRole: 'client',
+          eventData: {
+            ...attorneyHandoffRepairQueueCandidate.event.data,
+            onboardingId: attorneyHandoffRepairQueueCandidate.onboardingId,
+            completedAt: attorneyHandoffRepairQueueCandidate.completedAt,
+            reasons: attorneyHandoffRepairQueueCandidate.reasons,
+          },
+        })
+        await notifyRolesForTransaction(client, {
+          transactionId: transaction.id,
+          roleTypes: ['agent', 'developer'],
+          title: 'Attorney handoff repair queue',
+          message:
+            attorneyHandoffRepairQueueCandidate.nextAction ||
+            'Legal handoff needs attorney assignment repair before the transaction can progress cleanly.',
+          notificationType: 'readiness_updated',
+          eventType: 'TransactionUpdated',
+          eventData: {
+            source: 'attorney_handoff_repair_queue_candidate',
+            queueKey: attorneyHandoffRepairQueueCandidate.queueKey,
+            priority: attorneyHandoffRepairQueueCandidate.priority,
+            requiredRoles: attorneyHandoffRepairQueueCandidate.requiredRoles,
+            reasonKeys: attorneyHandoffRepairQueueCandidate.reasons.map((item) => item.key),
+          },
+          dedupePrefix: 'attorney-handoff-repair-queue',
+        })
+      } catch (attorneyRepairError) {
+        if (!isPermissionDeniedError(attorneyRepairError) && !isMissingSchemaError(attorneyRepairError)) {
+          throw attorneyRepairError
+        }
+        console.warn('Attorney handoff repair queue projection skipped', attorneyRepairError)
+      }
+    }
 
     try {
       await logTransactionEventIfPossible(client, {
@@ -39591,6 +39877,12 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     transactionId: transaction.id,
     clientPortalPath,
     clientPortalLink,
+    completionHook: buyerOnboardingCompletionHook,
+    bondFallbackQueue: bondFallbackQueueCandidate,
+    attorneyHandoffRepairQueue: attorneyHandoffRepairQueueCandidate,
+    documentCapture: {
+      informationSheet: informationSheetCapture,
+    },
   }
 }
 

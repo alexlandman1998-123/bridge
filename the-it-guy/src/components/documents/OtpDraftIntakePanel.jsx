@@ -4,8 +4,10 @@ import {
   normalizeLegalPropertyTitleType,
   resolveLegalDocumentScenarioProfile,
 } from '../../core/documents/legalDocumentScenarioProfile'
+import { buildOtpCommercialTermsReviewModel } from '../../core/documents/otpCommercialTermsReviewPhase25'
 import { resolveLegalDocumentScenarioRequirements } from '../../core/documents/legalDocumentScenarioRequirements'
 import Button from '../ui/Button'
+import OtpCommercialTermsReviewPanel from './OtpCommercialTermsReviewPanel'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -504,8 +506,12 @@ export default function OtpDraftIntakePanel({
   signingReadiness = null,
   manualChangeCount = 0,
   generationWorkspaceId = '',
+  commercialTermsReviewModel = null,
+  commercialTermsReviewInput = null,
+  commercialTermsReviewBusy = false,
   onFieldChange = null,
   onReset = null,
+  onCommercialTermsReviewAction = null,
 }) {
   const sourceLabel = getSourceModeLabel(sourceMode)
   const hasManualStart = normalizeKey(sourceMode) === 'manual_details'
@@ -541,7 +547,28 @@ export default function OtpDraftIntakePanel({
     ...missingRequirementFields.map((field) => field.key).filter(Boolean),
     ...missingRoutingFieldKeys,
   ])
-  const readinessChecks = buildReadinessGroups({ requirements, scenarioProfile, sourceSummary, signingReadiness })
+  const commercialTermsReview = commercialTermsReviewModel || (
+    commercialTermsReviewInput ? buildOtpCommercialTermsReviewModel(commercialTermsReviewInput) : null
+  )
+  const commercialTermsCheck = commercialTermsReview ? {
+    key: 'commercial_terms_review',
+    label: 'Commercial terms review',
+    source: { label: commercialTermsReview.routeVariant.replace(/_/g, ' ') },
+    status: commercialTermsReview.canGenerateOtp ? 'ready' : 'needs_attention',
+    message: commercialTermsReview.canGenerateOtp
+      ? 'Ready.'
+      : commercialTermsReview.generationBlockers.map((code) => code.replace(/_/g, ' ')).join(', '),
+    actions: commercialTermsReview.canGenerateOtp
+      ? []
+      : commercialTermsReview.generationBlockers.map((code) => ({
+        label: code.replace(/_/g, ' '),
+        fieldKey: '',
+      })),
+  } : null
+  const readinessChecks = [
+    ...buildReadinessGroups({ requirements, scenarioProfile, sourceSummary, signingReadiness }),
+    ...(commercialTermsCheck ? [commercialTermsCheck] : []),
+  ]
   const sectionReadiness = buildSectionReadiness({ requirements, sourceSummary })
   const missingChecks = readinessChecks.filter((item) => item.status === 'needs_attention')
   const readyCheckCount = readinessChecks.filter((item) => item.status === 'ready').length
@@ -748,6 +775,16 @@ export default function OtpDraftIntakePanel({
 	        onJumpToField={handleJumpToField}
 	        onJumpToWorkspace={hasGenerationWorkspaceTarget ? handleJumpToWorkspace : null}
 	      />
+
+        {commercialTermsReview ? (
+          <div className="mt-5">
+            <OtpCommercialTermsReviewPanel
+              model={commercialTermsReview}
+              busy={commercialTermsReviewBusy}
+              onAction={onCommercialTermsReviewAction}
+            />
+          </div>
+        ) : null}
 
 	      <div className="mt-6 grid gap-6">
 		        <div id="otp-section-buyer" className="grid scroll-mt-28 gap-3 border-t border-[#edf2f7] pt-5">

@@ -397,6 +397,26 @@ try {
     client: cashClient,
   })
   assert.equal(cashTransferMove.allowed, true)
+
+  const earlyRegistration = await actionService.runWorkflowAction({
+    transactionId: 'tx-2',
+    actionKey: 'MARK_REGISTERED',
+    userId: 'user-2',
+    actorRole: 'attorney',
+    payload: {
+      source: 'test',
+      registrationDate: '2026-06-02',
+      titleDeedNumber: 'T123',
+      registrationConfirmationDocumentId: 'doc-reg-early',
+    },
+    client: cashClient,
+  })
+  assert.equal(earlyRegistration.allowed, false)
+  assert.equal(earlyRegistration.blocked, true)
+  assert.equal(earlyRegistration.blockers[0].workflowKey, 'attorney_transfer')
+  assert.equal(earlyRegistration.blockers[0].code, 'TRANSFER_NOT_LODGED')
+  assert.match(earlyRegistration.blockers[0].message, /completed|lodged/i)
+
   for (const key of [
     'instruction_received',
     'transfer_documents_requested',

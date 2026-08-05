@@ -103,6 +103,14 @@ import {
   normalizeDocumentLifecycleState,
   resolveDocumentLifecycleStateFromPacket,
 } from '../../core/documents/documentLifecycle'
+import {
+  buildOtpAgentControlledEditModel,
+} from '../../core/documents/otpAgentControlledEditsPhase30'
+import {
+  buildOtpAgentReviewRecord,
+  buildOtpAgentReviewUiState,
+} from '../../core/documents/otpAgentReviewUiPhase31'
+import { normalizeOtpDocumentVariant } from '../../core/documents/otpRouteUniverse'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -3386,6 +3394,261 @@ function MandateReviewPanel({
   )
 }
 
+function getOtpAgentReviewRecord(sourceContext = {}) {
+  const record = sourceContext?.otpAgentReviewRecord && typeof sourceContext.otpAgentReviewRecord === 'object'
+    ? sourceContext.otpAgentReviewRecord
+    : sourceContext?.otp_agent_review_record && typeof sourceContext.otp_agent_review_record === 'object'
+      ? sourceContext.otp_agent_review_record
+      : null
+  return record || null
+}
+
+function buildOtpReviewTermsFromContext({ sourceContext = {}, placeholders = {}, summary = {}, transactionReference = '' } = {}) {
+  const lead = sourceContext.lead && typeof sourceContext.lead === 'object' ? sourceContext.lead : {}
+  const transaction = sourceContext.transaction && typeof sourceContext.transaction === 'object' ? sourceContext.transaction : {}
+  const privateListing = sourceContext.privateListing && typeof sourceContext.privateListing === 'object' ? sourceContext.privateListing : {}
+  const generationPayload = sourceContext.generationPayload && typeof sourceContext.generationPayload === 'object' ? sourceContext.generationPayload : {}
+  return {
+    buyer_full_name: firstNonEmptyText(placeholders.buyer_full_name, transaction.buyer_name, lead.buyerName, sourceContext.buyerName),
+    buyer_email: firstNonEmptyText(placeholders.buyer_email, transaction.buyer_email, lead.buyerEmail, sourceContext.buyerEmail),
+    buyer_phone: firstNonEmptyText(placeholders.buyer_phone, transaction.buyer_phone, lead.buyerPhone, sourceContext.buyerPhone),
+    seller_full_name: firstNonEmptyText(placeholders.seller_full_name, transaction.seller_name, lead.sellerName, summary.seller),
+    developer_name: firstNonEmptyText(placeholders.developer_name, transaction.developer_name, generationPayload.developerName),
+    property_address: firstNonEmptyText(placeholders.property_address, transaction.property_address, privateListing.propertyAddress, lead.propertyAddress, summary.property, transactionReference),
+    property_title_type: firstNonEmptyText(placeholders.property_title_type, transaction.property_title_type, privateListing.propertyTitleType),
+    purchase_price: firstNonEmptyText(placeholders.purchase_price, transaction.purchase_price, transaction.offer_amount, sourceContext.purchasePrice),
+    deposit_amount: firstNonEmptyText(placeholders.deposit_amount, transaction.deposit_amount, sourceContext.depositAmount),
+    deposit_due_date: firstNonEmptyText(placeholders.deposit_due_date, transaction.deposit_due_date, sourceContext.depositDueDate),
+    guarantee_delivery_deadline: firstNonEmptyText(placeholders.guarantee_delivery_deadline, transaction.guarantee_delivery_deadline, sourceContext.guaranteeDeliveryDeadline),
+    finance_type: firstNonEmptyText(placeholders.finance_type, transaction.finance_type, sourceContext.financeType),
+    bond_amount: firstNonEmptyText(placeholders.bond_amount, transaction.bond_amount, sourceContext.bondAmount),
+    bond_approval_deadline: firstNonEmptyText(placeholders.bond_approval_deadline, transaction.bond_approval_deadline, sourceContext.bondApprovalDeadline),
+    cash_amount: firstNonEmptyText(placeholders.cash_amount, transaction.cash_amount, sourceContext.cashAmount),
+    cash_proof_deadline: firstNonEmptyText(placeholders.cash_proof_deadline, transaction.cash_proof_deadline, sourceContext.cashProofDeadline),
+    occupation_date: firstNonEmptyText(placeholders.occupation_date, transaction.occupation_date, sourceContext.occupationDate),
+    occupational_rent_amount: firstNonEmptyText(placeholders.occupational_rent_amount, transaction.occupational_rent_amount, sourceContext.occupationalRentAmount),
+  }
+}
+
+function resolveOtpRouteVariantForReview({ sourceContext = {}, latestVersion = null, packet = null, templateDetail = null } = {}) {
+  const generationPayload = sourceContext.generationPayload && typeof sourceContext.generationPayload === 'object' ? sourceContext.generationPayload : {}
+  const launchReadiness = generationPayload.otpTemplateLaunchReadiness && typeof generationPayload.otpTemplateLaunchReadiness === 'object'
+    ? generationPayload.otpTemplateLaunchReadiness
+    : {}
+  const routeCandidate = firstNonEmptyText(
+    sourceContext.otpDocumentVariant,
+    sourceContext.otp_document_variant,
+    sourceContext.documentVariant,
+    sourceContext.document_variant,
+    generationPayload.otpDocumentVariant,
+    generationPayload.routeKey,
+    launchReadiness.routeKey,
+    latestVersion?.validation_summary_json?.otpDocumentVariant,
+    packet?.template_key_snapshot,
+    templateDetail?.template_key,
+  )
+  const normalized = normalizeOtpDocumentVariant(routeCandidate)
+  if (normalized) return normalized
+  const routeHint = [
+    routeCandidate,
+    packet?.template_label_snapshot,
+    templateDetail?.template_label,
+    generationPayload.otpTemplateRouteLabel,
+  ].map(normalizeText).join(' ').toLowerCase()
+  return routeHint.includes('development') || routeHint.includes('developer')
+    ? 'new_development'
+    : 'resale_existing_property'
+}
+
+function OtpAgentReviewPanel({
+  model = null,
+  uiState = null,
+  termsSnapshot = {},
+  reviewRecord = null,
+  open = false,
+  busy = false,
+  onOpen = null,
+  onClose = null,
+  onConfirm = null,
+}) {
+  const [draftTerms, setDraftTerms] = useState(termsSnapshot || {})
+  const [selectedConditions, setSelectedConditions] = useState({})
+
+  useEffect(() => {
+    if (!open) return
+    setDraftTerms({ ...(reviewRecord?.termsSnapshot || termsSnapshot || {}) })
+    const selected = {}
+    for (const condition of reviewRecord?.standardConditionSelections || []) {
+      const key = normalizeKey(condition.conditionType || condition.key)
+      if (key) selected[key] = true
+    }
+    setSelectedConditions(selected)
+  }, [open, reviewRecord, termsSnapshot])
+
+  if (!model?.canOpenAgentReviewModal) return null
+
+  const statusLabel = uiState?.reviewConfirmed ? 'Reviewed' : uiState?.requiresReviewBeforeGenerate ? 'Review required' : 'Ready'
+  const statusClassName = uiState?.reviewConfirmed
+    ? 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
+    : 'border-[#f4e2bf] bg-[#fff8ec] text-[#8a5b12]'
+  const sectionRows = (model.editableSections || []).slice(0, 8)
+  const conditionControls = model.standardConditionControls || []
+  const updateDraftTerm = (key, value) => setDraftTerms((current) => ({ ...current, [key]: value }))
+  const buildSelections = () => conditionControls
+    .filter((control) => selectedConditions[control.key])
+    .map((control) => ({
+      conditionType: control.key,
+      fields: draftTerms,
+      actorRole: 'agent',
+    }))
+
+  const handleConfirm = () => {
+    void onConfirm?.({
+      termsSnapshot: draftTerms,
+      standardConditionSelections: buildSelections(),
+      customConditionRequests: [],
+    })
+  }
+
+  return (
+    <>
+      <section className="mb-5 rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-[240px] flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-[1.05rem] font-semibold text-[#102033]">OTP Review</h3>
+              <span className={`rounded-full border px-3 py-1 text-[0.68rem] font-semibold ${statusClassName}`}>
+                {statusLabel}
+              </span>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-[#607387]">
+              Review buyer, seller, property, price, cost and suspensive-condition controls before generating the OTP.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpen?.()}
+            disabled={busy || !uiState?.canOpenReview}
+            className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#d7e4f3] bg-white px-4 text-sm font-semibold text-[#102033] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Pencil size={15} />
+            {uiState?.reviewConfirmed ? 'Review Terms' : 'Open Review'}
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-[18px] border border-[#edf3fa] bg-[#fbfdff] px-4 py-3">
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">Route</p>
+            <p className="mt-1 truncate text-sm font-semibold text-[#102033]">{model.routeLabel}</p>
+          </div>
+          <div className="rounded-[18px] border border-[#edf3fa] bg-[#fbfdff] px-4 py-3">
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">Controls</p>
+            <p className="mt-1 text-sm font-semibold text-[#102033]">{conditionControls.length} standard conditions</p>
+          </div>
+          <div className="rounded-[18px] border border-[#edf3fa] bg-[#fbfdff] px-4 py-3">
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">Last review</p>
+            <p className="mt-1 truncate text-sm font-semibold text-[#102033]">{reviewRecord?.confirmedAt ? formatDateTime(reviewRecord.confirmedAt) : 'Not confirmed yet'}</p>
+          </div>
+        </div>
+      </section>
+
+      {open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#102033]/45 px-4 py-6">
+          <section className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[24px] bg-white shadow-[0_28px_80px_rgba(16,32,51,0.28)]">
+            <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e5edf7] px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8ea4]">Agent controlled OTP review</p>
+                <h3 className="mt-1 text-xl font-semibold text-[#102033]">{model.routeLabel}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => onClose?.()}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#d7e4f3] bg-white text-[#526b84] transition hover:bg-[#f7fbff]"
+                aria-label="Close OTP review"
+              >
+                <X size={16} />
+              </button>
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+              <div className="grid gap-4 lg:grid-cols-2">
+                {[
+                  ['buyer_full_name', 'Buyer full name'],
+                  ['buyer_email', 'Buyer email'],
+                  ['seller_full_name', model.routeVariant === 'new_development' ? 'Developer / seller' : 'Seller full name'],
+                  ['property_address', 'Property address'],
+                  ['purchase_price', 'Purchase price'],
+                  ['deposit_amount', 'Deposit amount'],
+                  ['occupation_date', 'Occupation date'],
+                  ['occupational_rent_amount', 'Occupational rent'],
+                ].map(([key, label]) => (
+                  <label key={key} className="block rounded-[16px] border border-[#e5edf7] bg-[#fbfdff] px-3 py-3">
+                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7f93aa]">{label}</span>
+                    <input
+                      value={draftTerms[key] ?? ''}
+                      onChange={(event) => updateDraftTerm(key, event.target.value)}
+                      className="mt-2 h-10 w-full rounded-[10px] border border-[#d8e3ef] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition focus:border-[#1a7f5a] focus:ring-2 focus:ring-[#1a7f5a]/15"
+                      placeholder="Not captured"
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <div className="mt-5 rounded-[18px] border border-[#e5edf7] bg-[#fbfdff] p-4">
+                <h4 className="text-sm font-semibold text-[#102033]">Suspensive condition controls</h4>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {conditionControls.map((control) => (
+                    <label key={control.key} className="flex items-start gap-3 rounded-[14px] border border-[#edf3fa] bg-white px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selectedConditions[control.key])}
+                        onChange={(event) => setSelectedConditions((current) => ({ ...current, [control.key]: event.target.checked }))}
+                        className="mt-1 h-4 w-4 rounded border-[#cbd9e8] text-[#00614f]"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-[#102033]">{control.label}</span>
+                        <span className="mt-1 block text-xs leading-5 text-[#6b7c93]">{control.description || control.requiredFields.join(', ')}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-[18px] border border-[#edf3fa] bg-[#f8fbff] p-4">
+                <h4 className="text-sm font-semibold text-[#102033]">Review sections</h4>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {sectionRows.map((section) => (
+                    <div key={section.key} className="rounded-[14px] border border-[#edf3fa] bg-white px-3 py-2">
+                      <p className="text-sm font-semibold text-[#102033]">{section.label}</p>
+                      <p className="mt-1 text-xs text-[#6b7c93]">{section.approvalRequired ? 'Approval path required for changes' : 'Structured transaction fields only'}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {model.blockerCodes?.length ? (
+                <div className="mt-5 rounded-[18px] border border-[#f6ddd7] bg-[#fff6f3] px-4 py-3 text-sm text-[#973824]">
+                  <p className="font-semibold">Review cannot be confirmed yet.</p>
+                  <p className="mt-1">{model.blockerCodes.join(', ')}</p>
+                </div>
+              ) : null}
+            </div>
+            <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e5edf7] px-5 py-4">
+              <p className="text-xs font-medium text-[#6b7c93]">This saves a reviewed transaction-terms record. It does not change legal template clauses.</p>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" variant="secondary" onClick={() => onClose?.()} disabled={busy}>
+                  Cancel
+                </Button>
+                <Button type="button" size="sm" onClick={handleConfirm} disabled={busy || !model.canGenerateOtp}>
+                  {busy ? 'Saving…' : 'Confirm Review'}
+                </Button>
+              </div>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
 function ActivityPanel({
   activeTab = 'all',
   onTabChange = null,
@@ -3849,6 +4112,9 @@ export default function LegalDocumentWorkspace({
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [mandateOverrideSaving, setMandateOverrideSaving] = useState(false)
   const [localMandateManualOverride, setLocalMandateManualOverride] = useState(null)
+  const [otpAgentReviewOpen, setOtpAgentReviewOpen] = useState(false)
+  const [otpAgentReviewSaving, setOtpAgentReviewSaving] = useState(false)
+  const [localOtpAgentReviewRecord, setLocalOtpAgentReviewRecord] = useState(null)
   const [bottomActionMenuOpen, setBottomActionMenuOpen] = useState(false)
   const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false)
   const [activeSectionKey, setActiveSectionKey] = useState('')
@@ -4033,15 +4299,24 @@ export default function LegalDocumentWorkspace({
   const signingDeliveryUnavailableMessage = normalizeText(signingDeliveryDisabledReason) ||
     'Signing delivery is temporarily unavailable. No signing links or sent status will be created until server-backed delivery is enabled.'
   const sourceContext = useMemo(() => (
-    statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
-      ? statusState.packet.source_context_json
-      : localMandateManualOverride
+    {
+      ...(statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
+        ? statusState.packet.source_context_json
+        : {}),
+      ...(localMandateManualOverride
         ? {
             mandateManualOverride: localMandateManualOverride,
             mandate_manual_override: localMandateManualOverride,
           }
-        : {}
-  ), [localMandateManualOverride, statusState?.packet?.source_context_json])
+        : {}),
+      ...(localOtpAgentReviewRecord
+        ? {
+            otpAgentReviewRecord: localOtpAgentReviewRecord,
+            otp_agent_review_record: localOtpAgentReviewRecord,
+          }
+        : {}),
+    }
+  ), [localMandateManualOverride, localOtpAgentReviewRecord, statusState?.packet?.source_context_json])
   const mandateSecondarySignerConfig = useMemo(
     () => {
       if (!isMandatePacket) {
@@ -4766,6 +5041,55 @@ export default function LegalDocumentWorkspace({
     transactionReference,
   ])
 
+  const otpRouteVariant = useMemo(() => (
+    isOtpPacket
+      ? resolveOtpRouteVariantForReview({
+          sourceContext,
+          latestVersion,
+          packet: statusState?.packet || packetDetail,
+          templateDetail,
+        })
+      : ''
+  ), [isOtpPacket, latestVersion, packetDetail, sourceContext, statusState?.packet, templateDetail])
+
+  const otpReviewTermsSnapshot = useMemo(() => (
+    isOtpPacket
+      ? buildOtpReviewTermsFromContext({
+          sourceContext,
+          placeholders: latestVersion?.placeholders_resolved_json || {},
+          summary: workspaceSummary,
+          transactionReference,
+        })
+      : {}
+  ), [isOtpPacket, latestVersion?.placeholders_resolved_json, sourceContext, transactionReference, workspaceSummary])
+
+  const otpAgentControlledEditModel = useMemo(() => {
+    if (!isOtpPacket) return null
+    const editRequests = Object.entries(otpReviewTermsSnapshot)
+      .filter(([, value]) => normalizeText(value))
+      .map(([fieldKey, nextValue]) => ({ fieldKey, nextValue }))
+    const existingRecord = getOtpAgentReviewRecord(sourceContext)
+    return buildOtpAgentControlledEditModel({
+      transactionId: transactionId || transactionReference,
+      routeVariant: otpRouteVariant || 'resale_existing_property',
+      editRequests,
+      standardConditionSelections: existingRecord?.standardConditionSelections || [],
+      customConditionRequests: existingRecord?.customConditionRequests || [],
+    })
+  }, [isOtpPacket, otpReviewTermsSnapshot, otpRouteVariant, sourceContext, transactionId, transactionReference])
+
+  const otpAgentReviewUiState = useMemo(() => (
+    isOtpPacket
+      ? buildOtpAgentReviewUiState({
+          model: otpAgentControlledEditModel,
+          sourceContext,
+          lifecycleState: normalizedLifecycleState,
+          canGeneratePermission: Boolean(legalPermissions.canGenerate),
+          hasGeneratedPacketVersion,
+        })
+      : null
+  ), [hasGeneratedPacketVersion, isOtpPacket, legalPermissions.canGenerate, normalizedLifecycleState, otpAgentControlledEditModel, sourceContext])
+
   const primaryLabel = useMemo(() => {
     if (normalizedLifecycleState === 'ready_to_send') return 'Send for Signature'
     return resolvePrimaryActionLabel(effectiveMode, statusState?.state, packetType)
@@ -5209,6 +5533,62 @@ export default function LegalDocumentWorkspace({
       setMandateOverrideSaving(false)
     }
   }, [mandateDataSnapshot, packetId, sourceContext, statusState?.packet?.id, updateWorkspacePacket, workspaceRole])
+
+  const handleConfirmOtpAgentReview = useCallback(async ({
+    termsSnapshot = {},
+    standardConditionSelections = [],
+    customConditionRequests = [],
+  } = {}) => {
+    const resolvedPacketId = normalizeText(statusStateRef.current?.packet?.id || statusState?.packet?.id || packetId)
+    const editRequests = Object.entries(termsSnapshot || {})
+      .filter(([, value]) => normalizeText(value))
+      .map(([fieldKey, nextValue]) => ({ fieldKey, nextValue }))
+    const model = buildOtpAgentControlledEditModel({
+      transactionId: transactionId || transactionReference,
+      routeVariant: otpRouteVariant || 'resale_existing_property',
+      editRequests,
+      standardConditionSelections,
+      customConditionRequests,
+    })
+    if (!model.canGenerateOtp) {
+      setLoadError(`OTP review cannot be confirmed yet: ${model.blockerCodes.join(', ') || 'review blockers remain'}.`)
+      return false
+    }
+    const nextRecord = buildOtpAgentReviewRecord({
+      model,
+      termsSnapshot: {
+        ...termsSnapshot,
+        routeVariant: otpRouteVariant || 'resale_existing_property',
+      },
+      standardConditionSelections,
+      customConditionRequests,
+      actorRole: workspaceRole,
+    })
+
+    setOtpAgentReviewSaving(true)
+    setLoadError('')
+    try {
+      if (resolvedPacketId) {
+        await updateWorkspacePacket(resolvedPacketId, {
+          sourceContextJson: {
+            otpAgentReviewRecord: nextRecord,
+            otp_agent_review_record: nextRecord,
+          },
+        })
+        setLocalOtpAgentReviewRecord(null)
+      } else {
+        setLocalOtpAgentReviewRecord(nextRecord)
+      }
+      setOtpAgentReviewOpen(false)
+      setActionFeedback('OTP review confirmed. The next generated OTP will use the reviewed transaction terms record.')
+      return true
+    } catch (error) {
+      setLoadError(toFriendlyWorkspaceError(error, 'Unable to save the OTP review record.'))
+      return false
+    } finally {
+      setOtpAgentReviewSaving(false)
+    }
+  }, [otpRouteVariant, packetId, statusState?.packet?.id, transactionId, transactionReference, updateWorkspacePacket, workspaceRole])
 
   useEffect(() => {
     let active = true
@@ -8036,6 +8416,12 @@ export default function LegalDocumentWorkspace({
   const handleGeneratePacketDraft = async () => {
     if (typeof onGenerate !== 'function' || actionBusyRef.current) return
     assertWorkspacePermission('canGenerate', 'generate legal drafts')
+    if (isOtpPacket && otpAgentReviewUiState?.requiresReviewBeforeGenerate) {
+      setOtpAgentReviewOpen(true)
+      setLoadError('')
+      setActionFeedback('Review and confirm the OTP terms before generating the PDF.')
+      return
+    }
     actionBusyRef.current = true
     setActionBusy(true)
     setLoadError('')
@@ -8084,6 +8470,7 @@ export default function LegalDocumentWorkspace({
         mandateManualOverride,
         editableSections,
         renderFreeze,
+        otpAgentReviewRecord: otpAgentReviewUiState?.reviewRecord || null,
         onProgress: (message) => setActionProgressMessage(normalizeText(message)),
       })
       if (generationResult?.status) {
@@ -8504,7 +8891,11 @@ export default function LegalDocumentWorkspace({
                     onClick={() => void handleGeneratePacketDraft()}
                     disabled={loading || actionBusy}
                   >
-                    {actionBusy ? 'Working…' : editableSections.length ? 'Generate PDF' : `Generate ${isOtpPacket ? 'OTP' : 'Mandate'}`}
+                    {actionBusy
+                      ? 'Working…'
+                      : isOtpPacket && otpAgentReviewUiState?.requiresReviewBeforeGenerate
+                        ? 'Review OTP'
+                        : editableSections.length ? 'Generate PDF' : `Generate ${isOtpPacket ? 'OTP' : 'Mandate'}`}
                   </Button>
                 ) : null}
                 <div className="relative">
@@ -8661,6 +9052,19 @@ export default function LegalDocumentWorkspace({
               <article className="mb-5 rounded-[18px] border border-[#e4ebf4] bg-[#f8fbff] px-4 py-3 text-sm font-semibold text-[#55708d]">
                 Read-only mode: your role can view lifecycle progress and signer status, but cannot modify legal drafts.
               </article>
+            ) : null}
+            {isOtpPacket && otpAgentControlledEditModel ? (
+              <OtpAgentReviewPanel
+                model={otpAgentControlledEditModel}
+                uiState={otpAgentReviewUiState}
+                termsSnapshot={otpAgentReviewUiState?.reviewRecord?.termsSnapshot || otpReviewTermsSnapshot}
+                reviewRecord={otpAgentReviewUiState?.reviewRecord}
+                open={otpAgentReviewOpen}
+                busy={otpAgentReviewSaving || actionBusy || loading}
+                onOpen={() => setOtpAgentReviewOpen(true)}
+                onClose={() => setOtpAgentReviewOpen(false)}
+                onConfirm={handleConfirmOtpAgentReview}
+              />
             ) : null}
             {documentChangePanelVisible ? (
               <DocumentChangeRequestPanel

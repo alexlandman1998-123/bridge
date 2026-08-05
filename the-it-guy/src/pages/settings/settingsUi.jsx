@@ -19,18 +19,13 @@ function getAlertToneClasses(tone) {
   return 'border-[#f6d4d4] bg-[#fff5f5] text-[#b42318]'
 }
 
-export function SettingsPageHeader({ kicker, title, description, actions }) {
+export function SettingsPageHeader({ actions }) {
+  if (!actions) return null
+
   return (
-    <header className="flex flex-col gap-4 border-b border-[#e8edf2] pb-6 lg:flex-row lg:items-start lg:justify-between">
-      <div className="space-y-2">
-        {kicker ? <span className="text-[0.68rem] font-semibold uppercase text-[#7b8da6]">{kicker}</span> : null}
-        <div className="space-y-1.5">
-          <h2 className="text-2xl font-semibold leading-tight tracking-[-0.025em] text-[#121c2d]">{title}</h2>
-          {description ? <p className="max-w-3xl text-sm font-normal leading-6 text-[#607387]">{description}</p> : null}
-        </div>
-      </div>
-      {actions ? <div className="flex shrink-0 items-center gap-3">{actions}</div> : null}
-    </header>
+    <div className="flex justify-end">
+      <div className="flex shrink-0 items-center gap-3">{actions}</div>
+    </div>
   )
 }
 

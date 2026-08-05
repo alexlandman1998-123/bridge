@@ -1,6 +1,6 @@
 # OTP Template vNext Phase 7 Structured Terms
 
-Generated: 2026-08-05T09:51:21.211Z
+Generated: 2026-08-05T11:02:41.629Z
 Version: otp_structured_terms_phase7_v1
 Record contract: otp_structured_terms_record_phase7_v1
 Status: OTP_STRUCTURED_TERMS_READY_FOR_RENDERER_WIRING
@@ -11,10 +11,10 @@ Mutated data: false
 | Metric | Value |
 | --- | --- |
 | Routes | 2 |
-| Structured term groups | 11 |
-| Resale groups | 8 |
-| New-development groups | 8 |
-| Unique structured fields | 39 |
+| Structured term groups | 13 |
+| Resale groups | 10 |
+| New-development groups | 10 |
+| Unique structured fields | 47 |
 | Blockers | 0 |
 
 ## Checks
@@ -36,8 +36,8 @@ Mutated data: false
 
 | Route | Groups | Fields | Source Owners | Boundary |
 | --- | --- | --- | --- | --- |
-| Existing / resale property OTP | purchase_economics, finance_and_guarantees, structured_suspensive_conditions, offer_validity, transfer_conveyancer, resale_subject_to_sale, resale_occupation_rent, resale_disclosure_fixtures | purchase_price, purchase_price_words, deposit_amount, deposit_due_date, trust_account_recipient, finance_type, bond_amount, bond_approval_deadline, cash_amount, cash_proof_deadline, guarantee_delivery_deadline, guarantee_delivery_period, structured_suspensive_conditions, irrevocable_offer_expiry, transfer_attorney_company_name, transfer_attorney_contact_person, transfer_attorney_email, transfer_attorney_phone, subject_sale_property, subject_sale_minimum_price, subject_sale_fulfilment_date, occupation_date, occupational_rent_payable, occupational_rent_amount, mandatory_disclosure_status, mandatory_disclosure_annexure, mandatory_disclosure_comments, fixtures_included, fixtures_excluded, compliance_certificate_schedule | transaction_offer_terms, conveyancer_transfer_assignment, seller_onboarding | structured_terms_only_no_free_text_fallback |
-| New development OTP | purchase_economics, finance_and_guarantees, structured_suspensive_conditions, offer_validity, transfer_conveyancer, development_vat_pricing, development_handover, development_levies_and_compliance | purchase_price, purchase_price_words, deposit_amount, deposit_due_date, trust_account_recipient, finance_type, bond_amount, bond_approval_deadline, cash_amount, cash_proof_deadline, guarantee_delivery_deadline, guarantee_delivery_period, structured_suspensive_conditions, irrevocable_offer_expiry, transfer_attorney_company_name, transfer_attorney_contact_person, transfer_attorney_email, transfer_attorney_phone, vat_inclusive_purchase_price, occupation_date, snagging_period_days, contractor_company_name, property_nhbrc_certificate_number, body_corporate_rules_annexure, development_levy_estimate, development_rates_estimate, utility_connection_charges, development_compliance_certificate_schedule | transaction_offer_terms, conveyancer_transfer_assignment, development_setup, development_unit_setup | structured_terms_only_no_free_text_fallback |
+| Existing / resale property OTP | purchase_economics, finance_and_guarantees, structured_suspensive_conditions, offer_validity, transfer_conveyancer, otp_commission_variation, buyer_cost_obligations, resale_subject_to_sale, resale_occupation_rent, resale_disclosure_fixtures | purchase_price, purchase_price_words, deposit_amount, deposit_due_date, trust_account_recipient, finance_type, bond_amount, bond_approval_deadline, cash_amount, cash_proof_deadline, guarantee_delivery_deadline, guarantee_delivery_period, structured_suspensive_conditions, irrevocable_offer_expiry, transfer_attorney_company_name, transfer_attorney_contact_person, transfer_attorney_email, transfer_attorney_phone, matter_attorney_cost_quote_status, gross_commission_amount, mandate_commission_snapshot, otp_commission_proposal, otp_commission_variation_status, otp_commission_approval_reference, otp_buyer_cost_obligations, otp_pending_cost_obligations, subject_sale_property, subject_sale_minimum_price, subject_sale_fulfilment_date, occupation_date, occupational_rent_payable, occupational_rent_amount, mandatory_disclosure_status, mandatory_disclosure_annexure, mandatory_disclosure_comments, fixtures_included, fixtures_excluded, compliance_certificate_schedule | transaction_offer_terms, conveyancer_transfer_assignment, organisation_agent_settings, seller_onboarding | structured_terms_only_no_free_text_fallback |
+| New development OTP | purchase_economics, finance_and_guarantees, structured_suspensive_conditions, offer_validity, transfer_conveyancer, otp_commission_variation, buyer_cost_obligations, development_vat_pricing, development_handover, development_levies_and_compliance | purchase_price, purchase_price_words, deposit_amount, deposit_due_date, trust_account_recipient, finance_type, bond_amount, bond_approval_deadline, cash_amount, cash_proof_deadline, guarantee_delivery_deadline, guarantee_delivery_period, structured_suspensive_conditions, irrevocable_offer_expiry, transfer_attorney_company_name, transfer_attorney_contact_person, transfer_attorney_email, transfer_attorney_phone, matter_attorney_cost_quote_status, gross_commission_amount, mandate_commission_snapshot, otp_commission_proposal, otp_commission_variation_status, otp_commission_approval_reference, otp_buyer_cost_obligations, otp_pending_cost_obligations, vat_inclusive_purchase_price, occupation_date, snagging_period_days, contractor_company_name, property_nhbrc_certificate_number, body_corporate_rules_annexure, development_levy_estimate, development_rates_estimate, utility_connection_charges, development_compliance_certificate_schedule | transaction_offer_terms, conveyancer_transfer_assignment, organisation_agent_settings, development_setup, development_unit_setup | structured_terms_only_no_free_text_fallback |
 
 ## Boundary
 

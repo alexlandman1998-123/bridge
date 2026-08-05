@@ -471,6 +471,7 @@ Body-corporate rules, levies, rates, utility charges and development compliance 
       'trust_account_recipient',
       'guarantee_delivery_deadline',
       'guarantee_delivery_period',
+      'matter_attorney_cost_quote_status',
     ],
     legalText: `TRANSFER AND CONVEYANCER
 
@@ -481,8 +482,62 @@ Transfer Contact Telephone: {{transfer_attorney_phone}}
 Trust Account Recipient: {{trust_account_recipient}}
 Guarantee Delivery Deadline: {{guarantee_delivery_deadline}}
 Guarantee Delivery Period: {{guarantee_delivery_period}}
+Matter Attorney Cost Quote Status: {{matter_attorney_cost_quote_status}}
 
 Transfer administration, guarantee delivery and deposit/trust-account handling must follow the appointed transfer attorney or conveyancer assignment.`,
+  }),
+  section({
+    sectionKey: 'buyer_cost_obligations',
+    sectionLabel: 'Buyer Cost Obligations',
+    sectionType: 'dynamic_fields',
+    sortOrder: 72,
+    clauseFamily: 'costs',
+    placeholderKeys: [
+      'otp_buyer_cost_obligations',
+      'otp_pending_cost_obligations',
+      'matter_attorney_cost_quote_status',
+      'transfer_attorney_company_name',
+    ],
+    legalText: `BUYER COST OBLIGATIONS
+
+Buyer Cost Obligations: {{otp_buyer_cost_obligations}}
+Pending Cost Obligations: {{otp_pending_cost_obligations}}
+Matter Attorney Cost Quote Status: {{matter_attorney_cost_quote_status}}
+
+The Purchaser is responsible for the buyer cost obligations recorded in the structured schedule for this transaction, including any transfer costs, transfer duty, tax-related charges, rates or levy apportionments, scheme or community charges, and other route-specific charges marked as payable by the Purchaser.
+
+Each obligation must render as known, estimated, pending or not applicable. An estimated or pending amount is not omitted merely because the final amount is unavailable at signature. It remains payable once confirmed by the appointed conveyancer, municipality, scheme managing body, homeowners association, developer, utility provider, SARS or other competent authority for the route.
+
+Transaction attorney cost quotes or statements are matter-level records supplied through {{transfer_attorney_company_name}} and must remain separate from public attorney-lead quote workflows. A final statement or revised quote supersedes an earlier estimate only to the extent that the later statement identifies the updated charge.`,
+  }),
+  section({
+    sectionKey: 'otp_commission_variation',
+    sectionLabel: 'Agency Commission',
+    sectionType: 'dynamic_fields',
+    sortOrder: 74,
+    clauseFamily: 'agency_commission',
+    placeholderKeys: [
+      'organisation_trading_name',
+      'agent_full_name',
+      'agent_ffc_number',
+      'gross_commission_amount',
+      'mandate_commission_snapshot',
+      'otp_commission_proposal',
+      'otp_commission_variation_status',
+      'otp_commission_approval_reference',
+    ],
+    legalText: `AGENCY COMMISSION
+
+Agency: {{organisation_trading_name}}
+Agent: {{agent_full_name}}
+Agent FFC Number: {{agent_ffc_number}}
+Gross Commission Amount: {{gross_commission_amount}}
+Mandate Commission Snapshot: {{mandate_commission_snapshot}}
+OTP Commission Proposal: {{otp_commission_proposal}}
+OTP Commission Variation Status: {{otp_commission_variation_status}}
+OTP Commission Approval Reference: {{otp_commission_approval_reference}}
+
+The original mandate commission must remain a preserved snapshot. Any negotiated OTP commission proposal must carry approval status and an approval reference before it can be used to lock transaction commission allocations.`,
   }),
   section({
     sectionKey: 'special_conditions_annexures',

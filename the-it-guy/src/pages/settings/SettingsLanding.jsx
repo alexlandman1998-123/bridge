@@ -41,7 +41,7 @@ export default function SettingsLanding() {
   const groups = buildVisibleSettingsGroups({ role, canManage, can })
 
   return (
-    <div className={settingsPageClass}>
+    <div className={`${settingsPageClass} settings-dashboard-page`}>
       <header className="settings-dashboard-header">
         <h1>Settings</h1>
       </header>
