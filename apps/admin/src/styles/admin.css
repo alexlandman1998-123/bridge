@@ -115,7 +115,7 @@ button.queue-item {
   gap: 8px;
 }
 
-.nav-list button {
+.nav-list a {
   align-items: center;
   background: transparent;
   border: 1px solid transparent;
@@ -125,11 +125,12 @@ button.queue-item {
   gap: 10px;
   min-height: 44px;
   padding: 0 12px;
+  text-decoration: none;
   text-align: left;
 }
 
-.nav-list button.active,
-.nav-list button:hover {
+.nav-list a.active,
+.nav-list a:hover {
   background: #eef6f1;
   border-color: #d3eadc;
   color: #0f5135;
@@ -943,7 +944,7 @@ button:disabled {
     overflow-x: auto;
   }
 
-  .nav-list button {
+  .nav-list a {
     flex: 0 0 auto;
   }
 

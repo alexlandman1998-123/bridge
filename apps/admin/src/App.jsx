@@ -17,7 +17,13 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { ADMIN_LEVELS, formatAdminLevelLabel, resolveAdminAccess } from './lib/adminAccess'
+import { formatAdminLevelLabel, resolveAdminAccess } from './lib/adminAccess'
+import {
+  ADMIN_NAV_ITEMS,
+  getAllowedAdminViews,
+  pathForView,
+  resolveAdminViewFromPath,
+} from './lib/adminRoutes'
 import { getSupabaseConfigStatus, isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
 const RANGE_OPTIONS = [
@@ -27,12 +33,12 @@ const RANGE_OPTIONS = [
   { id: 'month', label: 'This Month' },
 ]
 
-const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: Home, levels: [ADMIN_LEVELS.EXECUTIVE] },
-  { id: 'support', label: 'Support', icon: Headphones, levels: [ADMIN_LEVELS.EXECUTIVE, ADMIN_LEVELS.CUSTOMER_SUPPORT] },
-  { id: 'search', label: 'Search', icon: Search, levels: [ADMIN_LEVELS.EXECUTIVE, ADMIN_LEVELS.CUSTOMER_SUPPORT] },
-  { id: 'settings', label: 'Settings', icon: Settings, levels: [ADMIN_LEVELS.EXECUTIVE, ADMIN_LEVELS.CUSTOMER_SUPPORT] },
-]
+const NAV_ICONS = {
+  dashboard: Home,
+  support: Headphones,
+  search: Search,
+  settings: Settings,
+}
 
 const EMPTY_DASHBOARD = {
   attention: [],
@@ -276,26 +282,6 @@ function getDashboardDrilldowns(snapshot = EMPTY_DASHBOARD, support = EMPTY_SUPP
   }
 }
 
-function getDefaultView(level = '') {
-  return level === ADMIN_LEVELS.CUSTOMER_SUPPORT ? 'support' : 'dashboard'
-}
-
-function getViewFromPath(level = '') {
-  if (typeof window === 'undefined') return getDefaultView(level)
-  const path = window.location.pathname
-  if (path.includes('/admin/support')) return 'support'
-  if (path.includes('/admin/search')) return 'search'
-  if (path.includes('/admin/settings')) return 'settings'
-  return getDefaultView(level)
-}
-
-function pathForView(viewId = 'dashboard') {
-  if (viewId === 'support') return '/admin/support'
-  if (viewId === 'search') return '/admin/search'
-  if (viewId === 'settings') return '/admin/settings'
-  return '/admin'
-}
-
 async function loadAdminProfile(userId) {
   if (!supabase || !userId) return null
 
@@ -494,7 +480,7 @@ function Notice({ text, tone = 'neutral' }) {
 }
 
 function Sidebar({ access, activeView, onNavigate, onSignOut, profile }) {
-  const items = NAV_ITEMS.filter((item) => item.levels.includes(access.level))
+  const items = ADMIN_NAV_ITEMS.filter((item) => item.levels.includes(access.level))
 
   return (
     <aside className="sidebar">
@@ -508,17 +494,20 @@ function Sidebar({ access, activeView, onNavigate, onSignOut, profile }) {
 
       <nav className="nav-list" aria-label="Admin navigation">
         {items.map((item) => {
-          const Icon = item.icon
+          const Icon = NAV_ICONS[item.id]
           return (
-            <button
+            <a
               className={activeView === item.id ? 'active' : ''}
+              href={pathForView(item.id)}
               key={item.id}
-              onClick={() => onNavigate(item.id)}
-              type="button"
+              onClick={(event) => {
+                event.preventDefault()
+                onNavigate(item.id)
+              }}
             >
               <Icon size={18} />
               <span>{item.label}</span>
-            </button>
+            </a>
           )
         })}
       </nav>
@@ -1477,7 +1466,6 @@ function UnauthorizedScreen({ onSignOut, roles }) {
 
 export default function App() {
   const [access, setAccess] = useState({ allowed: false, level: '', roles: [] })
-  const [activeView, setActiveView] = useState('dashboard')
   const [authError, setAuthError] = useState('')
   const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD)
   const [profile, setProfile] = useState(null)
@@ -1486,9 +1474,10 @@ export default function App() {
   const [support, setSupport] = useState(EMPTY_SUPPORT)
   const [isBooting, setIsBooting] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
+  const [pathname, setPathname] = useState(() => (typeof window === 'undefined' ? '/admin' : window.location.pathname))
 
   const allowedViews = useMemo(
-    () => NAV_ITEMS.filter((item) => item.levels.includes(access.level)).map((item) => item.id),
+    () => getAllowedAdminViews(access.level),
     [access.level],
   )
 
@@ -1520,12 +1509,26 @@ export default function App() {
   }
 
   function navigate(viewId) {
-    const nextView = allowedViews.includes(viewId) ? viewId : getDefaultView(access.level)
-    setActiveView(nextView)
+    const nextView = allowedViews.includes(viewId)
+      ? viewId
+      : resolveAdminViewFromPath({ level: access.level, pathname })
+    const nextPath = pathForView(nextView)
     if (typeof window !== 'undefined') {
-      window.history.pushState({}, '', pathForView(nextView))
+      window.history.pushState({ adminView: nextView }, '', nextPath)
     }
+    setPathname(nextPath)
   }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
+    function handlePopState() {
+      setPathname(window.location.pathname)
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   useEffect(() => {
     let isMounted = true
@@ -1577,7 +1580,7 @@ export default function App() {
       const nextAccess = resolveAdminAccess({ profile: nextProfile, user: session.user })
       setAccess(nextAccess)
       setProfile(nextProfile || { email: session.user.email })
-      setActiveView(getViewFromPath(nextAccess.level))
+      if (typeof window !== 'undefined') setPathname(window.location.pathname)
     }
 
     resolveAccess()
@@ -1589,6 +1592,16 @@ export default function App() {
   useEffect(() => {
     refreshData(rangeId)
   }, [access.allowed, rangeId, session])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !access.allowed) return
+    const nextView = resolveAdminViewFromPath({ level: access.level, pathname })
+    const nextPath = pathForView(nextView)
+    if (window.location.pathname !== nextPath) {
+      window.history.replaceState({ adminView: nextView }, '', nextPath)
+      setPathname(nextPath)
+    }
+  }, [access.allowed, access.level, pathname])
 
   async function handleSignIn({ email, password }) {
     setAuthError('')
@@ -1630,7 +1643,7 @@ export default function App() {
     return <UnauthorizedScreen onSignOut={handleSignOut} roles={access.roles} />
   }
 
-  const view = allowedViews.includes(activeView) ? activeView : getDefaultView(access.level)
+  const view = resolveAdminViewFromPath({ level: access.level, pathname })
 
   return (
     <div className="admin-shell">

@@ -15268,7 +15268,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'documents' ? (
+        {(workspaceRole === 'attorney' || isAgentTransactionView) && activeWorkspaceMenu === 'documents' ? (
           <section className="space-y-4">
             <ArchlineDocumentsWorkspace
               documentHealthSummary={documentHealthSummary}
@@ -15810,7 +15810,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {activeWorkspaceMenu === 'documents' && workspaceRole !== 'attorney' ? (
+        {activeWorkspaceMenu === 'documents' && workspaceRole !== 'attorney' && !isAgentTransactionView ? (
           <section className="space-y-5">
             <header className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
