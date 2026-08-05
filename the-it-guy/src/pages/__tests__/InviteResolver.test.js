@@ -20,14 +20,14 @@ const principalClaimInvite = {
 
 assert.equal(
   getRedirectTarget({ success: true, invite: principalClaimInvite }),
-  '/setup',
-  'accepted principal claim invites should continue into claim setup',
+  '/dashboard',
+  'accepted principal claim invites should continue into the existing workspace',
 )
 
 assert.equal(
   getInviteTarget({ ...principalClaimInvite, status: 'accepted' }),
-  '/setup',
-  'already-accepted principal claim invites should continue into claim setup',
+  '/dashboard',
+  'already-accepted principal claim invites should continue into the existing workspace',
 )
 
 assert.equal(

@@ -147,7 +147,6 @@ function isCommercialInvite(invite = {}) {
 export function getRedirectTarget(result = {}) {
   const portalRedirect = getInvitePortalRedirect(result.invite)
   if (portalRedirect) return portalRedirect
-  if (isPrincipalClaimInvite(result.invite)) return '/setup'
   if (isCommercialInvite(result.invite)) return '/commercial'
   if (result.redirect_to) return result.redirect_to
   if (result.transaction_id) return `/transactions/${result.transaction_id}`
@@ -157,7 +156,6 @@ export function getRedirectTarget(result = {}) {
 export function getInviteTarget(invite = {}) {
   const portalRedirect = getInvitePortalRedirect(invite)
   if (portalRedirect) return portalRedirect
-  if (isPrincipalClaimInvite(invite)) return '/setup'
   if (isCommercialInvite(invite)) return '/commercial'
   if (invite.targetTransactionId) return `/transactions/${invite.targetTransactionId}`
   return '/dashboard'
@@ -422,7 +420,7 @@ export default function InviteResolver() {
   const workspaceName = normalizeText(invite?.workspace?.display_name || invite?.workspace?.name)
   const workspaceLogoUrl = getInviteWorkspaceLogoUrl(invite)
   const branchName = getInviteBranchName(invite)
-  const roleLabel = invite ? formatInviteRoleLabel(principalClaimInvite ? 'principal claim' : invite?.metadata?.role_label || invite?.targetWorkspaceRole || invite?.metadata?.role) : ''
+  const roleLabel = invite ? formatInviteRoleLabel(principalClaimInvite ? 'principal' : invite?.metadata?.role_label || invite?.targetWorkspaceRole || invite?.metadata?.role) : ''
   const inviteDetails = useMemo(() => {
     const rows = []
     if (workspaceName) rows.push({ label: 'Workspace', value: workspaceName })
@@ -437,8 +435,8 @@ export default function InviteResolver() {
     if (invite.inviteType === 'client_invite') return 'Client access'
     if (principalClaimInvite) {
       return workspaceName
-        ? `Claim principal access for ${workspaceName}`
-        : 'Principal organisation claim'
+        ? `Principal access for ${workspaceName}`
+        : 'Principal workspace access'
     }
     if (invite.inviteType === 'branch_invite') {
       return branchName && workspaceName ? `${branchName} branch at ${workspaceName}` : 'Branch workspace access'
@@ -454,7 +452,7 @@ export default function InviteResolver() {
       source: SIGNUP_INTENT_SOURCE.inviteLink,
       inviteToken: token,
       overrides: {
-        workspace_action: SIGNUP_WORKSPACE_ACTIONS.claimExistingWorkspace,
+        workspace_action: SIGNUP_WORKSPACE_ACTIONS.acceptInvite,
         email: invitedEmail,
       },
     })
@@ -570,8 +568,8 @@ export default function InviteResolver() {
           <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
           <InviteHeader
             icon={<CheckCircle2 size={22} />}
-            title={principalClaimInvite ? 'Principal claim started' : 'Invite accepted'}
-            subtitle={principalClaimInvite ? 'Your claim invite has been accepted. Continue to claim setup so Arch9 can capture the organisation details before access is finalised.' : 'Your access has been created and verified.'}
+            title="Invite accepted"
+            subtitle={principalClaimInvite ? 'Your principal access has been activated for the existing workspace.' : 'Your access has been created and verified.'}
             tone="success"
           />
           <InviteActionPanel>
@@ -592,8 +590,8 @@ export default function InviteResolver() {
           <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
           <InviteHeader
             icon={<CheckCircle2 size={22} />}
-            title={principalClaimInvite ? 'Principal claim already started' : 'You’re already connected'}
-            subtitle={principalClaimInvite ? `This claim invite has already been accepted for ${invitedEmail || 'your account'}. Continue to claim setup to finish the claim.` : `This invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Arch9 to access the workspace.`}
+            title="You’re already connected"
+            subtitle={principalClaimInvite ? `This principal invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Arch9 to access the workspace.` : `This invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Arch9 to access the workspace.`}
             tone="success"
           />
           <InviteActionPanel>
@@ -660,7 +658,7 @@ export default function InviteResolver() {
         <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
         <InviteHeader
           icon={<Building2 size={22} />}
-          title={principalClaimInvite ? 'Start Principal Claim' : 'Accept Invite'}
+          title={principalClaimInvite ? 'Accept Principal Invite' : 'Accept Invite'}
           subtitle={invitePurpose}
         />
 
@@ -677,13 +675,13 @@ export default function InviteResolver() {
           ) : (
             <p className="text-center text-helper text-textMuted">
               {principalClaimInvite
-                ? 'Continue with the invited email address. Arch9 will start the claim process without granting principal access automatically.'
+                ? 'Continue with the invited email address. Arch9 will activate principal access for the existing workspace.'
                 : 'Continue with the invited email address. Arch9 will apply the workspace and role from this invite.'}
             </p>
           )}
           <div className="flex flex-wrap justify-center gap-2">
             <Button type="button" onClick={() => void handleAccept()} disabled={saving}>
-              {saving ? 'Accepting…' : principalClaimInvite ? 'Start claim' : 'Accept invite'}
+              {saving ? 'Accepting...' : 'Accept invite'}
             </Button>
           </div>
         </InviteActionPanel>

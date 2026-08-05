@@ -237,10 +237,9 @@ export async function acceptInvite(token, options = {}) {
     throw new InviteValidationError(result.data?.code || 'invite_accept_failed', result.data || {})
   }
 
-  const inviteType = context.invite?.inviteType || result.data?.invite_type || ''
   let workspaceResolution = null
   let onboardingCompletion = null
-  if (result.data.workspace_id && inviteType !== INVITE_TYPES.principalClaim) {
+  if (result.data.workspace_id) {
     workspaceResolution = await resolveCurrentWorkspace(user.id, {
       client,
       user,
