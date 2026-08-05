@@ -36,6 +36,24 @@ create table if not exists public.notification_recipient_preferences (
     check (user_id is not null or nullif(trim(coalesce(recipient_email, '')), '') is not null)
 );
 
+alter table public.notification_recipient_preferences
+  add column if not exists user_id uuid references auth.users(id) on delete cascade,
+  add column if not exists recipient_role text,
+  add column if not exists automation_key text references public.notification_automation_definitions(automation_key)
+    on update cascade
+    on delete cascade,
+  add column if not exists channel text not null default 'email',
+  add column if not exists enabled boolean not null default true,
+  add column if not exists frequency text not null default 'immediate',
+  add column if not exists quiet_hours_enabled boolean not null default false,
+  add column if not exists quiet_hours_start_hour integer not null default 18,
+  add column if not exists quiet_hours_end_hour integer not null default 8,
+  add column if not exists quiet_hours_timezone text not null default 'Africa/Johannesburg',
+  add column if not exists muted_until timestamptz,
+  add column if not exists unsubscribe_token text not null default encode(gen_random_bytes(24), 'hex'),
+  add column if not exists source text not null default 'account_settings',
+  add column if not exists metadata_json jsonb not null default '{}'::jsonb;
+
 create unique index if not exists notification_recipient_preferences_scope_idx
   on public.notification_recipient_preferences (
     coalesce(organisation_id, '00000000-0000-0000-0000-000000000000'::uuid),

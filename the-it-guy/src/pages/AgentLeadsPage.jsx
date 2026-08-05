@@ -2203,7 +2203,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       title: 'Finance position needs confirmation',
       copy: finance.helper,
       actionLabel: 'Qualify Buyer',
-      actionId: 'requirements',
+      actionId: 'qualification',
       tone: 'amber',
       blockers: finance.missing,
       snapshot: deal,
@@ -2233,8 +2233,8 @@ function getBuyerWorkspaceCommand(row = {}) {
   }
   if (nextStep) {
     const actionMap = {
-      qualified: ['Qualify Buyer', 'requirements'],
-      viewing: ['Schedule Viewing', 'appointments'],
+      qualified: ['Qualify Buyer', 'qualification'],
+      viewing: ['Schedule Viewing', 'schedule_viewing'],
       offer_submitted: ['Open Offers', 'offers'],
       offer_accepted: ['Open Offers', 'offers'],
       won: ['Open Transaction', 'convert'],
@@ -3640,8 +3640,8 @@ function BuyerOutreachProgress({
 
   function getStepAction(stepKey) {
     if (stepKey === 'contacted') return markReachedOut
-    if (stepKey === 'qualified') return qualification.qualified ? onQualifyBuyer : markQualified
-    if (stepKey === 'viewing') return onMarkViewingCompleted
+    if (stepKey === 'qualified') return onQualifyBuyer
+    if (stepKey === 'viewing') return onScheduleViewing
     if (stepKey === 'offer_submitted') return onCaptureOfferSubmitted
     if (stepKey === 'offer_accepted') return onOpenOffers
     if (stepKey === 'won') return onPrepareTransaction
@@ -3701,14 +3701,14 @@ function BuyerOutreachProgress({
           ) : null}
           {nextStep?.key === 'viewing' ? (
             <div className="mt-3 grid gap-2">
-              <button type="button" onClick={onMarkViewingCompleted} className="inline-flex min-h-9 items-center justify-center rounded-xl bg-slate-950 px-3 text-xs font-semibold text-white hover:bg-slate-800">
-                Viewing Completed
-              </button>
-              <button type="button" onClick={onScheduleViewing} className="inline-flex min-h-9 items-center justify-center rounded-xl border border-blue-200 bg-white px-3 text-xs font-semibold text-blue-700 hover:bg-blue-50">
+              <button type="button" onClick={onScheduleViewing} className="inline-flex min-h-9 items-center justify-center rounded-xl bg-slate-950 px-3 text-xs font-semibold text-white hover:bg-slate-800">
                 Schedule Viewing
               </button>
+              <button type="button" onClick={onMarkViewingCompleted} className="inline-flex min-h-9 items-center justify-center rounded-xl border border-blue-200 bg-white px-3 text-xs font-semibold text-blue-700 hover:bg-blue-50">
+                Viewing Done
+              </button>
               <p className="text-[11px] font-medium leading-4 text-slate-500">
-                Use completed when the viewing happened outside Arch9.
+                Schedule a viewing or capture buyer feedback when it already happened.
               </p>
             </div>
           ) : null}
@@ -4358,7 +4358,7 @@ function BuyerFollowUpCentreCard({ row, leadScore, organisationId, actor, onSave
   const quickActions = [
     { label: 'Log Call', icon: Phone, action: 'activity' },
     { label: 'Log WhatsApp', icon: MessageSquarePlus, action: 'activity' },
-    { label: 'Schedule Viewing', icon: CalendarDays, action: 'appointments' },
+    { label: 'Schedule Viewing', icon: CalendarDays, action: 'schedule_viewing' },
     { label: 'Send Listings', icon: Home, action: 'property_match' },
   ]
 
@@ -12274,9 +12274,10 @@ function ManualBuyerViewingCompletedModal({ open, organisationId, lead, actor, o
   )
 }
 
-function LeadAppointmentsPanel({ organisationId, lead, actor, timeline = [], onSaved, onViewActivity }) {
+function LeadAppointmentsPanel({ organisationId, lead, actor, timeline = [], onSaved, onViewActivity, openComposerSignal = 0 }) {
   const navigate = useNavigate()
   const [composerOpen, setComposerOpen] = useState(false)
+  const [dismissedOpenComposerSignal, setDismissedOpenComposerSignal] = useState(0)
   const [selectedAppointment, setSelectedAppointment] = useState(null)
   const [plansOpen, setPlansOpen] = useState(false)
   const [activeListings, setActiveListings] = useState([])
@@ -12305,13 +12306,23 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, timeline = [], onS
     }
   }, [organisationId])
 
-  const closeComposer = useCallback(() => setComposerOpen(false), [])
+  useEffect(() => {
+    if (openComposerSignal > 0 && openComposerSignal !== dismissedOpenComposerSignal) {
+      setComposerOpen(true)
+    }
+  }, [dismissedOpenComposerSignal, openComposerSignal])
+
+  const closeComposer = useCallback(() => {
+    setComposerOpen(false)
+    setDismissedOpenComposerSignal(openComposerSignal)
+  }, [openComposerSignal])
   const closeDetails = useCallback(() => setSelectedAppointment(null), [])
   const closePlans = useCallback(() => setPlansOpen(false), [])
   const handleComposerSaved = useCallback(async () => {
     setComposerOpen(false)
+    setDismissedOpenComposerSignal(openComposerSignal)
     await onSaved?.()
-  }, [onSaved])
+  }, [onSaved, openComposerSignal])
   const handleDetailsSaved = useCallback(async () => {
     await onSaved?.()
   }, [onSaved])
@@ -22347,6 +22358,7 @@ function AgentLeadWorkspace() {
   const [data, setData] = useState(optimisticWorkspace)
   const [activeTab, setActiveTab] = useState('overview')
   const [qualificationFocusSignal, setQualificationFocusSignal] = useState(0)
+  const [buyerAppointmentComposerSignal, setBuyerAppointmentComposerSignal] = useState(0)
   const [shareDraft, setShareDraft] = useState(null)
   const [manualViewingModalOpen, setManualViewingModalOpen] = useState(false)
   const [buyerOfferCaptureOpen, setBuyerOfferCaptureOpen] = useState(false)
@@ -23438,6 +23450,11 @@ function AgentLeadWorkspace() {
     setQualificationFocusSignal((value) => value + 1)
   }, [])
 
+  const openBuyerAppointmentComposer = useCallback(() => {
+    setActiveTab('appointments')
+    setBuyerAppointmentComposerSignal((value) => value + 1)
+  }, [])
+
   const openManualViewingCompleted = useCallback(() => {
     setManualViewingModalOpen(true)
   }, [])
@@ -23460,6 +23477,14 @@ function AgentLeadWorkspace() {
       focusBuyerQualificationSnapshot()
       return
     }
+    if (actionId === 'schedule_viewing') {
+      openBuyerAppointmentComposer()
+      return
+    }
+    if (actionId === 'viewing_done' || actionId === 'capture_viewing_feedback') {
+      openManualViewingCompleted()
+      return
+    }
     if (actionId === 'timeline' || actionId === 'activity') {
       setActiveTab('timeline')
       return
@@ -23469,7 +23494,7 @@ function AgentLeadWorkspace() {
       return
     }
     setActiveTab(actionId || 'overview')
-  }, [convertBuyerLead, focusBuyerQualificationSnapshot])
+  }, [convertBuyerLead, focusBuyerQualificationSnapshot, openBuyerAppointmentComposer, openManualViewingCompleted])
 
   return (
     <main className={pageShell}>
@@ -23559,7 +23584,7 @@ function AgentLeadWorkspace() {
                     onQualifyBuyer={focusBuyerQualificationSnapshot}
                     onMarkReachedOut={markBuyerReachedOut}
                     onMarkQualified={markBuyerQualified}
-                    onScheduleViewing={() => setActiveTab('appointments')}
+                    onScheduleViewing={openBuyerAppointmentComposer}
                     onMarkViewingCompleted={openManualViewingCompleted}
                     onCaptureOfferSubmitted={openBuyerManualOfferCapture}
                     onOpenOffers={() => setActiveTab('offers')}
@@ -23625,6 +23650,7 @@ function AgentLeadWorkspace() {
                   timeline={data?.timeline || row.communicationTimeline || []}
                   onSaved={loadWorkspace}
                   onViewActivity={() => setActiveTab('timeline')}
+                  openComposerSignal={buyerAppointmentComposerSignal}
                 />
               ) : null}
 
