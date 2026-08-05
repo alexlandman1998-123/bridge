@@ -48,6 +48,10 @@ export function isExistingWorkspaceJoinProfileStep({
   )
 }
 
+export function hasExistingWorkspaceMembership({ activeMemberships = [], currentMembership = null } = {}) {
+  return Boolean(currentMembership?.id || (Array.isArray(activeMemberships) && activeMemberships.length > 0))
+}
+
 export function resolveExistingWorkspaceJoinProfileRoute({
   role = '',
   signupIntent = null,
@@ -57,8 +61,7 @@ export function resolveExistingWorkspaceJoinProfileRoute({
 } = {}) {
   const intentToken = String(signupIntent?.invite_token || signupIntent?.inviteToken || '').trim()
   const inviteToken = intentToken || String(pendingInviteToken || '').trim()
-  const hasMembership = Boolean(currentMembership?.id || (Array.isArray(activeMemberships) && activeMemberships.length > 0))
-  if (!hasMembership && inviteToken) {
+  if (!hasExistingWorkspaceMembership({ activeMemberships, currentMembership }) && inviteToken) {
     return `/invite/${encodeURIComponent(inviteToken)}?accept=1`
   }
   return resolveDashboardPathForRole(role)
@@ -138,6 +141,7 @@ function OnboardingProfileSetup() {
   const recoveryPositionOptions = POSITION_OPTIONS_BY_BUSINESS_TYPE[recoveryBusinessType] || []
   const isPrincipalClaimIntent = effectiveIntent?.workspace_action === SIGNUP_WORKSPACE_ACTIONS.claimExistingWorkspace
   const pendingInviteToken = getPendingInviteToken()
+  const hasWorkspaceMembership = hasExistingWorkspaceMembership({ activeMemberships, currentMembership })
   const isExistingWorkspaceJoin = !isPrincipalClaimIntent && isExistingWorkspaceJoinProfileStep({
     signupIntent: effectiveIntent,
     activeMemberships,
@@ -210,7 +214,7 @@ function OnboardingProfileSetup() {
         lastName: String(lastName || '').trim(),
         phoneNumber: String(phoneNumber || '').trim(),
         role: effectiveAppRole,
-        onboardingCompleted: isExistingWorkspaceJoin,
+        onboardingCompleted: hasWorkspaceMembership,
       }
       if (showCompanyName) {
         profilePayload.companyName = String(companyName || '').trim()

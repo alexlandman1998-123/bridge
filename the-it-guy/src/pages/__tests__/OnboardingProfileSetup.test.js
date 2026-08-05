@@ -12,6 +12,7 @@ const server = await createServer({
 })
 
 const {
+  hasExistingWorkspaceMembership,
   isExistingWorkspaceJoinProfileStep,
   resolveExistingWorkspaceJoinProfileRoute,
 } = await server.ssrLoadModule('/src/pages/OnboardingProfileSetup.jsx')
@@ -59,6 +60,23 @@ assert.equal(
   }),
   '/invite/invite-token-1?accept=1',
   'pending invite tokens should route back through the invite resolver',
+)
+
+assert.equal(
+  hasExistingWorkspaceMembership({
+    activeMemberships: [],
+    currentMembership: null,
+  }),
+  false,
+  'pending invite users should not complete onboarding before a membership exists',
+)
+
+assert.equal(
+  hasExistingWorkspaceMembership({
+    activeMemberships: [{ id: 'membership-1' }],
+  }),
+  true,
+  'active memberships should allow onboarding completion',
 )
 
 assert.equal(
