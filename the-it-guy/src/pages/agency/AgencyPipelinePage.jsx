@@ -50,6 +50,8 @@ import {
   ensureAgencyCrmLeadRecordPersisted,
   fetchAgencyCrmLeadRouteHydrationSeed,
   fetchAgencyCrmLeadWorkspace,
+  listBuyerViewingPreferenceLinks,
+  listSellerViewingCoordinationLinks,
   listAgencyCrmLeadContacts,
   updateAgencyCrmLeadActivity,
   updateAgencyCrmLeadRecord,
@@ -57,6 +59,7 @@ import {
 } from '../../lib/agencyCrmRepository'
 import { listOrganisationPreferredPartners, listOrganisationUsers, fetchOrganisationSettings } from '../../lib/settingsApi'
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { resolveOnboardingBranding } from '../../lib/onboardingBranding'
 import { filterPreferredPartners } from '../../lib/preferredPartners'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../../lib/partnersRepository'
 import { upsertAreaByName, upsertAreaFromAddress } from '../../lib/location/upsertArea'
@@ -507,6 +510,52 @@ function normalizeText(value) {
 
 function asRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function resolveAgencyOfferEmailBranding({ organisationId = '', organisationName = '', profile = {}, currentWorkspace = {}, workspace = {} } = {}) {
+  const resolved = resolveOnboardingBranding(currentWorkspace, workspace, profile)
+  const fallbackName = normalizeText(
+    organisationName ||
+      profile?.companyName ||
+      profile?.company ||
+      profile?.organisationName ||
+      currentWorkspace?.name ||
+      workspace?.name,
+  )
+  const logoUrl = normalizeText(resolved.logoDarkUrl || resolved.logoLightUrl || resolved.logoIconUrl)
+  const supportEmail = normalizeText(
+    profile?.supportEmail ||
+      profile?.support_email ||
+      profile?.companyEmail ||
+      profile?.company_email ||
+      currentWorkspace?.supportEmail ||
+      currentWorkspace?.support_email ||
+      workspace?.supportEmail ||
+      workspace?.support_email,
+  )
+  const supportPhone = normalizeText(
+    profile?.supportPhone ||
+      profile?.support_phone ||
+      profile?.companyPhone ||
+      profile?.company_phone ||
+      currentWorkspace?.supportPhone ||
+      currentWorkspace?.support_phone ||
+      workspace?.supportPhone ||
+      workspace?.support_phone,
+  )
+
+  return {
+    organisationId,
+    organisationName: normalizeText(resolved.organisationName) || fallbackName,
+    organisationLogoUrl: logoUrl,
+    organisationLogoLightUrl: normalizeText(resolved.logoLightUrl || logoUrl),
+    organisationLogoDarkUrl: normalizeText(resolved.logoDarkUrl || logoUrl),
+    organisationLogoIconUrl: normalizeText(resolved.logoIconUrl),
+    organisationBrandPrimaryColor: normalizeText(resolved.primaryColour),
+    organisationBrandSecondaryColor: normalizeText(resolved.secondaryColour || resolved.accentColour),
+    supportEmail,
+    supportPhone,
+  }
 }
 
 function getMandateManualOverrideFromSource(sourceContext = {}) {
@@ -2309,7 +2358,8 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
         { label: 'Lease end date', value: firstWorkspaceText(onboarding?.leaseEndDate, onboarding?.lease_end_date), Icon: Clock3 },
         { label: 'Rates & taxes', value: firstWorkspaceValue(onboarding?.ratesAndTaxes, onboarding?.ratesTaxes, onboarding?.monthlyRates), Icon: Tag, format: 'currency' },
         { label: 'Levies', value: firstWorkspaceValue(onboarding?.levies, onboarding?.monthlyLevies), Icon: Columns3, format: 'currency' },
-        { label: 'Access arrangement', value: firstWorkspaceText(onboarding?.accessArrangement, onboarding?.accessInstructions, onboarding?.viewingInstructions), Icon: Lock },
+        { label: 'Viewing availability', value: firstWorkspaceText(onboarding?.viewingAvailabilityWindows, onboarding?.viewing_availability_windows, onboarding?.canonicalSellerFacts?.occupancy?.viewing_availability_windows), Icon: CalendarDays },
+        { label: 'Access arrangement', value: firstWorkspaceText(onboarding?.viewingAccessInstructions, onboarding?.viewing_access_instructions, onboarding?.accessArrangement, onboarding?.accessInstructions, onboarding?.viewingInstructions), Icon: Lock },
       ],
     },
     marketing: {
@@ -3521,6 +3571,316 @@ function resolveSellerNameFromListing(listing = {}) {
       listing?.seller_name ||
       listing?.seller?.name,
   )
+}
+
+function resolveSellerViewingAvailabilityFromListing(listing = {}) {
+  const formData = getListingSellerFormData(listing)
+  const canonicalFacts = formData?.canonicalSellerFacts && typeof formData.canonicalSellerFacts === 'object'
+    ? formData.canonicalSellerFacts
+    : listing?.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object'
+      ? listing.sellerCanonicalFacts
+      : listing?.seller_canonical_facts_json && typeof listing.seller_canonical_facts_json === 'object'
+        ? listing.seller_canonical_facts_json
+        : {}
+  const occupancyFacts = canonicalFacts?.occupancy && typeof canonicalFacts.occupancy === 'object' ? canonicalFacts.occupancy : {}
+  const availabilityWindows = normalizeText(
+    formData.viewingAvailabilityWindows ||
+      formData.viewing_availability_windows ||
+      occupancyFacts.viewing_availability_windows ||
+      listing?.viewingAvailabilityWindows ||
+      listing?.viewing_availability_windows,
+  )
+  const accessInstructions = normalizeText(
+    formData.viewingAccessInstructions ||
+      formData.viewing_access_instructions ||
+      occupancyFacts.viewing_access_instructions ||
+      formData.accessInstructions ||
+      formData.viewingInstructions ||
+      listing?.viewingAccessInstructions ||
+      listing?.viewing_access_instructions,
+  )
+  const noticePeriod = normalizeText(
+    formData.viewingNoticePeriod ||
+      formData.viewing_notice_period ||
+      occupancyFacts.viewing_notice_period ||
+      listing?.viewingNoticePeriod ||
+      listing?.viewing_notice_period,
+  )
+  const noticeRequired = Boolean(
+    formData.viewingNoticeRequired ||
+      formData.viewing_notice_required ||
+      occupancyFacts.viewing_notice_required ||
+      listing?.viewingNoticeRequired ||
+      listing?.viewing_notice_required,
+  )
+
+  return {
+    availabilityWindows,
+    accessInstructions,
+    noticePeriod,
+    noticeRequired,
+    summary: [
+      availabilityWindows,
+      noticePeriod ? `Notice: ${noticePeriod}` : '',
+      noticeRequired && !noticePeriod ? 'Notice required before access' : '',
+    ].filter(Boolean).join('\n'),
+  }
+}
+
+function buildSellerViewingAvailabilityNoteForProperties(properties = []) {
+  return (Array.isArray(properties) ? properties : [])
+    .map((property) => {
+      const title = normalizeText(property?.title) || 'Selected property'
+      const availability = normalizeText(property?.sellerViewingAvailability || property?.sellerViewingAvailabilityWindows)
+      const access = normalizeText(property?.sellerViewingAccessInstructions)
+      const notice = normalizeText(property?.sellerViewingNoticePeriod)
+      const noticeRequired = Boolean(property?.sellerViewingNoticeRequired)
+      const details = [
+        availability ? `Availability: ${availability}` : '',
+        notice ? `Notice: ${notice}` : noticeRequired ? 'Notice required before access' : '',
+        access ? `Access: ${access}` : '',
+      ].filter(Boolean)
+      return details.length ? `${title}\n${details.join('\n')}` : ''
+    })
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+const VIEWING_WEEKDAY_LABELS = [
+  { key: 'monday', label: 'Monday', tokens: ['monday', 'mon'] },
+  { key: 'tuesday', label: 'Tuesday', tokens: ['tuesday', 'tue', 'tues'] },
+  { key: 'wednesday', label: 'Wednesday', tokens: ['wednesday', 'wed'] },
+  { key: 'thursday', label: 'Thursday', tokens: ['thursday', 'thu', 'thur', 'thurs'] },
+  { key: 'friday', label: 'Friday', tokens: ['friday', 'fri'] },
+  { key: 'saturday', label: 'Saturday', tokens: ['saturday', 'sat'] },
+  { key: 'sunday', label: 'Sunday', tokens: ['sunday', 'sun'] },
+]
+
+function getViewingAvailabilityLines(text = '') {
+  return normalizeText(text)
+    .split(/\r?\n|;|\u2022/)
+    .map(normalizeText)
+    .filter(Boolean)
+}
+
+function getViewingAvailabilityWeekdays(text = '') {
+  const lower = normalizeText(text).toLowerCase()
+  return VIEWING_WEEKDAY_LABELS.filter(({ tokens }) =>
+    tokens.some((token) => new RegExp(`\\b${token}\\b`, 'i').test(lower)),
+  )
+}
+
+function getViewingAvailabilityTimeRanges(text = '') {
+  return Array.from(normalizeText(text).matchAll(/\b(?:[01]?\d|2[0-3])(?::[0-5]\d)?\s*(?:am|pm)?\s*(?:-|to|until|till)\s*(?:[01]?\d|2[0-3])(?::[0-5]\d)?\s*(?:am|pm)?\b/gi))
+    .map((match) => normalizeText(match[0]))
+    .slice(0, 3)
+}
+
+function lineMentionsViewingWeekday(line = '', weekdayKey = '') {
+  const weekday = VIEWING_WEEKDAY_LABELS.find((item) => item.key === weekdayKey)
+  if (!weekday) return false
+  return weekday.tokens.some((token) => new RegExp(`\\b${token}\\b`, 'i').test(line))
+}
+
+function buildViewingAvailabilityCompatibility({
+  buyerAvailability = '',
+  sellerAvailability = '',
+  properties = [],
+} = {}) {
+  const buyerText = normalizeText(buyerAvailability)
+  const sellerText = normalizeText(sellerAvailability) || buildSellerViewingAvailabilityNoteForProperties(properties)
+  const buyerDays = getViewingAvailabilityWeekdays(buyerText)
+  const sellerDays = getViewingAvailabilityWeekdays(sellerText)
+  const sellerDayKeys = new Set(sellerDays.map((day) => day.key))
+  const overlappingDays = buyerDays.filter((day) => sellerDayKeys.has(day.key))
+  const buyerTimes = getViewingAvailabilityTimeRanges(buyerText)
+  const sellerTimes = getViewingAvailabilityTimeRanges(sellerText)
+  const buyerLines = getViewingAvailabilityLines(buyerText)
+  const sellerLines = getViewingAvailabilityLines(sellerText)
+  const matchedBuyerLines = overlappingDays.length
+    ? buyerLines.filter((line) => overlappingDays.some((day) => lineMentionsViewingWeekday(line, day.key)))
+    : []
+  const matchedSellerLines = overlappingDays.length
+    ? sellerLines.filter((line) => overlappingDays.some((day) => lineMentionsViewingWeekday(line, day.key)))
+    : []
+  const suggestions = [
+    ...matchedBuyerLines,
+    ...matchedSellerLines,
+    ...buyerTimes.map((time) => `Buyer time range: ${time}`),
+    ...sellerTimes.map((time) => `Seller time range: ${time}`),
+  ]
+    .map(normalizeText)
+    .filter(Boolean)
+    .filter((line, index, rows) => rows.indexOf(line) === index)
+    .slice(0, 4)
+
+  if (!buyerText && !sellerText) {
+    return {
+      status: 'missing',
+      label: 'Need buyer and seller windows',
+      detail: 'Ask the buyer for viewing times, then confirm seller access.',
+      suggestions: [],
+      sellerAvailability: sellerText,
+    }
+  }
+  if (!buyerText) {
+    return {
+      status: 'seller_only',
+      label: 'Seller availability ready',
+      detail: 'Seller availability is on record. The next blocker is the buyer time window.',
+      suggestions: sellerLines.slice(0, 3),
+      sellerAvailability: sellerText,
+    }
+  }
+  if (!sellerText) {
+    return {
+      status: 'buyer_only',
+      label: 'Buyer availability ready',
+      detail: 'Buyer windows are captured. Confirm seller access before booking.',
+      suggestions: buyerLines.slice(0, 3),
+      sellerAvailability: sellerText,
+    }
+  }
+  if (overlappingDays.length) {
+    return {
+      status: 'aligned',
+      label: `Likely overlap: ${overlappingDays.map((day) => day.label).join(', ')}`,
+      detail: 'Buyer and seller windows mention the same day. Use this as the first booking candidate.',
+      suggestions: suggestions.length ? suggestions : [`Try ${overlappingDays[0].label}`],
+      sellerAvailability: sellerText,
+    }
+  }
+  return {
+    status: 'review',
+    label: 'Review windows manually',
+    detail: 'Buyer and seller supplied availability, but no obvious weekday overlap was detected.',
+    suggestions: [...buyerLines.slice(0, 2), ...sellerLines.slice(0, 2)].slice(0, 4),
+    sellerAvailability: sellerText,
+  }
+}
+
+function buildViewingPlannerSmartAutomation({
+  selectedProperties = [],
+  confirmedProperties = [],
+  bookedPropertyIds = [],
+  viewingPlanStatus = 'draft',
+  savedPlan = {},
+  buyerAvailability = '',
+  sellerAvailability = '',
+  latestBuyerResponse = null,
+  latestBuyerResponseApplied = false,
+  latestSellerResponse = null,
+  latestSellerResponseApplied = false,
+  sellerRecipientCount = 0,
+} = {}) {
+  const selectedCount = Array.isArray(selectedProperties) ? selectedProperties.length : 0
+  const confirmedCount = Array.isArray(confirmedProperties) ? confirmedProperties.length : 0
+  const bookedCount = Array.isArray(bookedPropertyIds) ? bookedPropertyIds.length : 0
+  const compatibility = buildViewingAvailabilityCompatibility({
+    buyerAvailability,
+    sellerAvailability,
+    properties: confirmedProperties.length ? confirmedProperties : selectedProperties,
+  })
+  const base = {
+    tone: 'info',
+    compatibility,
+    suggestions: compatibility.suggestions,
+  }
+
+  if (latestBuyerResponse && !latestBuyerResponseApplied) {
+    return {
+      ...base,
+      action: 'apply_buyer_response',
+      actionLabel: 'Apply buyer response',
+      title: 'Buyer response is ready',
+      detail: 'Pull the submitted buyer choices into the viewing plan, then the seller access step can start.',
+      tone: 'ready',
+    }
+  }
+  if (latestSellerResponse && !latestSellerResponseApplied) {
+    return {
+      ...base,
+      action: 'apply_seller_response',
+      actionLabel: 'Apply seller response',
+      title: 'Seller access is ready',
+      detail: 'Pull the seller response into the workspace and use the matched windows to book.',
+      tone: 'ready',
+    }
+  }
+  if (!selectedCount) {
+    return {
+      ...base,
+      action: '',
+      actionLabel: '',
+      title: 'Select viewing properties',
+      detail: 'Choose one or more properties before the automation can send a buyer request.',
+    }
+  }
+  if (!normalizeText(savedPlan.requestedAt) && viewingPlanStatus === 'draft') {
+    return {
+      ...base,
+      action: 'send_buyer_request',
+      actionLabel: 'Request buyer availability',
+      title: 'Ready to ask the buyer',
+      detail: `${selectedCount} selected propert${selectedCount === 1 ? 'y is' : 'ies are'} ready for the buyer preference link.`,
+      tone: 'ready',
+    }
+  }
+  if (!normalizeText(buyerAvailability)) {
+    return {
+      ...base,
+      action: '',
+      actionLabel: '',
+      title: 'Waiting for buyer times',
+      detail: 'The buyer preference link has been sent. Check responses or follow up if it stays quiet.',
+    }
+  }
+  if (confirmedCount && !normalizeText(savedPlan.sellerRequestedAt)) {
+    return sellerRecipientCount
+      ? {
+          ...base,
+          action: 'request_seller_access',
+          actionLabel: 'Request seller access',
+          title: 'Ready to confirm seller access',
+          detail: 'Buyer windows are captured. Send the seller coordination link next.',
+          tone: 'ready',
+        }
+      : {
+          ...base,
+          action: '',
+          actionLabel: '',
+          title: 'Add seller recipient',
+          detail: 'Buyer windows are captured, but a seller email is still needed before access can be requested.',
+          tone: 'warning',
+        }
+  }
+  if (confirmedCount && bookedCount < confirmedCount) {
+    return {
+      ...base,
+      action: 'book_viewing',
+      actionLabel: 'Book next viewing',
+      title: compatibility.status === 'aligned' ? 'Best next step: book matched window' : 'Ready to book',
+      detail: compatibility.detail,
+      tone: compatibility.status === 'aligned' ? 'ready' : 'warning',
+    }
+  }
+  if (normalizeText(viewingPlanStatus) === 'booked') {
+    return {
+      ...base,
+      action: '',
+      actionLabel: '',
+      title: 'Viewing plan booked',
+      detail: 'Appointments are in place. The next automation will be post-viewing follow-up.',
+      tone: 'ready',
+    }
+  }
+  return {
+    ...base,
+    action: '',
+    actionLabel: '',
+    title: 'Automation standing by',
+    detail: 'The planner will surface the next action as buyer and seller responses arrive.',
+  }
 }
 
 function describeSellerReviewPreparation(preparation = {}) {
@@ -5184,9 +5544,133 @@ function buildBuyerViewingAvailabilityEmailProperties(properties = [], origin = 
       price: normalizeText(property?.price),
       area: normalizeText(property?.area),
       match: normalizeText(property?.match) ? `${property.match}%` : '',
+      imageUrl: normalizeText(property?.image || property?.imageUrl || property?.thumbnailUrl),
       link: hasListingRoute ? `${origin}/listings/${encodeURIComponent(listingId)}` : '',
+      sellerViewingAvailability: normalizeText(property?.sellerViewingAvailability),
+      sellerViewingAvailabilityWindows: normalizeText(property?.sellerViewingAvailabilityWindows),
+      sellerViewingAccessInstructions: normalizeText(property?.sellerViewingAccessInstructions),
+      sellerViewingNoticePeriod: normalizeText(property?.sellerViewingNoticePeriod),
+      sellerViewingNoticeRequired: Boolean(property?.sellerViewingNoticeRequired),
     }
   })
+}
+
+function normalizeBuyerViewingPreferenceResponse(link = {}) {
+  const response = link?.response && typeof link.response === 'object' && !Array.isArray(link.response) ? link.response : {}
+  const selectedPropertyIds = (Array.isArray(link?.selectedPropertyIds) ? link.selectedPropertyIds : [])
+    .map(normalizeText)
+    .filter(Boolean)
+  const responseRows = Array.isArray(response.propertyResponses) ? response.propertyResponses : []
+  const confirmedPropertyIds = (Array.isArray(response.confirmedPropertyIds) && response.confirmedPropertyIds.length
+    ? response.confirmedPropertyIds
+    : responseRows
+      .filter((row) => row?.wantsToView === true)
+      .map((row) => row?.propertyId || row?.property_id || row?.id))
+    .map(normalizeText)
+    .filter(Boolean)
+  const availabilityWindows = (Array.isArray(response.availabilityWindows) ? response.availabilityWindows : [])
+    .map(normalizeText)
+    .filter(Boolean)
+  const responseNotes = [
+    normalizeText(response.responseNotes || response.response_notes),
+    normalizeText(response.attendeeNotes || response.attendee_notes)
+      ? `Attendees: ${normalizeText(response.attendeeNotes || response.attendee_notes)}`
+      : '',
+  ].filter(Boolean).join('\n')
+
+  return {
+    id: normalizeText(link?.id),
+    status: normalizeText(link?.status).toLowerCase(),
+    selectedPropertyIds,
+    confirmedPropertyIds,
+    availabilityWindows,
+    availabilityText: availabilityWindows.join('\n'),
+    responseNotes,
+    submittedAt: normalizeText(link?.submittedAt || response.submittedAt || response.submitted_at),
+  }
+}
+
+function getBuyerViewingPreferencePropertyTitle(propertyId = '', links = [], fallbackProperties = []) {
+  const normalizedId = normalizeText(propertyId)
+  if (!normalizedId) return ''
+  const fallback = (Array.isArray(fallbackProperties) ? fallbackProperties : [])
+    .find((property) => normalizeText(property?.id) === normalizedId)
+  if (fallback) return normalizeText(fallback.title)
+  for (const link of Array.isArray(links) ? links : []) {
+    const property = (Array.isArray(link?.properties) ? link.properties : [])
+      .find((row) => normalizeText(row?.id) === normalizedId)
+    if (property) return normalizeText(property.title || property.name || property.address)
+  }
+  return normalizedId
+}
+
+function buyerViewingPreferenceMatchesSavedPlan(savedPlan = {}, normalizedResponse = {}) {
+  const savedConfirmed = (Array.isArray(savedPlan.confirmedPropertyIds) ? savedPlan.confirmedPropertyIds : []).map(normalizeText).filter(Boolean).sort()
+  const responseConfirmed = (Array.isArray(normalizedResponse.confirmedPropertyIds) ? normalizedResponse.confirmedPropertyIds : []).map(normalizeText).filter(Boolean).sort()
+  return Boolean(
+    normalizeText(savedPlan.respondedAt) &&
+      savedConfirmed.join('|') === responseConfirmed.join('|') &&
+      normalizeText(savedPlan.availabilityWindows) === normalizeText(normalizedResponse.availabilityText),
+  )
+}
+
+function normalizeSellerViewingCoordinationResponse(link = {}) {
+  const response = link?.response && typeof link.response === 'object' && !Array.isArray(link.response) ? link.response : {}
+  const responseRows = Array.isArray(response.propertyResponses)
+    ? response.propertyResponses
+    : Array.isArray(response.property_responses)
+      ? response.property_responses
+      : []
+  const confirmedPropertyIds = (Array.isArray(response.confirmedPropertyIds) && response.confirmedPropertyIds.length
+    ? response.confirmedPropertyIds
+    : Array.isArray(response.confirmed_property_ids) && response.confirmed_property_ids.length
+      ? response.confirmed_property_ids
+      : responseRows
+        .filter((row) => row?.canHostViewing === true || row?.can_host_viewing === true || row?.wantsToView === true)
+        .map((row) => row?.propertyId || row?.property_id || row?.id))
+    .map(normalizeText)
+    .filter(Boolean)
+  const availabilityWindows = (Array.isArray(response.availabilityWindows) ? response.availabilityWindows : Array.isArray(response.availability_windows) ? response.availability_windows : [])
+    .map(normalizeText)
+    .filter(Boolean)
+  const accessNotes = normalizeText(response.accessNotes || response.access_notes || response.attendeeNotes || response.attendee_notes)
+  const responseNotes = [
+    normalizeText(response.responseNotes || response.response_notes),
+    accessNotes ? `Access notes: ${accessNotes}` : '',
+  ].filter(Boolean).join('\n')
+
+  return {
+    id: normalizeText(link?.id),
+    status: normalizeText(link?.status).toLowerCase(),
+    selectedPropertyIds: (Array.isArray(link?.selectedPropertyIds) ? link.selectedPropertyIds : []).map(normalizeText).filter(Boolean),
+    confirmedPropertyIds,
+    availabilityWindows,
+    availabilityText: availabilityWindows.join('\n'),
+    accessNotes,
+    responseNotes,
+    sellerEmail: normalizeText(link?.sellerEmail),
+    submittedAt: normalizeText(link?.submittedAt || response.submittedAt || response.submitted_at),
+  }
+}
+
+function getSellerViewingCoordinationPropertyTitle(propertyId = '', links = [], fallbackProperties = []) {
+  const normalizedId = normalizeText(propertyId)
+  if (!normalizedId) return ''
+  const fallback = (Array.isArray(fallbackProperties) ? fallbackProperties : [])
+    .find((property) => normalizeText(property?.id) === normalizedId)
+  if (fallback) return normalizeText(fallback.title)
+  for (const link of Array.isArray(links) ? links : []) {
+    const property = (Array.isArray(link?.properties) ? link.properties : [])
+      .find((row) => normalizeText(row?.id) === normalizedId)
+    if (property) return normalizeText(property.title || property.name || property.address)
+  }
+  return normalizedId
+}
+
+function sellerViewingCoordinationMatchesSavedPlan(savedPlan = {}, normalizedResponse = {}) {
+  const sellerNotes = normalizeText(savedPlan.sellerCoordinationNotes)
+  const submittedAt = normalizeText(normalizedResponse.submittedAt)
+  return Boolean(submittedAt && sellerNotes.includes(submittedAt))
 }
 
 function buildSellerViewingAvailabilityEmailBody({
@@ -5435,6 +5919,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [viewingPlanSelectedPropertyIds, setViewingPlanSelectedPropertyIds] = useState([])
   const [viewingPlanStatus, setViewingPlanStatus] = useState('draft')
   const [viewingPlanResponseForm, setViewingPlanResponseForm] = useState(BUYER_VIEWING_RESPONSE_DEFAULTS)
+  const [buyerViewingPreferenceLinks, setBuyerViewingPreferenceLinks] = useState([])
+  const [buyerViewingPreferenceLinksLoading, setBuyerViewingPreferenceLinksLoading] = useState(false)
+  const [buyerViewingPreferenceLinksError, setBuyerViewingPreferenceLinksError] = useState('')
+  const [sellerViewingCoordinationLinks, setSellerViewingCoordinationLinks] = useState([])
+  const [sellerViewingCoordinationLinksLoading, setSellerViewingCoordinationLinksLoading] = useState(false)
+  const [sellerViewingCoordinationLinksError, setSellerViewingCoordinationLinksError] = useState('')
   const [viewingPlanSellerForm, setViewingPlanSellerForm] = useState(BUYER_SELLER_COORDINATION_DEFAULTS)
   const [viewingPlanBookingPropertyId, setViewingPlanBookingPropertyId] = useState('')
   const [viewingPlanBookingContext, setViewingPlanBookingContext] = useState({ leadId: '', propertyId: '' })
@@ -6945,6 +7435,58 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadKey)
       .sort((a, b) => new Date(a.dueDate || a.createdAt || 0) - new Date(b.dueDate || b.createdAt || 0))
   }, [records.tasks, selectedLead])
+
+  const reloadBuyerViewingPreferenceLinks = useCallback(async ({ showMessage = false } = {}) => {
+    if (!organisationId || !selectedLead || selectedLeadIsSeller || !normalizeLeadUuid(selectedLead?.leadId)) {
+      setBuyerViewingPreferenceLinks([])
+      setBuyerViewingPreferenceLinksError('')
+      return []
+    }
+    setBuyerViewingPreferenceLinksLoading(true)
+    setBuyerViewingPreferenceLinksError('')
+    try {
+      const links = await listBuyerViewingPreferenceLinks(organisationId, selectedLead.leadId, { limit: 10 })
+      setBuyerViewingPreferenceLinks(links)
+      if (showMessage) {
+        const submittedCount = links.filter((link) => normalizeText(link?.status).toLowerCase() === 'submitted').length
+        setMessage(submittedCount ? `${submittedCount} buyer viewing response${submittedCount === 1 ? '' : 's'} found.` : 'No buyer viewing response has been submitted yet.')
+      }
+      return links
+    } catch (preferenceError) {
+      const message = preferenceError?.message || 'Could not load buyer viewing responses.'
+      setBuyerViewingPreferenceLinksError(message)
+      if (showMessage) setError(message)
+      return []
+    } finally {
+      setBuyerViewingPreferenceLinksLoading(false)
+    }
+  }, [organisationId, selectedLead, selectedLeadIsSeller])
+
+  const reloadSellerViewingCoordinationLinks = useCallback(async ({ showMessage = false } = {}) => {
+    if (!organisationId || !selectedLead || selectedLeadIsSeller || !normalizeLeadUuid(selectedLead?.leadId)) {
+      setSellerViewingCoordinationLinks([])
+      setSellerViewingCoordinationLinksError('')
+      return []
+    }
+    setSellerViewingCoordinationLinksLoading(true)
+    setSellerViewingCoordinationLinksError('')
+    try {
+      const links = await listSellerViewingCoordinationLinks(organisationId, selectedLead.leadId, { limit: 10 })
+      setSellerViewingCoordinationLinks(links)
+      if (showMessage) {
+        const submittedCount = links.filter((link) => normalizeText(link?.status).toLowerCase() === 'submitted').length
+        setMessage(submittedCount ? `${submittedCount} seller access response${submittedCount === 1 ? '' : 's'} found.` : 'No seller access response has been submitted yet.')
+      }
+      return links
+    } catch (coordinationError) {
+      const message = coordinationError?.message || 'Could not load seller access responses.'
+      setSellerViewingCoordinationLinksError(message)
+      if (showMessage) setError(message)
+      return []
+    } finally {
+      setSellerViewingCoordinationLinksLoading(false)
+    }
+  }, [organisationId, selectedLead, selectedLeadIsSeller])
 
   const selectedLeadAppointments = useMemo(() => {
     if (!selectedLead) return []
@@ -9342,6 +9884,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return options.slice(0, 6).map((option, index) => {
       const listing = appointmentListingById.get(normalizeText(option?.id)) || option || {}
       const match = Math.max(72, Math.min(96, selectedLeadBuyerMatchScore - index * 2 + (option?.source === 'Viewed' ? 3 : 0)))
+      const sellerViewingAvailability = resolveSellerViewingAvailabilityFromListing(listing)
       return {
         id: normalizeText(option?.id || listing?.id) || `recommended-${index}`,
         title: normalizeText(listing?.title || option?.label) || 'Recommended property',
@@ -9356,6 +9899,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         sellerName: resolveSellerNameFromListing(listing),
         sellerEmail: resolveSellerEmailFromListing(listing),
         sellerPhone: resolveSellerPhoneFromListing(listing),
+        sellerViewingAvailability: sellerViewingAvailability.summary,
+        sellerViewingAvailabilityWindows: sellerViewingAvailability.availabilityWindows,
+        sellerViewingAccessInstructions: sellerViewingAvailability.accessInstructions,
+        sellerViewingNoticePeriod: sellerViewingAvailability.noticePeriod,
+        sellerViewingNoticeRequired: sellerViewingAvailability.noticeRequired,
       }
     })
   }, [
@@ -9398,6 +9946,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead?.notes)
     if (savedPlan.selectedPropertyIds.length) {
+      const sellerAvailabilityNote = buildSellerViewingAvailabilityNoteForProperties(
+        selectedLeadViewingPlanProperties.filter((property) => savedPlan.selectedPropertyIds.includes(normalizeText(property?.id))),
+      )
       setViewingPlanSelectedPropertyIds(savedPlan.selectedPropertyIds)
       setViewingPlanStatus(savedPlan.status)
       setViewingPlanResponseForm({
@@ -9407,21 +9958,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
       setViewingPlanSellerForm({
         sellerRecipientEmails: savedPlan.sellerRecipientEmails,
-        sellerCoordinationNotes: savedPlan.sellerCoordinationNotes,
+        sellerCoordinationNotes: savedPlan.sellerCoordinationNotes || sellerAvailabilityNote,
       })
       setViewingPlanBookingPropertyId(savedPlan.confirmedPropertyIds.find((id) => !savedPlan.bookedPropertyIds.includes(id)) || savedPlan.confirmedPropertyIds[0] || savedPlan.selectedPropertyIds[0] || '')
       return
     }
     const defaultIds = selectedLeadViewingPlanProperties.slice(0, 3).map((property) => normalizeText(property?.id)).filter(Boolean)
+    const sellerAvailabilityNote = buildSellerViewingAvailabilityNoteForProperties(
+      selectedLeadViewingPlanProperties.filter((property) => defaultIds.includes(normalizeText(property?.id))),
+    )
     setViewingPlanSelectedPropertyIds(defaultIds)
     setViewingPlanStatus(savedPlan.status)
     setViewingPlanResponseForm({
       ...BUYER_VIEWING_RESPONSE_DEFAULTS,
       confirmedPropertyIds: defaultIds,
     })
-    setViewingPlanSellerForm(BUYER_SELLER_COORDINATION_DEFAULTS)
+    setViewingPlanSellerForm({
+      ...BUYER_SELLER_COORDINATION_DEFAULTS,
+      sellerCoordinationNotes: sellerAvailabilityNote,
+    })
     setViewingPlanBookingPropertyId(defaultIds[0] || '')
   }, [selectedLead, selectedLeadIsSeller, selectedLeadViewingPlanProperties])
+
+  useEffect(() => {
+    void reloadBuyerViewingPreferenceLinks()
+  }, [reloadBuyerViewingPreferenceLinks])
+
+  useEffect(() => {
+    void reloadSellerViewingCoordinationLinks()
+  }, [reloadSellerViewingCoordinationLinks])
 
   const selectedLeadOfferPropertyOptions = useMemo(() => {
     const fallbackImages = [
@@ -10946,6 +11511,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const buyerName = normalizeText(selectedLeadDisplayName || selectedLeadContact?.firstName || selectedLead?.firstName) || 'there'
       const agentName = normalizeText(currentAgent?.fullName || currentAgent?.email) || 'your agent'
       const agentEmail = normalizeText(currentAgent?.email).toLowerCase()
+      const emailProperties = buildBuyerViewingAvailabilityEmailProperties(selectedProperties, origin)
+      const preferenceLinkResponse = await invokeEdgeFunction('buyer-viewing-preferences', {
+        body: {
+          action: 'create',
+          organisationId,
+          leadId: normalizeLeadUuid(selectedLead.leadId),
+          buyerEmail,
+          buyerName,
+          agentName,
+          agentEmail,
+          organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+          origin,
+          selectedPropertyIds,
+          properties: emailProperties,
+          expiresInDays: 14,
+        },
+      })
+      assertEdgeFunctionSuccess(preferenceLinkResponse, 'Unable to create the buyer viewing preference link.')
+      const preferenceLinkData = preferenceLinkResponse?.data || {}
+      const preferenceLink = normalizeText(preferenceLinkData?.preferenceLink)
       const emailResponse = await invokeEdgeFunction('send-email', {
         body: {
           type: 'buyer_viewing_availability_request',
@@ -10959,13 +11544,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           leadId: selectedLead.leadId,
           recipientRole: 'buyer',
           resend: isResend,
+          actionLink: preferenceLink,
+          preferenceLink,
           propertyCount: selectedPropertyIds.length,
-          properties: buildBuyerViewingAvailabilityEmailProperties(selectedProperties, origin),
+          properties: emailProperties,
           idempotencyKey: `buyer-viewing-availability:${organisationId}:${selectedLead.leadId}:${isResend ? 'resend' : 'send'}:${sentAt}:${selectedPropertyIds.join(',')}`,
           deliveryMetadata: {
             source: 'buyer_viewing_planner',
             action: isResend ? 'resend' : 'send',
             selectedPropertyIds,
+            buyerViewingPreferenceLinkId: normalizeText(preferenceLinkData?.linkId),
+            buyerViewingPreferenceLinkExpiresAt: normalizeText(preferenceLinkData?.expiresAt),
           },
         },
       })
@@ -11026,6 +11615,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setViewingPlanSelectedPropertyIds(selectedPropertyIds)
       setViewingPlanStatus(nextStatus)
       scheduleRecordsReload(organisationId, 850)
+      void reloadBuyerViewingPreferenceLinks()
 
       setMessage(deliveryStatus === 'suppressed' ? 'Viewing availability request logged. Email delivery was suppressed for this test recipient.' : 'Viewing availability email sent and logged.')
       setError('')
@@ -11175,6 +11765,256 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function handleApplyBuyerViewingPreferenceResponse(link = {}) {
+    if (!organisationId || !selectedLead || selectedLeadIsSeller) return
+    const normalizedResponse = normalizeBuyerViewingPreferenceResponse(link)
+    const selectedPropertyIds = normalizedResponse.selectedPropertyIds.length
+      ? normalizedResponse.selectedPropertyIds
+      : viewingPlanSelectedPropertyIds.map(normalizeText).filter(Boolean)
+    const confirmedPropertyIds = normalizedResponse.confirmedPropertyIds
+      .filter((id) => !selectedPropertyIds.length || selectedPropertyIds.includes(id))
+    const availabilityWindows = normalizeText(normalizedResponse.availabilityText)
+    const responseNotes = normalizeText(normalizedResponse.responseNotes)
+
+    if (!confirmedPropertyIds.length) {
+      setMessage('The submitted buyer response did not include a property to view.')
+      return
+    }
+    if (!availabilityWindows) {
+      setMessage('The submitted buyer response did not include viewing time windows.')
+      return
+    }
+
+    const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+    if (buyerViewingPreferenceMatchesSavedPlan(savedPlan, normalizedResponse)) {
+      setViewingPlanSelectedPropertyIds(selectedPropertyIds.length ? selectedPropertyIds : confirmedPropertyIds)
+      setViewingPlanStatus('buyer_confirmed')
+      setViewingPlanResponseForm({
+        confirmedPropertyIds,
+        availabilityWindows,
+        responseNotes,
+      })
+      setMessage('Buyer viewing response is already applied.')
+      return
+    }
+
+    setIsLeadDetailSaving(true)
+    try {
+      const appliedAt = new Date().toISOString()
+      const respondedAt = normalizedResponse.submittedAt || appliedAt
+      const nextStatus = 'buyer_confirmed'
+      const notes = buildBuyerViewingPlanNotes(
+        {
+          status: nextStatus,
+          selectedPropertyIds: selectedPropertyIds.length ? selectedPropertyIds : confirmedPropertyIds,
+          confirmedPropertyIds,
+          availabilityWindows,
+          responseNotes,
+          sellerRecipientEmails: savedPlan.sellerRecipientEmails || viewingPlanSellerForm.sellerRecipientEmails,
+          sellerCoordinationNotes: savedPlan.sellerCoordinationNotes || viewingPlanSellerForm.sellerCoordinationNotes,
+          bookedPropertyIds: savedPlan.bookedPropertyIds,
+          bookedAppointmentIds: savedPlan.bookedAppointmentIds,
+          requestedAt: savedPlan.requestedAt || normalizeText(link?.lastSentAt || link?.createdAt),
+          respondedAt,
+          sellerRequestedAt: savedPlan.sellerRequestedAt,
+          bookedAt: savedPlan.bookedAt,
+          recipientEmail: savedPlan.recipientEmail || normalizeText(link?.contactEmail || selectedLeadContact?.email || selectedLead?.email),
+          buyerEmailDeliveryStatus: savedPlan.buyerEmailDeliveryStatus,
+          buyerEmailDeliveryId: savedPlan.buyerEmailDeliveryId,
+          buyerEmailProviderMessageId: savedPlan.buyerEmailProviderMessageId,
+          buyerEmailDeliveryFailure: savedPlan.buyerEmailDeliveryFailure,
+          sellerEmailDeliveryStatus: savedPlan.sellerEmailDeliveryStatus,
+          sellerEmailDeliveryIds: savedPlan.sellerEmailDeliveryIds,
+          sellerEmailProviderMessageIds: savedPlan.sellerEmailProviderMessageIds,
+          sellerEmailDeliveryFailure: savedPlan.sellerEmailDeliveryFailure,
+          updatedAt: appliedAt,
+        },
+        selectedLead.notes,
+      )
+      const leadPatch = { notes }
+      const confirmedNames = confirmedPropertyIds
+        .map((propertyId) => getBuyerViewingPreferencePropertyTitle(propertyId, [link], selectedLeadViewingPlanProperties))
+        .filter(Boolean)
+        .join(', ')
+      const confirmedPropertiesForAutomation = selectedLeadViewingPlanProperties.filter((property) => confirmedPropertyIds.includes(normalizeText(property?.id)))
+      const buyerCompatibility = buildViewingAvailabilityCompatibility({
+        buyerAvailability: availabilityWindows,
+        sellerAvailability: savedPlan.sellerCoordinationNotes || viewingPlanSellerForm.sellerCoordinationNotes,
+        properties: confirmedPropertiesForAutomation,
+      })
+
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        selectedLead.leadId,
+        {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Buyer Viewing Response Pulled Into Workspace',
+          activityNote: [
+            `${confirmedPropertyIds.length} propert${confirmedPropertyIds.length === 1 ? 'y' : 'ies'} confirmed${confirmedNames ? `: ${confirmedNames}` : ''}.`,
+            `Availability: ${availabilityWindows}`,
+            responseNotes ? `Notes: ${responseNotes}` : '',
+          ].filter(Boolean).join('\n'),
+          outcome: 'Buyer confirmed',
+        },
+        { actor: currentAgent },
+      ).catch(() => null)
+      await createBuyerViewingAutomationTask({
+        title: 'Follow up seller viewing access',
+        description: [
+          `Confirm seller access for ${confirmedPropertyIds.length} buyer-confirmed propert${confirmedPropertyIds.length === 1 ? 'y' : 'ies'}.`,
+          `Buyer availability: ${availabilityWindows}`,
+          buyerCompatibility.suggestions.length ? `Suggested windows: ${buyerCompatibility.suggestions.join('; ')}` : '',
+        ].filter(Boolean).join('\n'),
+        dueDate: getDateOffsetIsoDate(1),
+        priority: 'High',
+      }).catch(() => null)
+      await completeBuyerViewingAutomationTask('Follow up buyer viewing availability').catch(() => null)
+      await completeBuyerViewingAutomationTask('Coordinate seller viewing access').catch(() => null)
+
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      setViewingPlanSelectedPropertyIds(selectedPropertyIds.length ? selectedPropertyIds : confirmedPropertyIds)
+      setViewingPlanStatus(nextStatus)
+      setViewingPlanResponseForm({
+        confirmedPropertyIds,
+        availabilityWindows,
+        responseNotes,
+      })
+      setMessage('Buyer viewing response pulled into the workspace.')
+      setError('')
+      scheduleRecordsReload(organisationId, 850)
+      void reloadBuyerViewingPreferenceLinks()
+    } catch (applyError) {
+      setError(applyError?.message || 'Could not pull the buyer viewing response into the workspace.')
+    } finally {
+      setIsLeadDetailSaving(false)
+    }
+  }
+
+  async function handleApplySellerViewingCoordinationResponse(link = {}) {
+    if (!organisationId || !selectedLead || selectedLeadIsSeller) return
+    const normalizedResponse = normalizeSellerViewingCoordinationResponse(link)
+    const selectedPropertyIds = viewingPlanSelectedPropertyIds.map(normalizeText).filter(Boolean)
+    const confirmedPropertyIds = normalizedResponse.confirmedPropertyIds
+      .filter((id) => !selectedPropertyIds.length || selectedPropertyIds.includes(id))
+    const sellerAvailability = normalizeText(normalizedResponse.availabilityText)
+    const sellerResponseNotes = normalizeText(normalizedResponse.responseNotes)
+
+    if (!confirmedPropertyIds.length) {
+      setMessage('The submitted seller response did not confirm access for any selected property.')
+      return
+    }
+    if (!sellerAvailability) {
+      setMessage('The submitted seller response did not include access time windows.')
+      return
+    }
+
+    const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
+    if (sellerViewingCoordinationMatchesSavedPlan(savedPlan, normalizedResponse)) {
+      setMessage('Seller access response is already applied.')
+      return
+    }
+
+    setIsLeadDetailSaving(true)
+    try {
+      const appliedAt = new Date().toISOString()
+      const submittedAt = normalizedResponse.submittedAt || appliedAt
+      const confirmedNames = confirmedPropertyIds
+        .map((propertyId) => getSellerViewingCoordinationPropertyTitle(propertyId, [link], selectedLeadViewingPlanProperties))
+        .filter(Boolean)
+        .join(', ')
+      const sellerCoordinationNotes = [
+        normalizeText(savedPlan.sellerCoordinationNotes || viewingPlanSellerForm.sellerCoordinationNotes),
+        [
+          `Seller response applied: ${submittedAt}`,
+          confirmedNames ? `Access confirmed for: ${confirmedNames}` : '',
+          `Seller availability: ${sellerAvailability}`,
+          sellerResponseNotes ? `Seller notes: ${sellerResponseNotes}` : '',
+          normalizedResponse.sellerEmail ? `Seller email: ${normalizedResponse.sellerEmail}` : '',
+        ].filter(Boolean).join('\n'),
+      ].filter(Boolean).join('\n\n')
+      const confirmedPropertiesForAutomation = selectedLeadViewingPlanProperties.filter((property) => confirmedPropertyIds.includes(normalizeText(property?.id)))
+      const bookingCompatibility = buildViewingAvailabilityCompatibility({
+        buyerAvailability: savedPlan.availabilityWindows || viewingPlanResponseForm.availabilityWindows,
+        sellerAvailability,
+        properties: confirmedPropertiesForAutomation,
+      })
+      const notes = buildBuyerViewingPlanNotes(
+        {
+          status: 'seller_coordination',
+          selectedPropertyIds: selectedPropertyIds.length ? selectedPropertyIds : confirmedPropertyIds,
+          confirmedPropertyIds,
+          availabilityWindows: savedPlan.availabilityWindows || viewingPlanResponseForm.availabilityWindows,
+          responseNotes: savedPlan.responseNotes || viewingPlanResponseForm.responseNotes,
+          sellerRecipientEmails: savedPlan.sellerRecipientEmails || viewingPlanSellerForm.sellerRecipientEmails || normalizedResponse.sellerEmail,
+          sellerCoordinationNotes,
+          bookedPropertyIds: savedPlan.bookedPropertyIds,
+          bookedAppointmentIds: savedPlan.bookedAppointmentIds,
+          requestedAt: savedPlan.requestedAt,
+          respondedAt: savedPlan.respondedAt,
+          sellerRequestedAt: savedPlan.sellerRequestedAt || normalizeText(link?.lastSentAt || link?.createdAt),
+          bookedAt: savedPlan.bookedAt,
+          recipientEmail: savedPlan.recipientEmail || normalizeText(selectedLeadContact?.email || selectedLead?.email),
+          buyerEmailDeliveryStatus: savedPlan.buyerEmailDeliveryStatus,
+          buyerEmailDeliveryId: savedPlan.buyerEmailDeliveryId,
+          buyerEmailProviderMessageId: savedPlan.buyerEmailProviderMessageId,
+          buyerEmailDeliveryFailure: savedPlan.buyerEmailDeliveryFailure,
+          sellerEmailDeliveryStatus: savedPlan.sellerEmailDeliveryStatus,
+          sellerEmailDeliveryIds: savedPlan.sellerEmailDeliveryIds,
+          sellerEmailProviderMessageIds: savedPlan.sellerEmailProviderMessageIds,
+          sellerEmailDeliveryFailure: savedPlan.sellerEmailDeliveryFailure,
+          updatedAt: appliedAt,
+        },
+        selectedLead.notes,
+      )
+      const leadPatch = { notes }
+
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        selectedLead.leadId,
+        {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Seller Viewing Response Pulled Into Workspace',
+          activityNote: [
+            `${confirmedPropertyIds.length} propert${confirmedPropertyIds.length === 1 ? 'y' : 'ies'} confirmed for access${confirmedNames ? `: ${confirmedNames}` : ''}.`,
+            `Seller availability: ${sellerAvailability}`,
+            sellerResponseNotes ? `Notes: ${sellerResponseNotes}` : '',
+          ].filter(Boolean).join('\n'),
+          outcome: 'Seller confirmed',
+        },
+        { actor: currentAgent },
+      ).catch(() => null)
+      await createBuyerViewingAutomationTask({
+        title: 'Book viewing appointments',
+        description: [
+          `Seller access confirmed. Book ${confirmedPropertyIds.length} viewing appointment${confirmedPropertyIds.length === 1 ? '' : 's'}.`,
+          `Seller windows: ${sellerAvailability}`,
+          bookingCompatibility.suggestions.length ? `Suggested windows: ${bookingCompatibility.suggestions.join('; ')}` : '',
+        ].filter(Boolean).join('\n'),
+        dueDate: getDateOffsetIsoDate(1),
+        priority: 'High',
+      }).catch(() => null)
+      await completeBuyerViewingAutomationTask('Follow up seller viewing access').catch(() => null)
+
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      setViewingPlanStatus('seller_coordination')
+      setViewingPlanSellerForm((previous) => ({
+        ...previous,
+        sellerRecipientEmails: savedPlan.sellerRecipientEmails || previous.sellerRecipientEmails || normalizedResponse.sellerEmail,
+        sellerCoordinationNotes,
+      }))
+      setMessage('Seller access response pulled into the workspace. You can book the viewing appointment next.')
+      setError('')
+      scheduleRecordsReload(organisationId, 850)
+      void reloadSellerViewingCoordinationLinks()
+    } catch (applyError) {
+      setError(applyError?.message || 'Could not pull the seller access response into the workspace.')
+    } finally {
+      setIsLeadDetailSaving(false)
+    }
+  }
+
   async function handleSendSellerViewingAvailabilityRequest(selectedProperties = []) {
     if (!organisationId || !selectedLead || selectedLeadIsSeller) return
     const selectedPropertyIds = viewingPlanSelectedPropertyIds.map(normalizeText).filter(Boolean)
@@ -11215,7 +12055,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	      const isResend = Boolean(savedPlan.sellerRequestedAt)
 	      const nextStatus = 'seller_coordination'
 	      const sellerRecipientEmails = sellerEmails.join(', ')
-	      const sellerCoordinationNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
+	      const sellerCoordinationNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes) ||
+          buildSellerViewingAvailabilityNoteForProperties(confirmedProperties.length ? confirmedProperties : selectedProperties)
 	      const origin = typeof window !== 'undefined' ? window.location?.origin || '' : ''
 	      const sellerName = confirmedProperties.length === 1
 	        ? normalizeText(confirmedProperties[0]?.sellerName) || 'there'
@@ -11223,6 +12064,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	      const buyerName = normalizeText(selectedLeadDisplayName || selectedLeadContactName) || 'the buyer'
 	      const agentName = normalizeText(currentAgent?.fullName || currentAgent?.email) || 'your agent'
 	      const agentEmail = normalizeText(currentAgent?.email).toLowerCase()
+	      const emailProperties = buildBuyerViewingAvailabilityEmailProperties(confirmedProperties.length ? confirmedProperties : selectedProperties, origin)
+	      const coordinationLinkResponse = await invokeEdgeFunction('seller-viewing-coordination', {
+	        body: {
+	          action: 'create',
+	          organisationId,
+	          leadId: normalizeLeadUuid(selectedLead.leadId),
+	          sellerEmail: sellerEmails[0] || '',
+	          sellerName,
+	          buyerName,
+	          agentName,
+	          agentEmail,
+	          organisationName: normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName),
+	          origin,
+	          selectedPropertyIds: confirmedPropertyIds,
+	          properties: emailProperties,
+	          availabilityWindows,
+	          coordinationNotes: sellerCoordinationNotes,
+	          expiresInDays: 14,
+	        },
+	      })
+	      assertEdgeFunctionSuccess(coordinationLinkResponse, 'Unable to create the seller viewing coordination link.')
+	      const coordinationLinkData = coordinationLinkResponse?.data || {}
+	      const sellerCoordinationLink = normalizeText(coordinationLinkData?.sellerCoordinationLink)
 	      const emailResponse = await invokeEdgeFunction('send-email', {
 	        body: {
 	          type: 'seller_viewing_availability_request',
@@ -11238,8 +12102,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	          leadId: selectedLead.leadId,
 	          recipientRole: 'seller',
 	          resend: isResend,
+	          actionLink: sellerCoordinationLink,
+	          sellerCoordinationLink,
 	          propertyCount: confirmedPropertyIds.length,
-	          properties: buildBuyerViewingAvailabilityEmailProperties(confirmedProperties.length ? confirmedProperties : selectedProperties, origin),
+	          properties: emailProperties,
 	          availabilityWindows,
 	          coordinationNotes: sellerCoordinationNotes,
 	          idempotencyKey: `seller-viewing-availability:${organisationId}:${selectedLead.leadId}:${isResend ? 'resend' : 'send'}:${sentAt}:${confirmedPropertyIds.join(',')}:${sellerEmails.join(',')}`,
@@ -11248,12 +12114,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	            action: isResend ? 'resend' : 'send',
 	            confirmedPropertyIds,
 	            sellerEmails,
+	            sellerViewingCoordinationLinkId: normalizeText(coordinationLinkData?.linkId),
+	            sellerViewingCoordinationLinkExpiresAt: normalizeText(coordinationLinkData?.expiresAt),
 	          },
 	          deliveryMetadata: {
 	            source: 'buyer_viewing_planner',
 	            action: isResend ? 'resend' : 'send',
 	            confirmedPropertyIds,
 	            sellerEmails,
+	            sellerViewingCoordinationLinkId: normalizeText(coordinationLinkData?.linkId),
+	            sellerViewingCoordinationLinkExpiresAt: normalizeText(coordinationLinkData?.expiresAt),
 	          },
 	        },
 	      })
@@ -11323,6 +12193,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         sellerCoordinationNotes,
       })
       scheduleRecordsReload(organisationId, 850)
+      void reloadSellerViewingCoordinationLinks()
 
 	      setMessage(
 	        sellerDeliveryStatus === 'suppressed'
@@ -11337,7 +12208,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	      const savedPlan = parseBuyerViewingPlanNoteBlock(selectedLead.notes)
 	      const deliveryFailure = sendError?.message || 'Unable to send the seller viewing availability email.'
 	      const sellerRecipientEmails = sellerEmails.join(', ')
-	      const sellerCoordinationNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
+	      const sellerCoordinationNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes) ||
+          buildSellerViewingAvailabilityNoteForProperties(confirmedProperties.length ? confirmedProperties : selectedProperties)
 	      const failureNotes = buildBuyerViewingPlanNotes(
 	        {
 	          status: savedPlan.status || viewingPlanStatus || 'buyer_confirmed',
@@ -11388,6 +12260,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function handleRunViewingPlannerAutomation(action = '', context = {}) {
+    const automationAction = normalizeText(action)
+    if (!automationAction) return
+    if (automationAction === 'apply_buyer_response') {
+      await handleApplyBuyerViewingPreferenceResponse(context.buyerLink)
+      return
+    }
+    if (automationAction === 'apply_seller_response') {
+      await handleApplySellerViewingCoordinationResponse(context.sellerLink)
+      return
+    }
+    if (automationAction === 'request_seller_access') {
+      await handleSendSellerViewingAvailabilityRequest(context.confirmedProperties || [])
+      return
+    }
+    if (automationAction === 'book_viewing') {
+      handleOpenViewingPlanBookingModal(context.bookingProperty || null)
+      return
+    }
+    if (automationAction === 'send_buyer_request') {
+      await handleSendBuyerViewingAvailabilityRequest(context.selectedProperties || [])
+    }
+  }
+
   function handleOpenViewingPlanBookingModal(property = null) {
     if (!selectedLead || selectedLeadIsSeller) return
     const propertyId = normalizeText(property?.id || viewingPlanBookingPropertyId)
@@ -11410,8 +12306,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const location = normalizeText(listing?.address || selectedProperty?.title || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress)
     const buyerAvailability = normalizeText(viewingPlanResponseForm.availabilityWindows)
     const sellerNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
+    const compatibility = buildViewingAvailabilityCompatibility({
+      buyerAvailability,
+      sellerAvailability: sellerNotes,
+      properties: selectedProperty ? [selectedProperty] : [],
+    })
     const notes = [
       buyerAvailability ? `Buyer availability: ${buyerAvailability}` : '',
+      compatibility.suggestions.length ? `Suggested viewing windows: ${compatibility.suggestions.join('; ')}` : '',
       sellerNotes ? `Seller coordination: ${sellerNotes}` : '',
       normalizeText(viewingPlanResponseForm.responseNotes) ? `Buyer response notes: ${normalizeText(viewingPlanResponseForm.responseNotes)}` : '',
     ].filter(Boolean).join('\n')
@@ -15241,6 +16143,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     try {
+      const agencyEmailBranding = resolveAgencyOfferEmailBranding({
+        organisationId,
+        organisationName,
+        profile,
+        currentWorkspace,
+        workspace,
+      })
       const emailResponse = await invokeEdgeFunction('send-email', {
         body: {
           type: 'buyer_offer_link',
@@ -15251,7 +16160,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           offerLink,
           expiresAt: normalizeText(expiresAt || offerLinkForm.expiryDate),
           agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
+          agentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email).toLowerCase(),
+          replyTo: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email).toLowerCase(),
           note: normalizeText(note || offerLinkForm.note),
+          ...agencyEmailBranding,
         },
       })
       if (emailResponse?.error || emailResponse?.data?.error) {
@@ -19022,6 +19934,64 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const viewingPlannerBuyerAvailability = normalizeText(viewingPlanResponseForm.availabilityWindows)
                         const viewingPlannerBuyerNotes = normalizeText(viewingPlanResponseForm.responseNotes)
                         const viewingPlannerSellerNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
+                        const submittedBuyerViewingPreferenceLinks = buyerViewingPreferenceLinks
+                          .filter((link) => normalizeText(link?.status).toLowerCase() === 'submitted')
+                          .sort((left, right) => new Date(right?.submittedAt || right?.updatedAt || right?.createdAt || 0) - new Date(left?.submittedAt || left?.updatedAt || left?.createdAt || 0))
+                        const latestBuyerViewingPreferenceLink = submittedBuyerViewingPreferenceLinks[0] || null
+                        const latestBuyerViewingPreferenceResponse = latestBuyerViewingPreferenceLink
+                          ? normalizeBuyerViewingPreferenceResponse(latestBuyerViewingPreferenceLink)
+                          : null
+                        const latestBuyerViewingPreferenceApplied = latestBuyerViewingPreferenceResponse
+                          ? buyerViewingPreferenceMatchesSavedPlan(savedViewingPlan, latestBuyerViewingPreferenceResponse)
+                          : false
+                        const latestBuyerViewingPreferenceConfirmedNames = latestBuyerViewingPreferenceResponse
+                          ? latestBuyerViewingPreferenceResponse.confirmedPropertyIds
+                            .map((propertyId) => getBuyerViewingPreferencePropertyTitle(propertyId, buyerViewingPreferenceLinks, selectedLeadViewingPlanProperties))
+                            .filter(Boolean)
+                          : []
+                        const submittedSellerViewingCoordinationLinks = sellerViewingCoordinationLinks
+                          .filter((link) => normalizeText(link?.status).toLowerCase() === 'submitted')
+                          .sort((left, right) => new Date(right?.submittedAt || right?.updatedAt || right?.createdAt || 0) - new Date(left?.submittedAt || left?.updatedAt || left?.createdAt || 0))
+                        const latestSellerViewingCoordinationLink = submittedSellerViewingCoordinationLinks[0] || null
+                        const latestSellerViewingCoordinationResponse = latestSellerViewingCoordinationLink
+                          ? normalizeSellerViewingCoordinationResponse(latestSellerViewingCoordinationLink)
+                          : null
+                        const latestSellerViewingCoordinationApplied = latestSellerViewingCoordinationResponse
+                          ? sellerViewingCoordinationMatchesSavedPlan(savedViewingPlan, latestSellerViewingCoordinationResponse)
+                          : false
+                        const latestSellerViewingCoordinationConfirmedNames = latestSellerViewingCoordinationResponse
+                          ? latestSellerViewingCoordinationResponse.confirmedPropertyIds
+                            .map((propertyId) => getSellerViewingCoordinationPropertyTitle(propertyId, sellerViewingCoordinationLinks, selectedLeadViewingPlanProperties))
+                            .filter(Boolean)
+                          : []
+                        const viewingPlannerSellerAvailabilityText = normalizeText(
+                          latestSellerViewingCoordinationApplied
+                            ? latestSellerViewingCoordinationResponse?.availabilityText
+                            : '',
+                        ) || viewingPlannerSellerNotes || buildSellerViewingAvailabilityNoteForProperties(
+                          viewingPlanConfirmedProperties.length ? viewingPlanConfirmedProperties : viewingPlanSelectedProperties,
+                        )
+                        const viewingPlannerSmartAutomation = buildViewingPlannerSmartAutomation({
+                          selectedProperties: viewingPlanSelectedProperties,
+                          confirmedProperties: viewingPlanConfirmedProperties,
+                          bookedPropertyIds: viewingPlanBookedPropertyIds,
+                          viewingPlanStatus,
+                          savedPlan: savedViewingPlan,
+                          buyerAvailability: viewingPlannerBuyerAvailability,
+                          sellerAvailability: viewingPlannerSellerAvailabilityText,
+                          latestBuyerResponse: latestBuyerViewingPreferenceResponse,
+                          latestBuyerResponseApplied: latestBuyerViewingPreferenceApplied,
+                          latestSellerResponse: latestSellerViewingCoordinationResponse,
+                          latestSellerResponseApplied: latestSellerViewingCoordinationApplied,
+                          sellerRecipientCount: viewingPlanSellerRecipientCount,
+                        })
+                        const viewingPlannerSmartActionContext = {
+                          buyerLink: latestBuyerViewingPreferenceLink,
+                          sellerLink: latestSellerViewingCoordinationLink,
+                          selectedProperties: viewingPlanSelectedProperties,
+                          confirmedProperties: viewingPlanConfirmedProperties,
+                          bookingProperty: viewingPlanBookingProperty,
+                        }
                         const viewingPlannerEmailPreview = buildBuyerViewingAvailabilityEmailBody({
                           buyerName: normalizeText(selectedLeadDisplayName || selectedLeadContact?.firstName || selectedLead?.firstName) || 'there',
                           agentName: currentAgent.fullName || currentAgent.email,
@@ -19048,6 +20018,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             label: 'Follow up seller viewing access',
                             active: viewingPlanStatus === 'buyer_confirmed' || viewingPlanStatus === 'seller_coordination',
                             task: findViewingAutomationTask('Follow up seller viewing access'),
+                          },
+                          {
+                            key: 'book-viewing',
+                            label: 'Book viewing appointments',
+                            active: viewingPlannerSmartAutomation.action === 'book_viewing',
+                            task: findViewingAutomationTask('Book viewing appointments'),
                           },
                           {
                             key: 'post-viewing',
@@ -19467,6 +20443,46 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           <p className="mt-2 line-clamp-6 whitespace-pre-wrap text-sm leading-6 text-[#29435d]">{viewingPlannerEmailPreview}</p>
                                         </div>
                                       )}
+                                      {latestBuyerViewingPreferenceLink ? (
+                                        <div className={`mt-4 rounded-[14px] border p-4 ${latestBuyerViewingPreferenceApplied ? 'border-[#cbe7d7] bg-[#f4fbf7]' : 'border-[#d8e6f2] bg-white'}`}>
+                                          <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div>
+                                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Buyer response received</p>
+                                              <h5 className="mt-1 text-sm font-semibold text-[#102033]">
+                                                {latestBuyerViewingPreferenceConfirmedNames.length
+                                                  ? latestBuyerViewingPreferenceConfirmedNames.join(', ')
+                                                  : `${latestBuyerViewingPreferenceResponse.confirmedPropertyIds.length} selected propert${latestBuyerViewingPreferenceResponse.confirmedPropertyIds.length === 1 ? 'y' : 'ies'}`}
+                                              </h5>
+                                              {latestBuyerViewingPreferenceResponse.submittedAt ? (
+                                                <p className="mt-1 text-xs text-[#60758b]">Submitted {formatDateShort(latestBuyerViewingPreferenceResponse.submittedAt)}</p>
+                                              ) : null}
+                                            </div>
+                                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${latestBuyerViewingPreferenceApplied ? 'bg-[#e8f4ee] text-[#17643a]' : 'bg-[#eef4f9] text-[#285b7d]'}`}>
+                                              {latestBuyerViewingPreferenceApplied ? 'Synced' : 'Ready to apply'}
+                                            </span>
+                                          </div>
+                                          <div className="mt-3 rounded-[12px] bg-[#f8fbfd] px-3 py-2">
+                                            <p className="whitespace-pre-wrap text-sm leading-6 text-[#29435d]">{latestBuyerViewingPreferenceResponse.availabilityText || 'No time windows supplied.'}</p>
+                                            {latestBuyerViewingPreferenceResponse.responseNotes ? (
+                                              <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-[#60758b]">{latestBuyerViewingPreferenceResponse.responseNotes}</p>
+                                            ) : null}
+                                          </div>
+                                          <div className="mt-3 flex justify-end">
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              variant={latestBuyerViewingPreferenceApplied ? 'secondary' : 'primary'}
+                                              disabled={latestBuyerViewingPreferenceApplied || isLeadDetailSaving}
+                                              onClick={() => void handleApplyBuyerViewingPreferenceResponse(latestBuyerViewingPreferenceLink)}
+                                            >
+                                              <CheckCircle2 className="h-4 w-4" />
+                                              {latestBuyerViewingPreferenceApplied ? 'Response applied' : 'Apply response'}
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      ) : buyerViewingPreferenceLinksError ? (
+                                        <p className="mt-3 rounded-[12px] border border-[#f3d1c9] bg-[#fff4f2] px-3 py-2 text-xs font-semibold text-[#a43f2c]">{buyerViewingPreferenceLinksError}</p>
+                                      ) : null}
                                       <div className="mt-4 flex flex-wrap items-center gap-2">
                                         <Button
                                           type="button"
@@ -19495,6 +20511,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           <Copy className="h-4 w-4" />
                                           Copy request
                                         </Button>
+                                        {viewingPlannerBuyerHasRequest ? (
+                                          <Button type="button" size="sm" variant="secondary" disabled={buyerViewingPreferenceLinksLoading} onClick={() => void reloadBuyerViewingPreferenceLinks({ showMessage: true })}>
+                                            <RefreshCw className={`h-4 w-4 ${buyerViewingPreferenceLinksLoading ? 'animate-spin' : ''}`} />
+                                            Check responses
+                                          </Button>
+                                        ) : null}
                                       </div>
                                       {!viewingPlanBuyerEmail ? (
                                         <p className="mt-3 text-sm font-semibold text-[#b45309]">Add a buyer email before sending the request.</p>
@@ -19549,6 +20571,46 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                      {viewingPlannerSellerEmailDeliveryStatus === 'failed' && savedViewingPlan.sellerEmailDeliveryFailure ? (
 	                                        <p className="mt-2 text-xs font-semibold text-[#a43f2c]">{savedViewingPlan.sellerEmailDeliveryFailure}</p>
 	                                      ) : null}
+                                      {latestSellerViewingCoordinationLink ? (
+                                        <div className={`mt-3 rounded-[14px] border p-4 ${latestSellerViewingCoordinationApplied ? 'border-[#cbe7d7] bg-[#f4fbf7]' : 'border-[#d8e6f2] bg-white'}`}>
+                                          <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div>
+                                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Seller response received</p>
+                                              <h5 className="mt-1 text-sm font-semibold text-[#102033]">
+                                                {latestSellerViewingCoordinationConfirmedNames.length
+                                                  ? latestSellerViewingCoordinationConfirmedNames.join(', ')
+                                                  : `${latestSellerViewingCoordinationResponse.confirmedPropertyIds.length} access-confirmed propert${latestSellerViewingCoordinationResponse.confirmedPropertyIds.length === 1 ? 'y' : 'ies'}`}
+                                              </h5>
+                                              {latestSellerViewingCoordinationResponse.submittedAt ? (
+                                                <p className="mt-1 text-xs text-[#60758b]">Submitted {formatDateShort(latestSellerViewingCoordinationResponse.submittedAt)}</p>
+                                              ) : null}
+                                            </div>
+                                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${latestSellerViewingCoordinationApplied ? 'bg-[#e8f4ee] text-[#17643a]' : 'bg-[#eef4f9] text-[#285b7d]'}`}>
+                                              {latestSellerViewingCoordinationApplied ? 'Synced' : 'Ready to apply'}
+                                            </span>
+                                          </div>
+                                          <div className="mt-3 rounded-[12px] bg-[#f8fbfd] px-3 py-2">
+                                            <p className="whitespace-pre-wrap text-sm leading-6 text-[#29435d]">{latestSellerViewingCoordinationResponse.availabilityText || 'No access windows supplied.'}</p>
+                                            {latestSellerViewingCoordinationResponse.responseNotes ? (
+                                              <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-[#60758b]">{latestSellerViewingCoordinationResponse.responseNotes}</p>
+                                            ) : null}
+                                          </div>
+                                          <div className="mt-3 flex justify-end">
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              variant={latestSellerViewingCoordinationApplied ? 'secondary' : 'primary'}
+                                              disabled={latestSellerViewingCoordinationApplied || isLeadDetailSaving}
+                                              onClick={() => void handleApplySellerViewingCoordinationResponse(latestSellerViewingCoordinationLink)}
+                                            >
+                                              <CheckCircle2 className="h-4 w-4" />
+                                              {latestSellerViewingCoordinationApplied ? 'Response applied' : 'Apply seller response'}
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      ) : sellerViewingCoordinationLinksError ? (
+                                        <p className="mt-3 rounded-[12px] border border-[#f3d1c9] bg-[#fff4f2] px-3 py-2 text-xs font-semibold text-[#a43f2c]">{sellerViewingCoordinationLinksError}</p>
+                                      ) : null}
 	                                      <div className="mt-3 rounded-[14px] border border-[#dce7f2] bg-white p-4">
                                         <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Buyer availability</p>
                                         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#29435d]">{viewingPlannerBuyerAvailability || 'No buyer availability captured yet.'}</p>
@@ -19577,8 +20639,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
                                         <Button type="button" size="sm" disabled={!viewingPlanConfirmedProperties.length || !viewingPlannerBuyerAvailability || !viewingPlanSellerRecipientCount || isLeadDetailSaving} onClick={() => void handleSendSellerViewingAvailabilityRequest(viewingPlanConfirmedProperties)}>
                                           <Send className="h-4 w-4" />
-                                          Request seller availability
+                                          {viewingPlannerSellerHasRequest ? 'Resend seller request' : 'Request seller availability'}
                                         </Button>
+                                        {viewingPlannerSellerHasRequest ? (
+                                          <Button type="button" size="sm" variant="secondary" disabled={sellerViewingCoordinationLinksLoading} onClick={() => void reloadSellerViewingCoordinationLinks({ showMessage: true })}>
+                                            <RefreshCw className={`h-4 w-4 ${sellerViewingCoordinationLinksLoading ? 'animate-spin' : ''}`} />
+                                            Check seller responses
+                                          </Button>
+                                        ) : null}
                                       </div>
                                     </div>
                                   ) : null}
@@ -19623,6 +20691,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         <div className="space-y-3 rounded-[14px] border border-[#dce7f2] bg-white p-4">
                                           <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Buyer windows</p>
                                           <p className="line-clamp-5 whitespace-pre-wrap text-sm leading-6 text-[#29435d]">{viewingPlannerBuyerAvailability || 'No buyer availability captured yet.'}</p>
+                                          {viewingPlannerSmartAutomation.suggestions.length ? (
+                                            <div className="rounded-[12px] border border-[#dce7f2] bg-[#fbfdff] px-3 py-2">
+                                              <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#7c91a8]">Suggested overlap</p>
+                                              {viewingPlannerSmartAutomation.suggestions.slice(0, 2).map((suggestion) => (
+                                                <p key={`booking-suggestion-${suggestion}`} className="mt-1 line-clamp-2 text-xs leading-5 text-[#29435d]">{suggestion}</p>
+                                              ))}
+                                            </div>
+                                          ) : null}
                                           {viewingPlannerSellerNotes ? <p className="text-xs leading-5 text-[#60758b]">{viewingPlannerSellerNotes}</p> : null}
                                           <Button type="button" size="sm" className="w-full" disabled={!viewingPlanBookingProperty || !viewingPlannerBuyerAvailability} onClick={() => handleOpenViewingPlanBookingModal(viewingPlanBookingProperty)}>
                                             <CalendarDays className="h-4 w-4" />
@@ -19911,6 +20987,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         {savedViewingPlan.sellerRequestedAt ? `Requested ${formatDateShort(savedViewingPlan.sellerRequestedAt)}` : 'Not requested'}
                                       </span>
                                     </div>
+                                    {latestSellerViewingCoordinationLink ? (
+                                      <div className={`mt-3 rounded-[14px] border p-3 ${latestSellerViewingCoordinationApplied ? 'border-[#cbe7d7] bg-[#f4fbf7]' : 'border-[#d8e6f2] bg-[#fbfdff]'}`}>
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <p className="text-sm font-semibold text-[#102033]">
+                                            Seller response: {latestSellerViewingCoordinationConfirmedNames.length ? latestSellerViewingCoordinationConfirmedNames.join(', ') : 'Access details received'}
+                                          </p>
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant={latestSellerViewingCoordinationApplied ? 'secondary' : 'primary'}
+                                            disabled={latestSellerViewingCoordinationApplied || isLeadDetailSaving}
+                                            onClick={() => void handleApplySellerViewingCoordinationResponse(latestSellerViewingCoordinationLink)}
+                                          >
+                                            <CheckCircle2 className="h-4 w-4" />
+                                            {latestSellerViewingCoordinationApplied ? 'Response applied' : 'Apply seller response'}
+                                          </Button>
+                                        </div>
+                                        <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-[#60758b]">{latestSellerViewingCoordinationResponse.availabilityText}</p>
+                                      </div>
+                                    ) : sellerViewingCoordinationLinksError ? (
+                                      <p className="mt-3 rounded-[12px] border border-[#f3d1c9] bg-[#fff4f2] px-3 py-2 text-xs font-semibold text-[#a43f2c]">{sellerViewingCoordinationLinksError}</p>
+                                    ) : null}
 
                                     <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,0.85fr)_minmax(260px,0.55fr)]">
                                       <div className="space-y-2">
@@ -19969,8 +21067,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           onClick={() => void handleSendSellerViewingAvailabilityRequest(viewingPlanConfirmedProperties)}
                                         >
                                           <Send className="h-4 w-4" />
-                                          {isLeadDetailSaving ? 'Preparing...' : 'Request seller availability'}
+                                          {isLeadDetailSaving ? 'Preparing...' : viewingPlannerSellerHasRequest ? 'Resend seller request' : 'Request seller availability'}
                                         </Button>
+                                        {viewingPlannerSellerHasRequest ? (
+                                          <Button type="button" size="sm" variant="secondary" className="w-full" disabled={sellerViewingCoordinationLinksLoading} onClick={() => void reloadSellerViewingCoordinationLinks({ showMessage: true })}>
+                                            <RefreshCw className={`h-4 w-4 ${sellerViewingCoordinationLinksLoading ? 'animate-spin' : ''}`} />
+                                            Check seller responses
+                                          </Button>
+                                        ) : null}
                                       </div>
                                     </div>
                                   </div>
@@ -20034,6 +21138,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             {normalizeText(viewingPlanResponseForm.availabilityWindows) || 'No buyer availability captured yet.'}
                                           </p>
                                         </div>
+                                        {viewingPlannerSmartAutomation.suggestions.length ? (
+                                          <div className="rounded-[12px] border border-[#edf3f8] bg-white px-3 py-2.5">
+                                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7c91a8]">Suggested overlap</p>
+                                            {viewingPlannerSmartAutomation.suggestions.slice(0, 2).map((suggestion) => (
+                                              <p key={`legacy-booking-suggestion-${suggestion}`} className="mt-1 line-clamp-2 text-xs leading-5 text-[#29435d]">{suggestion}</p>
+                                            ))}
+                                          </div>
+                                        ) : null}
                                         <Button
                                           type="button"
                                           size="sm"
@@ -20141,6 +21253,51 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         <p className="mt-1 text-sm font-semibold text-[#102033]">Follow-up queue</p>
                                       </div>
                                       <Zap className="h-4 w-4 text-[#2f7b9e]" />
+                                    </div>
+                                    <div className={`mt-3 rounded-[14px] border px-3 py-3 ${
+                                      viewingPlannerSmartAutomation.tone === 'ready'
+                                        ? 'border-[#cbe7d7] bg-[#f4fbf7]'
+                                        : viewingPlannerSmartAutomation.tone === 'warning'
+                                          ? 'border-[#f0dfb7] bg-[#fffaf0]'
+                                          : 'border-[#dce7f2] bg-white'
+                                    }`}>
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <p className="text-xs font-semibold text-[#20364c]">{viewingPlannerSmartAutomation.title}</p>
+                                          <p className="mt-1 text-[0.7rem] leading-5 text-[#60758b]">{viewingPlannerSmartAutomation.detail}</p>
+                                        </div>
+                                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.66rem] font-semibold ${
+                                          viewingPlannerSmartAutomation.tone === 'ready'
+                                            ? 'bg-[#e8f4ee] text-[#17643a]'
+                                            : viewingPlannerSmartAutomation.tone === 'warning'
+                                              ? 'bg-[#fff4dc] text-[#8a5b13]'
+                                              : 'bg-[#eef4f9] text-[#60758b]'
+                                        }`}>
+                                          Smart
+                                        </span>
+                                      </div>
+                                      {viewingPlannerSmartAutomation.suggestions.length ? (
+                                        <div className="mt-3 rounded-[12px] bg-white/80 px-3 py-2 ring-1 ring-[#e8eef5]">
+                                          <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#7c91a8]">Suggested windows</p>
+                                          <div className="mt-2 space-y-1">
+                                            {viewingPlannerSmartAutomation.suggestions.map((suggestion) => (
+                                              <p key={suggestion} className="line-clamp-2 text-[0.7rem] leading-5 text-[#29435d]">{suggestion}</p>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                      {viewingPlannerSmartAutomation.action ? (
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          className="mt-3 w-full"
+                                          disabled={isLeadDetailSaving}
+                                          onClick={() => void handleRunViewingPlannerAutomation(viewingPlannerSmartAutomation.action, viewingPlannerSmartActionContext)}
+                                        >
+                                          <Zap className="h-4 w-4" />
+                                          {isLeadDetailSaving ? 'Running...' : viewingPlannerSmartAutomation.actionLabel}
+                                        </Button>
+                                      ) : null}
                                     </div>
                                     <div className="mt-3 space-y-2">
                                       {viewingPlanAutomationRows.map((row) => (

@@ -1058,10 +1058,28 @@ export type SendBuyerOfferLinkPayload = {
   offerLink?: string;
   expiresAt?: string;
   agentName?: string;
+  agentEmail?: string;
+  agent_email?: string;
   note?: string;
   organisationName?: string;
+  organisationLogoUrl?: string;
+  organisation_logo_url?: string;
+  organisationLogoLightUrl?: string;
+  organisation_logo_light_url?: string;
+  organisationLogoDarkUrl?: string;
+  organisation_logo_dark_url?: string;
+  organisationLogoIconUrl?: string;
+  organisation_logo_icon_url?: string;
+  organisationBrandPrimaryColor?: string;
+  organisation_brand_primary_color?: string;
+  organisationBrandSecondaryColor?: string;
+  organisation_brand_secondary_color?: string;
   supportEmail?: string;
   supportPhone?: string;
+  replyTo?: string;
+  reply_to?: string;
+  fromName?: string;
+  from_name?: string;
 } & DeliveryContextPayload;
 
 export type SendLeadPropertySharePayload = {
@@ -1090,8 +1108,23 @@ export type ViewingAvailabilityRequestPropertyPayload = {
   location?: string;
   match?: string;
   matchLabel?: string;
+  imageUrl?: string;
+  image_url?: string;
+  image?: string;
+  thumbnailUrl?: string;
+  thumbnail_url?: string;
   link?: string;
   url?: string;
+  sellerViewingAvailability?: string;
+  seller_viewing_availability?: string;
+  sellerViewingAvailabilityWindows?: string;
+  seller_viewing_availability_windows?: string;
+  sellerViewingAccessInstructions?: string;
+  seller_viewing_access_instructions?: string;
+  sellerViewingNoticePeriod?: string;
+  seller_viewing_notice_period?: string;
+  sellerViewingNoticeRequired?: boolean;
+  seller_viewing_notice_required?: boolean;
 };
 
 export type SendBuyerViewingAvailabilityRequestPayload = {
@@ -1107,6 +1140,10 @@ export type SendBuyerViewingAvailabilityRequestPayload = {
   agentEmail?: string;
   note?: string;
   message?: string;
+  actionLink?: string;
+  action_link?: string;
+  preferenceLink?: string;
+  preference_link?: string;
   propertyCount?: number;
   properties?: ViewingAvailabilityRequestPropertyPayload[];
   organisationName?: string;
@@ -1129,8 +1166,23 @@ export type SellerViewingAvailabilityRequestPropertyPayload = {
   location?: string;
   match?: string;
   matchLabel?: string;
+  imageUrl?: string;
+  image_url?: string;
+  image?: string;
+  thumbnailUrl?: string;
+  thumbnail_url?: string;
   link?: string;
   url?: string;
+  sellerViewingAvailability?: string;
+  seller_viewing_availability?: string;
+  sellerViewingAvailabilityWindows?: string;
+  seller_viewing_availability_windows?: string;
+  sellerViewingAccessInstructions?: string;
+  seller_viewing_access_instructions?: string;
+  sellerViewingNoticePeriod?: string;
+  seller_viewing_notice_period?: string;
+  sellerViewingNoticeRequired?: boolean;
+  seller_viewing_notice_required?: boolean;
 };
 
 export type SendSellerViewingAvailabilityRequestPayload = {
@@ -1150,6 +1202,10 @@ export type SendSellerViewingAvailabilityRequestPayload = {
   coordinationNotes?: string;
   note?: string;
   message?: string;
+  actionLink?: string;
+  action_link?: string;
+  sellerCoordinationLink?: string;
+  seller_coordination_link?: string;
   propertyCount?: number;
   properties?: SellerViewingAvailabilityRequestPropertyPayload[];
   organisationName?: string;

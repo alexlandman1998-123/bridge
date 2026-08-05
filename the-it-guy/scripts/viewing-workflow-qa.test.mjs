@@ -5,6 +5,7 @@ const pageSource = await fs.readFile(new URL('../src/pages/agency/AgencyPipeline
 const reportingServiceSource = await fs.readFile(new URL('../src/modules/agency/agents/principalAgentCommandCentreService.js', import.meta.url), 'utf8')
 const reportingTestSource = await fs.readFile(new URL('./principal-agent-command-centre.test.mjs', import.meta.url), 'utf8')
 const buyerEmailTestSource = await fs.readFile(new URL('./buyer-viewing-email-delivery.test.mjs', import.meta.url), 'utf8')
+const buyerPreferenceLinkTestSource = await fs.readFile(new URL('./buyer-viewing-preference-link.test.mjs', import.meta.url), 'utf8')
 const sellerEmailTestSource = await fs.readFile(new URL('./seller-viewing-email-delivery.test.mjs', import.meta.url), 'utf8')
 const sendEmailIndexSource = await fs.readFile(new URL('../../supabase/functions/send-email/index.ts', import.meta.url), 'utf8')
 const brandedEmailTestSource = await fs.readFile(new URL('../../supabase/functions/send-email/content/brandedTemplates.test.ts', import.meta.url), 'utf8')
@@ -48,6 +49,12 @@ const appointmentSaveBlock = extractBlock(
   '\n  function handleOpenAppointmentModal',
   'appointment save flow',
 )
+const buyerPreferenceApplyBlock = extractBlock(
+  pageSource,
+  'async function handleApplyBuyerViewingPreferenceResponse',
+  '\n  async function handleSendSellerViewingAvailabilityRequest',
+  'buyer preference response pull-through flow',
+)
 
 for (const contract of [
   /BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set\(\['overview', 'properties', 'appointments', 'activity', 'offers'\]\)/,
@@ -61,7 +68,9 @@ for (const contract of [
 
 for (const contract of [
   /invokeEdgeFunction\('send-email'/,
+  /invokeEdgeFunction\('buyer-viewing-preferences'/,
   /type: 'buyer_viewing_availability_request'/,
+  /actionLink: preferenceLink/,
   /resend: isResend/,
   /propertyCount: selectedPropertyIds\.length/,
   /deliveryMetadata/,
@@ -160,8 +169,34 @@ for (const contract of [
   /buyer viewing email delivery contract tests passed/,
   /Viewing Availability Requested/,
   /Viewing Availability Email Failed/,
+  /buyerViewingPreferenceLinkId/,
 ]) {
   assert.match(buyerEmailTestSource, contract, `buyer email contract should include ${contract}`)
+}
+
+for (const contract of [
+  /buyer viewing preference link contract tests passed/,
+  /BuyerViewingPreferencesPage/,
+  /buyer-viewing-preferences/,
+  /Confirm viewings/,
+  /listBuyerViewingPreferenceLinks/,
+  /handleApplyBuyerViewingPreferenceResponse/,
+  /Check responses/,
+  /Apply response/,
+  /Buyer Viewing Response Pulled Into Workspace/,
+]) {
+  assert.match(buyerPreferenceLinkTestSource, contract, `buyer preference link contract should include ${contract}`)
+}
+
+for (const contract of [
+  /normalizeBuyerViewingPreferenceResponse/,
+  /buildBuyerViewingPlanNotes/,
+  /Buyer Viewing Response Pulled Into Workspace/,
+  /Follow up seller viewing access/,
+  /completeBuyerViewingAutomationTask\('Follow up buyer viewing availability'\)/,
+  /patchSelectedLeadRecord/,
+]) {
+  assert.match(buyerPreferenceApplyBlock, contract, `buyer preference pull-through should include ${contract}`)
 }
 
 for (const contract of [

@@ -129,24 +129,50 @@ export default function PremiumOnboardingLanding({
   agencyName = '',
   personName = '',
   propertyAddress = '',
+  propertyImage = '',
+  propertyTitle = '',
+  propertyMeta = '',
+  propertyPrice = '',
   backgroundImage = '',
   primaryColour = '',
   secondaryColour = '',
   accentColour = '',
+  label = '',
+  headlinePrefix = '',
+  headlineAccent = '',
+  subtext = '',
   ctaLabel = '',
+  reassuranceRows = null,
+  contextRows = null,
+  beforeStartTitle = '',
+  beforeStartText = '',
   onStart,
 }) {
   const type = normalizePortalType(portalType)
-  const content = CONTENT[type]
+  const baseContent = CONTENT[type]
+  const content = {
+    ...baseContent,
+    label: String(label || '').trim() || baseContent.label,
+    headlinePrefix: String(headlinePrefix || '').trim() || baseContent.headlinePrefix,
+    headlineAccent: String(headlineAccent || '').trim() || baseContent.headlineAccent,
+    subtext: String(subtext || '').trim() || baseContent.subtext,
+  }
   const resolvedBackgroundImage = backgroundImage || DEFAULT_BACKGROUND_IMAGES[type]
   const theme = resolveTheme({ primaryColour, secondaryColour, accentColour })
-  const ctaText = String(ctaLabel || '').trim() || content.cta
+  const ctaText = String(ctaLabel || '').trim() || baseContent.cta
   const safePersonName = String(personName || '').trim()
   const safePropertyAddress = String(propertyAddress || '').trim()
-  const contextRows = [
+  const resolvedReassuranceRows = Array.isArray(reassuranceRows) && reassuranceRows.length ? reassuranceRows : REASSURANCE_ROWS
+  const resolvedContextRows = Array.isArray(contextRows) && contextRows.length ? contextRows : [
     safePropertyAddress ? { icon: MapPin, label: 'Property', value: safePropertyAddress } : null,
     { icon: ClipboardCheck, label: 'Process', value: type === 'seller' ? 'Seller intake and property details' : 'Buyer intake and purchase details' },
   ].filter(Boolean)
+  const safePropertyTitle = String(propertyTitle || '').trim()
+  const safePropertyMeta = String(propertyMeta || '').trim()
+  const safePropertyPrice = String(propertyPrice || '').trim()
+  const safePropertyImage = String(propertyImage || '').trim()
+  const safeBeforeStartTitle = String(beforeStartTitle || '').trim() || 'A few details, captured once.'
+  const safeBeforeStartText = String(beforeStartText || '').trim() || 'You can save and continue later. Your agent will use this information to prepare the listing, mandate, and document checklist.'
 
   return (
     <section
@@ -189,7 +215,7 @@ export default function PremiumOnboardingLanding({
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              {REASSURANCE_ROWS.map((item) => {
+              {resolvedReassuranceRows.map((item) => {
                 const RowIcon = item.icon
                 return (
                   <div key={item.title} className="flex min-h-[74px] min-w-[190px] flex-1 items-center gap-3 rounded-lg border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-xl sm:max-w-[230px]">
@@ -209,9 +235,21 @@ export default function PremiumOnboardingLanding({
 
           <aside className="rounded-lg border border-white/15 bg-white/10 p-5 shadow-[0_24px_58px_rgba(0,0,0,0.28)] backdrop-blur-2xl lg:p-6">
             <p className="text-xs font-semibold uppercase text-[var(--landing-accent)]">Before you start</p>
-            <h2 className="mt-2 text-2xl font-semibold leading-tight text-white">A few details, captured once.</h2>
+            <h2 className="mt-2 text-2xl font-semibold leading-tight text-white">{safeBeforeStartTitle}</h2>
+            {safePropertyTitle || safePropertyImage ? (
+              <div className="mt-5 overflow-hidden rounded-lg border border-white/10 bg-[var(--landing-primary-muted)]">
+                {safePropertyImage ? (
+                  <img src={safePropertyImage} alt={safePropertyTitle || safePropertyAddress || 'Property'} className="h-32 w-full object-cover sm:h-36" />
+                ) : null}
+                <div className="p-4">
+                  {safePropertyTitle ? <p className="text-base font-semibold leading-6 text-white">{safePropertyTitle}</p> : null}
+                  {safePropertyMeta ? <p className="mt-1 text-sm leading-5 text-white/65">{safePropertyMeta}</p> : null}
+                  {safePropertyPrice ? <p className="mt-3 text-sm font-semibold text-[var(--landing-accent)]">{safePropertyPrice}</p> : null}
+                </div>
+              </div>
+            ) : null}
             <div className="mt-5 grid gap-3">
-              {contextRows.map((row) => {
+              {resolvedContextRows.map((row) => {
                 const RowIcon = row.icon
                 return (
                   <div key={row.label} className="flex items-start gap-3 rounded-lg border border-white/10 bg-[var(--landing-primary-muted)] p-4">
@@ -227,7 +265,7 @@ export default function PremiumOnboardingLanding({
               })}
             </div>
             <p className="mt-5 text-sm leading-6 text-white/60">
-              You can save and continue later. Your agent will use this information to prepare the listing, mandate, and document checklist.
+              {safeBeforeStartText}
             </p>
           </aside>
         </div>

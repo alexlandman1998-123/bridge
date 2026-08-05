@@ -1825,6 +1825,10 @@ function normalizeFormData(listing) {
     tenantContactDetails: existing.tenantContactDetails || '',
     noticePeriodDetails: existing.noticePeriodDetails || '',
     rentalScheduleAvailable: Boolean(existing.rentalScheduleAvailable),
+    viewingAvailabilityWindows: existing.viewingAvailabilityWindows || existing.viewing_availability_windows || canonicalFacts?.occupancy?.viewing_availability_windows || '',
+    viewingAccessInstructions: existing.viewingAccessInstructions || existing.viewing_access_instructions || canonicalFacts?.occupancy?.viewing_access_instructions || '',
+    viewingNoticePeriod: existing.viewingNoticePeriod || existing.viewing_notice_period || canonicalFacts?.occupancy?.viewing_notice_period || '',
+    viewingNoticeRequired: Boolean(existing.viewingNoticeRequired || existing.viewing_notice_required || canonicalFacts?.occupancy?.viewing_notice_required),
 
     existingBond: Boolean(existing.existingBond || existing.sellerHasExistingBond || existing.bondedProperty),
     bondBank: existing.bondBank || existing.currentBondBank || '',
@@ -5862,6 +5866,37 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                           </label>
                         </>
                       ) : null}
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                        Viewing availability
+                        <textarea
+                          className={`${DETAIL_INPUT_CLASS} min-h-[96px] py-3`}
+                          value={form.viewingAvailabilityWindows}
+                          onChange={(event) => handleFormUpdate('viewingAvailabilityWindows', event.target.value)}
+                          placeholder="e.g. Weekdays 17:00-19:00, Saturday mornings, avoid Sundays"
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Minimum notice for viewings
+                        <input
+                          className={DETAIL_INPUT_CLASS}
+                          value={form.viewingNoticePeriod}
+                          onChange={(event) => handleFormUpdate('viewingNoticePeriod', event.target.value)}
+                          placeholder="e.g. 24 hours"
+                        />
+                      </label>
+                      <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                        <input type="checkbox" checked={Boolean(form.viewingNoticeRequired)} onChange={(event) => handleFormUpdate('viewingNoticeRequired', event.target.checked)} />
+                        Notice must be confirmed before access
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                        Access instructions for viewings
+                        <textarea
+                          className={`${DETAIL_INPUT_CLASS} min-h-[96px] py-3`}
+                          value={form.viewingAccessInstructions}
+                          onChange={(event) => handleFormUpdate('viewingAccessInstructions', event.target.value)}
+                          placeholder="Keys, gate code, alarm, pets, tenant contact, parking instructions..."
+                        />
+                      </label>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

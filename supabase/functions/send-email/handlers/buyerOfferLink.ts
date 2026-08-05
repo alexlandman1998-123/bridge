@@ -1,3 +1,4 @@
+import { createClient } from "supabase";
 import type { SendBuyerOfferLinkPayload } from "../types.ts";
 import {
   renderBridgeCta,
@@ -42,6 +43,9 @@ export async function handleBuyerOfferLinkEmail(
     ? Number(payload.propertyCount)
     : 0;
   const agentName = normalizeText(payload.agentName);
+  const rawPayload = payload as Record<string, unknown>;
+  const agentEmail = normalizeText(payload.agentEmail || payload.agent_email)
+    .toLowerCase();
   const expiresAt = normalizeText(payload.expiresAt);
   const note = normalizeText(payload.note);
   const organisationName = normalizeText(payload.organisationName) ||
@@ -49,13 +53,21 @@ export async function handleBuyerOfferLinkEmail(
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
     "Arch9";
   const supportEmail = normalizeText(payload.supportEmail) ||
+    agentEmail ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
     normalizeText(Deno.env.get("SUPPORT_EMAIL"));
   const supportPhone = normalizeText(payload.supportPhone) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
-  const rawPayload = payload as Record<string, unknown>;
+  const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
+  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const supabase = supabaseUrl && serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    : undefined;
   const branding = await resolveEmailBranding({
+    supabase,
     payload: rawPayload,
     organisationId: normalizeText(
       rawPayload.organisationId || rawPayload.organisation_id,
@@ -100,13 +112,13 @@ export async function handleBuyerOfferLinkEmail(
     }),
   ].join("");
   const html = renderBridgeEmailLayout({
-    preheader: `Your secure Arch9 offer link is ready for ${propertyLabel}.`,
+    preheader: `Your secure offer link from ${branding.organisationName} is ready for ${propertyLabel}.`,
     title: "Offer Link Ready",
     greeting: `Hi ${buyerName},`,
     contentHtml,
     securityTitle: "Secure Offer Portal",
     securityBody:
-      "Your offer link is shared through Arch9 so your agent can keep the offer, viewing, and transaction record connected.",
+      `${branding.organisationName} uses Arch9 to keep the offer, viewing, and transaction record connected securely.`,
     helpBody:
       "Need help? Reply to this email or contact your agent before submitting an offer.",
     organisationName: branding.organisationName,
@@ -153,6 +165,8 @@ export async function handleBuyerOfferLinkEmail(
     subject,
     html,
     text,
+    replyTo: agentEmail || branding.replyTo || branding.supportEmail ||
+      supportEmail || undefined,
   });
 
   if (!emailResult.ok) {

@@ -30,7 +30,27 @@ function normalizeProperties(
         price: normalizeText(row.price || row.priceLabel),
         area: normalizeText(row.area || row.suburb || row.location),
         match: normalizeText(row.match || row.matchLabel),
+        imageUrl: normalizeText(
+          row.imageUrl || row.image_url || row.image || row.thumbnailUrl ||
+            row.thumbnail_url,
+        ),
         link: normalizeText(row.link || row.url),
+        sellerViewingAvailability: normalizeText(
+          row.sellerViewingAvailability || row.seller_viewing_availability,
+        ),
+        sellerViewingAvailabilityWindows: normalizeText(
+          row.sellerViewingAvailabilityWindows ||
+            row.seller_viewing_availability_windows,
+        ),
+        sellerViewingAccessInstructions: normalizeText(
+          row.sellerViewingAccessInstructions ||
+            row.seller_viewing_access_instructions,
+        ),
+        sellerViewingNoticePeriod: normalizeText(
+          row.sellerViewingNoticePeriod || row.seller_viewing_notice_period,
+        ),
+        sellerViewingNoticeRequired: row.sellerViewingNoticeRequired === true ||
+          row.seller_viewing_notice_required === true,
       };
     });
 }
@@ -66,6 +86,10 @@ export async function handleBuyerViewingAvailabilityRequestEmail(
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
   const rawPayload = payload as Record<string, unknown>;
+  const actionLink = normalizeText(
+    payload.actionLink || payload.action_link || payload.preferenceLink ||
+      payload.preference_link,
+  );
   const branding = await resolveEmailBranding({
     payload: rawPayload,
     organisationId: normalizeText(
@@ -91,6 +115,7 @@ export async function handleBuyerViewingAvailabilityRequestEmail(
     organisationName: branding.organisationName,
     supportEmail: branding.supportEmail || supportEmail,
     supportPhone: branding.supportPhone || supportPhone,
+    actionLink,
     branding,
   });
   const text = buildBuyerViewingAvailabilityRequestEmailText({
@@ -101,6 +126,7 @@ export async function handleBuyerViewingAvailabilityRequestEmail(
     organisationName: branding.organisationName,
     supportEmail: branding.supportEmail || supportEmail,
     supportPhone: branding.supportPhone || supportPhone,
+    actionLink,
   });
 
   const delivery = await prepareEmailDelivery(

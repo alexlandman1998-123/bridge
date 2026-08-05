@@ -194,6 +194,7 @@ Deno.test("buyer viewing availability request renders company branding and prope
         price: "R 1 250 000",
         area: "Brooklyn, Lynnwood",
         match: "72%",
+        imageUrl: "https://cdn.example.test/listings/114.jpg",
         link: "https://app.example.test/listings/114",
       },
       {
@@ -202,6 +203,7 @@ Deno.test("buyer viewing availability request renders company branding and prope
         area: "Brooklyn, Lynnwood",
       },
     ],
+    actionLink: "https://app.example.test/viewing-preferences/token-123",
     branding,
   });
   const text = buildBuyerViewingAvailabilityRequestEmailText({
@@ -211,15 +213,21 @@ Deno.test("buyer viewing availability request renders company branding and prope
     organisationName: branding.organisationName,
     supportEmail: branding.supportEmail,
     supportPhone: branding.supportPhone,
+    actionLink: "https://app.example.test/viewing-preferences/token-123",
   });
 
   assertIncludes(html, "Kingstons Property");
   assertIncludes(html, "background: #123abc");
   assertIncludes(html, "border-bottom: 4px solid #fedcba");
   assertIncludes(html, "Viewing Options");
+  assertIncludes(html, "Confirm viewings");
+  assertIncludes(html, "https://app.example.test/viewing-preferences/token-123");
   assertIncludes(html, "114 West Street");
+  assertIncludes(html, "https://cdn.example.test/listings/114.jpg");
+  assertIncludes(html, `alt="114 West Street"`);
   assertIncludes(html, "View property details");
-  assertIncludes(text, "Please reply with:");
+  assertIncludes(text, "Confirm your preferred viewings here:");
+  assertIncludes(text, "Or reply with:");
   assertIncludes(text, "Support: support@example.test | +27 21 000 0000");
 });
 

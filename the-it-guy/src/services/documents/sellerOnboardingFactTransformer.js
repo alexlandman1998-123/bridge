@@ -624,6 +624,10 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       tenant_contact_details: normalizeText(form.tenantContactDetails),
       notice_period_details: normalizeText(form.noticePeriodDetails),
       rental_schedule_available: normalizeBoolean(form.rentalScheduleAvailable, false),
+      viewing_availability_windows: normalizeText(form.viewingAvailabilityWindows || form.viewing_availability_windows),
+      viewing_access_instructions: normalizeText(form.viewingAccessInstructions || form.viewing_access_instructions),
+      viewing_notice_period: normalizeText(form.viewingNoticePeriod || form.viewing_notice_period),
+      viewing_notice_required: normalizeBoolean(form.viewingNoticeRequired || form.viewing_notice_required, false),
     },
     finance: {
       existing_bond: existingBond,

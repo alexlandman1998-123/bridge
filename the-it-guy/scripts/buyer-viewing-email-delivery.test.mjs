@@ -15,8 +15,12 @@ assert.notEqual(handlerEnd, -1, 'buyer viewing availability handler should remai
 const plannerHandler = pageSource.slice(handlerStart, handlerEnd)
 
 assert.match(plannerHandler, /invokeEdgeFunction\('send-email'/, 'planner should call the email edge function')
+assert.match(plannerHandler, /invokeEdgeFunction\('buyer-viewing-preferences'/, 'planner should create a buyer viewing preference link before sending')
 assert.match(plannerHandler, /type: 'buyer_viewing_availability_request'/, 'planner should send the buyer viewing template type')
+assert.match(plannerHandler, /actionLink: preferenceLink/, 'planner should pass the preference link as the email CTA')
+assert.match(plannerHandler, /buyerViewingPreferenceLinkId/, 'planner should include the preference link id in delivery metadata')
 assert.match(plannerHandler, /resend: isResend/, 'planner resend should stay on the edge-function email path')
+assert.match(pageSource, /imageUrl: normalizeText\(property\?\.image/, 'planner should include the listing image in the email payload')
 assert.match(plannerHandler, /buyerEmailDeliveryStatus/, 'planner should persist delivery status in the viewing plan')
 assert.match(plannerHandler, /buyerEmailProviderMessageId/, 'planner should persist the provider message id')
 assert.match(plannerHandler, /Viewing Availability Requested/, 'planner should log successful request activity')
@@ -51,7 +55,10 @@ for (const contract of [
 for (const contract of [
   /renderBridgeEmailLayout/,
   /Viewing Availability Request/,
+  /Confirm viewings/,
+  /actionLink/,
   /Viewing Options/,
+  /property\.imageUrl/,
   /Please reply with/,
   /Powered by Arch9/,
 ]) {

@@ -2,10 +2,13 @@ import {
   AlertTriangle,
   ArrowRight,
   Bath,
+  BadgeCheck,
   BedDouble,
+  Bookmark,
   Car,
   CheckCircle2,
   ChevronLeft,
+  ChevronRight,
   Clock3,
   Home,
   LockKeyhole,
@@ -15,11 +18,13 @@ import {
 } from 'lucide-react'
 import { createElement, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboardingLanding'
 import {
   getCanonicalOfferInviteContext,
   getOfferLifecycleSummary,
   submitCanonicalBuyerOffer,
 } from '../lib/buyerLifecycleService'
+import { resolveOnboardingBranding } from '../lib/onboardingBranding'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
   getOfferInviteContext,
@@ -34,6 +39,13 @@ const WARM_WHITE = '#FAFAF8'
 const PRIMARY_TEXT = '#111827'
 const INTEREST_RATE = 0.1175
 const LOAN_TERM_MONTHS = 240
+const BUYER_OFFER_DRAFT_VERSION = 1
+const BUYER_OFFER_STAGES = ['landing', 'offer', 'onboarding', 'review', 'complete']
+const BUYER_OFFER_PROGRESS = [
+  { key: 'offer', label: 'Offer' },
+  { key: 'onboarding', label: 'Buyer' },
+  { key: 'review', label: 'Review' },
+]
 
 function formatCurrency(value) {
   const amount = Number(value || 0)
@@ -72,6 +84,54 @@ function formatDateTime(value) {
 
 function firstText(...values) {
   return values.map(normalizeText).find(Boolean) || ''
+}
+
+function getBuyerOfferDraftKey(token = '') {
+  const safeToken = normalizeText(token)
+  return safeToken ? `arch9:buyer-offer-onboarding-draft:${safeToken}` : ''
+}
+
+function readBuyerOfferDraft(token = '') {
+  const key = getBuyerOfferDraftKey(token)
+  if (!key || typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed?.version !== BUYER_OFFER_DRAFT_VERSION) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writeBuyerOfferDraft(token = '', draft = {}) {
+  const key = getBuyerOfferDraftKey(token)
+  if (!key || typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(key, JSON.stringify({
+      version: BUYER_OFFER_DRAFT_VERSION,
+      ...draft,
+      savedAt: new Date().toISOString(),
+    }))
+  } catch {
+    // Local resume is helpful but should never block the public offer flow.
+  }
+}
+
+function clearBuyerOfferDraft(token = '') {
+  const key = getBuyerOfferDraftKey(token)
+  if (!key || typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem(key)
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function normalizeStage(value = '', fallback = 'landing') {
+  const stage = normalizeText(value).toLowerCase()
+  return BUYER_OFFER_STAGES.includes(stage) ? stage : fallback
 }
 
 function getMediaUrl(item) {
@@ -206,21 +266,21 @@ function TrustItem({ children }) {
   )
 }
 
-function ProgressDots({ step }) {
-  const labels = ['Offer', 'Buyer', 'Review']
+function ProgressDots({ stage }) {
+  const activeIndex = Math.max(0, BUYER_OFFER_PROGRESS.findIndex((item) => item.key === stage))
   return (
-    <div className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-[#FAFAF8]/95 px-4 py-3 backdrop-blur md:hidden">
-      <div className="mx-auto flex max-w-md items-center justify-between">
-        {labels.map((label, index) => {
-          const active = step === index
-          const done = step > index
+    <div className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-[#FAFAF8]/95 px-4 py-3 backdrop-blur">
+      <div className="mx-auto flex max-w-3xl items-center justify-between">
+        {BUYER_OFFER_PROGRESS.map((item, index) => {
+          const active = activeIndex === index
+          const done = activeIndex > index || stage === 'complete'
           return (
-            <div key={label} className="flex flex-1 items-center">
+            <div key={item.key} className="flex flex-1 items-center">
               <div className={`flex h-8 min-w-8 items-center justify-center rounded-full text-xs font-bold ${active || done ? 'bg-[#0F7A5A] text-white' : 'bg-white text-[#6B7280]'}`}>
                 {done ? <CheckCircle2 size={14} /> : index + 1}
               </div>
-              <span className={`ml-2 text-xs font-bold ${active ? 'text-[#111827]' : 'text-[#6B7280]'}`}>{label}</span>
-              {index < labels.length - 1 ? <div className="mx-2 h-px flex-1 bg-[#E5E7EB]" /> : null}
+              <span className={`ml-2 text-xs font-bold ${active ? 'text-[#111827]' : 'text-[#6B7280]'}`}>{item.label}</span>
+              {index < BUYER_OFFER_PROGRESS.length - 1 ? <div className="mx-2 h-px flex-1 bg-[#E5E7EB]" /> : null}
             </div>
           )
         })}
@@ -237,7 +297,9 @@ function BuyerOfferSubmission() {
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [mobileStep, setMobileStep] = useState(0)
+  const [flowStage, setFlowStage] = useState('landing')
+  const [draftLoaded, setDraftLoaded] = useState(false)
+  const [activeBuyerSection, setActiveBuyerSection] = useState('overview')
   const [confirmedAccuracy, setConfirmedAccuracy] = useState(false)
   const [form, setForm] = useState({
     fullName: '',
@@ -342,7 +404,56 @@ function BuyerOfferSubmission() {
   const propertyImageUrl = getListingImageUrl(listing)
   const agentName = firstText(context?.canonicalOffer?.conditions?.agentName, invite?.agentName) || 'Assigned agent'
   const agencyName = firstText(context?.canonicalOffer?.conditions?.organisationName, context?.canonicalOffer?.conditions?.agencyName) || 'Arch9 Partner Agency'
+  const offerBrand = useMemo(() => {
+    const conditions = context?.canonicalOffer?.conditions || {}
+    const resolved = resolveOnboardingBranding(conditions, listing || {}, invite || {})
+    return {
+      ...resolved,
+      organisationName: resolved.organisationName || agencyName,
+    }
+  }, [agencyName, context?.canonicalOffer?.conditions, invite, listing])
   const submitButtonLabel = counterPendingBuyer ? 'Submit Revised Offer' : 'Submit Offer + Onboarding'
+  const buyerSectionCards = useMemo(() => {
+    const personalComplete = Boolean(form.fullName && form.idNumber)
+    const contactComplete = Boolean(form.email && form.phone)
+    const financeComplete = Boolean(form.financeType && (financeType === 'cash' || form.bondAmount || loanAmount))
+    const complianceComplete = Boolean(confirmedAccuracy)
+    return [
+      {
+        key: 'personal',
+        title: 'Personal Details',
+        description: 'Your legal name and ID or passport number.',
+        complete: personalComplete,
+        fields: ['fullName', 'idNumber'],
+      },
+      {
+        key: 'contact',
+        title: 'Contact Information',
+        description: 'How your agent can reach you about this offer.',
+        complete: contactComplete,
+        fields: ['email', 'phone'],
+      },
+      {
+        key: 'finance',
+        title: 'Finance Readiness',
+        description: 'Finance route and buyer-side funding signals.',
+        complete: financeComplete,
+        fields: ['financeType', 'bondAmount', 'cashContribution', 'proofOfFundsUrl'],
+      },
+      {
+        key: 'compliance',
+        title: 'ID & FICA',
+        description: 'A light compliance check before review.',
+        complete: complianceComplete,
+        fields: ['confirmedAccuracy'],
+      },
+    ]
+  }, [confirmedAccuracy, financeType, form.bondAmount, form.cashContribution, form.email, form.financeType, form.fullName, form.idNumber, form.phone, form.proofOfFundsUrl, loanAmount])
+  const buyerCompletion = buyerSectionCards.filter((item) => item.complete).length
+  const hasDraft = useMemo(() => Boolean(readBuyerOfferDraft(token)), [token, draftLoaded])
+  const stageIndex = BUYER_OFFER_STAGES.indexOf(flowStage)
+  const previousStage = stageIndex > 1 ? BUYER_OFFER_STAGES[stageIndex - 1] : 'offer'
+  const offerAmountLabel = offerAmount > 0 ? formatCurrency(offerAmount) : 'Pending'
   const offerStrength = useMemo(() => {
     const hasBuyerDetails = Boolean(form.fullName && form.email && form.phone)
     const checks = [
@@ -379,16 +490,23 @@ function BuyerOfferSubmission() {
   }, [canonicalLifecycle])
 
   useEffect(() => {
-    if (!context?.ok) return
+    if (!context?.ok || draftLoaded) return
     const conditions = context?.canonicalOffer?.conditions || {}
+    const draft = readBuyerOfferDraft(token)
+    const draftForm = draft?.form && typeof draft.form === 'object' ? draft.form : {}
     setForm((previous) => ({
       ...previous,
-      fullName: previous.fullName || conditions.buyerName || invite?.buyerLeadName || '',
-      email: previous.email || conditions.buyerEmail || '',
-      phone: previous.phone || conditions.buyerPhone || '',
-      otpDocumentVariant: previous.otpDocumentVariant || conditions.otpDocumentVariant || invite?.otpDocumentVariant || resolveOtpDocumentVariant({ property: listing || {}, transaction: canonicalOffer || {} }),
+      fullName: draftForm.fullName || previous.fullName || conditions.buyerName || invite?.buyerLeadName || '',
+      email: draftForm.email || previous.email || conditions.buyerEmail || '',
+      phone: draftForm.phone || previous.phone || conditions.buyerPhone || '',
+      ...draftForm,
+      otpDocumentVariant: draftForm.otpDocumentVariant || previous.otpDocumentVariant || conditions.otpDocumentVariant || invite?.otpDocumentVariant || resolveOtpDocumentVariant({ property: listing || {}, transaction: canonicalOffer || {} }),
     }))
-  }, [canonicalOffer, context?.canonicalOffer?.conditions, context?.ok, invite?.buyerLeadName, invite?.otpDocumentVariant, listing])
+    setConfirmedAccuracy(Boolean(draft?.confirmedAccuracy))
+    setFlowStage(normalizeStage(draft?.stage, 'landing'))
+    setActiveBuyerSection(normalizeText(draft?.activeBuyerSection) || 'overview')
+    setDraftLoaded(true)
+  }, [canonicalOffer, context?.canonicalOffer?.conditions, context?.ok, draftLoaded, invite?.buyerLeadName, invite?.otpDocumentVariant, listing, token])
 
   useEffect(() => {
     if (!canonicalLifecycle?.counterTerms || !counterPendingBuyer) return
@@ -407,6 +525,22 @@ function BuyerOfferSubmission() {
     }))
   }, [canonicalLifecycle?.counterTerms, counterPendingBuyer])
 
+  useEffect(() => {
+    setDraftLoaded(false)
+    setFlowStage('landing')
+    setActiveBuyerSection('overview')
+  }, [token])
+
+  useEffect(() => {
+    if (!context?.ok || !draftLoaded || flowStage === 'complete') return
+    writeBuyerOfferDraft(token, {
+      stage: flowStage,
+      activeBuyerSection,
+      form,
+      confirmedAccuracy,
+    })
+  }, [activeBuyerSection, confirmedAccuracy, context?.ok, draftLoaded, flowStage, form, token])
+
   function updateForm(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
   }
@@ -421,12 +555,12 @@ function BuyerOfferSubmission() {
     }))
   }
 
-  function validateForStep(nextStep) {
-    if (nextStep > 0 && !offerAmount) {
+  function validateStageTransition(nextStage) {
+    if (['onboarding', 'review'].includes(nextStage) && !offerAmount) {
       setErrorMessage('Enter your offer amount before continuing.')
       return false
     }
-    if (nextStep > 1 && (!form.fullName || !form.email || !form.phone || !form.idNumber)) {
+    if (nextStage === 'review' && (!form.fullName || !form.email || !form.phone || !form.idNumber)) {
       setErrorMessage('Complete your buyer details before review.')
       return false
     }
@@ -434,9 +568,25 @@ function BuyerOfferSubmission() {
     return true
   }
 
+  function goToStage(nextStage) {
+    const normalizedStage = normalizeStage(nextStage, flowStage)
+    if (!validateStageTransition(normalizedStage)) return
+    setFlowStage(normalizedStage)
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   function goNext() {
-    const next = Math.min(2, mobileStep + 1)
-    if (validateForStep(next)) setMobileStep(next)
+    if (flowStage === 'landing') {
+      goToStage('offer')
+      return
+    }
+    if (flowStage === 'offer') {
+      goToStage('onboarding')
+      return
+    }
+    if (flowStage === 'onboarding') {
+      goToStage('review')
+    }
   }
 
   async function handleSubmitOffer(event) {
@@ -467,7 +617,9 @@ function BuyerOfferSubmission() {
       await sendAgentOfferSubmittedNotification(submittedOffer).catch((notificationError) => {
         console.warn('[BUYER OFFER] agent offer submission notification failed', notificationError)
       })
-      setSuccessMessage('Offer + onboarding submitted successfully. The agent will review any conditions before OTP generation.')
+      clearBuyerOfferDraft(token)
+      setSuccessMessage('Offer submitted successfully. The agent will review any conditions before OTP generation.')
+      setFlowStage('complete')
       setRefreshKey((value) => value + 1)
     } catch (error) {
       setErrorMessage(error?.message || 'Unable to submit offer right now.')
@@ -590,15 +742,80 @@ function BuyerOfferSubmission() {
     </section>
   )
 
-  const buyerDetails = (
+  const buyerOnboardingWorkspace = (
     <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 md:p-6">
-      <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Buyer Details</h2>
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <TextInput label="Full Name" value={form.fullName} onChange={(event) => updateForm('fullName', event.target.value)} placeholder="Full legal name" autoComplete="name" />
-        <TextInput label="ID / Passport" value={form.idNumber} onChange={(event) => updateForm('idNumber', event.target.value)} placeholder="ID or passport number" />
-        <TextInput label="Email" type="email" value={form.email} onChange={(event) => updateForm('email', event.target.value)} placeholder="name@email.com" autoComplete="email" />
-        <TextInput label="Phone" value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} placeholder="082..." inputMode="tel" autoComplete="tel" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0F7A5A]">Buyer onboarding</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#111827]">Tell us about yourself.</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
+            Complete each section before review. Your progress is saved on this device.
+          </p>
+        </div>
+        <span className="w-fit rounded-full bg-[#EEF6F2] px-3 py-1.5 text-xs font-bold text-[#0F7A5A]">{buyerCompletion} of {buyerSectionCards.length} complete</span>
       </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
+        {buyerSectionCards.map((section) => (
+          <button
+            key={section.key}
+            type="button"
+            onClick={() => setActiveBuyerSection(section.key)}
+            className={`rounded-[20px] border p-4 text-left transition ${activeBuyerSection === section.key ? 'border-[#0F7A5A] bg-[#F2FBF7]' : 'border-[#E5E7EB] bg-[#FAFAF8] hover:border-[#B8D8C9]'}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-[#111827]">{section.title}</p>
+                <p className="mt-1 text-xs leading-5 text-[#6B7280]">{section.description}</p>
+              </div>
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold ${section.complete ? 'bg-[#DCFCE7] text-[#166534]' : 'bg-white text-[#6B7280]'}`}>
+                {section.complete ? 'Complete' : 'Not started'}
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-5 rounded-[22px] border border-[#E5E7EB] bg-white p-4">
+        {activeBuyerSection === 'overview' ? (
+          <p className="text-sm leading-6 text-[#6B7280]">Choose a section above to complete or update your buyer details.</p>
+        ) : null}
+        {activeBuyerSection === 'personal' ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <TextInput label="Full Name" value={form.fullName} onChange={(event) => updateForm('fullName', event.target.value)} placeholder="Full legal name" autoComplete="name" />
+            <TextInput label="ID / Passport" value={form.idNumber} onChange={(event) => updateForm('idNumber', event.target.value)} placeholder="ID or passport number" />
+          </div>
+        ) : null}
+        {activeBuyerSection === 'contact' ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <TextInput label="Email" type="email" value={form.email} onChange={(event) => updateForm('email', event.target.value)} placeholder="name@email.com" autoComplete="email" />
+            <TextInput label="Phone" value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} placeholder="082..." inputMode="tel" autoComplete="tel" />
+          </div>
+        ) : null}
+        {activeBuyerSection === 'finance' ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <SelectInput label="Finance Type" value={form.financeType} onChange={(event) => updateFinanceType(event.target.value)}>
+              <option value="cash">Cash</option>
+              <option value="bond">Bond</option>
+              <option value="hybrid">Hybrid</option>
+            </SelectInput>
+            {financeType !== 'cash' ? <TextInput label="Bond Amount" value={form.bondAmount} onChange={(event) => updateForm('bondAmount', event.target.value)} placeholder="2250000" inputMode="decimal" /> : null}
+            {financeType !== 'bond' ? <TextInput label="Cash Contribution" value={form.cashContribution} onChange={(event) => updateForm('cashContribution', event.target.value)} placeholder="250000" inputMode="decimal" /> : null}
+            <TextInput label="Proof of Funds URL" value={form.proofOfFundsUrl} onChange={(event) => updateForm('proofOfFundsUrl', event.target.value)} placeholder="Optional document link" />
+          </div>
+        ) : null}
+        {activeBuyerSection === 'compliance' ? (
+          <label className="flex items-start gap-3 rounded-[18px] bg-[#F7F7F4] p-4 text-sm font-semibold text-[#374151]">
+            <input type="checkbox" checked={confirmedAccuracy} onChange={(event) => setConfirmedAccuracy(event.target.checked)} className="mt-1" />
+            <span>I confirm the information captured so far is accurate.</span>
+          </label>
+        ) : null}
+      </div>
+
+      <p className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#F7F7F4] px-3 py-2 text-xs font-bold text-[#374151]">
+        <LockKeyhole size={14} color={ARCH_GREEN} />
+        Your information is secure and encrypted.
+      </p>
     </section>
   )
 
@@ -648,12 +865,20 @@ function BuyerOfferSubmission() {
           <TextInput label="Timeline Note" value={form.subjectSaleTimeline} onChange={(event) => updateForm('subjectSaleTimeline', event.target.value)} placeholder="For example, within 90 days" />
         </div>
       ) : null}
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <TextAreaInput label="Included Fixtures" value={form.includedFixtures} onChange={(event) => updateForm('includedFixtures', event.target.value)} placeholder="Fixtures the buyer wants included" />
-        <TextAreaInput label="Excluded Fixtures" value={form.excludedFixtures} onChange={(event) => updateForm('excludedFixtures', event.target.value)} placeholder="Fixtures the seller may remove" />
-        <TextAreaInput label="Other Suspensive Conditions" value={form.suspensiveConditions} onChange={(event) => updateForm('suspensiveConditions', event.target.value)} placeholder="Only add deal-specific conditions that need agent review" />
-        <TextAreaInput label="Special Conditions" value={form.specialConditions} onChange={(event) => updateForm('specialConditions', event.target.value)} placeholder="Only add deal-specific special conditions" />
-      </div>
+      <details className="mt-5 rounded-[22px] border border-[#E5E7EB] bg-[#FBFCFA] p-4">
+        <summary className="cursor-pointer list-none text-sm font-bold text-[#111827]">
+          Conditions
+          <span className="ml-2 rounded-full bg-[#EEF6F2] px-2 py-1 text-[0.68rem] font-bold text-[#0F7A5A]">
+            {[form.includedFixtures, form.excludedFixtures, form.suspensiveConditions, form.specialConditions].filter((value) => normalizeText(value)).length} added
+          </span>
+        </summary>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <TextAreaInput label="Included Fixtures" value={form.includedFixtures} onChange={(event) => updateForm('includedFixtures', event.target.value)} placeholder="Fixtures the buyer wants included" />
+          <TextAreaInput label="Excluded Fixtures" value={form.excludedFixtures} onChange={(event) => updateForm('excludedFixtures', event.target.value)} placeholder="Fixtures the seller may remove" />
+          <TextAreaInput label="Other Suspensive Conditions" value={form.suspensiveConditions} onChange={(event) => updateForm('suspensiveConditions', event.target.value)} placeholder="Only add deal-specific conditions that need agent review" />
+          <TextAreaInput label="Special Conditions" value={form.specialConditions} onChange={(event) => updateForm('specialConditions', event.target.value)} placeholder="Only add deal-specific special conditions" />
+        </div>
+      </details>
       {isDevelopmentOffer ? (
         <div className="mt-5 grid gap-3 rounded-[22px] bg-[#F7F7F4] p-5">
           {[
@@ -745,6 +970,75 @@ function BuyerOfferSubmission() {
     </section>
   )
 
+  const confirmationSection = (
+    <section className="rounded-[24px] border border-[#CFE8DC] bg-white p-5 md:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#DCFCE7] text-[#166534]">
+            <BadgeCheck size={24} />
+          </div>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.055em] text-[#111827]">Offer submitted.</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
+            Your offer and buyer onboarding have been securely delivered to {agentName}. The agent will review the conditions before moving the transaction forward.
+          </p>
+        </div>
+        <span className="w-fit rounded-full bg-[#EDF9F0] px-3 py-1.5 text-xs font-bold text-[#17643A]">Securely submitted</span>
+      </div>
+      <div className="mt-6 grid gap-3 md:grid-cols-2">
+        {[
+          ['Property', getListingTitle(listing)],
+          ['Buyer', form.fullName || 'Buyer'],
+          ['Offer Amount', offerAmountLabel],
+          ['Agent', agentName],
+          ['Agency', offerBrand.organisationName || agencyName],
+          ['Submitted', formatDateTime(new Date().toISOString())],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-[18px] bg-[#F7F7F4] p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#6B7280]">{label}</p>
+            <p className="mt-1 text-sm font-bold text-[#111827]">{value}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-6 grid gap-3 sm:grid-cols-5">
+        {['Offer submitted', 'Agent review', 'Seller feedback', 'OTP prepared', 'Signature'].map((item, index) => (
+          <div key={item} className="rounded-[18px] border border-[#E5E7EB] bg-white p-4">
+            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${index === 0 ? 'bg-[#0F7A5A] text-white' : 'bg-[#F7F7F4] text-[#6B7280]'}`}>{index + 1}</div>
+            <p className="mt-3 text-sm font-bold text-[#111827]">{item}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+
+  const activeStageContent = flowStage === 'offer' ? (
+    <>
+      {offerHero}
+      {offerDetails}
+    </>
+  ) : flowStage === 'onboarding' ? (
+    buyerOnboardingWorkspace
+  ) : flowStage === 'review' ? (
+    <>
+      {reviewSection}
+      {trustSection}
+      {timeline}
+    </>
+  ) : flowStage === 'complete' ? (
+    confirmationSection
+  ) : null
+
+  const stageCtaLabel = flowStage === 'offer'
+    ? 'Continue to Buyer Details'
+    : flowStage === 'onboarding'
+      ? 'Continue to Review'
+      : flowStage === 'review'
+        ? (submitting ? 'Submitting...' : submitButtonLabel)
+        : 'Submitted'
+
+  const stageCtaIcon = flowStage === 'review' ? <ShieldCheck size={16} /> : <ArrowRight size={16} />
+  const canShowFooter = flowStage !== 'complete'
+  const canGoBack = ['onboarding', 'review'].includes(flowStage)
+
   if (canonicalLoading && !context?.ok) {
     return (
       <main className="min-h-screen bg-[#FAFAF8] px-4 py-8">
@@ -773,9 +1067,45 @@ function BuyerOfferSubmission() {
     )
   }
 
+  if (flowStage === 'landing') {
+    return (
+      <PremiumOnboardingLanding
+        portalType="buyer"
+        agencyLogo={offerBrand.logoDarkUrl || offerBrand.logoLightUrl || offerBrand.logoIconUrl || ''}
+        agencyName={offerBrand.organisationName || agencyName}
+        personName={form.fullName || invite?.buyerLeadName || ''}
+        propertyAddress={getListingAddress(listing)}
+        propertyImage={propertyImageUrl}
+        propertyTitle={getListingTitle(listing)}
+        propertyMeta={[getListingAddress(listing), getListingType(listing)].filter(Boolean).join(' · ')}
+        propertyPrice={askingPrice ? formatCurrency(askingPrice) : ''}
+        primaryColour={offerBrand.primaryColour}
+        secondaryColour={offerBrand.secondaryColour}
+        accentColour={offerBrand.accentColour}
+        label="MAKE AN OFFER"
+        headlinePrefix="Let's make"
+        headlineAccent="your move."
+        subtext="Submit your residential property offer and complete buyer onboarding in one secure flow."
+        ctaLabel={hasDraft ? 'Resume Offer' : 'Start Offer'}
+        reassuranceRows={[
+          { title: 'Secure offer link', description: 'Private token access', icon: ShieldCheck },
+          { title: 'Save and continue later', description: 'Progress is saved here', icon: Bookmark },
+          { title: 'Review before submit', description: 'Nothing is sent early', icon: Clock3 },
+        ]}
+        contextRows={[
+          { icon: UserRound, label: 'Property Professional', value: agentName },
+          { icon: ChevronRight, label: 'Process', value: 'Offer terms, buyer details, review and submit' },
+        ]}
+        beforeStartTitle="One guided offer flow."
+        beforeStartText="You can save and continue later. Your agent receives the offer only after you review and submit."
+        onStart={() => goToStage('offer')}
+      />
+    )
+  }
+
   return (
     <main style={{ background: WARM_WHITE, color: PRIMARY_TEXT }} className="min-h-screen pb-32 md:pb-28">
-      <ProgressDots step={mobileStep} />
+      <ProgressDots stage={flowStage} />
       <form onSubmit={handleSubmitOffer}>
         <div className="mx-auto w-full max-w-[1360px] px-4 py-5 md:px-8 md:py-8">
           <header className="rounded-[26px] border border-[#E5E7EB] bg-white p-5 md:p-6">
@@ -817,69 +1147,39 @@ function BuyerOfferSubmission() {
             </div>
           ) : null}
 
-          <div className="mt-5 hidden gap-6 md:grid md:grid-cols-[0.4fr_0.6fr]">
-            <div>{propertySummary}</div>
+          <div className="mt-5 grid gap-6 md:grid-cols-[0.4fr_0.6fr]">
+            <div className={flowStage === 'complete' ? 'hidden md:block' : ''}>{propertySummary}</div>
             <div className="space-y-5">
-              {offerHero}
-              {buyerDetails}
-              {offerDetails}
-              {trustSection}
-              {timeline}
-              {reviewSection}
+              {activeStageContent}
             </div>
-          </div>
-
-          <div className="mt-5 space-y-5 md:hidden">
-            {mobileStep === 0 ? (
-              <>
-                {propertySummary}
-                {offerHero}
-                {offerDetails}
-              </>
-            ) : null}
-            {mobileStep === 1 ? buyerDetails : null}
-            {mobileStep === 2 ? (
-              <>
-                {reviewSection}
-                {trustSection}
-                {timeline}
-              </>
-            ) : null}
           </div>
         </div>
 
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#E5E7EB] bg-white/95 px-4 py-3 shadow-[0_-16px_40px_rgba(17,24,39,0.08)] backdrop-blur supports-[padding:max(0px)]:pb-[max(12px,env(safe-area-inset-bottom))]">
+        {canShowFooter ? <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#E5E7EB] bg-white/95 px-4 py-3 shadow-[0_-16px_40px_rgba(17,24,39,0.08)] backdrop-blur supports-[padding:max(0px)]:pb-[max(12px,env(safe-area-inset-bottom))]">
           <div className="mx-auto flex max-w-[1360px] items-center gap-3">
             <button
               type="button"
-              onClick={() => setMobileStep((step) => Math.max(0, step - 1))}
-              className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#E5E7EB] text-[#374151] md:hidden ${mobileStep === 0 ? 'invisible' : ''}`}
+              onClick={() => goToStage(previousStage)}
+              className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#E5E7EB] text-[#374151] ${canGoBack ? '' : 'invisible'}`}
+              aria-label="Go back"
             >
               <ChevronLeft size={20} />
             </button>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#6B7280]">Offer Amount</p>
-              <p className="truncate text-xl font-bold tracking-[-0.04em] text-[#111827]">{formatCurrency(offerAmount)}</p>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#6B7280]">Current Offer</p>
+              <p className="truncate text-xl font-bold tracking-[-0.04em] text-[#111827]">{offerAmountLabel}</p>
             </div>
             <button
-              type={mobileStep === 2 ? 'submit' : 'button'}
-              onClick={mobileStep === 2 ? undefined : goNext}
-              disabled={submitting || (mobileStep === 2 && context?.source === 'canonical' && !canSubmitCanonicalOffer)}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[18px] bg-[#0F7A5A] px-5 text-sm font-bold text-white shadow-[0_12px_28px_rgba(15,122,90,0.22)] transition hover:bg-[#0B654A] disabled:bg-[#9CA3AF] md:hidden"
+              type={flowStage === 'review' ? 'submit' : 'button'}
+              onClick={flowStage === 'review' ? undefined : goNext}
+              disabled={submitting || (flowStage === 'review' && context?.source === 'canonical' && !canSubmitCanonicalOffer)}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[18px] bg-[#0F7A5A] px-5 text-sm font-bold text-white shadow-[0_12px_28px_rgba(15,122,90,0.22)] transition hover:bg-[#0B654A] disabled:bg-[#9CA3AF] sm:min-w-[260px]"
             >
-              {mobileStep === 2 ? (submitting ? 'Submitting...' : submitButtonLabel) : 'Continue'}
-              {mobileStep === 2 ? <ShieldCheck size={16} /> : <ArrowRight size={16} />}
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || (context?.source === 'canonical' && !canSubmitCanonicalOffer)}
-              className="hidden min-h-12 min-w-[360px] items-center justify-center gap-2 rounded-[18px] bg-[#0F7A5A] px-5 text-sm font-bold text-white shadow-[0_12px_28px_rgba(15,122,90,0.22)] transition hover:bg-[#0B654A] disabled:bg-[#9CA3AF] md:inline-flex"
-            >
-              {submitting ? 'Submitting...' : submitButtonLabel}
-              <ShieldCheck size={16} />
+              {stageCtaLabel}
+              {stageCtaIcon}
             </button>
           </div>
-        </div>
+        </div> : null}
       </form>
     </main>
   )

@@ -484,14 +484,38 @@ function getLatestPacketVersion(packet = null) {
   return Array.isArray(packet?.versions) && packet.versions.length ? packet.versions[0] : null
 }
 
+function withDownloadHint(url = '', fileName = '') {
+  const href = firstText(url)
+  if (!href) return ''
+  try {
+    const parsed = new URL(href, typeof window !== 'undefined' ? window.location.origin : undefined)
+    if (fileName && parsed.pathname.includes('/storage/v1/object/sign/')) {
+      parsed.searchParams.set('download', fileName)
+    }
+    return parsed.toString()
+  } catch {
+    return href
+  }
+}
+
 function getMandateDocument(row = {}, packet = null) {
   const version = getLatestPacketVersion(packet)
   const packetTitle = firstText(packet?.title, row.raw?.allocation?.mandate_title, 'Mandate Agreement')
+  const name = firstText(version?.final_signed_file_name, version?.rendered_file_name, packetTitle, 'Mandate Agreement.pdf')
   return {
     packetId: firstText(packet?.id, row.mandatePacketId),
     versionId: version?.id || '',
-    name: firstText(version?.final_signed_file_name, version?.rendered_file_name, packetTitle, 'Mandate Agreement.pdf'),
+    name,
     uploadedAt: firstText(version?.finalised_at, version?.generated_at, packet?.completed_at, packet?.updated_at, packet?.created_at, row.incomingSince),
+    accessUrl: withDownloadHint(
+      firstText(
+        version?.final_signed_file_access_url,
+        version?.rendered_file_access_url,
+        version?.final_signed_file_url,
+        version?.rendered_file_url,
+      ),
+      name,
+    ),
     fallbackHref: row.mandatePacketId ? `/legal-documents/${encodeURIComponent(row.mandatePacketId)}` : row.actionHref,
   }
 }
@@ -534,7 +558,7 @@ function IncomingMatterDrawer({
             <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
-                disabled={!document.packetId || downloadingMandate}
+                disabled={packetLoading || (!document.versionId && !document.accessUrl) || downloadingMandate}
                 onClick={() => onDownloadMandate?.(document)}
                 className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#00614f] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#00463d] disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -616,7 +640,7 @@ function IncomingMatterDrawer({
               </div>
               <button
                 type="button"
-                disabled={!document.packetId || downloadingMandate}
+                disabled={packetLoading || (!document.versionId && !document.accessUrl) || downloadingMandate}
                 onClick={() => onDownloadMandate?.(document)}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#00614f] px-4 text-sm font-semibold text-white transition hover:bg-[#00463d] disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -1740,9 +1764,10 @@ function AttorneyMattersPage() {
   }
 
   async function handleDownloadMandate(document = {}) {
-    const key = document.versionId || document.packetId || document.fallbackHref
+    const key = document.versionId || document.accessUrl || document.packetId
     if (!key) return
     setDownloadingMandateId(key)
+    setDrawerPacketError('')
     const pendingWindow = typeof window !== 'undefined' ? window.open('', '_blank') : null
     if (pendingWindow) pendingWindow.opener = null
     try {
@@ -1759,18 +1784,20 @@ function AttorneyMattersPage() {
           downloadUrl = ''
         }
       }
-      downloadUrl = downloadUrl || document.fallbackHref || ''
-      if (!downloadUrl) throw new Error('No mandate document is linked to this incoming matter yet.')
+      downloadUrl = downloadUrl || document.accessUrl || ''
+      if (!downloadUrl) throw new Error('The mandate PDF is still being prepared. Please wait a moment, then retry the download.')
       if (pendingWindow) {
         pendingWindow.location.href = downloadUrl
       } else if (typeof window !== 'undefined') {
         window.open(downloadUrl, '_blank', 'noopener,noreferrer')
       }
     } catch (downloadError) {
+      const message = downloadError?.message || 'Unable to download the mandate.'
       if (pendingWindow) pendingWindow.close()
+      setDrawerPacketError(message)
       setIncomingAction({
         pendingId: '',
-        error: downloadError?.message || 'Unable to download the mandate.',
+        error: message,
       })
     } finally {
       setDownloadingMandateId('')

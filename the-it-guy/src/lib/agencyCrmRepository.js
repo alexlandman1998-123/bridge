@@ -239,6 +239,55 @@ function mapSupabaseLeadActivity(row = {}) {
   }
 }
 
+function mapBuyerViewingPreferenceLink(row = {}) {
+  return {
+    id: normalizeText(row?.id),
+    organisationId: normalizeText(row?.organisation_id),
+    leadId: normalizeText(row?.lead_id),
+    contactEmail: normalizeText(row?.contact_email).toLowerCase(),
+    organisationName: normalizeText(row?.organisation_name),
+    buyerName: normalizeText(row?.buyer_name),
+    agentName: normalizeText(row?.agent_name),
+    agentEmail: normalizeText(row?.agent_email).toLowerCase(),
+    status: normalizeText(row?.status) || 'pending',
+    selectedPropertyIds: Array.isArray(row?.selected_property_ids) ? row.selected_property_ids.map(normalizeText).filter(Boolean) : [],
+    properties: Array.isArray(row?.properties) ? row.properties : [],
+    response: row?.response && typeof row.response === 'object' && !Array.isArray(row.response) ? row.response : {},
+    createdBy: normalizeText(row?.created_by),
+    createdAt: row?.created_at || '',
+    updatedAt: row?.updated_at || '',
+    lastSentAt: row?.last_sent_at || '',
+    expiresAt: row?.expires_at || '',
+    submittedAt: row?.submitted_at || '',
+  }
+}
+
+function mapSellerViewingCoordinationLink(row = {}) {
+  return {
+    id: normalizeText(row?.id),
+    organisationId: normalizeText(row?.organisation_id),
+    leadId: normalizeText(row?.lead_id),
+    sellerEmail: normalizeText(row?.seller_email).toLowerCase(),
+    organisationName: normalizeText(row?.organisation_name),
+    sellerName: normalizeText(row?.seller_name),
+    buyerName: normalizeText(row?.buyer_name),
+    agentName: normalizeText(row?.agent_name),
+    agentEmail: normalizeText(row?.agent_email).toLowerCase(),
+    status: normalizeText(row?.status) || 'pending',
+    selectedPropertyIds: Array.isArray(row?.selected_property_ids) ? row.selected_property_ids.map(normalizeText).filter(Boolean) : [],
+    properties: Array.isArray(row?.properties) ? row.properties : [],
+    buyerAvailabilityWindows: normalizeText(row?.buyer_availability_windows),
+    coordinationNotes: normalizeText(row?.coordination_notes),
+    response: row?.response && typeof row.response === 'object' && !Array.isArray(row.response) ? row.response : {},
+    createdBy: normalizeText(row?.created_by),
+    createdAt: row?.created_at || '',
+    updatedAt: row?.updated_at || '',
+    lastSentAt: row?.last_sent_at || '',
+    expiresAt: row?.expires_at || '',
+    submittedAt: row?.submitted_at || '',
+  }
+}
+
 function mapSupabaseTask(row = {}) {
   return {
     taskId: normalizeText(row?.task_id),
@@ -1074,6 +1123,52 @@ export async function fetchAgencyCrmLeadRouteHydrationSeed(organisationId, leadI
     resolvedLeadId,
     listingId: normalizeText(listingResolution?.listing?.id) || normalizeText(leadRow?.listing_id) || null,
   }
+}
+
+export async function listBuyerViewingPreferenceLinks(organisationId, leadId, { limit = 10 } = {}) {
+  const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.listBuyerViewingPreferenceLinks')
+  const leadUuid = normalizeLeadUuid(leadId)
+  if (!leadUuid) return []
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase is required before loading buyer viewing preference responses.')
+  }
+
+  const query = await supabase
+    .from('buyer_viewing_preference_links')
+    .select('id, organisation_id, lead_id, contact_email, organisation_name, buyer_name, agent_name, agent_email, status, selected_property_ids, properties, response, created_by, created_at, updated_at, last_sent_at, expires_at, submitted_at')
+    .eq('organisation_id', workspaceId)
+    .eq('lead_id', leadUuid)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(Math.max(Number(limit || 10), 1), 25))
+
+  if (query.error) {
+    if (isMissingSchemaOrTableError(query.error)) return []
+    throw query.error
+  }
+  return (Array.isArray(query.data) ? query.data : []).map(mapBuyerViewingPreferenceLink)
+}
+
+export async function listSellerViewingCoordinationLinks(organisationId, leadId, { limit = 10 } = {}) {
+  const workspaceId = requireAgencyWorkspaceId(organisationId, 'agencyCrmRepository.listSellerViewingCoordinationLinks')
+  const leadUuid = normalizeLeadUuid(leadId)
+  if (!leadUuid) return []
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase is required before loading seller viewing coordination responses.')
+  }
+
+  const query = await supabase
+    .from('seller_viewing_coordination_links')
+    .select('id, organisation_id, lead_id, seller_email, organisation_name, seller_name, buyer_name, agent_name, agent_email, status, selected_property_ids, properties, buyer_availability_windows, coordination_notes, response, created_by, created_at, updated_at, last_sent_at, expires_at, submitted_at')
+    .eq('organisation_id', workspaceId)
+    .eq('lead_id', leadUuid)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(Math.max(Number(limit || 10), 1), 25))
+
+  if (query.error) {
+    if (isMissingSchemaOrTableError(query.error)) return []
+    throw query.error
+  }
+  return (Array.isArray(query.data) ? query.data : []).map(mapSellerViewingCoordinationLink)
 }
 
 export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { actor = null } = {}) {

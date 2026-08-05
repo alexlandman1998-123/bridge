@@ -12,6 +12,11 @@ export type SellerViewingAvailabilityRequestProperty = {
   area?: string;
   match?: string;
   link?: string;
+  sellerViewingAvailability?: string;
+  sellerViewingAvailabilityWindows?: string;
+  sellerViewingAccessInstructions?: string;
+  sellerViewingNoticePeriod?: string;
+  sellerViewingNoticeRequired?: boolean;
 };
 
 function normalizeText(value: unknown) {
@@ -86,6 +91,16 @@ function renderPropertyList(
   `;
 }
 
+function renderActionButton(actionLink = "") {
+  const link = normalizeText(actionLink);
+  if (!link) return "";
+  return `
+    <div style="margin: 18px 0 20px;">
+      <a href="${escapeHtml(link)}" style="display: inline-block; padding: 13px 18px; border-radius: 10px; background: #0f2f4f; color: #ffffff; font-size: 14px; font-weight: 800; text-decoration: none;">Confirm access</a>
+    </div>
+  `;
+}
+
 export function buildSellerViewingAvailabilityRequestEmailHtml({
   sellerName = "there",
   buyerName = "the buyer",
@@ -96,6 +111,7 @@ export function buildSellerViewingAvailabilityRequestEmailHtml({
   organisationName = "Arch9",
   supportEmail = "",
   supportPhone = "",
+  actionLink = "",
   branding,
 }: {
   sellerName?: string;
@@ -107,6 +123,7 @@ export function buildSellerViewingAvailabilityRequestEmailHtml({
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
+  actionLink?: string;
   branding?: BridgeEmailLayoutBranding;
 }) {
   const selectedProperties = normalizeProperties(properties);
@@ -118,9 +135,12 @@ export function buildSellerViewingAvailabilityRequestEmailHtml({
           ? "a buyer viewing"
           : `${propertyCount} buyer viewings`
       } for ${pickText(buyerName, "the buyer")}.`,
-      "Please confirm which of the buyer's proposed time windows will work for property access.",
+      actionLink
+        ? "Use the button below to confirm which buyer time windows can work for property access."
+        : "Please confirm which of the buyer's proposed time windows will work for property access.",
       coordinationNotes ? `Agent note: ${coordinationNotes}` : "",
     ]),
+    renderActionButton(actionLink),
     renderPropertyList(selectedProperties),
     renderBridgeBullets([
       "Which proposed time windows work for access.",
@@ -160,6 +180,7 @@ export function buildSellerViewingAvailabilityRequestEmailText({
   organisationName = "Arch9",
   supportEmail = "",
   supportPhone = "",
+  actionLink = "",
 }: {
   sellerName?: string;
   buyerName?: string;
@@ -170,6 +191,7 @@ export function buildSellerViewingAvailabilityRequestEmailText({
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
+  actionLink?: string;
 }) {
   const selectedProperties = normalizeProperties(properties);
   const propertyLines = selectedProperties.length
@@ -192,7 +214,10 @@ export function buildSellerViewingAvailabilityRequestEmailText({
         ? "a buyer viewing"
         : `${selectedProperties.length || 1} buyer viewings`
     } for ${pickText(buyerName, "the buyer")}.`,
-    "Please confirm which of the buyer's proposed time windows will work for property access.",
+    actionLink
+      ? "Confirm property access here:"
+      : "Please confirm which of the buyer's proposed time windows will work for property access.",
+    actionLink || null,
     coordinationNotes ? `Agent note: ${coordinationNotes}` : null,
     "",
     propertyLines,

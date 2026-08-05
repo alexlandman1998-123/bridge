@@ -18,6 +18,8 @@ assert.match(plannerHandler, /invokeEdgeFunction\('send-email'/, 'seller planner
 assert.match(plannerHandler, /type: 'seller_viewing_availability_request'/, 'seller planner should send the seller viewing template type')
 assert.match(plannerHandler, /to: sellerEmails/, 'seller planner should send the selected seller recipients')
 assert.match(plannerHandler, /resend: isResend/, 'seller planner resend should stay on the edge-function email path')
+assert.match(plannerHandler, /seller-viewing-coordination/, 'seller planner should create a public seller coordination link')
+assert.match(plannerHandler, /sellerCoordinationLink/, 'seller planner should pass the seller coordination link into the email')
 assert.match(plannerHandler, /availabilityWindows/, 'seller planner should include buyer availability windows')
 assert.match(plannerHandler, /sellerEmailDeliveryStatus/, 'seller planner should persist seller delivery status')
 assert.match(plannerHandler, /sellerEmailProviderMessageIds/, 'seller planner should persist provider message ids')
@@ -56,6 +58,8 @@ for (const contract of [
   /Seller Viewing Availability/,
   /Properties To Confirm/,
   /Buyer availability/,
+  /Confirm access/,
+  /actionLink/,
   /Please reply with/,
   /Powered by Arch9/,
 ]) {

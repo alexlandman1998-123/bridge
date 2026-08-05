@@ -194,6 +194,8 @@ const BridgeResourcesPage = lazyNamed(() => import('./pages/BridgeLanding'), 'Br
 const BridgeSolutionsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeSolutionsPage')
 const BridgeToolsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeToolsPage')
 const BuyerOfferSubmission = lazy(() => import('./pages/BuyerOfferSubmission'))
+const BuyerViewingPreferencesPage = lazy(() => import('./pages/BuyerViewingPreferencesPage'))
+const SellerViewingCoordinationPage = lazy(() => import('./pages/SellerViewingCoordinationPage'))
 const PostViewingOfferPortal = lazy(() => import('./pages/PostViewingOfferPortal'))
 const PublicAgencyIntakePage = lazy(() => import('./pages/PublicAgencyIntakePage'))
 const SellerOfferReviewPage = lazy(() => import('./pages/SellerOfferReviewPage'))
@@ -3094,6 +3096,8 @@ function AppRoutes() {
           <Route path="/client/:token/documents" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/otp-signing" element={<TokenRouteGate><LegacyOtpSigningRedirect /></TokenRouteGate>} />
           <Route path="/client/offer/:token" element={<AppErrorBoundary scope="buyer-offer-route" title="Offer link failed to load"><BuyerOfferSubmission /></AppErrorBoundary>} />
+          <Route path="/viewing-preferences/:token" element={<AppErrorBoundary scope="buyer-viewing-preferences-route" title="Viewing preferences failed to load"><BuyerViewingPreferencesPage /></AppErrorBoundary>} />
+          <Route path="/seller-viewing/:token" element={<AppErrorBoundary scope="seller-viewing-coordination-route" title="Viewing coordination failed to load"><SellerViewingCoordinationPage /></AppErrorBoundary>} />
           <Route path="/offers/session/:token" element={<AppErrorBoundary scope="post-viewing-offer-route" title="Offer portal failed to load"><PostViewingOfferPortal /></AppErrorBoundary>} />
           <Route path="/offers/:token" element={<AppErrorBoundary scope="buyer-offer-route" title="Offer link failed to load"><BuyerOfferSubmission /></AppErrorBoundary>} />
           <Route path="/seller/offers/review/:token" element={<AppErrorBoundary scope="seller-offer-review-route" title="Seller offer review failed to load"><SellerOfferReviewPage /></AppErrorBoundary>} />

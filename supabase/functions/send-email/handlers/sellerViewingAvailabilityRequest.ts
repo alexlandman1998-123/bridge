@@ -44,6 +44,22 @@ function normalizeProperties(
         area: normalizeText(row.area || row.suburb || row.location),
         match: normalizeText(row.match || row.matchLabel),
         link: normalizeText(row.link || row.url),
+        sellerViewingAvailability: normalizeText(
+          row.sellerViewingAvailability || row.seller_viewing_availability,
+        ),
+        sellerViewingAvailabilityWindows: normalizeText(
+          row.sellerViewingAvailabilityWindows ||
+            row.seller_viewing_availability_windows,
+        ),
+        sellerViewingAccessInstructions: normalizeText(
+          row.sellerViewingAccessInstructions ||
+            row.seller_viewing_access_instructions,
+        ),
+        sellerViewingNoticePeriod: normalizeText(
+          row.sellerViewingNoticePeriod || row.seller_viewing_notice_period,
+        ),
+        sellerViewingNoticeRequired: row.sellerViewingNoticeRequired === true ||
+          row.seller_viewing_notice_required === true,
       };
     });
 }
@@ -70,6 +86,10 @@ export async function handleSellerViewingAvailabilityRequestEmail(
   const availabilityWindows = normalizeText(payload.availabilityWindows);
   const coordinationNotes = normalizeText(
     payload.coordinationNotes || payload.note || payload.message,
+  );
+  const actionLink = normalizeText(
+    payload.actionLink || payload.action_link ||
+      payload.sellerCoordinationLink || payload.seller_coordination_link,
   );
   const properties = normalizeProperties(payload.properties);
   const organisationName = normalizeText(payload.organisationName) ||
@@ -111,6 +131,7 @@ export async function handleSellerViewingAvailabilityRequestEmail(
     organisationName: branding.organisationName,
     supportEmail: branding.supportEmail || supportEmail,
     supportPhone: branding.supportPhone || supportPhone,
+    actionLink,
     branding,
   });
   const text = buildSellerViewingAvailabilityRequestEmailText({
@@ -123,6 +144,7 @@ export async function handleSellerViewingAvailabilityRequestEmail(
     organisationName: branding.organisationName,
     supportEmail: branding.supportEmail || supportEmail,
     supportPhone: branding.supportPhone || supportPhone,
+    actionLink,
   });
   const baseIdempotencyKey = normalizeText(
     payload.idempotencyKey || payload.idempotency_key,
