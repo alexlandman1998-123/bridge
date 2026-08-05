@@ -4888,6 +4888,18 @@ const LEAD_DETAIL_DEFAULT_ACTIVITY = {
   outcome: '',
 }
 
+function isLeadCreatedActivity(activity = {}) {
+  const type = normalizeText(activity?.activityType || activity?.activity_type).toLowerCase()
+  const note = normalizeText(activity?.activityNote || activity?.activity_note).toLowerCase()
+  return type === 'lead created' || note === 'lead_created'
+}
+
+function isBuyerContactActivity(activity = {}) {
+  if (!activity || isLeadCreatedActivity(activity)) return false
+  const type = normalizeText(activity.activityType || activity.activity_type).toLowerCase()
+  return ['call', 'whatsapp', 'email', 'meeting', 'sms'].some((token) => type.includes(token))
+}
+
 const LEAD_ACTIVITY_OUTCOME_OPTIONS = [
   '',
   'Interested',
@@ -7427,6 +7439,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadKey)
       .sort((a, b) => new Date(b.activityDate || b.createdAt || 0) - new Date(a.activityDate || a.createdAt || 0))
   }, [records.leadActivities, selectedLead])
+
+  const selectedLeadContactActivities = useMemo(
+    () => selectedLeadActivities.filter((activity) => isBuyerContactActivity(activity)),
+    [selectedLeadActivities],
+  )
+
+  const selectedLeadLastContactedAt = useMemo(
+    () =>
+      selectedLead?.firstContactedAt ||
+      selectedLead?.first_contacted_at ||
+      selectedLeadContactActivities[0]?.activityDate ||
+      selectedLeadContactActivities[0]?.createdAt ||
+      '',
+    [selectedLead, selectedLeadContactActivities],
+  )
 
   const selectedLeadTasks = useMemo(() => {
     if (!selectedLead) return []
@@ -10394,7 +10421,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedLeadBuyerJourneyStages = useMemo(() => {
     const stageKey = normalizeText(selectedLeadEffectiveLifecycleStage || selectedLead?.stage).toLowerCase()
-    const contacted = selectedLeadActivities.length > 0 || !['', 'new lead', 'lead', 'cold'].includes(stageKey)
+    const progressedBeyondContact = ['qualified', 'viewing', 'offer', 'transaction', 'converted'].some((token) => stageKey.includes(token))
+    const contacted = Boolean(
+      selectedLeadLastContactedAt ||
+        selectedLeadContactActivities.length > 0 ||
+        normalizeText(selectedLead?.ownershipStatus || selectedLead?.ownership_status).toLowerCase() === 'contacted' ||
+        stageKey.includes('contacted') ||
+        progressedBeyondContact,
+    )
     const qualified = Boolean(
       normalizeText(selectedLead?.budget || selectedLead?.estimatedValue || selectedLead?.areaInterest || selectedLead?.propertyInterest) ||
         stageKey.includes('qualified') ||
@@ -10410,7 +10444,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const transactionDone = Boolean(selectedLeadLinkedTransactionId)
     const rawStages = [
       { key: 'captured', label: 'Captured', detail: formatDateShort(selectedLead?.createdAt), done: Boolean(selectedLead) },
-      { key: 'contacted', label: 'Contacted', detail: contacted ? formatDateShort(selectedLeadLastActiveAt || selectedLead?.updatedAt) : 'Not reached', done: contacted },
+      { key: 'contacted', label: 'Contacted', detail: contacted ? formatDateShort(selectedLeadLastContactedAt || selectedLeadLastActiveAt || selectedLead?.updatedAt) : 'Not reached', done: contacted },
       { key: 'qualification', label: 'Qualification', detail: qualified ? 'In progress' : 'Pending', done: qualified },
       { key: 'viewing', label: 'Viewing', detail: viewingCompleted ? 'Completed' : viewingStarted ? 'Upcoming' : 'Not booked', done: viewingCompleted, started: viewingStarted },
       { key: 'offer', label: 'Offer', detail: offerComplete ? 'Accepted' : offerStarted ? 'Pending' : 'Not started', done: offerComplete, started: offerStarted },
@@ -10432,12 +10466,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [
     selectedLead,
     selectedLeadAcceptedOffer,
-    selectedLeadActivities.length,
+    selectedLeadContactActivities.length,
     selectedLeadAppointments,
     selectedLeadEffectiveLifecycleStage,
     selectedLeadLastActiveAt,
+    selectedLeadLastContactedAt,
     selectedLeadLinkedTransactionId,
     selectedLeadOfferSummary.total,
+    selectedLead?.ownershipStatus,
+    selectedLead?.ownership_status,
   ])
 
   useEffect(() => {
@@ -12630,6 +12667,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const nextActivityType = normalizeText(overrides.activityType ?? activityForm.activityType) || LEAD_DETAIL_DEFAULT_ACTIVITY.activityType
     const nextActivityNote = normalizeText(overrides.activityNote ?? activityForm.activityNote)
     const nextOutcome = normalizeText(overrides.outcome ?? activityForm.outcome)
+    const activityDate = new Date().toISOString()
     if (!nextActivityNote) {
       setError('Add an activity note before saving.')
       return
@@ -12646,8 +12684,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         activityType: nextActivityType,
         activityNote: nextActivityNote,
         outcome: nextOutcome,
-        activityDate: new Date().toISOString(),
+        activityDate,
       }, { actor: currentAgent })
+    }
+    if (!selectedLeadIsSeller && isBuyerContactActivity({ activityType: nextActivityType, activityNote: nextActivityNote })) {
+      const contactedAt = selectedLeadLastContactedAt || activityDate
+      const currentStageKey = normalizeText(selectedLeadEffectiveLifecycleStage || selectedLead?.stage).toLowerCase()
+      const shouldMoveToContacted = ['', 'new lead', 'lead', 'cold', 'captured'].includes(currentStageKey)
+      const leadPatch = {
+        firstContactedAt: contactedAt,
+        ownershipStatus: 'contacted',
+        ...(shouldMoveToContacted ? { stage: 'Contacted', status: 'Active' } : {}),
+      }
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
     }
     resetActivityComposer()
     setError('')
@@ -19445,7 +19495,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <div className="flex flex-wrap gap-2">
                           {buyerJourneyActionStage === 'contacted' ? (
                             <>
-                              <Button type="button" size="sm" onClick={() => void handleUpdateLeadStage(selectedLead.leadId, 'Contacted', { successMessage: 'Buyer marked as contacted.' })}>Mark Reached Out</Button>
+                              <Button type="button" size="sm" onClick={() => handleBuyerJourneyQuickActivity('Call')}>Log first touch</Button>
                               <Button type="button" size="sm" variant="secondary" onClick={() => handleBuyerJourneyQuickActivity('Call')}>Log Call</Button>
                               <Button type="button" size="sm" variant="secondary" onClick={() => handleBuyerJourneyQuickActivity('WhatsApp')}>Log WhatsApp</Button>
                               <Button type="button" size="sm" variant="secondary" onClick={() => handleBuyerJourneyQuickActivity('Email')}>Log Email</Button>
@@ -19474,7 +19524,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </>
                           ) : (
                             <>
-                              <Button type="button" size="sm" onClick={() => void handleUpdateLeadStage(selectedLead.leadId, 'Contacted', { successMessage: 'Buyer journey started.' })}>Start Outreach</Button>
+                              <Button type="button" size="sm" onClick={() => handleBuyerJourneyQuickActivity('Call')}>Start Outreach</Button>
                               <Button type="button" size="sm" variant="secondary" onClick={() => handleBuyerJourneyQuickActivity('Call')}>Log Call</Button>
                             </>
                           )}
@@ -20033,6 +20083,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             task: findViewingAutomationTask('Post-viewing buyer follow-up'),
                           },
                         ]
+                        const buyerNeedsFirstContact = !buyerOverviewQualification.hasContacted
+                        const buyerNextTouchTitle = buyerNeedsFirstContact
+                          ? 'Log the first buyer contact'
+                          : buyerOverviewQualification.hasQualificationSignal
+                            ? selectedLeadOpenActions.nextDueAction?.label || 'Keep the buyer journey moving'
+                            : 'Capture phone qualification'
+                        const buyerNextTouchDescription = buyerNeedsFirstContact
+                          ? 'Call, WhatsApp, email, or meet the buyer, then log the outcome here to move them from Captured to Contacted.'
+                          : buyerOverviewQualification.hasQualificationSignal
+                            ? selectedLeadOpenActions.nextDueAction?.meta || 'Use the activity logger for the next touch, or book the next viewing when the buyer is ready.'
+                            : 'Use the qualification questions after first contact to capture budget, areas, finance and urgency.'
 
                         return (
                           <>
@@ -20172,16 +20233,54 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 )}
                               </form>
 
-                              <section className="flex h-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                              <div className="flex h-full min-w-0 flex-col gap-4">
+                              <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
+                                <div className="flex flex-wrap items-start justify-between gap-4">
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">What’s next</p>
+                                    <h3 className="mt-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">{buyerNextTouchTitle}</h3>
+                                    <p className="mt-2 text-sm leading-5 text-[#c7d5e2]">{buyerNextTouchDescription}</p>
+                                  </div>
+                                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10 text-[#9bd6b7] ring-1 ring-white/15">
+                                    <Phone className="h-4 w-4" />
+                                  </span>
+                                </div>
+                                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                                  {[
+                                    ['Call', Phone],
+                                    ['WhatsApp', MessageCircle],
+                                    ['Email', Mail],
+                                  ].map(([type, Icon]) => (
+                                    <button
+                                      key={type}
+                                      type="button"
+                                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] bg-white px-3 text-sm font-semibold text-[#102033] transition hover:bg-[#edf4fa]"
+                                      onClick={() => {
+                                        handleActivityComposerModeChange('activity')
+                                        setActivityForm((previous) => ({
+                                          ...previous,
+                                          activityType: type,
+                                          activityNote: normalizeText(previous.activityNote) || `${type} with ${selectedLeadDisplayName || 'buyer'}`,
+                                        }))
+                                      }}
+                                    >
+                                      {createElement(Icon, { className: 'h-4 w-4' })}
+                                      {type}
+                                    </button>
+                                  ))}
+                                </div>
+                              </section>
+
+                              <section className="flex flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Activity Logger</p>
-                                    <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">Capture the next touch</h3>
+                                    <h3 className="mt-1 text-base font-semibold tracking-[-0.02em] text-[#102033]">Capture touchpoint</h3>
                                   </div>
                                   <Zap className="h-5 w-5 text-[#2f7b9e]" />
                                 </div>
 
-                                <div className="mt-4">
+                                <div className="mt-3">
                                   <div className="grid gap-1 rounded-[14px] bg-[#f3f7fb] p-1" style={{ gridTemplateColumns: `repeat(${activityQuickTypes.length}, minmax(0, 1fr))` }}>
                                     {activityQuickTypes.map((type) => {
                                       const ActivityIcon = activityIconByType[type] || Columns3
@@ -20203,7 +20302,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     })}
                                   </div>
 
-                                  <form className="mt-4 space-y-3" onSubmit={handleUnifiedActivitySubmit}>
+                                  <form className="mt-3 space-y-3" onSubmit={handleUnifiedActivitySubmit}>
                                     {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? (
                                       <div className="grid gap-3 sm:grid-cols-3">
                                         <Field placeholder="Next action title" value={taskForm.title} onChange={(event) => setTaskForm((previous) => ({ ...previous, title: event.target.value }))} />
@@ -20230,7 +20329,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     )}
                                     <Field
                                       as="textarea"
-                                      rows={5}
+                                      rows={3}
                                       placeholder={activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? 'Describe the next action...' : 'Add notes about this activity...'}
                                       value={activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? taskForm.description : activityForm.activityNote}
                                       onChange={(event) => {
@@ -20271,7 +20370,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     </div>
                                   </form>
 
-                                  <div className="mt-5 border-t border-[#edf3f8] pt-4">
+                                  <div className="mt-4 border-t border-[#edf3f8] pt-4">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                       <div>
                                         <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Completed activity</p>
@@ -20318,6 +20417,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   </div>
                                 </div>
                               </section>
+                              </div>
                             </div>
 
                             <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6">
