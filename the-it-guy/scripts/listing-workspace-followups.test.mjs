@@ -25,7 +25,7 @@ assert.match(
 
 for (const label of [
   'Send seller onboarding',
-  'Generate mandate',
+  'Generate Mandate',
   'Upload signed mandate',
   'Add seller contact',
   'Add seller ID / registration number',

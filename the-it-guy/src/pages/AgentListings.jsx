@@ -93,7 +93,7 @@ const ORGANISATION_ASSIGNMENT_SCOPE_ROLES = ['principal', 'owner', 'admin', 'hq'
 const QUICK_ADD_MANDATE_STATUS_OPTIONS = [
   { value: 'not_started', label: 'Not started' },
   { value: 'in_progress', label: 'Busy with seller' },
-  { value: 'signed_external_pending_upload', label: 'Manual signature reported — verification required' },
+  { value: 'signed_external_pending_upload', label: 'Signed manually, upload later' },
   { value: 'expired', label: 'Expired' },
 ]
 const QUICK_ADD_INTENT_OPTIONS = [
@@ -3714,7 +3714,7 @@ function AgentListings({ initialTab = null } = {}) {
                       <div className="rounded-[12px] border border-[#cfe4d8] bg-[#f4fbf7] px-3 py-2">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#4d8060]">Quick Add handoff</p>
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#4d8060]">Listing follow-ups</p>
                             <p className="mt-1 truncate text-[0.82rem] font-semibold text-[#24583a]">{card.quickAddPrimaryAction.label}</p>
                             {card.quickAddPrimaryAction.reminderLabel ? (
                               <p className="mt-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#5f8a6f]">{card.quickAddPrimaryAction.reminderLabel}</p>

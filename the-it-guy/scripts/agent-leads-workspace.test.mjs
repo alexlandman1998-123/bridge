@@ -218,7 +218,7 @@ try {
     'appointments',
     'offers',
   ], 'buyer lead workspace should expose exactly six buyer journey tabs')
-  assert.ok(buyerTabsSource.includes("{ key: 'property_match', label: 'Properties' }"), 'buyer property match tab should be labelled Properties')
+  assert.ok(buyerTabsSource.includes("{ key: 'property_match', label: 'Property Match' }"), 'buyer property match tab should be labelled Property Match')
   assert.ok(buyerTabsSource.includes("{ key: 'timeline', label: 'Activity' }"), 'buyer timeline tab should be labelled Activity')
   for (const retiredTab of ['requirements', 'suggestions', 'listings', 'recommendations', 'saved_searches']) {
     assert.ok(!buyerTabKeys.includes(retiredTab), `${retiredTab} should be merged into Property Match`)
