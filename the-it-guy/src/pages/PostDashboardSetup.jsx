@@ -19,7 +19,7 @@ import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import OnboardingProgressLayout from '../components/onboarding/OnboardingProgressLayout'
 import { APP_ROLE_LABELS } from '../lib/appRoleMetadata'
-import { ONBOARDING_REQUIRED_REASONS, ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
+import { ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
 import { SIGNUP_ONBOARDING_PATHS, SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
 import { clearStoredSignupIntent } from '../lib/signupIntent'
 import { hasCommercialAccessMarker } from '../lib/commercialAccess'
@@ -591,9 +591,7 @@ export default function PostDashboardSetup() {
   const recoveryReasons = [onboardingRequiredReason, onboardingState?.recoveryReason]
     .map((reason) => normalizeText(reason))
     .filter(Boolean)
-  const hasBlockingRecoveryReason = recoveryReasons.some(
-    (reason) => reason !== ONBOARDING_REQUIRED_REASONS.noActiveMembership,
-  )
+  const hasBlockingRecoveryReason = recoveryReasons.length > 0
   const canOpenActiveWorkspace = hasActiveMembership && !hasBlockingRecoveryReason
   const pageTitle = useMemo(() => {
     if (canClaimExistingWorkspace) return 'Claim your agency workspace'
@@ -627,10 +625,10 @@ export default function PostDashboardSetup() {
   }, [intent, profile])
 
   useEffect(() => {
-    if (!hasCommercialWorkspaceAccess || !activeMemberships.length) return
+    if (!canOpenActiveWorkspace || !hasCommercialWorkspaceAccess) return
     clearStoredSignupIntent()
     navigate('/commercial', { replace: true })
-  }, [activeMemberships.length, hasCommercialWorkspaceAccess, navigate])
+  }, [canOpenActiveWorkspace, hasCommercialWorkspaceAccess, navigate])
 
   useEffect(() => {
     if (!canOpenActiveWorkspace) return
@@ -696,7 +694,7 @@ export default function PostDashboardSetup() {
     inviteAutoContinueRef.current = token
     const targetPath = getPostInviteDashboardPath({ hasCommercialWorkspaceAccess, agencySignupType, intent, baseRole })
 
-    if (activeMemberships.length > 0) {
+    if (canOpenActiveWorkspace) {
       clearStoredSignupIntent()
       navigate(targetPath, { replace: true })
       return
@@ -706,17 +704,14 @@ export default function PostDashboardSetup() {
       try {
         setSaving(true)
         setError('')
-        setMessage('Accepting invite. Opening your workspace...')
+        setMessage('Accepting invite. Checking your workspace access...')
         await joinWorkspaceFromInvite(token, authState.user, { intent })
         await refreshAuthState?.()
-        clearStoredSignupIntent()
-        navigate(targetPath, { replace: true })
+        setMessage('Invite accepted. Finalising your workspace access...')
       } catch (inviteError) {
         if (isInviteAlreadyAcceptedError(inviteError)) {
-          setMessage('Invite already accepted. Opening your workspace...')
+          setMessage('Invite already accepted. Refreshing your workspace access...')
           await refreshAuthState?.()
-          clearStoredSignupIntent()
-          navigate(targetPath, { replace: true })
           return
         }
         setError(inviteError?.message || 'Invite acceptance failed.')
@@ -726,7 +721,7 @@ export default function PostDashboardSetup() {
     }
 
     void acceptAndContinue()
-  }, [activeMemberships.length, agencySignupType, authState.user, baseRole, canAcceptInvite, form.inviteToken, hasCommercialWorkspaceAccess, intent, navigate, refreshAuthState, saving])
+  }, [agencySignupType, authState.user, baseRole, canAcceptInvite, canOpenActiveWorkspace, form.inviteToken, hasCommercialWorkspaceAccess, intent, navigate, refreshAuthState, saving])
 
   function updateField(field, value) {
     setForm((previous) => ({ ...previous, [field]: value }))
@@ -1117,19 +1112,11 @@ export default function PostDashboardSetup() {
       setMessage('')
       await joinWorkspaceFromInvite(token, authState.user, { intent })
       refreshAuthState?.()
-      setMessage('Invite accepted. Opening your workspace...')
-      clearStoredSignupIntent()
-      const targetPath = getPostInviteDashboardPath({ hasCommercialWorkspaceAccess, agencySignupType, intent, baseRole })
-      window.setTimeout(() => {
-        navigate(targetPath, { replace: true })
-      }, 500)
+      setMessage('Invite accepted. Finalising your workspace access...')
     } catch (inviteError) {
       if (isInviteAlreadyAcceptedError(inviteError)) {
-        setMessage('Invite already accepted. Opening your workspace...')
+        setMessage('Invite already accepted. Refreshing your workspace access...')
         await refreshAuthState?.()
-        clearStoredSignupIntent()
-        const targetPath = getPostInviteDashboardPath({ hasCommercialWorkspaceAccess, agencySignupType, intent, baseRole })
-        navigate(targetPath, { replace: true })
         return
       }
       setError(inviteError?.message || 'Invite acceptance failed.')
