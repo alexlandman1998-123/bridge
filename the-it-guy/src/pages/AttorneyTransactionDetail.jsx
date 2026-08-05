@@ -24,6 +24,7 @@ import {
   ListChecks,
   LockKeyhole,
   MapPin,
+  MessageCircle,
   MessageSquarePlus,
   MoreHorizontal,
   Paperclip,
@@ -7316,9 +7317,7 @@ function ArchlineDocumentsWorkspace({
   allLibraryRows = [],
   missingRows = [],
   recentActivity = [],
-  search = '',
   onFilterChange,
-  onSearchChange,
   onUpload,
   onRequest,
   onUploadRequirement,
@@ -7365,9 +7364,21 @@ function ArchlineDocumentsWorkspace({
   return (
     <>
       <section className="space-y-4">
-        <div>
-          <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-950">Documents</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-600">Manage, review and request documents for this matter.</p>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-950">Documents</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600">Manage, review and request documents for this matter.</p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:justify-end">
+            <Button type="button" variant="secondary" size="sm" onClick={onRequest} className="justify-center whitespace-nowrap">
+              <FileText size={14} />
+              Request Document
+            </Button>
+            <Button type="button" size="sm" onClick={onUpload} className="justify-center whitespace-nowrap">
+              <Upload size={14} />
+              Upload Document
+            </Button>
+          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
@@ -7398,7 +7409,7 @@ function ArchlineDocumentsWorkspace({
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.25fr)]">
         <div className="space-y-4">
           <ArchlinePanel className="overflow-hidden">
-            <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="border-b border-slate-200 p-4">
               <div className="inline-flex w-full rounded-lg border border-slate-200 bg-slate-50 p-1 sm:w-auto">
                 {[
                   ['all', 'All'],
@@ -7416,21 +7427,6 @@ function ArchlineDocumentsWorkspace({
                     {label}
                   </button>
                 ))}
-              </div>
-
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <label className="relative min-w-0 sm:w-[310px]">
-                  <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <Field value={search} onChange={(event) => onSearchChange?.(event.target.value)} placeholder="Search documents..." className="h-10 pl-9 text-sm" />
-                </label>
-                <Button type="button" variant="secondary" size="sm" onClick={onRequest} className="justify-center">
-                  <FileText size={14} />
-                  Request Document
-                </Button>
-                <Button type="button" size="sm" onClick={onUpload} className="justify-center">
-                  <Upload size={14} />
-                  Upload Document
-                </Button>
               </div>
             </div>
 
@@ -9004,6 +9000,596 @@ function AttorneyDocumentControl({
           ))}
           {!visibleRows.length ? <p className="rounded-[14px] border border-success/20 bg-successSoft px-4 py-5 text-sm text-success">Nothing in this group needs attention.</p> : null}
         </div>
+      </section>
+    </section>
+  )
+}
+
+const AGENT_TRANSACTION_JOURNEY_STAGES = [
+  { key: 'offer_accepted', label: 'Offer Accepted', Icon: CheckCircle2 },
+  { key: 'otp_signed', label: 'OTP Signed', Icon: FileCheck2 },
+  { key: 'buyer_onboarding', label: 'Buyer Onboarding', Icon: UsersRound },
+  { key: 'finance', label: 'Finance', Icon: Landmark },
+  { key: 'transfer', label: 'Transfer', Icon: Phone },
+  { key: 'registration', label: 'Registration', Icon: FileText },
+]
+
+const AGENT_DOCUMENT_SNAPSHOT_GROUPS = [
+  { key: 'buyer', label: 'Buyer Documents', categories: ['buyer'], Icon: FileText, barClass: 'bg-blue-600', iconClass: 'bg-blue-50 text-blue-700' },
+  { key: 'seller', label: 'Seller Documents', categories: ['seller'], Icon: FileCheck2, barClass: 'bg-emerald-700', iconClass: 'bg-emerald-50 text-emerald-700' },
+  { key: 'attorney', label: 'Attorney Documents', categories: ['transfer', 'general', 'cancellation'], Icon: BriefcaseBusiness, barClass: 'bg-violet-600', iconClass: 'bg-violet-50 text-violet-700' },
+  { key: 'finance', label: 'Finance Documents', categories: ['finance', 'bond'], Icon: Landmark, barClass: 'bg-orange-500', iconClass: 'bg-orange-50 text-orange-700' },
+]
+
+const AGENT_OVERVIEW_RECEIVED_DOCUMENT_STATUSES = new Set(['uploaded', 'pending_review', 'verified', 'generated'])
+const AGENT_OVERVIEW_OPEN_DOCUMENT_STATUSES = new Set(['missing', 'requested', 'rejected', 'expired'])
+const AGENT_PARTY_KEYS = ['buyer', 'seller', 'transfer_attorney', 'bond_originator']
+
+function clampPercent(value = 0) {
+  const percent = Number(value || 0)
+  if (!Number.isFinite(percent)) return 0
+  return Math.max(0, Math.min(100, Math.round(percent)))
+}
+
+function getAgentOverviewRequirementStatus(row = {}) {
+  return normalizeDocumentCommandStatus(row.status || row.requiredDocumentStatus, {
+    hasDocument: Boolean(row.fileUrl || row.linkedDocument || row.raw),
+  })
+}
+
+function getAgentOverviewCategory(row = {}) {
+  const normalized = normalizeLibraryCategory(row.canonicalCategory || row.category || row.raw?.category)
+  if (normalized === 'generated' || normalized === 'internal') return 'general'
+  if (normalized === 'bank_requested') return 'finance'
+  return normalized || 'general'
+}
+
+function getAgentJourneyStageIndex({ transaction = {}, lifecycleProgress = null, transferStageKey = '', transferStageLabel = '', lifecycleState = '' } = {}) {
+  const source = [
+    lifecycleProgress?.currentStage,
+    lifecycleProgress?.nextMilestone,
+    lifecycleProgress?.helperText,
+    transferStageKey,
+    transferStageLabel,
+    lifecycleState,
+    transaction?.current_main_stage,
+    transaction?.main_stage,
+    transaction?.stage,
+    transaction?.detailed_stage,
+    transaction?.onboarding_status,
+  ].filter(Boolean).join(' ').toLowerCase()
+
+  if (/(registered|registration complete|completed)/.test(source)) return 5
+  if (/(registration|lodgement|lodged|transfer|duty|guarantee|attorney|conveyanc)/.test(source)) return 4
+  if (/(finance|bond|loan|bank|mortgage)/.test(source)) return 3
+  if (/(onboarding|fica|buyer)/.test(source)) return 2
+  if (/(otp|offer to purchase|agreement|signed)/.test(source)) return 1
+  return 0
+}
+
+function buildAgentJourneyStages({ transaction = {}, lifecycleProgress = null, transferStageKey = '', transferStageLabel = '', lifecycleState = '' } = {}) {
+  const currentIndex = getAgentJourneyStageIndex({ transaction, lifecycleProgress, transferStageKey, transferStageLabel, lifecycleState })
+  const dateByStage = {
+    offer_accepted: transaction?.offer_accepted_at || transaction?.accepted_at || transaction?.agreement_date || transaction?.created_at,
+    otp_signed: transaction?.otp_signed_at || transaction?.signed_otp_at || transaction?.agreement_signed_at,
+    buyer_onboarding: transaction?.onboarding_completed_at || transaction?.buyer_onboarding_sent_at || transaction?.updated_at,
+    finance: transaction?.finance_submitted_at || transaction?.bond_application_submitted_at || transaction?.bond_instruction_date,
+    transfer: transaction?.instruction_date || transaction?.transfer_instruction_sent_at || transaction?.lodgement_date,
+    registration: transaction?.registration_date || transaction?.registered_at || transaction?.target_registration_date || transaction?.expected_transfer_date,
+  }
+
+  return AGENT_TRANSACTION_JOURNEY_STAGES.map((stage, index) => ({
+    ...stage,
+    state: index < currentIndex ? 'completed' : index === currentIndex ? 'current' : 'pending',
+    detail: index < currentIndex
+      ? formatShortDayMonth(dateByStage[stage.key], 'Completed')
+      : index === currentIndex
+        ? 'In Progress'
+        : 'Pending',
+  }))
+}
+
+function buildAgentJourneyReason({ outstandingItems = [], lifecycleProgress = null, healthLabel = '' } = {}) {
+  const firstBlocker = outstandingItems.find((item) => item.priority === 'High') || outstandingItems[0] || null
+  if (firstBlocker) {
+    return {
+      tone: firstBlocker.priority === 'High' ? 'warning' : 'neutral',
+      label: firstBlocker.priority === 'High' ? 'Needs attention' : 'Watching',
+      text: firstBlocker.description || firstBlocker.title,
+    }
+  }
+
+  if (lifecycleProgress?.blockerReason) {
+    return {
+      tone: 'warning',
+      label: 'Needs attention',
+      text: lifecycleProgress.blockerReason,
+    }
+  }
+
+  return {
+    tone: 'success',
+    label: `Why we're on track`,
+    text: healthLabel && healthLabel !== 'On Track'
+      ? healthLabel
+      : 'All parties are responding within expected timeframes.',
+  }
+}
+
+function buildAgentDocumentSnapshotRows({ requiredRows = [], allLibraryRows = [] } = {}) {
+  return AGENT_DOCUMENT_SNAPSHOT_GROUPS.map((group) => {
+    const required = requiredRows.filter((row) => group.categories.includes(getAgentOverviewCategory(row)))
+    const library = allLibraryRows.filter((row) => group.categories.includes(getAgentOverviewCategory(row)))
+    const basisRows = required.length ? required : library
+    const total = basisRows.length
+    const received = basisRows.filter((row) => AGENT_OVERVIEW_RECEIVED_DOCUMENT_STATUSES.has(getAgentOverviewRequirementStatus(row))).length
+    return {
+      ...group,
+      received,
+      total,
+      percent: total ? clampPercent((received / total) * 100) : 0,
+      countLabel: total ? `${received} / ${total}` : '0 / 0',
+    }
+  })
+}
+
+function getAgentOverviewOwnerFromRow(row = {}) {
+  const owner = String(row.ownerLabel || row.requiredParty || '').trim()
+  if (owner) return owner
+  const category = getAgentOverviewCategory(row)
+  if (category === 'buyer') return 'Buyer'
+  if (category === 'seller') return 'Seller'
+  if (category === 'finance' || category === 'bond') return 'Finance'
+  return 'Matter team'
+}
+
+function buildAgentOutstandingItems({
+  missingDocuments = [],
+  requiredRows = [],
+  transactionContactRows = [],
+  financeReadinessDashboard = null,
+  transactionRollup = null,
+} = {}) {
+  const items = []
+  const sourceRows = (missingDocuments.length ? missingDocuments : requiredRows)
+    .filter((row) => AGENT_OVERVIEW_OPEN_DOCUMENT_STATUSES.has(getAgentOverviewRequirementStatus(row)))
+
+  sourceRows.slice(0, 8).forEach((row) => {
+    const owner = getAgentOverviewOwnerFromRow(row)
+    items.push({
+      key: `document:${row.id || row.displayName}`,
+      owner,
+      title: row.displayName || row.documentTypeLabel || 'Document outstanding',
+      description: `${owner} document needed`,
+      priority: row.blocksStage || row.priority === 'High' ? 'High' : row.priority || 'Medium',
+      waitLabel: row.statusLabel || getDocumentCommandStatusLabel(row.status),
+      target: 'documents',
+    })
+  })
+
+  ;(transactionRollup?.blockers || []).slice(0, 4).forEach((blocker, index) => {
+    const title = blocker?.label || blocker?.message || blocker?.title || String(blocker || '')
+    if (!title) return
+    items.push({
+      key: `rollup:${index}:${title}`,
+      owner: blocker?.ownerLabel || blocker?.roleLabel || 'Matter team',
+      title,
+      description: blocker?.reason || blocker?.description || 'Transaction item needs attention',
+      priority: 'High',
+      waitLabel: 'Blocking',
+      target: blocker?.actionTarget || 'overview',
+    })
+  })
+
+  ;(financeReadinessDashboard?.blockers || []).slice(0, 4).forEach((blocker, index) => {
+    const title = blocker?.label || blocker?.message || blocker?.title || ''
+    if (!title) return
+    items.push({
+      key: `finance:${index}:${title}`,
+      owner: 'Finance',
+      title,
+      description: blocker?.description || 'Finance readiness needs attention',
+      priority: 'Medium',
+      waitLabel: 'Finance',
+      target: 'finance',
+    })
+  })
+
+  transactionContactRows
+    .filter((row) => ['Transfer Attorney', 'Bond Originator'].includes(row.role) && row.status === 'Not assigned')
+    .forEach((row) => {
+      items.push({
+        key: `roleplayer:${row.key}`,
+        owner: row.role,
+        title: `${row.role} awaiting assignment`,
+        description: 'Assign the roleplayer before the next handoff.',
+        priority: row.key === 'transfer_attorney' ? 'High' : 'Medium',
+        waitLabel: 'Not started',
+        target: 'stakeholders',
+      })
+    })
+
+  const seen = new Set()
+  return items.filter((item) => {
+    const key = `${item.owner}:${item.title}`.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function buildAgentOverviewNextAction({ outstandingItems = [], overviewNextActions = [], transactionContactRows = [] } = {}) {
+  const primary = outstandingItems[0] || overviewNextActions[0] || null
+  if (!primary) {
+    return {
+      owner: 'Matter team',
+      ownerKey: '',
+      title: 'No action needed',
+      description: 'Everything looks good right now.',
+      contact: null,
+    }
+  }
+
+  const ownerText = String(primary.owner || primary.workflow || primary.title || '').toLowerCase()
+  const preferredKey = ownerText.includes('seller')
+    ? 'seller'
+    : ownerText.includes('attorney') || ownerText.includes('transfer')
+      ? 'transfer_attorney'
+      : ownerText.includes('bond') || ownerText.includes('finance')
+        ? 'bond_originator'
+        : 'buyer'
+  const contact = transactionContactRows.find((row) => row.key === preferredKey) || transactionContactRows.find((row) => row.key === 'buyer') || null
+  const ownerLabel = contact?.role || primary.owner || 'Buyer'
+
+  return {
+    ...primary,
+    owner: ownerLabel,
+    ownerKey: contact?.key || preferredKey,
+    title: primary.target === 'documents' || /document|proof|fica|address/i.test(primary.title)
+      ? `Follow up with ${ownerLabel}`
+      : primary.title || `Follow up with ${ownerLabel}`,
+    description: primary.description || 'They still need to complete the next transaction step.',
+    contact,
+  }
+}
+
+function getAgentContactInitials(row = {}) {
+  const value = String(row.contact || row.company || row.role || '?').trim()
+  const initials = value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase()
+  return initials || '?'
+}
+
+function getAgentContactHref(type, value = '') {
+  const rawValue = String(value || '').trim()
+  if (!rawValue || rawValue === 'Not captured' || rawValue === 'Not assigned') return ''
+  if (type === 'phone') return `tel:${rawValue.replace(/\s+/g, '')}`
+  if (type === 'email') return `mailto:${rawValue}`
+  if (type === 'whatsapp') {
+    const digits = rawValue.replace(/[^\d+]/g, '').replace(/^\+/, '')
+    return digits ? `https://wa.me/${digits}` : ''
+  }
+  return ''
+}
+
+function buildAgentPartyRows(transactionContactRows = []) {
+  const rowByKey = new Map(transactionContactRows.map((row) => [row.key, row]))
+  return AGENT_PARTY_KEYS.map((key) => {
+    const fallbackRole = key === 'transfer_attorney'
+      ? 'Transfer Attorney'
+      : key === 'bond_originator'
+        ? 'Bond Originator'
+        : toTitle(key)
+    const row = rowByKey.get(key) || {
+      key,
+      role: fallbackRole,
+      contact: 'Not assigned',
+      company: key === 'buyer' || key === 'seller' ? 'Client' : 'Awaiting Assignment',
+      email: 'Not captured',
+      phone: 'Not captured',
+      status: 'Not assigned',
+    }
+    const assigned = row.contact && row.contact !== 'Not assigned'
+    return {
+      ...row,
+      role: row.role || fallbackRole,
+      contact: assigned ? row.contact : 'Awaiting Assignment',
+      company: assigned ? row.company : 'Awaiting Assignment',
+      status: assigned ? row.status || 'Active' : 'Awaiting Assignment',
+      initials: getAgentContactInitials(assigned ? row : { ...row, contact: fallbackRole }),
+      tone: key === 'buyer'
+        ? 'bg-emerald-50 text-emerald-800'
+        : key === 'seller'
+          ? 'bg-amber-50 text-amber-800'
+          : key === 'transfer_attorney'
+            ? 'bg-slate-100 text-slate-800'
+            : 'bg-blue-50 text-blue-800',
+    }
+  })
+}
+
+function buildAgentFinancialRows({ transaction = {}, displayPurchasePriceValue = 0, financeTypeLabel = '', bondAmountFallback = '', hasCapturedFinancials = false } = {}) {
+  const depositValue = hasCapturedFinancials
+    ? Number(transaction?.deposit_amount || transaction?.reservation_amount || transaction?.reservation_deposit_amount || 0)
+    : 0
+  const purchasePrice = Number(displayPurchasePriceValue || 0)
+  const balance = purchasePrice && Number.isFinite(depositValue) ? Math.max(0, purchasePrice - depositValue) : 0
+  const transferDuty = transaction?.transfer_duty || transaction?.transfer_duty_amount || transaction?.estimated_transfer_duty || transaction?.transferDutyAmount
+
+  return [
+    ['Purchase Price', formatCurrencyValue(displayPurchasePriceValue, 'Not captured')],
+    ['Deposit', formatCurrencyValue(depositValue, 'Not captured')],
+    ['Balance', formatCurrencyValue(balance, purchasePrice ? 'Not captured' : 'Not captured')],
+    ['Finance Type', financeTypeLabel || 'Not captured'],
+    ['Bond Amount', formatCurrencyValue(hasCapturedFinancials ? transaction?.bond_amount : 0, bondAmountFallback || 'Not captured')],
+    ['Transfer Duty', formatCurrencyValue(transferDuty, 'Not captured')],
+    ['Target Registration', formatDate(transaction?.target_registration_date || transaction?.expected_transfer_date, 'Not set')],
+  ]
+}
+
+function AgentOverviewPriorityPill({ priority = 'Medium' }) {
+  const normalized = String(priority || 'Medium').toLowerCase()
+  const className = normalized === 'high'
+    ? 'border-red-100 bg-red-50 text-red-700'
+    : normalized === 'low'
+      ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+      : 'border-amber-100 bg-amber-50 text-amber-700'
+  return <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${className}`}>{toTitle(priority)}</span>
+}
+
+function AgentTransactionOverview({
+  journeyStages = [],
+  journeyReason = null,
+  outstandingItems = [],
+  nextAction = null,
+  documentRows = [],
+  partyRows = [],
+  financialRows = [],
+  onOpenDocuments,
+  onOpenFinance,
+  onOpenTimeline,
+  onOpenStakeholders,
+  onSendBuyerReminder,
+  onSendSellerReminder,
+}) {
+  const completedCount = journeyStages.filter((stage) => stage.state === 'completed').length
+  const currentStageIndex = Math.max(0, journeyStages.findIndex((stage) => stage.state === 'current'))
+  const progressPercent = journeyStages.length > 1 ? clampPercent((currentStageIndex / (journeyStages.length - 1)) * 100) : 0
+  const reasonTone = journeyReason?.tone === 'warning'
+    ? 'border-amber-100 bg-amber-50 text-amber-800'
+    : 'border-emerald-100 bg-emerald-50 text-emerald-800'
+  const nextContact = nextAction?.contact || null
+  const callHref = getAgentContactHref('phone', nextContact?.phone)
+  const whatsappHref = getAgentContactHref('whatsapp', nextContact?.phone)
+
+  const handleCallNextAction = () => {
+    if (callHref) {
+      window.location.href = callHref
+      return
+    }
+    onOpenStakeholders?.()
+  }
+  const handleWhatsAppNextAction = () => {
+    if (whatsappHref) {
+      window.open(whatsappHref, '_blank', 'noopener,noreferrer')
+      return
+    }
+    onOpenStakeholders?.()
+  }
+  const handleReminderNextAction = () => {
+    if (nextAction?.ownerKey === 'seller') {
+      onSendSellerReminder?.()
+      return
+    }
+    onSendBuyerReminder?.()
+  }
+
+  return (
+    <section className="space-y-6">
+      <section className="rounded-[22px] border border-borderDefault bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)] sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-lg font-bold tracking-[-0.02em] text-textStrong">Transaction Journey</h2>
+            <p className="mt-1 text-sm text-textMuted">{completedCount} milestones completed, current stage highlighted.</p>
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={onOpenTimeline}>
+            View Full Timeline
+            <ChevronRight size={15} />
+          </Button>
+        </div>
+
+        <div className="mt-8 overflow-x-auto pb-2">
+          <div className="relative min-w-[820px] px-3">
+            <div className="absolute left-10 right-10 top-[22px] h-0.5 bg-slate-200" />
+            <div className="absolute left-10 top-[22px] h-0.5 bg-emerald-700 transition-all" style={{ width: `calc((100% - 5rem) * ${progressPercent / 100})` }} />
+            <div className="relative grid grid-cols-6 gap-4">
+              {journeyStages.map((stage) => {
+                const Icon = stage.Icon || FileText
+                const isComplete = stage.state === 'completed'
+                const isCurrent = stage.state === 'current'
+                const circleClass = isComplete
+                  ? 'border-emerald-700 bg-emerald-700 text-white'
+                  : isCurrent
+                    ? 'border-emerald-700 bg-white text-emerald-800 shadow-[0_0_0_5px_rgba(16,185,129,0.12)]'
+                    : 'border-slate-200 bg-slate-100 text-slate-500'
+                return (
+                  <div key={stage.key} className="flex min-w-0 flex-col items-center text-center">
+                    <span className={`relative z-10 inline-flex size-11 items-center justify-center rounded-full border-2 ${circleClass}`}>
+                      {isComplete ? <CheckCircle2 size={20} /> : <Icon size={18} />}
+                    </span>
+                    <strong className={`mt-3 block text-sm ${isCurrent ? 'text-textStrong' : isComplete ? 'text-slate-700' : 'text-textMuted'}`}>{stage.label}</strong>
+                    <span className={`mt-1 text-xs font-semibold ${isCurrent ? 'text-emerald-700' : 'text-textMuted'}`}>{stage.detail}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className={`mt-5 flex flex-col gap-3 rounded-[14px] border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between ${reasonTone}`}>
+          <p className="min-w-0">
+            <strong>{journeyReason?.label || `Why we're on track`}:</strong> {journeyReason?.text || 'All parties are responding within expected timeframes.'}
+          </p>
+          <Button type="button" variant="ghost" size="sm" className="shrink-0 justify-center bg-white/70" onClick={onOpenTimeline}>
+            View Full Timeline
+            <ChevronRight size={15} />
+          </Button>
+        </div>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-3">
+        <article className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-textStrong">Outstanding Items</h3>
+            {outstandingItems.length ? <span className="inline-flex size-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">{outstandingItems.length}</span> : null}
+          </div>
+          <div className="mt-4 space-y-3">
+            {outstandingItems.slice(0, 3).map((item, index) => (
+              <button key={item.key || `${item.title}-${index}`} type="button" className="flex w-full items-start gap-3 rounded-[14px] border border-borderSoft bg-white px-3.5 py-3 text-left transition hover:border-borderStrong hover:bg-surfaceAlt" onClick={() => item.target === 'finance' ? onOpenFinance?.() : item.target === 'stakeholders' ? onOpenStakeholders?.() : onOpenDocuments?.()}>
+                <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-bold text-blue-700">{String(item.owner || '?').slice(0, 2).toUpperCase()}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-semibold text-textMuted">{item.owner}</span>
+                  <strong className="mt-0.5 block text-sm text-textStrong">{item.title}</strong>
+                  <span className="mt-1 block text-xs font-semibold text-primary">{item.waitLabel || 'Waiting'}</span>
+                </span>
+                <AgentOverviewPriorityPill priority={item.priority || 'Medium'} />
+              </button>
+            ))}
+            {!outstandingItems.length ? (
+              <p className="rounded-[14px] border border-success/20 bg-successSoft px-4 py-8 text-sm font-semibold text-success">
+                Everything looks good. No outstanding actions.
+              </p>
+            ) : null}
+          </div>
+        </article>
+
+        <article className="flex min-h-[236px] flex-col rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
+          <h3 className="text-base font-semibold text-textStrong">Your Next Action</h3>
+          <div className="mt-4 flex flex-1 flex-col items-center justify-center rounded-[16px] border border-emerald-100 bg-emerald-50/55 px-4 py-6 text-center">
+            <span className="inline-flex size-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-800">
+              <Phone size={24} />
+            </span>
+            <strong className="mt-4 text-base text-textStrong">{nextAction?.title || 'No action needed'}</strong>
+            <p className="mt-1 max-w-sm text-sm leading-6 text-textMuted">{nextAction?.description || 'Everything looks good right now.'}</p>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <Button type="button" size="sm" className="justify-center" onClick={handleCallNextAction}>
+              <Phone size={14} />
+              Call {nextAction?.owner || 'Buyer'}
+            </Button>
+            <Button type="button" variant="secondary" size="sm" className="justify-center" onClick={handleReminderNextAction}>
+              <Send size={14} />
+              Send Reminder
+            </Button>
+            <Button type="button" variant="secondary" size="sm" className="justify-center" onClick={handleWhatsAppNextAction}>
+              <MessageCircle size={14} />
+              WhatsApp
+            </Button>
+          </div>
+        </article>
+
+        <article className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-textStrong">Documents Snapshot</h3>
+            <Button type="button" variant="ghost" size="sm" onClick={onOpenDocuments}>View Documents</Button>
+          </div>
+          <div className="mt-4 space-y-4">
+            {documentRows.map((row) => {
+              const Icon = row.Icon || FileText
+              return (
+                <button key={row.key} type="button" className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 text-left" onClick={onOpenDocuments}>
+                  <span className={`inline-flex size-9 items-center justify-center rounded-[11px] ${row.iconClass}`}>{createElement(Icon, { size: 16 })}</span>
+                  <span className="min-w-0">
+                    <span className="flex items-center justify-between gap-3">
+                      <strong className="truncate text-sm text-textStrong">{row.label}</strong>
+                      <span className="text-xs font-bold text-textMuted">{row.countLabel}</span>
+                    </span>
+                    <span className="mt-2 block h-2 overflow-hidden rounded-full bg-slate-100">
+                      <span className={`block h-full rounded-full ${row.barClass}`} style={{ width: `${row.percent}%` }} />
+                    </span>
+                  </span>
+                  <ChevronRight size={14} className="text-textMuted" />
+                </button>
+              )
+            })}
+          </div>
+        </article>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+        <article className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-textStrong">Parties</h3>
+            <Button type="button" variant="ghost" size="sm" onClick={onOpenStakeholders}>View all</Button>
+          </div>
+          <div className="mt-4 divide-y divide-borderSoft">
+            {partyRows.map((row) => {
+              const phoneHref = getAgentContactHref('phone', row.phone)
+              const emailHref = getAgentContactHref('email', row.email)
+              const rowWhatsAppHref = getAgentContactHref('whatsapp', row.phone)
+              const contactActions = [
+                { key: 'phone', icon: Phone, href: phoneHref, label: 'Call' },
+                { key: 'email', icon: Mail, href: emailHref, label: 'Email' },
+                { key: 'whatsapp', icon: MessageCircle, href: rowWhatsAppHref, label: 'WhatsApp' },
+              ]
+              return (
+                <div key={row.key} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className={`inline-flex size-11 shrink-0 items-center justify-center rounded-full text-sm font-bold ${row.tone}`}>{row.initials}</span>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-semibold text-textMuted">{row.role}</span>
+                      <strong className="mt-0.5 block truncate text-sm text-textStrong">{row.contact}</strong>
+                      <span className="mt-0.5 block truncate text-xs text-textMuted">{row.company}</span>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <span className="rounded-full bg-surfaceAlt px-2.5 py-1 text-xs font-semibold text-textMuted">{row.status}</span>
+                    {contactActions.map((action) => {
+                      const Icon = action.icon
+                      return (
+                        <button
+                          key={`${row.key}-${action.key}`}
+                          type="button"
+                          title={action.label}
+                          className="inline-flex size-9 items-center justify-center rounded-[10px] border border-borderDefault bg-white text-textBody transition hover:border-primary/30 hover:bg-primarySoft hover:text-primary disabled:cursor-not-allowed disabled:opacity-45"
+                          disabled={!action.href}
+                          onClick={() => {
+                            if (!action.href) return
+                            if (action.key === 'whatsapp') window.open(action.href, '_blank', 'noopener,noreferrer')
+                            else window.location.href = action.href
+                          }}
+                        >
+                          <Icon size={15} />
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </article>
+
+        <article className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
+          <h3 className="text-base font-semibold text-textStrong">Financial Snapshot</h3>
+          <div className="mt-4 divide-y divide-borderSoft">
+            {financialRows.map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-4 py-3 text-sm">
+                <span className="text-textMuted">{label}</span>
+                <strong className="text-right text-textStrong">{value}</strong>
+              </div>
+            ))}
+          </div>
+          <Button type="button" variant="secondary" className="mt-5 w-full justify-center" onClick={onOpenFinance}>
+            View Finance
+            <ChevronRight size={15} />
+          </Button>
+        </article>
       </section>
     </section>
   )
@@ -13576,6 +14162,81 @@ function AttorneyTransactionDetail() {
       visible: requiresCancellationAttorneyCard,
     },
   ].filter((item) => item.visible !== false)
+  const agentOverviewOutstandingItems = useMemo(
+    () =>
+      buildAgentOutstandingItems({
+        missingDocuments: documentReadiness.missingDocuments || [],
+        requiredRows: requiredDocumentRows,
+        transactionContactRows,
+        financeReadinessDashboard,
+        transactionRollup,
+      }),
+    [
+      documentReadiness.missingDocuments,
+      financeReadinessDashboard,
+      requiredDocumentRows,
+      transactionContactRows,
+      transactionRollup,
+    ],
+  )
+  const agentOverviewJourneyStages = useMemo(
+    () =>
+      buildAgentJourneyStages({
+        transaction,
+        lifecycleProgress: displayedLifecycleProgress,
+        transferStageKey,
+        transferStageLabel,
+        lifecycleState,
+      }),
+    [displayedLifecycleProgress, lifecycleState, transaction, transferStageKey, transferStageLabel],
+  )
+  const agentOverviewJourneyReason = useMemo(
+    () =>
+      buildAgentJourneyReason({
+        outstandingItems: agentOverviewOutstandingItems,
+        lifecycleProgress: displayedLifecycleProgress,
+        healthLabel: displayedMatterHealthLabel,
+      }),
+    [agentOverviewOutstandingItems, displayedLifecycleProgress, displayedMatterHealthLabel],
+  )
+  const agentOverviewDocumentRows = useMemo(
+    () =>
+      buildAgentDocumentSnapshotRows({
+        requiredRows: requiredDocumentRows,
+        allLibraryRows: allDocumentLibraryRows,
+      }),
+    [allDocumentLibraryRows, requiredDocumentRows],
+  )
+  const agentOverviewNextAction = useMemo(
+    () =>
+      buildAgentOverviewNextAction({
+        outstandingItems: agentOverviewOutstandingItems,
+        overviewNextActions,
+        transactionContactRows,
+      }),
+    [agentOverviewOutstandingItems, overviewNextActions, transactionContactRows],
+  )
+  const agentOverviewPartyRows = useMemo(
+    () => buildAgentPartyRows(transactionContactRows),
+    [transactionContactRows],
+  )
+  const agentOverviewFinancialRows = useMemo(
+    () =>
+      buildAgentFinancialRows({
+        transaction,
+        displayPurchasePriceValue,
+        financeTypeLabel,
+        bondAmountFallback,
+        hasCapturedFinancials,
+      }),
+    [
+      bondAmountFallback,
+      displayPurchasePriceValue,
+      financeTypeLabel,
+      hasCapturedFinancials,
+      transaction,
+    ],
+  )
   const archlineMatterChips = useMemo(() => [
     archlineTransferWorkflow ? { key: 'transfer', label: 'Transfer', icon: Workflow } : null,
     isBondOrHybridFinance ? { key: 'bond', label: 'Bond', icon: Landmark } : null,
@@ -15488,37 +16149,46 @@ function AttorneyTransactionDetail() {
             <section className="space-y-5">
               <div className="space-y-4">
                 {activeWorkspaceMenu === 'overview' ? (
-                  <AttorneyMatterCommandCenter
-                    workflows={legalWorkflowModels}
-                    roleplayerItems={roleplayerStripItems}
-                    conversationEntries={overviewConversationEntries}
-                    quickActions={overviewQuickActions}
-                    overviewNextActions={overviewNextActions}
-                    lifecycleProgress={displayedLifecycleProgress}
-                    statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
-                    healthLabel={displayedMatterHealthLabel}
-                    updatedLabel={displayedUpdatedLabel}
-                    routingDiagnostics={routingDiagnostics}
-                    canEditRoutingProfile={canEditRoutingProfile}
-                    onEditRoutingProfile={openRoutingProfileModal}
-                    onOpenWorkflow={(workflow) => openLegalWorkflowDetail(workflow.detailKey)}
-                    onExecuteAction={handleWorkflowActionCommand}
-                    onRequestDocuments={(workflow, action) => handleWorkflowActionCommand(workflow?.lane, action)}
-                    onExecuteCoordination={handleWorkflowCoordinationCommand}
-                    onExecuteFollowUp={handleWorkflowFollowUpCommand}
-                    onDraftBrief={handleDraftAttorneyStatusBrief}
-                    onOpenWorkspace={openWorkspaceMenu}
-                    onOpenTask={(item) => openWorkspaceMenu(getWorkspaceMenuForTask(item))}
-                  />
-                ) : null}
-                {activeWorkspaceMenu === 'overview' && isAgentTransactionView && isBondOrHybridFinance ? (
-                  <BondOriginatorAgentProgressView
-                    progressView={bondOriginatorAgentProgressView}
-                    transaction={transaction}
-                    onOpenFinance={() => openWorkspaceMenu('finance')}
-                    onOpenDocuments={() => openWorkspaceMenu('documents')}
-                    onOpenActivity={() => openWorkspaceMenu('activity')}
-                  />
+                  isAgentTransactionView ? (
+                    <AgentTransactionOverview
+                      journeyStages={agentOverviewJourneyStages}
+                      journeyReason={agentOverviewJourneyReason}
+                      outstandingItems={agentOverviewOutstandingItems}
+                      nextAction={agentOverviewNextAction}
+                      documentRows={agentOverviewDocumentRows}
+                      partyRows={agentOverviewPartyRows}
+                      financialRows={agentOverviewFinancialRows}
+                      onOpenDocuments={() => openWorkspaceMenu('documents')}
+                      onOpenFinance={() => openWorkspaceMenu('finance')}
+                      onOpenTimeline={() => openWorkspaceMenu('activity')}
+                      onOpenStakeholders={() => openWorkspaceMenu('stakeholders')}
+                      onSendBuyerReminder={() => void handleAgentHeaderOnboardingAction()}
+                      onSendSellerReminder={() => void handleSendSellerPortalLink()}
+                    />
+                  ) : (
+                    <AttorneyMatterCommandCenter
+                      workflows={legalWorkflowModels}
+                      roleplayerItems={roleplayerStripItems}
+                      conversationEntries={overviewConversationEntries}
+                      quickActions={overviewQuickActions}
+                      overviewNextActions={overviewNextActions}
+                      lifecycleProgress={displayedLifecycleProgress}
+                      statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
+                      healthLabel={displayedMatterHealthLabel}
+                      updatedLabel={displayedUpdatedLabel}
+                      routingDiagnostics={routingDiagnostics}
+                      canEditRoutingProfile={canEditRoutingProfile}
+                      onEditRoutingProfile={openRoutingProfileModal}
+                      onOpenWorkflow={(workflow) => openLegalWorkflowDetail(workflow.detailKey)}
+                      onExecuteAction={handleWorkflowActionCommand}
+                      onRequestDocuments={(workflow, action) => handleWorkflowActionCommand(workflow?.lane, action)}
+                      onExecuteCoordination={handleWorkflowCoordinationCommand}
+                      onExecuteFollowUp={handleWorkflowFollowUpCommand}
+                      onDraftBrief={handleDraftAttorneyStatusBrief}
+                      onOpenWorkspace={openWorkspaceMenu}
+                      onOpenTask={(item) => openWorkspaceMenu(getWorkspaceMenuForTask(item))}
+                    />
+                  )
                 ) : null}
                 {activeWorkspaceMenu !== 'overview' ? (
                   activeLegalWorkflowDetailKey ? (

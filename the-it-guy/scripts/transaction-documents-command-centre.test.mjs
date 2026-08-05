@@ -19,6 +19,11 @@ assert.notEqual(documentsStart, -1, 'Documents workspace tab should render expli
 assert.notEqual(tasksStart, -1, 'Tasks workspace tab should follow Documents tab for block extraction')
 
 const documentsBlock = source.slice(documentsStart, tasksStart)
+const archlineDocumentsStart = source.indexOf('function ArchlineDocumentsWorkspace(')
+const archlineDocumentsEnd = source.indexOf('function MatterOverviewHeader(', archlineDocumentsStart)
+assert.notEqual(archlineDocumentsStart, -1, 'Archline documents workspace component should exist')
+assert.notEqual(archlineDocumentsEnd, -1, 'Archline documents workspace block should be extractable')
+const archlineDocumentsBlock = source.slice(archlineDocumentsStart, archlineDocumentsEnd)
 const workflowDetailBlock = source.slice(
   source.indexOf('const openWorkspaceMenu = useCallback'),
   source.indexOf('function handleOverviewActionTarget'),
@@ -44,6 +49,8 @@ assert.match(source, /<h3 className="text-sm font-semibold text-slate-950">Uploa
 assert.match(source, /ArchlinePanel title="Document Health"/, 'Documents workspace should render the right-sidebar document health')
 assert.match(source, /ArchlinePanel title="Quick Actions"/, 'Documents workspace should render the right-sidebar quick actions')
 assert.match(source, /Document Activity/, 'Documents workspace should render document activity')
+assert.match(archlineDocumentsBlock, /<h2 className="text-xl font-semibold tracking-\[-0\.02em\] text-slate-950">Documents<\/h2>[\s\S]*Request Document[\s\S]*Upload Document/, 'Documents workspace actions should sit in the page heading row')
+assert.doesNotMatch(archlineDocumentsBlock, /Search documents\.\.\./, 'Documents workspace should not render the clipped in-card search bar')
 assert.match(documentsBlock, /open=\{uploadDocumentModalOpen\}/, 'Upload should be modal-driven')
 assert.match(documentsBlock, /Satisfies required document\?/, 'Upload modal should support linking to required documents')
 assert.match(source, /activeCategoryRequirements\.map/, 'Required document rows should be navigable from the category modal')
