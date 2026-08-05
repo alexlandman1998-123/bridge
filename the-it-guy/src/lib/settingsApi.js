@@ -3184,7 +3184,7 @@ export async function uploadOrganisationBrandingAsset({ file, variant = 'light' 
   const signedUrl = normalizeText(signedResult?.data?.signedUrl)
   const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(objectPath)
   const publicUrl = normalizeText(publicUrlData?.publicUrl)
-  const resolvedUrl = signedUrl || publicUrl
+  const resolvedUrl = publicUrl || signedUrl
 
   return {
     bucket: uploadedBucket,

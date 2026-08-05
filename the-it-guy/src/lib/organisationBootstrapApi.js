@@ -898,14 +898,19 @@ async function resolveBrandingStorageAssetUrl(client, { bucket = '', path = '' }
   }
 
   const storage = client.storage.from(safeBucket)
+  const { data: publicUrlData } = storage.getPublicUrl(safePath)
+  const publicUrl = normalizeText(publicUrlData?.publicUrl)
+  if (publicUrl) {
+    return publicUrl
+  }
+
   const signedResult = await storage.createSignedUrl(safePath, 60 * 60 * 24 * 30)
   const signedUrl = normalizeText(signedResult?.data?.signedUrl)
   if (!signedResult?.error && signedUrl) {
     return signedUrl
   }
 
-  const { data: publicUrlData } = storage.getPublicUrl(safePath)
-  return normalizeText(publicUrlData?.publicUrl)
+  return ''
 }
 
 async function resolveBrandingAssetUrl(client, input = {}) {
