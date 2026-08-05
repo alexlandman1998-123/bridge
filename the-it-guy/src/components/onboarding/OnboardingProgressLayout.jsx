@@ -17,13 +17,15 @@ export default function OnboardingProgressLayout({
   description = '',
   activeStep = ONBOARDING_STEPS.createOrJoinWorkspace,
   steps = DEFAULT_STEPS,
+  className = '',
+  panelClassName = '',
   children,
 }) {
   const activeIndex = resolveIndex(steps, activeStep)
 
   return (
-    <section className="page onboarding-progress-page">
-      <article className="panel card-tier-standard onboarding-progress-panel">
+    <section className={`page onboarding-progress-page ${className}`.trim()}>
+      <article className={`panel card-tier-standard onboarding-progress-panel ${panelClassName}`.trim()}>
         <div className="onboarding-progress-heading">
           <p>Onboarding</p>
           <h1>{title}</h1>

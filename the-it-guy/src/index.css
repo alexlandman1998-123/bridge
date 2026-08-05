@@ -7790,6 +7790,151 @@ button.agency-setup-row-card:hover {
   max-width: 76rem;
 }
 
+.setup-module-shell .setup-invite-progress-page {
+  align-content: center;
+}
+
+.setup-module-shell .setup-invite-progress-panel {
+  width: min(880px, 100%);
+  gap: clamp(0.95rem, 1.45vw, 1.3rem);
+  padding: clamp(1rem, 2vw, 1.5rem);
+}
+
+.setup-invite-panel {
+  display: grid;
+  gap: clamp(0.85rem, 1.3vw, 1rem);
+  border: 1px solid #dbe5ef;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  padding: clamp(0.95rem, 1.7vw, 1.35rem);
+  box-shadow: 0 16px 38px rgba(20, 33, 50, 0.07);
+}
+
+.setup-invite-head {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.setup-invite-icon {
+  display: inline-grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid #cfe0ef;
+  border-radius: 14px;
+  background: #f2f8fd;
+  color: #17476a;
+}
+
+.setup-invite-head p {
+  margin: 0 0 0.28rem;
+  color: #6c8198;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.setup-invite-head h2 {
+  margin: 0;
+  color: #102033;
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.08;
+}
+
+.setup-invite-head span {
+  display: block;
+  margin-top: 0.42rem;
+  color: #60758d;
+  font-size: 0.92rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.setup-invite-token-card {
+  border: 1px solid #e0e9f2;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 0.85rem;
+}
+
+.setup-invite-token-input {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace);
+  font-size: 0.82rem;
+}
+
+.setup-invite-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.72rem;
+  align-items: center;
+  border: 1px solid #cfe8d8;
+  border-radius: 14px;
+  background: #effaf3;
+  color: #236340;
+  padding: 0.8rem 0.9rem;
+}
+
+.setup-invite-status strong {
+  display: block;
+  color: inherit;
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.setup-invite-status p {
+  margin: 0.18rem 0 0;
+  color: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.setup-invite-status.is-ready {
+  border-color: #dbe8f3;
+  background: #f8fbff;
+  color: #1f3d59;
+}
+
+.setup-invite-status.is-error {
+  display: block;
+  border-color: #f2c8c4;
+  background: #fff5f4;
+  color: #9f1c1c;
+}
+
+.setup-invite-spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(35, 99, 64, 0.25);
+  border-top-color: #236340;
+  border-radius: 999px;
+  animation: setupInviteSpin 800ms linear infinite;
+}
+
+.setup-invite-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.setup-invite-actions .setup-primary-button {
+  min-width: 210px;
+}
+
+@keyframes setupInviteSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .onboarding-progress-page {
   gap: clamp(0.72rem, 1vw, 1.15rem);
 }
@@ -8188,6 +8333,24 @@ button.agency-setup-row-card:hover {
 
   .onboarding-progress-steps li {
     text-align: center;
+  }
+
+  .setup-invite-head {
+    grid-template-columns: 1fr;
+  }
+
+  .setup-invite-icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .setup-invite-head h2 {
+    font-size: 1.22rem;
+  }
+
+  .setup-invite-actions,
+  .setup-invite-actions .setup-primary-button {
+    width: 100%;
   }
 
   .setup-field-grid,

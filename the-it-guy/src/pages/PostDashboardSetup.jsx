@@ -90,10 +90,6 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
-function normalizeKey(value = '') {
-  return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
-}
-
 function getPostInviteDashboardPath({ hasCommercialWorkspaceAccess = false, agencySignupType = '', intent = null, baseRole = '' } = {}) {
   if (hasCommercialWorkspaceAccess || agencySignupType === 'commercial') return '/commercial'
   return getDashboardPath(intent?.app_role || baseRole)
@@ -611,7 +607,9 @@ export default function PostDashboardSetup() {
         ? 'Choose the originator setup type, then capture the owner, operating, and launch-team details Arch9 needs to create a complete bond workspace.'
         : isDeveloperCompanySetup
           ? 'Create the developer workspace your sales team, agency partners, attorneys, and buyers will use to manage launches and unit sales.'
-        : 'Arch9 has your profile and signup path. The last step is creating or joining a real backend workspace so dashboard access is tied to an active membership.'
+        : canAcceptInvite
+          ? 'We found your invite. Arch9 will verify it, activate your membership, and open the correct workspace.'
+          : 'Arch9 has your profile and signup path. Create or join a workspace to unlock dashboard access.'
 
   useEffect(() => {
     setForm((previous) => ({
@@ -708,7 +706,6 @@ export default function PostDashboardSetup() {
         clearStoredSignupIntent()
         navigate(targetPath, { replace: true })
       } catch (inviteError) {
-        inviteAutoContinueRef.current = ''
         setError(inviteError?.message || 'Invite acceptance failed.')
       } finally {
         setSaving(false)
@@ -1152,6 +1149,8 @@ export default function PostDashboardSetup() {
   const hasPendingMembership = pendingMemberships.length > 0
   const hasSuspendedMembership = suspendedMemberships.length > 0
   const hasPendingOnboardingState = onboardingState?.onboardingStatus === ONBOARDING_STATUSES.workspacePendingApproval
+  const showPendingApprovalNotice = !canAcceptInvite && (hasPendingMembership || hasPendingOnboardingState || request)
+  const inviteToken = normalizeText(form.inviteToken)
   const branches = agencyDraft?.branchStructure?.branches || []
   const invites = agencyDraft?.invitations || []
   const agency = agencyDraft?.agencyInformation || {}
@@ -1827,6 +1826,8 @@ export default function PostDashboardSetup() {
             : onboardingState?.onboardingStep || ONBOARDING_STEPS.createOrJoinWorkspace
       }
       steps={isAgencyPrincipalSetup ? AGENCY_SETUP_STEPS : isBondOwnerSetup ? BOND_SETUP_STEPS : undefined}
+      className={canAcceptInvite ? 'setup-invite-progress-page' : ''}
+      panelClassName={canAcceptInvite ? 'setup-invite-progress-panel' : ''}
     >
       {isAgencyPrincipalSetup ? (
         <form className="agency-setup-shell" onSubmit={handleAgencyStepSubmit}>
@@ -1976,7 +1977,7 @@ export default function PostDashboardSetup() {
         renderDeveloperSetup()
       ) : (
         <>
-          {intent ? (
+          {intent && !canAcceptInvite ? (
             <SetupStatusCard title="Signup path">
               <p>
                 {APP_ROLE_LABELS[intent.app_role] || intent.app_role} · {workspaceNoun} ·{' '}
@@ -2009,7 +2010,7 @@ export default function PostDashboardSetup() {
             </SetupStatusCard>
           ) : null}
 
-          {hasPendingMembership || hasPendingOnboardingState || request ? (
+          {showPendingApprovalNotice ? (
             <SetupStatusCard title="Pending approval" tone="warning">
               <p>
                 Your workspace access is pending. You cannot open protected dashboards until an owner, principal, partner,
@@ -2073,17 +2074,60 @@ export default function PostDashboardSetup() {
           ) : null}
 
           {canAcceptInvite ? (
-            <form className="grid gap-4 rounded-[16px] border border-[#dde4ee] bg-white px-4 py-4" onSubmit={handleAcceptInvite}>
-              <SetupStatusCard title="Invite acceptance">
-                <p>Confirm the invite token and Arch9 will create your active membership if the invite is valid.</p>
-              </SetupStatusCard>
-              <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
-                Invite token
-                <input className="auth-input" value={form.inviteToken} onChange={(event) => updateField('inviteToken', event.target.value)} />
-              </label>
-              <div className="flex flex-wrap justify-end gap-2">
-                <button type="submit" className="header-primary-cta" disabled={saving}>
-                  {saving ? 'Accepting invite...' : 'Accept invite'}
+            <form className="setup-invite-panel" onSubmit={handleAcceptInvite}>
+              <div className="setup-invite-head">
+                <span className="setup-invite-icon">
+                  <ShieldCheck size={22} />
+                </span>
+                <div>
+                  <p>Secure invite</p>
+                  <h2>Joining your {workspaceNoun} workspace</h2>
+                  <span>
+                    We will confirm the invite, create your active membership, and send you straight to your dashboard.
+                  </span>
+                </div>
+              </div>
+
+              <div className="setup-invite-token-card">
+                <label className="setup-field">
+                  <span>Invite token</span>
+                  <input
+                    className="setup-input setup-invite-token-input"
+                    value={form.inviteToken}
+                    onChange={(event) => updateField('inviteToken', event.target.value)}
+                    disabled={saving}
+                    spellCheck="false"
+                  />
+                </label>
+              </div>
+
+              {saving ? (
+                <div className="setup-invite-status">
+                  <span className="setup-invite-spinner" aria-hidden="true" />
+                  <div>
+                    <strong>Accepting invite</strong>
+                    <p>Syncing your workspace access. This usually takes a few seconds.</p>
+                  </div>
+                </div>
+              ) : error ? (
+                <div className="setup-invite-status is-error">
+                  <strong>Invite acceptance needs attention</strong>
+                  <p>{error}</p>
+                </div>
+              ) : (
+                <div className="setup-invite-status is-ready">
+                  <CheckCircle2 size={18} />
+                  <div>
+                    <strong>Ready to continue</strong>
+                    <p>Your invite is loaded and ready to verify.</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="setup-invite-actions">
+                <button type="submit" className="setup-primary-button" disabled={saving || !inviteToken}>
+                  {saving ? 'Opening workspace...' : 'Continue to workspace'}
+                  {!saving ? <ArrowRight size={16} /> : null}
                 </button>
               </div>
             </form>
@@ -2139,8 +2183,8 @@ export default function PostDashboardSetup() {
             </SetupStatusCard>
           ) : null}
 
-          {message ? <p className="rounded-[12px] border border-[#cfe8d8] bg-[#effaf3] px-3 py-2 text-sm text-[#236340]">{message}</p> : null}
-          {error ? <p className="rounded-[12px] border border-[#f2c8c4] bg-[#fff5f4] px-3 py-2 text-sm text-[#9f1c1c]">{error}</p> : null}
+          {message && !canAcceptInvite ? <p className="rounded-[12px] border border-[#cfe8d8] bg-[#effaf3] px-3 py-2 text-sm text-[#236340]">{message}</p> : null}
+          {error && !canAcceptInvite ? <p className="rounded-[12px] border border-[#f2c8c4] bg-[#fff5f4] px-3 py-2 text-sm text-[#9f1c1c]">{error}</p> : null}
         </>
       )}
     </OnboardingProgressLayout>
