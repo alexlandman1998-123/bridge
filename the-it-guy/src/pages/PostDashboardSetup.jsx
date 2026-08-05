@@ -90,6 +90,12 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function isInviteAlreadyAcceptedError(error) {
+  const code = normalizeText(error?.code || error?.reason)
+  const message = normalizeText(error?.message).toLowerCase()
+  return code === 'already_accepted' || message === 'already_accepted' || message.includes('already been accepted')
+}
+
 function getPostInviteDashboardPath({ hasCommercialWorkspaceAccess = false, agencySignupType = '', intent = null, baseRole = '' } = {}) {
   if (hasCommercialWorkspaceAccess || agencySignupType === 'commercial') return '/commercial'
   return getDashboardPath(intent?.app_role || baseRole)
@@ -706,6 +712,13 @@ export default function PostDashboardSetup() {
         clearStoredSignupIntent()
         navigate(targetPath, { replace: true })
       } catch (inviteError) {
+        if (isInviteAlreadyAcceptedError(inviteError)) {
+          setMessage('Invite already accepted. Opening your workspace...')
+          await refreshAuthState?.()
+          clearStoredSignupIntent()
+          navigate(targetPath, { replace: true })
+          return
+        }
         setError(inviteError?.message || 'Invite acceptance failed.')
       } finally {
         setSaving(false)
@@ -1111,6 +1124,14 @@ export default function PostDashboardSetup() {
         navigate(targetPath, { replace: true })
       }, 500)
     } catch (inviteError) {
+      if (isInviteAlreadyAcceptedError(inviteError)) {
+        setMessage('Invite already accepted. Opening your workspace...')
+        await refreshAuthState?.()
+        clearStoredSignupIntent()
+        const targetPath = getPostInviteDashboardPath({ hasCommercialWorkspaceAccess, agencySignupType, intent, baseRole })
+        navigate(targetPath, { replace: true })
+        return
+      }
       setError(inviteError?.message || 'Invite acceptance failed.')
     } finally {
       setSaving(false)
@@ -1984,7 +2005,7 @@ export default function PostDashboardSetup() {
                 {intent.intended_org_role.replace(/_/g, ' ')}
               </p>
             </SetupStatusCard>
-          ) : (
+          ) : !canAcceptInvite ? (
             <SetupStatusCard title="Signup intent missing" tone="warning">
               <p>
                 This looks like a legacy or interrupted account. Confirm your business type on the profile recovery
@@ -1994,7 +2015,7 @@ export default function PostDashboardSetup() {
                 Continue profile recovery
               </button>
             </SetupStatusCard>
-          )}
+          ) : null}
 
           {canOpenActiveWorkspace ? (
             <SetupStatusCard title="Workspace membership active" tone="success">
