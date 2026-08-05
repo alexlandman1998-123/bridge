@@ -189,7 +189,7 @@ async function clickByRole(page, role, name, options = {}) {
 
 async function chooseLeadType(page, label) {
   const tab = page.getByRole('tab', { name: new RegExp(label), exact: false }).first()
-  if (await tab.isVisible({ timeout: 1000 }).catch(() => false)) {
+  if (await tab.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false)) {
     await tab.click()
     return
   }
