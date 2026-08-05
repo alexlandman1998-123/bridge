@@ -89,7 +89,8 @@ import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/
 import { filterPreferredPartners } from '../lib/preferredPartners'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
 import { listOrganisationPreferredPartners, listOrganisationUsers } from '../lib/settingsApi'
-import { invokeEdgeFunction } from '../lib/supabaseClient'
+import { DOCUMENTS_BUCKET_CANDIDATES, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { uploadToStorageCandidateBuckets } from '../lib/storageFallbacks'
 import {
   buildAgentLeadRows,
   fetchAgentLeadWorkspace,
@@ -358,6 +359,15 @@ const EMPTY_LEAD_CREATE_FORM = {
   notes: '',
 }
 
+const BUYER_AGENT_DOCUMENT_TYPES = [
+  { value: 'buyer_id_document', label: 'Buyer ID document', category: 'Buyer FICA' },
+  { value: 'buyer_proof_of_address', label: 'Buyer proof of address', category: 'Buyer FICA' },
+  { value: 'proof_of_funds', label: 'Proof of funds', category: 'Buyer Finance' },
+  { value: 'bank_statements', label: 'Bank statements', category: 'Buyer Finance' },
+  { value: 'bond_preapproval', label: 'Bond pre-approval', category: 'Buyer Finance' },
+  { value: 'other_buyer_document', label: 'Other buyer document', category: 'Buyer Documents' },
+]
+
 function normalizeText(value) {
   return String(value ?? '').trim()
 }
@@ -370,6 +380,94 @@ function isPersistedSupabaseSignedUrl(value) {
 function normalizeDurableDocumentUrl(value) {
   const url = normalizeText(value)
   return url && !isPersistedSupabaseSignedUrl(url) ? url : ''
+}
+
+function getBuyerLeadRawPayload(row = {}) {
+  const payload = row.rawEnquiryPayload ?? row.raw_enquiry_payload
+  return isPlainObject(payload) ? payload : {}
+}
+
+function getAgentUploadedBuyerDocuments(row = {}) {
+  const payload = getBuyerLeadRawPayload(row)
+  const rows = [
+    payload.agentUploadedBuyerDocuments,
+    payload.agent_uploaded_buyer_documents,
+    payload.buyerDocuments,
+    payload.buyer_documents,
+  ].flatMap((collection) => (Array.isArray(collection) ? collection : []))
+  const seen = new Set()
+  return rows.filter((document, index) => {
+    const key = normalizeText(
+      document?.id ||
+        document?.documentId ||
+        document?.document_id ||
+        document?.filePath ||
+        document?.file_path ||
+        document?.url ||
+        document?.fileName ||
+        document?.file_name ||
+        `buyer-document-${index}`,
+    )
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function sanitizeBuyerDocumentFilePart(value = '', fallback = 'buyer-document') {
+  const safe = normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 96)
+  return safe || fallback
+}
+
+function createBuyerLeadDocumentId() {
+  if (typeof globalThis !== 'undefined' && typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID()
+  }
+  return `buyer-doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function buildBuyerLeadDocumentPayload({
+  file,
+  documentType = BUYER_AGENT_DOCUMENT_TYPES[0],
+  bucket = '',
+  filePath = '',
+  publicUrl = '',
+  actor = {},
+  lead = {},
+  uploadedAt = new Date().toISOString(),
+} = {}) {
+  const type = documentType || BUYER_AGENT_DOCUMENT_TYPES[0]
+  const fileName = normalizeText(file?.name) || `${type.value}.pdf`
+  return {
+    id: createBuyerLeadDocumentId(),
+    documentType: type.value,
+    document_type: type.value,
+    label: type.label,
+    category: type.category,
+    status: 'uploaded',
+    source: 'Agent upload',
+    uploadedByRole: 'agent',
+    uploaded_by_role: 'agent',
+    uploadedBy: normalizeText(actor?.fullName || actor?.name || actor?.email) || 'Agent',
+    uploadedByUserId: normalizeText(actor?.id || actor?.userId),
+    uploadedAt,
+    uploaded_at: uploadedAt,
+    fileName,
+    file_name: fileName,
+    fileSize: Number(file?.size || 0) || 0,
+    fileType: normalizeText(file?.type),
+    fileBucket: bucket,
+    file_bucket: bucket,
+    filePath,
+    file_path: filePath,
+    url: normalizeDurableDocumentUrl(publicUrl),
+    leadId: normalizeText(lead?.leadId),
+    captureMode: 'agent_assisted_buyer_document_upload',
+  }
 }
 
 function withActionTimeout(promise, message, timeoutMs) {
@@ -1626,6 +1724,7 @@ function getBuyerLastActivity(row = {}) {
 
 function getBuyerDocumentCollections(row = {}) {
   return [
+    getAgentUploadedBuyerDocuments(row),
     row.documents,
     row.buyerDocuments,
     row.buyer_documents,
@@ -2483,6 +2582,86 @@ function getBuyerDocumentItems(row = {}) {
       note: normalizeText(document?.note || document?.description || document?.requirementDescription || document?.requirement_description),
     }
   })
+}
+
+async function uploadAgentBuyerLeadDocument({
+  organisationId = '',
+  lead = {},
+  file = null,
+  documentTypeValue = '',
+  actor = {},
+} = {}) {
+  const leadId = normalizeText(lead?.leadId)
+  const workspaceId = normalizeText(organisationId)
+  if (!workspaceId || !leadId) throw new Error('Load the buyer lead before uploading buyer documents.')
+  if (!file) throw new Error('Choose the buyer document to upload.')
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Buyer document upload needs Supabase storage to be configured.')
+  }
+
+  const documentType = BUYER_AGENT_DOCUMENT_TYPES.find((item) => item.value === documentTypeValue) || BUYER_AGENT_DOCUMENT_TYPES[0]
+  const uploadedAt = new Date().toISOString()
+  const safeFileName = sanitizeBuyerDocumentFilePart(file.name, `${documentType.value}.pdf`)
+  const safeLeadId = sanitizeBuyerDocumentFilePart(leadId, 'lead')
+  const safeWorkspaceId = sanitizeBuyerDocumentFilePart(workspaceId, 'workspace')
+  const filePath = [
+    'agency-crm',
+    'buyer-leads',
+    safeWorkspaceId,
+    safeLeadId,
+    'agent-documents',
+    `${Date.now()}-${safeFileName}`,
+  ].join('/')
+
+  const { bucket } = await uploadToStorageCandidateBuckets({
+    bucketCandidates: DOCUMENTS_BUCKET_CANDIDATES,
+    upload: (bucketName) => supabase.storage.from(bucketName).upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type || undefined,
+    }),
+    missingBucketMessage: `Storage bucket not found for buyer lead document upload. Checked: ${DOCUMENTS_BUCKET_CANDIDATES.join(', ')}.`,
+    accessDeniedMessage: 'Buyer lead document storage is not ready yet. Please retry after storage access is refreshed.',
+    accessDeniedCode: 'buyer_lead_document_storage_access_not_ready',
+    genericMessage: 'Unable to upload buyer lead document.',
+  })
+
+  const publicUrl = supabase.storage.from(bucket).getPublicUrl(filePath)?.data?.publicUrl || ''
+  const uploadedDocument = buildBuyerLeadDocumentPayload({
+    file,
+    documentType,
+    bucket,
+    filePath,
+    publicUrl,
+    actor,
+    lead,
+    uploadedAt,
+  })
+  const rawPayload = getBuyerLeadRawPayload(lead)
+  const nextDocuments = [
+    ...getAgentUploadedBuyerDocuments(lead),
+    uploadedDocument,
+  ]
+  const nextRawPayload = {
+    ...rawPayload,
+    agentUploadedBuyerDocuments: nextDocuments,
+    agent_uploaded_buyer_documents: nextDocuments,
+    buyerDocumentUploadUpdatedAt: uploadedAt,
+    buyer_document_upload_updated_at: uploadedAt,
+  }
+
+  await updateAgencyCrmLeadRecord(workspaceId, leadId, {
+    rawEnquiryPayload: nextRawPayload,
+  })
+  await createAgencyCrmLeadActivity(workspaceId, leadId, {
+    agent: { id: actor?.id || actor?.userId, name: actor?.fullName || actor?.name, email: actor?.email },
+    activityType: 'Buyer Document Uploaded By Agent',
+    activityNote: `${documentType.label} uploaded by agent from the buyer lead workspace.`,
+    outcome: 'buyer_document_uploaded',
+    activityDate: uploadedAt,
+  }, { actor }).catch(() => null)
+
+  return { document: uploadedDocument, rawEnquiryPayload: nextRawPayload }
 }
 
 function getBuyerUpcomingAppointments(row = {}) {
@@ -4702,19 +4881,87 @@ function BuyerLeadOverview({ row, workspace = {}, sourceInfo, leadScore = 0, org
   )
 }
 
-function BuyerLeadDocumentsTab({ row }) {
+function BuyerLeadDocumentsTab({ row, organisationId, actor, onSaved }) {
   const readiness = getBuyerDocumentReadiness(row)
   const documents = getBuyerDocumentItems(row)
+  const [documentType, setDocumentType] = useState(BUYER_AGENT_DOCUMENT_TYPES[0].value)
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  async function submitAgentBuyerDocumentUpload(event) {
+    event.preventDefault()
+    try {
+      setUploading(true)
+      setMessage('')
+      setError('')
+      const result = await uploadAgentBuyerLeadDocument({
+        organisationId,
+        lead: row,
+        file: selectedFile,
+        documentTypeValue: documentType,
+        actor,
+      })
+      setSelectedFile(null)
+      setMessage(`${result.document.label} uploaded for this buyer lead.`)
+      await onSaved?.()
+    } catch (uploadError) {
+      setError(uploadError?.message || 'Unable to upload buyer document.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   return (
     <section className={`${buyerWorkspaceCardClass} p-6`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Documents</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-slate-950">Buyer document centre</h2>
-          <p className="mt-2 text-sm text-slate-500">Track uploaded, missing, and in-review buyer documents without changing the underlying document flow.</p>
+          <p className="mt-2 text-sm text-slate-500">Track uploaded, missing, and in-review buyer documents. Agents can upload emailed buyer documents here without waiting for the buyer portal.</p>
         </div>
         <StatusPill tone={readiness.tone}>{readiness.percent}% complete</StatusPill>
       </div>
+
+      <form onSubmit={submitAgentBuyerDocumentUpload} className="mt-5 grid gap-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 lg:grid-cols-[minmax(180px,0.75fr)_minmax(220px,1fr)_auto] lg:items-end">
+        <label className="grid gap-2 text-sm font-semibold text-slate-700">
+          Document type
+          <select
+            value={documentType}
+            onChange={(event) => setDocumentType(event.target.value)}
+            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300"
+          >
+            {BUYER_AGENT_DOCUMENT_TYPES.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-2 text-sm font-semibold text-slate-700">
+          Agent upload
+          <input
+            type="file"
+            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+            onChange={(event) => {
+              setSelectedFile(event.target.files?.[0] || null)
+              setMessage('')
+              setError('')
+            }}
+            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-700 focus:border-blue-300"
+          />
+          <span className="text-xs font-medium text-slate-500">Use this when the buyer emailed documents to the agent.</span>
+        </label>
+        <button
+          type="submit"
+          disabled={uploading || !selectedFile}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          <Upload size={15} />
+          {uploading ? 'Uploading...' : 'Upload Buyer Document'}
+        </button>
+        {message ? <p className="lg:col-span-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{message}</p> : null}
+        {error ? <p className="lg:col-span-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+      </form>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <BuyerInfoRow label="Complete" value={`${readiness.complete}/${readiness.total}`} />
@@ -22602,7 +22849,7 @@ function AgentLeadWorkspace() {
     [isSellerLeadWorkspace, tabs],
   )
   const visibleBuyerTabs = useMemo(
-    () => tabs.filter((tab) => !['requirements', 'tasks'].includes(tab.key)),
+    () => [...tabs.filter((tab) => !['requirements', 'tasks'].includes(tab.key)), { key: 'documents', label: 'Documents' }],
     [tabs],
   )
 
@@ -23667,8 +23914,11 @@ function AgentLeadWorkspace() {
               {activeTab === 'documents' ? (
                 <BuyerLeadDocumentsTab
                   row={row}
+                  organisationId={organisationId}
+                  actor={actor}
                   workspace={data || {}}
                   onNavigate={runBuyerWorkspaceAction}
+                  onSaved={loadWorkspace}
                 />
               ) : null}
 

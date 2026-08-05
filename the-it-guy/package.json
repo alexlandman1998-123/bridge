@@ -303,6 +303,7 @@
     "test:lead-suggestions": "node scripts/lead-suggestions.test.mjs",
     "test:lead-recommendations": "node scripts/lead-recommendations.test.mjs",
     "test:lead-property-sharing": "node scripts/lead-property-sharing.test.mjs",
+    "test:agent-assisted-buyer-document-upload-phase64": "node scripts/agent-assisted-buyer-document-upload-phase64.test.mjs",
     "test:arch9-launch-concierge": "node scripts/arch9-launch-concierge.test.mjs",
     "test:public-listing-bridge": "node server/tests/publicListingsService.test.js",
     "test:public-listing-readiness": "node server/tests/publicListingReadinessService.test.js",

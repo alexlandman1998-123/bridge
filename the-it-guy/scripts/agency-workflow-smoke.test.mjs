@@ -30,6 +30,7 @@ const workflows = [
       ['test:lead-requirements', 'buyer requirements capture and editable qualification fields'],
       ['test:lead-matching', 'property matching suggestions and shortlist workflow'],
       ['test:lead-property-sharing', 'property share/send controls and activity logging'],
+      ['test:agent-assisted-buyer-document-upload-phase64', 'agent-assisted buyer document upload coverage'],
     ],
   },
   {
