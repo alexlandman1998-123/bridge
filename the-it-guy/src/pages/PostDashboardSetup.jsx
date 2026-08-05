@@ -39,6 +39,7 @@ import {
   completeAgencyOnboarding,
   uploadOrganisationBrandingAsset,
 } from '../lib/settingsApi'
+import { fetchAgencyOnboardingSettings } from '../lib/organisationBootstrapApi'
 import {
   createWorkspaceFromIntent,
   joinWorkspaceFromInvite,
@@ -449,6 +450,97 @@ function getAgencyDraftDefaults(intent, profile) {
   }, profile)
 }
 
+function firstText(...values) {
+  for (const value of values) {
+    const normalized = normalizeText(value)
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+function getOrganisationName(organisation = {}) {
+  return firstText(organisation.displayName, organisation.display_name, organisation.name)
+}
+
+function getOrganisationAddress(organisation = {}) {
+  return firstText(
+    organisation.formattedAddress,
+    organisation.formatted_address,
+    [
+      organisation.addressLine1 || organisation.address_line_1,
+      organisation.addressLine2 || organisation.address_line_2,
+      organisation.suburb,
+      organisation.city,
+      organisation.province,
+      organisation.postalCode || organisation.postal_code,
+    ].map(normalizeText).filter(Boolean).join(', '),
+  )
+}
+
+function mergeClaimWorkspaceDetailsIntoDraft(draft, claimSettings, profile) {
+  const currentDraft = mergeAgencyOnboardingDraft(buildDefaultAgencyOnboarding(profile), draft, profile)
+  const persistedDraft = claimSettings?.onboarding && typeof claimSettings.onboarding === 'object'
+    ? claimSettings.onboarding
+    : {}
+  const persistedAgency = persistedDraft.agencyInformation || {}
+  const persistedPrincipal = persistedDraft.principalInformation || {}
+  const organisation = claimSettings?.organisation || {}
+  const organisationName = getOrganisationName(organisation)
+  const organisationAddress = getOrganisationAddress(organisation)
+  const organisationEmail = firstText(
+    organisation.companyEmail,
+    organisation.company_email,
+    organisation.supportEmail,
+    organisation.support_email,
+  )
+  const organisationPhone = firstText(
+    organisation.companyPhone,
+    organisation.company_phone,
+    organisation.supportPhone,
+    organisation.support_phone,
+  )
+  const organisationWebsite = firstText(organisation.website)
+  const organisationProvince = firstText(organisation.province)
+  const organisationCountry = firstText(organisation.country, 'South Africa')
+  const currentAgency = currentDraft.agencyInformation || {}
+  const currentPrincipal = currentDraft.principalInformation || {}
+  const currentBranches = currentDraft.branchStructure?.branches || []
+  const primaryBranch = currentBranches[0] || createAgencyBranchDraft()
+  const primaryBranchLocation = firstText(primaryBranch.officeLocation, organisation.city, organisationProvince, organisationAddress)
+
+  return mergeAgencyOnboardingDraft(currentDraft, {
+    agencyInformation: {
+      ...currentAgency,
+      agencyName: firstText(organisationName, persistedAgency.agencyName, currentAgency.agencyName),
+      tradingName: firstText(organisationName, persistedAgency.tradingName, currentAgency.tradingName),
+      website: firstText(organisationWebsite, persistedAgency.website, currentAgency.website),
+      mainOfficeNumber: firstText(organisationPhone, persistedAgency.mainOfficeNumber, currentAgency.mainOfficeNumber),
+      mainEmailAddress: firstText(organisationEmail, persistedAgency.mainEmailAddress, currentAgency.mainEmailAddress),
+      physicalAddress: firstText(organisationAddress, persistedAgency.physicalAddress, currentAgency.physicalAddress),
+      province: firstText(organisationProvince, persistedAgency.province, currentAgency.province),
+      country: firstText(organisationCountry, persistedAgency.country, currentAgency.country),
+    },
+    principalInformation: {
+      ...currentPrincipal,
+      principalFullName: firstText(currentPrincipal.principalFullName, persistedPrincipal.principalFullName, profile?.fullName),
+      emailAddress: firstText(currentPrincipal.emailAddress, persistedPrincipal.emailAddress, profile?.email),
+      phoneNumber: firstText(currentPrincipal.phoneNumber, persistedPrincipal.phoneNumber, profile?.phoneNumber),
+      position: firstText(currentPrincipal.position, persistedPrincipal.position, 'Principal / Owner'),
+    },
+    branchStructure: {
+      branches: currentBranches.length
+        ? currentBranches.map((branch, index) => index === 0
+          ? createAgencyBranchDraft({
+              ...branch,
+              branchName: firstText(branch.branchName, 'Head Office'),
+              officeLocation: primaryBranchLocation,
+            })
+          : branch)
+        : [createAgencyBranchDraft({ officeLocation: primaryBranchLocation })],
+    },
+  }, profile)
+}
+
 function resolveAgencyStepError(stepKey, draft) {
   const agency = draft?.agencyInformation || {}
   const principal = draft?.principalInformation || {}
@@ -555,6 +647,8 @@ export default function PostDashboardSetup() {
   const [error, setError] = useState('')
   const [request, setRequest] = useState(null)
   const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
+  const [claimWorkspaceSettings, setClaimWorkspaceSettings] = useState(null)
+  const [claimWorkspaceLoading, setClaimWorkspaceLoading] = useState(false)
   const autosaveTimerRef = useRef(null)
   const hydratedDraftKeyRef = useRef('')
   const inviteAutoContinueRef = useRef('')
@@ -584,6 +678,10 @@ export default function PostDashboardSetup() {
   const agencySignupType = getAgencyTypeForSignupIntent(intent)
   const agencySetupType = agencyDraft?.agencyInformation?.agencyType || agencySignupType
   const agencySetupLabel = getAgencySetupLabel(agencySetupType)
+  const claimedWorkspaceName = getOrganisationName(claimWorkspaceSettings?.organisation)
+  const agencyDisplayName = canClaimExistingWorkspace
+    ? firstText(claimedWorkspaceName, agencyDraft?.agencyInformation?.agencyName, `Existing ${agencySetupLabel}`)
+    : firstText(agencyDraft?.agencyInformation?.agencyName, `New ${agencySetupLabel}`)
   const hasCommercialWorkspaceAccess = useMemo(
     () => [currentMembership, ...(activeMemberships || [])].some((membership) => hasCommercialAccessMarker(membership)),
     [activeMemberships, currentMembership],
@@ -600,7 +698,7 @@ export default function PostDashboardSetup() {
   const hasBlockingRecoveryReason = recoveryReasons.length > 0
   const canOpenActiveWorkspace = hasResolvedWorkspaceMembership && !hasBlockingRecoveryReason
   const pageTitle = useMemo(() => {
-    if (canClaimExistingWorkspace) return 'Claim your agency workspace'
+    if (canClaimExistingWorkspace) return claimedWorkspaceName ? `Claim ${claimedWorkspaceName}` : 'Claim your agency workspace'
     if (isAgencyPrincipalSetup) return getAgencySetupTitle(agencySetupType)
     if (isBondOwnerSetup) return 'Set up your bond originator business'
     if (isDeveloperCompanySetup) return 'Set up your developer command centre'
@@ -608,9 +706,11 @@ export default function PostDashboardSetup() {
     if (canAcceptInvite) return 'Accept your workspace invite'
     if (canJoinOrRequest) return `Join a ${workspaceNoun}`
     return 'Workspace setup'
-  }, [agencySetupType, canAcceptInvite, canClaimExistingWorkspace, canCreateWorkspace, canJoinOrRequest, isAgencyPrincipalSetup, isBondOwnerSetup, isDeveloperCompanySetup, workspaceNoun])
+  }, [agencySetupType, canAcceptInvite, canClaimExistingWorkspace, canCreateWorkspace, canJoinOrRequest, claimedWorkspaceName, isAgencyPrincipalSetup, isBondOwnerSetup, isDeveloperCompanySetup, workspaceNoun])
   const pageDescription = canClaimExistingWorkspace
-    ? 'Confirm the profile details for the principal who is claiming an existing agency workspace.'
+    ? claimedWorkspaceName
+      ? `${claimedWorkspaceName} already exists in Arch9. Confirm the workspace details to activate your principal access.`
+      : 'Confirm the existing agency workspace details to activate your principal access.'
     : isAgencyPrincipalSetup
       ? getAgencySetupDescription(agencySetupType)
       : isBondOwnerSetup
@@ -670,6 +770,37 @@ export default function PostDashboardSetup() {
       setMessage(`Draft restored from ${new Date(savedDraft.savedAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}.`)
     }
   }, [intent, isAgencyPrincipalSetup, profile, setupDraftStorageKey])
+
+  useEffect(() => {
+    if (!canClaimExistingWorkspace || !isAgencyPrincipalSetup || !authState.user?.id) {
+      setClaimWorkspaceSettings(null)
+      setClaimWorkspaceLoading(false)
+      return undefined
+    }
+
+    let cancelled = false
+    setClaimWorkspaceLoading(true)
+    fetchAgencyOnboardingSettings({ forceRefresh: true })
+      .then((settings) => {
+        if (cancelled) return
+        setClaimWorkspaceSettings(settings)
+        setAgencyDraft((previous) => mergeClaimWorkspaceDetailsIntoDraft(previous, settings, profile))
+      })
+      .catch((settingsError) => {
+        if (cancelled) return
+        console.error('[ONBOARDING] claim-workspace-settings:failed', settingsError)
+        setError((previous) => previous || 'We could not load the existing workspace details. Refresh and try again.')
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setClaimWorkspaceLoading(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [authState.user?.id, canClaimExistingWorkspace, isAgencyPrincipalSetup, profile])
 
   useEffect(() => {
     if (!isAgencyPrincipalSetup || !setupDraftStorageKey || hydratedDraftKeyRef.current !== setupDraftStorageKey) return undefined
@@ -1451,11 +1582,13 @@ export default function PostDashboardSetup() {
           <SetupSectionHeader
             eyebrow="Foundation"
             title={isCommercialAgencyType(agency.agencyType) ? `${agencySetupLabel[0].toUpperCase()}${agencySetupLabel.slice(1)} profile` : 'Agency profile'}
-            copy="This becomes the legal and operational identity for the workspace."
+            copy={canClaimExistingWorkspace
+              ? `Confirm the saved business details for ${agencyDisplayName}.`
+              : 'This becomes the legal and operational identity for the workspace.'}
             icon={Building2}
           />
           <div className="setup-field-grid">
-            <SetupField label="Agency name">
+            <SetupField label={canClaimExistingWorkspace ? 'Workspace name' : 'Agency name'}>
               <input className="setup-input" value={agency.agencyName || ''} onChange={(event) => updateAgencySection('agencyInformation', 'agencyName', event.target.value)} />
             </SetupField>
             <SetupField label="Trading name">
@@ -1689,8 +1822,10 @@ export default function PostDashboardSetup() {
       <div className="agency-setup-card">
         <SetupSectionHeader
           eyebrow="Final check"
-          title={`Create the ${agencySetupLabel} workspace`}
-          copy="Arch9 will create the organisation, save this setup, activate the principal account, and queue the team invitations."
+          title={canClaimExistingWorkspace ? `Activate ${agencyDisplayName}` : `Create the ${agencySetupLabel} workspace`}
+          copy={canClaimExistingWorkspace
+            ? 'Arch9 will save these details, activate your principal membership, and open the existing workspace.'
+            : 'Arch9 will create the organisation, save this setup, activate the principal account, and queue the team invitations.'}
           icon={CheckCircle2}
         />
         <div className="agency-review-grid">
@@ -1853,8 +1988,8 @@ export default function PostDashboardSetup() {
         <form className="agency-setup-shell" onSubmit={handleAgencyStepSubmit}>
           <aside className="agency-setup-command">
             <div>
-              <p className="agency-setup-kicker">Principal setup</p>
-              <h2>{agency.agencyName || `New ${agencySetupLabel}`}</h2>
+              <p className="agency-setup-kicker">{canClaimExistingWorkspace ? 'Workspace claim' : 'Principal setup'}</p>
+              <h2>{claimWorkspaceLoading ? 'Loading workspace...' : agencyDisplayName}</h2>
               <span>{APP_ROLE_LABELS[intent.app_role] || 'Agent'} · {intendedRole.replace(/_/g, ' ')}</span>
             </div>
             <div className="agency-setup-progress">
