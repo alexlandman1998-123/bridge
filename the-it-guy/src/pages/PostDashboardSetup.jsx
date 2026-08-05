@@ -85,6 +85,7 @@ const BOND_INVITE_ROLE_OPTIONS = [
 ]
 const SETUP_DRAFT_SCHEMA_VERSION = 1
 const SETUP_DRAFT_STORAGE_PREFIX = 'bridge:post-dashboard-setup-draft'
+const autoInviteAttemptKeys = new Set()
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -696,6 +697,12 @@ export default function PostDashboardSetup() {
     const token = normalizeText(intent?.invite_token || form.inviteToken)
     if (!canAcceptInvite || !token || !authState.user?.id || saving) return
     if (inviteAutoContinueRef.current === token) return
+    const attemptKey = `${authState.user.id}:${token}`
+    if (autoInviteAttemptKeys.has(attemptKey)) {
+      setMessage('Invite checked. Workspace access is still being resolved.')
+      return
+    }
+    autoInviteAttemptKeys.add(attemptKey)
     inviteAutoContinueRef.current = token
     const targetPath = getPostInviteDashboardPath({ hasCommercialWorkspaceAccess, agencySignupType, intent, baseRole })
 
@@ -715,7 +722,7 @@ export default function PostDashboardSetup() {
         setMessage('Invite accepted. Finalising your workspace access...')
       } catch (inviteError) {
         if (isInviteAlreadyAcceptedError(inviteError)) {
-          setMessage('Invite already accepted. Refreshing your workspace access...')
+          setMessage('Invite already accepted. Checking your workspace access once...')
           await refreshAuthState?.()
           return
         }
