@@ -40,6 +40,39 @@ Kingstons needs two appointment requirements:
 These are definition-only in Phase 2. The appointment scheduler is not yet
 gated by this model.
 
+## Kingston Rail Model
+
+Phase 2 also introduces a model-only Kingston rail builder in
+`src/services/sellerProcessRailModelService.js`.
+
+The visible Kingston rail stages are:
+
+1. `first_contact` - First Contact
+2. `valuation_appointment` - Schedule Valuation Appointment
+3. `formal_valuation` - Formal Valuation
+4. `valuation_presentation` - Valuation Presentation
+5. `seller_pack` - Seller Pack
+6. `list_property` - List Property
+
+The rail is an overlay model only:
+
+- default organisations receive `visible: false`
+- organisation name and branding do not activate it
+- `kingstons_residential` receives `visible: true`
+- `canReplaceSellerJourney` remains `false`
+- no React surface imports the rail model yet
+
+Rail action metadata is prepared for later UI routing:
+
+- `schedule_valuation_appointment` opens appointments with `seller_valuation`
+- `upload_valuation_document` opens documents for `valuation_document`
+- `schedule_valuation_presentation` opens appointments with `valuation_presentation`
+- `prepare_listing` opens the listing workspace
+
+`seller_pack` is intentionally present as a deferred placeholder. It is not
+action-enabled in Phase 2, because mandate, defects, and FICA will be handled
+as their own later phase.
+
 ## Document And Evidence Requirements
 
 Kingstons needs these documents:
@@ -90,6 +123,7 @@ Run:
 
 ```bash
 npm run test:seller-process-definition-phase2
+npm run test:seller-process-rail-model-phase2
 npm run test:seller-process-profile-boundary-phase1
 npm run test:seller-process-default-freeze-phase0
 ```

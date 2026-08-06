@@ -554,6 +554,7 @@
     "test:seller-process-default-freeze-phase0": "node scripts/seller-process-default-freeze-phase0.test.mjs",
     "test:seller-process-profile-boundary-phase1": "node scripts/seller-process-profile-boundary-phase1.test.mjs",
     "test:seller-process-definition-phase2": "node scripts/seller-process-definition-phase2.test.mjs",
+    "test:seller-process-rail-model-phase2": "node scripts/seller-process-rail-model-phase2.test.mjs",
     "test:seller-process-evaluator-phase3": "node scripts/seller-process-evaluator-phase3.test.mjs",
     "test:seller-process-projection-phase4": "node scripts/seller-process-projection-phase4.test.mjs",
     "test:seller-process-shadow-integration-phase5": "node scripts/seller-process-shadow-integration-phase5.test.mjs",
