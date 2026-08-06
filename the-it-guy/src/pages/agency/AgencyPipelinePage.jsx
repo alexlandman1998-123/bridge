@@ -86,6 +86,7 @@ import { buildSellerReadinessSummary } from '../../services/sellerReadinessServi
 import { buildSellerDocumentSourceOfTruth } from '../../services/sellerDocumentRequirementsService'
 import { resolveSellerProcessProfileForOrganisation } from '../../services/sellerProcessProfileService'
 import { buildKingstonsSellerProcessRailModel } from '../../services/sellerProcessRailModelService'
+import { buildKingstonsSellerProcessActionModel } from '../../services/sellerProcessActionModelService'
 import { resolveLeadNextStep } from '../../services/leadNextActionService'
 import { buildAppointmentSaveFeedback } from '../../services/appointmentSaveFeedbackService'
 import { normalizeLeadLifecycleStageKey, resolveLeadLifecyclePresentation } from '../../services/leadLifecyclePresentationService'
@@ -1150,7 +1151,7 @@ function getSellerLeadDocumentCategoryKey(documentRow = {}) {
 
   if (/(marketing|asset|photo|image|gallery|brochure|floor|plan|media|campaign|listing_photo|property_photo)/.test(source)) return 'marketing'
   if (/(legal|mandate|otp|offer|agreement|contract|signature|signed|transfer|attorney|conveyancer)/.test(source)) return 'legal'
-  if (/(property|title|deed|rates|levy|hoa|body|corporate|condition|disclosure|certificate|coc|occupancy|municipal|ownership)/.test(source)) return 'property'
+  if (/(property|valuation|title|deed|rates|levy|hoa|body|corporate|condition|disclosure|certificate|coc|occupancy|municipal|ownership)/.test(source)) return 'property'
   return 'seller'
 }
 
@@ -1209,6 +1210,7 @@ function getSellerLeadDocumentCanonicalLabel(row = {}) {
   const key = normalizeKey(row?.key || row?.requirementKey || row?.requirement_key)
   if (key === 'signed_mandate') return 'Signed Mandate'
   if (key === 'property_condition_disclosure') return 'Seller Declaration / Disclosure'
+  if (key === 'valuation_document') return 'Formal Valuation Document'
   return row?.label || row?.title || row?.document_name || row?.name || 'Seller document'
 }
 
@@ -1227,6 +1229,11 @@ function getSellerLeadDocumentCanonicalKey(row = {}) {
     row?.name,
   ].filter(Boolean).join(' '))
   if (source.includes('signed_mandate') || source.includes('mandate_signature') || (source.includes('signed') && source.includes('mandate'))) return 'signed_mandate'
+  if (
+    source.includes('valuation_document') ||
+    source.includes('formal_valuation_document') ||
+    (source.includes('valuation') && source.includes('document'))
+  ) return 'valuation_document'
   if (
     source.includes('property_condition_disclosure') ||
     source.includes('condition_disclosure') ||
@@ -1331,6 +1338,32 @@ function dedupeSellerLeadDocumentRows(rows = []) {
     mergedRows[index] = mergeSellerLeadDocumentRows(mergedRows[index], row)
   }
   return mergedRows
+}
+
+function ensureKingstonsValuationDocumentRequirement(rows = []) {
+  const normalizedRows = Array.isArray(rows) ? rows : []
+  const hasValuationDocument = normalizedRows.some((row) => getSellerLeadDocumentCanonicalKey(row) === 'valuation_document')
+  if (hasValuationDocument) return normalizedRows
+  return [
+    ...normalizedRows,
+    {
+      id: 'kingstons-valuation-document',
+      key: 'valuation_document',
+      requirementKey: 'valuation_document',
+      requirement_key: 'valuation_document',
+      documentType: 'valuation_document',
+      document_type: 'valuation_document',
+      category: 'property',
+      document_category: 'property',
+      title: 'Formal Valuation Document',
+      label: 'Formal Valuation Document',
+      description: 'Kingstons formal valuation document.',
+      required: true,
+      status: 'pending',
+      statusLabel: 'Pending',
+      source: 'kingstons_seller_process',
+    },
+  ]
 }
 
 function buildSellerLeadMandatePacketForDocuments({
@@ -2997,6 +3030,38 @@ function buildAppointmentParticipant({ name = '', email = '', phone = '', role =
     isRequired: true,
     rsvpStatus: 'Pending',
   }
+}
+
+function buildKingstonsSellerAppointmentParticipants({ lead = {}, contact = {}, agent = {} } = {}) {
+  const participants = []
+  const sellerName = normalizeText(
+    [contact?.firstName, contact?.lastName].filter(Boolean).join(' ') ||
+      contact?.fullName ||
+      contact?.name ||
+      lead?.sellerName ||
+      lead?.name,
+  )
+  const sellerEmail = normalizeText(contact?.email || lead?.sellerEmail || lead?.email).toLowerCase()
+  const sellerPhone = normalizeText(contact?.phone || contact?.mobile || lead?.sellerPhone || lead?.phone)
+  const sellerParticipant = buildAppointmentParticipant({
+    name: sellerName || sellerEmail,
+    email: sellerEmail,
+    phone: sellerPhone,
+    role: 'Seller',
+    source: 'kingstons_seller_process',
+  })
+  if (sellerParticipant) participants.push(sellerParticipant)
+
+  const agentParticipant = buildAppointmentParticipant({
+    name: normalizeText(agent?.fullName || agent?.name),
+    email: normalizeText(agent?.email).toLowerCase(),
+    phone: normalizeText(agent?.phone || agent?.mobile || agent?.contactNumber || agent?.contact_number),
+    role: 'Agent',
+    source: 'kingstons_seller_process',
+  })
+  if (agentParticipant) participants.push(agentParticipant)
+
+  return participants
 }
 
 function getLeadSourceChipTone(value = '') {
@@ -5032,6 +5097,21 @@ const LEAD_DETAIL_DEFAULT_TASK = {
 }
 
 const APPOINTMENT_TYPE_OPTIONS = getAppointmentTypeOptions()
+const KINGSTONS_SELLER_PROCESS_APPOINTMENT_TYPES = new Set([
+  'seller_valuation',
+  'valuation_presentation',
+])
+const KINGSTONS_SELLER_PROCESS_APPOINTMENT_TERMINAL_STATUSES = new Set([
+  'cancelled',
+  'canceled',
+  'declined',
+])
+const KINGSTONS_SELLER_PROCESS_ONLY_ACTION_IDS = new Set([
+  'schedule_valuation_appointment',
+  'schedule_valuation_presentation',
+  'resend_valuation_presentation',
+  'upload_valuation_document',
+])
 
 const VIEWING_OUTCOME_OPTIONS = [
   'Interested',
@@ -6137,6 +6217,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [draggingPipelineCardId, setDraggingPipelineCardId] = useState('')
   const draggingPipelineCardRef = useRef('')
   const [leadWorkspaceTab, setLeadWorkspaceTab] = useState('overview')
+  const [sellerDocumentCenterIntent, setSellerDocumentCenterIntent] = useState(null)
+  const [sellerDocumentActiveCategory, setSellerDocumentActiveCategory] = useState('property')
+  const [sellerDocumentSearchValue, setSellerDocumentSearchValue] = useState('')
   const [buyerJourneyActionStage, setBuyerJourneyActionStage] = useState('qualification')
   const [leadFilter, setLeadFilter] = useState(DEFAULT_LEAD_FILTER)
   const [leadTablePage, setLeadTablePage] = useState(1)
@@ -7767,6 +7850,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadKey)
       .sort((a, b) => new Date(a.dateTime || a.createdAt || 0) - new Date(b.dateTime || b.createdAt || 0))
   }, [records.appointments, selectedLead])
+
+  const selectedKingstonsSellerAppointmentsByType = useMemo(() => {
+    const map = new Map()
+    for (const appointment of selectedLeadAppointments) {
+      const appointmentType = normalizeText(appointment?.appointmentType || appointment?.appointment_type || appointment?.type)
+      if (!KINGSTONS_SELLER_PROCESS_APPOINTMENT_TYPES.has(appointmentType)) continue
+      const status = normalizeText(appointment?.status || appointment?.appointmentStatus || appointment?.appointment_status).toLowerCase()
+      if (KINGSTONS_SELLER_PROCESS_APPOINTMENT_TERMINAL_STATUSES.has(status)) continue
+      const existing = map.get(appointmentType)
+      if (!existing) {
+        map.set(appointmentType, appointment)
+        continue
+      }
+      const existingTime = parseAppointmentDate(existing)?.getTime() || new Date(existing?.createdAt || existing?.created_at || 0).getTime() || 0
+      const appointmentTime = parseAppointmentDate(appointment)?.getTime() || new Date(appointment?.createdAt || appointment?.created_at || 0).getTime() || 0
+      if (appointmentTime >= existingTime) {
+        map.set(appointmentType, appointment)
+      }
+    }
+    return map
+  }, [selectedLeadAppointments])
 
   const selectedLeadLinkedAppointment = useMemo(
     () =>
@@ -9649,42 +9753,136 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     sellerProcess: currentWorkspace?.sellerProcess || currentWorkspace?.seller_process,
     currentWorkspace,
   }), [currentWorkspace, organisationId, organisationName, organisationSettings, selectedLead])
+  const selectedSellerProcessDocumentRows = useMemo(() => buildSellerLeadDocumentRowsFromSource({
+    lead: selectedLead || {},
+    listing: selectedLeadLinkedListing,
+    journey: selectedSellerJourney,
+    mandatePacketStatus,
+  }), [
+    mandatePacketStatus,
+    selectedLead,
+    selectedLeadLinkedListing,
+    selectedSellerJourney,
+  ])
+  const selectedSellerProcessEvidenceDocuments = useMemo(() => [
+    ...(Array.isArray(selectedLead?.documents) ? selectedLead.documents : []),
+    ...(Array.isArray(selectedLeadLinkedListing?.documents) ? selectedLeadLinkedListing.documents : []),
+    ...selectedSellerProcessDocumentRows,
+    ...(Array.isArray(mandatePacketStatus?.versions) ? mandatePacketStatus.versions : []),
+  ], [
+    mandatePacketStatus?.versions,
+    selectedLead?.documents,
+    selectedLeadLinkedListing?.documents,
+    selectedSellerProcessDocumentRows,
+  ])
   const selectedKingstonsSellerProcessRailModel = useMemo(() => buildKingstonsSellerProcessRailModel({
     sellerProcessProfile: selectedSellerProcessProfileResolution.profile,
     organisationSettings,
     lead: selectedLead || {},
     listing: selectedLeadLinkedListing || {},
     appointments: selectedLeadAppointments,
-    documents: [
-      ...(Array.isArray(selectedLead?.documents) ? selectedLead.documents : []),
-      ...(Array.isArray(selectedLeadLinkedListing?.documents) ? selectedLeadLinkedListing.documents : []),
-      ...(Array.isArray(mandatePacketStatus?.versions) ? mandatePacketStatus.versions : []),
-    ],
+    documents: selectedSellerProcessEvidenceDocuments,
     activities: selectedLeadActivities,
   }), [
-    mandatePacketStatus?.versions,
     organisationSettings,
     selectedLead,
     selectedLeadActivities,
     selectedLeadAppointments,
     selectedLeadLinkedListing,
+    selectedSellerProcessEvidenceDocuments,
     selectedSellerProcessProfileResolution.profile,
   ])
+  const selectedKingstonsSellerProcessActionModel = useMemo(() => buildKingstonsSellerProcessActionModel({
+    sellerProcessProfile: selectedSellerProcessProfileResolution.profile,
+    organisationSettings,
+    lead: selectedLead || {},
+    listing: selectedLeadLinkedListing || {},
+    appointments: selectedLeadAppointments,
+    documents: selectedSellerProcessEvidenceDocuments,
+    activities: selectedLeadActivities,
+  }), [
+    organisationSettings,
+    selectedLead,
+    selectedLeadActivities,
+    selectedLeadAppointments,
+    selectedLeadLinkedListing,
+    selectedSellerProcessEvidenceDocuments,
+    selectedSellerProcessProfileResolution.profile,
+  ])
+  const selectedAppointmentTypeOptions = useMemo(() => {
+    const currentType = normalizeText(appointmentForm.appointmentType)
+    const allowKingstonsAppointmentTypes =
+      Boolean(selectedKingstonsSellerProcessActionModel?.visible) ||
+      KINGSTONS_SELLER_PROCESS_APPOINTMENT_TYPES.has(currentType)
+    return APPOINTMENT_TYPE_OPTIONS.filter((option) => (
+      allowKingstonsAppointmentTypes ||
+      !KINGSTONS_SELLER_PROCESS_APPOINTMENT_TYPES.has(normalizeText(option?.value))
+    ))
+  }, [appointmentForm.appointmentType, selectedKingstonsSellerProcessActionModel?.visible])
   const selectedSellerJourneyStageKey = normalizeKey(selectedSellerJourney?.stage?.key || selectedSellerJourney?.stageKey || selectedSellerJourney?.stage?.label)
   const selectedSellerCanSendOnboarding = !selectedLeadIsSeller || selectedSellerJourneyStageKey !== 'new_lead'
   const selectedLeadSellerOnboardingCommandLabel = selectedSellerCanSendOnboarding
     ? selectedLeadSellerOnboardingActionLabel
     : 'Contact Seller First'
 
+  const selectedSellerDocumentRows = useMemo(() => {
+    if (selectedKingstonsSellerProcessActionModel?.visible) {
+      return ensureKingstonsValuationDocumentRequirement(selectedSellerProcessDocumentRows)
+    }
+    return selectedSellerProcessDocumentRows
+  }, [
+    selectedKingstonsSellerProcessActionModel?.visible,
+    selectedSellerProcessDocumentRows,
+  ])
+
   const selectedSellerDocumentCategories = useMemo(
-    () => buildSellerLeadDocumentCategories(buildSellerLeadDocumentRowsFromSource({
-      lead: selectedLead || {},
-      listing: selectedLeadLinkedListing,
-      journey: selectedSellerJourney,
-      mandatePacketStatus,
-    })),
-    [mandatePacketStatus, selectedLead, selectedLeadLinkedListing, selectedSellerJourney],
+    () => buildSellerLeadDocumentCategories(selectedSellerDocumentRows),
+    [selectedSellerDocumentRows],
   )
+
+  const selectedSellerDocumentVisibleCategories = useMemo(() => {
+    const query = normalizeText(sellerDocumentSearchValue).toLowerCase()
+    return selectedSellerDocumentCategories.map((category) => {
+      const categoryMatches = normalizeText(category.key) === normalizeText(sellerDocumentActiveCategory)
+      const items = categoryMatches
+        ? category.items.filter((documentRow) => {
+            const haystack = [
+              documentRow?.key,
+              documentRow?.requirementKey,
+              documentRow?.requirement_key,
+              documentRow?.documentType,
+              documentRow?.document_type,
+              documentRow?.label,
+              documentRow?.title,
+              documentRow?.description,
+              documentRow?.uploadedFileName,
+            ].filter(Boolean).join(' ').toLowerCase()
+            return !query || haystack.includes(query)
+          })
+        : []
+      return { ...category, visibleItems: items }
+    })
+  }, [selectedSellerDocumentCategories, sellerDocumentActiveCategory, sellerDocumentSearchValue])
+
+  useEffect(() => {
+    if (!sellerDocumentCenterIntent?.requestedAt) return
+    const category = normalizeText(sellerDocumentCenterIntent.category).toLowerCase()
+    const search = normalizeText(sellerDocumentCenterIntent.search || sellerDocumentCenterIntent.label)
+    if (SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG.some((row) => row.key === category)) {
+      setSellerDocumentActiveCategory(category)
+    }
+    if (normalizeText(sellerDocumentCenterIntent.documentType) === 'valuation_document') {
+      setSellerDocumentSearchValue(search || 'Formal Valuation Document')
+    } else if (search) {
+      setSellerDocumentSearchValue(search)
+    }
+  }, [
+    sellerDocumentCenterIntent?.category,
+    sellerDocumentCenterIntent?.documentType,
+    sellerDocumentCenterIntent?.label,
+    sellerDocumentCenterIntent?.requestedAt,
+    sellerDocumentCenterIntent?.search,
+  ])
 
   const selectedSellerDocumentSummary = useMemo(() => {
     const total = selectedSellerDocumentCategories.reduce((sum, category) => sum + category.total, 0)
@@ -9737,6 +9935,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadContact,
     selectedLeadLinkedListing,
     selectedSellerJourney,
+  ])
+
+  const selectedSellerNextBestAction = useMemo(() => {
+    const kingstonsAction = selectedKingstonsSellerProcessActionModel?.currentAction || null
+    if (
+      selectedLeadIsSeller &&
+      selectedKingstonsSellerProcessActionModel?.visible &&
+      selectedKingstonsSellerProcessActionModel?.canReplaceGlobalNextBestAction &&
+      kingstonsAction
+    ) {
+      return {
+        id: kingstonsAction.key,
+        label: kingstonsAction.label,
+        description: kingstonsAction.description || 'Continue the Kingstons seller process.',
+        disabled: kingstonsAction.enabled === false,
+        source: 'kingstons_seller_process',
+        disabledReason: kingstonsAction.disabledReason || '',
+      }
+    }
+
+    const blockerLabel = normalizeText(selectedSellerReadiness.blockers?.[0]?.label)
+    return {
+      id: selectedSellerReadiness.nextAction?.id || 'open_journey',
+      label: selectedSellerReadiness.nextAction?.label || selectedLeadMandatePrimaryLabel || 'Review seller journey',
+      description: blockerLabel
+        ? `${blockerLabel} needs attention before this seller is market ready.`
+        : 'The seller workspace is on track.',
+      disabled: selectedSellerReadiness.nextAction?.disabled,
+      source: 'default_seller_readiness',
+      disabledReason: '',
+    }
+  }, [
+    selectedKingstonsSellerProcessActionModel,
+    selectedLeadIsSeller,
+    selectedLeadMandatePrimaryLabel,
+    selectedSellerReadiness.blockers,
+    selectedSellerReadiness.nextAction,
   ])
 
   const selectedSellerReadinessRequirements = useMemo(() => {
@@ -13782,10 +14017,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setAppointmentModalOpen(true)
   }
 
+  function handleOpenKingstonsSellerAppointment(appointmentType, options = {}) {
+    if (!selectedKingstonsSellerProcessActionModel?.visible) return false
+    const resolvedAppointmentType = normalizeText(appointmentType)
+    if (!KINGSTONS_SELLER_PROCESS_APPOINTMENT_TYPES.has(resolvedAppointmentType)) return false
+    const existingAppointment = selectedKingstonsSellerAppointmentsByType.get(resolvedAppointmentType)
+    if (!existingAppointment) return false
+    handleLeadWorkspaceTabSelection('appointments')
+    handleOpenAppointmentModal(existingAppointment)
+    setMessage(options.resend
+      ? 'Valuation presentation appointment opened. Use Resend Invite to send it again.'
+      : `${getAppointmentTypeLabel(resolvedAppointmentType)} appointment opened.`
+    )
+    return true
+  }
+
   function handleScheduleSellerAppointment(appointmentType = 'seller_consultation') {
     if (!selectedLead) return
     setAppointmentManualParticipantOpen(false)
     setAppointmentDeselectedParticipantKeys([])
+    setSelectedAppointmentId('')
     const sellerListingId = normalizeText(
       selectedLead?.listingId ||
       selectedLead?.listing_id ||
@@ -13794,21 +14045,87 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     )
     const sellerLeadId = normalizeText(selectedLead?.leadId || selectedLead?.lead_id)
     const resolvedAppointmentType = normalizeText(appointmentType) || 'seller_consultation'
-    const propertyLabel = normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress)
+    const isKingstonsSellerAppointment =
+      selectedKingstonsSellerProcessActionModel?.visible &&
+      KINGSTONS_SELLER_PROCESS_APPOINTMENT_TYPES.has(resolvedAppointmentType)
+    if (isKingstonsSellerAppointment && handleOpenKingstonsSellerAppointment(resolvedAppointmentType)) {
+      return
+    }
+    const propertyLabel = normalizeText(
+      selectedLeadLinkedListing?.propertyAddress ||
+        selectedLeadLinkedListing?.formattedAddress ||
+        selectedLeadLinkedListing?.address ||
+        selectedLead?.propertyInterest ||
+        selectedLead?.sellerPropertyAddress ||
+        selectedLead?.seller_property_address,
+    )
+    const kingstonsStageKey = resolvedAppointmentType === 'valuation_presentation'
+      ? 'valuation_presentation_scheduled'
+      : 'valuation_appointment_scheduled'
+    const kingstonsEvidenceKey = resolvedAppointmentType === 'valuation_presentation'
+      ? 'valuation_presentation_scheduled'
+      : 'valuation_appointment_scheduled'
+    const kingstonsTitle = resolvedAppointmentType === 'valuation_presentation'
+      ? 'Valuation Presentation'
+      : 'Valuation Appointment'
+    const kingstonsParticipants = isKingstonsSellerAppointment
+      ? buildKingstonsSellerAppointmentParticipants({
+          lead: selectedLead,
+          contact: selectedLeadContact || {},
+          agent: currentAgent || {},
+        })
+      : []
+    const appointmentSeed = isKingstonsSellerAppointment
+      ? {
+          ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
+          date: getTomorrowIsoDate(),
+          startTime: getCurrentTimeValue(),
+          participantDraft: {
+            ...LEAD_DETAIL_DEFAULT_APPOINTMENT.participantDraft,
+            participantRole: 'Seller',
+          },
+        }
+      : null
     setAppointmentForm((previous) => buildDefaultAppointmentFormForType(resolvedAppointmentType, {
-      ...previous,
+      ...(appointmentSeed || previous),
       appointmentType: resolvedAppointmentType,
       title: propertyLabel
-        ? `${getAppointmentTypeLabel(resolvedAppointmentType)} - ${propertyLabel}`
-        : getAppointmentTypeLabel(resolvedAppointmentType),
-      date: previous.date || getTomorrowIsoDate(),
-      startTime: previous.startTime || getCurrentTimeValue(),
+        ? `${isKingstonsSellerAppointment ? kingstonsTitle : getAppointmentTypeLabel(resolvedAppointmentType)} - ${propertyLabel}`
+        : (isKingstonsSellerAppointment ? kingstonsTitle : getAppointmentTypeLabel(resolvedAppointmentType)),
+      date: isKingstonsSellerAppointment ? getTomorrowIsoDate() : (previous.date || getTomorrowIsoDate()),
+      startTime: isKingstonsSellerAppointment ? getCurrentTimeValue() : (previous.startTime || getCurrentTimeValue()),
       contactId: normalizeText(selectedLead?.contactId) || '',
       leadId: sellerLeadId || previous.leadId || '',
       listingId: sellerListingId || previous.listingId || '',
       relatedEntityType: 'lead',
       relatedEntityId: sellerLeadId || previous.relatedEntityId || '',
+      location: isKingstonsSellerAppointment ? propertyLabel : (normalizeText(previous.location) || propertyLabel),
       visibility: 'client_visible',
+      linkedWorkflow: isKingstonsSellerAppointment ? 'kingstons_seller_process' : previous.linkedWorkflow,
+      linkedWorkflowStage: isKingstonsSellerAppointment ? kingstonsStageKey : previous.linkedWorkflowStage,
+      completionBehavior: isKingstonsSellerAppointment ? 'record_outcome' : previous.completionBehavior,
+      workflowCompletionEffect: isKingstonsSellerAppointment
+        ? {
+            sellerProcessProfile: 'kingstons_residential',
+            evidenceKey: kingstonsEvidenceKey,
+            completionEffects: [`mark_${kingstonsEvidenceKey}`],
+          }
+        : previous.workflowCompletionEffect,
+      requiredDocuments: isKingstonsSellerAppointment
+        ? (resolvedAppointmentType === 'valuation_presentation'
+            ? [{ key: 'valuation_document', label: 'Valuation document' }]
+            : [])
+        : previous.requiredDocuments,
+      notes: isKingstonsSellerAppointment
+        ? `Kingstons seller process: ${kingstonsTitle}.`
+        : previous.notes,
+      recipientEmail: isKingstonsSellerAppointment
+        ? normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email).toLowerCase()
+        : previous.recipientEmail,
+      sendInviteEmails: true,
+      attachCalendarInvite: true,
+      notifyCreatorOnRsvp: true,
+      participants: isKingstonsSellerAppointment ? kingstonsParticipants : previous.participants,
     }))
     setAppointmentSchedulingIntegrity(null)
     setAppointmentSchedulingError('')
@@ -15192,7 +15509,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }))
       setSellerContactFeedbackModal(SELLER_CONTACT_FEEDBACK_DEFAULTS)
       setError('')
-      setMessage('Seller contact logged. Next best action is now Send Seller Onboarding.')
+      setMessage(selectedKingstonsSellerProcessActionModel?.visible
+        ? 'Seller contact logged. Next best action is now Schedule Valuation Appointment.'
+        : 'Seller contact logged. Next best action is now Send Seller Onboarding.')
       scheduleRecordsReload(organisationId, 850)
     } catch (contactError) {
       const errorMessage = contactError?.message || 'Unable to save seller contact feedback.'
@@ -15270,8 +15589,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function openSellerDocumentCenter(intent = {}) {
+    setSellerDocumentCenterIntent({
+      ...intent,
+      requestedAt: Date.now(),
+    })
+    setLeadWorkspaceTab('documents')
+  }
+
   function handleSellerJourneyAction(actionId) {
     const id = normalizeText(actionId)
+    if (
+      KINGSTONS_SELLER_PROCESS_ONLY_ACTION_IDS.has(id) &&
+      !selectedKingstonsSellerProcessActionModel?.visible
+    ) {
+      setLeadWorkspaceTab('overview')
+      return
+    }
     if (id === 'contact_seller') {
       openSellerContactFeedbackModal()
       return
@@ -15284,8 +15618,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       handleScheduleSellerAppointment('valuation_presentation')
       return
     }
+    if (id === 'resend_valuation_presentation') {
+      if (handleOpenKingstonsSellerAppointment('valuation_presentation', { resend: true })) return
+      handleScheduleSellerAppointment('valuation_presentation')
+      setMessage('No valuation presentation appointment was found. Book the presentation appointment first.')
+      return
+    }
     if (id === 'upload_valuation_document') {
-      setLeadWorkspaceTab('documents')
+      openSellerDocumentCenter({
+        documentType: 'valuation_document',
+        category: 'property',
+        search: 'Formal Valuation Document',
+      })
       return
     }
     if (id === 'complete_seller_pack') {
@@ -20369,23 +20713,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <div className="min-w-0">
                               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Next Best Action</p>
                               <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">
-                                {selectedSellerReadiness.nextAction?.label || selectedLeadMandatePrimaryLabel || 'Review seller journey'}
+                                {selectedSellerNextBestAction.label}
                               </h3>
                               <p className="mt-2 line-clamp-2 text-sm leading-5 text-[#c7d5e2]">
-                                {selectedSellerReadiness.blockers?.[0]?.label
-                                  ? `${selectedSellerReadiness.blockers[0].label} needs attention before this seller is market ready.`
-                                  : 'The seller workspace is on track.'}
+                                {selectedSellerNextBestAction.description}
                               </p>
                             </div>
                             <Button
                               type="button"
                               size="sm"
                               className="min-h-10 shrink-0 bg-white px-4 text-[#102033] hover:bg-[#edf4fa]"
-                              onClick={() => handleSellerJourneyAction(selectedSellerReadiness.nextAction?.id || 'open_journey')}
-                              disabled={selectedSellerReadiness.nextAction?.disabled}
+                              onClick={() => handleSellerJourneyAction(selectedSellerNextBestAction.id)}
+                              disabled={selectedSellerNextBestAction.disabled}
+                              data-testid="seller-next-best-action-button"
                             >
                               <CheckCircle2 className="h-4 w-4" />
-                              {selectedSellerReadiness.nextAction?.label || 'Open Journey'}
+                              {selectedSellerNextBestAction.label || 'Open Journey'}
                             </Button>
                           </div>
                         </section>
@@ -24489,9 +24832,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             ))}
                           </div>
 
+                          <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between" data-testid="seller-document-center-controls">
+                            <div className="flex flex-wrap gap-2">
+                              {selectedSellerDocumentCategories.map((category) => (
+                                <button
+                                  key={category.key}
+                                  type="button"
+                                  onClick={() => setSellerDocumentActiveCategory(category.key)}
+                                  className={`inline-flex min-h-10 items-center gap-2 rounded-[12px] border px-3 text-sm font-semibold transition ${sellerDocumentActiveCategory === category.key ? 'border-[#b8d5f4] bg-[#eef6ff] text-[#245c93]' : 'border-[#dbe7f2] bg-white text-[#607891] hover:border-[#c6d7e8]'}`}
+                                >
+                                  {category.label}
+                                  <span className="rounded-full bg-white px-2 py-0.5 text-xs">{category.total}</span>
+                                </button>
+                              ))}
+                            </div>
+                            <label className="relative w-full lg:max-w-sm">
+                              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8aa0b7]" />
+                              <Field
+                                value={sellerDocumentSearchValue}
+                                onChange={(event) => setSellerDocumentSearchValue(event.target.value)}
+                                placeholder="Search documents..."
+                                className="pl-10"
+                                data-testid="seller-document-center-search"
+                              />
+                            </label>
+                          </div>
+
                           <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
                             <div className="space-y-4" data-testid="seller-documents-list">
-                              {selectedSellerDocumentCategories.map((category) => {
+                              {selectedSellerDocumentVisibleCategories
+                                .filter((category) => category.key === sellerDocumentActiveCategory)
+                                .map((category) => {
                                 const CategoryIcon = category.Icon
                                 return (
                                   <section key={category.key} className="rounded-[22px] border border-[#e3edf7] bg-[#fbfdff] p-4">
@@ -24508,7 +24879,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       <span className="rounded-full border border-[#dbe7f2] bg-white px-3 py-1 text-xs font-semibold text-[#607891]">{category.progress}%</span>
                                     </div>
                                     <div className="mt-4 grid gap-2">
-                                      {category.items.length ? category.items.map((documentRow) => {
+                                      {category.visibleItems.length ? category.visibleItems.map((documentRow) => {
                                         const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
                                         const StatusIcon = statusMeta.Icon
                                         const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
@@ -24583,7 +24954,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         )
                                       }) : (
                                         <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-white px-4 py-5 text-sm font-semibold text-[#7890a8]">
-                                          No {category.label.toLowerCase()} have been requested yet.
+                                          {sellerDocumentSearchValue
+                                            ? `No ${category.label.toLowerCase()} match this search.`
+                                            : `No ${category.label.toLowerCase()} have been requested yet.`}
                                         </div>
                                       )}
                                     </div>
@@ -25265,7 +25638,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 Appointment type *
                 <Field as="select" value={appointmentForm.appointmentType} onChange={(event) => handleAppointmentTypeChange(event.target.value)}>
                   <option value="">Select appointment type</option>
-                  {APPOINTMENT_TYPE_OPTIONS.map((option) => (
+                  {selectedAppointmentTypeOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>

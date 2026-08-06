@@ -9,6 +9,7 @@ import {
 } from '../src/services/sellerProcessProfileService.js'
 import { evaluateSellerProcess } from '../src/services/sellerProcessEvaluationService.js'
 import { buildKingstonsSellerProcessRailModel } from '../src/services/sellerProcessRailModelService.js'
+import { buildKingstonsSellerProcessActionModel } from '../src/services/sellerProcessActionModelService.js'
 import { buildSellerProcessProjectionBundle } from '../src/services/sellerProcessProjectionService.js'
 import { buildSellerProcessShadowIntegration } from '../src/services/sellerProcessShadowIntegrationService.js'
 import { buildSellerLeadWorkspaceShadowIntegration } from '../src/services/sellerProcessWorkspaceIntegrationService.js'
@@ -17,6 +18,7 @@ import { buildSellerProcessWorkspacePanelModel } from '../src/services/sellerPro
 const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 const phase7Doc = readFileSync(resolve(appRoot, 'docs/seller-process-phase7-containment-tests.md'), 'utf8')
+const agencyPipelineSource = readFileSync(resolve(appRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
 
 const liveRuntimeSources = [
   'src/services/sellerJourneyService.js',
@@ -45,6 +47,7 @@ const allowedSellerProcessSources = [
   'src/services/sellerProcessWorkspaceIntegrationService.js',
   'src/services/sellerProcessWorkspacePanelService.js',
   'src/services/sellerProcessRailModelService.js',
+  'src/services/sellerProcessActionModelService.js',
   'src/services/sellerProcessEvidenceMappingService.js',
 ]
 
@@ -63,6 +66,7 @@ const kingstonsActionKeys = [
   'schedule_valuation_appointment',
   'upload_valuation_document',
   'schedule_valuation_presentation',
+  'resend_valuation_presentation',
   'complete_seller_pack',
   'prepare_listing',
 ]
@@ -118,6 +122,7 @@ function assertDefaultContainment(source = {}, label = 'source') {
   const resolution = resolveSellerProcessProfile(source)
   const evaluation = evaluateSellerProcess(source)
   const rail = buildKingstonsSellerProcessRailModel(source)
+  const actionModel = buildKingstonsSellerProcessActionModel(source)
   const projection = buildSellerProcessProjectionBundle(source)
   const shadow = buildSellerProcessShadowIntegration(source)
   const workspaceShadow = buildSellerLeadWorkspaceShadowIntegration(source)
@@ -127,6 +132,10 @@ function assertDefaultContainment(source = {}, label = 'source') {
   assert.equal(resolution.isKingstons, false, `${label} should not be Kingstons`)
   assert.equal(evaluation.profile, DEFAULT_SELLER_PROCESS_PROFILE, `${label} evaluator should stay default`)
   assert.equal(rail.visible, false, `${label} rail should stay hidden`)
+  assert.equal(actionModel.visible, false, `${label} action model should stay hidden`)
+  assert.equal(actionModel.canReplaceGlobalNextBestAction, false, `${label} must not replace global next best action`)
+  assert.equal(actionModel.currentAction, null, `${label} must not emit a Kingston current action`)
+  assert.deepEqual(actionModel.actions, [], `${label} must not emit Kingston actions`)
   assert.equal(projection.surface.mode, 'default', `${label} projection should stay default`)
   assert.deepEqual(projection.surface.completedProcessStageKeys, [], `${label} should not emit Kingston completed stages`)
   assert.deepEqual(projection.surface.missingEvidenceKeys, [], `${label} should not emit Kingston missing evidence`)
@@ -149,6 +158,7 @@ function assertDefaultContainment(source = {}, label = 'source') {
   const resolution = resolveSellerProcessProfile(explicitKingstonsEvidence)
   const evaluation = evaluateSellerProcess(explicitKingstonsEvidence)
   const rail = buildKingstonsSellerProcessRailModel(explicitKingstonsEvidence)
+  const actionModel = buildKingstonsSellerProcessActionModel(explicitKingstonsEvidence)
   const shadow = buildSellerProcessShadowIntegration(explicitKingstonsEvidence)
   const panel = buildSellerProcessWorkspacePanelModel({ sellerProcessShadowIntegration: shadow })
 
@@ -158,6 +168,11 @@ function assertDefaultContainment(source = {}, label = 'source') {
   assert.equal(evaluation.canApplyToRuntime, false)
   assert.equal(rail.visible, true)
   assert.equal(rail.canReplaceSellerJourney, false)
+  assert.equal(actionModel.visible, true)
+  assert.equal(actionModel.canReplaceGlobalNextBestAction, true)
+  assert.equal(actionModel.readOnly, true)
+  assert.equal(actionModel.sellerPackDeferred, true)
+  assert.equal(actionModel.actions.find((action) => action.key === 'complete_seller_pack')?.enabled, false)
   assert.equal(shadow.mode, 'shadow')
   assert.equal(shadow.canWrite, false)
   assert.equal(shadow.canApplyToRuntime, false)
@@ -169,6 +184,16 @@ function assertDefaultContainment(source = {}, label = 'source') {
 }
 
 {
+  assert.match(agencyPipelineSource, /const KINGSTONS_SELLER_PROCESS_ONLY_ACTION_IDS = new Set\(\[/)
+  assert.match(agencyPipelineSource, /KINGSTONS_SELLER_PROCESS_ONLY_ACTION_IDS\.has\(id\)/)
+  assert.match(agencyPipelineSource, /!selectedKingstonsSellerProcessActionModel\?\.visible/)
+  assert.match(agencyPipelineSource, /setLeadWorkspaceTab\('overview'\)[\s\S]*?return[\s\S]*?if \(id === 'contact_seller'\)/)
+  assert.match(agencyPipelineSource, /const selectedAppointmentTypeOptions = useMemo\(\(\) => \{/)
+  assert.match(agencyPipelineSource, /Boolean\(selectedKingstonsSellerProcessActionModel\?\.visible\)/)
+  assert.match(agencyPipelineSource, /!KINGSTONS_SELLER_PROCESS_APPOINTMENT_TYPES\.has\(normalizeText\(option\?\.value\)\)/)
+}
+
+{
   for (const file of liveRuntimeSources) {
     const source = readFileSync(resolve(appRoot, file), 'utf8')
     assert.equal(source.includes('sellerProcessEvaluationService'), false, `${file} must not import the seller process evaluator`)
@@ -176,6 +201,7 @@ function assertDefaultContainment(source = {}, label = 'source') {
     assert.equal(source.includes('sellerProcessShadowIntegrationService'), false, `${file} must not import seller process shadow integration`)
     assert.equal(source.includes('sellerProcessWorkspacePanelService'), false, `${file} must not import seller process panel model`)
     assert.equal(source.includes('sellerProcessRailModelService'), false, `${file} must not import Kingston rail model`)
+    assert.equal(source.includes('sellerProcessActionModelService'), false, `${file} must not import Kingston action model`)
     assert.equal(source.includes('sellerProcessEvidenceMappingService'), false, `${file} must not import seller process evidence mapper`)
   }
 }

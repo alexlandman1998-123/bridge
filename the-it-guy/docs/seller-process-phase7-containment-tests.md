@@ -18,13 +18,19 @@ The tests prove:
 - organisation name alone does not activate Kingston behaviour
 - unknown profile values fall back to the default process
 - default sellers do not receive Kingston rail stages, missing evidence keys,
-  shadow mode, or a visible seller-process panel
+  shadow mode, Kingston next-best-actions, or a visible seller-process panel
 - explicit `kingstons_residential` is still the only activation path
 - Kingston payloads remain read-only and shadow-only
 - partner-facing payloads and services do not expose internal Kingston workflow
   keys
+- Kingston-only UI actions are visibility-gated before routing to valuation
+  appointments or valuation-document upload
+- Kingston appointment types stay hidden from the default appointment picker
+  unless the Kingston process profile is active, or an existing Kingston
+  appointment is already being edited
 - seller journey, readiness, document, listing, notification, dashboard, and
-  partner services do not import Kingston process services
+  partner services do not import Kingston process services or the Kingston
+  action model
 - Kingston process services do not write, upload documents, create appointments,
   update listings, or send notifications
 
