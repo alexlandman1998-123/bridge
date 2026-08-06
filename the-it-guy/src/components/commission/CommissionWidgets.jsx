@@ -295,7 +295,7 @@ export function CompanyTargetTracker({ tracker = {}, onEdit, compact = false }) 
             <Target size={20} />
           </span>
           <div>
-            <h3 className="text-base font-semibold text-[#101828]">{tracker.title || 'Company Commission'}</h3>
+            <h3 className="text-base font-semibold text-[#101828]">{tracker.title || 'Commission Target'}</h3>
             <p className="mt-1 text-sm leading-6 text-[#667085]">Monthly minimum company commission target.</p>
           </div>
         </div>

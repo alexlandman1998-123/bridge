@@ -18,6 +18,12 @@ const AUTO_CLAIMABLE_ONBOARDING_REASONS = new Set([
   ONBOARDING_REQUIRED_REASONS.onboardingIncomplete,
 ])
 
+const RESOLVED_WORKSPACE_STALE_RECOVERY_REASONS = new Set([
+  ONBOARDING_REQUIRED_REASONS.noActiveMembership,
+  ONBOARDING_REQUIRED_REASONS.onboardingIncomplete,
+  ONBOARDING_REQUIRED_REASONS.workspaceMissing,
+])
+
 const AUTH_BOOT_REQUIRED_STEP_TIMEOUT_MS = 10000
 const AUTH_BOOT_OPTIONAL_STEP_TIMEOUT_MS = 5000
 const AUTH_BOOT_HEALTH_PROBE_TIMEOUT_MS = 2500
@@ -526,7 +532,7 @@ export function shouldIgnoreStaleMembershipRecovery({
   if (!activeMemberships.length || !currentMembership?.id || !currentWorkspace?.id) return false
 
   const recoveryReason = normalizeText(onboardingState?.recoveryReason || onboardingState?.validation?.reason)
-  return recoveryReason === ONBOARDING_REQUIRED_REASONS.noActiveMembership
+  return RESOLVED_WORKSPACE_STALE_RECOVERY_REASONS.has(recoveryReason)
 }
 
 export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } = {}) {
@@ -574,22 +580,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       ))?.data?.user
   if (!user?.id) throw new Error('Authenticated Supabase user could not be resolved.')
 
-  const bootHealth = await runAuthBootStep(
-    'bootHealth.probe',
-    () => probeAuthBootHealth({ user, client: supabase }),
-    { userId: user.id },
-  )
-  if (!bootHealth.ok) {
-    console.warn('[AUTH] boot health probe reported degraded backend access', {
-      userId: user.id,
-      status: bootHealth.status,
-      durationMs: bootHealth.durationMs,
-      errorCode: bootHealth.errorCode,
-      errorMessage: bootHealth.errorMessage,
-    })
-  }
-
-  const profile = await runAuthBootStep(
+  const profileBootstrap = runAuthBootStep(
     'profile.getOrCreate',
     async () => {
       try {
@@ -615,7 +606,8 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     },
     { userId: user.id },
   )
-  const loadedSignupIntent = await runAuthBootStep(
+
+  const signupIntentBootstrap = runAuthBootStep(
     'signupIntent.load',
     async () => {
       try {
@@ -637,6 +629,29 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     },
     { userId: user.id },
   )
+
+  const bootHealthBootstrap = runAuthBootStep(
+    'bootHealth.probe',
+    () => probeAuthBootHealth({ user, client: supabase }),
+    { userId: user.id },
+  )
+
+  const [profile, loadedSignupIntent, bootHealth] = await Promise.all([
+    profileBootstrap,
+    signupIntentBootstrap,
+    bootHealthBootstrap,
+  ])
+
+  if (!bootHealth.ok) {
+    console.warn('[AUTH] boot health probe reported degraded backend access', {
+      userId: user.id,
+      status: bootHealth.status,
+      durationMs: bootHealth.durationMs,
+      errorCode: bootHealth.errorCode,
+      errorMessage: bootHealth.errorMessage,
+    })
+  }
+
   const signupIntent = loadedSignupIntent && loadedSignupIntent.status !== SIGNUP_INTENT_STATUSES.readyForOnboarding
     ? await runAuthBootStep(
         'signupIntent.markReady',
@@ -920,6 +935,13 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     currentWorkspace,
     onboardingState,
   })
+  const effectiveOnboardingState = staleMembershipRecovery
+    ? {
+        ...onboardingState,
+        ignoredRecoveryReason: onboardingState?.recoveryReason || onboardingState?.validation?.reason || '',
+        recoveryReason: '',
+      }
+    : onboardingState
   const engineRequiresSetup = (!staleMembershipRecovery && Boolean(onboardingState?.recoveryReason)) || (
     onboarding.onboardingComplete &&
     onboardingState?.validation &&
@@ -937,7 +959,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     user,
     profile,
     signupIntent,
-    onboardingState,
+    onboardingState: effectiveOnboardingState,
     appRole,
     memberships,
     activeMemberships,

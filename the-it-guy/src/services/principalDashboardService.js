@@ -1790,6 +1790,14 @@ async function getPrincipalDashboardDataUncached({
       row.is_active !== false
     )) ||
     { target_amount: DEFAULT_COMPANY_MONTHLY_TARGET }
+  const activeAgentTarget =
+    (allCommissionTargets || []).find((row) => (
+      normalizeKey(row.target_type) === 'agent' &&
+      normalizeKey(row.target_metric || 'agent_commission') === 'agent_commission' &&
+      row.is_active !== false &&
+      (normalizeText(row.user_id).toLowerCase() === scopedActorId || normalizeText(row.user_email).toLowerCase() === scopedActorEmail)
+    )) ||
+    null
   const scopedDocumentRequests = documentRequests.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedDocuments = documents.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedSubprocesses = subprocesses.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
@@ -2144,6 +2152,17 @@ async function getPrincipalDashboardDataUncached({
     scope: 'company',
     now,
   })
+  const agentCommissionTracker = buildCommissionTrackerFromRows({
+    transactions,
+    transactionCommissions,
+    levels: DEFAULT_COMMISSION_LEVELS,
+    target: activeAgentTarget,
+    scope: 'agent',
+    targetMetric: 'agent_commission',
+    userId: scopedActorId,
+    userEmail: scopedActorEmail,
+    now,
+  })
 
   return {
     filters: {
@@ -2201,6 +2220,7 @@ async function getPrincipalDashboardDataUncached({
       ...residentialMetrics.revenue,
       companyCommissionTracker,
     },
+    agentCommissionTracker,
     companyCommissionTracker,
     overview: {
       pipeline: {

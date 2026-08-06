@@ -13,6 +13,10 @@ const finalSignedFunction = readFileSync(
   resolve(repoRoot, 'supabase/functions/generate-final-signed-document/index.ts'),
   'utf8',
 )
+const legalDocumentWorkspacePage = readFileSync(
+  resolve(appRoot, 'src/pages/LegalDocumentWorkspacePage.jsx'),
+  'utf8',
+)
 const sourceOfTruthContract = readFileSync(
   resolve(appRoot, 'docs/seller-lead-listing-source-of-truth.md'),
   'utf8',
@@ -63,6 +67,13 @@ test('converted listings own operational fields after mandate signed', () => {
   assert.match(finalSignedFunction, /title: listingOwnsOperationalFields \? normalizeText\(listing\.title\) \|\| null : firstMissingText\(listing\.title, title\)/)
   assert.match(finalSignedFunction, /address_line_1: listingOwnsOperationalFields \? normalizeText\(listing\.address_line_1\) \|\| null : firstMissingText\(listing\.address_line_1, address\)/)
   assert.match(finalSignedFunction, /asking_price: listingOwnsOperationalFields \? normalizeNumber\(listing\.asking_price\) : firstMissingNumber\(listing\.asking_price, askingPrice\)/)
+})
+
+test('legal workspace mandate finalization activates the linked listing', () => {
+  assert.match(legalDocumentWorkspacePage, /listingStatus: 'mandate_signed'/)
+  assert.match(legalDocumentWorkspacePage, /listingVisibility: 'active_market'/)
+  assert.match(legalDocumentWorkspacePage, /mandateStatus: 'signed'/)
+  assert.match(legalDocumentWorkspacePage, /isActive: true/)
 })
 
 test('source-of-truth contract documents post-conversion ownership', () => {

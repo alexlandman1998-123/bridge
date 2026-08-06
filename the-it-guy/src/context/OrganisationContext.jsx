@@ -285,6 +285,14 @@ export function OrganisationProvider({ children }) {
 
   useEffect(() => {
     let active = true
+    const scheduleHydration = (fn) => {
+      if (typeof window === 'undefined') {
+        return null
+      }
+      return window.setTimeout(() => {
+        void fn()
+      }, 0)
+    }
 
     async function hydrateOrganisation() {
       if (authState.status !== 'authenticated' || !authState.user?.id) {
@@ -314,46 +322,54 @@ export function OrganisationProvider({ children }) {
         return
       }
 
-      if (active) {
-        setLoading(true)
-        setError('')
-      }
-
       const bootstrapTrace = createDashboardPerformanceTrace({
         metricName: DASHBOARD_PERFORMANCE_METRICS.organisationBootstrap,
         resourceOrigin: import.meta.env.VITE_SUPABASE_URL,
       })
-      let bootstrapOutcome = 'success'
-      let nextState = null
-      try {
-        // Auth and workspace changes already clear the scoped runtime cache.
-        // Keep initial hydration coalescible for StrictMode and colocated
-        // consumers; explicit user-triggered refreshes still force a reload.
-        nextState = await fetchAgencyOnboardingSettings()
-        if (active) {
-          applyOrganisationState(nextState)
-        } else {
-          bootstrapOutcome = 'cancelled'
+      const hydrateInBackground = async () => {
+        if (!active) return
+        setLoading(true)
+        setError('')
+        let bootstrapOutcome = 'success'
+        let nextState = null
+        try {
+          // Auth and workspace changes already clear the scoped runtime cache.
+          // Keep initial hydration coalescible for StrictMode and colocated
+          // consumers; explicit user-triggered refreshes still force a reload.
+          nextState = await fetchAgencyOnboardingSettings()
+          if (active) {
+            applyOrganisationState(nextState)
+          } else {
+            bootstrapOutcome = 'cancelled'
+          }
+        } catch (hydrateError) {
+          bootstrapOutcome = active ? 'failed' : 'cancelled'
+          if (active) {
+            setError(hydrateError?.message || 'Unable to load organisation settings.')
+          }
+        } finally {
+          void persistDashboardPerformanceTrace(bootstrapTrace, {
+            userId: authState.user.id,
+            workspaceId: getOrganisationMetricWorkspaceId(authState, nextState),
+            route: typeof window !== 'undefined' ? window.location.pathname : '',
+            appRole: authState.appRole || 'unknown',
+            dashboardKind: 'organisation',
+            lifecycle: 'initial',
+            outcome: bootstrapOutcome,
+            hasData: Boolean(nextState),
+            isInitialLoad: true,
+          })
+          if (active) {
+            setLoading(false)
+          }
         }
-      } catch (hydrateError) {
-        bootstrapOutcome = active ? 'failed' : 'cancelled'
-        if (active) {
-          setError(hydrateError?.message || 'Unable to load organisation settings.')
-        }
-      } finally {
-        void persistDashboardPerformanceTrace(bootstrapTrace, {
-          userId: authState.user.id,
-          workspaceId: getOrganisationMetricWorkspaceId(authState, nextState),
-          route: typeof window !== 'undefined' ? window.location.pathname : '',
-          appRole: authState.appRole || 'unknown',
-          dashboardKind: 'organisation',
-          lifecycle: 'initial',
-          outcome: bootstrapOutcome,
-          hasData: Boolean(nextState),
-          isInitialLoad: true,
-        })
-        if (active) {
-          setLoading(false)
+      }
+
+      if (!active) return
+      const hydrationTimer = scheduleHydration(hydrateInBackground)
+      return () => {
+        if (hydrationTimer !== null) {
+          window.clearTimeout(hydrationTimer)
         }
       }
     }

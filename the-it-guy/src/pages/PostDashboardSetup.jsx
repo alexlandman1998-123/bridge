@@ -19,7 +19,7 @@ import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import OnboardingProgressLayout from '../components/onboarding/OnboardingProgressLayout'
 import { APP_ROLE_LABELS } from '../lib/appRoleMetadata'
-import { ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
+import { ONBOARDING_REQUIRED_REASONS, ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
 import { SIGNUP_ONBOARDING_PATHS, SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
 import { clearStoredSignupIntent } from '../lib/signupIntent'
 import { hasCommercialAccessMarker } from '../lib/commercialAccess'
@@ -86,6 +86,11 @@ const BOND_INVITE_ROLE_OPTIONS = [
 ]
 const SETUP_DRAFT_SCHEMA_VERSION = 1
 const SETUP_DRAFT_STORAGE_PREFIX = 'bridge:post-dashboard-setup-draft'
+const RESOLVED_WORKSPACE_STALE_RECOVERY_REASONS = new Set([
+  ONBOARDING_REQUIRED_REASONS.noActiveMembership,
+  ONBOARDING_REQUIRED_REASONS.onboardingIncomplete,
+  ONBOARDING_REQUIRED_REASONS.workspaceMissing,
+])
 const autoInviteAttemptKeys = new Set()
 
 function normalizeText(value) {
@@ -96,6 +101,12 @@ function isInviteAlreadyAcceptedError(error) {
   const code = normalizeText(error?.code || error?.reason)
   const message = normalizeText(error?.message).toLowerCase()
   return code === 'already_accepted' || message === 'already_accepted' || message.includes('already been accepted')
+}
+
+function isBlockingRecoveryReason(reason = '', hasResolvedWorkspaceMembership = false) {
+  const normalized = normalizeText(reason)
+  if (!normalized) return false
+  return !hasResolvedWorkspaceMembership || !RESOLVED_WORKSPACE_STALE_RECOVERY_REASONS.has(normalized)
 }
 
 function getPostInviteDashboardPath({ hasCommercialWorkspaceAccess = false, agencySignupType = '', intent = null, baseRole = '' } = {}) {
@@ -695,7 +706,7 @@ export default function PostDashboardSetup() {
   const recoveryReasons = [onboardingRequiredReason, onboardingState?.recoveryReason]
     .map((reason) => normalizeText(reason))
     .filter(Boolean)
-  const hasBlockingRecoveryReason = recoveryReasons.length > 0
+  const hasBlockingRecoveryReason = recoveryReasons.some((reason) => isBlockingRecoveryReason(reason, hasResolvedWorkspaceMembership))
   const canOpenActiveWorkspace = hasResolvedWorkspaceMembership && !hasBlockingRecoveryReason
   const pageTitle = useMemo(() => {
     if (canClaimExistingWorkspace) return claimedWorkspaceName ? `Claim ${claimedWorkspaceName}` : 'Claim your agency workspace'

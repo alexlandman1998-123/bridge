@@ -57,11 +57,41 @@ try {
   )
   assert.equal(
     shouldIgnoreStaleMembershipRecovery({
+      appRole: 'agent',
+      activeMemberships: [membership],
+      currentMembership: membership,
+      currentWorkspace: workspace,
+      onboardingState: { recoveryReason: 'onboarding_incomplete' },
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreStaleMembershipRecovery({
+      appRole: 'agent',
+      activeMemberships: [membership],
+      currentMembership: membership,
+      currentWorkspace: workspace,
+      onboardingState: { recoveryReason: 'workspace_missing' },
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreStaleMembershipRecovery({
       appRole: 'attorney',
       activeMemberships: [membership],
       currentMembership: membership,
       currentWorkspace: workspace,
       onboardingState: { recoveryReason: 'missing_department' },
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreStaleMembershipRecovery({
+      appRole: 'agent',
+      activeMemberships: [membership],
+      currentMembership: { ...membership, workspace: null },
+      currentWorkspace: null,
+      onboardingState: { recoveryReason: 'workspace_missing' },
     }),
     false,
   )

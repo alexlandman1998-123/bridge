@@ -2226,6 +2226,18 @@ function _buildPrincipalPremiumModel(data = {}) {
 
 function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'company', profile, dateRange = 'last_30_days', branchId = '', onViewTransactions, onOpenTransaction, onViewCalendar, onOpenCalendar, onManageAppointment, onOpenAppointment, onScheduleAppointment }) {
   const dashboardScope = dataScope === 'agent' ? 'agent' : 'principal'
+  const commissionTracker = (() => {
+    const tracker = dashboardScope === 'agent'
+      ? (data?.agentCommissionTracker || null)
+      : (data?.companyCommissionTracker || data?.revenue?.companyCommissionTracker || null)
+    if (!tracker) return null
+    if (dashboardScope === 'agent') return tracker
+    return {
+      ...tracker,
+      title: 'Commission Target',
+    }
+  })()
+
   const model = useMemo(
     () =>
       deriveResidentialDashboardMetrics({
@@ -2252,7 +2264,7 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'comp
         includeAllAppointments={dashboardScope !== 'agent'}
         canManageAppointments
         appointmentRefreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}:${dashboardScope}`}
-        commissionTracker={dashboardScope === 'agent' ? null : data?.companyCommissionTracker || data?.revenue?.companyCommissionTracker || null}
+        commissionTracker={commissionTracker}
         onViewTransactions={onViewTransactions}
         onOpenTransaction={onOpenTransaction}
         onViewCalendar={onViewCalendar}

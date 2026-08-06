@@ -3488,14 +3488,6 @@ export default function LegalDocumentWorkspacePage() {
         resolvedOrganisationId = immediateOrganisationId
       }
 
-      const settingsPromise = withLegalWorkspaceTimeout(
-        fetchAgencyOnboardingSettings(),
-        'Organisation settings are taking too long.',
-      ).catch((settingsError) => {
-        console.warn('[LegalDocumentWorkspacePage] organisation settings unavailable; continuing with route context.', settingsError)
-        return null
-      })
-
       let detail = null
       if (resolvedTransactionId) {
         detail = await withLegalWorkspaceTimeout(
@@ -3513,83 +3505,7 @@ export default function LegalDocumentWorkspacePage() {
         resolvedOrganisationId = normalizeText(detail?.transaction?.organisation_id) || resolvedOrganisationId
       }
 
-      const settings = await settingsPromise
-      if (!resolvedOrganisationId) {
-        resolvedOrganisationId = normalizeText(settings?.organisation?.id) || null
-      }
-      const onboardingSettings = settings?.onboarding && typeof settings.onboarding === 'object' ? settings.onboarding : {}
-      const agencyInformation = onboardingSettings?.agencyInformation && typeof onboardingSettings.agencyInformation === 'object'
-        ? onboardingSettings.agencyInformation
-        : onboardingSettings?.agency_information && typeof onboardingSettings.agency_information === 'object'
-          ? onboardingSettings.agency_information
-          : {}
-      const organisationSettings = settings?.organisation || {}
-      const organisationAddress = firstText(
-        agencyInformation.physicalAddress,
-        agencyInformation.physical_address,
-        organisationSettings.physical_address,
-        organisationSettings.physicalAddress,
-        [
-          organisationSettings.address_line_1 || organisationSettings.addressLine1,
-          organisationSettings.address_line_2 || organisationSettings.addressLine2,
-          organisationSettings.city,
-          organisationSettings.province,
-          organisationSettings.postal_code || organisationSettings.postalCode,
-        ].map(normalizeText).filter(Boolean).join(', '),
-      )
-      const organisationPhone = firstText(
-        agencyInformation.mainOfficeNumber,
-        agencyInformation.main_office_number,
-        agencyInformation.phoneNumber,
-        agencyInformation.phone_number,
-        organisationSettings.companyPhone,
-        organisationSettings.company_phone,
-        organisationSettings.telephone,
-        organisationSettings.phone_number,
-        organisationSettings.phone,
-      )
-      const organisationEmail = firstText(
-        agencyInformation.mainEmailAddress,
-        agencyInformation.main_email_address,
-        agencyInformation.emailAddress,
-        agencyInformation.email_address,
-        agencyInformation.email,
-        organisationSettings.companyEmail,
-        organisationSettings.company_email,
-        organisationSettings.email,
-      )
-      const organisationWebsite = firstText(
-        agencyInformation.website,
-        organisationSettings.website,
-        organisationSettings.companyWebsite,
-        organisationSettings.company_website,
-      )
-      const brandingFromSettings = {
-        organisationName:
-          normalizeText(organisationSettings.display_name) ||
-          normalizeText(organisationSettings.displayName) ||
-          normalizeText(organisationSettings.name),
-        logoLightUrl: normalizeText(onboardingSettings?.branding?.logoLight) || normalizeText(organisationSettings.logo_url),
-        logoDarkUrl: normalizeText(onboardingSettings?.branding?.logoDark),
-        website: organisationWebsite,
-        organisationWebsite,
-        email: organisationEmail,
-        organisationEmail,
-        physicalAddress: organisationAddress,
-        organisationPhysicalAddress: organisationAddress,
-        telephone: organisationPhone,
-        phoneNumber: organisationPhone,
-        organisationPhone,
-      }
-      const packetBranding = resolvedOrganisationId
-        ? await withLegalWorkspaceTimeout(
-            resolveDocumentPacketBranding({ organisationId: resolvedOrganisationId }),
-            'Workspace branding is taking too long.',
-          ).catch((brandingError) => {
-            console.warn('[LegalDocumentWorkspacePage] branding unavailable; continuing with settings fallback.', brandingError)
-            return null
-          })
-        : null
+      const settings = null
 
       let nextLeadContext = immediateLeadContext.lead
         ? immediateLeadContext
@@ -3696,26 +3612,12 @@ export default function LegalDocumentWorkspacePage() {
           return buildFallbackPacketStatus(resolvedPacketType, 'Packet status lookup timed out. You can still prepare this draft manually.')
         })
       }
-      if (leadRuntimeMandate && hasGeneratedRuntimeMandate(nextLeadContext.lead) && !isUuidLike(status?.packet?.id)) {
-        status = buildRuntimeMandateStatusForLead({
-          organisationId: resolvedOrganisationId,
-          transaction: detail?.transaction || null,
-          transactionId: resolvedTransactionId,
-          transactionDetail: detail,
-          transactionReference: resolveTransactionReference(
-            detail,
-            [
-              normalizeText(nextLeadContext.lead?.sellerPropertyAddress || nextLeadContext.lead?.propertyInterest),
-              normalizeText(nextLeadContext.lead?.leadCategory),
-            ].filter(Boolean).join(' · '),
-          ),
-          routeLeadId,
-          leadContext: nextLeadContext,
-          actor,
-          role,
-          branding: packetBranding || brandingFromSettings,
-          settings,
-        })
+      const shouldBuildRuntimeStatus = leadRuntimeMandate && hasGeneratedRuntimeMandate(nextLeadContext.lead) && !isUuidLike(status?.packet?.id)
+      if (shouldBuildRuntimeStatus) {
+        status = buildFallbackPacketStatus(
+          resolvedPacketType,
+          'Loading full package settings and branding...',
+        )
       }
       if (packetOwnershipWarnings.length) {
         status = {
@@ -3729,26 +3631,152 @@ export default function LegalDocumentWorkspacePage() {
 
       setTransactionDetail(detail)
       setOrganisationId(resolvedOrganisationId)
-      setWorkspaceBranding({
-        ...(packetBranding || {}),
-        organisationName: normalizeText(packetBranding?.organisationName) || brandingFromSettings.organisationName,
-        logoLightUrl: normalizeText(packetBranding?.logoLightUrl) || brandingFromSettings.logoLightUrl,
-        logoDarkUrl: normalizeText(packetBranding?.logoDarkUrl) || brandingFromSettings.logoDarkUrl,
-        website: normalizeText(packetBranding?.website) || normalizeText(packetBranding?.organisationWebsite) || brandingFromSettings.website,
-        organisationWebsite: normalizeText(packetBranding?.organisationWebsite) || normalizeText(packetBranding?.website) || brandingFromSettings.organisationWebsite,
-        email: normalizeText(packetBranding?.email) || normalizeText(packetBranding?.organisationEmail) || brandingFromSettings.email,
-        organisationEmail: normalizeText(packetBranding?.organisationEmail) || normalizeText(packetBranding?.email) || brandingFromSettings.organisationEmail,
-        physicalAddress: normalizeText(packetBranding?.physicalAddress) || normalizeText(packetBranding?.organisationPhysicalAddress) || brandingFromSettings.physicalAddress,
-        organisationPhysicalAddress: normalizeText(packetBranding?.organisationPhysicalAddress) || normalizeText(packetBranding?.physicalAddress) || brandingFromSettings.organisationPhysicalAddress,
-        telephone: normalizeText(packetBranding?.telephone) || normalizeText(packetBranding?.phoneNumber) || normalizeText(packetBranding?.organisationPhone) || brandingFromSettings.telephone,
-        phoneNumber: normalizeText(packetBranding?.phoneNumber) || normalizeText(packetBranding?.telephone) || normalizeText(packetBranding?.organisationPhone) || brandingFromSettings.phoneNumber,
-        organisationPhone: normalizeText(packetBranding?.organisationPhone) || normalizeText(packetBranding?.phoneNumber) || normalizeText(packetBranding?.telephone) || brandingFromSettings.organisationPhone,
-      })
+      setWorkspaceBranding(null)
       setWorkspaceSettings(settings)
       setLeadContext(nextLeadContext)
       setInitialStatus(status)
       setValidatedRoutePacketId(normalizeText(status?.packet?.id || effectiveRoutePacketId))
       hydratedRouteContextKeyRef.current = nextRouteContextKey
+
+      void (async () => {
+        const settingsForBranding = await withLegalWorkspaceTimeout(
+          fetchAgencyOnboardingSettings(),
+          'Organisation settings are taking too long.',
+        ).catch((settingsError) => {
+          console.warn('[LegalDocumentWorkspacePage] organisation settings unavailable; continuing with route context.', settingsError)
+          return null
+        })
+        if (hydratedRouteContextKeyRef.current !== nextRouteContextKey) {
+          return
+        }
+
+        const resolvedSettingsOrganisationId = normalizeText(settingsForBranding?.organisation?.id)
+        if (!resolvedOrganisationId && resolvedSettingsOrganisationId) {
+          resolvedOrganisationId = resolvedSettingsOrganisationId
+          setOrganisationId(resolvedOrganisationId)
+        }
+
+        const onboardingSettings = settingsForBranding?.onboarding && typeof settingsForBranding.onboarding === 'object' ? settingsForBranding.onboarding : {}
+        const agencyInformation = onboardingSettings?.agencyInformation && typeof onboardingSettings.agencyInformation === 'object'
+          ? onboardingSettings.agencyInformation
+          : onboardingSettings?.agency_information && typeof onboardingSettings.agency_information === 'object'
+            ? onboardingSettings.agency_information
+            : {}
+        const organisationSettings = settingsForBranding?.organisation || {}
+        const organisationAddress = firstText(
+          agencyInformation.physicalAddress,
+          agencyInformation.physical_address,
+          organisationSettings.physical_address,
+          organisationSettings.physicalAddress,
+          [
+            organisationSettings.address_line_1 || organisationSettings.addressLine1,
+            organisationSettings.address_line_2 || organisationSettings.addressLine2,
+            organisationSettings.city,
+            organisationSettings.province,
+            organisationSettings.postal_code || organisationSettings.postalCode,
+          ].map(normalizeText).filter(Boolean).join(', '),
+        )
+        const organisationPhone = firstText(
+          agencyInformation.mainOfficeNumber,
+          agencyInformation.main_office_number,
+          agencyInformation.phoneNumber,
+          agencyInformation.phone_number,
+          organisationSettings.companyPhone,
+          organisationSettings.company_phone,
+          organisationSettings.telephone,
+          organisationSettings.phone_number,
+          organisationSettings.phone,
+        )
+        const organisationEmail = firstText(
+          agencyInformation.mainEmailAddress,
+          agencyInformation.main_email_address,
+          agencyInformation.emailAddress,
+          agencyInformation.email_address,
+          agencyInformation.email,
+          organisationSettings.companyEmail,
+          organisationSettings.company_email,
+          organisationSettings.email,
+        )
+        const organisationWebsite = firstText(
+          agencyInformation.website,
+          organisationSettings.website,
+          organisationSettings.companyWebsite,
+          organisationSettings.company_website,
+        )
+        const brandingFromSettings = {
+          organisationName:
+            normalizeText(organisationSettings.display_name) ||
+            normalizeText(organisationSettings.displayName) ||
+            normalizeText(organisationSettings.name),
+          logoLightUrl: normalizeText(onboardingSettings?.branding?.logoLight) || normalizeText(organisationSettings.logo_url),
+          logoDarkUrl: normalizeText(onboardingSettings?.branding?.logoDark),
+          website: organisationWebsite,
+          organisationWebsite,
+          email: organisationEmail,
+          organisationEmail,
+          physicalAddress: organisationAddress,
+          organisationPhysicalAddress: organisationAddress,
+          telephone: organisationPhone,
+          phoneNumber: organisationPhone,
+          organisationPhone,
+        }
+        const freshBranding = resolvedOrganisationId
+          ? await withLegalWorkspaceTimeout(
+              resolveDocumentPacketBranding({ organisationId: resolvedOrganisationId }),
+              'Workspace branding is taking too long.',
+            ).catch((brandingError) => {
+              console.warn('[LegalDocumentWorkspacePage] branding unavailable; continuing with settings fallback.', brandingError)
+              return null
+            })
+          : null
+
+        if (hydratedRouteContextKeyRef.current !== nextRouteContextKey) {
+          return
+        }
+
+        setWorkspaceSettings(settingsForBranding)
+        setWorkspaceBranding({
+          ...(freshBranding || {}),
+          organisationName: normalizeText(freshBranding?.organisationName) || brandingFromSettings.organisationName,
+          logoLightUrl: normalizeText(freshBranding?.logoLightUrl) || brandingFromSettings.logoLightUrl,
+          logoDarkUrl: normalizeText(freshBranding?.logoDarkUrl) || brandingFromSettings.logoDarkUrl,
+          website: normalizeText(freshBranding?.website) || normalizeText(freshBranding?.organisationWebsite) || brandingFromSettings.website,
+          organisationWebsite: normalizeText(freshBranding?.organisationWebsite) || normalizeText(freshBranding?.website) || brandingFromSettings.organisationWebsite,
+          email: normalizeText(freshBranding?.email) || normalizeText(freshBranding?.organisationEmail) || brandingFromSettings.email,
+          organisationEmail: normalizeText(freshBranding?.organisationEmail) || normalizeText(freshBranding?.email) || brandingFromSettings.organisationEmail,
+          physicalAddress: normalizeText(freshBranding?.physicalAddress) || normalizeText(freshBranding?.organisationPhysicalAddress) || brandingFromSettings.physicalAddress,
+          organisationPhysicalAddress: normalizeText(freshBranding?.organisationPhysicalAddress) || normalizeText(freshBranding?.physicalAddress) || brandingFromSettings.organisationPhysicalAddress,
+          telephone: normalizeText(freshBranding?.telephone) || normalizeText(freshBranding?.phoneNumber) || normalizeText(freshBranding?.organisationPhone) || brandingFromSettings.telephone,
+          phoneNumber: normalizeText(freshBranding?.phoneNumber) || normalizeText(freshBranding?.telephone) || normalizeText(freshBranding?.organisationPhone) || brandingFromSettings.phoneNumber,
+          organisationPhone: normalizeText(freshBranding?.organisationPhone) || normalizeText(freshBranding?.phoneNumber) || normalizeText(freshBranding?.telephone) || brandingFromSettings.organisationPhone,
+        })
+
+        if (shouldBuildRuntimeStatus) {
+          const hydratedStatus = buildRuntimeMandateStatusForLead({
+            organisationId: resolvedOrganisationId,
+            transaction: detail?.transaction || null,
+            transactionId: resolvedTransactionId,
+            transactionDetail: detail,
+            transactionReference: resolveTransactionReference(
+              detail,
+              [
+                normalizeText(nextLeadContext.lead?.sellerPropertyAddress || nextLeadContext.lead?.propertyInterest),
+                normalizeText(nextLeadContext.lead?.leadCategory),
+              ].filter(Boolean).join(' · '),
+            ),
+            routeLeadId,
+            leadContext: nextLeadContext,
+            actor,
+            role,
+            branding: freshBranding || brandingFromSettings,
+            settings: settingsForBranding,
+          })
+          if (isUuidLike(hydratedStatus?.packet?.id) || hydratedStatus?.packet?.status === status?.packet?.status) {
+            setInitialStatus(hydratedStatus)
+          }
+        }
+      })()
+
       setContextHydrated(true)
     } catch (error) {
       if (renderedFallback) {
@@ -5216,8 +5244,10 @@ export default function LegalDocumentWorkspacePage() {
           linkedListingId,
           {
             listingStatus: 'mandate_signed',
+            listingVisibility: 'active_market',
             mandateStatus: 'signed',
             mandatePacketId: packetId,
+            isActive: true,
           },
           { includeRequirementsAndDocuments: false },
         )

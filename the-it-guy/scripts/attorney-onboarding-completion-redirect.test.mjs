@@ -37,14 +37,20 @@ assert.doesNotMatch(
 
 assert.match(
   postDashboardSetupSource,
-  /const canOpenActiveWorkspace = hasActiveMembership && !hasBlockingRecoveryReason/,
+  /const canOpenActiveWorkspace = hasResolvedWorkspaceMembership && !hasBlockingRecoveryReason/,
   'An authoritative active membership should be able to open its workspace when no genuine setup blocker remains.',
 )
 
 assert.match(
   postDashboardSetupSource,
-  /reason !== ONBOARDING_REQUIRED_REASONS\.noActiveMembership/,
+  /RESOLVED_WORKSPACE_STALE_RECOVERY_REASONS[\s\S]*ONBOARDING_REQUIRED_REASONS\.noActiveMembership[\s\S]*ONBOARDING_REQUIRED_REASONS\.onboardingIncomplete[\s\S]*ONBOARDING_REQUIRED_REASONS\.workspaceMissing/,
   'A stale no-active-membership recovery reason should not override an active backend membership.',
+)
+
+assert.match(
+  postDashboardSetupSource,
+  /recoveryReasons\.some\(\(reason\) => isBlockingRecoveryReason\(reason, hasResolvedWorkspaceMembership\)\)/,
+  'Setup recovery should only block resolved workspaces for genuine blockers.',
 )
 
 for (const inertLabel of [

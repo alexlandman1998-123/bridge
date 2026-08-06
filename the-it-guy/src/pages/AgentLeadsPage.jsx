@@ -60,6 +60,7 @@ import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import AreaMultiSelect from '../components/location/AreaMultiSelect'
 import LeadImportModal from '../components/leads/LeadImportModal'
 import Modal from '../components/ui/Modal'
+import { useOptionalOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
   createAgencyCrmLeadActivity,
@@ -182,6 +183,8 @@ import {
 import { prepareBuyerOnboardingNotification } from '../services/buyerOnboardingNotificationService'
 import { listLeadCommunicationTemplates } from '../services/leadCommunicationTemplateService'
 import { buildLeadWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
+import { resolveSellerProcessProfile } from '../services/sellerProcessProfileService'
+import { buildSellerProcessWorkspacePanelModel } from '../services/sellerProcessWorkspacePanelService'
 import { buildSellerJourney } from '../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../services/sellerReadinessService'
 import {
@@ -259,6 +262,8 @@ const APPOINTMENT_STATUS_LABELS = {
 }
 const SELLER_APPOINTMENT_TYPES = [
   { value: 'seller_consultation', label: 'Seller Consultation' },
+  { value: 'seller_valuation', label: 'Valuation Appointment' },
+  { value: 'valuation_presentation', label: 'Valuation Presentation' },
   { value: 'other', label: 'Seller Appointment' },
   { value: 'mandate_signing', label: 'Mandate Signing' },
   { value: 'client_meeting', label: 'Client Meeting' },
@@ -1100,6 +1105,8 @@ function formatCleanValue(value, fallback = '—') {
 function getSellerAppointmentDefaultTitle(appointmentType = 'seller_consultation', contactName = '', leadName = '') {
   const personName = contactName || leadName || 'Seller'
   if (appointmentType === 'seller_consultation') return `Seller Consultation - ${personName}`
+  if (appointmentType === 'seller_valuation') return `Valuation Appointment - ${personName}`
+  if (appointmentType === 'valuation_presentation') return `Valuation Presentation - ${personName}`
   if (appointmentType === 'mandate_signing') return `Mandate Signing - ${personName}`
   if (appointmentType === 'client_meeting') return `Client Meeting - ${personName}`
   return `Seller appointment - ${personName}`
@@ -12666,13 +12673,16 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, timeline = [], onS
   )
 }
 
-function SellerAppointmentForm({ organisationId, lead, listing = null, actor, onSaved }) {
+function SellerAppointmentForm({ organisationId, lead, listing = null, actor, onSaved, initialAppointmentType = 'seller_consultation' }) {
   const contact = getLeadContactSnapshot(lead)
   const listingId = getSellerListingId(lead, listing)
   const property = getSellerPropertySummary(lead, listing)
-  const defaultAppointmentTitle = getSellerAppointmentDefaultTitle('seller_consultation', contact.name, lead?.name)
+  const normalizedInitialAppointmentType = SELLER_APPOINTMENT_TYPES.some((option) => option.value === initialAppointmentType)
+    ? initialAppointmentType
+    : 'seller_consultation'
+  const defaultAppointmentTitle = getSellerAppointmentDefaultTitle(normalizedInitialAppointmentType, contact.name, lead?.name)
   const [draft, setDraft] = useState({
-    appointmentType: 'seller_consultation',
+    appointmentType: normalizedInitialAppointmentType,
     title: defaultAppointmentTitle,
     appointmentStatus: 'confirmed',
     sendInviteEmails: false,
@@ -12691,6 +12701,17 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
       title: previous.title || getSellerAppointmentDefaultTitle(previous.appointmentType, contact.name, lead?.name),
     }))
   }, [contact.name, lead?.name])
+
+  useEffect(() => {
+    setDraft((previous) => {
+      if (previous.appointmentType === normalizedInitialAppointmentType) return previous
+      return {
+        ...previous,
+        appointmentType: normalizedInitialAppointmentType,
+        title: getSellerAppointmentDefaultTitle(normalizedInitialAppointmentType, contact.name, lead?.name),
+      }
+    })
+  }, [contact.name, lead?.name, normalizedInitialAppointmentType])
 
   async function submit(event) {
     event.preventDefault()
@@ -12750,8 +12771,8 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
         participants: [sellerParticipant].filter((participant) => participant.email || participant.phone || participant.name),
       }, false))
       setDraft({
-        appointmentType: 'seller_consultation',
-        title: getSellerAppointmentDefaultTitle('seller_consultation', contact.name, lead.name),
+        appointmentType: normalizedInitialAppointmentType,
+        title: getSellerAppointmentDefaultTitle(normalizedInitialAppointmentType, contact.name, lead.name),
         appointmentStatus: 'confirmed',
         sendInviteEmails: false,
         date: getTodayInputValue(),
@@ -12839,7 +12860,7 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
   )
 }
 
-function SellerAppointmentsTab({ organisationId, lead, listing = null, actor, onSaved, openComposerSignal = 0 }) {
+function SellerAppointmentsTab({ organisationId, lead, listing = null, actor, onSaved, openComposerSignal = 0, composerAppointmentType = 'seller_consultation' }) {
   const navigate = useNavigate()
   const [manualAppointmentModalOpen, setManualAppointmentModalOpen] = useState(false)
   const [dismissedOpenComposerSignal, setDismissedOpenComposerSignal] = useState(0)
@@ -12883,7 +12904,14 @@ function SellerAppointmentsTab({ organisationId, lead, listing = null, actor, on
           subtitle="Create a seller appointment without leaving the lead workspace."
           className="max-w-4xl"
         >
-          <SellerAppointmentForm organisationId={organisationId} lead={lead} listing={listing} actor={actor} onSaved={handleAppointmentSaved} />
+          <SellerAppointmentForm
+            organisationId={organisationId}
+            lead={lead}
+            listing={listing}
+            actor={actor}
+            onSaved={handleAppointmentSaved}
+            initialAppointmentType={composerAppointmentType}
+          />
         </Modal>
         <SellerAppointmentForm organisationId={organisationId} lead={lead} listing={listing} actor={actor} onSaved={onSaved} />
         <AppointmentList items={lead.appointments} organisationId={organisationId} lead={lead} actor={actor} onSaved={onSaved} />
@@ -17366,6 +17394,112 @@ function SellerReadinessScoreCard({ readiness = null, journey = null }) {
             ) : <p className="mt-2 text-sm font-semibold text-emerald-700">No readiness blockers</p>}
           </div>
         </div>
+      </div>
+    </section>
+  )
+}
+
+function getSellerProcessPanelActionHint(actionKey = '') {
+  const hints = {
+    schedule_valuation_appointment: 'Open appointment composer',
+    upload_valuation_document: 'Open document center',
+    schedule_valuation_presentation: 'Open presentation appointment',
+    complete_seller_pack: 'Open mandate workspace',
+    prepare_listing: 'Open listing workspace',
+  }
+  return hints[actionKey] || 'Open workspace'
+}
+
+function SellerProcessShadowPanel({ model = null, onAction }) {
+  if (!model?.visible) return null
+
+  const progressSection = (model.sections || []).find((section) => section.key === 'progress') || {}
+  const missingSection = (model.sections || []).find((section) => section.key === 'missing_evidence') || {}
+  const progressItems = Array.isArray(progressSection.items) ? progressSection.items : []
+  const missingItems = Array.isArray(missingSection.items) ? missingSection.items : []
+  const actionCards = Array.isArray(model.actionCards) ? model.actionCards : []
+  const partnerReadiness = Array.isArray(model.partnerReadiness) ? model.partnerReadiness : []
+  const percent = Math.max(0, Math.min(100, Number(model.percent || 0)))
+
+  return (
+    <section id="seller-process-shadow-panel" className={`${panelClass} scroll-mt-6 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)] sm:p-6`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">{model.title || 'Seller Process'}</h2>
+            <StatusPill tone="blue">Kingstons</StatusPill>
+            <StatusPill tone="slate">Read-only</StatusPill>
+          </div>
+          <p className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-slate-950">{model.currentStageLabel || 'Not Started'}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-4">
+          <ListingReadinessCircle percent={percent} />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Process Complete</p>
+            <p className="mt-1 text-xl font-semibold tracking-[-0.035em] text-slate-950">{percent}%</p>
+          </div>
+        </div>
+      </div>
+
+      <ol className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {progressItems.map((item) => (
+          <li key={item.key} className={`rounded-2xl border p-4 ${item.state === 'complete' ? 'border-emerald-100 bg-emerald-50' : item.state === 'current' ? 'border-blue-100 bg-blue-50' : 'border-slate-200 bg-slate-50'}`}>
+            <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl ${item.state === 'complete' ? 'bg-emerald-600 text-white' : item.state === 'current' ? 'bg-blue-600 text-white' : 'bg-white text-slate-400'}`}>
+              {item.state === 'complete' ? <CheckCircle2 size={15} /> : <Clock3 size={15} />}
+            </span>
+            <p className="mt-3 text-sm font-semibold leading-5 text-slate-950">{item.label}</p>
+            <p className="mt-1 text-xs font-semibold capitalize text-slate-500">{item.state}</p>
+          </li>
+        ))}
+      </ol>
+
+      <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.38fr)]">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {actionCards.map((card) => (
+            <button
+              key={card.key}
+              type="button"
+              onClick={() => onAction?.(card.key)}
+              disabled={!onAction}
+              className="flex min-h-[116px] flex-col items-start justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-200 hover:bg-blue-50/50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70"
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                <FileText size={15} />
+                {card.label}
+              </span>
+              <span className="flex flex-wrap items-center gap-2">
+                <StatusPill tone={card.pending ? 'amber' : 'green'}>{card.pending ? 'Pending' : 'Satisfied'}</StatusPill>
+                <span className="text-xs font-semibold text-blue-700">{getSellerProcessPanelActionHint(card.key)}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <aside className="grid gap-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-950">Missing Evidence</h3>
+            <div className="mt-3 grid gap-2">
+              {missingItems.length ? missingItems.map((item) => (
+                <p key={item.key} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                  <AlertTriangle size={14} className="shrink-0 text-amber-500" />
+                  <span className="min-w-0 truncate">{item.label}</span>
+                </p>
+              )) : <p className="rounded-xl bg-white px-3 py-2 text-sm font-semibold text-emerald-700">No missing evidence</p>}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-950">Partner Readiness</h3>
+            <div className="mt-3 grid gap-2">
+              {partnerReadiness.length ? partnerReadiness.map((partner) => (
+                <div key={partner.key} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate font-semibold text-slate-700">{partner.label}</span>
+                  <StatusPill tone={partner.ready ? 'green' : 'amber'}>{partner.ready ? 'Ready' : `${partner.blockerCount || 0} blockers`}</StatusPill>
+                </div>
+              )) : <p className="rounded-xl bg-white px-3 py-2 text-sm font-semibold text-slate-500">No partner signals</p>}
+            </div>
+          </div>
+        </aside>
       </div>
     </section>
   )
@@ -22078,6 +22212,7 @@ function SellerTabContent({
   onCopySellerPortalLink,
   onTabChange,
   appointmentComposerSignal = 0,
+  appointmentComposerType = 'seller_consultation',
 }) {
   if (activeTab === 'seller') {
     return (
@@ -22131,6 +22266,7 @@ function SellerTabContent({
         actor={actor}
         onSaved={onSaved}
         openComposerSignal={appointmentComposerSignal}
+        composerAppointmentType={appointmentComposerType}
       />
     )
   }
@@ -22288,6 +22424,7 @@ function SellerLeadWorkspaceLayout({
   initialWorkspaceTab = '',
   sellerJourney,
   sellerReadiness,
+  sellerProcessPanelModel = null,
   linkedSellerListing,
   mandatePacketStatus = null,
   sellerOnboardingStatus,
@@ -22316,6 +22453,7 @@ function SellerLeadWorkspaceLayout({
 }) {
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('overview')
   const [appointmentComposerSignal, setAppointmentComposerSignal] = useState(0)
+  const [appointmentComposerType, setAppointmentComposerType] = useState('seller_consultation')
   const [agentOnboardingSignal, setAgentOnboardingSignal] = useState(0)
   const initialWorkspaceTabHandledRef = useRef('')
   const commissionSummary = useMemo(() => getSellerCommissionWorkspace(row, linkedSellerListing), [linkedSellerListing, row])
@@ -22340,7 +22478,11 @@ function SellerLeadWorkspaceLayout({
       target?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
     }, 80)
   }, [])
-  const openAppointmentComposer = useCallback(() => {
+  const openAppointmentComposer = useCallback((appointmentType = 'seller_consultation') => {
+    const nextType = SELLER_APPOINTMENT_TYPES.some((option) => option.value === appointmentType)
+      ? appointmentType
+      : 'seller_consultation'
+    setAppointmentComposerType(nextType)
     setActiveWorkspaceTab('appointments')
     setAppointmentComposerSignal((value) => value + 1)
   }, [])
@@ -22374,6 +22516,11 @@ function SellerLeadWorkspaceLayout({
     else if (['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(key)) onOpenListing?.()
     else if (['open_documents'].includes(key)) setActiveWorkspaceTab('documents')
     else if (['schedule_appointment', 'open_appointments'].includes(key)) openAppointmentComposer()
+    else if (key === 'schedule_valuation_appointment') openAppointmentComposer('seller_valuation')
+    else if (key === 'schedule_valuation_presentation') openAppointmentComposer('valuation_presentation')
+    else if (key === 'upload_valuation_document') setActiveWorkspaceTab('documents')
+    else if (key === 'complete_seller_pack') setActiveWorkspaceTab('mandate')
+    else if (key === 'prepare_listing') onOpenListing?.()
     else if (['contact_seller', 'open_timeline'].includes(key)) setActiveWorkspaceTab('activity')
     else if (['capture_property_address'].includes(key)) setActiveWorkspaceTab('property')
     else if (key === 'agent_onboard_seller') {
@@ -22428,6 +22575,7 @@ function SellerLeadWorkspaceLayout({
         onboardingStatus={sellerOnboardingStatus}
         onAction={handleAcquisitionAction}
       />
+      <SellerProcessShadowPanel model={sellerProcessPanelModel} onAction={handleAcquisitionAction} />
       <SellerJourneyRail journey={sellerJourney} row={row} listing={linkedSellerListing} />
       <SellerWorkspaceTabs activeTab={activeWorkspaceTab} onTabChange={setActiveWorkspaceTab} />
       <SellerTabContent
@@ -22459,6 +22607,7 @@ function SellerLeadWorkspaceLayout({
         onCopySellerPortalLink={onCopySellerPortalLink}
         onTabChange={setActiveWorkspaceTab}
         appointmentComposerSignal={appointmentComposerSignal}
+        appointmentComposerType={appointmentComposerType}
       />
     </div>
   )
@@ -22563,11 +22712,21 @@ function AgentLeadWorkspace() {
   const navigate = useNavigate()
   const location = useLocation()
   const workspaceContext = useWorkspace()
+  const organisationContext = useOptionalOrganisation()
   const organisationId = getOrganisationId(workspaceContext)
   const actor = useMemo(() => getActor({
     ...(workspaceContext.profile || {}),
     workspaceRole: workspaceContext.currentMembership?.workspace_role || workspaceContext.currentMembership?.organisation_role || workspaceContext.currentMembership?.role || workspaceContext.profile?.role,
   }), [workspaceContext.currentMembership, workspaceContext.profile])
+  const organisationSettings = organisationContext?.organisationSettings || null
+  const sellerProcessProfileResolution = useMemo(() => resolveSellerProcessProfile({
+    organisationSettings,
+    settings: organisationSettings,
+    onboarding: organisationContext?.onboarding || null,
+    sellerProcessProfile: workspaceContext.currentWorkspace?.sellerProcessProfile || workspaceContext.currentWorkspace?.seller_process_profile,
+    sellerProcess: workspaceContext.currentWorkspace?.sellerProcess || workspaceContext.currentWorkspace?.seller_process,
+  }), [organisationContext?.onboarding, organisationSettings, workspaceContext.currentWorkspace])
+  const includeSellerProcessShadowIntegration = sellerProcessProfileResolution.isKingstons === true
   const optimisticWorkspace = (() => {
     const workspace = location.state?.leadWorkspace
     const row = workspace?.row || workspace?.lead
@@ -22631,7 +22790,14 @@ function AgentLeadWorkspace() {
         setLoading(true)
         setError('')
       }
-      const result = await fetchAgentLeadWorkspace({ organisationId, leadId, actor })
+      const result = await fetchAgentLeadWorkspace({
+        organisationId,
+        leadId,
+        actor,
+        includeSellerProcessShadowIntegration,
+        sellerProcessProfile: sellerProcessProfileResolution.profile,
+        organisationSettings,
+      })
       setData(result)
     } catch (loadError) {
       if (silent) {
@@ -22643,7 +22809,7 @@ function AgentLeadWorkspace() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [actor, leadId, organisationId])
+  }, [actor, includeSellerProcessShadowIntegration, leadId, organisationId, organisationSettings, sellerProcessProfileResolution.profile])
 
   useEffect(() => {
     void loadWorkspace()
@@ -22682,6 +22848,7 @@ function AgentLeadWorkspace() {
   const row = data?.row || null
   const leadWorkspaceMissing = !loading && !error && !row && data?.notFound
   const leadWorkspaceUnavailable = !loading && !error && !row && data?.unavailable
+  const sellerProcessPanelModel = useMemo(() => buildSellerProcessWorkspacePanelModel(data || {}), [data])
   const sourceInfo = row ? getLeadSourceInfo(row) : null
   const workspaceAnalytics = row ? buildLeadWorkspaceAnalyticsSummary(row) : null
   const leadCategory = row ? normalizeLeadCategory(row) : 'other'
@@ -23780,6 +23947,7 @@ function AgentLeadWorkspace() {
               initialWorkspaceTab={requestedSellerWorkspaceTab}
               sellerJourney={sellerJourney}
               sellerReadiness={sellerReadiness}
+              sellerProcessPanelModel={sellerProcessPanelModel}
               linkedSellerListing={linkedSellerListing}
               mandatePacketStatus={sellerMandatePacketStatus}
               sellerOnboardingStatus={sellerOnboardingStatus}
