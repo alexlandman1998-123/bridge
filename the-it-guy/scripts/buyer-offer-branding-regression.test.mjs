@@ -22,6 +22,9 @@ assert.match(files.viteConfig, /server\.middlewares\.use\('\/api\/public\/buyer-
 assert.match(files.buyerOfferSubmission, /fetchBuyerOfferBrandingSnapshot/, 'buyer offer submission should fetch token-scoped branding')
 assert.match(files.buyerOfferSubmission, /resolveOnboardingBranding\(offerBrandingSnapshot \|\| \{\}, conditions, listing \|\| \{\}, invite \|\| \{\}\)/, 'live settings branding should be merged before embedded offer fallbacks')
 assert.match(files.buyerOfferSubmission, /agencyLogo=\{offerBrand\.logoDarkUrl \|\| offerBrand\.logoLightUrl \|\| offerBrand\.logoIconUrl \|\| ''\}/, 'buyer offer landing should render the resolved organisation logo')
+assert.match(files.buyerOfferSubmission, /data-testid="buyer-offer-action-dock"/, 'buyer offer page should expose the mobile action dock for regression coverage')
+assert.match(files.buyerOfferSubmission, /data-testid="buyer-offer-action-summary"[^>]*hidden[^>]*sm:grid/, 'buyer offer mobile action dock should hide the amount summary on narrow screens')
+assert.match(files.buyerOfferSubmission, /pb-\[calc\(8rem\+env\(safe-area-inset-bottom\)\)\]/, 'buyer offer page should reserve mobile bottom space for the fixed action dock')
 assert.match(files.packageJson, /"test:buyer-offer-branding-regression": "node scripts\/buyer-offer-branding-regression\.test\.mjs"/)
 
 const optionsResponse = await createBuyerOfferBrandingResponse({ method: 'OPTIONS' })

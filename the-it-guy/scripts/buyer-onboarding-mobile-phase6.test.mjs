@@ -512,6 +512,14 @@ function resolveRestPayload(table, url) {
 }
 
 async function installSupabaseMocks(page) {
+  await page.route('**/release-manifest.json**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ releaseId: 'buyer-onboarding-mobile-phase6' }),
+    })
+  })
+
   await page.route('**/auth/v1/**', async (route) => {
     await route.fulfill({
       status: 200,

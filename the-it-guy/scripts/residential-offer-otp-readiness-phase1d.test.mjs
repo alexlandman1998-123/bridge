@@ -4,6 +4,7 @@ import { createServer } from 'vite'
 import { resolveOtpReadiness } from '../src/core/documents/otpReadiness.js'
 import { buildResidentialOfferConditionReviewPatch } from '../src/core/offers/residentialOfferConditionReview.js'
 import { mergeResidentialOfferTermsIntoConditions } from '../src/core/offers/residentialOfferTerms.js'
+import { resolveTransactionWorkflowEvidence } from '../server/services/workflowEvidenceResolver.js'
 
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 assert.equal(
@@ -16,7 +17,7 @@ assert.ok(
   'Chapter 1 verification should include the Phase 1D OTP readiness contract.',
 )
 
-function buildReadiness(offer) {
+function buildReadiness(offer, overrides = {}) {
   return resolveOtpReadiness({
     lead: {
       leadId: 'lead-otp-phase1d',
@@ -46,6 +47,7 @@ function buildReadiness(offer) {
       name: 'Test Agency',
     },
     offer,
+    ...overrides,
     deliveryMode: 'digital_portal',
     deliveryLabel: 'Digital portal',
     requiresDigitalContact: true,
@@ -98,6 +100,37 @@ assert.equal(reviewBlockedReadiness.facts.conditionReviewReady, false)
 assert.ok(
   reviewBlockedReadiness.blockers.includes('Agent must approve or rewrite buyer wording before OTP generation'),
   'Buyer free-text condition wording should block OTP generation until agent review is complete.',
+)
+
+const onboardingCompletedReadiness = buildReadiness(submittedOffer, {
+  transaction: {
+    onboarding_status: 'awaiting_signed_otp',
+    onboarding_completed_at: '2026-07-29T10:05:00.000Z',
+  },
+  onboardingFormData: {
+    submitted_at: '2026-07-29T10:05:00.000Z',
+  },
+})
+assert.equal(onboardingCompletedReadiness.canGenerate, true)
+assert.equal(onboardingCompletedReadiness.facts.buyerOnboardingComplete, true)
+assert.equal(onboardingCompletedReadiness.rows.find((row) => row.key === 'condition_review')?.optional, true)
+assert.deepEqual(onboardingCompletedReadiness.blockers, [])
+assert.ok(
+  onboardingCompletedReadiness.warnings.includes('Buyer wording captured for agent review while generating OTP'),
+  'Completed buyer onboarding should let agents generate OTP while reviewing captured buyer wording.',
+)
+
+const awaitingSignedOtpEvidence = resolveTransactionWorkflowEvidence({
+  transaction: {
+    id: 'tx-awaiting-otp',
+    onboarding_status: 'awaiting_signed_otp',
+    updated_at: '2026-07-29T10:05:00.000Z',
+  },
+})
+assert.equal(
+  awaitingSignedOtpEvidence.BUYER_ONBOARDING_COMPLETE.satisfied,
+  true,
+  'awaiting_signed_otp should satisfy buyer onboarding evidence for OTP workflow actions.',
 )
 
 const approvedPatch = buildResidentialOfferConditionReviewPatch({

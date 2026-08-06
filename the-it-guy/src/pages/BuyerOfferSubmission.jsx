@@ -299,18 +299,18 @@ function ConditionButton({ label, active, onClick }) {
 function ProgressDots({ stage }) {
   const activeIndex = Math.max(0, BUYER_OFFER_PROGRESS.findIndex((item) => item.key === stage))
   return (
-    <div className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-[#FAFAF8]/95 px-4 py-3 backdrop-blur">
+    <div className="sticky top-0 z-30 overflow-x-hidden border-b border-[#E5E7EB] bg-[#FAFAF8]/95 px-4 py-3 backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center justify-between">
         {BUYER_OFFER_PROGRESS.map((item, index) => {
           const active = activeIndex === index
           const done = activeIndex > index || stage === 'complete'
           return (
-            <div key={item.key} className="flex flex-1 items-center">
-              <div className={`flex h-8 min-w-8 items-center justify-center rounded-full text-xs font-bold ${active || done ? 'bg-[#0F7A5A] text-white' : 'bg-white text-[#6B7280]'}`}>
+            <div key={item.key} className="flex min-w-0 flex-1 items-center">
+              <div className={`flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${active || done ? 'bg-[#0F7A5A] text-white' : 'bg-white text-[#6B7280]'}`}>
                 {done ? <CheckCircle2 size={14} /> : index + 1}
               </div>
-              <span className={`ml-2 text-xs font-bold ${active ? 'text-[#111827]' : 'text-[#6B7280]'}`}>{item.label}</span>
-              {index < BUYER_OFFER_PROGRESS.length - 1 ? <div className="mx-2 h-px flex-1 bg-[#E5E7EB]" /> : null}
+              <span className={`ml-2 min-w-0 text-[11px] font-bold leading-tight sm:text-xs ${active ? 'text-[#111827]' : 'text-[#6B7280]'}`}>{item.label}</span>
+              {index < BUYER_OFFER_PROGRESS.length - 1 ? <div className="mx-2 h-px min-w-3 flex-1 bg-[#E5E7EB]" /> : null}
             </div>
           )
         })}
@@ -968,9 +968,9 @@ function BuyerOfferSubmission() {
           ['Buyer', form.fullName || 'Not captured'],
           ['Email', form.email || 'Not captured'],
         ].map(([label, value]) => (
-          <div key={label} className="flex items-center justify-between gap-4 border-b border-[#F0F1EF] py-3 text-sm">
-            <span className="font-semibold text-[#6B7280]">{label}</span>
-            <span className="text-right font-bold text-[#111827]">{value}</span>
+          <div key={label} className="grid min-w-0 gap-1 border-b border-[#F0F1EF] py-3 text-sm sm:grid-cols-[minmax(0,0.38fr)_minmax(0,1fr)] sm:items-center sm:gap-4">
+            <span className="min-w-0 font-semibold text-[#6B7280]">{label}</span>
+            <span className="min-w-0 break-words font-bold text-[#111827] sm:text-right">{value}</span>
           </div>
         ))}
       </div>
@@ -1127,12 +1127,12 @@ function BuyerOfferSubmission() {
   }
 
   return (
-    <main style={{ background: WARM_WHITE, color: PRIMARY_TEXT }} className="min-h-screen pb-32 md:pb-28">
+    <main style={{ background: WARM_WHITE, color: PRIMARY_TEXT }} className="min-h-screen overflow-x-hidden pb-[calc(8rem+env(safe-area-inset-bottom))] sm:pb-32 md:pb-28">
       <ProgressDots stage={flowStage} />
       <form onSubmit={handleSubmitOffer}>
         <div className="mx-auto w-full max-w-[980px] px-4 py-8 md:px-8 md:py-10">
           <header className="mb-7">
-            <h1 className="text-4xl font-semibold tracking-[-0.055em] text-[#111827] md:text-5xl">{pageTitle}</h1>
+            <h1 className="break-words text-4xl font-semibold tracking-[-0.055em] text-[#111827] md:text-5xl">{pageTitle}</h1>
             {pageSubtitle ? <p className="mt-3 max-w-[560px] text-lg leading-8 text-[#374151]">{pageSubtitle}</p> : null}
           </header>
 
@@ -1161,7 +1161,7 @@ function BuyerOfferSubmission() {
           </div>
         </div>
 
-        {canShowFooter ? <div className="fixed inset-x-0 bottom-0 z-40 rounded-t-[22px] border border-b-0 border-[#E5E7EB] bg-white/95 px-4 py-3 shadow-[0_-16px_40px_rgba(17,24,39,0.08)] backdrop-blur supports-[padding:max(0px)]:pb-[max(12px,env(safe-area-inset-bottom))]">
+        {canShowFooter ? <div data-testid="buyer-offer-action-dock" className="fixed inset-x-0 bottom-0 z-40 rounded-t-[22px] border border-b-0 border-[#E5E7EB] bg-white/95 px-4 py-3 shadow-[0_-16px_40px_rgba(17,24,39,0.08)] backdrop-blur supports-[padding:max(0px)]:pb-[max(12px,env(safe-area-inset-bottom))]">
           <div className="mx-auto flex max-w-[980px] items-center gap-3">
             <button
               type="button"
@@ -1171,7 +1171,7 @@ function BuyerOfferSubmission() {
             >
               <ChevronLeft size={20} />
             </button>
-            <div className="grid min-w-0 flex-1 grid-cols-3 gap-3">
+            <div data-testid="buyer-offer-action-summary" className="hidden min-w-0 flex-1 grid-cols-3 gap-3 sm:grid">
               {[
                 ['Offer', offerAmountLabel],
                 ['Deposit', formatCurrency(depositAmount)],
@@ -1187,10 +1187,10 @@ function BuyerOfferSubmission() {
               type={flowStage === 'review' ? 'submit' : 'button'}
               onClick={flowStage === 'review' ? undefined : goNext}
               disabled={submitting || (flowStage === 'review' && context?.source === 'canonical' && !canSubmitCanonicalOffer)}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[18px] bg-[#0F7A5A] px-5 text-sm font-bold text-white shadow-[0_12px_28px_rgba(15,122,90,0.22)] transition hover:bg-[#0B654A] disabled:bg-[#9CA3AF] sm:min-w-[260px]"
+              className="inline-flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-[18px] bg-[#0F7A5A] px-4 text-center text-sm font-bold text-white shadow-[0_12px_28px_rgba(15,122,90,0.22)] transition hover:bg-[#0B654A] disabled:bg-[#9CA3AF] sm:flex-none sm:px-5 sm:min-w-[260px]"
             >
-              {stageCtaLabel}
-              {stageCtaIcon}
+              <span className="min-w-0 whitespace-nowrap">{stageCtaLabel}</span>
+              <span className="shrink-0">{stageCtaIcon}</span>
             </button>
           </div>
         </div> : null}

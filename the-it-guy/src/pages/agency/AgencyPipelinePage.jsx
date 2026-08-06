@@ -8125,6 +8125,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadBuyerOnboardingSubmitted = Boolean(
     selectedLeadBuyerOnboardingStatusKey.includes('submitted') ||
       selectedLeadBuyerOnboardingStatusKey.includes('complete') ||
+      selectedLeadBuyerOnboardingStatusKey.includes('awaiting_signed_otp') ||
+      selectedLeadBuyerOnboardingStatusKey.includes('signed_otp_received') ||
+      selectedLeadBuyerOnboardingStatusKey.includes('client_onboarding_complete') ||
       selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at ||
       selectedLeadLifecycleDiagnostic?.transaction?.onboarding_completed_at,
   )
@@ -10377,6 +10380,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         financeType: normalizeText((selectedLeadAcceptedOffer || selectedLeadLifecycleDiagnosticOffer)?.financeType || selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLeadLinkedTransaction?.finance_type || selectedLeadLinkedTransaction?.financeType),
         purchasePrice: normalizeText((selectedLeadAcceptedOffer || selectedLeadLifecycleDiagnosticOffer)?.offerAmount || selectedLeadOfferCentreProperty?.price || selectedLeadBuyerBudgetLabel),
       },
+      onboardingFormData: {
+        ...(selectedLeadFinanceFormData || {}),
+        status: selectedLeadLifecycleDiagnostic?.onboarding?.status,
+        submitted_at: selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at,
+        onboarding_status: selectedLeadLifecycleDiagnostic?.transaction?.onboarding_status,
+      },
       deliveryMode,
       deliveryLabel: getClientIntakePreferenceLabel(deliveryMode),
       requiresDigitalContact,
@@ -10400,6 +10409,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadContact,
     selectedLeadContactName,
     selectedLeadLifecycleDiagnosticOffer,
+    selectedLeadLifecycleDiagnostic?.onboarding?.status,
+    selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at,
+    selectedLeadLifecycleDiagnostic?.transaction?.onboarding_status,
+    selectedLeadFinanceFormData,
     selectedLeadLinkedTransaction,
     selectedLeadOfferCentreProperty,
     selectedLeadOtpTemplateReadiness,

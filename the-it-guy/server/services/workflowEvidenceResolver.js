@@ -238,7 +238,16 @@ function collectOnboardingEvidence(transaction = {}, checklistItems = [], docume
   const buyerStatus = normalizeText(transaction.onboarding_status || transaction.buyer_onboarding_status || '')
   const sellerStatus = normalizeText(transaction.seller_onboarding_status || '')
 
-  if (['submitted', 'reviewed', 'approved', 'complete', 'completed'].includes(buyerStatus)) {
+  if ([
+    'submitted',
+    'reviewed',
+    'approved',
+    'complete',
+    'completed',
+    'client_onboarding_complete',
+    'awaiting_signed_otp',
+    'signed_otp_received',
+  ].includes(buyerStatus)) {
     evidence.BUYER_ONBOARDING_COMPLETE.satisfied = true
     evidence.BUYER_ONBOARDING_COMPLETE.sources.push(`transaction:${transaction.id || 'unknown'}`)
     evidence.BUYER_ONBOARDING_COMPLETE.updatedAt = transaction.updated_at || transaction.created_at || null

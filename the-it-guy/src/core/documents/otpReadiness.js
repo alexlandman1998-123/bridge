@@ -90,12 +90,27 @@ function hasSubmittedOfferStatus(value = '') {
   const status = normalizeOfferStatus(value)
   return [
     'submitted',
+    'buyer_submitted',
     'agent_review',
     'ready_to_generate_otp',
     'sent_to_seller',
     'seller_viewed',
     'accepted',
     'converted_to_transaction',
+  ].includes(status)
+}
+
+function hasCompletedBuyerOnboardingStatus(value = '') {
+  const status = normalizeOfferStatus(value)
+  return [
+    'submitted',
+    'reviewed',
+    'approved',
+    'complete',
+    'completed',
+    'client_onboarding_complete',
+    'awaiting_signed_otp',
+    'signed_otp_received',
   ].includes(status)
 }
 
@@ -449,6 +464,22 @@ export function resolveOtpReadiness({
   })
   const legalRouteReadiness = getOtpLegalRouteReadiness(scenarioProfile)
   const templateReadinessRecord = asPlainObject(templateReadiness)
+  const buyerOnboardingComplete = hasCompletedBuyerOnboardingStatus(
+    transactionRecord.onboarding_status ||
+      transactionRecord.onboardingStatus ||
+      onboardingRecord.status ||
+      onboardingRecord.onboarding_status ||
+      onboardingRecord.onboardingStatus,
+  ) || Boolean(
+    transactionRecord.onboarding_completed_at ||
+      transactionRecord.onboardingCompletedAt ||
+      transactionRecord.external_onboarding_submitted_at ||
+      transactionRecord.externalOnboardingSubmittedAt ||
+      onboardingRecord.submitted_at ||
+      onboardingRecord.submittedAt,
+  )
+  const submittedOfferReady = hasSubmittedOfferStatus(offerStatus) || (buyerOnboardingComplete && Boolean(residentialOfferTerms.version))
+  const canReviewBuyerConditionsDuringOtpGeneration = buyerOnboardingComplete && submittedOfferReady && conditionReview.reviewRequired
   const templateRow = templateReadinessRecord.value || templateReadinessRecord.label || templateReadinessRecord.status
     ? buildReadinessRow(
         'template_route',
@@ -475,8 +506,8 @@ export function resolveOtpReadiness({
     buildReadinessRow(
       'offer_status',
       'Offer submitted',
-      offerStatus ? labelFromKey(offerStatus) : 'Offer + Onboarding not submitted',
-      hasSubmittedOfferStatus(offerStatus),
+      offerStatus ? labelFromKey(offerStatus) : buyerOnboardingComplete ? 'Buyer onboarding submitted' : 'Offer + Onboarding not submitted',
+      submittedOfferReady,
     ),
     buildReadinessRow(
       'offer_terms',
@@ -492,9 +523,12 @@ export function resolveOtpReadiness({
       conditionReview.readyForOtpGeneration
         ? 'Agent-approved wording ready for OTP'
         : conditionReview.reviewRequired
-          ? 'Agent must approve or rewrite buyer wording before OTP generation'
+          ? canReviewBuyerConditionsDuringOtpGeneration
+            ? 'Buyer wording captured for agent review while generating OTP'
+            : 'Agent must approve or rewrite buyer wording before OTP generation'
           : 'Condition wording not ready',
       conditionReview.readyForOtpGeneration,
+      { optional: canReviewBuyerConditionsDuringOtpGeneration },
     ),
     buildReadinessRow('price', 'Price context', formatCurrency(purchasePrice) || 'Not captured', purchasePrice > 0, { optional: true }),
     buildReadinessRow('viewing', 'Viewing context', viewingLabel || 'No completed viewing linked', Boolean(hasViewingContext), { optional: true }),
@@ -523,7 +557,8 @@ export function resolveOtpReadiness({
       propertyLabel,
       purchasePrice,
       offerStatus,
-      offerSubmitted: hasSubmittedOfferStatus(offerStatus),
+      offerSubmitted: submittedOfferReady,
+      buyerOnboardingComplete,
       residentialOfferTermsVersion: normalizeText(residentialOfferTerms.version),
       conditionReviewStatus: conditionReview.status,
       conditionReviewReady: conditionReview.readyForOtpGeneration,
