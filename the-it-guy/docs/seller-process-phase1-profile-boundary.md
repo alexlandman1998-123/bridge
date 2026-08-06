@@ -34,6 +34,28 @@ Default organisation settings now carry:
 
 This is metadata only in Phase 1.
 
+## Activation Write Path
+
+Phase 1 also exposes one explicit activation path:
+
+```js
+updateOrganisationSellerProcessProfile({
+  sellerProcessProfile: 'kingstons_residential',
+})
+```
+
+The write path:
+
+- requires organisation admin access
+- validates the requested profile against known profile keys
+- writes only `organisation_settings.settings_json.sellerProcess.profile`
+- preserves existing organisation settings metadata
+- records a `seller_process_profile_updated` audit event
+- clears the organisation runtime cache after persistence
+
+It does not expose a public UI toggle, infer Kingstons from branding, or change
+the visible seller journey by itself.
+
 ## Explicit Configuration Only
 
 Kingstons behaviour must not be inferred from organisation names, branch names,

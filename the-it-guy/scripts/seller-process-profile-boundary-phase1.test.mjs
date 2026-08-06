@@ -6,9 +6,11 @@ import {
   DEFAULT_SELLER_PROCESS_PROFILE,
   KINGSTONS_SELLER_PROCESS_PROFILE,
   SELLER_PROCESS_PROFILE_KEYS,
+  buildSellerProcessProfileSettings,
   isKingstonsSellerProcessProfile,
   isKnownSellerProcessProfile,
   normalizeSellerProcessProfile,
+  resolveSellerProcessProfileActivation,
   resolveSellerProcessProfile,
   resolveSellerProcessProfileKey,
 } from '../src/services/sellerProcessProfileService.js'
@@ -139,6 +141,43 @@ const mandatePacketStatus = {
 }
 
 {
+  const activation = resolveSellerProcessProfileActivation({
+    sellerProcessProfile: 'Kingstons Residential',
+  })
+  assert.equal(activation.ok, true)
+  assert.equal(activation.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(activation.isKingstons, true)
+
+  const missing = resolveSellerProcessProfileActivation({})
+  assert.equal(missing.ok, false)
+  assert.equal(missing.reason, 'missing_profile')
+
+  const unknown = resolveSellerProcessProfileActivation({
+    sellerProcessProfile: 'future_partner_profile',
+  })
+  assert.equal(unknown.ok, false)
+  assert.equal(unknown.reason, 'unknown_profile')
+
+  const activatedSettings = buildSellerProcessProfileSettings(
+    {
+      onboardingRules: { enableEmploymentTypeForBond: true },
+      sellerProcess: {
+        profile: 'default_residential',
+        notes: 'keep local metadata',
+      },
+    },
+    { sellerProcessProfile: 'kingstons' },
+  )
+  assert.equal(activatedSettings.sellerProcess.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(activatedSettings.sellerProcess.notes, 'keep local metadata')
+  assert.equal(activatedSettings.onboardingRules.enableEmploymentTypeForBond, true)
+  assert.throws(
+    () => buildSellerProcessProfileSettings({}, { sellerProcessProfile: 'not_real' }),
+    /Unknown seller process profile: not_real/,
+  )
+}
+
+{
   const journey = buildSellerJourney({
     lead: baseLead,
     mandatePacketStatus,
@@ -164,6 +203,11 @@ const mandatePacketStatus = {
   assert.match(phase1Doc, /metadata only in Phase 1/)
   assert.match(settingsApiSource, /sellerProcess:\s*{\s*profile: 'default_residential'/)
   assert.match(organisationBootstrapApiSource, /sellerProcess:\s*{\s*profile: 'default_residential'/)
+  assert.match(settingsApiSource, /export async function updateOrganisationSellerProcessProfile/)
+  assert.match(settingsApiSource, /assertOrganisationAdminAccess\(context, 'update seller process profile'\)/)
+  assert.match(settingsApiSource, /\.from\('organisation_settings'\)[\s\S]*settings_json: merged/)
+  assert.match(settingsApiSource, /action: 'seller_process_profile_updated'/)
+  assert.equal(settingsApiSource.includes('Kingstons Real Estate'), false)
   assert.equal(
     packageJson.scripts?.['test:seller-process-profile-boundary-phase1'],
     'node scripts/seller-process-profile-boundary-phase1.test.mjs',

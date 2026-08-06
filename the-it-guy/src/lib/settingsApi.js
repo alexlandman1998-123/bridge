@@ -59,6 +59,7 @@ import { loadSignupIntentForUser } from './signupIntent'
 import { isActiveMembershipStatus, normalizeMembershipStatus } from '../constants/membershipStatuses'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import { normalizeOrganisationJobTitle } from './organisationJobTitles'
+import { buildSellerProcessProfileSettings } from '../services/sellerProcessProfileService'
 
 export { fetchAgencyOnboardingSettings } from './organisationBootstrapApi'
 
@@ -3604,6 +3605,58 @@ export async function updateWorkflowSettings(input = {}) {
     action: 'workflow_settings_updated',
     targetType: 'organisation_settings',
     targetId: context.organisation.id,
+  })
+  clearOrganisationRuntimeCache()
+  return {
+    membershipRole: context.membershipRole,
+    persisted: true,
+    ...safeJson(data?.settings_json, DEFAULT_ORGANISATION_SETTINGS),
+  }
+}
+
+export async function updateOrganisationSellerProcessProfile(input = {}) {
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  assertOrganisationAdminAccess(context, 'update seller process profile')
+
+  const merged = {
+    ...DEFAULT_ORGANISATION_SETTINGS,
+    ...buildSellerProcessProfileSettings(context.organisationSettings, input),
+  }
+
+  if (!context.organisation.id) {
+    return {
+      membershipRole: context.membershipRole,
+      persisted: false,
+      ...merged,
+    }
+  }
+
+  const { data, error } = await client
+    .from('organisation_settings')
+    .upsert(
+      {
+        organisation_id: context.organisation.id,
+        settings_json: merged,
+      },
+      { onConflict: 'organisation_id' },
+    )
+    .select('settings_json')
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'seller_process_profile_updated',
+    targetType: 'organisation_settings',
+    targetId: context.organisation.id,
+    metadata: {
+      sellerProcessProfile: merged.sellerProcess?.profile || null,
+    },
   })
   clearOrganisationRuntimeCache()
   return {

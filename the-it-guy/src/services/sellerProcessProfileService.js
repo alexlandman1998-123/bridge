@@ -134,3 +134,63 @@ export function resolveSellerProcessProfile(source = {}) {
 export function resolveSellerProcessProfileKey(source = {}) {
   return resolveSellerProcessProfile(source).profile
 }
+
+export function resolveSellerProcessProfileActivation(input = {}) {
+  const requestedProfile = normalizeText(
+    input?.profile ||
+      input?.sellerProcessProfile ||
+      input?.seller_process_profile ||
+      input?.sellerProcess?.profile ||
+      input?.seller_process?.profile,
+  )
+  if (!requestedProfile) {
+    return Object.freeze({
+      ok: false,
+      reason: 'missing_profile',
+      requestedProfile: '',
+      profile: DEFAULT_SELLER_PROCESS_PROFILE,
+      isKingstons: false,
+    })
+  }
+  if (!isKnownSellerProcessProfile(requestedProfile)) {
+    return Object.freeze({
+      ok: false,
+      reason: 'unknown_profile',
+      requestedProfile,
+      profile: DEFAULT_SELLER_PROCESS_PROFILE,
+      isKingstons: false,
+    })
+  }
+  const profile = normalizeSellerProcessProfile(requestedProfile)
+  return Object.freeze({
+    ok: true,
+    reason: '',
+    requestedProfile,
+    profile,
+    isKingstons: profile === KINGSTONS_SELLER_PROCESS_PROFILE,
+  })
+}
+
+export function buildSellerProcessProfileSettings(settings = {}, input = {}) {
+  const activation = resolveSellerProcessProfileActivation(input)
+  if (!activation.ok) {
+    throw new Error(
+      activation.reason === 'unknown_profile'
+        ? `Unknown seller process profile: ${activation.requestedProfile}`
+        : 'Seller process profile is required.',
+    )
+  }
+  const source = isObject(settings) ? settings : {}
+  const existingSellerProcess = isObject(source.sellerProcess)
+    ? source.sellerProcess
+    : isObject(source.seller_process)
+      ? source.seller_process
+      : {}
+  return Object.freeze({
+    ...source,
+    sellerProcess: {
+      ...existingSellerProcess,
+      profile: activation.profile,
+    },
+  })
+}
