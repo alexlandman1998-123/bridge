@@ -15,6 +15,7 @@ import {
   formatEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
+import { resolveBuyerOfferLinkEmailLayoutBranding } from "./buyerOfferLinkBranding.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
@@ -124,7 +125,7 @@ export async function handleBuyerOfferLinkEmail(
     organisationName: branding.organisationName,
     supportEmail: branding.supportEmail,
     supportPhone: branding.supportPhone,
-    branding,
+    branding: resolveBuyerOfferLinkEmailLayoutBranding(branding),
   });
   const text = [
     `Hi ${buyerName},`,

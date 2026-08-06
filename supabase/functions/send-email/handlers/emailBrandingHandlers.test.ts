@@ -105,3 +105,29 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name:
+    "buyer offer submitted notification hydrates agency branding from organisation id",
+  permissions: { read: true },
+  async fn() {
+    const source = await Deno.readTextFile(
+      new URL("buyerOfferSubmittedAgent.ts", import.meta.url),
+    );
+    assertIncludes(
+      source,
+      'import { createClient } from "supabase";',
+      "buyer offer submitted handler should be able to load organisation branding",
+    );
+    assertIncludes(
+      source,
+      "const supabase = supabaseUrl && serviceRoleKey",
+      "buyer offer submitted handler should create a service-role client when configured",
+    );
+    assertIncludes(
+      source,
+      "supabase,",
+      "buyer offer submitted handler should pass the client into resolveEmailBranding",
+    );
+  },
+});

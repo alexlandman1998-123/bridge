@@ -1,3 +1,4 @@
+import { createClient } from "supabase";
 import type { SendBuyerOfferSubmittedAgentPayload } from "../types.ts";
 import {
   renderBridgeCta,
@@ -51,7 +52,15 @@ export async function handleBuyerOfferSubmittedAgentEmail(
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
   const rawPayload = payload as Record<string, unknown>;
+  const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
+  const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  const supabase = supabaseUrl && serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    : undefined;
   const branding = await resolveEmailBranding({
+    supabase,
     payload: rawPayload,
     organisationId: normalizeText(
       rawPayload.organisationId || rawPayload.organisation_id,

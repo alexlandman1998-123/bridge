@@ -27,6 +27,8 @@ for (const contract of [
 for (const contract of [
   /action === "create"/,
   /getAuthenticatedUser/,
+  /const UUID_PATTERN = \//,
+  /raw\.match\(UUID_PATTERN\)\?\.\[0\]/,
   /seller_viewing_coordination_links/,
   /sellerCoordinationLink/,
   /\/seller-viewing\//,
@@ -72,6 +74,9 @@ for (const contract of [
   /handleApplySellerViewingCoordinationResponse/,
   /seller-viewing-coordination/,
   /Seller Viewing Response Pulled Into Workspace/,
+  /function normalizeLeadUuid\(value\)[\s\S]*raw\.match\(UUID_PATTERN\)\?\.\[0\]/,
+  /function normalizeLeadUuidFromLead\(lead = \{\}\)[\s\S]*lead\?\.lead_id[\s\S]*lead\?\.id/,
+  /const selectedLeadUuid = normalizeLeadUuidFromLead\(selectedLead\)[\s\S]*leadId: selectedLeadUuid/,
   /Apply seller response/,
   /Check seller responses/,
   /Book viewing appointments/,

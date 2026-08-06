@@ -13,6 +13,7 @@ import {
   formatEmailSender,
   resolveEmailBranding,
 } from "../services/emailBranding.ts";
+import { resolveSellerMandateEmailLayoutBranding } from "./sellerMandateBranding.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
 
@@ -193,7 +194,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     supportEmail: branding.supportEmail || supportEmail,
     supportPhone: branding.supportPhone || supportPhone,
     footerText: brandedOrganisationName,
-    branding,
+    branding: resolveSellerMandateEmailLayoutBranding(branding, recipientRole),
   });
   const text = [
     `Hi ${recipientName},`,

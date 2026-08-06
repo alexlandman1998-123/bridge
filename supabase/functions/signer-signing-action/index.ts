@@ -167,10 +167,16 @@ async function runFinalSignedCompletionJob({
 
   if (normalizeText(packet.packet_type).toLowerCase() !== "mandate") return;
 
+  const reloadedPacket = await reloadPacketForSellerPortalInvite({
+    supabase,
+    packetId,
+    fallbackPacket: packet,
+  });
+
   try {
     await syncSellerMandateCompletion({
       supabase,
-      packet,
+      packet: reloadedPacket,
       packetId,
       organisationId,
       nowIso,
@@ -185,7 +191,7 @@ async function runFinalSignedCompletionJob({
   try {
     await appendSellerPortalInviteAfterMandateSignedTrigger({
       supabase,
-      packet,
+      packet: reloadedPacket,
       packetId,
       organisationId,
       versionId: packetVersionId,
@@ -202,7 +208,7 @@ async function runFinalSignedCompletionJob({
   try {
     const portalInviteResult = await sendSellerPortalInviteAfterMandateSigned({
       supabase,
-      packet,
+      packet: reloadedPacket,
       packetId,
       organisationId,
       versionId: packetVersionId,
@@ -223,6 +229,27 @@ async function runFinalSignedCompletionJob({
       error: String(portalInviteError),
     });
   }
+}
+
+async function reloadPacketForSellerPortalInvite({
+  supabase,
+  packetId,
+  fallbackPacket,
+}: {
+  supabase: SupabaseAdminClient;
+  packetId: string;
+  fallbackPacket: Record<string, unknown>;
+}) {
+  const query = await supabase
+    .from("document_packets")
+    .select("id, organisation_id, packet_type, title, lead_id, status, current_version_number, source_context_json")
+    .eq("id", packetId)
+    .maybeSingle();
+  if (query.error || !query.data) {
+    console.error("[mandate-signing] seller portal invite packet reload failed", query.error);
+    return fallbackPacket;
+  }
+  return query.data as Record<string, unknown>;
 }
 
 function shouldMarkForegroundFinalising(packet: Record<string, unknown>, signer: Record<string, unknown>) {
@@ -2200,6 +2227,134 @@ async function resolveSellerPortalInviteOnboarding({
   return null;
 }
 
+async function createSellerPortalInviteOnboarding({
+  supabase,
+  listing,
+  packet,
+  allSigners,
+  nowIso,
+}: {
+  supabase: any;
+  listing: Record<string, unknown>;
+  packet: Record<string, unknown>;
+  allSigners: Record<string, unknown>[];
+  nowIso: string;
+}) {
+  const listingId = normalizeText(listing.id);
+  if (!listingId) return null;
+
+  const { sourceContext, nestedSource, sourceLead, sellerOnboarding, formData, placeholders } = resolveSellerPortalSourceContext(packet);
+  const sellerSigner = (allSigners || []).find((item) => isMandateSeller(item.signer_role)) || {};
+  const sellerEmail = firstText(
+    formData.sellerEmail,
+    formData.seller_email,
+    formData.email,
+    formData.contactEmail,
+    sourceContext.sellerEmail,
+    sourceContext.seller_email,
+    nestedSource.sellerEmail,
+    nestedSource.seller_email,
+    sourceLead.email,
+    sourceLead.sellerEmail,
+    sourceLead.seller_email,
+    sellerSigner.signer_email,
+  ).toLowerCase();
+  const sellerName = firstText(
+    formData.sellerName,
+    formData.seller_name,
+    formData.fullName,
+    [formData.sellerFirstName, formData.sellerSurname].map(normalizeText).filter(Boolean).join(" "),
+    sourceContext.sellerName,
+    sourceContext.seller_name,
+    nestedSource.sellerName,
+    nestedSource.seller_name,
+    sellerSigner.signer_name,
+    "Seller",
+  );
+  const propertyTitle = firstText(
+    listing.title,
+    [listing.address_line_1, listing.address_line_2].map(normalizeText).filter(Boolean).join(", "),
+    sourceContext.propertyTitle,
+    nestedSource.propertyTitle,
+    formData.propertyTitle,
+    formData.listingTitle,
+    formData.propertyAddress,
+    placeholders.property_address,
+    packet.title,
+  );
+  const token = firstText(
+    sellerOnboarding.token,
+    sellerOnboarding.sellerWorkspaceToken,
+    sourceContext.sellerOnboardingToken,
+    sourceContext.seller_onboarding_token,
+    sourceContext.sellerWorkspaceToken,
+    sourceContext.seller_workspace_token,
+    sourceLead.sellerOnboardingToken,
+    sourceLead.seller_onboarding_token,
+    `seller-${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`,
+  );
+  const sellerPortalToken = firstText(
+    sellerOnboarding.seller_portal_token,
+    sellerOnboarding.sellerPortalToken,
+    sourceContext.sellerPortalToken,
+    sourceContext.seller_portal_token,
+    `seller-portal-${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`,
+  );
+  let payload: Record<string, unknown> = {
+    private_listing_id: listingId,
+    token,
+    seller_portal_token: sellerPortalToken,
+    status: "completed",
+    seller_type: firstText(sellerOnboarding.seller_type, sellerOnboarding.sellerType, formData.sellerType, formData.seller_type) || null,
+    ownership_structure: firstText(sellerOnboarding.ownership_structure, sellerOnboarding.ownershipStructure, formData.ownershipStructure, formData.ownership_structure) || null,
+    marital_regime: firstText(sellerOnboarding.marital_regime, sellerOnboarding.maritalRegime, formData.maritalRegime, formData.marital_regime) || null,
+    form_data: {
+      ...formData,
+      sellerName,
+      sellerEmail,
+      propertyTitle,
+    },
+    submitted_at: nowIso,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+  const currentColumns = "id, private_listing_id, token, seller_portal_token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at";
+  const legacyColumns = "id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at";
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const insert = await supabase
+      .from("private_listing_seller_onboarding")
+      .insert(payload)
+      .select(currentColumns)
+      .maybeSingle();
+    if (!insert.error) return insert.data as Record<string, unknown> | null;
+
+    const missingColumn = missingColumnName(insert.error as Record<string, unknown>);
+    if (missingColumn === "seller_portal_token") {
+      const { seller_portal_token: _removed, ...legacyPayload } = payload;
+      const legacyInsert = await supabase
+        .from("private_listing_seller_onboarding")
+        .insert(legacyPayload)
+        .select(legacyColumns)
+        .maybeSingle();
+      if (!legacyInsert.error) return legacyInsert.data as Record<string, unknown> | null;
+      console.error("[mandate-signing] seller portal invite onboarding legacy create failed", legacyInsert.error);
+      return null;
+    }
+    if (missingColumn && missingColumn in payload) {
+      const { [missingColumn]: _removed, ...rest } = payload;
+      payload = rest;
+      continue;
+    }
+    if (normalizeText((insert.error as Record<string, unknown>)?.code) === "23505") {
+      return await resolveSellerPortalInviteOnboarding({ supabase, listing, packet });
+    }
+    console.error("[mandate-signing] seller portal invite onboarding create failed", insert.error);
+    return null;
+  }
+  return null;
+}
+
 function normalizeRequirementKey(value: unknown) {
   return normalizeText(value)
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
@@ -2676,7 +2831,14 @@ async function sendSellerPortalInviteAfterMandateSigned({
     return { skipped: true, reason: "listing_missing" };
   }
 
-  const onboarding = await resolveSellerPortalInviteOnboarding({ supabase, listing, packet });
+  const onboarding = await resolveSellerPortalInviteOnboarding({ supabase, listing, packet }) ||
+    await createSellerPortalInviteOnboarding({
+      supabase,
+      listing,
+      packet,
+      allSigners,
+      nowIso,
+    });
   if (!onboarding?.id) {
     await appendSellerPortalMandateInviteOutcome({
       supabase,

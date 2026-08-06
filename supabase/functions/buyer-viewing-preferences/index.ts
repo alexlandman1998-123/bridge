@@ -12,6 +12,7 @@ const corsHeaders = {
 
 const MAX_REQUEST_BYTES = 96 * 1024;
 const LINK_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
 const NOTE_START = "[Buyer viewing plan]";
 const NOTE_END = "[/Buyer viewing plan]";
 
@@ -95,10 +96,8 @@ function safeOrigin(value: unknown) {
 }
 
 function normalizeUuid(value: unknown) {
-  const raw = normalizeText(value, 80);
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(raw)
-    ? raw
-    : "";
+  const raw = normalizeText(value, 160);
+  return raw.match(UUID_PATTERN)?.[0] || "";
 }
 
 function normalizeProperties(value: unknown) {

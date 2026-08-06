@@ -55,6 +55,24 @@ const buyerPreferenceApplyBlock = extractBlock(
   '\n  async function handleSendSellerViewingAvailabilityRequest',
   'buyer preference response pull-through flow',
 )
+const buyerJourneyBlock = extractBlock(
+  pageSource,
+  'const selectedLeadBuyerJourneyStages = useMemo',
+  '\n  useEffect(() => {\n    const currentStage',
+  'buyer journey stage resolver',
+)
+const buyerQualificationSaveBlock = extractBlock(
+  pageSource,
+  'async function handleSaveBuyerQualification',
+  '\n  function handleOpenBuyerQualificationAction',
+  'buyer qualification save flow',
+)
+const offerCentreBlock = extractBlock(
+  pageSource,
+  "{leadWorkspaceTab === 'offers'",
+  '\n                  {leadWorkspaceTab ===',
+  'buyer offer centre workspace',
+)
 
 for (const contract of [
   /BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set\(\['overview', 'properties', 'appointments', 'activity', 'offers'\]\)/,
@@ -62,8 +80,48 @@ for (const contract of [
   /buildBuyerViewingPlanNotes/,
   /buyerEmailDeliveryStatus/,
   /sellerEmailDeliveryStatus/,
+  /BUYER_QUALIFICATION_MINIMUM_ANSWER_COUNT = 2/,
+  /getBuyerQualificationEvidence/,
 ]) {
   assert.match(pageSource, contract, `buyer workspace should keep the simplified viewing workflow contract ${contract}`)
+}
+
+for (const contract of [
+  /const qualificationStarted = selectedLeadBuyerQualificationEvidence\.answeredCount > 0/,
+  /const qualified = selectedLeadBuyerQualificationEvidence\.complete/,
+  /const currentIndex = firstIncompleteIndex >= 0 \? firstIncompleteIndex : rawStages\.length - 1/,
+]) {
+  assert.match(buyerJourneyBlock, contract, `buyer journey should not skip qualification with viewing activity ${contract}`)
+}
+assert.doesNotMatch(buyerJourneyBlock, /stageKey\.includes\('viewing'\)[\s\S]{0,180}selectedLeadOfferSummary\.total/, 'buyer qualification should not be completed by viewing or offer progression alone')
+
+for (const contract of [
+  /const qualificationEvidence = getBuyerQualificationEvidence\(buyerQualificationForm\)/,
+  /if \(qualificationEvidence\.complete\)/,
+  /Qualification saved as in progress/,
+  /outcome: qualificationEvidence\.complete \? 'Qualified' : 'In progress'/,
+]) {
+  assert.match(buyerQualificationSaveBlock, contract, `buyer qualification save should allow partial capture without forcing qualified ${contract}`)
+}
+assert.match(pageSource, /function handleMarkBuyerQualifiedAction\(\)[\s\S]*Capture at least \$\{selectedLeadBuyerQualificationEvidence\.minimumCount\} qualification answers/, 'manual mark qualified should require minimum qualification answers')
+
+for (const contract of [
+  /handleLeadCanonicalOfferAccept\(offer\)/,
+  /handleLeadCanonicalOfferStatus\(offer, 'accepted', 'Offer accepted from Offer Centre'\)/,
+  /View Offer/,
+  /Seller Review/,
+  /offerDetailRows/,
+  /Accept Offer/,
+]) {
+  assert.match(pageSource, contract, `offer centre should expose submitted-offer review and acceptance actions ${contract}`)
+}
+for (const contract of [
+  /sellerReviewLink/,
+  /residentialTerms/,
+  /offerConditionText/,
+  /canAcceptOffer/,
+]) {
+  assert.match(offerCentreBlock, contract, `offer centre card should surface submitted offer evidence ${contract}`)
 }
 
 for (const contract of [

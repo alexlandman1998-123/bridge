@@ -180,6 +180,7 @@ const PIPELINE_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
 const PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS = 20000
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i
 function readPipelineBooleanFlag(value, fallback = false) {
   const text = String(value ?? '').trim().toLowerCase()
   if (!text) return Boolean(fallback)
@@ -1789,9 +1790,13 @@ function isUuidLike(value) {
 function normalizeLeadUuid(value) {
   const raw = normalizeText(value)
   if (!raw) return ''
-  if (isUuidLike(raw)) return raw
-  const withoutPrefix = raw.replace(/^lead_/i, '')
-  return isUuidLike(withoutPrefix) ? withoutPrefix : ''
+  return raw.match(UUID_PATTERN)?.[0] || ''
+}
+
+function normalizeLeadUuidFromLead(lead = {}) {
+  return [lead?.leadId, lead?.lead_id, lead?.id]
+    .map((value) => normalizeLeadUuid(value))
+    .find(Boolean) || ''
 }
 
 function normalizeLeadIdentityKey(value) {
@@ -5236,6 +5241,7 @@ const BUYER_QUALIFICATION_NOTE_FIELDS = [
   { key: 'propertyNeed', label: 'Property need' },
   { key: 'additionalNotes', label: 'Call notes' },
 ]
+const BUYER_QUALIFICATION_MINIMUM_ANSWER_COUNT = 2
 
 const BUYER_MOVE_TIMEFRAME_OPTIONS = ['', 'Immediately', '1-3 months', '3-6 months', '6+ months', 'Just browsing']
 const BUYER_FINANCE_TYPE_OPTIONS = ['', 'Bond', 'Cash', 'Cash + bond', 'Not sure']
@@ -5326,6 +5332,22 @@ function buildBuyerQualificationFormFromLead(lead = {}) {
     areaInterest: normalizeText(parsed.areaInterest) || normalizeText(lead?.areaInterest),
     propertyNeed: normalizeText(parsed.propertyNeed) || normalizeText(lead?.propertyInterest),
     additionalNotes: [normalizeText(parsed.additionalNotes), parsed.additionalNotes ? freeformNotes : ''].filter(Boolean).join('\n\n') || freeformNotes,
+  }
+}
+
+function getBuyerQualificationAnsweredFields(form = {}) {
+  return BUYER_QUALIFICATION_NOTE_FIELDS
+    .map(({ key, label }) => ({ key, label, value: normalizeText(form[key]) }))
+    .filter((field) => field.value)
+}
+
+function getBuyerQualificationEvidence(form = {}) {
+  const answeredFields = getBuyerQualificationAnsweredFields(form)
+  return {
+    answeredFields,
+    answeredCount: answeredFields.length,
+    minimumCount: BUYER_QUALIFICATION_MINIMUM_ANSWER_COUNT,
+    complete: answeredFields.length >= BUYER_QUALIFICATION_MINIMUM_ANSWER_COUNT,
   }
 }
 
@@ -8730,6 +8752,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ? 'Mandate Signed'
       : resolveLeadLifecyclePresentation(selectedLead).label
 
+  const selectedLeadBuyerQualificationEvidence = useMemo(
+    () => getBuyerQualificationEvidence(buildBuyerQualificationFormFromLead(selectedLead || {})),
+    [selectedLead],
+  )
+
   const selectedLeadWorkflowHealth = useMemo(() => {
     if (!selectedLead) {
       return { completed: 0, total: 0, percent: 0, missing: [] }
@@ -8743,14 +8770,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const hasTransaction = Boolean(selectedLeadLinkedTransaction)
     const hasOffer = stage.includes('offer') || hasTransaction || selectedLeadOfferSummary.total > 0
     const hasContacted = selectedLeadActivities.length > 0 || !['', 'new lead', 'lead', 'cold'].includes(stage)
-    const hasQualificationSignal = Boolean(
-      normalizeText(selectedLead?.budget || selectedLead?.estimatedValue || selectedLead?.areaInterest || selectedLead?.propertyInterest) ||
-        stage.includes('qualified') ||
-        stage.includes('viewing') ||
-        stage.includes('offer') ||
-        hasAppointment ||
-        selectedLeadOfferSummary.total,
-    )
+    const hasQualificationSignal = selectedLeadBuyerQualificationEvidence.complete
     const hasViewingStarted = hasAppointment || stage.includes('viewing')
     const hasViewingCompleted = hasCompletedAppointment || stage.includes('viewing completed')
     const hasOfferAccepted = selectedLeadOfferSummary.accepted > 0 || hasTransaction || stage.includes('offer accepted')
@@ -8793,6 +8813,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLead,
     selectedLeadActivities.length,
     selectedLeadAppointments,
+    selectedLeadBuyerQualificationEvidence.complete,
     selectedLeadEffectiveLifecycleStage,
     selectedLeadLinkedTransaction,
     selectedLeadMandateSignedEvidence,
@@ -10719,14 +10740,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         stageKey.includes('contacted') ||
         progressedBeyondContact,
     )
-    const qualified = Boolean(
-      normalizeText(selectedLead?.budget || selectedLead?.estimatedValue || selectedLead?.areaInterest || selectedLead?.propertyInterest) ||
-        stageKey.includes('qualified') ||
-        stageKey.includes('viewing') ||
-        stageKey.includes('offer') ||
-        selectedLeadAppointments.length ||
-        selectedLeadOfferSummary.total,
-    )
+    const qualificationStarted = selectedLeadBuyerQualificationEvidence.answeredCount > 0
+    const qualified = selectedLeadBuyerQualificationEvidence.complete
     const viewingStarted = selectedLeadAppointments.length > 0 || stageKey.includes('viewing')
     const viewingCompleted = selectedLeadAppointments.some((appointment) => normalizeText(appointment?.status).toLowerCase() === 'completed') || stageKey.includes('viewing completed')
     const offerStarted = selectedLeadOfferSummary.total > 0 || stageKey.includes('offer')
@@ -10735,20 +10750,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const rawStages = [
       { key: 'captured', label: 'Captured', detail: formatDateShort(selectedLead?.createdAt), done: Boolean(selectedLead) },
       { key: 'contacted', label: 'Contacted', detail: contacted ? formatDateShort(selectedLeadLastContactedAt || selectedLeadLastActiveAt || selectedLead?.updatedAt) : 'Not reached', done: contacted },
-      { key: 'qualification', label: 'Qualification', detail: qualified ? 'In progress' : 'Pending', done: qualified },
+      {
+        key: 'qualification',
+        label: 'Qualification',
+        detail: qualified
+          ? `${selectedLeadBuyerQualificationEvidence.answeredCount} captured`
+          : qualificationStarted
+            ? `${selectedLeadBuyerQualificationEvidence.answeredCount}/${selectedLeadBuyerQualificationEvidence.minimumCount} captured`
+            : 'Pending',
+        done: qualified,
+        started: qualificationStarted,
+      },
       { key: 'viewing', label: 'Viewing', detail: viewingCompleted ? 'Completed' : viewingStarted ? 'Upcoming' : 'Not booked', done: viewingCompleted, started: viewingStarted },
       { key: 'offer', label: 'Offer', detail: offerComplete ? 'Accepted' : offerStarted ? 'Pending' : 'Not started', done: offerComplete, started: offerStarted },
       { key: 'transaction', label: 'Transaction', detail: transactionDone ? 'Created' : 'Not started', done: transactionDone },
     ]
     const firstIncompleteIndex = rawStages.findIndex((stage) => !stage.done)
-    const activeStartedIndex = rawStages.reduce((current, stage, index) => (
-      stage.started && !stage.done ? index : current
-    ), -1)
-    const currentIndex = activeStartedIndex >= 0
-      ? activeStartedIndex
-      : firstIncompleteIndex >= 0
-        ? firstIncompleteIndex
-        : rawStages.length - 1
+    const currentIndex = firstIncompleteIndex >= 0 ? firstIncompleteIndex : rawStages.length - 1
     return rawStages.map((stage, index) => ({
       ...stage,
       state: stage.done ? 'completed' : index === currentIndex ? 'current' : 'future',
@@ -10758,6 +10776,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadAcceptedOffer,
     selectedLeadContactActivities.length,
     selectedLeadAppointments,
+    selectedLeadBuyerQualificationEvidence,
     selectedLeadEffectiveLifecycleStage,
     selectedLeadLastActiveAt,
     selectedLeadLastContactedAt,
@@ -10778,7 +10797,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const rawFinanceType = normalizeText(selectedLead?.financeType || selectedLead?.preferredFinanceType || selectedLead?.finance_type || selectedLeadLinkedTransaction?.finance_type || selectedLeadLinkedTransaction?.financeType)
     const hasContacted = selectedLeadBuyerJourneyStages.some((stage) => stage.key === 'contacted' && stage.done)
     const hasViewingBooked = selectedLeadAppointments.length > 0
-    const hasQualificationSignal = selectedLeadBuyerJourneyStages.some((stage) => stage.key === 'qualification' && (stage.done || stage.started))
+    const hasQualificationStarted = selectedLeadBuyerJourneyStages.some((stage) => stage.key === 'qualification' && (stage.done || stage.started))
+    const hasQualificationComplete = selectedLeadBuyerJourneyStages.some((stage) => stage.key === 'qualification' && stage.done)
     const hasFinanceStarted = Boolean(
       selectedLeadLinkedTransactionId ||
         rawFinanceType ||
@@ -10794,7 +10814,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return {
       hasContacted,
       hasViewingBooked,
-      hasQualificationSignal,
+      hasQualificationSignal: hasQualificationComplete,
+      hasQualificationStarted,
+      hasQualificationComplete,
       hasFinanceStarted,
       hasDeposit,
       cashOrBondLabel: rawFinanceType || 'Not captured',
@@ -11815,11 +11837,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleSendBuyerViewingAvailabilityRequest(selectedProperties = []) {
     if (!organisationId || !selectedLead || selectedLeadIsSeller) return
+    const selectedLeadUuid = normalizeLeadUuidFromLead(selectedLead)
     const buyerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.email).toLowerCase()
     const selectedPropertyIds = (Array.isArray(selectedProperties) ? selectedProperties : [])
       .map((property) => normalizeText(property?.id))
       .filter(Boolean)
 
+    if (!selectedLeadUuid) {
+      setError('This buyer lead is not fully linked to Supabase yet. Repair the lead before sending a viewing request.')
+      return
+    }
     if (!selectedPropertyIds.length) {
       setMessage('Select at least one property before requesting buyer availability.')
       return
@@ -11844,7 +11871,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         body: {
           action: 'create',
           organisationId,
-          leadId: normalizeLeadUuid(selectedLead.leadId),
+          leadId: selectedLeadUuid,
           buyerEmail,
           buyerName,
           agentName,
@@ -12347,6 +12374,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleSendSellerViewingAvailabilityRequest(selectedProperties = []) {
     if (!organisationId || !selectedLead || selectedLeadIsSeller) return
+    const selectedLeadUuid = normalizeLeadUuidFromLead(selectedLead)
     const selectedPropertyIds = viewingPlanSelectedPropertyIds.map(normalizeText).filter(Boolean)
     const confirmedPropertyIds = (Array.isArray(viewingPlanResponseForm.confirmedPropertyIds) ? viewingPlanResponseForm.confirmedPropertyIds : [])
       .map(normalizeText)
@@ -12361,6 +12389,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ])]
     const invalidSellerEmails = sellerEmails.filter((email) => !isValidEmail(email))
 
+    if (!selectedLeadUuid) {
+      setError('This buyer lead is not fully linked to Supabase yet. Repair the lead before sending a viewing request.')
+      return
+    }
     if (!confirmedPropertyIds.length) {
       setMessage('Capture the buyer response before coordinating seller availability.')
       return
@@ -12399,7 +12431,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	        body: {
 	          action: 'create',
 	          organisationId,
-	          leadId: normalizeLeadUuid(selectedLead.leadId),
+	          leadId: selectedLeadUuid,
 	          sellerEmail: sellerEmails[0] || '',
 	          sellerName,
 	          buyerName,
@@ -12699,6 +12731,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setIsLeadDetailSaving(true)
     try {
       const budgetAmount = parseCurrencyAmount(buyerQualificationForm.budget)
+      const qualificationEvidence = getBuyerQualificationEvidence(buyerQualificationForm)
       const notes = buildBuyerQualificationNotes(buyerQualificationForm, selectedLead.notes)
       const leadPatch = {
         budget: budgetAmount || 0,
@@ -12706,8 +12739,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         areaInterest: normalizeText(buyerQualificationForm.areaInterest),
         propertyInterest: normalizeText(buyerQualificationForm.propertyNeed),
         notes,
-        stage: 'Qualified',
-        status: 'Qualified',
+      }
+      if (qualificationEvidence.complete) {
+        leadPatch.stage = 'Qualified'
+        leadPatch.status = 'Qualified'
       }
 
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
@@ -12718,8 +12753,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         {
           agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
           activityType: 'Buyer Qualification Updated',
-          activityNote: 'Buyer phone qualification was saved.',
-          outcome: 'Qualified',
+          activityNote: `Buyer phone qualification was saved with ${qualificationEvidence.answeredCount}/${qualificationEvidence.minimumCount} minimum answers captured.`,
+          outcome: qualificationEvidence.complete ? 'Qualified' : 'In progress',
         },
         { actor: currentAgent },
       ).catch(() => null)
@@ -12735,7 +12770,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }))
       setBuyerQualificationEditing(false)
       setError('')
-      setMessage('Buyer qualification saved.')
+      setMessage(qualificationEvidence.complete
+        ? 'Buyer qualification saved.'
+        : `Qualification saved as in progress. Capture ${qualificationEvidence.minimumCount - qualificationEvidence.answeredCount} more answer${qualificationEvidence.minimumCount - qualificationEvidence.answeredCount === 1 ? '' : 's'} to mark qualified.`)
       scheduleRecordsReload(organisationId, 250)
     } catch (saveError) {
       setError(saveError?.message || 'Unable to save buyer qualification right now.')
@@ -16311,6 +16348,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     handleLeadWorkspaceTabSelection('overview')
   }
 
+  function handleMarkBuyerQualifiedAction() {
+    if (!selectedLead) return
+    if (!selectedLeadBuyerQualificationEvidence.complete) {
+      setError(`Capture at least ${selectedLeadBuyerQualificationEvidence.minimumCount} qualification answers before marking the buyer qualified.`)
+      handleOpenBuyerQualificationAction()
+      return
+    }
+    void handleUpdateLeadStage(selectedLead.leadId, 'Qualified', { successMessage: 'Buyer marked as qualified.' })
+  }
+
   function handleOpenBuyerViewingDoneAction() {
     setBuyerJourneyActionStage('viewing')
     const latestViewing = selectedLeadViewingAppointments
@@ -16938,6 +16985,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } finally {
       setCanonicalOfferActionId('')
     }
+  }
+
+  async function handleLeadCanonicalOfferAccept(offer) {
+    if (!organisationId || !offer?.id) return
+    const confirmed = typeof window === 'undefined'
+      ? true
+      : window.confirm('Accept this offer and prepare it for transaction conversion?')
+    if (!confirmed) return
+    await handleLeadCanonicalOfferStatus(offer, 'accepted', 'Offer accepted from Offer Centre')
   }
 
   async function resolveLeadOfferSellerRecipient(offer = {}) {
@@ -19880,7 +19936,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ) : buyerJourneyActionStage === 'qualification' ? (
                             <>
                               <Button type="button" size="sm" onClick={handleOpenBuyerQualificationAction}>Qualify Buyer</Button>
-                              <Button type="button" size="sm" variant="secondary" onClick={() => void handleUpdateLeadStage(selectedLead.leadId, 'Qualified', { successMessage: 'Buyer marked as qualified.' })}>Mark Qualified</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={handleMarkBuyerQualifiedAction}>Mark Qualified</Button>
                             </>
                           ) : (
                             <>
@@ -20241,14 +20297,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <div className="space-y-6">
                       {(() => {
                         const qualificationQuestionRows = buildBuyerQualificationQuestionRows(buyerQualificationForm)
-                        const buyerQualificationStageKey = normalizeText(selectedLead?.stage).toLowerCase()
                         const buyerQualificationStatusLabel = buyerQualificationEditing
                           ? 'Editing'
-                          : buyerQualificationStageKey.includes('qualified') || buyerQualificationStageKey.includes('viewing') || buyerQualificationStageKey.includes('offer') || buyerQualificationStageKey.includes('transaction')
+                          : selectedLeadBuyerQualificationEvidence.complete
                             ? 'Qualified'
-                            : buyerOverviewQualification.hasQualificationSignal
+                            : buyerOverviewQualification.hasQualificationStarted
                               ? 'In progress'
                               : 'Needs qualification'
+                        const buyerQualificationProgressLabel = `${selectedLeadBuyerQualificationEvidence.answeredCount}/${selectedLeadBuyerQualificationEvidence.minimumCount} minimum answers`
                         const activityQuickTypes = ['Call', 'WhatsApp', 'Email', 'Note', 'Meeting'].filter((type) => type !== 'Meeting' || ACTIVITY_TYPES.includes('Meeting'))
                         const activityIconByType = {
                           Call: Phone,
@@ -20520,6 +20576,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Buyer Qualification</p>
                                     <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">Phone qualification questions</h3>
+                                    <p className="mt-1 text-sm leading-5 text-[#60758b]">{buyerQualificationProgressLabel}</p>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2">
                                     <span className="rounded-full border border-[#d7e6f2] bg-[#f8fbfd] px-3 py-1 text-xs font-semibold text-[#60758b]">
@@ -23368,6 +23425,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             ) : selectedLeadOffers.length ? (
                               selectedLeadOffers.map((offer) => {
                                 const statusKey = normalizeText(offer.status).toLowerCase()
+                                const offerConditions = offer.conditions || {}
+                                const residentialTerms = offerConditions.residentialOfferTerms || {}
+                                const financeTerms = residentialTerms.finance || {}
+                                const termDetails = residentialTerms.terms || {}
+                                const conditionRequests = residentialTerms.conditionRequests || {}
+                                const buyerDetails = residentialTerms.buyer || {}
                                 const localSellerListing = normalizeText(offer.listingId || selectedLead?.listingId)
                                   ? readAgentPrivateListings().find((listing) => normalizeText(listing?.id || listing?.listingId || listing?.listing_id) === normalizeText(offer.listingId || selectedLead?.listingId)) || null
                                   : null
@@ -23400,6 +23463,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         : 'border-[#dbe6f2] bg-white text-[#35546c]'
 	                                const offerToken = normalizeText(offer.offerToken || offer.id)
 	                                const offerLink = offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
+                                const sellerReviewToken = normalizeText(offer.sellerReviewSession?.token || offerConditions.sellerReviewSessionToken)
+                                const sellerReviewLink = sellerReviewToken && typeof window !== 'undefined' ? `${window.location.origin}/seller/offers/review/${encodeURIComponent(sellerReviewToken)}` : ''
+                                const offerDetailRows = [
+                                  ['Buyer', buyerDetails.fullName || offerConditions.buyerName],
+                                  ['Deposit', offer.depositAmount || financeTerms.depositAmount ? formatCurrency(offer.depositAmount || financeTerms.depositAmount) : ''],
+                                  ['Cash', offer.cashComponent || financeTerms.cashContribution ? formatCurrency(offer.cashComponent || financeTerms.cashContribution) : ''],
+                                  ['Bond', offer.bondComponent || financeTerms.bondAmount ? formatCurrency(offer.bondComponent || financeTerms.bondAmount) : ''],
+                                  ['Occupation', termDetails.occupationDate || offerConditions.occupationDate],
+                                  ['Deposit Due', financeTerms.depositDueDate || offerConditions.depositDueDate],
+                                  ['Expiry Time', termDetails.expiryTime || offerConditions.expiryTime],
+                                ].filter(([, value]) => normalizeText(value) && value !== 'R 0')
+                                const offerConditionText = normalizeText(
+                                  conditionRequests.specialConditions ||
+                                  conditionRequests.suspensiveConditions ||
+                                  offerConditions.specialConditions ||
+                                  offerConditions.suspensiveConditions,
+                                )
+                                const canAcceptOffer = [
+                                  'submitted',
+                                  'agent_review',
+                                  'under_review',
+                                  'sent_to_seller',
+                                  'seller_viewed',
+                                  'countered',
+                                ].includes(statusKey)
                                 const offerPreflightBlocked = normalizeText(offer.id) === normalizeText(selectedLeadAcceptedOffer?.id) && !selectedLeadAcceptedOfferConversionPreflight?.canConvert
 	                                return (
                                   <article key={offer.id} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
@@ -23430,6 +23518,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/listings/${offer.listingId}`)}>Open Listing</Button>
                                         ) : null}
                                         {offerLink ? (
+                                          <Button type="button" size="sm" variant="secondary" onClick={() => window.open(offerLink, '_blank', 'noopener,noreferrer')}>
+                                            <ExternalLink className="h-4 w-4" />
+                                            View Offer
+                                          </Button>
+                                        ) : null}
+                                        {sellerReviewLink ? (
+                                          <Button type="button" size="sm" variant="secondary" onClick={() => window.open(sellerReviewLink, '_blank', 'noopener,noreferrer')}>
+                                            <ExternalLink className="h-4 w-4" />
+                                            Seller Review
+                                          </Button>
+                                        ) : null}
+                                        {offerLink ? (
                                           <Button type="button" size="sm" variant="secondary" onClick={() => {
                                             if (typeof navigator !== 'undefined') void navigator.clipboard?.writeText(offerLink)
                                             setMessage('Offer link copied.')
@@ -23440,6 +23540,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         ) : null}
                                       </div>
                                     </div>
+                                    {offerDetailRows.length || offerConditionText ? (
+                                      <div className="mt-3 rounded-[14px] border border-[#e6eef7] bg-white px-3 py-3">
+                                        {offerDetailRows.length ? (
+                                          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                                            {offerDetailRows.map(([label, value]) => (
+                                              <div key={label}>
+                                                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8fa5]">{label}</p>
+                                                <p className="mt-1 text-sm font-semibold text-[#203a54]">{value}</p>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : null}
+                                        {offerConditionText ? (
+                                          <div className={offerDetailRows.length ? 'mt-3 border-t border-[#edf2f7] pt-3' : ''}>
+                                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8fa5]">Conditions</p>
+                                            <p className="mt-1 text-sm leading-6 text-[#35546c]">{offerConditionText}</p>
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
                                     <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto]">
                                       <Field
                                         value={canonicalOfferNotesById[offer.id] || ''}
@@ -23474,6 +23594,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             <Button type="button" size="sm" variant="secondary" disabled={canonicalOfferActionId === `${offer.id}:changes_requested`} onClick={() => void handleLeadCanonicalOfferStatus(offer, 'changes_requested', 'Buyer changes requested')}>
                                               Request Changes
                                             </Button>
+                                            {canAcceptOffer ? (
+                                              <Button type="button" size="sm" disabled={canonicalOfferActionId === `${offer.id}:accepted`} onClick={() => void handleLeadCanonicalOfferAccept(offer)}>
+                                                Accept Offer
+                                              </Button>
+                                            ) : null}
                                           </>
                                         ) : null}
                                         {statusKey === 'accepted' || (statusKey === 'converted_to_transaction' && offer.transactionId) ? (
