@@ -17334,8 +17334,9 @@ function getKingstonsRailStageStatusLabel(stage = {}) {
   return 'Upcoming'
 }
 
-function canTriggerKingstonsRailAppointmentAction(stage = {}) {
-  return stage?.surface === 'appointments' && stage?.actionEnabled !== false && Boolean(stage?.actionKey) && !stage?.deferred
+function canTriggerKingstonsRailAction(stage = {}) {
+  const surface = normalizeText(stage?.surface).toLowerCase()
+  return ['appointments', 'documents'].includes(surface) && stage?.actionEnabled !== false && Boolean(stage?.actionKey) && !stage?.deferred
 }
 
 function KingstonsSellerProcessRail({ model = null, onAction }) {
@@ -17360,7 +17361,7 @@ function KingstonsSellerProcessRail({ model = null, onAction }) {
         {stages.map((stage, index) => {
           const isLast = index === stages.length - 1
           const statusLabel = getKingstonsRailStageStatusLabel(stage)
-          const canTriggerAppointmentAction = canTriggerKingstonsRailAppointmentAction(stage) && typeof onAction === 'function'
+          const canTriggerRailAction = canTriggerKingstonsRailAction(stage) && typeof onAction === 'function'
           const content = (
             <>
               <span className={`z-10 flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold shadow-sm ${stage.current ? 'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-100' : stage.complete ? 'border-emerald-600 bg-emerald-600 text-white' : stage.deferred ? 'border-amber-200 bg-amber-50 text-amber-600' : 'border-slate-200 bg-white text-slate-300'}`}>
@@ -17375,7 +17376,7 @@ function KingstonsSellerProcessRail({ model = null, onAction }) {
           return (
             <li key={stage.key} className="relative min-w-0">
               {!isLast ? <span className={`absolute left-[calc(50%+1.5rem)] top-5 hidden h-px w-[calc(100%-3rem)] xl:block ${stage.complete ? 'bg-emerald-300' : 'bg-slate-200'}`} /> : null}
-              {canTriggerAppointmentAction ? (
+              {canTriggerRailAction ? (
                 <button
                   type="button"
                   onClick={() => onAction(stage.actionKey)}
@@ -21815,7 +21816,7 @@ function SellerMandateTab({
   )
 }
 
-function SellerDocumentsTab({ journey, listing = null, row = {}, mandatePacketStatus = null }) {
+function SellerDocumentsTab({ journey, listing = null, row = {}, mandatePacketStatus = null, documentCenterIntent = null }) {
   const documents = useMemo(
     () => buildSellerDocumentRowsFromSource({ journey, listing, row, mandatePacketStatus }),
     [journey, listing, mandatePacketStatus, row],
@@ -21828,6 +21829,17 @@ function SellerDocumentsTab({ journey, listing = null, row = {}, mandatePacketSt
     () => documents.filter((document) => document?.required !== false && document?.applicable !== false),
     [documents],
   )
+  useEffect(() => {
+    if (!documentCenterIntent?.requestedAt) return
+    const category = normalizeText(documentCenterIntent.category).toLowerCase()
+    const search = normalizeText(documentCenterIntent.search || documentCenterIntent.label)
+    if (SELLER_DOCUMENT_CENTER_TABS.some((tab) => tab.key === category)) setActiveTab(category)
+    if (normalizeText(documentCenterIntent.documentType) === 'valuation_document') {
+      setSearchValue(search || 'Formal Valuation Document')
+    } else if (search) {
+      setSearchValue(search)
+    }
+  }, [documentCenterIntent?.category, documentCenterIntent?.documentType, documentCenterIntent?.label, documentCenterIntent?.requestedAt, documentCenterIntent?.search])
   const resolvedActiveTab = useMemo(() => {
     if (SELLER_DOCUMENT_CENTER_TABS.some((tab) => tab.key === activeTab) && getSellerDocumentCountForTab(searchableDocuments, activeTab)) {
       return activeTab
@@ -22284,6 +22296,7 @@ function SellerTabContent({
   onTabChange,
   appointmentComposerSignal = 0,
   appointmentComposerType = 'seller_consultation',
+  documentCenterIntent = null,
 }) {
   if (activeTab === 'seller') {
     return (
@@ -22341,7 +22354,7 @@ function SellerTabContent({
       />
     )
   }
-  if (activeTab === 'documents') return <SellerDocumentsTab journey={journey} listing={listing} row={row} mandatePacketStatus={mandatePacketStatus} />
+  if (activeTab === 'documents') return <SellerDocumentsTab journey={journey} listing={listing} row={row} mandatePacketStatus={mandatePacketStatus} documentCenterIntent={documentCenterIntent} />
   if (activeTab === 'activity') return <SellerActivityTab timeline={timeline} row={row} listing={listing} journey={journey} readiness={readiness} onTabChange={onTabChange} />
   return (
     <SellerOverviewTab
@@ -22526,6 +22539,7 @@ function SellerLeadWorkspaceLayout({
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('overview')
   const [appointmentComposerSignal, setAppointmentComposerSignal] = useState(0)
   const [appointmentComposerType, setAppointmentComposerType] = useState('seller_consultation')
+  const [documentCenterIntent, setDocumentCenterIntent] = useState(null)
   const [agentOnboardingSignal, setAgentOnboardingSignal] = useState(0)
   const initialWorkspaceTabHandledRef = useRef('')
   const commissionSummary = useMemo(() => getSellerCommissionWorkspace(row, linkedSellerListing), [linkedSellerListing, row])
@@ -22558,6 +22572,13 @@ function SellerLeadWorkspaceLayout({
     setActiveWorkspaceTab('appointments')
     setAppointmentComposerSignal((value) => value + 1)
   }, [])
+  const openSellerDocumentCenter = useCallback((intent = {}) => {
+    setDocumentCenterIntent({
+      ...intent,
+      requestedAt: Date.now(),
+    })
+    setActiveWorkspaceTab('documents')
+  }, [])
   const openManualSellerOnboarding = useCallback(() => {
     setActiveWorkspaceTab('seller')
     setAgentOnboardingSignal((value) => value + 1)
@@ -22586,11 +22607,15 @@ function SellerLeadWorkspaceLayout({
     else if (['generate_mandate', 'send_mandate', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(key)) void openMandateWithLatestTerms()
     else if (['add_commission', 'review_commission', 'open_commission'].includes(key)) setActiveWorkspaceTab('mandate')
     else if (['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(key)) onOpenListing?.()
-    else if (['open_documents'].includes(key)) setActiveWorkspaceTab('documents')
+    else if (['open_documents'].includes(key)) openSellerDocumentCenter()
     else if (['schedule_appointment', 'open_appointments'].includes(key)) openAppointmentComposer()
     else if (key === 'schedule_valuation_appointment') openAppointmentComposer('seller_valuation')
     else if (key === 'schedule_valuation_presentation') openAppointmentComposer('valuation_presentation')
-    else if (key === 'upload_valuation_document') setActiveWorkspaceTab('documents')
+    else if (key === 'upload_valuation_document') openSellerDocumentCenter({
+      documentType: 'valuation_document',
+      category: 'property',
+      search: 'Formal Valuation Document',
+    })
     else if (key === 'complete_seller_pack') setActiveWorkspaceTab('mandate')
     else if (key === 'prepare_listing') onOpenListing?.()
     else if (['contact_seller', 'open_timeline'].includes(key)) setActiveWorkspaceTab('activity')
@@ -22612,7 +22637,7 @@ function SellerLeadWorkspaceLayout({
       setActiveWorkspaceTab('documents')
     }
     else setActiveWorkspaceTab('overview')
-  }, [focusSellerWorkspaceSection, onOpenListing, onOpenSellerPortalLink, onSendSellerOnboarding, openAppointmentComposer, openManualSellerOnboarding, openMandateWithLatestTerms])
+  }, [focusSellerWorkspaceSection, onOpenListing, onOpenSellerPortalLink, onSendSellerOnboarding, openAppointmentComposer, openManualSellerOnboarding, openMandateWithLatestTerms, openSellerDocumentCenter])
 
   return (
     <div className="space-y-6">
@@ -22682,6 +22707,7 @@ function SellerLeadWorkspaceLayout({
         onTabChange={setActiveWorkspaceTab}
         appointmentComposerSignal={appointmentComposerSignal}
         appointmentComposerType={appointmentComposerType}
+        documentCenterIntent={documentCenterIntent}
       />
     </div>
   )

@@ -41,11 +41,11 @@ function sliceFunction(source, functionName, nextFunctionName) {
 
 {
   const railSource = sliceFunction(pageSource, 'KingstonsSellerProcessRail', 'ListingReadinessCircle')
-  assert.match(pageSource, /function canTriggerKingstonsRailAppointmentAction\(stage = \{\}\)/)
-  assert.match(pageSource, /stage\?\.surface === 'appointments'/)
+  assert.match(pageSource, /function canTriggerKingstonsRailAction\(stage = \{\}\)/)
+  assert.match(pageSource, /\['appointments', 'documents'\]\.includes\(surface\)/)
   assert.match(railSource, /onClick=\{\(\) => onAction\(stage\.actionKey\)\}/)
   assert.match(railSource, /aria-label=\{`Open \$\{stage\.label\}`\}/)
-  assert.match(railSource, /canTriggerKingstonsRailAppointmentAction\(stage\) && typeof onAction === 'function'/)
+  assert.match(railSource, /canTriggerKingstonsRailAction\(stage\) && typeof onAction === 'function'/)
   assert.doesNotMatch(railSource, /createAppointmentAsync/)
   assert.doesNotMatch(railSource, /uploadPrivateListingDocument/)
   assert.doesNotMatch(railSource, /updatePrivateListing/)
@@ -56,7 +56,7 @@ function sliceFunction(source, functionName, nextFunctionName) {
   assert.match(layoutSource, /<KingstonsSellerProcessRail model=\{kingstonsSellerProcessRailModel\} onAction=\{handleAcquisitionAction\} \/>/)
   assert.match(layoutSource, /key === 'schedule_valuation_appointment'\) openAppointmentComposer\('seller_valuation'\)/)
   assert.match(layoutSource, /key === 'schedule_valuation_presentation'\) openAppointmentComposer\('valuation_presentation'\)/)
-  assert.match(layoutSource, /key === 'upload_valuation_document'\) setActiveWorkspaceTab\('documents'\)/)
+  assert.match(layoutSource, /key === 'upload_valuation_document'\) openSellerDocumentCenter\(\{/)
   assert.match(layoutSource, /key === 'complete_seller_pack'\) setActiveWorkspaceTab\('mandate'\)/)
   assert.match(layoutSource, /key === 'prepare_listing'\) onOpenListing\?\.\(\)/)
 }
