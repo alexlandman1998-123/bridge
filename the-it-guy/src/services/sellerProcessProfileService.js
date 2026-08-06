@@ -5,6 +5,9 @@ export const SELLER_PROCESS_PROFILE_KEYS = Object.freeze({
 
 export const DEFAULT_SELLER_PROCESS_PROFILE = SELLER_PROCESS_PROFILE_KEYS.DEFAULT_RESIDENTIAL
 export const KINGSTONS_SELLER_PROCESS_PROFILE = SELLER_PROCESS_PROFILE_KEYS.KINGSTONS_RESIDENTIAL
+export const KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS = Object.freeze([
+  'ec19d0a6-bcba-4eef-aa72-9972de88204d',
+])
 
 const SELLER_PROCESS_PROFILE_ALIASES = Object.freeze({
   default: DEFAULT_SELLER_PROCESS_PROFILE,
@@ -59,6 +62,31 @@ const PROFILE_CANDIDATE_PATHS = Object.freeze([
   ['metadata', 'seller_process_profile'],
 ])
 
+const ORGANISATION_ID_CANDIDATE_PATHS = Object.freeze([
+  ['organisationId'],
+  ['organisation_id'],
+  ['organizationId'],
+  ['organization_id'],
+  ['workspaceId'],
+  ['workspace_id'],
+  ['organisation', 'id'],
+  ['organisation', 'organisationId'],
+  ['organisation', 'organisation_id'],
+  ['organization', 'id'],
+  ['organization', 'organizationId'],
+  ['organization', 'organization_id'],
+  ['workspace', 'id'],
+  ['workspace', 'organisationId'],
+  ['workspace', 'organisation_id'],
+  ['currentWorkspace', 'id'],
+  ['currentWorkspace', 'organisationId'],
+  ['currentWorkspace', 'organisation_id'],
+  ['row', 'organisationId'],
+  ['row', 'organisation_id'],
+  ['lead', 'organisationId'],
+  ['lead', 'organisation_id'],
+])
+
 function normalizeText(value) {
   return String(value ?? '').trim()
 }
@@ -95,10 +123,26 @@ function collectProfileCandidates(source = {}) {
     .filter((candidate) => normalizeText(candidate.value))
 }
 
+function collectOrganisationIdCandidates(source = {}) {
+  if (!isObject(source)) return []
+
+  return ORGANISATION_ID_CANDIDATE_PATHS
+    .map((path) => ({
+      path: path.join('.'),
+      value: readPath(source, path),
+    }))
+    .filter((candidate) => normalizeText(candidate.value))
+}
+
 export function normalizeSellerProcessProfile(value, { fallback = DEFAULT_SELLER_PROCESS_PROFILE } = {}) {
   const token = normalizeProfileToken(value)
   if (!token) return fallback
   return SELLER_PROCESS_PROFILE_ALIASES[token] || fallback
+}
+
+export function isKingstonsSellerProcessOrganisationId(value) {
+  const organisationId = normalizeText(value).toLowerCase()
+  return Boolean(organisationId && KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS.includes(organisationId))
 }
 
 export function isKnownSellerProcessProfile(value) {
@@ -133,6 +177,27 @@ export function resolveSellerProcessProfile(source = {}) {
 
 export function resolveSellerProcessProfileKey(source = {}) {
   return resolveSellerProcessProfile(source).profile
+}
+
+export function resolveSellerProcessProfileForOrganisation(source = {}) {
+  const explicitResolution = resolveSellerProcessProfile(source)
+  if (explicitResolution.configured) return explicitResolution
+
+  const [candidate] = collectOrganisationIdCandidates(source)
+  const organisationId = normalizeText(candidate?.value).toLowerCase()
+  if (!isKingstonsSellerProcessOrganisationId(organisationId)) return explicitResolution
+
+  return Object.freeze({
+    profile: KINGSTONS_SELLER_PROCESS_PROFILE,
+    key: KINGSTONS_SELLER_PROCESS_PROFILE,
+    configured: true,
+    knownProfile: true,
+    requestedProfile: KINGSTONS_SELLER_PROCESS_PROFILE,
+    sourcePath: candidate?.path || 'organisationId',
+    isDefault: false,
+    isKingstons: true,
+    organisationScoped: true,
+  })
 }
 
 export function resolveSellerProcessProfileActivation(input = {}) {

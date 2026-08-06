@@ -4,14 +4,17 @@ import { resolve } from 'node:path'
 
 import {
   DEFAULT_SELLER_PROCESS_PROFILE,
+  KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS,
   KINGSTONS_SELLER_PROCESS_PROFILE,
   SELLER_PROCESS_PROFILE_KEYS,
   buildSellerProcessProfileSettings,
+  isKingstonsSellerProcessOrganisationId,
   isKingstonsSellerProcessProfile,
   isKnownSellerProcessProfile,
   normalizeSellerProcessProfile,
   resolveSellerProcessProfileActivation,
   resolveSellerProcessProfile,
+  resolveSellerProcessProfileForOrganisation,
   resolveSellerProcessProfileKey,
 } from '../src/services/sellerProcessProfileService.js'
 import {
@@ -97,6 +100,34 @@ const mandatePacketStatus = {
   assert.equal(resolved.profile, DEFAULT_SELLER_PROCESS_PROFILE)
   assert.equal(resolved.configured, false)
   assert.equal(resolved.isKingstons, false)
+}
+
+{
+  const kingstonOrgId = KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS[0]
+  assert.equal(kingstonOrgId, 'ec19d0a6-bcba-4eef-aa72-9972de88204d')
+  assert.equal(isKingstonsSellerProcessOrganisationId(kingstonOrgId), true)
+  assert.equal(isKingstonsSellerProcessOrganisationId('11111111-1111-4111-8111-111111111111'), false)
+
+  const explicitOnly = resolveSellerProcessProfile({
+    organisationId: kingstonOrgId,
+  })
+  assert.equal(explicitOnly.profile, DEFAULT_SELLER_PROCESS_PROFILE)
+  assert.equal(explicitOnly.isKingstons, false)
+
+  const orgScoped = resolveSellerProcessProfileForOrganisation({
+    organisationId: kingstonOrgId,
+  })
+  assert.equal(orgScoped.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(orgScoped.isKingstons, true)
+  assert.equal(orgScoped.organisationScoped, true)
+
+  const unknownExplicitStillDefault = resolveSellerProcessProfileForOrganisation({
+    organisationId: kingstonOrgId,
+    sellerProcessProfile: 'future_partner_profile',
+  })
+  assert.equal(unknownExplicitStillDefault.profile, DEFAULT_SELLER_PROCESS_PROFILE)
+  assert.equal(unknownExplicitStillDefault.configured, true)
+  assert.equal(unknownExplicitStillDefault.knownProfile, false)
 }
 
 {
