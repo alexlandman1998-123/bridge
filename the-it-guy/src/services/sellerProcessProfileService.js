@@ -181,7 +181,10 @@ export function resolveSellerProcessProfileKey(source = {}) {
 
 export function resolveSellerProcessProfileForOrganisation(source = {}) {
   const explicitResolution = resolveSellerProcessProfile(source)
-  if (explicitResolution.configured) return explicitResolution
+  if (explicitResolution.configured && explicitResolution.profile !== DEFAULT_SELLER_PROCESS_PROFILE) {
+    return explicitResolution
+  }
+  if (explicitResolution.configured && !explicitResolution.knownProfile) return explicitResolution
 
   const [candidate] = collectOrganisationIdCandidates(source)
   const organisationId = normalizeText(candidate?.value).toLowerCase()

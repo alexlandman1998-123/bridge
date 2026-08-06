@@ -22956,6 +22956,18 @@ function AgentLeadWorkspace() {
   const workspaceAnalytics = row ? buildLeadWorkspaceAnalyticsSummary(row) : null
   const leadCategory = row ? normalizeLeadCategory(row) : 'other'
   const isSellerLeadWorkspace = leadCategory === 'seller'
+  const activeSellerProcessProfileResolution = useMemo(() => resolveSellerProcessProfileForOrganisation({
+    organisationId,
+    organisationSettings,
+    settings: organisationSettings,
+    onboarding: organisationContext?.onboarding || null,
+    organisation: organisationContext?.organisation || { id: organisationId },
+    lead: row || {},
+    row: row || {},
+    sellerProcessProfile: workspaceContext.currentWorkspace?.sellerProcessProfile || workspaceContext.currentWorkspace?.seller_process_profile,
+    sellerProcess: workspaceContext.currentWorkspace?.sellerProcess || workspaceContext.currentWorkspace?.seller_process,
+    currentWorkspace: workspaceContext.currentWorkspace,
+  }), [organisationContext?.onboarding, organisationContext?.organisation, organisationId, organisationSettings, row, workspaceContext.currentWorkspace])
   const requestedSellerWorkspaceTab = useMemo(() => {
     if (!location.search) return ''
     return normalizeText(new URLSearchParams(location.search).get('sellerWorkspace')).toLowerCase()
@@ -22971,7 +22983,7 @@ function AgentLeadWorkspace() {
     return chooseRichestSellerListing(matches) || chooseRichestSellerListing(row.listings) || (leadListingId ? { id: leadListingId } : null)
   }, [data?.listings, row])
   const kingstonsSellerProcessRailModel = useMemo(() => buildKingstonsSellerProcessRailModel({
-    sellerProcessProfile: sellerProcessProfileResolution.profile,
+    sellerProcessProfile: activeSellerProcessProfileResolution.profile,
     organisationSettings,
     lead: row || {},
     listing: linkedSellerListing || {},
@@ -22988,7 +23000,7 @@ function AgentLeadWorkspace() {
       ...(Array.isArray(data?.timeline) ? data.timeline : []),
       ...(Array.isArray(row?.communicationTimeline) ? row.communicationTimeline : []),
     ],
-  }), [data?.appointments, data?.documents, data?.timeline, linkedSellerListing, organisationSettings, row, sellerProcessProfileResolution.profile])
+  }), [activeSellerProcessProfileResolution.profile, data?.appointments, data?.documents, data?.timeline, linkedSellerListing, organisationSettings, row])
   const sellerMandatePacket = useMemo(() => {
     if (!row || !isSellerLeadWorkspace) return null
     const mandatePacketId = normalizeText(row.mandatePacketId || row.mandate_packet_id || linkedSellerListing?.mandatePacketId || linkedSellerListing?.mandate_packet_id)

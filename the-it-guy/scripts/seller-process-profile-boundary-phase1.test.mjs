@@ -121,6 +121,18 @@ const mandatePacketStatus = {
   assert.equal(orgScoped.isKingstons, true)
   assert.equal(orgScoped.organisationScoped, true)
 
+  const orgScopedDefaultFallback = resolveSellerProcessProfileForOrganisation({
+    organisationId: kingstonOrgId,
+    organisationSettings: {
+      sellerProcess: {
+        profile: 'default_residential',
+      },
+    },
+  })
+  assert.equal(orgScopedDefaultFallback.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(orgScopedDefaultFallback.isKingstons, true)
+  assert.equal(orgScopedDefaultFallback.organisationScoped, true)
+
   const unknownExplicitStillDefault = resolveSellerProcessProfileForOrganisation({
     organisationId: kingstonOrgId,
     sellerProcessProfile: 'future_partner_profile',
