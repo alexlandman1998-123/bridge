@@ -84,6 +84,8 @@ import { activateSellerPortalForListing, SELLER_PORTAL_ACTIVATION_SOURCES } from
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { buildSellerDocumentSourceOfTruth } from '../../services/sellerDocumentRequirementsService'
+import { resolveSellerProcessProfileForOrganisation } from '../../services/sellerProcessProfileService'
+import { buildKingstonsSellerProcessRailModel } from '../../services/sellerProcessRailModelService'
 import { resolveLeadNextStep } from '../../services/leadNextActionService'
 import { buildAppointmentSaveFeedback } from '../../services/appointmentSaveFeedbackService'
 import { normalizeLeadLifecycleStageKey, resolveLeadLifecyclePresentation } from '../../services/leadLifecyclePresentationService'
@@ -6106,6 +6108,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [organisationId, setOrganisationId] = useState('')
   const [organisationName, setOrganisationName] = useState('')
+  const [organisationSettings, setOrganisationSettings] = useState(null)
   const [users, setUsers] = useState([])
   const [records, setRecords] = useState({
     contacts: [],
@@ -6834,6 +6837,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const resolvedMembershipRole = normalizeText(context?.membershipRole || fallbackMembershipRole) || fallbackMembershipRole
 
       setOrganisationId(effectiveOrgId)
+      setOrganisationSettings(context?.organisationSettings || null)
       setOrganisationName(
         normalizeText(
           context?.organisation?.display_name ||
@@ -9633,6 +9637,38 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadAppointments,
     selectedLeadContact,
     selectedLeadLinkedListing,
+  ])
+  const selectedSellerProcessProfileResolution = useMemo(() => resolveSellerProcessProfileForOrganisation({
+    organisationId,
+    organisationSettings,
+    settings: organisationSettings,
+    organisation: { id: organisationId, name: organisationName },
+    lead: selectedLead || {},
+    row: selectedLead || {},
+    sellerProcessProfile: currentWorkspace?.sellerProcessProfile || currentWorkspace?.seller_process_profile,
+    sellerProcess: currentWorkspace?.sellerProcess || currentWorkspace?.seller_process,
+    currentWorkspace,
+  }), [currentWorkspace, organisationId, organisationName, organisationSettings, selectedLead])
+  const selectedKingstonsSellerProcessRailModel = useMemo(() => buildKingstonsSellerProcessRailModel({
+    sellerProcessProfile: selectedSellerProcessProfileResolution.profile,
+    organisationSettings,
+    lead: selectedLead || {},
+    listing: selectedLeadLinkedListing || {},
+    appointments: selectedLeadAppointments,
+    documents: [
+      ...(Array.isArray(selectedLead?.documents) ? selectedLead.documents : []),
+      ...(Array.isArray(selectedLeadLinkedListing?.documents) ? selectedLeadLinkedListing.documents : []),
+      ...(Array.isArray(mandatePacketStatus?.versions) ? mandatePacketStatus.versions : []),
+    ],
+    activities: selectedLeadActivities,
+  }), [
+    mandatePacketStatus?.versions,
+    organisationSettings,
+    selectedLead,
+    selectedLeadActivities,
+    selectedLeadAppointments,
+    selectedLeadLinkedListing,
+    selectedSellerProcessProfileResolution.profile,
   ])
   const selectedSellerJourneyStageKey = normalizeKey(selectedSellerJourney?.stage?.key || selectedSellerJourney?.stageKey || selectedSellerJourney?.stage?.label)
   const selectedSellerCanSendOnboarding = !selectedLeadIsSeller || selectedSellerJourneyStageKey !== 'new_lead'
@@ -13746,7 +13782,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setAppointmentModalOpen(true)
   }
 
-  function handleScheduleSellerAppointment() {
+  function handleScheduleSellerAppointment(appointmentType = 'seller_consultation') {
     if (!selectedLead) return
     setAppointmentManualParticipantOpen(false)
     setAppointmentDeselectedParticipantKeys([])
@@ -13757,9 +13793,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.private_listing_id,
     )
     const sellerLeadId = normalizeText(selectedLead?.leadId || selectedLead?.lead_id)
-    setAppointmentForm((previous) => buildDefaultAppointmentFormForType('seller_consultation', {
+    const resolvedAppointmentType = normalizeText(appointmentType) || 'seller_consultation'
+    const propertyLabel = normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress)
+    setAppointmentForm((previous) => buildDefaultAppointmentFormForType(resolvedAppointmentType, {
       ...previous,
-      appointmentType: 'seller_consultation',
+      appointmentType: resolvedAppointmentType,
+      title: propertyLabel
+        ? `${getAppointmentTypeLabel(resolvedAppointmentType)} - ${propertyLabel}`
+        : getAppointmentTypeLabel(resolvedAppointmentType),
       date: previous.date || getTomorrowIsoDate(),
       startTime: previous.startTime || getCurrentTimeValue(),
       contactId: normalizeText(selectedLead?.contactId) || '',
@@ -15233,6 +15274,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const id = normalizeText(actionId)
     if (id === 'contact_seller') {
       openSellerContactFeedbackModal()
+      return
+    }
+    if (id === 'schedule_valuation_appointment') {
+      handleScheduleSellerAppointment('seller_valuation')
+      return
+    }
+    if (id === 'schedule_valuation_presentation') {
+      handleScheduleSellerAppointment('valuation_presentation')
+      return
+    }
+    if (id === 'upload_valuation_document') {
+      setLeadWorkspaceTab('documents')
+      return
+    }
+    if (id === 'complete_seller_pack') {
+      void handleSelectedLeadMandatePrimaryAction()
+      return
+    }
+    if (id === 'prepare_listing') {
+      void handleCreateListingFromSellerLead()
       return
     }
     if (id === 'open_timeline') {
@@ -20188,56 +20249,118 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   <div className="min-w-0 space-y-6">
                   {leadWorkspaceTab === 'overview' && selectedLeadIsSeller ? (
                   <div className="space-y-6">
-                    <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]" data-testid="seller-journey-overview">
-                      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-6 py-5 sm:px-8">
-                        <div>
-                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Seller Journey</p>
-                          <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">
-                            {selectedSellerJourney.status?.summary || selectedSellerJourney.stage?.label || 'Acquisition Timeline'}
-                          </h2>
+                    {selectedKingstonsSellerProcessRailModel?.visible ? (
+                      <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]" data-testid="kingstons-seller-process-overview">
+                        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-6 py-5 sm:px-8">
+                          <div>
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Kingstons Seller Process</p>
+                            <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">
+                              {selectedKingstonsSellerProcessRailModel.currentStageLabel || 'First Contact'}
+                            </h2>
+                          </div>
+                          <span className="rounded-full border border-[#cfe4d8] bg-[#edf8f1] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#237348]">
+                            Current Stage
+                          </span>
                         </div>
-                        <span className="rounded-full border border-[#cfe4d8] bg-[#edf8f1] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#237348]">
-                          Current Stage
-                        </span>
-                      </div>
 
-                      <div className="overflow-x-auto px-5 py-7 sm:px-8" data-testid="seller-journey-rail">
-                        <ol
-                          className="grid min-w-[980px] gap-0"
-                          style={{ gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))` }}
-                        >
-                          {selectedSellerJourney.steps.map((step, index) => {
-                            const isCurrent = step.state === 'current'
-                            const isCompleted = step.state === 'completed'
-                            const dotClass = isCurrent
-                              ? 'border-[#0f8f59] bg-white text-[#0f7b4e] shadow-[0_0_0_7px_rgba(15,143,89,0.12)]'
-                              : isCompleted
-                                ? 'border-[#0f8f59] bg-[#0f8f59] text-white'
-                                : 'border-[#cad7e5] bg-white text-[#8fa1b4]'
-                            const lineClass = isCompleted || isCurrent ? 'bg-[#9bd6b7]' : 'bg-[#dce6f1]'
-                            return (
-                              <li key={step.key} className="relative px-2">
-                                {index < selectedSellerJourney.steps.length - 1 ? (
-                                  <span className={`absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-[18px] h-0.5 ${lineClass}`} aria-hidden="true" />
-                                ) : null}
-                                <div className={`relative flex min-h-[116px] flex-col items-center text-center ${isCurrent ? 'rounded-[18px] border border-[#cfe8d8] bg-[#f4fbf7] px-3 py-3 shadow-[0_10px_22px_rgba(31,54,78,0.06)]' : 'px-2 py-3'}`}>
-                                  <span className={`z-10 grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${dotClass}`}>
-                                    {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
-                                  </span>
-                                  <p className="mt-3 max-w-[150px] text-sm font-semibold leading-5 text-[#203a54]">{step.label}</p>
-                                  <p className="mt-1 max-w-[150px] truncate text-xs font-semibold text-[#6d839b]" title={step.status || (isCurrent ? 'Current Stage' : isCompleted ? 'Complete' : 'Upcoming')}>
-                                    {step.status || (isCurrent ? 'Current Stage' : isCompleted ? 'Complete' : 'Upcoming')}
-                                  </p>
-                                  {isCurrent ? (
-                                    <span className="mt-2 rounded-full bg-[#dff4e8] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.1em] text-[#0f7b4e]">Live</span>
+                        <div className="overflow-x-auto px-5 py-7 sm:px-8" data-testid="kingstons-seller-process-rail">
+                          <ol
+                            className="grid min-w-[980px] gap-0"
+                            style={{ gridTemplateColumns: `repeat(${Math.max(selectedKingstonsSellerProcessRailModel.stages.length, 1)}, minmax(150px, 1fr))` }}
+                          >
+                            {selectedKingstonsSellerProcessRailModel.stages.map((stage, index) => {
+                              const isCurrent = stage.state === 'current'
+                              const isCompleted = stage.state === 'complete'
+                              const dotClass = isCurrent
+                                ? 'border-[#0f8f59] bg-white text-[#0f7b4e] shadow-[0_0_0_7px_rgba(15,143,89,0.12)]'
+                                : isCompleted
+                                  ? 'border-[#0f8f59] bg-[#0f8f59] text-white'
+                                  : 'border-[#cad7e5] bg-white text-[#8fa1b4]'
+                              const lineClass = isCompleted || isCurrent ? 'bg-[#9bd6b7]' : 'bg-[#dce6f1]'
+                              return (
+                                <li key={stage.key} className="relative px-2">
+                                  {index < selectedKingstonsSellerProcessRailModel.stages.length - 1 ? (
+                                    <span className={`absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-[18px] h-0.5 ${lineClass}`} aria-hidden="true" />
                                   ) : null}
-                                </div>
-                              </li>
-                            )
-                          })}
-                        </ol>
-                      </div>
-                    </section>
+                                  <div className={`relative flex min-h-[130px] flex-col items-center text-center ${isCurrent ? 'rounded-[18px] border border-[#cfe8d8] bg-[#f4fbf7] px-3 py-3 shadow-[0_10px_22px_rgba(31,54,78,0.06)]' : 'px-2 py-3'}`}>
+                                    <span className={`z-10 grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${dotClass}`}>
+                                      {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                                    </span>
+                                    <p className="mt-3 max-w-[160px] text-sm font-semibold leading-5 text-[#203a54]">{stage.label}</p>
+                                    <p className="mt-1 max-w-[160px] truncate text-xs font-semibold text-[#6d839b]" title={isCurrent ? 'Current Stage' : isCompleted ? 'Complete' : 'Upcoming'}>
+                                      {isCurrent ? 'Current Stage' : isCompleted ? 'Complete' : 'Upcoming'}
+                                    </p>
+                                    {isCurrent ? (
+                                      <span className="mt-2 rounded-full bg-[#dff4e8] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.1em] text-[#0f7b4e]">Live</span>
+                                    ) : null}
+                                    {stage.actionEnabled ? (
+                                      <button
+                                        type="button"
+                                        className="mt-3 rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-[0.68rem] font-bold text-[#315b7a] transition hover:border-[#b9cade] hover:bg-[#fbfdff]"
+                                        onClick={() => handleSellerJourneyAction(stage.actionKey)}
+                                      >
+                                        Open
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </li>
+                              )
+                            })}
+                          </ol>
+                        </div>
+                      </section>
+                    ) : (
+                      <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]" data-testid="seller-journey-overview">
+                        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-6 py-5 sm:px-8">
+                          <div>
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Seller Journey</p>
+                            <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">
+                              {selectedSellerJourney.status?.summary || selectedSellerJourney.stage?.label || 'Acquisition Timeline'}
+                            </h2>
+                          </div>
+                          <span className="rounded-full border border-[#cfe4d8] bg-[#edf8f1] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#237348]">
+                            Current Stage
+                          </span>
+                        </div>
+
+                        <div className="overflow-x-auto px-5 py-7 sm:px-8" data-testid="seller-journey-rail">
+                          <ol
+                            className="grid min-w-[980px] gap-0"
+                            style={{ gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))` }}
+                          >
+                            {selectedSellerJourney.steps.map((step, index) => {
+                              const isCurrent = step.state === 'current'
+                              const isCompleted = step.state === 'completed'
+                              const dotClass = isCurrent
+                                ? 'border-[#0f8f59] bg-white text-[#0f7b4e] shadow-[0_0_0_7px_rgba(15,143,89,0.12)]'
+                                : isCompleted
+                                  ? 'border-[#0f8f59] bg-[#0f8f59] text-white'
+                                  : 'border-[#cad7e5] bg-white text-[#8fa1b4]'
+                              const lineClass = isCompleted || isCurrent ? 'bg-[#9bd6b7]' : 'bg-[#dce6f1]'
+                              return (
+                                <li key={step.key} className="relative px-2">
+                                  {index < selectedSellerJourney.steps.length - 1 ? (
+                                    <span className={`absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-[18px] h-0.5 ${lineClass}`} aria-hidden="true" />
+                                  ) : null}
+                                  <div className={`relative flex min-h-[116px] flex-col items-center text-center ${isCurrent ? 'rounded-[18px] border border-[#cfe8d8] bg-[#f4fbf7] px-3 py-3 shadow-[0_10px_22px_rgba(31,54,78,0.06)]' : 'px-2 py-3'}`}>
+                                    <span className={`z-10 grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${dotClass}`}>
+                                      {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                                    </span>
+                                    <p className="mt-3 max-w-[150px] text-sm font-semibold leading-5 text-[#203a54]">{step.label}</p>
+                                    <p className="mt-1 max-w-[150px] truncate text-xs font-semibold text-[#6d839b]" title={step.status || (isCurrent ? 'Current Stage' : isCompleted ? 'Complete' : 'Upcoming')}>
+                                      {step.status || (isCurrent ? 'Current Stage' : isCompleted ? 'Complete' : 'Upcoming')}
+                                    </p>
+                                    {isCurrent ? (
+                                      <span className="mt-2 rounded-full bg-[#dff4e8] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.1em] text-[#0f7b4e]">Live</span>
+                                    ) : null}
+                                  </div>
+                                </li>
+                              )
+                            })}
+                          </ol>
+                        </div>
+                      </section>
+                    )}
 
                     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,0.8fr)] 2xl:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.8fr)]">
                       <div className="flex min-h-[430px] min-w-0 flex-col gap-4 self-stretch">

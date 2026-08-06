@@ -10,6 +10,7 @@ import { buildKingstonsSellerProcessRailModel } from '../src/services/sellerProc
 
 const appRoot = resolve(import.meta.dirname, '..')
 const pageSource = readFileSync(resolve(appRoot, 'src/pages/AgentLeadsPage.jsx'), 'utf8')
+const agencyPipelineSource = readFileSync(resolve(appRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
 const phase3Doc = readFileSync(resolve(appRoot, 'docs/seller-process-phase3-kingston-rail-ui.md'), 'utf8')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 
@@ -36,8 +37,22 @@ function sliceFunction(source, functionName, nextFunctionName) {
 {
   assert.match(pageSource, /import \{ buildKingstonsSellerProcessRailModel \} from '..\/services\/sellerProcessRailModelService'/)
   assert.match(pageSource, /const kingstonsSellerProcessRailModel = useMemo\(\(\) => buildKingstonsSellerProcessRailModel\(\{/)
-  assert.match(pageSource, /sellerProcessProfile: sellerProcessProfileResolution\.profile/)
+  assert.match(pageSource, /sellerProcessProfile: activeSellerProcessProfileResolution\.profile/)
   assert.match(pageSource, /kingstonsSellerProcessRailModel=\{kingstonsSellerProcessRailModel\}/)
+}
+
+{
+  assert.match(agencyPipelineSource, /import \{ resolveSellerProcessProfileForOrganisation \} from '..\/..\/services\/sellerProcessProfileService'/)
+  assert.match(agencyPipelineSource, /import \{ buildKingstonsSellerProcessRailModel \} from '..\/..\/services\/sellerProcessRailModelService'/)
+  assert.match(agencyPipelineSource, /const \[organisationSettings, setOrganisationSettings\] = useState\(null\)/)
+  assert.match(agencyPipelineSource, /setOrganisationSettings\(context\?\.organisationSettings \|\| null\)/)
+  assert.match(agencyPipelineSource, /const selectedSellerProcessProfileResolution = useMemo\(\(\) => resolveSellerProcessProfileForOrganisation\(\{/)
+  assert.match(agencyPipelineSource, /const selectedKingstonsSellerProcessRailModel = useMemo\(\(\) => buildKingstonsSellerProcessRailModel\(\{/)
+  assert.match(agencyPipelineSource, /selectedKingstonsSellerProcessRailModel\?\.visible \?/)
+  assert.match(agencyPipelineSource, /Kingstons Seller Process/)
+  assert.match(agencyPipelineSource, /data-testid="kingstons-seller-process-rail"/)
+  assert.match(agencyPipelineSource, /handleScheduleSellerAppointment\('seller_valuation'\)/)
+  assert.match(agencyPipelineSource, /handleScheduleSellerAppointment\('valuation_presentation'\)/)
 }
 
 {
