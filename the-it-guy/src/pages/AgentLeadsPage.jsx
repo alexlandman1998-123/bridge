@@ -184,6 +184,7 @@ import { prepareBuyerOnboardingNotification } from '../services/buyerOnboardingN
 import { listLeadCommunicationTemplates } from '../services/leadCommunicationTemplateService'
 import { buildLeadWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
 import { resolveSellerProcessProfile } from '../services/sellerProcessProfileService'
+import { buildKingstonsSellerProcessRailModel } from '../services/sellerProcessRailModelService'
 import { buildSellerProcessWorkspacePanelModel } from '../services/sellerProcessWorkspacePanelService'
 import { buildSellerJourney } from '../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../services/sellerReadinessService'
@@ -17326,6 +17327,55 @@ function SellerJourneyRail({ journey = null, row = {}, listing = null }) {
   )
 }
 
+function getKingstonsRailStageStatusLabel(stage = {}) {
+  if (stage.deferred) return 'Deferred'
+  if (stage.complete) return 'Complete'
+  if (stage.current) return 'Current'
+  return 'Upcoming'
+}
+
+function KingstonsSellerProcessRail({ model = null }) {
+  if (!model?.visible) return null
+  const stages = Array.isArray(model.stages) ? model.stages : []
+  return (
+    <section id="seller-journey" className={`${panelClass} scroll-mt-6 flex h-full min-h-[220px] flex-col p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)]`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Kingstons Seller Process</h2>
+            <StatusPill tone="blue">Kingstons</StatusPill>
+          </div>
+          <p className="mt-2 text-xl font-semibold tracking-[-0.035em] text-slate-950">{model.currentStageLabel || 'First Contact'}</p>
+        </div>
+        <StatusPill tone="slate">{model.percent || 0}% Complete</StatusPill>
+      </div>
+      <ol
+        className="mt-7 grid min-w-0 grid-cols-2 gap-x-4 gap-y-6 px-1 sm:grid-cols-3 sm:px-2 lg:grid-cols-4 lg:px-3 xl:grid-cols-6 xl:gap-x-3"
+        aria-label="Kingstons seller process rail"
+      >
+        {stages.map((stage, index) => {
+          const isLast = index === stages.length - 1
+          const statusLabel = getKingstonsRailStageStatusLabel(stage)
+          return (
+            <li key={stage.key} className="relative min-w-0">
+              {!isLast ? <span className={`absolute left-[calc(50%+1.5rem)] top-5 hidden h-px w-[calc(100%-3rem)] xl:block ${stage.complete ? 'bg-emerald-300' : 'bg-slate-200'}`} /> : null}
+              <div className="relative flex min-h-[124px] min-w-0 flex-col items-center gap-3 text-center">
+                <span className={`z-10 flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold shadow-sm ${stage.current ? 'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-100' : stage.complete ? 'border-emerald-600 bg-emerald-600 text-white' : stage.deferred ? 'border-amber-200 bg-amber-50 text-amber-600' : 'border-slate-200 bg-white text-slate-300'}`}>
+                  {stage.complete || stage.current ? <CheckCircle2 size={16} /> : stage.deferred ? <Clock3 size={15} /> : <FileText size={14} />}
+                </span>
+                <div className="min-w-0 max-w-full">
+                  <p className={`mx-auto min-h-[2.5rem] max-w-[11rem] break-words text-sm font-semibold leading-5 xl:max-w-[8.5rem] ${stage.current ? 'text-blue-700' : stage.complete ? 'text-slate-950' : stage.deferred ? 'text-amber-700' : 'text-slate-500'}`}>{stage.label}</p>
+                  <p className="mt-1 mx-auto min-h-[2rem] max-w-[11rem] break-words text-xs font-semibold leading-4 text-slate-500 xl:max-w-[8.5rem]">{statusLabel}</p>
+                </div>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </section>
+  )
+}
+
 function ListingReadinessCircle({ percent = 0 }) {
   const safePercent = Math.max(0, Math.min(100, Number(percent) || 0))
   return (
@@ -22425,6 +22475,7 @@ function SellerLeadWorkspaceLayout({
   sellerJourney,
   sellerReadiness,
   sellerProcessPanelModel = null,
+  kingstonsSellerProcessRailModel = null,
   linkedSellerListing,
   mandatePacketStatus = null,
   sellerOnboardingStatus,
@@ -22576,7 +22627,9 @@ function SellerLeadWorkspaceLayout({
         onAction={handleAcquisitionAction}
       />
       <SellerProcessShadowPanel model={sellerProcessPanelModel} onAction={handleAcquisitionAction} />
-      <SellerJourneyRail journey={sellerJourney} row={row} listing={linkedSellerListing} />
+      {kingstonsSellerProcessRailModel?.visible
+        ? <KingstonsSellerProcessRail model={kingstonsSellerProcessRailModel} />
+        : <SellerJourneyRail journey={sellerJourney} row={row} listing={linkedSellerListing} />}
       <SellerWorkspaceTabs activeTab={activeWorkspaceTab} onTabChange={setActiveWorkspaceTab} />
       <SellerTabContent
         activeTab={activeWorkspaceTab}
@@ -22867,6 +22920,25 @@ function AgentLeadWorkspace() {
     })
     return chooseRichestSellerListing(matches) || chooseRichestSellerListing(row.listings) || (leadListingId ? { id: leadListingId } : null)
   }, [data?.listings, row])
+  const kingstonsSellerProcessRailModel = useMemo(() => buildKingstonsSellerProcessRailModel({
+    sellerProcessProfile: sellerProcessProfileResolution.profile,
+    organisationSettings,
+    lead: row || {},
+    listing: linkedSellerListing || {},
+    appointments: [
+      ...(Array.isArray(data?.appointments) ? data.appointments : []),
+      ...(Array.isArray(row?.appointments) ? row.appointments : []),
+    ],
+    documents: [
+      ...(Array.isArray(data?.documents) ? data.documents : []),
+      ...(Array.isArray(row?.documents) ? row.documents : []),
+      ...(Array.isArray(row?.documentPackets) ? row.documentPackets : []),
+    ],
+    activities: [
+      ...(Array.isArray(data?.timeline) ? data.timeline : []),
+      ...(Array.isArray(row?.communicationTimeline) ? row.communicationTimeline : []),
+    ],
+  }), [data?.appointments, data?.documents, data?.timeline, linkedSellerListing, organisationSettings, row, sellerProcessProfileResolution.profile])
   const sellerMandatePacket = useMemo(() => {
     if (!row || !isSellerLeadWorkspace) return null
     const mandatePacketId = normalizeText(row.mandatePacketId || row.mandate_packet_id || linkedSellerListing?.mandatePacketId || linkedSellerListing?.mandate_packet_id)
@@ -23948,6 +24020,7 @@ function AgentLeadWorkspace() {
               sellerJourney={sellerJourney}
               sellerReadiness={sellerReadiness}
               sellerProcessPanelModel={sellerProcessPanelModel}
+              kingstonsSellerProcessRailModel={kingstonsSellerProcessRailModel}
               linkedSellerListing={linkedSellerListing}
               mandatePacketStatus={sellerMandatePacketStatus}
               sellerOnboardingStatus={sellerOnboardingStatus}

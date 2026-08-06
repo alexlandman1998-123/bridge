@@ -14,7 +14,6 @@ import {
 const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 const railSource = readFileSync(resolve(appRoot, 'src/services/sellerProcessRailModelService.js'), 'utf8')
-const pageSource = readFileSync(resolve(appRoot, 'src/pages/AgentLeadsPage.jsx'), 'utf8')
 const phase2Doc = readFileSync(resolve(appRoot, 'docs/seller-process-phase2-definition-model.md'), 'utf8')
 
 const railStageKeys = [
@@ -134,7 +133,6 @@ const railLabels = [
 {
   assert.match(railSource, /KINGSTONS_SELLER_PROCESS_PROFILE/)
   assert.equal(railSource.includes('Kingstons Real Estate'), false)
-  assert.equal(pageSource.includes('buildKingstonsSellerProcessRailModel'), false)
   assert.match(phase2Doc, /Kingston Rail Model/)
   assert.equal(
     packageJson.scripts?.['test:seller-process-rail-model-phase2'],
