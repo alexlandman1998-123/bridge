@@ -16,6 +16,7 @@ import { buildRequirementSummary, listLeadRequirements } from './leadRequirement
 import { getSuggestionsForLead } from './leadSuggestionService'
 import { getPrivateListing } from './privateListingService'
 import { listOrganisationUsers } from '../lib/settingsApi'
+import { attachSellerProcessShadowIntegration } from './sellerProcessWorkspaceIntegrationService.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const LEAD_WORKSPACE_CAN_VIEW_ALL_ROLES = new Set(['owner', 'principal', 'admin', 'admin_staff'])
@@ -1144,7 +1145,15 @@ export async function listAgentLeadWorkspaceRows({ organisationId = '', actor = 
   }
 }
 
-export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = '', actor = null } = {}) {
+export async function fetchAgentLeadWorkspace({
+  organisationId = '',
+  leadId = '',
+  actor = null,
+  includeSellerProcessShadowIntegration = false,
+  includeSellerProcessShadow = false,
+  sellerProcessProfile = '',
+  organisationSettings = null,
+} = {}) {
   const workspace = await fetchAgencyCrmLeadWorkspace(organisationId, leadId)
   const lead = workspace.leads[0] || null
   if (!lead) {
@@ -1313,7 +1322,7 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
       assignmentHistory: [],
     }
   }
-  return {
+  const result = {
     ...workspace,
     row: rows[0] || null,
     appointments,
@@ -1332,4 +1341,22 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     timeline: rows[0]?.communicationTimeline || [],
     assignmentHistory,
   }
+  return attachSellerProcessShadowIntegration(
+    result,
+    {
+      lead,
+      row: rows[0] || null,
+      contact,
+      appointments,
+      listings: workspaceListings,
+      documentPackets: normalizedDocumentPackets,
+      leadActivities: workspace.leadActivities,
+      organisationSettings,
+      sellerProcessProfile,
+    },
+    {
+      includeSellerProcessShadowIntegration,
+      includeSellerProcessShadow,
+    },
+  )
 }

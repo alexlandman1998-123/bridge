@@ -77,6 +77,9 @@ const DEFAULT_ORGANISATION_SETTINGS = {
     organisation_structure_type: 'independent',
     structureType: 'independent',
   },
+  sellerProcess: {
+    profile: 'default_residential',
+  },
   preferredPartners: [],
   partnerRoutingRules: [],
   commissionStructures: [],
