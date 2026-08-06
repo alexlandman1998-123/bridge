@@ -564,6 +564,7 @@
     "test:seller-process-workspace-gate-phase6": "node scripts/seller-process-workspace-gate-phase6.test.mjs",
     "test:seller-process-evidence-mapping-phase6": "node scripts/seller-process-evidence-mapping-phase6.test.mjs",
     "test:seller-process-containment-phase7": "node scripts/seller-process-containment-phase7.test.mjs",
+    "test:seller-process-kingston-org-configuration-phase8": "node scripts/seller-process-kingston-org-configuration-phase8.test.mjs",
     "test:seller-process-panel-model-phase7": "node scripts/seller-process-panel-model-phase7.test.mjs",
     "test:seller-process-workspace-panel-phase8": "node scripts/seller-process-workspace-panel-phase8.test.mjs",
     "test:seller-process-panel-action-routing-phase9": "node scripts/seller-process-panel-action-routing-phase9.test.mjs",
