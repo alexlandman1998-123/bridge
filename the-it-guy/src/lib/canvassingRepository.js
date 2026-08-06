@@ -3,6 +3,9 @@ import { isSupabaseConfigured, supabase } from './supabaseClient'
 
 const STORAGE_PREFIX = 'itg:agency-canvassing:v1'
 export const CANVASSING_UPDATED_EVENT = 'itg:agency-canvassing-updated'
+const CANVASSING_WORKSPACE_RPC = 'bridge_list_canvassing_workspace'
+const CANVASSING_WORKSPACE_PROSPECT_LIMIT = 5000
+const CANVASSING_WORKSPACE_ACTIVITY_LIMIT = 5000
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -32,6 +35,17 @@ function isMissingCanvassingSchemaError(error) {
     message.includes('canvassing_prospects') ||
     message.includes('canvassing_activities') ||
     message.includes('schema cache')
+  )
+}
+
+function isMissingCanvassingWorkspaceRpcError(error) {
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeText(error?.message || error?.details).toLowerCase()
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    message.includes(CANVASSING_WORKSPACE_RPC) ||
+    message.includes('could not find the function')
   )
 }
 
@@ -434,6 +448,67 @@ export async function listCanvassingWorkspace(organisationId, options = {}) {
   const orgId = normalizeText(organisationId)
   if (!orgId) return { prospects: [], activities: [], persistence: 'none' }
   const includeLocalFallback = options?.includeLocalFallback !== false
+  const prospectLimit = Number(options?.prospectLimit || CANVASSING_WORKSPACE_PROSPECT_LIMIT)
+  const activityLimit = Number(options?.activityLimit || CANVASSING_WORKSPACE_ACTIVITY_LIMIT)
+
+  async function loadWorkspaceViaRpc(client) {
+    const result = await client.rpc(CANVASSING_WORKSPACE_RPC, {
+      p_organisation_id: orgId,
+      p_prospect_limit: Number.isFinite(prospectLimit) ? prospectLimit : CANVASSING_WORKSPACE_PROSPECT_LIMIT,
+      p_activity_limit: Number.isFinite(activityLimit) ? activityLimit : CANVASSING_WORKSPACE_ACTIVITY_LIMIT,
+    })
+    if (result.error) throw result.error
+    const payload = result.data && typeof result.data === 'object' ? result.data : {}
+    const rawProspects = Array.isArray(payload.prospects) ? payload.prospects : []
+    const rawActivities = Array.isArray(payload.activities) ? payload.activities : []
+    return {
+      prospects: rawProspects.map(mapProspectRow),
+      activities: rawActivities.map(mapActivityRow),
+      persistence: normalizeText(payload.persistence) || 'supabase',
+      pendingLocalChanges: false,
+      syncedAt: normalizeText(payload.syncedAt || payload.synced_at) || new Date().toISOString(),
+      truncated: payload.truncated === true,
+      _rawProspectRows: rawProspects,
+      _rawActivityRows: rawActivities,
+    }
+  }
+
+  async function loadWorkspaceDirect(client) {
+    const [prospectsResult, activitiesResult] = await Promise.all([
+      client
+        .from('canvassing_prospects')
+        .select('*')
+        .eq('organisation_id', orgId)
+        .order('created_at', { ascending: false })
+        .limit(Number.isFinite(prospectLimit) ? prospectLimit : CANVASSING_WORKSPACE_PROSPECT_LIMIT),
+      client
+        .from('canvassing_activities')
+        .select('*')
+        .eq('organisation_id', orgId)
+        .order('activity_date', { ascending: false })
+        .limit(Number.isFinite(activityLimit) ? activityLimit : CANVASSING_WORKSPACE_ACTIVITY_LIMIT),
+    ])
+    if (prospectsResult.error) throw prospectsResult.error
+    if (activitiesResult.error) throw activitiesResult.error
+
+    const prospects = (prospectsResult.data || []).filter((row) => !isDemoCanvassingRow(row))
+    const prospectIds = new Set(prospects.map((row) => normalizeText(row?.id)).filter(Boolean))
+    const activities = (activitiesResult.data || []).filter((row) => {
+      if (isDemoCanvassingRow(row)) return false
+      const prospectId = normalizeText(row?.prospect_id)
+      return prospectIds.has(prospectId)
+    })
+
+    return {
+      prospects: prospects.map(mapProspectRow),
+      activities: activities.map(mapActivityRow),
+      persistence: 'supabase',
+      pendingLocalChanges: false,
+      syncedAt: new Date().toISOString(),
+      _rawProspectRows: prospects,
+      _rawActivityRows: activities,
+    }
+  }
 
   if (!includeLocalFallback) {
     if (!isSupabaseConfigured || !supabase) {
@@ -441,58 +516,25 @@ export async function listCanvassingWorkspace(organisationId, options = {}) {
     }
 
     try {
-      const [prospectsResult, activitiesResult] = await Promise.all([
-        supabase
-          .from('canvassing_prospects')
-          .select('*')
-          .eq('organisation_id', orgId)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('canvassing_activities')
-          .select('*')
-          .eq('organisation_id', orgId)
-          .order('activity_date', { ascending: false }),
-      ])
-      if (prospectsResult.error) throw prospectsResult.error
-      if (activitiesResult.error) throw activitiesResult.error
-
-      const prospects = (prospectsResult.data || []).filter((row) => !isDemoCanvassingRow(row))
-      const prospectIds = new Set(prospects.map((row) => normalizeText(row?.id)).filter(Boolean))
-      const activities = (activitiesResult.data || []).filter((row) => {
-        if (isDemoCanvassingRow(row)) return false
-        const prospectId = normalizeText(row?.prospect_id)
-        return prospectIds.has(prospectId)
-      })
-
-      return {
-        prospects: prospects.map(mapProspectRow),
-        activities: activities.map(mapActivityRow),
-        persistence: 'supabase',
-      }
+      return await loadWorkspaceViaRpc(supabase)
     } catch (error) {
       if (isMissingCanvassingSchemaError(error)) {
         return { prospects: [], activities: [], persistence: 'none', schemaMissing: true }
       }
+      if (isMissingCanvassingWorkspaceRpcError(error)) return await loadWorkspaceDirect(supabase)
       throw error
     }
   }
 
   return withFallback(orgId, async (client) => {
     const fallbackStore = readCanvassingFallbackStore(orgId)
-    const [prospectsResult, activitiesResult] = await Promise.all([
-      client
-        .from('canvassing_prospects')
-        .select('*')
-        .eq('organisation_id', orgId)
-        .order('created_at', { ascending: false }),
-      client
-        .from('canvassing_activities')
-        .select('*')
-        .eq('organisation_id', orgId)
-        .order('activity_date', { ascending: false }),
-    ])
-    if (prospectsResult.error) throw prospectsResult.error
-    if (activitiesResult.error) throw activitiesResult.error
+    let remoteStore = null
+    try {
+      remoteStore = await loadWorkspaceViaRpc(client)
+    } catch (error) {
+      if (!isMissingCanvassingWorkspaceRpcError(error)) throw error
+      remoteStore = await loadWorkspaceDirect(client)
+    }
     const hasFallbackRows = (
       (Array.isArray(fallbackStore.prospects) && fallbackStore.prospects.length) ||
       (Array.isArray(fallbackStore.activities) && fallbackStore.activities.length)
@@ -502,18 +544,13 @@ export async function listCanvassingWorkspace(organisationId, options = {}) {
       hasFallbackRows &&
       !fallbackIsSyncedSnapshot
     ) {
-      const migrated = await migrateFallbackStoreToSupabase(client, orgId, fallbackStore, prospectsResult.data || [], activitiesResult.data || [])
+      const existingProspectRows = Array.isArray(remoteStore._rawProspectRows) ? remoteStore._rawProspectRows : []
+      const existingActivityRows = Array.isArray(remoteStore._rawActivityRows) ? remoteStore._rawActivityRows : []
+      const migrated = await migrateFallbackStoreToSupabase(client, orgId, fallbackStore, existingProspectRows, existingActivityRows)
       if (migrated) return migrated
     }
-    const store = {
-      prospects: (prospectsResult.data || []).map(mapProspectRow),
-      activities: (activitiesResult.data || []).map(mapActivityRow),
-      persistence: 'supabase',
-      pendingLocalChanges: false,
-      syncedAt: new Date().toISOString(),
-    }
-    writeCanvassingFallbackStore(orgId, store)
-    return store
+    writeCanvassingFallbackStore(orgId, remoteStore)
+    return remoteStore
   })
 }
 

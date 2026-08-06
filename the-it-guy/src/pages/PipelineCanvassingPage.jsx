@@ -393,6 +393,18 @@ function normalizeCanvassingDataStatus(store = {}) {
 
 function getCanvassingDataStatusMeta(status = CANVASSING_DATA_STATUS_DEFAULT) {
   const persistence = normalizeKey(status?.persistence || 'none')
+  if (status?.error) {
+    const isTimeout = normalizeKey(status.error).includes('statement timeout') || normalizeKey(status.error).includes('taking too long')
+    return {
+      key: isTimeout ? 'timeout' : 'error',
+      label: isTimeout ? 'Storage timeout' : 'Storage unavailable',
+      detail: isTimeout
+        ? 'Canvassing storage is connected, but the workspace query is taking too long. Try again shortly.'
+        : 'Canvassing storage could not be loaded right now.',
+      className: 'border-rose-200 bg-rose-50 text-rose-800',
+      Icon: Clock3,
+    }
+  }
   if (status?.schemaMissing || persistence === 'none') {
     return {
       key: 'not_configured',
@@ -1754,7 +1766,7 @@ function PipelineCanvassingPage() {
       } catch (contextError) {
         if (!active) return
         setCanvassingDataStatus(normalizeCanvassingDataStatus({
-          persistence: 'none',
+          persistence: 'error',
           error: contextError?.message || 'Unable to load canvassing workspace.',
         }))
         setError(contextError?.message || 'Unable to load canvassing workspace.')
