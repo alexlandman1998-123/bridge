@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -33,11 +33,9 @@ import {
   getAgencyPipelineSnapshot,
   checkAppointmentSchedulingIntegrityAsync,
   listAppointmentsAsync,
-  listAppointmentResourcesAsync,
   recoverAgencyPipelineStoreForOrganisation,
   resolveAgencyPipelineStorageScope,
   updateAppointmentAsync,
-  updateAppointmentParticipantRsvpAsync,
 } from '../../lib/agencyPipelineService'
 import {
   createAgencyCrmLeadActivity,
@@ -129,7 +127,6 @@ import { getAppointmentTypeLabel, getAppointmentTypeOptions } from '../../lib/ap
 import { readViewingRequests } from '../../lib/viewingWorkflow'
 import {
   applyAppointmentTemplate,
-  getAppointmentRequiredPrep,
   getAppointmentTemplateInstructions,
   getAppointmentTypeTemplate,
 } from '../../services/appointmentTemplateService'
@@ -4712,6 +4709,7 @@ const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
   appointmentType: '',
   customTypeLabel: '',
   title: '',
+  durationMinutes: 45,
   date: '',
   startTime: '',
   endTime: '',
@@ -4754,6 +4752,8 @@ const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
   },
 }
 
+const APPOINTMENT_DURATION_OPTIONS = [30, 60, 90]
+
 function parseTimeToMinutes(value) {
   const normalized = normalizeText(value)
   const match = normalized.match(/^(\d{1,2}):(\d{2})/)
@@ -4771,6 +4771,17 @@ function formatMinutesToTime(value) {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
 }
 
+function resolveAppointmentDurationMinutes(source = {}, template = null) {
+  const rawDuration =
+    source?.durationMinutes ??
+    source?.duration_minutes ??
+    source?.duration ??
+    template?.defaultDurationMinutes ??
+    45
+  const duration = Number(rawDuration)
+  return Number.isFinite(duration) && duration > 0 ? duration : Number(template?.defaultDurationMinutes || 45)
+}
+
 function buildDefaultAppointmentFormForType(type, seed = {}) {
   const hasExplicitType = Boolean(normalizeText(type || seed?.appointmentType))
   const template = getAppointmentTypeTemplate(hasExplicitType ? (type || seed?.appointmentType) : 'other')
@@ -4780,19 +4791,20 @@ function buildDefaultAppointmentFormForType(type, seed = {}) {
     appointmentType: hasExplicitType ? template.type : '',
   }
   const withTemplate = hasExplicitType ? applyAppointmentTemplate(template.type, mergedSeed) : mergedSeed
+  const durationMinutes = resolveAppointmentDurationMinutes(withTemplate, template)
 
   const startTime = normalizeText(withTemplate.startTime || withTemplate.start_time || mergedSeed.startTime)
-  const defaultDuration = Number(template.defaultDurationMinutes || 45)
   const computedEnd = (() => {
     const startMinutes = parseTimeToMinutes(startTime)
     if (!Number.isFinite(startMinutes)) return normalizeText(withTemplate.endTime || mergedSeed.endTime)
-    return formatMinutesToTime(startMinutes + defaultDuration)
+    return formatMinutesToTime(startMinutes + durationMinutes)
   })()
 
   return {
     ...mergedSeed,
     appointmentType: hasExplicitType ? template.type : '',
     title: normalizeText(withTemplate.title),
+    durationMinutes,
     endTime: normalizeText(withTemplate.endTime) || computedEnd,
     visibility: normalizeText(withTemplate.visibility || template.defaultVisibility) || template.defaultVisibility,
     linkedWorkflow: normalizeText(withTemplate.linkedWorkflow || template.linkedWorkflow),
@@ -6243,7 +6255,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [canonicalOfferActionId, setCanonicalOfferActionId] = useState('')
   const [canonicalOfferNotesById, setCanonicalOfferNotesById] = useState({})
   const [sellerReviewDeliveryModeByOfferId, setSellerReviewDeliveryModeByOfferId] = useState({})
-  const [appointmentResources, setAppointmentResources] = useState([])
   const [appointmentListingOptions, setAppointmentListingOptions] = useState([])
   const [appointmentSchedulingIntegrity, setAppointmentSchedulingIntegrity] = useState(null)
   const [appointmentSchedulingLoading, setAppointmentSchedulingLoading] = useState(false)
@@ -6412,6 +6423,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       appointmentId: selectedAppointmentId || null,
       title: normalizeText(appointmentForm.title) || getAppointmentTypeLabel(appointmentForm.appointmentType),
       appointmentType: appointmentForm.appointmentType,
+      durationMinutes: resolveAppointmentDurationMinutes(appointmentForm, getAppointmentTypeTemplate(appointmentForm.appointmentType || 'other')),
       date: appointmentForm.date,
       startTime: appointmentForm.startTime,
       endTime: appointmentForm.endTime,
@@ -10996,25 +11008,60 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [appointmentForm.appointmentType],
   )
 
-  const appointmentPrepChecklist = useMemo(() => {
-    const statusByKey = {}
-    const uploadedKeys = []
-    for (const requirement of Array.isArray(appointmentForm.requiredDocuments) ? appointmentForm.requiredDocuments : []) {
-      const key = normalizeText(requirement?.key || requirement)
-      if (!key) continue
-      const normalizedKey = key.toLowerCase()
-      const status = normalizeText(requirement?.status).toLowerCase()
-      if (status) statusByKey[normalizedKey] = status
-      if (requirement?.completed === true || ['uploaded', 'approved', 'completed', 'under_review'].includes(status)) {
-        uploadedKeys.push(normalizedKey)
-      }
+  const appointmentDurationMinutes = useMemo(
+    () => resolveAppointmentDurationMinutes(appointmentForm, selectedAppointmentTemplate),
+    [appointmentForm, selectedAppointmentTemplate],
+  )
+
+  const appointmentSchedulerVerb = useMemo(() => {
+    const templateLabel = normalizeText(selectedAppointmentTemplate.label).toLowerCase()
+    const appointmentType = normalizeText(appointmentForm.appointmentType).toLowerCase()
+    if (selectedLeadIsSeller || appointmentType.includes('valuation') || templateLabel.includes('valuation')) return 'valuation'
+    if (appointmentType.includes('viewing') || templateLabel.includes('viewing')) return 'viewing'
+    if (appointmentType.includes('follow') || templateLabel.includes('follow')) return 'follow-up'
+    if (appointmentType.includes('consult') || templateLabel.includes('consult')) return 'consultation'
+    return normalizeText(selectedAppointmentTemplate.label).toLowerCase() || 'appointment'
+  }, [appointmentForm.appointmentType, selectedAppointmentTemplate.label, selectedLeadIsSeller])
+
+  const appointmentSchedulerTitle = useMemo(() => {
+    if (selectedAppointmentId) return 'Appointment Details'
+    if (!normalizeText(appointmentForm.appointmentType)) return 'Create Appointment'
+    return `Schedule ${appointmentSchedulerVerb}`
+  }, [appointmentForm.appointmentType, appointmentSchedulerVerb, selectedAppointmentId])
+
+  const appointmentSchedulerSubtitle = useMemo(() => {
+    if (selectedAppointmentId) {
+      return selectedAppointment?.appointmentTypeLabel || selectedAppointment?.title || 'Update appointment details'
     }
-    const transactionContext = {
-      requirementStatusByKey: statusByKey,
-      uploadedRequirementKeys: uploadedKeys,
+    if (selectedLead) {
+      return `${selectedLeadDisplayName || selectedLeadContactName || 'Lead'} · ${selectedLeadIsSeller ? 'Seller Lead' : 'Lead'}`
     }
-    return getAppointmentRequiredPrep(appointmentForm.appointmentType || 'other', transactionContext)
-  }, [appointmentForm.appointmentType, appointmentForm.requiredDocuments])
+    return selectedAppointmentTemplate.label || 'Quickly schedule an appointment.'
+  }, [selectedAppointment, selectedAppointmentId, selectedAppointmentTemplate.label, selectedLead, selectedLeadContactName, selectedLeadDisplayName, selectedLeadIsSeller])
+
+  const appointmentSchedulerLocation = useMemo(() => {
+    if (normalizeText(appointmentForm.locationType) === 'video_call') {
+      return normalizeText(appointmentForm.meetingUrl) || normalizeText(appointmentForm.location)
+    }
+    return normalizeText(appointmentForm.location) || normalizeText(appointmentForm.meetingUrl)
+  }, [appointmentForm.location, appointmentForm.locationType, appointmentForm.meetingUrl])
+
+  const appointmentVisibleParticipants = useMemo(() => {
+    const rows = []
+    const seen = new Set()
+    const addParticipant = (participant, source, index) => {
+      const role = normalizeText(participant?.participantRole || participant?.role).toLowerCase()
+      if (!role || role === 'agent') return
+      const key = buildParticipantIdentityKey(participant) || `${source}:${index}`
+      if (seen.has(key)) return
+      seen.add(key)
+      rows.push({ ...participant, key, source, sourceIndex: index })
+    }
+
+    selectedSuggestedAppointmentParticipants.forEach((participant, index) => addParticipant(participant, 'suggested', index))
+    ;(appointmentForm.participants || []).forEach((participant, index) => addParticipant(participant, 'manual', index))
+    return rows
+  }, [appointmentForm.participants, selectedSuggestedAppointmentParticipants])
 
   const appointmentLinkOptions = useMemo(() => {
     const options = new Map()
@@ -11367,31 +11414,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   )
 
   const appointmentHasHardConflicts = appointmentSchedulingIntegrity?.hasHardConflicts === true
-  const appointmentHasSoftConflicts = appointmentSchedulingIntegrity?.hasSoftConflicts === true
   const appointmentCanSave = !appointmentSchedulingLoading && !appointmentHasHardConflicts
-
-  useEffect(() => {
-    if (!organisationId) {
-      setAppointmentResources([])
-      return
-    }
-    let isCancelled = false
-    void (async () => {
-      try {
-        const resources = await listAppointmentResourcesAsync(organisationId, { includeInactive: false })
-        if (!isCancelled) {
-          setAppointmentResources(Array.isArray(resources) ? resources : [])
-        }
-      } catch {
-        if (!isCancelled) {
-          setAppointmentResources([])
-        }
-      }
-    })()
-    return () => {
-      isCancelled = true
-    }
-  }, [organisationId])
 
   useEffect(() => {
     if (!appointmentModalOpen) {
@@ -13263,13 +13286,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setAppointmentForm((previous) => {
       const template = getAppointmentTypeTemplate(previous.appointmentType || 'other')
       const startMinutes = parseTimeToMinutes(nextStartTime)
-      const duration = Number(template.defaultDurationMinutes || 45)
+      const duration = resolveAppointmentDurationMinutes(previous, template)
       return {
         ...previous,
         startTime: nextStartTime,
         endTime: Number.isFinite(startMinutes) ? formatMinutesToTime(startMinutes + duration) : previous.endTime,
       }
     })
+  }
+
+  function handleAppointmentDurationChange(nextDurationMinutes) {
+    const durationMinutes = Math.max(15, Number(nextDurationMinutes) || 45)
+    setAppointmentForm((previous) => {
+      const startMinutes = parseTimeToMinutes(previous.startTime)
+      return {
+        ...previous,
+        durationMinutes,
+        endTime: Number.isFinite(startMinutes) ? formatMinutesToTime(startMinutes + durationMinutes) : previous.endTime,
+      }
+    })
+  }
+
+  function handleAppointmentLocationChange(nextValue) {
+    const value = normalizeText(nextValue)
+    const looksLikeLink = /^(https?:\/\/|www\.)/i.test(value) || /(meet\.google|zoom\.us|teams\.microsoft|microsoft\.com\/en-us\/microsoft-teams\/join)/i.test(value)
+    setAppointmentForm((previous) => ({
+      ...previous,
+      locationType: looksLikeLink ? 'video_call' : 'physical_address',
+      location: looksLikeLink ? '' : value,
+      meetingUrl: looksLikeLink ? value : '',
+    }))
   }
 
   function handleAppointmentListingChange(nextListingId) {
@@ -13282,52 +13328,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       relatedEntityId: listingId && ['none', 'listing', ''].includes(normalizeText(previous.relatedEntityType)) ? listingId : previous.relatedEntityId,
       location: normalizeText(previous.location) || normalizeText(listing?.address || listing?.label) || previous.location,
     }))
-  }
-
-  function handleAppointmentLinkChange(nextValue) {
-    const option = appointmentLinkOptionByValue.get(normalizeText(nextValue))
-    if (!option) {
-      setAppointmentForm((previous) => ({
-        ...previous,
-        listingId: '',
-        transactionId: '',
-        contactId: '',
-        relatedEntityType: 'none',
-        relatedEntityId: '',
-      }))
-      setAppointmentDeselectedParticipantKeys([])
-      return
-    }
-
-    const listingId = normalizeText(option.entityType === 'listing' ? option.entityId : option.lead?.listingId || option.lead?.listing_id)
-    const selectedListing = listingId ? appointmentListingById.get(listingId) : null
-    const nextLocation = normalizeText(
-      selectedListing?.address ||
-      option.listing?.address ||
-      option.transaction?.propertyAddress ||
-      option.transaction?.property_address ||
-      option.lead?.propertyInterest ||
-      option.lead?.sellerPropertyAddress ||
-      option.primaryLabel,
-    )
-    const titleBase = option.entityType === 'listing' && nextLocation ? `Property Viewing - ${nextLocation}` : ''
-    setAppointmentForm((previous) => {
-      const previousTitle = normalizeText(previous.title)
-      const templateLabel = normalizeText(getAppointmentTypeLabel(previous.appointmentType))
-      const shouldRefreshTitle = !previousTitle || previousTitle === templateLabel || previousTitle === 'Property Viewing'
-      return {
-        ...previous,
-        listingId,
-        transactionId: option.entityType === 'transaction' ? option.entityId : normalizeText(option.transaction?.transactionId || option.transaction?.dealId || previous.transactionId),
-        contactId: normalizeText(option.contact?.contactId || option.lead?.contactId || previous.contactId),
-        relatedEntityType: option.entityType,
-        relatedEntityId: option.entityId,
-        recipientEmail: normalizeText(option.contact?.email || option.lead?.email || previous.recipientEmail),
-        location: normalizeText(previous.location) || nextLocation,
-        title: shouldRefreshTitle ? (titleBase || previousTitle || templateLabel || 'Appointment') : previous.title,
-      }
-    })
-    setAppointmentDeselectedParticipantKeys([])
   }
 
   function handleToggleSuggestedAppointmentParticipant(participant) {
@@ -13424,6 +13424,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const appointmentPayload = applyAppointmentTemplate(appointmentForm.appointmentType, {
       title: normalizeText(appointmentForm.title) || getAppointmentTypeLabel(appointmentForm.appointmentType),
       appointmentType: appointmentForm.appointmentType,
+      durationMinutes: resolveAppointmentDurationMinutes(appointmentForm, selectedAppointmentTemplate),
       customTypeLabel: normalizeText(appointmentForm.customTypeLabel),
       date: appointmentForm.date,
       startTime: appointmentForm.startTime,
@@ -13646,13 +13647,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setAppointmentDeselectedParticipantKeys([])
     setViewingPlanBookingContext({ leadId: '', propertyId: '' })
     if (appointment) {
-      setAppointmentForm(buildDefaultAppointmentFormForType(appointment.appointmentType || 'viewing', {
-        appointmentType: appointment.appointmentType || 'viewing',
-        customTypeLabel: appointment.customTypeLabel || '',
-        title: appointment.title || appointment.appointmentType || '',
-        date: appointment.date || (appointment.dateTime ? String(appointment.dateTime).slice(0, 10) : ''),
-        startTime: appointment.startTime || (appointment.dateTime ? String(appointment.dateTime).slice(11, 16) : ''),
-        endTime: appointment.endTime || '',
+        setAppointmentForm(buildDefaultAppointmentFormForType(appointment.appointmentType || 'viewing', {
+          appointmentType: appointment.appointmentType || 'viewing',
+          customTypeLabel: appointment.customTypeLabel || '',
+          title: appointment.title || appointment.appointmentType || '',
+          durationMinutes: resolveAppointmentDurationMinutes(appointment, getAppointmentTypeTemplate(appointment.appointmentType || 'other')),
+          date: appointment.date || (appointment.dateTime ? String(appointment.dateTime).slice(0, 10) : ''),
+          startTime: appointment.startTime || (appointment.dateTime ? String(appointment.dateTime).slice(11, 16) : ''),
+          endTime: appointment.endTime || '',
         timezone: appointment.timezone || 'Africa/Johannesburg',
         allDay: appointment.allDay === true,
         locationType: appointment.locationType || 'physical_address',
@@ -13726,6 +13728,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           : 'Property Viewing',
         date: getTomorrowIsoDate(),
         startTime: getCurrentTimeValue(),
+        durationMinutes: 45,
         contactId: normalizeText(selectedLead?.contactId) || '',
         listingId: normalizeText(selectedLead?.listingId) || '',
         relatedEntityType: selectedLead ? 'lead' : 'none',
@@ -13757,16 +13760,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.private_listing_id,
     )
     const sellerLeadId = normalizeText(selectedLead?.leadId || selectedLead?.lead_id)
+    const sellerLocation = normalizeText(
+      selectedLeadLinkedListing?.propertyAddress ||
+      selectedLeadLinkedListing?.formattedAddress ||
+      selectedLeadLinkedListing?.address ||
+      selectedLead?.sellerPropertyAddress ||
+      selectedLead?.propertyInterest ||
+      selectedLeadPropertyLabel ||
+      resolveAppointmentListingLabel(sellerListingId),
+    )
     setAppointmentForm((previous) => buildDefaultAppointmentFormForType('seller_consultation', {
       ...previous,
       appointmentType: 'seller_consultation',
       date: previous.date || getTomorrowIsoDate(),
       startTime: previous.startTime || getCurrentTimeValue(),
+      durationMinutes: previous.durationMinutes || 60,
       contactId: normalizeText(selectedLead?.contactId) || '',
       leadId: sellerLeadId || previous.leadId || '',
       listingId: sellerListingId || previous.listingId || '',
       relatedEntityType: 'lead',
       relatedEntityId: sellerLeadId || previous.relatedEntityId || '',
+      location: normalizeText(previous.location) || sellerLocation,
       visibility: 'client_visible',
     }))
     setAppointmentSchedulingIntegrity(null)
@@ -15352,6 +15366,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const updatePayload = applyAppointmentTemplate(appointmentForm.appointmentType, {
         title: normalizeText(appointmentForm.title) || getAppointmentTypeLabel(appointmentForm.appointmentType),
         appointmentType: appointmentForm.appointmentType,
+        durationMinutes: resolveAppointmentDurationMinutes(appointmentForm, selectedAppointmentTemplate),
         customTypeLabel: normalizeText(appointmentForm.customTypeLabel),
         date: appointmentForm.date,
         startTime: appointmentForm.startTime,
@@ -16265,51 +16280,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError(downloadError?.message || 'Unable to download this document PDF right now.')
     } finally {
       setOpeningSellerLeadDocumentId('')
-    }
-  }
-
-  async function handleUpdateParticipantRsvp(participant, nextStatus) {
-    if (!organisationId || !selectedAppointmentId || !participant?.participantId) return
-    try {
-      await updateAppointmentParticipantRsvpAsync(
-        organisationId,
-        selectedAppointmentId,
-        participant.participantId,
-        {
-          rsvpStatus: nextStatus,
-        },
-        {
-          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        },
-      )
-      await reloadRecords(organisationId)
-    } catch (rsvpError) {
-      setError(rsvpError?.message || 'Unable to update RSVP.')
-    }
-  }
-
-  async function handleSaveAppointmentOutcome() {
-    if (!organisationId || !selectedAppointmentId) return
-    try {
-      await addAppointmentOutcomeAsync(
-        organisationId,
-        selectedAppointmentId,
-        {
-          status: appointmentForm.status === 'cancelled' ? 'cancelled' : 'completed',
-          outcomeSummary: appointmentOutcomeForm.outcomeSummary,
-          clientFeedback: appointmentOutcomeForm.clientFeedback,
-          agentNotes: appointmentOutcomeForm.agentNotes,
-          nextStep: appointmentOutcomeForm.nextStep,
-          followUpDate: appointmentOutcomeForm.followUpDate,
-        },
-        {
-          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        },
-      )
-      setMessage('Appointment outcome saved.')
-      await reloadRecords(organisationId)
-    } catch (outcomeError) {
-      setError(outcomeError?.message || 'Unable to save appointment outcome.')
     }
   }
 
@@ -17550,44 +17520,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const link = `${window.location.origin}/calendar?appointmentId=${encodeURIComponent(selectedAppointmentId)}`
     void navigator.clipboard?.writeText(link)
     setMessage('Appointment link copied.')
-  }
-
-  function handleOpenAppointmentRelatedRecord() {
-    const relatedType = normalizeText(appointmentForm.relatedEntityType || selectedAppointment?.relatedEntityType)
-    const relatedId = normalizeText(appointmentForm.relatedEntityId || selectedAppointment?.relatedEntityId || selectedAppointment?.leadId || selectedAppointment?.transactionId)
-    if (relatedType === 'lead' && relatedId) {
-      navigate(`/pipeline/leads/${relatedId}`)
-      setAppointmentModalOpen(false)
-      return
-    }
-    if (relatedType === 'transaction' && relatedId) {
-      navigate(`/transactions/${relatedId}`)
-      setAppointmentModalOpen(false)
-      return
-    }
-    setError('No related record is linked to this appointment yet.')
-  }
-
-  async function handleCreateFollowUpTaskFromAppointment() {
-    if (!organisationId || !selectedAppointment || !normalizeText(selectedAppointment.leadId)) return
-    const dueDate = normalizeText(appointmentOutcomeForm.followUpDate) || getTodayIsoDate()
-    await createAgencyCrmLeadTask(
-      organisationId,
-      selectedAppointment.leadId,
-      {
-        assignedAgent: resolveAgentById(selectedAppointment.assignedAgentId || selectedAppointment.assignedAgentEmail || currentAgent.id),
-        title: normalizeText(appointmentOutcomeForm.nextStep) || 'Appointment follow-up',
-        description: normalizeText(appointmentOutcomeForm.agentNotes) || normalizeText(appointmentOutcomeForm.outcomeSummary),
-        dueDate,
-        status: 'Pending',
-        priority: 'Medium',
-      },
-      {
-        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      },
-    )
-    setMessage('Follow-up task created from appointment.')
-    void reloadRecords(organisationId)
   }
 
   async function handleCreateBuyerOfferDraft() {
@@ -25079,13 +25011,39 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           setAppointmentSchedulingLoading(false)
           setViewingPlanBookingContext({ leadId: '', propertyId: '' })
         }}
-        title={selectedAppointmentId ? 'Appointment Details' : 'Create Appointment'}
-        subtitle={selectedAppointmentId ? 'Update appointment details.' : 'Quickly schedule an appointment.'}
-        className="max-w-[900px]"
+        title={appointmentSchedulerTitle}
+        subtitle={appointmentSchedulerSubtitle}
+        className="!max-w-[760px]"
+        footer={(
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-xs text-[#6f839c]">
+              {appointmentVisibleParticipants.length} attendee{appointmentVisibleParticipants.length === 1 ? '' : 's'}
+            </span>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setAppointmentModalOpen(false)
+                  setAppointmentSchedulingError('')
+                  setAppointmentSchedulingLoading(false)
+                  setViewingPlanBookingContext({ leadId: '', propertyId: '' })
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" form="appointment-modal-form" disabled={!appointmentCanSave || appointmentSchedulingLoading}>
+                {appointmentSchedulingLoading
+                  ? (selectedAppointmentId ? 'Saving…' : 'Scheduling…')
+                  : (selectedAppointmentId ? 'Save appointment' : `Schedule ${appointmentSchedulerVerb}`)}
+              </Button>
+            </div>
+          </div>
+        )}
       >
-        <form className="grid gap-4" onSubmit={handleSaveAppointmentDetail}>
+        <form id="appointment-modal-form" className="grid gap-5" onSubmit={handleSaveAppointmentDetail}>
           {selectedAppointmentId && selectedAppointment ? (
-            <div className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-3">
+            <div className="rounded-[18px] border border-[#dce6f2] bg-[#f8fbff] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h4 className="text-sm font-semibold text-[#1f3952]">Appointment Snapshot</h4>
@@ -25127,73 +25085,101 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </div>
           ) : null}
 
-          <section className="border-b border-[#e2eaf4] pb-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6f839c]">Appointment Details</p>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {!normalizeText(appointmentForm.appointmentType) ? (
+            <section className="grid gap-1.5">
+              <label className="text-xs font-semibold text-[#60758d]">Appointment type</label>
+              <Field as="select" value={appointmentForm.appointmentType} onChange={(event) => handleAppointmentTypeChange(event.target.value)}>
+                <option value="">Select appointment type</option>
+                {APPOINTMENT_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Field>
+            </section>
+          ) : null}
+
+          {appointmentSchedulerLocation ? (
+            <p className="flex items-start gap-2 text-sm text-[#62768e]">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#6b7f93]" />
+              <span className="min-w-0 break-words">{appointmentSchedulerLocation}</span>
+            </p>
+          ) : null}
+
+          <section className="grid gap-3">
+            <p className="text-sm font-semibold text-[#102033]">When</p>
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,1fr)]">
               <label className="grid gap-1.5 text-xs font-semibold text-[#60758d]">
-                Appointment title *
-                <Field
-                  placeholder="Property Viewing - 15 Ocean View Drive"
-                  value={appointmentForm.title}
-                  onChange={(event) => setAppointmentForm((previous) => ({ ...previous, title: event.target.value }))}
-                />
-              </label>
-              <label className="grid gap-1.5 text-xs font-semibold text-[#60758d]">
-                Appointment type *
-                <Field as="select" value={appointmentForm.appointmentType} onChange={(event) => handleAppointmentTypeChange(event.target.value)}>
-                  <option value="">Select appointment type</option>
-                  {APPOINTMENT_TYPE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Field>
-              </label>
-              {appointmentForm.appointmentType === 'other' ? (
-                <label className="grid gap-1.5 text-xs font-semibold text-[#60758d]">
-                  Custom type label
+                Date
+                <div className="relative">
+                  <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f839c]" />
                   <Field
-                    placeholder="Custom appointment type"
-                    value={appointmentForm.customTypeLabel}
-                    onChange={(event) => setAppointmentForm((previous) => ({ ...previous, customTypeLabel: event.target.value }))}
+                    type="date"
+                    className="pl-10"
+                    value={appointmentForm.date}
+                    onChange={(event) => setAppointmentForm((previous) => ({ ...previous, date: event.target.value }))}
                   />
-                </label>
-              ) : null}
+                </div>
+              </label>
+              <label className="grid gap-1.5 text-xs font-semibold text-[#60758d]">
+                Start time
+                <div className="relative">
+                  <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f839c]" />
+                  <Field
+                    type="time"
+                    className="pl-10"
+                    value={appointmentForm.startTime}
+                    disabled={appointmentForm.allDay}
+                    onChange={(event) => handleAppointmentStartTimeChange(event.target.value)}
+                  />
+                </div>
+              </label>
+              <div className="grid gap-1.5 text-xs font-semibold text-[#60758d]">
+                Duration
+                <div className="grid grid-cols-3 gap-1 rounded-[14px] border border-[#d8e3ef] bg-white p-1">
+                  {APPOINTMENT_DURATION_OPTIONS.map((duration) => {
+                    const selected = appointmentDurationMinutes === duration
+                    return (
+                      <button
+                        key={duration}
+                        type="button"
+                        onClick={() => handleAppointmentDurationChange(duration)}
+                        className={`rounded-[10px] px-3 py-2 text-sm font-semibold transition ${
+                          selected
+                            ? 'border border-[#2c6f45] bg-[#eef8f1] text-[#205a35] shadow-[0_0_0_1px_rgba(44,111,69,0.08)]'
+                            : 'text-[#20364c] hover:bg-[#f7fafc]'
+                        }`}
+                      >
+                        {duration} min
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-[1.2fr_0.9fr_0.9fr_0.5fr]">
-              <label className="grid gap-1.5 text-xs font-semibold text-[#60758d]">
-                Date *
-                <Field type="date" value={appointmentForm.date} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, date: event.target.value }))} />
-              </label>
-              <label className="grid gap-1.5 text-xs font-semibold text-[#60758d]">
-                Start time *
-                <Field type="time" value={appointmentForm.startTime} disabled={appointmentForm.allDay} onChange={(event) => handleAppointmentStartTimeChange(event.target.value)} />
-              </label>
-              <label className="grid gap-1.5 text-xs font-semibold text-[#60758d]">
-                End time *
-                <Field type="time" value={appointmentForm.endTime} disabled={appointmentForm.allDay} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, endTime: event.target.value }))} />
-              </label>
-              <div className="flex items-end pb-3 text-sm font-semibold text-[#6f839c]">{selectedAppointmentTemplate.defaultDurationMinutes} min</div>
-            </div>
-            <label className="mt-3 grid gap-1.5 text-xs font-semibold text-[#60758d]">
-              {appointmentForm.locationType === 'phone_call' ? 'Phone number *' : appointmentForm.locationType === 'video_call' ? 'Meeting link *' : 'Location / meeting link *'}
+            {appointmentSchedulingError ? (
+              <p className="text-xs text-[#9f3028]">{appointmentSchedulingError}</p>
+            ) : null}
+          </section>
+
+          <section className="grid gap-3">
+            <p className="text-sm font-semibold text-[#102033]">Where</p>
+            <label className="grid gap-1.5 text-xs font-semibold text-[#60758d]">
+              Location
               <div className="relative">
+                <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f839c]" />
                 <Field
-                  className="pr-10"
-                  placeholder={appointmentForm.locationType === 'phone_call' ? 'Phone number' : appointmentForm.locationType === 'video_call' ? 'https://meet.google.com/...' : '15 Ocean View Drive, Camps Bay, Cape Town'}
-                  value={appointmentForm.locationType === 'video_call' ? appointmentForm.meetingUrl : appointmentForm.location}
-                  onChange={(event) =>
-                    setAppointmentForm((previous) => appointmentForm.locationType === 'video_call'
-                      ? { ...previous, meetingUrl: event.target.value }
-                      : { ...previous, location: event.target.value })
-                  }
+                  className="pr-10 pl-10"
+                  placeholder="15 Ocean View Drive, Camps Bay, Cape Town"
+                  value={appointmentSchedulerLocation}
+                  onChange={(event) => handleAppointmentLocationChange(event.target.value)}
                 />
-                {(appointmentForm.location || appointmentForm.meetingUrl) ? (
+                {appointmentSchedulerLocation ? (
                   <button
                     type="button"
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6f839c]"
                     aria-label="Clear location"
-                    onClick={() => setAppointmentForm((previous) => ({ ...previous, location: '', meetingUrl: '' }))}
+                    onClick={() => setAppointmentForm((previous) => ({ ...previous, location: '', meetingUrl: '', locationType: 'physical_address' }))}
                   >
                     <X size={16} />
                   </button>
@@ -25202,70 +25188,56 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </label>
           </section>
 
-          <section className="border-b border-[#e2eaf4] pb-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6f839c]">Link Appointment</p>
-            <div className="mt-3 flex gap-2">
-              <Field as="select" value={selectedAppointmentLinkValue} onChange={(event) => handleAppointmentLinkChange(event.target.value)}>
-                <option value="">Link to Lead / Listing / Transaction</option>
-                {appointmentLinkOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.primaryLabel}{option.secondaryLabel ? ` · ${option.secondaryLabel}` : ''}
-                  </option>
-                ))}
-              </Field>
+          <section className="grid gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-[#102033]">Attendees</p>
               <button
                 type="button"
-                className="ui-icon-button h-12 w-12 shrink-0"
-                onClick={() => handleAppointmentLinkChange('')}
-                aria-label="Clear linked appointment record"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-[#0f7b4e]"
+                onClick={() => setAppointmentManualParticipantOpen((previous) => !previous)}
               >
-                <X size={16} />
+                <Plus size={16} />
+                Add attendee
               </button>
             </div>
-            {selectedAppointmentLinkOption ? (
-              <p className="mt-2 text-xs text-[#6f839c]">{selectedAppointmentLinkOption.secondaryLabel || selectedAppointmentLinkOption.primaryLabel}</p>
-            ) : null}
-          </section>
-
-          <section className="border-b border-[#e2eaf4] pb-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6f839c]">Participants</p>
-                <p className="mt-1 text-xs text-[#60758d]">Suggested from {selectedAppointmentLinkOption?.entityType || 'this appointment'}.</p>
-              </div>
-              <button type="button" className="inline-flex items-center gap-2 text-sm font-semibold text-[#0052cc]" onClick={() => setAppointmentManualParticipantOpen((previous) => !previous)}>
-                <Plus size={16} /> Add other participant
-              </button>
-            </div>
-            <div className="mt-3 grid gap-2 md:grid-cols-3">
-              {appointmentSuggestedParticipants.length ? (
-                appointmentSuggestedParticipants.map((participant) => {
-                  const selected = !appointmentDeselectedParticipantKeys.includes(participant.suggestionKey)
+            {appointmentVisibleParticipants.length ? (
+              <div className="space-y-2">
+                {appointmentVisibleParticipants.map((participant) => {
+                  const label = participant.name || participant.email || 'Attendee'
+                  const roleLabel = participant.participantRole || participant.role || 'Attendee'
+                  const removeParticipant = participant.source === 'suggested'
+                    ? () => handleToggleSuggestedAppointmentParticipant(participant)
+                    : () => handleRemoveParticipantFromDraft(participant.sourceIndex)
                   return (
                     <button
-                      key={participant.suggestionKey}
+                      key={participant.key}
                       type="button"
-                      onClick={() => handleToggleSuggestedAppointmentParticipant(participant)}
-                      className={`flex min-w-0 items-center gap-3 rounded-[10px] border px-3 py-2 text-left transition ${selected ? 'border-[#b9d5ff] bg-[#f4f8ff]' : 'border-[#dce6f2] bg-white'}`}
+                      onClick={removeParticipant}
+                      className="flex w-full items-center gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-3 py-2.5 text-left transition hover:border-[#bfd0e2] hover:bg-[#fbfdff]"
                     >
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#dce8fb] text-xs font-bold text-[#173b68]">{getInitials(participant.name)}</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold text-[#10233d]">{participant.name}</span>
-                        <span className="block truncate text-xs text-[#60758d]">{participant.participantRole}</span>
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#edf5ef] text-xs font-bold text-[#1f5d37]">
+                        {getInitials(label)}
                       </span>
-                      <input type="checkbox" readOnly checked={selected} className="h-4 w-4 accent-[#0052cc]" aria-label={`${selected ? 'Remove' : 'Select'} ${participant.name}`} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-[#102033]">{label}</span>
+                        <span className="mt-0.5 inline-flex items-center gap-2 text-xs text-[#60758d]">
+                          <span className="rounded-full bg-[#eef3f7] px-2 py-0.5 font-semibold text-[#50677d]">{roleLabel}</span>
+                          {participant.source === 'suggested' ? <span>Suggested</span> : null}
+                        </span>
+                      </span>
+                      <X size={14} className="shrink-0 text-[#7a8da3]" />
                     </button>
                   )
-                })
-              ) : (
-                <p className="rounded-[10px] border border-dashed border-[#d5e1ee] bg-[#fbfdff] px-3 py-3 text-xs text-[#6f839c] md:col-span-3">
-                  Link a record to suggest buyers, sellers, agents, and service providers automatically.
-                </p>
-              )}
-            </div>
+                })}
+              </div>
+            ) : (
+              <p className="rounded-[14px] border border-dashed border-[#d5e1ee] bg-[#fbfdff] px-3 py-3 text-xs text-[#6f839c]">
+                The lead or linked record will populate attendees automatically.
+              </p>
+            )}
             {appointmentManualParticipantOpen ? (
-              <div className="mt-3 rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] p-3">
-                <div className="grid gap-2 md:grid-cols-4">
+              <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3">
+                <div className="grid gap-2 md:grid-cols-[1.1fr_1.1fr_1fr_160px]">
                   <Field placeholder="Name" value={appointmentForm.participantDraft?.name || ''} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, participantDraft: { ...previous.participantDraft, name: event.target.value } }))} />
                   <Field placeholder="Email" value={appointmentForm.participantDraft?.email || ''} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, participantDraft: { ...previous.participantDraft, email: event.target.value } }))} />
                   <Field placeholder="Phone" value={appointmentForm.participantDraft?.phone || ''} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, participantDraft: { ...previous.participantDraft, phone: event.target.value } }))} />
@@ -25277,259 +25249,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     ))}
                   </Field>
                 </div>
-                <div className="mt-2 flex justify-end">
+                <div className="mt-3 flex flex-wrap justify-end gap-2">
+                  <Button type="button" variant="ghost" onClick={() => setAppointmentManualParticipantOpen(false)}>
+                    Done
+                  </Button>
                   <Button type="button" variant="secondary" onClick={handleAddParticipantToDraft}>
-                    Add Participant
+                    Add attendee
                   </Button>
                 </div>
               </div>
             ) : null}
-            {(appointmentForm.participants || []).length ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {(appointmentForm.participants || []).map((participant, index) => (
-                  <button
-                    key={`${participant.participantId || participant.email || participant.name || index}`}
-                    type="button"
-                    onClick={() => handleRemoveParticipantFromDraft(index)}
-                    className="rounded-full border border-[#dce6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]"
-                  >
-                    {participant.name || participant.email || 'Participant'} · Remove
-                  </button>
-                ))}
-              </div>
-            ) : null}
           </section>
 
-          <section>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6f839c]">Notes / Agenda (Optional)</p>
+          <section className="grid gap-3">
+            <p className="text-sm font-semibold text-[#102033]">Notes <span className="font-normal text-[#7a8da3]">(optional)</span></p>
             <Field
               as="textarea"
               rows={3}
-              placeholder="View property with the buyer and discuss offer strategy."
+              placeholder="Add an optional note..."
               value={appointmentForm.notes}
               onChange={(event) => setAppointmentForm((previous) => ({ ...previous, notes: event.target.value.slice(0, 500) }))}
-              className="mt-3 min-h-[86px]"
+              className="min-h-[86px]"
             />
-            <p className="mt-1 text-right text-xs text-[#7a8da3]">{normalizeText(appointmentForm.notes).length}/500</p>
           </section>
-
-          <details className="rounded-[12px] border border-transparent">
-            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-[#10233d]">
-              Advanced options <ChevronRight size={16} />
-            </summary>
-            <div className="mt-3 grid gap-3 rounded-[14px] border border-[#e4ebf4] bg-[#fbfdff] p-3">
-              <div className="grid gap-2 md:grid-cols-4">
-                <Field as="select" value={appointmentForm.locationType} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, locationType: event.target.value }))}>
-                  <option value="physical_address">Physical address</option>
-                  <option value="video_call">Google Meet / Video Call</option>
-                  <option value="phone_call">Phone Call</option>
-                  <option value="to_be_confirmed">To be confirmed</option>
-                </Field>
-                <Field value={appointmentForm.timezone} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, timezone: event.target.value }))} />
-                <Field as="select" value={appointmentForm.status} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, status: event.target.value }))}>
-                  {APPOINTMENT_STATUSES.map((status) => (
-                    <option key={status} value={status}>
-                      {APPOINTMENT_STATUS_LABELS[status] || status}
-                    </option>
-                  ))}
-                </Field>
-                <Field as="select" value={appointmentForm.visibility || selectedAppointmentTemplate.defaultVisibility} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, visibility: event.target.value }))}>
-                  <option value="internal_only">Internal only</option>
-                  <option value="client_visible">Client visible</option>
-                  <option value="shared_role_players">Team visible</option>
-                </Field>
-                <Field as="select" value={appointmentForm.resourceId} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, resourceId: event.target.value }))}>
-                  <option value="">No room/resource selected</option>
-                  {appointmentResources.map((resource) => (
-                    <option key={resource.resourceId} value={resource.resourceId}>
-                      {safeDisplayText(resource.resourceName, 'Room / resource')}
-                    </option>
-                  ))}
-                </Field>
-                <Field placeholder="Recipient email" value={appointmentForm.recipientEmail || ''} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, recipientEmail: event.target.value }))} />
-                <label className="flex items-center gap-2 rounded-[10px] border border-[#dce6f2] bg-white px-3 py-2 text-xs text-[#33536d]">
-                  <input type="checkbox" checked={appointmentForm.allDay === true} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, allDay: event.target.checked }))} />
-                  All-day appointment
-                </label>
-                <label className="flex items-center gap-2 rounded-[10px] border border-[#dce6f2] bg-white px-3 py-2 text-xs text-[#33536d]">
-                  <input type="checkbox" checked={appointmentForm.participantDraft?.isRequired !== false} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, participantDraft: { ...previous.participantDraft, isRequired: event.target.checked } }))} />
-                  Required attendee
-                </label>
-                <label className="flex items-center gap-2 rounded-[10px] border border-[#dce6f2] bg-white px-3 py-2 text-xs text-[#33536d]">
-                  <input type="checkbox" checked={appointmentForm.sendInviteEmails !== false} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, sendInviteEmails: event.target.checked }))} />
-                  Send appointment invite emails
-                </label>
-                <label className="flex items-center gap-2 rounded-[10px] border border-[#dce6f2] bg-white px-3 py-2 text-xs text-[#33536d]">
-                  <input type="checkbox" checked={appointmentForm.attachCalendarInvite !== false} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, attachCalendarInvite: event.target.checked }))} />
-                  Attach calendar invite file
-                </label>
-                <label className="flex items-center gap-2 rounded-[10px] border border-[#dce6f2] bg-white px-3 py-2 text-xs text-[#33536d]">
-                  <input type="checkbox" checked={appointmentForm.notifyCreatorOnRsvp !== false} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, notifyCreatorOnRsvp: event.target.checked }))} />
-                  Notify me on RSVP
-                </label>
-                {selectedAppointmentId ? (
-                  <Button type="button" variant="secondary" onClick={handleOpenAppointmentRelatedRecord}>
-                    Open Related Record
-                  </Button>
-                ) : null}
-              </div>
-              <div className="grid gap-2 md:grid-cols-2">
-                <div className="rounded-[10px] border border-[#e2eaf4] bg-white px-3 py-2">
-                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Appointment Purpose</p>
-                  <p className="mt-1 text-sm font-semibold text-[#203a52]">{selectedAppointmentTemplate.label}</p>
-                  <p className="mt-1 text-xs leading-5 text-[#5f7690]">{selectedAppointmentTemplate.description}</p>
-                </div>
-                <div className="rounded-[10px] border border-[#e2eaf4] bg-white px-3 py-2">
-                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Required Before Appointment</p>
-                  <div className="mt-1 space-y-1">
-                    {appointmentPrepChecklist.length ? (
-                      appointmentPrepChecklist.map((item) => (
-                        <div key={item.key} className="flex items-center justify-between gap-2 text-xs">
-                          <span className="text-[#48627d]">{item.label}</span>
-                          <span className={item.completed ? 'text-[#1f7d44]' : 'text-[#a76723]'}>
-                            {item.completed ? 'Completed' : 'Missing'}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-[#6f839c]">No prep documents required for this appointment type.</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <Field as="textarea" rows={2} placeholder="Client instructions" value={appointmentForm.instructions || ''} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, instructions: event.target.value }))} className="min-h-[72px]" />
-              <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-[#28435e]">Availability & Conflict Checks</p>
-                  {appointmentSchedulingLoading ? (
-                    <span className="text-xs text-[#5f7690]">Checking availability...</span>
-                  ) : (
-                    <span className="text-xs text-[#5f7690]">Last checked: {appointmentSchedulingIntegrity?.checkedAt ? formatCompactDate(appointmentSchedulingIntegrity.checkedAt) : '—'}</span>
-                  )}
-                </div>
-                {appointmentSchedulingError ? <div className="mt-2 rounded-[10px] border border-[#f2d0ce] bg-[#fff5f4] px-3 py-2 text-xs text-[#9f3028]">{appointmentSchedulingError}</div> : null}
-                {appointmentHasHardConflicts ? (
-                  <div className="mt-2 space-y-2">
-                    {(appointmentSchedulingIntegrity?.hardConflicts || []).map((conflict, index) => (
-                      <div key={`hard-${conflict.type || index}-${conflict.appointmentId || index}`} className={`rounded-[10px] border px-3 py-2 text-xs ${getConflictLevelTone(conflict.level)}`}>
-                        <p className="font-semibold">Hard conflict: {conflict.message || 'Scheduling conflict detected.'}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                {appointmentHasSoftConflicts ? (
-                  <div className="mt-2 space-y-2">
-                    {(appointmentSchedulingIntegrity?.softConflicts || []).map((conflict, index) => (
-                      <div key={`soft-${conflict.type || index}-${conflict.appointmentId || index}`} className={`rounded-[10px] border px-3 py-2 text-xs ${getConflictLevelTone(conflict.level)}`}>
-                        <p className="font-semibold">Soft warning: {conflict.message || 'Potential scheduling overlap detected.'}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                {Array.isArray(appointmentSchedulingIntegrity?.participantAvailability) && appointmentSchedulingIntegrity.participantAvailability.length ? (
-                  <div className="mt-3 grid gap-2 md:grid-cols-2">
-                    {appointmentSchedulingIntegrity.participantAvailability.map((availability, index) => (
-                      <div key={`${availability?.identityKey || availability?.email || index}`} className="rounded-[10px] border border-[#e3ebf5] bg-white px-3 py-2 text-xs">
-                        <p className="font-semibold text-[#28435e]">{availability?.name || availability?.email || availability?.role || 'Participant'}</p>
-                        <p className={`mt-1 ${availability?.isAvailable ? 'text-[#1c7c4f]' : 'text-[#b26d22]'}`}>
-                          {availability?.isAvailable ? 'Available in selected slot' : 'Potential overlap detected'}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                {Array.isArray(appointmentSchedulingIntegrity?.suggestedSlots) && appointmentSchedulingIntegrity.suggestedSlots.length ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {appointmentSchedulingIntegrity.suggestedSlots.slice(0, 4).map((slot) => (
-                      <button
-                        key={slot.start}
-                        type="button"
-                        onClick={() => setAppointmentForm((previous) => ({ ...previous, date: String(slot.start).slice(0, 10), startTime: String(slot.start).slice(11, 16), endTime: String(slot.end).slice(11, 16) }))}
-                        className="rounded-full border border-[#dce6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]"
-                      >
-                        {slot.label || formatCompactDate(slot.start)}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              {selectedAppointmentId && (appointmentForm.participants || []).length ? (
-                <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                  <p className="text-sm font-semibold text-[#28435e]">Participant RSVP</p>
-                  <div className="mt-2 space-y-2">
-                    {(appointmentForm.participants || []).map((participant, index) => (
-                      <div key={`${participant.participantId || participant.email || participant.name || index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-[#e5ecf5] bg-[#fbfdff] px-3 py-2 text-xs">
-                        <div>
-                          <p className="font-semibold text-[#223f59]">{participant.name || participant.email || 'Participant'}</p>
-                          <p className="mt-0.5 text-[#5e748d]">{participant.participantRole} · {participant.rsvpStatus} · {participant.isRequired === false ? 'Optional' : 'Required'}</p>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {participant.participantId ? (
-                            APPOINTMENT_RSVP_STATUSES.map((statusOption) => (
-                              <button
-                                key={statusOption}
-                                type="button"
-                                onClick={() => handleUpdateParticipantRsvp(participant, statusOption)}
-                                className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.68rem] font-semibold text-[#35546c]"
-                              >
-                                {statusOption}
-                              </button>
-                            ))
-                          ) : null}
-                          <button type="button" className="rounded-full border border-[#dce6f2] px-2 py-0.5 text-[0.68rem] font-semibold text-[#35546c]" onClick={() => handleRemoveParticipantFromDraft(index)}>
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              {selectedAppointmentId ? (
-                <div className="rounded-[14px] border border-[#e4ebf4] bg-white p-3">
-                  <p className="text-sm font-semibold text-[#28435e]">Outcome & Follow-up</p>
-                  <div className="mt-2 grid gap-2 md:grid-cols-2">
-                    <Field placeholder="Outcome summary" value={appointmentOutcomeForm.outcomeSummary} onChange={(event) => setAppointmentOutcomeForm((previous) => ({ ...previous, outcomeSummary: event.target.value }))} />
-                    <Field placeholder="Client feedback" value={appointmentOutcomeForm.clientFeedback} onChange={(event) => setAppointmentOutcomeForm((previous) => ({ ...previous, clientFeedback: event.target.value }))} />
-                    <Field placeholder="Next step" value={appointmentOutcomeForm.nextStep} onChange={(event) => setAppointmentOutcomeForm((previous) => ({ ...previous, nextStep: event.target.value }))} />
-                    <Field type="date" value={appointmentOutcomeForm.followUpDate} onChange={(event) => setAppointmentOutcomeForm((previous) => ({ ...previous, followUpDate: event.target.value }))} />
-                  </div>
-                  <Field as="textarea" rows={2} placeholder="Agent notes" value={appointmentOutcomeForm.agentNotes} onChange={(event) => setAppointmentOutcomeForm((previous) => ({ ...previous, agentNotes: event.target.value }))} className="mt-2 min-h-[72px]" />
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button type="button" variant="secondary" onClick={handleSaveAppointmentOutcome} disabled={!selectedAppointmentId}>
-                      Save Outcome
-                    </Button>
-                    <Button type="button" variant="secondary" onClick={handleCreateFollowUpTaskFromAppointment} disabled={!selectedAppointment?.leadId}>
-                      Create Follow-up Task
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </details>
-
-          <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-            <span className="text-xs text-[#6f839c]">
-              {selectedSuggestedAppointmentParticipants.length} participant{selectedSuggestedAppointmentParticipants.length === 1 ? '' : 's'} selected
-            </span>
-            <div className="flex flex-wrap justify-end gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setAppointmentModalOpen(false)
-                setAppointmentSchedulingError('')
-                setAppointmentSchedulingLoading(false)
-                setViewingPlanBookingContext({ leadId: '', propertyId: '' })
-              }}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!appointmentCanSave}>
-              {selectedAppointmentId ? 'Save Appointment' : 'Create Appointment'}
-            </Button>
-            </div>
-          </div>
         </form>
       </Modal>
 
