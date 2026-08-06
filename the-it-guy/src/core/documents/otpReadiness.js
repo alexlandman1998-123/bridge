@@ -114,6 +114,23 @@ function hasCompletedBuyerOnboardingStatus(value = '') {
   ].includes(status)
 }
 
+function hasTruthyCompletionFlag(value) {
+  if (value === true) return true
+  if (value === false || value === null || value === undefined || value === '') return false
+  return [
+    'true',
+    'yes',
+    'y',
+    '1',
+    'submitted',
+    'complete',
+    'completed',
+    'client_onboarding_complete',
+    'awaiting_signed_otp',
+    'signed_otp_received',
+  ].includes(normalizeOfferStatus(value))
+}
+
 function labelFromKey(value = '') {
   return normalizeText(value)
     .replace(/_/g, ' ')
@@ -464,7 +481,11 @@ export function resolveOtpReadiness({
   })
   const legalRouteReadiness = getOtpLegalRouteReadiness(scenarioProfile)
   const templateReadinessRecord = asPlainObject(templateReadiness)
-  const buyerOnboardingComplete = hasCompletedBuyerOnboardingStatus(
+  const buyerOnboardingComplete = hasTruthyCompletionFlag(onboardingRecord.buyerOnboardingComplete) ||
+  hasTruthyCompletionFlag(onboardingRecord.buyer_onboarding_complete) ||
+  hasTruthyCompletionFlag(transactionRecord.buyerOnboardingComplete) ||
+  hasTruthyCompletionFlag(transactionRecord.buyer_onboarding_complete) ||
+  hasCompletedBuyerOnboardingStatus(
     transactionRecord.onboarding_status ||
       transactionRecord.onboardingStatus ||
       onboardingRecord.status ||

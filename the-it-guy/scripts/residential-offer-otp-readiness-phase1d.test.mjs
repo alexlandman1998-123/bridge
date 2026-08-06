@@ -120,6 +120,25 @@ assert.ok(
   'Completed buyer onboarding should let agents generate OTP while reviewing captured buyer wording.',
 )
 
+const staleOfferStatusReadiness = buildReadiness({
+  ...submittedOffer,
+  status: '',
+}, {
+  onboardingFormData: {
+    buyerOnboardingComplete: true,
+    buyer_onboarding_complete: true,
+  },
+})
+assert.equal(staleOfferStatusReadiness.canGenerate, true)
+assert.equal(staleOfferStatusReadiness.facts.offerSubmitted, true)
+assert.equal(staleOfferStatusReadiness.facts.buyerOnboardingComplete, true)
+assert.equal(staleOfferStatusReadiness.rows.find((row) => row.key === 'offer_status')?.ready, true)
+assert.equal(
+  staleOfferStatusReadiness.rows.find((row) => row.key === 'offer_status')?.value,
+  'Buyer onboarding submitted',
+  'Explicit buyer onboarding completion should satisfy the offer submitted row when the offer status is stale.',
+)
+
 const awaitingSignedOtpEvidence = resolveTransactionWorkflowEvidence({
   transaction: {
     id: 'tx-awaiting-otp',
