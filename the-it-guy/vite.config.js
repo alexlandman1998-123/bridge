@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { createAdminMobileDashboardResponse } from './server/services/adminMobileDashboardApi.js'
 import { createMissionControlResponse, writeNodeJsonResponse } from './server/services/hqMissionControlApi.js'
+import { createBuyerOfferBrandingResponse } from './server/services/buyerOfferBrandingApi.js'
 import { createPublicAgencyIntakeResponse } from './server/services/publicAgencyIntakeApi.js'
 import { createPublicListingsResponse } from './server/services/publicListingsApi.js'
 
@@ -140,6 +141,14 @@ function missionControlApiPlugin() {
       })
       server.middlewares.use('/api/public/listings', async (request, response) => {
         const payload = await createPublicListingsResponse({
+          method: request.method,
+          url: request.url,
+          headers: request.headers,
+        })
+        writeNodeJsonResponse(response, payload)
+      })
+      server.middlewares.use('/api/public/buyer-offer-branding', async (request, response) => {
+        const payload = await createBuyerOfferBrandingResponse({
           method: request.method,
           url: request.url,
           headers: request.headers,

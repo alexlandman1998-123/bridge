@@ -533,6 +533,7 @@
     "test:onboarding-branding-phase5": "node scripts/onboarding-branding-phase5.test.mjs",
     "test:onboarding-branding-phase6": "node scripts/onboarding-branding-phase6.test.mjs",
     "test:onboarding-branding-browser-smoke": "node scripts/onboarding-branding-browser-smoke.mjs",
+    "test:buyer-offer-branding-regression": "node scripts/buyer-offer-branding-regression.test.mjs",
     "test:buyer-onboarding-flow-contract": "node scripts/buyer-onboarding-flow-contract.test.mjs",
     "test:buyer-onboarding-sa-scenarios": "node scripts/buyer-onboarding-south-african-scenarios.test.mjs",
     "test:buyer-onboarding-mobile-phase6": "node scripts/buyer-onboarding-mobile-phase6.test.mjs",

@@ -93,7 +93,9 @@ assert.match(emailTemplateSource, /Confirm viewings/, 'buyer email should render
 assert.match(emailTemplateSource, /actionLink/, 'buyer email should accept an action link')
 assert.match(emailTypesSource, /preferenceLink\?: string/, 'email payload types should include preferenceLink')
 assert.match(plannerSource, /function normalizeLeadUuid\(value\)[\s\S]*raw\.match\(UUID_PATTERN\)\?\.\[0\]/, 'planner should extract the canonical UUID from wrapped lead ids before creating preference links')
+assert.match(plannerSource, /function normalizeWorkspaceUuid\(value\)[\s\S]*raw\.match\(UUID_PATTERN\)\?\.\[0\]/, 'planner should extract the canonical UUID from wrapped workspace ids before creating preference links')
 assert.match(plannerSource, /function normalizeLeadUuidFromLead\(lead = \{\}\)[\s\S]*lead\?\.lead_id[\s\S]*lead\?\.id/, 'planner should resolve canonical lead ids from all supported lead row shapes')
 assert.match(plannerSource, /const selectedLeadUuid = normalizeLeadUuidFromLead\(selectedLead\)[\s\S]*leadId: selectedLeadUuid/, 'buyer viewing requests should send the resolved persisted lead UUID')
+assert.match(plannerSource, /const workspaceId = normalizeWorkspaceUuid\(organisationId\)[\s\S]*organisationId: workspaceId[\s\S]*leadId: selectedLeadUuid/, 'buyer viewing requests should send the resolved workspace UUID')
 
 console.log('buyer viewing preference link contract tests passed')

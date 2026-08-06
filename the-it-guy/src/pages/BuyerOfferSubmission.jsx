@@ -133,6 +133,19 @@ function clearBuyerOfferDraft(token = '') {
   }
 }
 
+async function fetchBuyerOfferBrandingSnapshot(token = '') {
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken || typeof fetch !== 'function') return null
+
+  const response = await fetch(`/api/public/buyer-offer-branding?token=${encodeURIComponent(normalizedToken)}`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+  })
+  if (!response.ok) return null
+  const payload = await response.json().catch(() => null)
+  return payload?.branding && typeof payload.branding === 'object' ? payload.branding : null
+}
+
 function normalizeStage(value = '', fallback = 'landing') {
   const stage = normalizeText(value).toLowerCase()
   return BUYER_OFFER_STAGES.includes(stage) ? stage : fallback
@@ -321,6 +334,8 @@ function BuyerOfferSubmission() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [canonicalContext, setCanonicalContext] = useState(null)
   const [canonicalLoading, setCanonicalLoading] = useState(false)
+  const [offerBrandingSnapshot, setOfferBrandingSnapshot] = useState(null)
+  const [offerBrandingLoaded, setOfferBrandingLoaded] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -412,6 +427,31 @@ function BuyerOfferSubmission() {
   const latestStatus = normalizeOfferWorkflowStatus(latestOffer?.status || '')
   const counterPendingBuyer = canonicalLifecycle?.effectiveStatus === 'countered' || latestStatus === OFFER_WORKFLOW_STATUS.BUYER_REVIEW_COUNTER || latestStatus === OFFER_WORKFLOW_STATUS.COUNTERED
   const canSubmitCanonicalOffer = !canonicalLifecycle || canonicalLifecycle.buyerCanResubmit
+
+  useEffect(() => {
+    let active = true
+    setOfferBrandingSnapshot(null)
+    setOfferBrandingLoaded(false)
+    if (!token || !context?.ok) {
+      return () => {
+        active = false
+      }
+    }
+    fetchBuyerOfferBrandingSnapshot(token)
+      .then((branding) => {
+        if (active) setOfferBrandingSnapshot(branding)
+      })
+      .catch(() => {
+        if (active) setOfferBrandingSnapshot(null)
+      })
+      .finally(() => {
+        if (active) setOfferBrandingLoaded(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [context?.ok, token])
+
   const otpDocumentVariant = form.otpDocumentVariant || resolveOtpDocumentVariant({
     placeholders: {
       otpDocumentVariant: invite?.otpDocumentVariant || canonicalOffer?.conditions?.otpDocumentVariant,
@@ -440,12 +480,12 @@ function BuyerOfferSubmission() {
   const agencyName = firstText(context?.canonicalOffer?.conditions?.organisationName, context?.canonicalOffer?.conditions?.agencyName) || 'Arch9 Partner Agency'
   const offerBrand = useMemo(() => {
     const conditions = context?.canonicalOffer?.conditions || {}
-    const resolved = resolveOnboardingBranding(conditions, listing || {}, invite || {})
+    const resolved = resolveOnboardingBranding(offerBrandingSnapshot || {}, conditions, listing || {}, invite || {})
     return {
       ...resolved,
       organisationName: resolved.organisationName || agencyName,
     }
-  }, [agencyName, context?.canonicalOffer?.conditions, invite, listing])
+  }, [agencyName, context?.canonicalOffer?.conditions, invite, listing, offerBrandingSnapshot])
   const submitButtonLabel = counterPendingBuyer ? 'Submit Revised Offer' : 'Submit Offer + Onboarding'
   const buyerVerificationModel = useMemo(
     () =>
@@ -1022,7 +1062,7 @@ function BuyerOfferSubmission() {
         ? ''
         : 'Submit your offer on this property in a few simple steps.'
 
-  if (canonicalLoading && !context?.ok) {
+  if ((canonicalLoading && !context?.ok) || (context?.ok && flowStage === 'landing' && !offerBrandingLoaded)) {
     return (
       <main className="min-h-screen bg-[#FAFAF8] px-4 py-8">
         <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#E5E7EB] bg-white p-6 text-sm font-semibold text-[#6B7280]">

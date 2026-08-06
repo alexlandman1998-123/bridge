@@ -67,6 +67,12 @@ const buyerQualificationSaveBlock = extractBlock(
   '\n  function handleOpenBuyerQualificationAction',
   'buyer qualification save flow',
 )
+const viewingCompletionBlock = extractBlock(
+  pageSource,
+  'async function handleCompleteLeadViewing',
+  '\n  async function handleCancelLeadViewing',
+  'viewing completion flow',
+)
 const offerCentreBlock = extractBlock(
   pageSource,
   "{leadWorkspaceTab === 'offers'",
@@ -256,6 +262,18 @@ for (const contract of [
 ]) {
   assert.match(buyerPreferenceApplyBlock, contract, `buyer preference pull-through should include ${contract}`)
 }
+
+for (const contract of [
+  /handleOpenViewingCompletedFeedbackOverride/,
+  /Viewing completed feedback/,
+  /viewing_completed_feedback/,
+  /record feedback and carry on/,
+]) {
+  assert.match(pageSource, contract, `buyer availability override should expose completed-viewing feedback ${contract}`)
+}
+assert.match(buyerResponseBlock, /completeBuyerViewingAutomationTask\('Follow up buyer viewing availability'\)/, 'manual buyer response capture should complete the stale buyer availability follow-up')
+assert.match(viewingCompletionBlock, /completeBuyerViewingAutomationTask\('Follow up buyer viewing availability'\)/, 'viewing completion should clear stale buyer availability follow-up tasks')
+assert.match(viewingCompletionBlock, /completeBuyerViewingAutomationTask\('Post-viewing buyer follow-up'\)/, 'viewing completion should clear post-viewing feedback follow-up tasks')
 
 for (const contract of [
   /seller viewing email delivery contract tests passed/,
