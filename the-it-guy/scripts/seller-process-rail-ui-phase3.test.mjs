@@ -48,8 +48,6 @@ function sliceFunction(source, functionName, nextFunctionName) {
   assert.match(railSource, /aria-label="Kingstons seller process rail"/)
   assert.match(railSource, /xl:grid-cols-6/)
   assert.match(pageSource, /if \(stage\.deferred\) return 'Deferred'/)
-  assert.doesNotMatch(railSource, /onClick/)
-  assert.doesNotMatch(railSource, /onAction/)
   assert.doesNotMatch(railSource, /createAppointmentAsync/)
   assert.doesNotMatch(railSource, /uploadPrivateListingDocument/)
   assert.doesNotMatch(railSource, /updatePrivateListing/)
@@ -58,7 +56,7 @@ function sliceFunction(source, functionName, nextFunctionName) {
 {
   const layoutSource = sliceFunction(pageSource, 'SellerLeadWorkspaceLayout', 'OwnershipCard')
   assert.match(layoutSource, /kingstonsSellerProcessRailModel = null/)
-  assert.match(layoutSource, /kingstonsSellerProcessRailModel\?\.visible\s*\?\s*<KingstonsSellerProcessRail model=\{kingstonsSellerProcessRailModel\} \/>/)
+  assert.match(layoutSource, /kingstonsSellerProcessRailModel\?\.visible\s*\?\s*<KingstonsSellerProcessRail model=\{kingstonsSellerProcessRailModel\} onAction=\{handleAcquisitionAction\} \/>/)
   assert.match(layoutSource, /:\s*<SellerJourneyRail journey=\{sellerJourney\} row=\{row\} listing=\{linkedSellerListing\} \/>/)
   assert.match(layoutSource, /<SellerProcessShadowPanel model=\{sellerProcessPanelModel\} onAction=\{handleAcquisitionAction\} \/>/)
 }

@@ -17334,7 +17334,11 @@ function getKingstonsRailStageStatusLabel(stage = {}) {
   return 'Upcoming'
 }
 
-function KingstonsSellerProcessRail({ model = null }) {
+function canTriggerKingstonsRailAppointmentAction(stage = {}) {
+  return stage?.surface === 'appointments' && stage?.actionEnabled !== false && Boolean(stage?.actionKey) && !stage?.deferred
+}
+
+function KingstonsSellerProcessRail({ model = null, onAction }) {
   if (!model?.visible) return null
   const stages = Array.isArray(model.stages) ? model.stages : []
   return (
@@ -17356,18 +17360,35 @@ function KingstonsSellerProcessRail({ model = null }) {
         {stages.map((stage, index) => {
           const isLast = index === stages.length - 1
           const statusLabel = getKingstonsRailStageStatusLabel(stage)
+          const canTriggerAppointmentAction = canTriggerKingstonsRailAppointmentAction(stage) && typeof onAction === 'function'
+          const content = (
+            <>
+              <span className={`z-10 flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold shadow-sm ${stage.current ? 'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-100' : stage.complete ? 'border-emerald-600 bg-emerald-600 text-white' : stage.deferred ? 'border-amber-200 bg-amber-50 text-amber-600' : 'border-slate-200 bg-white text-slate-300'}`}>
+                {stage.complete || stage.current ? <CheckCircle2 size={16} /> : stage.deferred ? <Clock3 size={15} /> : <FileText size={14} />}
+              </span>
+              <div className="min-w-0 max-w-full">
+                <p className={`mx-auto min-h-[2.5rem] max-w-[11rem] break-words text-sm font-semibold leading-5 xl:max-w-[8.5rem] ${stage.current ? 'text-blue-700' : stage.complete ? 'text-slate-950' : stage.deferred ? 'text-amber-700' : 'text-slate-500'}`}>{stage.label}</p>
+                <p className="mt-1 mx-auto min-h-[2rem] max-w-[11rem] break-words text-xs font-semibold leading-4 text-slate-500 xl:max-w-[8.5rem]">{statusLabel}</p>
+              </div>
+            </>
+          )
           return (
             <li key={stage.key} className="relative min-w-0">
               {!isLast ? <span className={`absolute left-[calc(50%+1.5rem)] top-5 hidden h-px w-[calc(100%-3rem)] xl:block ${stage.complete ? 'bg-emerald-300' : 'bg-slate-200'}`} /> : null}
-              <div className="relative flex min-h-[124px] min-w-0 flex-col items-center gap-3 text-center">
-                <span className={`z-10 flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold shadow-sm ${stage.current ? 'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-100' : stage.complete ? 'border-emerald-600 bg-emerald-600 text-white' : stage.deferred ? 'border-amber-200 bg-amber-50 text-amber-600' : 'border-slate-200 bg-white text-slate-300'}`}>
-                  {stage.complete || stage.current ? <CheckCircle2 size={16} /> : stage.deferred ? <Clock3 size={15} /> : <FileText size={14} />}
-                </span>
-                <div className="min-w-0 max-w-full">
-                  <p className={`mx-auto min-h-[2.5rem] max-w-[11rem] break-words text-sm font-semibold leading-5 xl:max-w-[8.5rem] ${stage.current ? 'text-blue-700' : stage.complete ? 'text-slate-950' : stage.deferred ? 'text-amber-700' : 'text-slate-500'}`}>{stage.label}</p>
-                  <p className="mt-1 mx-auto min-h-[2rem] max-w-[11rem] break-words text-xs font-semibold leading-4 text-slate-500 xl:max-w-[8.5rem]">{statusLabel}</p>
+              {canTriggerAppointmentAction ? (
+                <button
+                  type="button"
+                  onClick={() => onAction(stage.actionKey)}
+                  className="relative flex min-h-[124px] min-w-0 w-full flex-col items-center gap-3 rounded-2xl px-2 py-1 text-center transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                  aria-label={`Open ${stage.label}`}
+                >
+                  {content}
+                </button>
+              ) : (
+                <div className="relative flex min-h-[124px] min-w-0 flex-col items-center gap-3 text-center">
+                  {content}
                 </div>
-              </div>
+              )}
             </li>
           )
         })}
@@ -22628,7 +22649,7 @@ function SellerLeadWorkspaceLayout({
       />
       <SellerProcessShadowPanel model={sellerProcessPanelModel} onAction={handleAcquisitionAction} />
       {kingstonsSellerProcessRailModel?.visible
-        ? <KingstonsSellerProcessRail model={kingstonsSellerProcessRailModel} />
+        ? <KingstonsSellerProcessRail model={kingstonsSellerProcessRailModel} onAction={handleAcquisitionAction} />
         : <SellerJourneyRail journey={sellerJourney} row={row} listing={linkedSellerListing} />}
       <SellerWorkspaceTabs activeTab={activeWorkspaceTab} onTabChange={setActiveWorkspaceTab} />
       <SellerTabContent
