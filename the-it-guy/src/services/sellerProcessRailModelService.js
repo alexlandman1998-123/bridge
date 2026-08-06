@@ -3,6 +3,7 @@ import {
   KINGSTONS_SELLER_PROCESS_PROFILE,
 } from './sellerProcessProfileService.js'
 import { evaluateSellerProcess } from './sellerProcessEvaluationService.js'
+import { buildSellerProcessEvidenceContext } from './sellerProcessEvidenceMappingService.js'
 
 const KINGSTONS_RAIL_BLUEPRINT = Object.freeze([
   Object.freeze({
@@ -133,7 +134,7 @@ function buildRailStages(evaluation = {}) {
 }
 
 export function buildKingstonsSellerProcessRailModel(source = {}) {
-  const evaluation = evaluateSellerProcess(source)
+  const evaluation = evaluateSellerProcess(buildSellerProcessEvidenceContext(source))
   if (evaluation.profile !== KINGSTONS_SELLER_PROCESS_PROFILE) {
     return emptyRailModel(evaluation.profile)
   }
