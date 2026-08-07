@@ -10292,15 +10292,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedKingstonsProcessAction = useMemo(() => {
     const action = getKingstonsPipelineActionMeta(selectedSellerProcessPanelModel || {})
     if (!selectedLeadHasKingstonsPipelineSignal) return action
-    if (!selectedKingstonsSellerPackSummary.complete) {
-      return {
-        title: 'Seller Pack',
-        copy: `Still needed before listing can be created: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`,
-        actionId: 'complete_seller_pack',
-        label: 'Upload Seller Pack',
-        disabled: false,
-      }
-    }
     if (['complete_seller_pack', 'seller_pack_signed'].includes(action.actionId)) {
       return {
         title: 'Seller Pack Complete',
@@ -10312,8 +10303,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     return action
   }, [
-    selectedKingstonsSellerPackSummary.complete,
-    selectedKingstonsSellerPackSummary.missingLabels,
     selectedLeadHasKingstonsPipelineSignal,
     selectedSellerProcessPanelModel,
   ])
