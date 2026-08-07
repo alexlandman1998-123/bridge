@@ -6750,6 +6750,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [appointmentListingOptions, setAppointmentListingOptions] = useState([])
   const [appointmentSchedulingIntegrity, setAppointmentSchedulingIntegrity] = useState(null)
   const [appointmentSchedulingLoading, setAppointmentSchedulingLoading] = useState(false)
+  const [appointmentSchedulingSubmitting, setAppointmentSchedulingSubmitting] = useState(false)
   const [appointmentSchedulingError, setAppointmentSchedulingError] = useState('')
   const [appointmentManualParticipantOpen, setAppointmentManualParticipantOpen] = useState(false)
   const [appointmentDeselectedParticipantKeys, setAppointmentDeselectedParticipantKeys] = useState([])
@@ -14087,6 +14088,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       attachCalendarInvite: appointmentForm.attachCalendarInvite !== false,
       notifyCreatorOnRsvp: appointmentForm.notifyCreatorOnRsvp !== false,
     })
+    setAppointmentSchedulingSubmitting(true)
     try {
       if (linkedLead && resolveLeadCategoryView(linkedLead) !== 'seller') {
         const linkedContact =
@@ -14226,6 +14228,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setAppointmentSchedulingIntegrity(createError?.schedulingConflicts || null)
       }
       setError(createError?.message || 'Unable to create appointment right now.')
+    } finally {
+      setAppointmentSchedulingSubmitting(false)
     }
   }
 
@@ -16235,6 +16239,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         rsvpStatus: 'Pending',
       })
     }
+    setAppointmentSchedulingSubmitting(true)
     try {
       const updatePayload = applyAppointmentTemplate(appointmentForm.appointmentType, {
         title: normalizeText(appointmentForm.title) || getAppointmentTypeLabel(appointmentForm.appointmentType),
@@ -16311,6 +16316,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setAppointmentSchedulingIntegrity(updateError?.schedulingConflicts || null)
       }
       setError(updateError?.message || 'Unable to update appointment right now.')
+    } finally {
+      setAppointmentSchedulingSubmitting(false)
     }
   }
 
@@ -26221,6 +26228,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           setAppointmentModalOpen(false)
           setAppointmentSchedulingError('')
           setAppointmentSchedulingLoading(false)
+          setAppointmentSchedulingSubmitting(false)
           setViewingPlanBookingContext({ leadId: '', propertyId: '' })
         }}
         title={appointmentSchedulerTitle}
@@ -26239,13 +26247,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   setAppointmentModalOpen(false)
                   setAppointmentSchedulingError('')
                   setAppointmentSchedulingLoading(false)
+                  setAppointmentSchedulingSubmitting(false)
                   setViewingPlanBookingContext({ leadId: '', propertyId: '' })
                 }}
               >
                 Cancel
               </Button>
-              <Button type="submit" form="appointment-modal-form" disabled={!appointmentCanSave || appointmentSchedulingLoading}>
-                {appointmentSchedulingLoading
+              <Button type="submit" form="appointment-modal-form" disabled={!appointmentCanSave || appointmentSchedulingSubmitting}>
+                {appointmentSchedulingSubmitting
                   ? (selectedAppointmentId ? 'Saving…' : 'Scheduling…')
                   : (selectedAppointmentId ? 'Save appointment' : `Schedule ${appointmentSchedulerVerb}`)}
               </Button>
@@ -26371,6 +26380,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </div>
             {appointmentSchedulingError ? (
               <p className="text-xs text-[#9f3028]">{appointmentSchedulingError}</p>
+            ) : null}
+            {appointmentSchedulingLoading ? (
+              <p className="text-xs font-medium text-[#6f839c]">Checking availability…</p>
             ) : null}
           </section>
 
