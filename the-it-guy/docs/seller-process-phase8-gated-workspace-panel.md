@@ -22,6 +22,10 @@ overview page may synthesize the Kingston panel model from exact Kingston
 workspace identity signals only: the Kingston organisation ID, the Kingston
 training owner email, or a Kingston agent email domain.
 
+The production `/pipeline/leads/:leadId` route is rendered through
+`AgencyPipelinePage.jsx`, so that route applies the same exact Kingston signal
+gate before replacing the overview rail and next-best-action CTA.
+
 Organisation name alone still does not activate the Kingston process.
 
 ## UI Boundary

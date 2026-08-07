@@ -82,6 +82,12 @@ import { activateSellerPortalForListing, SELLER_PORTAL_ACTIVATION_SOURCES } from
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
 import { buildSellerDocumentSourceOfTruth } from '../../services/sellerDocumentRequirementsService'
+import { getSellerProcessDefinition } from '../../services/sellerProcessDefinitionService'
+import {
+  KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS,
+  KINGSTONS_SELLER_PROCESS_PROFILE,
+} from '../../services/sellerProcessProfileService'
+import { buildSellerProcessWorkspacePanelModel } from '../../services/sellerProcessWorkspacePanelService'
 import { resolveLeadNextStep } from '../../services/leadNextActionService'
 import { buildAppointmentSaveFeedback } from '../../services/appointmentSaveFeedbackService'
 import { normalizeLeadLifecycleStageKey, resolveLeadLifecyclePresentation } from '../../services/leadLifecyclePresentationService'
@@ -514,6 +520,98 @@ function normalizeText(value) {
 
 function asRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+const KINGSTONS_PIPELINE_ACTION_COPY = Object.freeze({
+  schedule_valuation_appointment: 'Book the valuation appointment with the seller and any required roleplayers.',
+  upload_valuation_document: 'Upload the completed formal valuation document to the seller document workspace.',
+  schedule_valuation_presentation: 'Book the valuation presentation appointment with the seller.',
+  complete_seller_pack: 'Complete the seller pack once the mandate, defects, and FICA flow is enabled.',
+  prepare_listing: 'Prepare the listing once the Kingston seller process is ready.',
+})
+
+const KINGSTONS_PIPELINE_STAGE_LABELS = Object.freeze({
+  first_contact: 'First Contact',
+  valuation_appointment_scheduled: 'Schedule Valuation Appointment',
+  formal_valuation_completed: 'Formal Valuation',
+  valuation_presentation_scheduled: 'Valuation Presentation',
+  seller_pack_signed: 'Seller Pack',
+  listing_ready: 'List Property',
+})
+
+function hasKingstonsPipelineSignal(source = {}) {
+  const lead = source.selectedLead || source.lead || {}
+  const exactOrganisationId = normalizeText(
+    source.organisationId ||
+      source.currentWorkspace?.id ||
+      source.currentWorkspace?.organisationId ||
+      source.currentWorkspace?.organisation_id ||
+      source.currentMembership?.organisation_id ||
+      source.currentMembership?.organization_id ||
+      lead.organisationId ||
+      lead.organisation_id,
+  ).toLowerCase()
+  if (KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS.includes(exactOrganisationId)) return true
+
+  const signals = [
+    source.selectedLeadAssignedAgentLabel,
+    source.currentAgent?.email,
+    source.profile?.email,
+    source.currentMembership?.email,
+    source.currentMembership?.userEmail,
+    source.currentMembership?.user_email,
+    source.currentMembership?.user?.email,
+    lead.assignedAgentEmail,
+    lead.assigned_agent_email,
+    lead.assignedAgentName,
+    lead.assigned_agent_name,
+  ].map((value) => normalizeText(value).toLowerCase()).filter(Boolean)
+
+  return signals.some((value) => value.includes('kingstons.training@arch9.test') || value.includes('@kingstons.'))
+}
+
+function getKingstonsPipelineActionMeta(model = {}) {
+  const cards = Array.isArray(model?.actionCards) ? model.actionCards : []
+  const pending = cards.find((card) => card.pending) || cards[0] || null
+  if (!pending) {
+    return {
+      title: model?.currentStageLabel || 'Kingstons Seller Process',
+      copy: 'Review the Kingston seller process and continue from the correct workspace surface.',
+      actionId: 'open_journey',
+      label: 'Review Process',
+    }
+  }
+  return {
+    title: pending.label,
+    copy: KINGSTONS_PIPELINE_ACTION_COPY[pending.key] || 'Continue the Kingston seller process from the correct workspace surface.',
+    actionId: pending.key,
+    label: pending.label,
+    disabled: pending.disabled === true,
+  }
+}
+
+function buildKingstonsPipelineRailSteps(model = {}) {
+  const definition = getSellerProcessDefinition({ sellerProcessProfile: KINGSTONS_SELLER_PROCESS_PROFILE })
+  const modelProgress = new Map(
+    (model.sections?.find((section) => section.key === 'progress')?.items || []).map((item) => [item.key, item]),
+  )
+  return definition.stages
+    .filter((stage) => stage.key !== 'valuation_presented')
+    .map((stage, index) => {
+      const progress = modelProgress.get(stage.key) || {}
+      const isCurrent = progress.state === 'current' || stage.label === model.currentStageLabel
+      const isCompleted = progress.state === 'complete' || progress.state === 'completed'
+      return {
+        key: stage.key,
+        label: KINGSTONS_PIPELINE_STAGE_LABELS[stage.key] || stage.label,
+        status: isCompleted ? 'Complete' : isCurrent ? 'Current Stage' : 'Upcoming',
+        state: isCompleted ? 'completed' : isCurrent ? 'current' : 'upcoming',
+        current: isCurrent,
+        completed: isCompleted,
+        upcoming: !isCurrent && !isCompleted,
+        index,
+      }
+    })
 }
 
 function resolveAgencyOfferEmailBranding({ organisationId = '', organisationName = '', profile = {}, currentWorkspace = {}, workspace = {} } = {}) {
@@ -9715,6 +9813,55 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedSellerJourney,
   ])
 
+  const selectedSellerProcessPanelModel = useMemo(() => {
+    if (!selectedLeadIsSeller) return null
+    if (!hasKingstonsPipelineSignal({
+      organisationId,
+      selectedLead,
+      selectedLeadAssignedAgentLabel,
+      currentAgent,
+      currentMembership,
+      currentWorkspace,
+      profile,
+      workspace,
+    })) return null
+
+    return buildSellerProcessWorkspacePanelModel({
+      row: selectedLead || {},
+      lead: selectedLead || {},
+      contact: selectedLeadContact || {},
+      appointments: selectedLeadAppointments,
+      listings: selectedLeadLinkedListing ? [selectedLeadLinkedListing] : [],
+      documents: selectedLeadLinkedListing?.documents || [],
+      mandatePacketStatus,
+      sellerProcessProfile: KINGSTONS_SELLER_PROCESS_PROFILE,
+    })
+  }, [
+    currentAgent,
+    currentMembership,
+    currentWorkspace,
+    mandatePacketStatus,
+    organisationId,
+    profile,
+    selectedLead,
+    selectedLeadAppointments,
+    selectedLeadAssignedAgentLabel,
+    selectedLeadContact,
+    selectedLeadIsSeller,
+    selectedLeadLinkedListing,
+    workspace,
+  ])
+
+  const selectedLeadHasKingstonsSellerProcess = selectedSellerProcessPanelModel?.visible === true
+  const selectedKingstonsProcessAction = useMemo(
+    () => getKingstonsPipelineActionMeta(selectedSellerProcessPanelModel || {}),
+    [selectedSellerProcessPanelModel],
+  )
+  const selectedKingstonsRailSteps = useMemo(
+    () => buildKingstonsPipelineRailSteps(selectedSellerProcessPanelModel || {}),
+    [selectedSellerProcessPanelModel],
+  )
+
   const selectedSellerReadinessRequirements = useMemo(() => {
     const listingItems = selectedSellerReadiness.listingReadiness?.items || []
     const propertyDetailAddress = normalizeText(
@@ -15266,6 +15413,52 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('documents')
       return
     }
+    if (id === 'schedule_valuation_appointment' || id === 'schedule_valuation_presentation') {
+      const appointmentType = id === 'schedule_valuation_presentation' ? 'valuation_presentation' : 'seller_valuation'
+      const title = id === 'schedule_valuation_presentation' ? 'Valuation Presentation' : 'Valuation Appointment'
+      setLeadWorkspaceTab('appointments')
+      setSelectedAppointmentId('')
+      setAppointmentManualParticipantOpen(false)
+      setAppointmentDeselectedParticipantKeys([])
+      setAppointmentForm(buildDefaultAppointmentFormForType(appointmentType, {
+        ...LEAD_DETAIL_DEFAULT_APPOINTMENT,
+        appointmentType,
+        title,
+        date: getTomorrowIsoDate(),
+        startTime: getCurrentTimeValue(),
+        contactId: normalizeText(selectedLead?.contactId) || '',
+        listingId: normalizeText(selectedLeadLinkedListing?.id || selectedLead?.listingId || selectedLead?.listing_id) || '',
+        relatedEntityType: 'lead',
+        relatedEntityId: normalizeText(selectedLead?.leadId) || '',
+        location: normalizeText(selectedLeadLinkedListing?.address || selectedLeadLinkedListing?.propertyAddress || selectedLead?.sellerPropertyAddress || selectedLead?.propertyInterest) || '',
+        status: 'requested',
+        recipientEmail: normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email).toLowerCase(),
+        participants: [{
+          name: normalizeText(selectedLeadContactName || selectedLeadDisplayName || selectedLead?.name) || 'Seller',
+          email: normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email).toLowerCase(),
+          phone: normalizeText(selectedLeadContact?.phone || selectedLead?.sellerPhone || selectedLead?.phone),
+          participantRole: 'Seller',
+          isRequired: true,
+          rsvpStatus: 'Pending',
+        }],
+      }))
+      setAppointmentSchedulingIntegrity(null)
+      setAppointmentSchedulingError('')
+      setAppointmentModalOpen(true)
+      return
+    }
+    if (id === 'upload_valuation_document') {
+      setLeadWorkspaceTab('documents')
+      return
+    }
+    if (id === 'complete_seller_pack') {
+      setLeadWorkspaceTab('mandate')
+      return
+    }
+    if (id === 'prepare_listing') {
+      void handleCreateListingFromSellerLead()
+      return
+    }
     if (id === 'send_seller_onboarding') {
       if (selectedLeadOnboardingCompleted) {
         void handleSendSellerPortalLink()
@@ -20123,9 +20316,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]" data-testid="seller-journey-overview">
                       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-6 py-5 sm:px-8">
                         <div>
-                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Seller Journey</p>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">
+                            {selectedLeadHasKingstonsSellerProcess ? 'Kingstons Seller Process' : 'Seller Journey'}
+                          </p>
                           <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">
-                            {selectedSellerJourney.status?.summary || selectedSellerJourney.stage?.label || 'Acquisition Timeline'}
+                            {selectedLeadHasKingstonsSellerProcess
+                              ? selectedSellerProcessPanelModel.currentStageLabel
+                              : selectedSellerJourney.status?.summary || selectedSellerJourney.stage?.label || 'Acquisition Timeline'}
                           </h2>
                         </div>
                         <span className="rounded-full border border-[#cfe4d8] bg-[#edf8f1] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#237348]">
@@ -20136,11 +20333,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <div className="overflow-x-auto px-5 py-7 sm:px-8" data-testid="seller-journey-rail">
                         <ol
                           className="grid min-w-[980px] gap-0"
-                          style={{ gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))` }}
+                          style={{ gridTemplateColumns: `repeat(${Math.max((selectedLeadHasKingstonsSellerProcess ? selectedKingstonsRailSteps : selectedSellerJourney.steps).length, 1)}, minmax(140px, 1fr))` }}
                         >
-                          {selectedSellerJourney.steps.map((step, index) => {
-                            const isCurrent = step.state === 'current'
-                            const isCompleted = step.state === 'completed'
+                          {(selectedLeadHasKingstonsSellerProcess ? selectedKingstonsRailSteps : selectedSellerJourney.steps).map((step, index, steps) => {
+                            const isCurrent = step.current === true || step.state === 'current'
+                            const isCompleted = step.completed === true || step.state === 'completed'
                             const dotClass = isCurrent
                               ? 'border-[#0f8f59] bg-white text-[#0f7b4e] shadow-[0_0_0_7px_rgba(15,143,89,0.12)]'
                               : isCompleted
@@ -20149,7 +20346,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             const lineClass = isCompleted || isCurrent ? 'bg-[#9bd6b7]' : 'bg-[#dce6f1]'
                             return (
                               <li key={step.key} className="relative px-2">
-                                {index < selectedSellerJourney.steps.length - 1 ? (
+                                {index < steps.length - 1 ? (
                                   <span className={`absolute left-[calc(50%+18px)] right-[calc(-50%+18px)] top-[18px] h-0.5 ${lineClass}`} aria-hidden="true" />
                                 ) : null}
                                 <div className={`relative flex min-h-[116px] flex-col items-center text-center ${isCurrent ? 'rounded-[18px] border border-[#cfe8d8] bg-[#f4fbf7] px-3 py-3 shadow-[0_10px_22px_rgba(31,54,78,0.06)]' : 'px-2 py-3'}`}>
@@ -20178,23 +20375,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <div className="min-w-0">
                               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Next Best Action</p>
                               <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">
-                                {selectedSellerReadiness.nextAction?.label || selectedLeadMandatePrimaryLabel || 'Review seller journey'}
+                                {selectedLeadHasKingstonsSellerProcess
+                                  ? selectedKingstonsProcessAction.title
+                                  : selectedSellerReadiness.nextAction?.label || selectedLeadMandatePrimaryLabel || 'Review seller journey'}
                               </h3>
                               <p className="mt-2 line-clamp-2 text-sm leading-5 text-[#c7d5e2]">
-                                {selectedSellerReadiness.blockers?.[0]?.label
-                                  ? `${selectedSellerReadiness.blockers[0].label} needs attention before this seller is market ready.`
-                                  : 'The seller workspace is on track.'}
+                                {selectedLeadHasKingstonsSellerProcess
+                                  ? selectedKingstonsProcessAction.copy
+                                  : selectedSellerReadiness.blockers?.[0]?.label
+                                    ? `${selectedSellerReadiness.blockers[0].label} needs attention before this seller is market ready.`
+                                    : 'The seller workspace is on track.'}
                               </p>
                             </div>
                             <Button
                               type="button"
                               size="sm"
                               className="min-h-10 shrink-0 bg-white px-4 text-[#102033] hover:bg-[#edf4fa]"
-                              onClick={() => handleSellerJourneyAction(selectedSellerReadiness.nextAction?.id || 'open_journey')}
-                              disabled={selectedSellerReadiness.nextAction?.disabled}
+                              onClick={() => handleSellerJourneyAction(selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.actionId : selectedSellerReadiness.nextAction?.id || 'open_journey')}
+                              disabled={selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.disabled : selectedSellerReadiness.nextAction?.disabled}
                             >
                               <CheckCircle2 className="h-4 w-4" />
-                              {selectedSellerReadiness.nextAction?.label || 'Open Journey'}
+                              {selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.label : selectedSellerReadiness.nextAction?.label || 'Open Journey'}
                             </Button>
                           </div>
                         </section>

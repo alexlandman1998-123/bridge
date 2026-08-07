@@ -11,6 +11,7 @@ import {
 
 const appRoot = resolve(import.meta.dirname, '..')
 const pageSource = readFileSync(resolve(appRoot, 'src/pages/AgentLeadsPage.jsx'), 'utf8')
+const pipelinePageSource = readFileSync(resolve(appRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
 const phase8Doc = readFileSync(resolve(appRoot, 'docs/seller-process-phase8-gated-workspace-panel.md'), 'utf8')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 
@@ -68,6 +69,12 @@ const liveNonWorkspaceSources = [
   assert.match(pageSource, /<KingstonsNextBestActionCard model=\{sellerProcessPanelModel\} onAction=\{handleAcquisitionAction\} \/>/)
   assert.match(pageSource, /<SellerProcessShadowPanel model=\{sellerProcessPanelModel\} onAction=\{handleAcquisitionAction\} \/>/)
   assert.match(pageSource, /sellerProcessPanelModel={sellerProcessPanelModel}/)
+  assert.match(pipelinePageSource, /buildSellerProcessWorkspacePanelModel/)
+  assert.match(pipelinePageSource, /hasKingstonsPipelineSignal/)
+  assert.match(pipelinePageSource, /selectedLeadHasKingstonsSellerProcess/)
+  assert.match(pipelinePageSource, /Kingstons Seller Process/)
+  assert.match(pipelinePageSource, /schedule_valuation_appointment/)
+  assert.match(pipelinePageSource, /schedule_valuation_presentation/)
   assert.equal(
     pageSource.includes("includeSellerProcessShadowIntegration: true"),
     false,
