@@ -6,6 +6,7 @@ import {
   DEFAULT_SELLER_PROCESS_PROFILE,
   KINGSTONS_SELLER_PROCESS_PROFILE,
   resolveSellerProcessProfile,
+  resolveSellerProcessProfileForOrganisation,
 } from '../src/services/sellerProcessProfileService.js'
 
 const appRoot = resolve(import.meta.dirname, '..')
@@ -31,6 +32,9 @@ const liveNonWorkspaceSources = [
   })
   assert.equal(nameOnly.profile, DEFAULT_SELLER_PROCESS_PROFILE)
   assert.equal(nameOnly.isKingstons, false)
+  assert.equal(resolveSellerProcessProfileForOrganisation({
+    organisationId: 'ec19d0a6-bcba-4eef-aa72-9972de88204d',
+  }).isKingstons, true)
 }
 
 {
@@ -47,9 +51,10 @@ const liveNonWorkspaceSources = [
 
 {
   assert.match(pageSource, /useOptionalOrganisation/)
-  assert.match(pageSource, /resolveSellerProcessProfile/)
+  assert.match(pageSource, /resolveSellerProcessProfileForOrganisation/)
   assert.match(pageSource, /buildSellerProcessWorkspacePanelModel/)
   assert.match(pageSource, /const includeSellerProcessShadowIntegration = sellerProcessProfileResolution\.isKingstons === true/)
+  assert.match(pageSource, /organisationId,\s*\n\s*organisationSettings,/)
   assert.match(pageSource, /includeSellerProcessShadowIntegration,\s*\n\s*sellerProcessProfile: sellerProcessProfileResolution\.profile,\s*\n\s*organisationSettings,/)
   assert.match(pageSource, /const sellerProcessPanelModel = useMemo\(\(\) => buildSellerProcessWorkspacePanelModel\(data \|\| {}\), \[data\]\)/)
   assert.match(pageSource, /const hasKingstonsSellerProcess = sellerProcessPanelModel\?\.visible === true/)

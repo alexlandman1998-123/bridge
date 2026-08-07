@@ -4,12 +4,15 @@ import { resolve } from 'node:path'
 
 import {
   DEFAULT_SELLER_PROCESS_PROFILE,
+  KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS,
   KINGSTONS_SELLER_PROCESS_PROFILE,
   SELLER_PROCESS_PROFILE_KEYS,
   isKingstonsSellerProcessProfile,
+  isKingstonsSellerProcessOrganisationId,
   isKnownSellerProcessProfile,
   normalizeSellerProcessProfile,
   resolveSellerProcessProfile,
+  resolveSellerProcessProfileForOrganisation,
   resolveSellerProcessProfileKey,
 } from '../src/services/sellerProcessProfileService.js'
 import {
@@ -55,6 +58,7 @@ const mandatePacketStatus = {
   packet: { id: 'packet-phase1-boundary', status: 'completed' },
   signingSummary: { allSignersSigned: true },
 }
+const kingstonOrgId = KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS[0]
 
 {
   assert.equal(SELLER_PROCESS_PROFILE_KEYS.DEFAULT_RESIDENTIAL, DEFAULT_SELLER_PROCESS_PROFILE)
@@ -68,6 +72,8 @@ const mandatePacketStatus = {
   assert.equal(isKnownSellerProcessProfile('made_up'), false)
   assert.equal(isKingstonsSellerProcessProfile('kingstons'), true)
   assert.equal(isKingstonsSellerProcessProfile('default_residential'), false)
+  assert.equal(isKingstonsSellerProcessOrganisationId(kingstonOrgId), true)
+  assert.equal(isKingstonsSellerProcessOrganisationId('not-kingstons'), false)
 }
 
 {
@@ -78,6 +84,44 @@ const mandatePacketStatus = {
   assert.equal(resolved.sourcePath, '')
   assert.equal(resolved.isDefault, true)
   assert.equal(resolved.isKingstons, false)
+}
+
+{
+  const nameOnly = resolveSellerProcessProfileForOrganisation({
+    organisation: {
+      name: 'Kingstons Real Estate',
+      displayName: 'Kingstons',
+    },
+  })
+  assert.equal(nameOnly.profile, DEFAULT_SELLER_PROCESS_PROFILE)
+  assert.equal(nameOnly.isKingstons, false)
+
+  const orgScoped = resolveSellerProcessProfileForOrganisation({
+    organisationId: kingstonOrgId,
+  })
+  assert.equal(orgScoped.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(orgScoped.isKingstons, true)
+  assert.equal(orgScoped.organisationScoped, true)
+
+  const orgScopedDefaultFallback = resolveSellerProcessProfileForOrganisation({
+    organisationId: kingstonOrgId,
+    organisationSettings: {
+      sellerProcess: {
+        profile: 'default_residential',
+      },
+    },
+  })
+  assert.equal(orgScopedDefaultFallback.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(orgScopedDefaultFallback.isKingstons, true)
+  assert.equal(orgScopedDefaultFallback.organisationScoped, true)
+
+  const unknownExplicitStillDefault = resolveSellerProcessProfileForOrganisation({
+    organisationId: kingstonOrgId,
+    sellerProcessProfile: 'future_partner_profile',
+  })
+  assert.equal(unknownExplicitStillDefault.profile, DEFAULT_SELLER_PROCESS_PROFILE)
+  assert.equal(unknownExplicitStillDefault.knownProfile, false)
+  assert.equal(unknownExplicitStillDefault.organisationScoped, undefined)
 }
 
 {

@@ -183,7 +183,7 @@ import {
 import { prepareBuyerOnboardingNotification } from '../services/buyerOnboardingNotificationService'
 import { listLeadCommunicationTemplates } from '../services/leadCommunicationTemplateService'
 import { buildLeadWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
-import { resolveSellerProcessProfile } from '../services/sellerProcessProfileService'
+import { resolveSellerProcessProfileForOrganisation } from '../services/sellerProcessProfileService'
 import { buildSellerProcessWorkspacePanelModel } from '../services/sellerProcessWorkspacePanelService'
 import { buildSellerJourney } from '../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../services/sellerReadinessService'
@@ -22878,13 +22878,16 @@ function AgentLeadWorkspace() {
     workspaceRole: workspaceContext.currentMembership?.workspace_role || workspaceContext.currentMembership?.organisation_role || workspaceContext.currentMembership?.role || workspaceContext.profile?.role,
   }), [workspaceContext.currentMembership, workspaceContext.profile])
   const organisationSettings = organisationContext?.organisationSettings || null
-  const sellerProcessProfileResolution = useMemo(() => resolveSellerProcessProfile({
+  const sellerProcessProfileResolution = useMemo(() => resolveSellerProcessProfileForOrganisation({
+    organisationId,
     organisationSettings,
     settings: organisationSettings,
     onboarding: organisationContext?.onboarding || null,
+    organisation: organisationContext?.organisation || { id: organisationId },
     sellerProcessProfile: workspaceContext.currentWorkspace?.sellerProcessProfile || workspaceContext.currentWorkspace?.seller_process_profile,
     sellerProcess: workspaceContext.currentWorkspace?.sellerProcess || workspaceContext.currentWorkspace?.seller_process,
-  }), [organisationContext?.onboarding, organisationSettings, workspaceContext.currentWorkspace])
+    currentWorkspace: workspaceContext.currentWorkspace,
+  }), [organisationContext?.onboarding, organisationContext?.organisation, organisationId, organisationSettings, workspaceContext.currentWorkspace])
   const includeSellerProcessShadowIntegration = sellerProcessProfileResolution.isKingstons === true
   const optimisticWorkspace = (() => {
     const workspace = location.state?.leadWorkspace
