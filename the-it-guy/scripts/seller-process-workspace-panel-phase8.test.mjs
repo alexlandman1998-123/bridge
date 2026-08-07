@@ -52,6 +52,8 @@ const liveNonWorkspaceSources = [
   assert.match(pageSource, /const includeSellerProcessShadowIntegration = sellerProcessProfileResolution\.isKingstons === true/)
   assert.match(pageSource, /includeSellerProcessShadowIntegration,\s*\n\s*sellerProcessProfile: sellerProcessProfileResolution\.profile,\s*\n\s*organisationSettings,/)
   assert.match(pageSource, /const sellerProcessPanelModel = useMemo\(\(\) => buildSellerProcessWorkspacePanelModel\(data \|\| {}\), \[data\]\)/)
+  assert.match(pageSource, /const hasKingstonsSellerProcess = sellerProcessPanelModel\?\.visible === true/)
+  assert.match(pageSource, /<KingstonsNextBestActionCard model=\{sellerProcessPanelModel\} onAction=\{handleAcquisitionAction\} \/>/)
   assert.match(pageSource, /<SellerProcessShadowPanel model=\{sellerProcessPanelModel\} onAction=\{handleAcquisitionAction\} \/>/)
   assert.match(pageSource, /sellerProcessPanelModel={sellerProcessPanelModel}/)
   assert.equal(
@@ -72,14 +74,25 @@ const liveNonWorkspaceSources = [
   const panelEnd = pageSource.indexOf('function SellerListingFact', panelStart)
   const panelSource = pageSource.slice(panelStart, panelEnd)
   assert.match(panelSource, /if \(!model\?\.visible\) return null/)
-  assert.match(panelSource, /StatusPill tone="slate">Read-only/)
+  assert.match(panelSource, /StatusPill tone="green">Active Profile/)
   assert.match(panelSource, /onClick=\{\(\) => onAction\?\.\(card\.key\)\}/)
-  assert.match(panelSource, /disabled=\{!onAction\}/)
+  assert.match(panelSource, /disabled=\{!onAction \|\| card\.disabled === true\}/)
   assert.doesNotMatch(panelSource, /onSaved/)
   assert.doesNotMatch(panelSource, /createAppointmentAsync/)
   assert.doesNotMatch(panelSource, /uploadPrivateListingDocument/)
   assert.doesNotMatch(panelSource, /updatePrivateListing/)
   assert.doesNotMatch(panelSource, /sendSellerOnboarding/)
+}
+
+{
+  const cardStart = pageSource.indexOf('function KingstonsNextBestActionCard')
+  assert.notEqual(cardStart, -1, 'Kingstons next best action card should exist')
+  const cardEnd = pageSource.indexOf('function SellerReadinessScoreCard', cardStart)
+  const cardSource = pageSource.slice(cardStart, cardEnd)
+  assert.match(cardSource, /getKingstonsNextActionMeta\(model\)/)
+  assert.match(cardSource, /onClick=\{\(\) => onAction\?\.\(meta\.actionId\)\}/)
+  assert.match(cardSource, /Kingstons Next Best Action/)
+  assert.doesNotMatch(cardSource, /SellerAcquisitionActionRow/)
 }
 
 {

@@ -51,7 +51,7 @@ function sliceFunction(source, functionName, nextFunctionName) {
 {
   const panelSource = sliceFunction(pageSource, 'SellerProcessShadowPanel', 'SellerListingFact')
   assert.match(panelSource, /onClick=\{\(\) => onAction\?\.\(card\.key\)\}/)
-  assert.match(panelSource, /disabled=\{!onAction\}/)
+  assert.match(panelSource, /disabled=\{!onAction \|\| card\.disabled === true\}/)
   assert.match(panelSource, /getSellerProcessPanelActionHint\(card\.key\)/)
   assert.doesNotMatch(panelSource, /createAppointmentAsync/)
   assert.doesNotMatch(panelSource, /uploadPrivateListingDocument/)
@@ -69,7 +69,11 @@ function sliceFunction(source, functionName, nextFunctionName) {
   assert.match(layoutSource, /key === 'upload_valuation_document'\) setActiveWorkspaceTab\('documents'\)/)
   assert.match(layoutSource, /key === 'complete_seller_pack'\) setActiveWorkspaceTab\('mandate'\)/)
   assert.match(layoutSource, /key === 'prepare_listing'\) onOpenListing\?\.\(\)/)
+  assert.match(layoutSource, /hasKingstonsSellerProcess \?/)
+  assert.match(layoutSource, /<KingstonsNextBestActionCard model=\{sellerProcessPanelModel\} onAction=\{handleAcquisitionAction\} \/>/)
   assert.match(layoutSource, /<SellerProcessShadowPanel model=\{sellerProcessPanelModel\} onAction=\{handleAcquisitionAction\} \/>/)
+  assert.match(layoutSource, /<SellerAcquisitionActionRow/)
+  assert.match(layoutSource, /<SellerJourneyRail journey=\{sellerJourney\} row=\{row\} listing=\{linkedSellerListing\} \/>/)
   assert.match(layoutSource, /appointmentComposerType=\{appointmentComposerType\}/)
 }
 

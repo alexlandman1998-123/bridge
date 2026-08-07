@@ -17372,6 +17372,62 @@ function SellerNextBestActionCard({ row, listing, journey, readiness, onboarding
   )
 }
 
+const KINGSTONS_ACTION_COPY = Object.freeze({
+  schedule_valuation_appointment: 'Book the first valuation appointment with the seller and roleplayers.',
+  upload_valuation_document: 'Upload the completed formal valuation so the seller process can move forward.',
+  schedule_valuation_presentation: 'Book the presentation meeting and resend details where needed.',
+  complete_seller_pack: 'Complete the mandate, defects form, and FICA pack once we enable the seller pack flow.',
+  prepare_listing: 'Create or open the listing once the seller process is ready.',
+})
+
+function getKingstonsNextActionMeta(model = {}) {
+  const cards = Array.isArray(model?.actionCards) ? model.actionCards : []
+  const pending = cards.find((card) => card.pending) || cards[0] || null
+  if (!pending) {
+    return {
+      title: model?.currentStageLabel || 'Kingstons seller process',
+      copy: 'Review the seller process and continue with the next available workspace action.',
+      actionId: 'open_journey',
+      actionLabel: 'Review Process',
+      tone: 'green',
+    }
+  }
+
+  return {
+    title: pending.label,
+    copy: KINGSTONS_ACTION_COPY[pending.key] || 'Continue the Kingstons seller process from the correct workspace surface.',
+    actionId: pending.key,
+    actionLabel: pending.label,
+    tone: pending.pending ? 'blue' : 'green',
+  }
+}
+
+function KingstonsNextBestActionCard({ model = null, onAction }) {
+  const meta = getKingstonsNextActionMeta(model)
+  const toneClass = meta.tone === 'green'
+    ? 'border-emerald-100 bg-emerald-50/70'
+    : 'border-blue-100 bg-blue-50/70'
+
+  return (
+    <section className={`${panelClass} min-h-[210px] p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)] sm:p-6 ${toneClass}`}>
+      <div className="flex h-full min-w-0 flex-col justify-between gap-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-blue-200 bg-white text-blue-700"><Tag size={16} /></span>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Kingstons Next Best Action</p>
+            <StatusPill tone="blue">Kingstons</StatusPill>
+          </div>
+          <h2 className="mt-4 text-2xl font-semibold tracking-[-0.045em] text-slate-950">{meta.title}</h2>
+          <p className="mt-2 text-sm font-medium text-slate-600">{meta.copy}</p>
+        </div>
+        <button type="button" onClick={() => onAction?.(meta.actionId)} className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] hover:bg-slate-800 sm:w-fit">
+          {meta.actionLabel}
+        </button>
+      </div>
+    </section>
+  )
+}
+
 function SellerReadinessScoreCard({ readiness = null, journey = null }) {
   const listingReadiness = readiness?.listingReadiness || {}
   const missing = listingReadiness.incompleteItems?.map((item) => item.blocker || item.label) || readiness?.blockers?.map((item) => item.label) || []
@@ -17428,7 +17484,7 @@ function SellerProcessShadowPanel({ model = null, onAction }) {
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">{model.title || 'Seller Process'}</h2>
             <StatusPill tone="blue">Kingstons</StatusPill>
-            <StatusPill tone="slate">Read-only</StatusPill>
+            <StatusPill tone="green">Active Profile</StatusPill>
           </div>
           <p className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-slate-950">{model.currentStageLabel || 'Not Started'}</p>
         </div>
@@ -17460,7 +17516,7 @@ function SellerProcessShadowPanel({ model = null, onAction }) {
               key={card.key}
               type="button"
               onClick={() => onAction?.(card.key)}
-              disabled={!onAction}
+              disabled={!onAction || card.disabled === true}
               className="flex min-h-[116px] flex-col items-start justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-200 hover:bg-blue-50/50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-70"
             >
               <span className="flex items-center gap-2 text-sm font-semibold text-slate-950">
@@ -21744,7 +21800,7 @@ function SellerMandateTab({
   )
 }
 
-function SellerDocumentsTab({ journey, listing = null, row = {}, mandatePacketStatus = null }) {
+function SellerDocumentsTab({ journey, listing = null, row = {}, mandatePacketStatus = null, onSaved }) {
   const documents = useMemo(
     () => buildSellerDocumentRowsFromSource({ journey, listing, row, mandatePacketStatus }),
     [journey, listing, mandatePacketStatus, row],
@@ -21753,6 +21809,11 @@ function SellerDocumentsTab({ journey, listing = null, row = {}, mandatePacketSt
   const summary = useMemo(() => getSellerDocumentStatusSummary(documents), [documents])
   const [activeTab, setActiveTab] = useState('property')
   const [searchValue, setSearchValue] = useState('')
+  const [valuationUploadFile, setValuationUploadFile] = useState(null)
+  const [valuationUploadSaving, setValuationUploadSaving] = useState(false)
+  const [valuationUploadMessage, setValuationUploadMessage] = useState('')
+  const [valuationUploadError, setValuationUploadError] = useState('')
+  const listingId = getSellerListingId(row, listing || journey?.listing || null)
   const searchableDocuments = useMemo(
     () => documents.filter((document) => document?.required !== false && document?.applicable !== false),
     [documents],
@@ -21779,10 +21840,75 @@ function SellerDocumentsTab({ journey, listing = null, row = {}, mandatePacketSt
       return matchesTab && matchesSearch
     })
   }, [resolvedActiveTab, searchValue, searchableDocuments])
+  const uploadValuationDocument = useCallback(async (event) => {
+    event.preventDefault()
+    if (!listingId) {
+      setValuationUploadError('Link a seller listing before uploading the valuation document.')
+      return
+    }
+    if (!valuationUploadFile) {
+      setValuationUploadError('Select the valuation document to upload.')
+      return
+    }
+
+    try {
+      setValuationUploadSaving(true)
+      setValuationUploadError('')
+      setValuationUploadMessage('')
+      await uploadPrivateListingDocument(listingId, valuationUploadFile, {
+        documentType: 'valuation_document',
+        documentCategory: 'Property Documents',
+        documentName: valuationUploadFile.name || 'Formal Valuation Document',
+        visibility: 'internal',
+        status: 'uploaded',
+      })
+      setValuationUploadFile(null)
+      setValuationUploadMessage('Formal valuation document uploaded.')
+      setActiveTab('property')
+      await onSaved?.()
+    } catch (uploadError) {
+      setValuationUploadError(uploadError?.message || 'Unable to upload valuation document.')
+    } finally {
+      setValuationUploadSaving(false)
+    }
+  }, [listingId, onSaved, valuationUploadFile])
 
   return (
     <SellerWorkspaceCard title="Document Center" action={<StatusPill tone={completion.percent >= 80 ? 'green' : completion.percent ? 'amber' : 'slate'}>{completion.percent}% complete</StatusPill>}>
       <p className="text-sm leading-6 text-slate-500">Track seller uploads, FICA, property documents, and additional requests.</p>
+      <form onSubmit={uploadValuationDocument} className="mt-5 grid gap-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 lg:grid-cols-[minmax(180px,0.7fr)_minmax(220px,1fr)_auto] lg:items-end">
+        <label className="grid gap-2 text-sm font-semibold text-slate-700">
+          Document type
+          <select value="valuation_document" disabled className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none">
+            <option value="valuation_document">Formal Valuation Document</option>
+          </select>
+        </label>
+        <label className="grid gap-2 text-sm font-semibold text-slate-700">
+          Agent upload
+          <input
+            type="file"
+            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+            onChange={(event) => {
+              setValuationUploadFile(event.target.files?.[0] || null)
+              setValuationUploadError('')
+              setValuationUploadMessage('')
+            }}
+            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-700 focus:border-blue-300"
+          />
+          <span className="text-xs font-medium text-slate-500">Uploads into property documents for this seller listing.</span>
+        </label>
+        <button
+          type="submit"
+          disabled={valuationUploadSaving || !valuationUploadFile || !listingId}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          <Upload size={15} />
+          {valuationUploadSaving ? 'Uploading...' : 'Upload Valuation'}
+        </button>
+        {valuationUploadMessage ? <p className="lg:col-span-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{valuationUploadMessage}</p> : null}
+        {valuationUploadError ? <p className="lg:col-span-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{valuationUploadError}</p> : null}
+        {!listingId ? <p className="lg:col-span-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">Link a seller listing before uploading valuation documents.</p> : null}
+      </form>
       <div className="mt-5 grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
         <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-5 xl:h-[420px]">
           <ListingReadinessCircle percent={completion.percent} />
@@ -22270,7 +22396,7 @@ function SellerTabContent({
       />
     )
   }
-  if (activeTab === 'documents') return <SellerDocumentsTab journey={journey} listing={listing} row={row} mandatePacketStatus={mandatePacketStatus} />
+  if (activeTab === 'documents') return <SellerDocumentsTab journey={journey} listing={listing} row={row} mandatePacketStatus={mandatePacketStatus} onSaved={onSaved} />
   if (activeTab === 'activity') return <SellerActivityTab timeline={timeline} row={row} listing={listing} journey={journey} readiness={readiness} onTabChange={onTabChange} />
   return (
     <SellerOverviewTab
@@ -22456,6 +22582,7 @@ function SellerLeadWorkspaceLayout({
   const [appointmentComposerType, setAppointmentComposerType] = useState('seller_consultation')
   const [agentOnboardingSignal, setAgentOnboardingSignal] = useState(0)
   const initialWorkspaceTabHandledRef = useRef('')
+  const hasKingstonsSellerProcess = sellerProcessPanelModel?.visible === true
   const commissionSummary = useMemo(() => getSellerCommissionWorkspace(row, linkedSellerListing), [linkedSellerListing, row])
   const [commissionDraft, setCommissionDraft] = useState(() => buildSellerCommissionDraft(commissionSummary))
   useEffect(() => {
@@ -22591,16 +22718,24 @@ function SellerLeadWorkspaceLayout({
       />
       {sellerActionError ? <p className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{sellerActionError}</p> : null}
       {sellerActionMessage ? <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{sellerActionMessage}</p> : null}
-      <SellerAcquisitionActionRow
-        row={row}
-        listing={linkedSellerListing}
-        journey={sellerJourney}
-        readiness={sellerReadiness}
-        onboardingStatus={sellerOnboardingStatus}
-        onAction={handleAcquisitionAction}
-      />
-      <SellerProcessShadowPanel model={sellerProcessPanelModel} onAction={handleAcquisitionAction} />
-      <SellerJourneyRail journey={sellerJourney} row={row} listing={linkedSellerListing} />
+      {hasKingstonsSellerProcess ? (
+        <>
+          <KingstonsNextBestActionCard model={sellerProcessPanelModel} onAction={handleAcquisitionAction} />
+          <SellerProcessShadowPanel model={sellerProcessPanelModel} onAction={handleAcquisitionAction} />
+        </>
+      ) : (
+        <>
+          <SellerAcquisitionActionRow
+            row={row}
+            listing={linkedSellerListing}
+            journey={sellerJourney}
+            readiness={sellerReadiness}
+            onboardingStatus={sellerOnboardingStatus}
+            onAction={handleAcquisitionAction}
+          />
+          <SellerJourneyRail journey={sellerJourney} row={row} listing={linkedSellerListing} />
+        </>
+      )}
       <SellerWorkspaceTabs activeTab={activeWorkspaceTab} onTabChange={setActiveWorkspaceTab} />
       <SellerTabContent
         activeTab={activeWorkspaceTab}
