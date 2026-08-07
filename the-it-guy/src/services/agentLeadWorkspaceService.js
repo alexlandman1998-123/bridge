@@ -16,6 +16,7 @@ import { buildRequirementSummary, listLeadRequirements } from './leadRequirement
 import { getSuggestionsForLead } from './leadSuggestionService'
 import { getPrivateListing } from './privateListingService'
 import { listOrganisationUsers } from '../lib/settingsApi'
+import { resolveSellerProcessProfileForOrganisation } from './sellerProcessProfileService.js'
 import { attachSellerProcessShadowIntegration } from './sellerProcessWorkspaceIntegrationService.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -1170,6 +1171,13 @@ export async function fetchAgentLeadWorkspace({
   }
 
   const contact = workspace.contacts[0] || null
+  const sellerProcessProfileResolution = resolveSellerProcessProfileForOrganisation({
+    organisationId,
+    organisationSettings,
+    sellerProcessProfile,
+    lead,
+    contact,
+  })
   const resolvedWorkspaceListingId = normalizeText(workspace?.listingId || workspace?.listing_id)
   const context = {
     leadId: getLeadId(lead),
@@ -1352,10 +1360,10 @@ export async function fetchAgentLeadWorkspace({
       documentPackets: normalizedDocumentPackets,
       leadActivities: workspace.leadActivities,
       organisationSettings,
-      sellerProcessProfile,
+      sellerProcessProfile: sellerProcessProfileResolution.profile,
     },
     {
-      includeSellerProcessShadowIntegration,
+      includeSellerProcessShadowIntegration: includeSellerProcessShadowIntegration || sellerProcessProfileResolution.isKingstons === true,
       includeSellerProcessShadow,
     },
   )

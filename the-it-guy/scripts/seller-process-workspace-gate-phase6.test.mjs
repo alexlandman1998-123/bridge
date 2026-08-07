@@ -139,6 +139,8 @@ function assertReadOnlyShadow(payload) {
 
 {
   assert.match(agentLeadWorkspaceSource, /includeSellerProcessShadowIntegration = false/)
+  assert.match(agentLeadWorkspaceSource, /resolveSellerProcessProfileForOrganisation/)
+  assert.match(agentLeadWorkspaceSource, /sellerProcessProfileResolution\.isKingstons === true/)
   assert.match(agentLeadWorkspaceSource, /attachSellerProcessShadowIntegration/)
   assert.match(agentLeadWorkspaceSource, /sellerProcessProfile = ''/)
   assert.match(agentLeadWorkspaceSource, /organisationSettings = null/)

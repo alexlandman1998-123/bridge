@@ -2,6 +2,7 @@ import {
   DEFAULT_SELLER_PROCESS_PROFILE,
   KINGSTONS_SELLER_PROCESS_PROFILE,
   resolveSellerProcessProfile,
+  resolveSellerProcessProfileForOrganisation,
 } from './sellerProcessProfileService.js'
 
 const DEFAULT_SELLER_STAGE_KEYS = Object.freeze([
@@ -232,7 +233,7 @@ export function getSellerProcessDefinitionByProfile(profile = DEFAULT_SELLER_PRO
 }
 
 export function getSellerProcessDefinition(source = {}) {
-  const resolution = resolveSellerProcessProfile(source)
+  const resolution = resolveSellerProcessProfileForOrganisation(source)
   const definition = SELLER_PROCESS_DEFINITIONS[resolution.profile] || DEFAULT_PROCESS_DEFINITION
   return Object.freeze({
     ...cloneDefinition(definition),

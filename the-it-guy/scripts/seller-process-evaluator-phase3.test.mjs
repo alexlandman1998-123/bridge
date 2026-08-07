@@ -55,6 +55,19 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
 
 {
   const evaluation = evaluateSellerProcess({
+    lead: {
+      organisation_id: 'ec19d0a6-bcba-4eef-aa72-9972de88204d',
+      stage: 'Contacted',
+    },
+  })
+  assert.equal(evaluation.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(evaluation.resolution.organisationScoped, true)
+  assert.equal(evaluation.currentStage.key, 'valuation_appointment_scheduled')
+  assert.deepEqual(evaluation.completedStageKeys, ['first_contact'])
+}
+
+{
+  const evaluation = evaluateSellerProcess({
     ...kingstonsProfile,
     activities: [{ activityType: 'seller_contact_call', status: 'completed' }],
     appointments: [

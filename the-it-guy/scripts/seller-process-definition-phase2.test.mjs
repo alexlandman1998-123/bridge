@@ -106,6 +106,15 @@ function assertSourceDoesNotConsumeDefinition(source, label) {
 }
 
 {
+  const organisationScoped = getSellerProcessDefinition({
+    organisationId: 'ec19d0a6-bcba-4eef-aa72-9972de88204d',
+  })
+  assert.equal(organisationScoped.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(organisationScoped.resolution.organisationScoped, true)
+  assert.deepEqual(organisationScoped.stages.map((stage) => stage.key), kingstonsStageKeys)
+}
+
+{
   const definition = getSellerProcessDefinition({
     organisationSettings: {
       sellerProcess: {
