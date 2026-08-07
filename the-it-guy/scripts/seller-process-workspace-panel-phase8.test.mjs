@@ -75,6 +75,16 @@ const liveNonWorkspaceSources = [
   assert.match(pipelinePageSource, /Kingstons Seller Process/)
   assert.match(pipelinePageSource, /schedule_valuation_appointment/)
   assert.match(pipelinePageSource, /schedule_valuation_presentation/)
+  {
+    const actionStart = pipelinePageSource.indexOf('const selectedKingstonsProcessAction = useMemo(')
+    assert.notEqual(actionStart, -1, 'selectedKingstonsProcessAction should exist')
+    const actionEnd = pipelinePageSource.indexOf('const selectedKingstonsRailSteps = useMemo', actionStart)
+    assert.notEqual(actionEnd, -1, 'selectedKingstonsRailSteps should follow selectedKingstonsProcessAction')
+    const actionSource = pipelinePageSource.slice(actionStart, actionEnd)
+    assert.match(actionSource, /const action = getKingstonsPipelineActionMeta\(selectedSellerProcessPanelModel \|\| \{\}\)/)
+    assert.doesNotMatch(actionSource, /if \(!selectedKingstonsSellerPackSummary\.complete\)/)
+    assert.match(actionSource, /if \(\['complete_seller_pack', 'seller_pack_signed'\]\.includes\(action\.actionId\)\)/)
+  }
   assert.equal(
     pageSource.includes("includeSellerProcessShadowIntegration: true"),
     false,
