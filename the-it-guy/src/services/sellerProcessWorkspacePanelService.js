@@ -1,5 +1,6 @@
 import {
   DEFAULT_SELLER_PROCESS_PROFILE,
+  KINGSTONS_SELLER_PROCESS_PROFILE,
   resolveSellerProcessProfileForOrganisation,
 } from './sellerProcessProfileService.js'
 import {
@@ -37,6 +38,29 @@ function normalizeText(value) {
   return String(value ?? '').trim()
 }
 
+function normalizeLower(value) {
+  return normalizeText(value).toLowerCase()
+}
+
+function hasKingstonsWorkspaceIdentitySignal(workspace = {}, row = {}, lead = {}) {
+  const source = [
+    workspace?.assignedAgentEmail,
+    workspace?.assigned_agent_email,
+    workspace?.leadOwnerEmail,
+    workspace?.lead_owner_email,
+    row?.assignedAgentEmail,
+    row?.assigned_agent_email,
+    row?.leadOwnerEmail,
+    row?.lead_owner_email,
+    row?.ownerEmail,
+    row?.owner_email,
+    lead?.assignedAgentEmail,
+    lead?.assigned_agent_email,
+  ].map(normalizeLower).filter(Boolean)
+
+  return source.some((value) => value.includes('kingstons.training@arch9.test') || value.includes('@kingstons.'))
+}
+
 function labelForEvidence(key = '') {
   return EVIDENCE_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (match) => match.toUpperCase())
 }
@@ -65,7 +89,7 @@ function buildShadowIntegrationFallback(workspace = {}) {
     lead,
   })
 
-  if (resolution.isKingstons !== true) return null
+  if (resolution.isKingstons !== true && !hasKingstonsWorkspaceIdentitySignal(workspace, row, lead)) return null
 
   return buildSellerLeadWorkspaceShadowIntegration({
     row,
@@ -76,7 +100,7 @@ function buildShadowIntegrationFallback(workspace = {}) {
     documentPackets: workspace?.documentPackets || row?.documentPackets || [],
     leadActivities: workspace?.leadActivities || workspace?.timeline || row?.leadActivities || [],
     organisationSettings: workspace?.organisationSettings || workspace?.organizationSettings || null,
-    sellerProcessProfile: resolution.profile,
+    sellerProcessProfile: resolution.isKingstons === true ? resolution.profile : KINGSTONS_SELLER_PROCESS_PROFILE,
   })
 }
 

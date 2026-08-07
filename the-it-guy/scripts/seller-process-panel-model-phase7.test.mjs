@@ -120,6 +120,21 @@ function assertPartnerReadinessHidesInternalKeys(model) {
 }
 
 {
+  const model = buildSellerProcessWorkspacePanelModel({
+    row: {
+      leadId: 'lead-kingstons-owner-email',
+      assignedAgentEmail: 'alex.kingstons.training@arch9.test',
+      stage: 'Contacted',
+      status: 'Active',
+    },
+  })
+  assert.equal(model.visible, true)
+  assert.equal(model.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(model.currentStageLabel, 'Schedule Valuation Appointment')
+  assert.equal(model.actionCards.find((card) => card.key === 'schedule_valuation_appointment').pending, true)
+}
+
+{
   const payload = buildSellerProcessShadowIntegration({
     organisationSettings: {
       sellerProcess: {
