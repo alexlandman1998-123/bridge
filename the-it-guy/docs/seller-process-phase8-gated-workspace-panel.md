@@ -17,6 +17,11 @@ organisation settings or explicit workspace profile fields only.
 The page requests the Phase 6 shadow payload only when the resolved profile is
 `kingstons_residential`.
 
+If the shadow payload is missing in an already-loaded seller lead workspace, the
+overview page may synthesize the Kingston panel model from exact Kingston
+workspace identity signals only: the Kingston organisation ID, the Kingston
+training owner email, or a Kingston agent email domain.
+
 Organisation name alone still does not activate the Kingston process.
 
 ## UI Boundary

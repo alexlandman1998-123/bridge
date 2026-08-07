@@ -183,7 +183,11 @@ import {
 import { prepareBuyerOnboardingNotification } from '../services/buyerOnboardingNotificationService'
 import { listLeadCommunicationTemplates } from '../services/leadCommunicationTemplateService'
 import { buildLeadWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
-import { resolveSellerProcessProfileForOrganisation } from '../services/sellerProcessProfileService'
+import {
+  KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS,
+  KINGSTONS_SELLER_PROCESS_PROFILE,
+  resolveSellerProcessProfileForOrganisation,
+} from '../services/sellerProcessProfileService'
 import { buildSellerProcessWorkspacePanelModel } from '../services/sellerProcessWorkspacePanelService'
 import { buildSellerJourney } from '../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../services/sellerReadinessService'
@@ -902,6 +906,42 @@ function getLeadWorkspaceOrganisationId(workspace = {}) {
       row?.workspaceId ||
       row?.workspace_id,
   )
+}
+
+function hasKingstonsSellerWorkspaceSignal(row = {}) {
+  const explicitOrganisationId = normalizeText(
+    row?.organisationId ||
+      row?.organisation_id ||
+      row?.organizationId ||
+      row?.organization_id,
+  ).toLowerCase()
+  if (KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS.includes(explicitOrganisationId)) return true
+
+  const signal = [
+    row?.assignedAgentEmail,
+    row?.assigned_agent_email,
+    row?.assignedAgentName,
+    row?.assigned_agent_name,
+    row?.assignedAgent,
+    row?.assigned_agent,
+    row?.leadOwnerEmail,
+    row?.lead_owner_email,
+    row?.ownerEmail,
+    row?.owner_email,
+  ].map((value) => normalizeText(value).toLowerCase()).filter(Boolean)
+
+  if (signal.some((value) => value.includes('kingstons.training@arch9.test') || value.includes('@kingstons.'))) {
+    return true
+  }
+
+  try {
+    const serialized = JSON.stringify(row).toLowerCase()
+    return KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS.some((id) => serialized.includes(id)) ||
+      serialized.includes('kingstons.training@arch9.test') ||
+      serialized.includes('@kingstons.')
+  } catch {
+    return false
+  }
 }
 
 function getActor(profile = {}) {
@@ -23025,11 +23065,19 @@ function AgentLeadWorkspace() {
   const row = data?.row || null
   const leadWorkspaceMissing = !loading && !error && !row && data?.notFound
   const leadWorkspaceUnavailable = !loading && !error && !row && data?.unavailable
-  const sellerProcessPanelModel = useMemo(() => buildSellerProcessWorkspacePanelModel(data || {}), [data])
+  const baseSellerProcessPanelModel = useMemo(() => buildSellerProcessWorkspacePanelModel(data || {}), [data])
   const sourceInfo = row ? getLeadSourceInfo(row) : null
   const workspaceAnalytics = row ? buildLeadWorkspaceAnalyticsSummary(row) : null
   const leadCategory = row ? normalizeLeadCategory(row) : 'other'
   const isSellerLeadWorkspace = leadCategory === 'seller'
+  const sellerProcessPanelModel = useMemo(() => {
+    if (baseSellerProcessPanelModel?.visible === true) return baseSellerProcessPanelModel
+    if (!row || !isSellerLeadWorkspace || !hasKingstonsSellerWorkspaceSignal(row)) return baseSellerProcessPanelModel
+    return buildSellerProcessWorkspacePanelModel({
+      ...(data || {}),
+      sellerProcessProfile: KINGSTONS_SELLER_PROCESS_PROFILE,
+    })
+  }, [baseSellerProcessPanelModel, data, isSellerLeadWorkspace, row])
   const requestedSellerWorkspaceTab = useMemo(() => {
     if (!location.search) return ''
     return normalizeText(new URLSearchParams(location.search).get('sellerWorkspace')).toLowerCase()
