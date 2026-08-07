@@ -908,8 +908,13 @@ function getLeadWorkspaceOrganisationId(workspace = {}) {
   )
 }
 
-function hasKingstonsSellerWorkspaceSignal(row = {}) {
+function hasKingstonsSellerWorkspaceSignal(workspace = {}) {
+  const row = workspace?.row || workspace?.lead || workspace
   const explicitOrganisationId = normalizeText(
+    workspace?.organisationId ||
+      workspace?.organisation_id ||
+      workspace?.organizationId ||
+      workspace?.organization_id ||
     row?.organisationId ||
       row?.organisation_id ||
       row?.organizationId ||
@@ -935,7 +940,7 @@ function hasKingstonsSellerWorkspaceSignal(row = {}) {
   }
 
   try {
-    const serialized = JSON.stringify(row).toLowerCase()
+    const serialized = JSON.stringify(workspace).toLowerCase()
     return KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS.some((id) => serialized.includes(id)) ||
       serialized.includes('kingstons.training@arch9.test') ||
       serialized.includes('@kingstons.')
@@ -23072,7 +23077,7 @@ function AgentLeadWorkspace() {
   const isSellerLeadWorkspace = leadCategory === 'seller'
   const sellerProcessPanelModel = useMemo(() => {
     if (baseSellerProcessPanelModel?.visible === true) return baseSellerProcessPanelModel
-    if (!row || !isSellerLeadWorkspace || !hasKingstonsSellerWorkspaceSignal(row)) return baseSellerProcessPanelModel
+    if (!row || !isSellerLeadWorkspace || !hasKingstonsSellerWorkspaceSignal(data || {})) return baseSellerProcessPanelModel
     return buildSellerProcessWorkspacePanelModel({
       ...(data || {}),
       sellerProcessProfile: KINGSTONS_SELLER_PROCESS_PROFILE,
