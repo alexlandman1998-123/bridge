@@ -100,6 +100,26 @@ function assertPartnerReadinessHidesInternalKeys(model) {
 }
 
 {
+  const model = buildSellerProcessWorkspacePanelModel({
+    row: {
+      leadId: 'lead-kingstons-route-state',
+      organisationId: 'ec19d0a6-bcba-4eef-aa72-9972de88204d',
+      stage: 'Contacted',
+      status: 'Active',
+    },
+    appointments: [],
+    listings: [],
+    documentPackets: [],
+    timeline: [],
+  })
+  assert.equal(model.visible, true)
+  assert.equal(model.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(model.title, 'Kingstons Seller Process')
+  assert.equal(model.currentStageLabel, 'Schedule Valuation Appointment')
+  assert.equal(model.actionCards.find((card) => card.key === 'schedule_valuation_appointment').pending, true)
+}
+
+{
   const payload = buildSellerProcessShadowIntegration({
     organisationSettings: {
       sellerProcess: {

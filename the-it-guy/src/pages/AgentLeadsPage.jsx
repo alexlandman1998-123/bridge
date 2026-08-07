@@ -890,6 +890,20 @@ function getOrganisationId(workspaceContext = {}) {
   return normalizeText(workspaceContext.currentWorkspace?.id || workspaceContext.workspace?.id)
 }
 
+function getLeadWorkspaceOrganisationId(workspace = {}) {
+  const row = workspace?.row || workspace?.lead || {}
+  return normalizeText(
+    workspace?.organisationId ||
+      workspace?.organisation_id ||
+      workspace?.workspaceId ||
+      workspace?.workspace_id ||
+      row?.organisationId ||
+      row?.organisation_id ||
+      row?.workspaceId ||
+      row?.workspace_id,
+  )
+}
+
 function getActor(profile = {}) {
   return {
     id: normalizeText(profile?.id || profile?.user_id || profile?.userId || profile?.email),
@@ -22872,7 +22886,8 @@ function AgentLeadWorkspace() {
   const location = useLocation()
   const workspaceContext = useWorkspace()
   const organisationContext = useOptionalOrganisation()
-  const organisationId = getOrganisationId(workspaceContext)
+  const routeWorkspaceOrganisationId = getLeadWorkspaceOrganisationId(location.state?.leadWorkspace)
+  const organisationId = getOrganisationId(workspaceContext) || routeWorkspaceOrganisationId
   const actor = useMemo(() => getActor({
     ...(workspaceContext.profile || {}),
     workspaceRole: workspaceContext.currentMembership?.workspace_role || workspaceContext.currentMembership?.organisation_role || workspaceContext.currentMembership?.role || workspaceContext.profile?.role,

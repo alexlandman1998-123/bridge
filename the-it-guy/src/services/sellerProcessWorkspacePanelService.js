@@ -1,5 +1,11 @@
-import { DEFAULT_SELLER_PROCESS_PROFILE } from './sellerProcessProfileService.js'
-import { SELLER_PROCESS_SHADOW_WORKSPACE_KEY } from './sellerProcessWorkspaceIntegrationService.js'
+import {
+  DEFAULT_SELLER_PROCESS_PROFILE,
+  resolveSellerProcessProfileForOrganisation,
+} from './sellerProcessProfileService.js'
+import {
+  SELLER_PROCESS_SHADOW_WORKSPACE_KEY,
+  buildSellerLeadWorkspaceShadowIntegration,
+} from './sellerProcessWorkspaceIntegrationService.js'
 
 const EVIDENCE_LABELS = Object.freeze({
   seller_contacted: 'First contact recorded',
@@ -43,7 +49,35 @@ function getShadowIntegration(workspaceOrPayload = {}) {
   if (workspaceOrPayload?.[SELLER_PROCESS_SHADOW_WORKSPACE_KEY]) {
     return workspaceOrPayload[SELLER_PROCESS_SHADOW_WORKSPACE_KEY]
   }
+  const fallbackPayload = buildShadowIntegrationFallback(workspaceOrPayload)
+  if (fallbackPayload) return fallbackPayload
   return workspaceOrPayload
+}
+
+function buildShadowIntegrationFallback(workspace = {}) {
+  const row = workspace?.row || workspace?.lead || {}
+  const lead = workspace?.lead || row
+  const resolution = resolveSellerProcessProfileForOrganisation({
+    organisationId: workspace?.organisationId || workspace?.organisation_id,
+    organisationSettings: workspace?.organisationSettings || workspace?.organizationSettings,
+    sellerProcessProfile: workspace?.sellerProcessProfile || workspace?.seller_process_profile,
+    row,
+    lead,
+  })
+
+  if (resolution.isKingstons !== true) return null
+
+  return buildSellerLeadWorkspaceShadowIntegration({
+    row,
+    lead,
+    contact: workspace?.contact || row?.contact || {},
+    appointments: workspace?.appointments || row?.appointments || [],
+    listings: workspace?.listings || row?.listings || [],
+    documentPackets: workspace?.documentPackets || row?.documentPackets || [],
+    leadActivities: workspace?.leadActivities || workspace?.timeline || row?.leadActivities || [],
+    organisationSettings: workspace?.organisationSettings || workspace?.organizationSettings || null,
+    sellerProcessProfile: resolution.profile,
+  })
 }
 
 function buildProgressSteps(payload = {}) {

@@ -51,6 +51,7 @@ const liveNonWorkspaceSources = [
 
 {
   assert.match(pageSource, /useOptionalOrganisation/)
+  assert.match(pageSource, /getLeadWorkspaceOrganisationId\(location\.state\?\.leadWorkspace\)/)
   assert.match(pageSource, /resolveSellerProcessProfileForOrganisation/)
   assert.match(pageSource, /buildSellerProcessWorkspacePanelModel/)
   assert.match(pageSource, /const includeSellerProcessShadowIntegration = sellerProcessProfileResolution\.isKingstons === true/)
