@@ -9972,7 +9972,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       rows: [
         ['Lifecycle Stage', selectedSellerJourney.stage?.label || selectedLeadEffectiveLifecycleStage || 'Not captured'],
         ['Linked Transaction', selectedLeadLinkedTransactionId || 'Not linked yet'],
-        ['Next Follow Up', selectedLeadNextStep || 'Not captured'],
+        ['Next Follow Up', selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.title : selectedLeadNextStep || 'Not captured'],
         ['Days in Stage', `${selectedSellerJourney.daysInCurrentStage || 0} days`],
       ],
     },
@@ -9983,6 +9983,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadLinkedTransactionId,
     selectedLeadNextStep,
     selectedLeadPropertyLabel,
+    selectedKingstonsProcessAction.title,
+    selectedLeadHasKingstonsSellerProcess,
     selectedSellerJourney.daysInCurrentStage,
     selectedSellerJourney.stage?.label,
   ])
