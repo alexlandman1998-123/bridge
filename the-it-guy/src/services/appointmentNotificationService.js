@@ -263,17 +263,24 @@ async function loadAppointmentContext(appointmentId) {
 
   let appointmentQuery = await supabase
     .from('appointments')
-    .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, timezone, location, meeting_url, status, notes, visibility_scope, required_documents, linked_workflow_stage, linked_transaction_stage')
+    .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, timezone, location, meeting_url, status, notes, visibility_scope, required_documents, linked_workflow_stage, linked_transaction_stage, assigned_agent_id, assigned_agent_name, assigned_agent_email')
     .eq('appointment_id', scopedAppointmentId)
     .maybeSingle()
 
   if (
     appointmentQuery.error &&
-    (isMissingColumnError(appointmentQuery.error, 'required_documents') || isMissingColumnError(appointmentQuery.error, 'meeting_url') || isMissingColumnError(appointmentQuery.error, 'timezone'))
+    (
+      isMissingColumnError(appointmentQuery.error, 'required_documents') ||
+      isMissingColumnError(appointmentQuery.error, 'meeting_url') ||
+      isMissingColumnError(appointmentQuery.error, 'timezone') ||
+      isMissingColumnError(appointmentQuery.error, 'assigned_agent_id') ||
+      isMissingColumnError(appointmentQuery.error, 'assigned_agent_name') ||
+      isMissingColumnError(appointmentQuery.error, 'assigned_agent_email')
+    )
   ) {
     appointmentQuery = await supabase
       .from('appointments')
-      .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, notes, visibility_scope')
+      .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, notes, visibility_scope, assigned_agent_id, assigned_agent_name, assigned_agent_email')
       .eq('appointment_id', scopedAppointmentId)
       .maybeSingle()
   }
@@ -355,6 +362,8 @@ async function sendAppointmentEmailToRecipient({ recipientEmail, eventType, appo
   const body = {
     type: emailType,
     to,
+    organisationId: normalizeText(appointment?.organisation_id || ''),
+    organisationName: normalizeText(metadata?.organisationName || metadata?.agencyName || ''),
     appointmentId: normalizeText(appointment?.appointment_id || appointment?.appointmentId || ''),
     participantId: normalizeText(participant?.participantId || ''),
     rsvpToken: normalizeText(participant?.rsvpToken || ''),
@@ -369,6 +378,23 @@ async function sendAppointmentEmailToRecipient({ recipientEmail, eventType, appo
     status: titleCaseStatus(appointment?.status || 'pending'),
     recipientName: normalizeText(participant?.name || ''),
     participantRole: normalizeText(participant?.participantRole || ''),
+    agentName: normalizeText(
+      appointment?.assigned_agent_name ||
+      appointment?.assignedAgentName ||
+      metadata?.agentName ||
+      metadata?.organizerName ||
+      '',
+    ),
+    agentEmail: normalizeLower(
+      appointment?.assigned_agent_email ||
+      appointment?.assignedAgentEmail ||
+      metadata?.agentEmail ||
+      metadata?.organizerEmail ||
+      '',
+    ),
+    agentRole: normalizeText(metadata?.agentRole || participant?.participantRole || 'Agent'),
+    agentBio: normalizeText(metadata?.agentBio || ''),
+    agentPhone: normalizeText(metadata?.agentPhone || ''),
     notes: normalizeText(metadata?.notes || appointment?.notes || ''),
     relatedListing: normalizeText(metadata?.listingLabel || metadata?.listingReference || metadata?.propertyLabel || ''),
     transactionId: normalizeText(appointment?.transaction_id || ''),
@@ -386,6 +412,14 @@ async function sendAppointmentEmailToRecipient({ recipientEmail, eventType, appo
       : '',
     organizerName: normalizeText(metadata?.organizerName || metadata?.attorneyName),
     organizerEmail: normalizeLower(metadata?.organizerEmail || metadata?.attorneyEmail),
+    replyTo: normalizeLower(
+      appointment?.assigned_agent_email ||
+      appointment?.assignedAgentEmail ||
+      metadata?.replyTo ||
+      metadata?.organizerEmail ||
+      metadata?.attorneyEmail ||
+      '',
+    ),
     attachCalendarInvite: metadata?.attachCalendarInvite !== false,
   }
 

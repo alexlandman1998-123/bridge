@@ -16,6 +16,17 @@ function isLegalFinanceDocument(document = {}) {
   return /(bond|finance|attorney|transfer|fica|guarantee|legal)/i.test(haystack)
 }
 
+function formatDocumentUploader(document = {}) {
+  const role = String(document.uploaded_by_role || document.uploadedByRole || '').trim()
+  const party = String(document.uploaded_by_party || document.uploadedByParty || '').trim()
+
+  const roleLabel = role ? role.replaceAll('_', ' ') : 'external'
+  if (party && party.toLowerCase() !== role.toLowerCase()) {
+    return `${roleLabel} on behalf of ${party.replaceAll('_', ' ')}`
+  }
+  return roleLabel
+}
+
 function latestByCreatedAt(list = []) {
   return [...list].sort((left, right) => {
     const leftDate = new Date(left.created_at || 0).getTime()
@@ -304,9 +315,9 @@ function DocumentsPanel({
                         </span>
                       ) : null}
                       <span className="mt-1 block text-xs text-[#8aa0b8]">{new Date(document.created_at).toLocaleDateString()}</span>
-                      {document.uploaded_by_role || document.uploaded_by_email ? (
+                      {document.uploaded_by_role || document.uploaded_by_email || document.uploaded_by_party ? (
                         <span className="mt-1 block text-xs text-[#8aa0b8]">
-                          {document.uploaded_by_role ? document.uploaded_by_role.replace('_', ' ') : 'external'} • {document.uploaded_by_email || 'email hidden'}
+                          {formatDocumentUploader(document)} • {document.uploaded_by_email || 'email hidden'}
                         </span>
                       ) : null}
                     </div>

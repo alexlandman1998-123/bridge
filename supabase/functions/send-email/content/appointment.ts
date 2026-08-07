@@ -2,6 +2,7 @@ import {
   type BridgeEmailLayoutBranding,
   escapeHtml,
   renderBridgeCta,
+  renderBridgeBullets,
   renderBridgeEmailLayout,
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
@@ -27,12 +28,87 @@ function eventTitle(eventType: string) {
   return mapping[eventType] || "Appointment Update";
 }
 
+function isSellerParticipant(participantRole?: string) {
+  return String(participantRole || "").trim().toLowerCase().includes("seller");
+}
+
+function buildHostSentence({
+  agentName,
+  agentRole,
+  organisationName,
+}: {
+  agentName?: string;
+  agentRole?: string;
+  organisationName?: string;
+}) {
+  const name = pickText(agentName, "");
+  if (!name) return "";
+  const role = pickText(agentRole, "");
+  const organisation = pickText(organisationName, "");
+  const roleFragment = role ? `, ${role}` : "";
+  const orgFragment = organisation ? ` at ${organisation}` : "";
+  return `${name}${roleFragment}${orgFragment}`;
+}
+
+function buildWhatToExpect({
+  eventType,
+  participantRole,
+  location,
+  attachCalendarInvite,
+}: {
+  eventType: string;
+  participantRole?: string;
+  location?: string;
+  attachCalendarInvite?: boolean;
+}) {
+  const seller = isSellerParticipant(participantRole);
+  const bullets = [
+    seller
+      ? "We’ll walk through the property, talk through the valuation, and explain the next steps in the selling process."
+      : "We’ll confirm the details, guide you through the appointment, and answer any questions on the day.",
+    attachCalendarInvite !== false
+      ? "A calendar invite is attached so the appointment can drop straight into your diary."
+      : "You can add the appointment to your calendar from the details below.",
+    location
+      ? "Please use the location below on the day, or reply to this email if anything needs to change."
+      : "Please reply to this email if anything needs to change before the appointment.",
+  ];
+
+  if (eventType === "appointment_confirmation_required") {
+    bullets.unshift(
+      "This appointment is waiting on your confirmation, so please review the details and respond as soon as you can.",
+    );
+  } else if (eventType === "appointment_rescheduled") {
+    bullets.unshift(
+      "The appointment time has changed, so please review the updated details below.",
+    );
+  } else if (eventType === "appointment_cancelled") {
+    bullets.unshift(
+      "This appointment has been cancelled. We’ve kept the details here in case you need to refer back to them.",
+    );
+  } else {
+    bullets.unshift(
+      "Please review the appointment details below so you know exactly what to expect.",
+    );
+  }
+
+  return bullets.filter(Boolean);
+}
+
 export function buildAppointmentSubject(
   eventType: string,
   appointmentType = "Appointment",
+  options: { participantRole?: string } = {},
 ) {
   const title = eventTitle(eventType);
   const typeLabel = pickText(appointmentType, "Appointment");
+  const participantRole = String(options.participantRole || "").trim().toLowerCase();
+  if (participantRole.includes("seller") && eventType === "appointment_scheduled") {
+    return `Seller valuation appointment: ${typeLabel}`;
+  }
+  if (participantRole.includes("seller") && eventType === "appointment_confirmed") {
+    return `Seller valuation confirmed: ${typeLabel}`;
+  }
   if (eventType === "appointment_confirmation_required") {
     return `${title}: ${typeLabel}`;
   }
@@ -55,9 +131,14 @@ export function buildAppointmentEmailHtml({
   declineLink,
   rescheduleLink,
   meetingUrl,
+  participantRole,
+  agentName,
+  agentRole,
+  agentBio,
   organisationName,
   supportEmail,
   supportPhone,
+  attachCalendarInvite,
   branding,
 }: {
   eventType: string;
@@ -75,9 +156,14 @@ export function buildAppointmentEmailHtml({
   declineLink?: string;
   rescheduleLink?: string;
   meetingUrl?: string;
+  participantRole?: string;
+  agentName?: string;
+  agentRole?: string;
+  agentBio?: string;
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
+  attachCalendarInvite?: boolean;
   branding?: BridgeEmailLayoutBranding;
 }) {
   const typeLabel = pickText(
@@ -85,29 +171,58 @@ export function buildAppointmentEmailHtml({
     appointmentType || "Appointment",
   );
   const primaryColor = normalizeBrandColor(branding?.primaryColor, "#214f75");
+  const resolvedOrganisationName = pickText(organisationName || branding?.organisationName, "Arch9");
+  const resolvedAgentName = pickText(agentName, "");
+  const resolvedAgentRole = pickText(agentRole, "");
+  const resolvedAgentBio = pickText(agentBio, "");
+  const hostSentence = buildHostSentence({
+    agentName: resolvedAgentName,
+    agentRole: resolvedAgentRole,
+    organisationName: resolvedOrganisationName,
+  });
+  const sellerRecipient = isSellerParticipant(participantRole);
   const safeAcceptLink = escapeHtml(acceptLink || "");
   const safeDeclineLink = escapeHtml(declineLink || "");
   const safeRescheduleLink = escapeHtml(rescheduleLink || "");
 
   const intro = {
     appointment_scheduled: [
-      `A ${typeLabel.toLowerCase()} has been requested.`,
-      "Please accept the proposed time, or request an alternative if it does not work for you.",
+      sellerRecipient
+        ? `Your valuation appointment has been scheduled.`
+        : `A ${typeLabel.toLowerCase()} has been requested.`,
+      hostSentence
+        ? `You’ll be met by ${hostSentence}.`
+        : `Your ${resolvedOrganisationName} team will host the appointment.`,
+      sellerRecipient
+        ? "We’ll walk through the property, explain the valuation process, and make sure you know what comes next."
+        : "Please review the proposed time, or request an alternative if it does not work for you.",
     ],
     appointment_confirmed: [
-      `Your ${typeLabel.toLowerCase()} has been accepted and it's on.`,
+      sellerRecipient
+        ? `Your valuation appointment is confirmed.`
+        : `Your ${typeLabel.toLowerCase()} has been accepted and it's on.`,
+      hostSentence
+        ? `You’ll be met by ${hostSentence}.`
+        : `Your ${resolvedOrganisationName} team will be there to guide you.`,
     ],
     appointment_updated: [
       `Your ${typeLabel.toLowerCase()} details were updated.`,
+      hostSentence ? `You’ll still be looked after by ${hostSentence}.` : "",
     ],
     appointment_cancelled: [
       `Your ${typeLabel.toLowerCase()} has been cancelled.`,
     ],
     appointment_rescheduled: [
       `Your ${typeLabel.toLowerCase()} has been rescheduled.`,
+      hostSentence ? `You’ll still be looked after by ${hostSentence}.` : "",
     ],
     appointment_confirmation_required: [
-      `A ${typeLabel.toLowerCase()} has been requested.`,
+      sellerRecipient
+        ? `Your valuation appointment needs your confirmation.`
+        : `A ${typeLabel.toLowerCase()} has been requested.`,
+      hostSentence
+        ? `You’ll be met by ${hostSentence}.`
+        : `Your ${resolvedOrganisationName} team will host the appointment.`,
       "Please accept the proposed time, or request an alternative if it does not work for you. The appointment is only confirmed once the final time is approved.",
     ],
     appointment_reminder: [
@@ -120,6 +235,10 @@ export function buildAppointmentEmailHtml({
 
   const contentHtml = [
     renderBridgeIntroParagraphs(intro),
+    `<div style="margin: 18px 0; padding: 16px 18px; border: 1px solid #dbe6f2; border-left: 4px solid ${primaryColor}; border-radius: 14px; background: linear-gradient(180deg, #f8fbff 0%, #eef5fb 100%);">
+      <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What to expect</p>
+      ${renderBridgeBullets(buildWhatToExpect({ eventType, participantRole, location: meetingUrl || location, attachCalendarInvite }))}
+    </div>`,
     renderBridgeSummaryCard(
       [
         { label: "Appointment", value: typeLabel },
@@ -133,13 +252,26 @@ export function buildAppointmentEmailHtml({
           value: pickText(meetingUrl || location, "To be confirmed"),
         },
         { label: "Status", value: pickText(status, "Pending") },
+        attachCalendarInvite !== false
+          ? { label: "Calendar invite", value: "Attached" }
+          : { label: "Calendar invite", value: "Not attached" },
       ],
       "Appointment Details",
     ),
+    renderBridgeSummaryCard(
+      [
+        { label: "Agent", value: pickText(resolvedAgentName, "Your agent") },
+        { label: "Agency", value: resolvedOrganisationName },
+        ...(resolvedAgentRole ? [{ label: "Role", value: resolvedAgentRole }] : []),
+        ...(resolvedAgentBio ? [{ label: "About your agent", value: resolvedAgentBio }] : []),
+      ],
+      "Your Host",
+    ),
     notes
-      ? `<p style="margin: 0 0 16px; font-size: 14px; line-height: 1.6; color: #35506d;"><strong>Notes:</strong> ${
-        escapeHtml(notes)
-      }</p>`
+      ? `<div style="margin: 16px 0 8px; padding: 16px 18px; border: 1px solid #e2eaf4; border-radius: 14px; background: #ffffff;">
+        <p style="margin: 0 0 8px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">Notes</p>
+        <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #35506d;">${escapeHtml(notes)}</p>
+      </div>`
       : "",
     acceptLink || declineLink || rescheduleLink
       ? `<div style="margin: 18px 0 16px;">
@@ -199,9 +331,14 @@ export function buildAppointmentEmailText({
   declineLink,
   rescheduleLink,
   meetingUrl,
+  participantRole,
+  agentName,
+  agentRole,
+  agentBio,
   organisationName,
   supportEmail,
   supportPhone,
+  attachCalendarInvite,
 }: {
   eventType: string;
   recipientName?: string;
@@ -218,9 +355,14 @@ export function buildAppointmentEmailText({
   declineLink?: string;
   rescheduleLink?: string;
   meetingUrl?: string;
+  participantRole?: string;
+  agentName?: string;
+  agentRole?: string;
+  agentBio?: string;
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
+  attachCalendarInvite?: boolean;
 }) {
   const typeLabel = pickText(
     appointmentTitle,
@@ -228,16 +370,26 @@ export function buildAppointmentEmailText({
   );
   const supportLine = [supportEmail, supportPhone].filter(Boolean).join(" | ");
   const resolvedOrganisationName = organisationName || "Arch9";
+  const hostSentence = buildHostSentence({
+    agentName,
+    agentRole,
+    organisationName: resolvedOrganisationName,
+  });
+  const sellerRecipient = isSellerParticipant(participantRole);
 
   return [
     `Hi ${pickText(recipientName, "there")},`,
     "",
     `${eventTitle(eventType)}: ${typeLabel}`,
+    sellerRecipient ? "This is your seller valuation appointment." : null,
     appointmentDate ? `Date: ${appointmentDate}` : null,
     appointmentTime ? `Time: ${appointmentTime}` : null,
     relatedListing ? `Listing / Property: ${relatedListing}` : null,
     meetingUrl || location ? `Location: ${meetingUrl || location}` : null,
     status ? `Status: ${status}` : null,
+    hostSentence ? `Host: ${hostSentence}` : null,
+    agentBio ? `About your agent: ${agentBio}` : null,
+    attachCalendarInvite !== false ? "Calendar invite: Attached" : "Calendar invite: Not attached",
     notes ? `Notes: ${notes}` : null,
     acceptLink ? `Accept: ${acceptLink}` : null,
     declineLink ? `Decline: ${declineLink}` : null,

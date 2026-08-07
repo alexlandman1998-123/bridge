@@ -2339,7 +2339,7 @@ export function createLeadAppointment(organisationId, leadId, payload = {}, { ac
   )
 }
 
-async function runAppointmentCreateNotificationSideEffects(notificationSource = {}, payload = {}) {
+async function runAppointmentCreateNotificationSideEffects(notificationSource = {}, payload = {}, actor = null) {
   let inviteNotificationResults = []
   let documentNotificationResults = []
   let reminderResults = []
@@ -2353,6 +2353,12 @@ async function runAppointmentCreateNotificationSideEffects(notificationSource = 
       source: 'createAppointmentAsync',
       attachCalendarInvite: payload?.attachCalendarInvite !== false,
       notifyCreatorOnRsvp: payload?.notifyCreatorOnRsvp !== false,
+      organisationId: normalizeText(notificationSource?.organisationId || payload?.organisationId || ''),
+      organisationName: normalizeText(payload?.organisationName || ''),
+      agentName: normalizeText(notificationSource?.assignedAgentName || payload?.assignedAgent?.name || payload?.agent?.name || actor?.name || ''),
+      agentEmail: normalizeText(notificationSource?.assignedAgentEmail || payload?.assignedAgent?.email || payload?.agent?.email || actor?.email || '').toLowerCase(),
+      agentRole: 'Agent',
+      replyTo: normalizeText(notificationSource?.assignedAgentEmail || payload?.assignedAgent?.email || payload?.agent?.email || actor?.email || '').toLowerCase(),
       listingId: normalizeText(payload?.listingId || notificationSource?.listingId) || '',
       listingLabel: normalizeText(payload?.listingLabel || payload?.listingReference || payload?.listingReferenceSnapshot) || '',
     },
@@ -2365,9 +2371,9 @@ async function runAppointmentCreateNotificationSideEffects(notificationSource = 
   return { inviteNotificationResults, documentNotificationResults, reminderResults }
 }
 
-function queueAppointmentCreateNotificationSideEffects(notificationSource = {}, payload = {}) {
+function queueAppointmentCreateNotificationSideEffects(notificationSource = {}, payload = {}, actor = null) {
   void Promise.resolve()
-    .then(() => runAppointmentCreateNotificationSideEffects(notificationSource, payload))
+    .then(() => runAppointmentCreateNotificationSideEffects(notificationSource, payload, actor))
     .catch((notificationError) => {
       console.warn('[appointments][notifications] queued appointment notification work failed', notificationError)
     })
@@ -2557,7 +2563,7 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
   let notificationsQueued = false
   if (payload?.sendInviteEmails !== false) {
     notificationsQueued = true
-    queueAppointmentCreateNotificationSideEffects(notificationSource, payload)
+    queueAppointmentCreateNotificationSideEffects(notificationSource, payload, actor)
   }
   emitAgencyCrmUpdated()
   return {

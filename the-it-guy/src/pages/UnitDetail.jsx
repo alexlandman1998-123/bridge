@@ -695,13 +695,15 @@ function resolveRequiredPartyLabel(value = '') {
 
 function resolveUploadedByLabel(document = {}, participants = []) {
   const role = String(document?.uploaded_by_role || '').trim()
+  const uploadedByParty = String(document?.uploaded_by_party || document?.uploadedByParty || '').trim()
   const participant =
     participants.find((entry) => String(entry?.roleType || '').trim().toLowerCase() === String(role).trim().toLowerCase()) || null
-  if (participant?.participantName) {
-    return participant.participantName
+  const uploaderName = participant?.participantName || (role ? toTitleLabel(role) : 'System')
+  if (uploadedByParty && uploadedByParty.toLowerCase() !== role.toLowerCase()) {
+    return `${uploaderName} on behalf of ${toTitleLabel(uploadedByParty)}`
   }
-  if (role) {
-    return toTitleLabel(role)
+  if (uploaderName) {
+    return uploaderName
   }
   return 'System'
 }
@@ -2840,6 +2842,7 @@ function UnitDetail() {
     category: '',
     documentType: '',
     visibility: 'client_visible',
+    uploadedByParty: 'client',
     relatedWorkflow: '',
     satisfiesRequiredDocument: 'yes',
     notes: '',
@@ -3836,6 +3839,7 @@ function UnitDetail() {
     category = 'General',
     documentType = '',
     visibility = 'client_visible',
+    uploadedByParty = 'client',
     relatedWorkflow = '',
     satisfiesRequiredDocument = 'yes',
     requiredDocumentId = '',
@@ -3849,6 +3853,7 @@ function UnitDetail() {
       category: String(category || 'General').trim(),
       documentType: String(documentType || '').trim(),
       visibility: String(visibility || 'client_visible').trim(),
+      uploadedByParty: String(uploadedByParty || 'client').trim(),
       relatedWorkflow: String(relatedWorkflow || '').trim(),
       satisfiesRequiredDocument,
       notes: String(previous.notes || '').trim(),
@@ -3865,6 +3870,7 @@ function UnitDetail() {
       ...previous,
       file: null,
       fileName: '',
+      uploadedByParty: 'client',
       requiredDocumentId: '',
       documentRequestId: '',
       requestTitle: '',
@@ -3923,6 +3929,7 @@ function UnitDetail() {
     const category = String(documentUploadForm.category || 'General').trim()
     const documentType = String(documentUploadForm.documentType || '').trim()
     const relatedWorkflow = String(documentUploadForm.relatedWorkflow || '').trim()
+    const uploadedByParty = String(documentUploadForm.uploadedByParty || 'client').trim()
     const satisfiesRequiredDocument =
       String(documentUploadForm.satisfiesRequiredDocument || 'no').trim().toLowerCase() === 'yes'
     const requiredDocumentId = satisfiesRequiredDocument ? String(documentUploadForm.requiredDocumentId || '').trim() : ''
@@ -3943,6 +3950,7 @@ function UnitDetail() {
         documentRequestId: documentRequestId || null,
         documentType: documentType || null,
         stageKey: relatedWorkflow || null,
+        uploadedByParty,
       })
       setUploadDocumentModalOpen(false)
       closeUploadDocumentModal()
@@ -10063,7 +10071,7 @@ function UnitDetail() {
                             <strong className="block text-sm font-semibold text-[#142132]">{document.name || 'FICA document'}</strong>
                             <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'FICA upload'}</p>
                             <p className="mt-2 text-xs text-[#7b8ca2]">
-                              Uploaded by {document.uploaded_by_role ? toTitleLabel(document.uploaded_by_role) : 'Team'} • {formatDate(document.created_at)}
+                              Uploaded by {resolveUploadedByLabel(document, transactionParticipants)} • {formatDate(document.created_at)}
                             </p>
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -10567,7 +10575,7 @@ function UnitDetail() {
                         </div>
                         <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{document.category || 'Working document'}</p>
                         <p className="mt-2 text-xs text-[#7b8ca2]">
-                          Uploaded by {document.uploaded_by_role ? toTitleLabel(document.uploaded_by_role) : 'Team'} • {formatDate(document.created_at)}
+                          Uploaded by {resolveUploadedByLabel(document, transactionParticipants)} • {formatDate(document.created_at)}
                         </p>
                         <div className="mt-4 flex flex-wrap gap-2">
                           <button
@@ -10779,6 +10787,19 @@ function UnitDetail() {
               {option.label}
             </option>
           ))}
+        </Field>
+        <Field
+          as="select"
+          label="Uploaded on behalf of"
+          value={documentUploadForm.uploadedByParty}
+          onChange={(event) => setDocumentUploadForm((previous) => ({ ...previous, uploadedByParty: event.target.value }))}
+        >
+          <option value="client">Client</option>
+          <option value="buyer">Buyer</option>
+          <option value="seller">Seller</option>
+          <option value="agent">Agent</option>
+          <option value="attorney">Attorney</option>
+          <option value="bond_originator">Bond Originator</option>
         </Field>
         <Field
           as="select"

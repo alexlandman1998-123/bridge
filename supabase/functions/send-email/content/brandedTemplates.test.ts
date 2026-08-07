@@ -130,13 +130,18 @@ Deno.test("seller submitted confirmation template renders branded seller portal 
   assertIncludes(html, "Open seller portal");
 });
 
-Deno.test("appointment template renders branded RSVP buttons", () => {
+Deno.test("appointment template renders branded host guidance and RSVP buttons", () => {
   const html = buildAppointmentEmailHtml({
     eventType: "appointment_confirmation_required",
     recipientName: "Buyer One",
     appointmentType: "Viewing",
     appointmentDate: "2026-07-28",
     appointmentTime: "10:00",
+    participantRole: "seller",
+    agentName: "Alex Landman",
+    agentRole: "Property Consultant",
+    organisationName: branding.organisationName,
+    attachCalendarInvite: true,
     acceptLink: "https://app.example.test/accept",
     declineLink: "https://app.example.test/decline",
     branding,
@@ -145,6 +150,10 @@ Deno.test("appointment template renders branded RSVP buttons", () => {
   assertIncludes(html, "Kingstons Property");
   assertIncludes(html, "background: #123abc");
   assertIncludes(html, "color: #123abc");
+  assertIncludes(html, "What to expect");
+  assertIncludes(html, "Alex Landman");
+  assertIncludes(html, "Calendar invite");
+  assertIncludes(html, "We’ll walk through the property");
 });
 
 Deno.test("appointment template preserves notes and branded plain-text support", () => {
@@ -154,6 +163,11 @@ Deno.test("appointment template preserves notes and branded plain-text support",
     appointmentType: "Viewing",
     appointmentDate: "2026-07-28",
     appointmentTime: "10:00",
+    participantRole: "seller",
+    agentName: "Alex Landman",
+    agentRole: "Property Consultant",
+    organisationName: branding.organisationName,
+    attachCalendarInvite: true,
     notes: `<script>alert("x")</script> Bring ID.`,
     acceptLink: `https://app.example.test/accept?next="quoted"`,
     organisationName: branding.organisationName,
@@ -167,6 +181,11 @@ Deno.test("appointment template preserves notes and branded plain-text support",
     appointmentType: "Viewing",
     appointmentDate: "2026-07-28",
     appointmentTime: "10:00",
+    participantRole: "seller",
+    agentName: "Alex Landman",
+    agentRole: "Property Consultant",
+    organisationName: branding.organisationName,
+    attachCalendarInvite: true,
     notes: "Bring ID.",
     organisationName: branding.organisationName,
     supportEmail: branding.supportEmail,
@@ -181,6 +200,8 @@ Deno.test("appointment template preserves notes and branded plain-text support",
   assertNotIncludes(html, `<script>alert("x")</script>`);
   assertIncludes(text, "Support: support@example.test | +27 21 000 0000");
   assertIncludes(text, "Kingstons Property");
+  assertIncludes(text, "Host: Alex Landman, Property Consultant at Kingstons Property");
+  assertIncludes(text, "Calendar invite: Attached");
   assertIncludes(text, "Powered by Arch9");
 });
 

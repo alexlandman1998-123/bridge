@@ -708,14 +708,16 @@ function resolveAttorneyDocumentUploadLane({
 
 function resolveUploadedByLabel(document = {}, participants = []) {
   const role = String(document?.uploaded_by_role || document?.uploadedByRole || '').trim()
+  const uploadedByParty = String(document?.uploaded_by_party || document?.uploadedByParty || '').trim()
   const participant = participants.find((entry) => String(entry?.roleType || '').trim().toLowerCase() === String(role).trim().toLowerCase())
+  const uploaderName = participant?.participantName || (role ? toTitle(role) : 'System')
+  if (uploadedByParty && uploadedByParty.toLowerCase() !== role.toLowerCase()) {
+    return `${uploaderName} on behalf of ${toTitle(uploadedByParty)}`
+  }
   if (participant?.participantName) {
     return participant.participantName
   }
-  if (role) {
-    return toTitle(role)
-  }
-  return 'System'
+  return uploaderName
 }
 
 const STAKEHOLDER_ROLE_OPTIONS = [
@@ -10833,6 +10835,7 @@ function AttorneyTransactionDetail() {
     category: ATTORNEY_DOCUMENT_CATEGORIES[0],
     documentType: '',
     visibility: 'client_visible',
+    uploadedByParty: 'client',
     relatedWorkflow: '',
     attorneyLaneKey: '',
     satisfiesRequiredDocument: 'yes',
@@ -15313,6 +15316,7 @@ function AttorneyTransactionDetail() {
       category: selectedCategory,
       documentType: requiredDocumentKey || previous.documentType || '',
       visibility: previous.visibility || 'client_visible',
+      uploadedByParty: previous.uploadedByParty || 'client',
       relatedWorkflow: requirementWorkflow || requirement?.visibleSection || attorneyLane?.laneKey || '',
       attorneyLaneKey: attorneyLane?.laneKey || '',
       satisfiesRequiredDocument: requirement ? 'yes' : 'no',
@@ -15367,6 +15371,7 @@ function AttorneyTransactionDetail() {
       category: shortcut.category || 'Internal Working Documents',
       documentType: shortcut.documentType || '',
       visibility: shortcut.visibility === 'internal_only' ? 'internal' : 'shared',
+      uploadedByParty: previous.uploadedByParty || 'client',
       relatedWorkflow: shortcut.relatedWorkflow || attorneyLane?.laneKey || 'transfer',
       attorneyLaneKey: attorneyLane?.laneKey || '',
       satisfiesRequiredDocument: 'no',
@@ -15400,6 +15405,7 @@ function AttorneyTransactionDetail() {
         : null
     const selectedVisibility = String(uploadDraft.visibility || 'client_visible').trim().toLowerCase()
     const visibilityScope = selectedVisibility === 'internal' ? 'internal' : 'shared'
+    const uploadedByParty = String(uploadDraft.uploadedByParty || 'client').trim()
     const isAttorneyUpload = String(workspaceRole || '').trim().toLowerCase() === 'attorney'
     const attorneyLane = isAttorneyUpload
       ? resolveAttorneyDocumentUploadLane({
@@ -15431,6 +15437,7 @@ function AttorneyTransactionDetail() {
         canonicalRequirementInstanceId: linkedRequirement ? (uploadDraft.canonicalRequirementInstanceId || null) : null,
         documentRequestId: uploadDraft.documentRequestId || null,
         source: isAttorneyUpload ? 'attorney_workspace' : 'internal',
+        uploadedByParty,
         attorneyLaneKey: attorneyLane?.laneKey || null,
         attorneyRole: attorneyLane?.attorneyRole || null,
       })
@@ -15445,6 +15452,7 @@ function AttorneyTransactionDetail() {
         canonicalRequirementInstanceId: '',
         documentRequestId: '',
         requestTitle: '',
+        uploadedByParty: 'client',
       }))
       setUploadInputVersion((previous) => previous + 1)
       setUploadDocumentModalOpen(false)
@@ -15506,6 +15514,7 @@ function AttorneyTransactionDetail() {
       category: getUploadCategoryForLibraryFilter(row.category || 'finance'),
       documentType: row.requiredDocumentKey || row.displayName || previous.documentType || '',
       visibility: previous.visibility || 'client_visible',
+      uploadedByParty: previous.uploadedByParty || 'client',
       relatedWorkflow: row.relatedWorkflow || attorneyLane?.laneKey || 'finance',
       attorneyLaneKey: attorneyLane?.laneKey || '',
       satisfiesRequiredDocument: 'no',
@@ -17095,6 +17104,21 @@ function AttorneyTransactionDetail() {
                           {option.label}
                         </option>
                       ))}
+                    </Field>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Uploaded on behalf of</span>
+                    <Field
+                      as="select"
+                      value={uploadDraft.uploadedByParty || 'client'}
+                      onChange={(event) => setUploadDraft((previous) => ({ ...previous, uploadedByParty: event.target.value }))}
+                    >
+                      <option value="client">Client</option>
+                      <option value="buyer">Buyer</option>
+                      <option value="seller">Seller</option>
+                      <option value="agent">Agent</option>
+                      <option value="attorney">Attorney</option>
+                      <option value="bond_originator">Bond Originator</option>
                     </Field>
                   </label>
                   <label className="flex flex-col gap-1.5">

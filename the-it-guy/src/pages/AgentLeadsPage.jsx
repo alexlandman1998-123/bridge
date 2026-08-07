@@ -22513,8 +22513,12 @@ function SellerLeadWorkspaceLayout({
     else if (key === 'open_seller_portal') onOpenSellerPortalLink?.()
     else if (['generate_mandate', 'send_mandate', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(key)) void openMandateWithLatestTerms()
     else if (['add_commission', 'review_commission', 'open_commission'].includes(key)) setActiveWorkspaceTab('mandate')
+    else if (['view_mandate_details', 'open_mandate'].includes(key)) setActiveWorkspaceTab('mandate')
     else if (['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(key)) onOpenListing?.()
     else if (['open_documents'].includes(key)) setActiveWorkspaceTab('documents')
+    else if (['view_enquiries', 'view_performance', 'monitor_performance'].includes(key)) {
+      setActiveWorkspaceTab('documents')
+    }
     else if (['schedule_appointment', 'open_appointments'].includes(key)) openAppointmentComposer()
     else if (key === 'schedule_valuation_appointment') openAppointmentComposer('seller_valuation')
     else if (key === 'schedule_valuation_presentation') openAppointmentComposer('valuation_presentation')
@@ -22539,7 +22543,27 @@ function SellerLeadWorkspaceLayout({
     } else if (key === 'open_readiness') {
       setActiveWorkspaceTab('documents')
     }
-    else setActiveWorkspaceTab('overview')
+    else if (key.includes('property')) {
+      setActiveWorkspaceTab('property')
+    }
+    else if (key.includes('seller') || key.includes('onboarding')) {
+      setActiveWorkspaceTab('seller')
+    }
+    else if (key.includes('mandate')) {
+      setActiveWorkspaceTab('mandate')
+    }
+    else if (key.includes('document')) {
+      setActiveWorkspaceTab('documents')
+    }
+    else if (key.includes('appointment')) {
+      openAppointmentComposer()
+    }
+    else if (key.includes('listing')) {
+      onOpenListing?.()
+    }
+    else if (key.includes('timeline') || key.includes('activity')) {
+      setActiveWorkspaceTab('activity')
+    }
   }, [focusSellerWorkspaceSection, onOpenListing, onOpenSellerPortalLink, onSendSellerOnboarding, openAppointmentComposer, openManualSellerOnboarding, openMandateWithLatestTerms])
 
   return (

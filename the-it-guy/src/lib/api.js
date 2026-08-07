@@ -10064,12 +10064,12 @@ async function resolveActiveProfileContext(client) {
   try {
     const { data, error } = await client.auth.getSession()
     if (error) {
-      return { userId: null, role: null, firmId: null, firmRole: null }
+      return { userId: null, role: null, email: null, firmId: null, firmRole: null }
     }
 
     const user = data?.session?.user
     if (!user?.id) {
-      return { userId: null, role: null, firmId: null, firmRole: null }
+      return { userId: null, role: null, email: null, firmId: null, firmRole: null }
     }
 
     const profileQuery = await client
@@ -10080,19 +10080,20 @@ async function resolveActiveProfileContext(client) {
       .maybeSingle()
     if (profileQuery.error) {
       if (isMissingSchemaError(profileQuery.error)) {
-        return { userId: user.id, role: null, firmId: null, firmRole: null }
+        return { userId: user.id, role: null, email: user.email || null, firmId: null, firmRole: null }
       }
-      return { userId: user.id, role: null, firmId: null, firmRole: null }
+      return { userId: user.id, role: null, email: user.email || null, firmId: null, firmRole: null }
     }
 
     return {
       userId: user.id,
       role: normalizeRoleType(profileQuery.data?.role || 'developer'),
+      email: user.email || null,
       firmId: profileQuery.data?.firm_id || null,
       firmRole: normalizeFirmRole(profileQuery.data?.firm_role || 'attorney'),
     }
   } catch {
-    return { userId: null, role: null, firmId: null, firmRole: null }
+    return { userId: null, role: null, email: null, firmId: null, firmRole: null }
   }
 }
 
@@ -46379,6 +46380,8 @@ export async function uploadDocument({
     document_type: normalizedDocumentType,
     visibility_scope: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
     uploaded_by_user_id: activeProfile.userId || null,
+    uploaded_by_role: activeProfile.role || null,
+    uploaded_by_email: activeProfile.email || null,
     stage_key: stageKey || null,
     is_client_visible: Boolean(isClientVisible),
     uploaded_by_party: normalizeNullableText(uploadedByParty),
@@ -46411,6 +46414,8 @@ export async function uploadDocument({
     'visibility_scope',
     'stage_key',
     'uploaded_by_user_id',
+    'uploaded_by_role',
+    'uploaded_by_email',
     'is_client_visible',
     'uploaded_by_party',
     'bucket_key',
@@ -46436,6 +46441,8 @@ export async function uploadDocument({
       isMissingColumnError(result.error, 'visibility_scope') ||
       isMissingColumnError(result.error, 'stage_key') ||
       isMissingColumnError(result.error, 'uploaded_by_user_id') ||
+      isMissingColumnError(result.error, 'uploaded_by_role') ||
+      isMissingColumnError(result.error, 'uploaded_by_email') ||
       isMissingColumnError(result.error, 'is_client_visible') ||
       isMissingColumnError(result.error, 'uploaded_by_party') ||
       isMissingColumnError(result.error, 'bucket_key') ||

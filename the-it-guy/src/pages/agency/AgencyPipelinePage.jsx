@@ -11046,23 +11046,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return normalizeText(appointmentForm.location) || normalizeText(appointmentForm.meetingUrl)
   }, [appointmentForm.location, appointmentForm.locationType, appointmentForm.meetingUrl])
 
-  const appointmentVisibleParticipants = useMemo(() => {
-    const rows = []
-    const seen = new Set()
-    const addParticipant = (participant, source, index) => {
-      const role = normalizeText(participant?.participantRole || participant?.role).toLowerCase()
-      if (!role || role === 'agent') return
-      const key = buildParticipantIdentityKey(participant) || `${source}:${index}`
-      if (seen.has(key)) return
-      seen.add(key)
-      rows.push({ ...participant, key, source, sourceIndex: index })
-    }
-
-    selectedSuggestedAppointmentParticipants.forEach((participant, index) => addParticipant(participant, 'suggested', index))
-    ;(appointmentForm.participants || []).forEach((participant, index) => addParticipant(participant, 'manual', index))
-    return rows
-  }, [appointmentForm.participants, selectedSuggestedAppointmentParticipants])
-
   const appointmentLinkOptions = useMemo(() => {
     const options = new Map()
     const addOption = (option) => {
@@ -11240,6 +11223,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => appointmentSuggestedParticipants.filter((participant) => !appointmentDeselectedParticipantKeys.includes(participant.suggestionKey)),
     [appointmentDeselectedParticipantKeys, appointmentSuggestedParticipants],
   )
+
+  const appointmentVisibleParticipants = useMemo(() => {
+    const rows = []
+    const seen = new Set()
+    const addParticipant = (participant, source, index) => {
+      const role = normalizeText(participant?.participantRole || participant?.role).toLowerCase()
+      if (!role || role === 'agent') return
+      const key = buildParticipantIdentityKey(participant) || `${source}:${index}`
+      if (seen.has(key)) return
+      seen.add(key)
+      rows.push({ ...participant, key, source, sourceIndex: index })
+    }
+
+    selectedSuggestedAppointmentParticipants.forEach((participant, index) => addParticipant(participant, 'suggested', index))
+    ;(appointmentForm.participants || []).forEach((participant, index) => addParticipant(participant, 'manual', index))
+    return rows
+  }, [appointmentForm.participants, selectedSuggestedAppointmentParticipants])
 
   const calendarAppointmentsByDate = useMemo(() => {
     const groups = new Map()

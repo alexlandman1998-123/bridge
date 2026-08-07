@@ -1314,6 +1314,8 @@ export type SendAppointmentEmailPayload = {
   appointmentTime?: string;
   appointmentEndTime?: string;
   timezone?: string;
+  organisationId?: string;
+  organisationName?: string;
   relatedListing?: string;
   location?: string;
   status?: string;
@@ -1326,6 +1328,12 @@ export type SendAppointmentEmailPayload = {
   meetingUrl?: string;
   organizerName?: string;
   organizerEmail?: string;
+  agentName?: string;
+  agentEmail?: string;
+  agentRole?: string;
+  agentBio?: string;
+  agentPhone?: string;
+  replyTo?: string;
   attachCalendarInvite?: boolean;
 };
 

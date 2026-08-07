@@ -22,6 +22,9 @@ function payload(overrides = {}) {
     recipientName: 'Test Client',
     organizerName: 'Test Attorney',
     organizerEmail: 'attorney@example.com',
+    agentName: 'Test Attorney',
+    agentRole: 'Property Consultant',
+    organisationName: 'Kingstons Property',
     notes: 'Bring ID; proof of address\nOriginal documents',
     actionLink: 'https://app.arch9.co.za/appointment-rsvp/test',
     attachCalendarInvite: true,
@@ -44,6 +47,7 @@ describe('appointment calendar attachment', () => {
     expect(content).toContain('STATUS:TENTATIVE')
     expect(content).toContain('ORGANIZER;CN=Test Attorney:MAILTO:attorney@example.com')
     expect(content).toContain('ATTENDEE;CN=Test Client;ROLE=REQ-PARTICIPANT;RSVP=TRUE:MAILTO:client@example.com')
+    expect(content).toContain('DESCRIPTION:Host: Test Attorney\\, Property Consultant\\n\\nAgency: Kingstons Property')
   })
 
   it('escapes calendar text and preserves the RSVP link', () => {
@@ -51,7 +55,7 @@ describe('appointment calendar attachment', () => {
 
     expect(content).toContain('SUMMARY:Signing\\, documents\\; review')
     expect(content).toContain('LOCATION:1 Legal Lane\\, Cape Town')
-    expect(content).toContain('DESCRIPTION:Bring ID\\; proof of address\\nOriginal documents\\n\\nAppointment link: https://app.arch9.co.za/appointment-rsvp/test')
+    expect(content).toContain('DESCRIPTION:Host: Test Attorney\\, Property Consultant\\n\\nAgency: Kingstons Property\\n\\nBring ID\\; proof of address\\nOriginal documents\\n\\nAppointment link: https://app.arch9.co.za/appointment-rsvp/test\\n\\nLocation: 1 Legal Lane\\, Cape Town\\n\\nPlease reply to the email if you need to reschedule.')
     expect(content).toContain('URL:https://app.arch9.co.za/appointment-rsvp/test')
     expect(content.split('\r\n')).toContain('END:VCALENDAR')
   })
