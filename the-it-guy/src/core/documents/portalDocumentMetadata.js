@@ -1,4 +1,8 @@
 import { resolveCrossModuleDocumentReference } from '../../services/documents/crossModuleDocumentKeyMapService.js'
+import {
+  buildSellerMandateDocumentModel,
+  normalizeSellerMandateDocumentType,
+} from './sellerMandateInformationModel.js'
 
 const PORTAL_WORKSPACE_CATEGORIES = ['sales', 'fica', 'bond', 'additional', 'property']
 
@@ -46,6 +50,10 @@ export function normalizePortalDocumentType(value) {
 function classifyWorkspaceFromType(documentType) {
   const type = normalizePortalDocumentType(documentType)
   if (!type) return ''
+
+  if (normalizeSellerMandateDocumentType(type)) {
+    return 'sales'
+  }
 
   if (
     type.includes('reservation') ||
@@ -255,6 +263,10 @@ export function resolvePortalDocumentMetadata(document = {}) {
       portalWorkspaceCategory: existingWorkspace,
     },
   )
+  const sellerMandate = buildSellerMandateDocumentModel({
+    ...document,
+    documentType: resolvedDocumentType,
+  })
   const mapWorkspace = PACK_KEY_TO_WORKSPACE[documentReference.documentPackKey] || ''
   const typeWorkspace = classifyWorkspaceFromType(resolvedDocumentType)
   const stageWorkspace = classifyWorkspaceFromStage(document.stageKey || document.stage_key)
@@ -315,5 +327,22 @@ export function resolvePortalDocumentMetadata(document = {}) {
     documentPackKey: documentReference.documentPackKey,
     documentCategory: documentReference.documentCategory,
     documentLabel: documentReference.documentLabel,
+    sellerMandateDocumentType: sellerMandate.sellerMandateDocumentType,
+    sellerMandateDocumentVariant: sellerMandate.sellerMandateDocumentVariant,
+    sellerMandateDocumentFamily: sellerMandate.sellerMandateDocumentFamily,
+    sellerMandateLifecycleState: sellerMandate.sellerMandateLifecycleState,
+    sellerMandateSourceSurface: sellerMandate.sellerMandateSourceSurface,
+    sellerMandateStorageSurface: sellerMandate.sellerMandateStorageSurface,
+    sellerMandateVersioningPolicy: sellerMandate.sellerMandateVersioningPolicy,
+    sellerMandateLinkedEntityType: sellerMandate.sellerMandateLinkedEntityType,
+    sellerMandateLinkedEntityId: sellerMandate.sellerMandateLinkedEntityId,
+    sellerMandateSellerLeadId: sellerMandate.sellerMandateSellerLeadId,
+    sellerMandateSellerProfileId: sellerMandate.sellerMandateSellerProfileId,
+    sellerMandateDocumentId: sellerMandate.sellerMandateDocumentId,
+    sellerMandateLatestDocumentId: sellerMandate.sellerMandateLatestDocumentId,
+    sellerMandatePreviousDocumentId: sellerMandate.sellerMandatePreviousDocumentId,
+    sellerMandateVersionNumber: sellerMandate.sellerMandateVersionNumber,
+    sellerMandateTitle: sellerMandate.sellerMandateTitle,
+    sellerMandateStatus: sellerMandate.sellerMandateStatus,
   }
 }

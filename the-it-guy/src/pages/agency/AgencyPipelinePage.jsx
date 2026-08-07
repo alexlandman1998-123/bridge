@@ -9861,6 +9861,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => buildKingstonsPipelineRailSteps(selectedSellerProcessPanelModel || {}),
     [selectedSellerProcessPanelModel],
   )
+  const selectedLeadDisplayLifecycleStage = useMemo(() => {
+    if (!selectedLeadHasKingstonsSellerProcess) return selectedLeadEffectiveLifecycleStage
+    return normalizeText(selectedSellerProcessPanelModel?.currentStageLabel) || selectedLeadEffectiveLifecycleStage
+  }, [
+    selectedLeadHasKingstonsSellerProcess,
+    selectedLeadEffectiveLifecycleStage,
+    selectedSellerProcessPanelModel?.currentStageLabel,
+  ])
 
   const selectedSellerReadinessRequirements = useMemo(() => {
     const listingItems = selectedSellerReadiness.listingReadiness?.items || []
@@ -9970,7 +9978,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       key: 'progress',
       title: 'Linked / Progress',
       rows: [
-        ['Lifecycle Stage', selectedSellerJourney.stage?.label || selectedLeadEffectiveLifecycleStage || 'Not captured'],
+        ['Lifecycle Stage', selectedSellerJourney.stage?.label || selectedLeadDisplayLifecycleStage || 'Not captured'],
         ['Linked Transaction', selectedLeadLinkedTransactionId || 'Not linked yet'],
         ['Next Follow Up', selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.title : selectedLeadNextStep || 'Not captured'],
         ['Days in Stage', `${selectedSellerJourney.daysInCurrentStage || 0} days`],
@@ -9979,7 +9987,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ]), [
     selectedLead,
     selectedLeadAssignedAgentLabel,
-    selectedLeadEffectiveLifecycleStage,
+    selectedLeadDisplayLifecycleStage,
     selectedLeadLinkedTransactionId,
     selectedLeadNextStep,
     selectedLeadPropertyLabel,
@@ -19853,7 +19861,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="rounded-full bg-white/12 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/14">Seller Lead</span>
                                   <span className="rounded-full bg-[#0f8f59]/25 px-3 py-1 text-xs font-semibold text-[#c8f8dc] ring-1 ring-[#46ca83]/25">
-                                    {selectedSellerJourney.stage?.label || selectedLeadEffectiveLifecycleStage}
+                                    {selectedSellerJourney.stage?.label || selectedLeadDisplayLifecycleStage}
                                   </span>
                                 </div>
                                 <h1 className="mt-8 max-w-4xl text-[2.2rem] font-bold leading-tight tracking-[-0.035em] text-white sm:text-[2.8rem]" title={selectedLeadDisplayName}>
@@ -22190,7 +22198,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ['Pipeline value', selectedLead.estimatedValue ? formatCurrency(selectedLead.estimatedValue) : formatCurrency(selectedLead.budget)],
                           ['Lead score', selectedLead.priority || selectedLead.leadScore || 'Standard'],
                           ['Follow up', selectedLeadNextStep || 'No next action'],
-                          ['Lifecycle stage', selectedLeadEffectiveLifecycleStage],
+                          ['Lifecycle stage', selectedLeadDisplayLifecycleStage],
                           [
                             'Linked appointment',
                             selectedLeadLinkedAppointment
@@ -22209,10 +22217,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                       <div className="mt-6 grid gap-4 rounded-[20px] bg-[#f8fbfd] p-4 text-sm sm:grid-cols-4">
                         {[
-                          ['Status', selectedLeadEffectiveLifecycleStage],
+                          ['Status', selectedLeadDisplayLifecycleStage],
                           ['Last Activity', formatRelativeTime(selectedLeadActivities[0]?.activityDate || selectedLeadActivities[0]?.createdAt || selectedLead.updatedAt || selectedLead.createdAt)],
                           ['Created', formatDate(selectedLead.createdAt)],
-                          ['Stage', selectedLeadEffectiveLifecycleStage || 'Not set'],
+                          ['Stage', selectedLeadDisplayLifecycleStage || 'Not set'],
                         ].map(([label, value]) => (
                           <div key={label}>
                             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{label}</p>

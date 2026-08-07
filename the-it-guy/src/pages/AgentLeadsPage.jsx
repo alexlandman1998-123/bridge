@@ -15573,13 +15573,13 @@ function getSellerMandateMeta(row = {}, listing = null, journey = null) {
   const hasRecord = sellerMandateHasRecord(row, listing, journey)
   const mode = getSellerMandateWorkspaceMode(status, hasRecord)
   if (mode === 'signed') {
-    return { label: 'Signed', actionLabel: 'View Signed Mandate', tone: 'green', hasRecord: true, mode: 'signed' }
+    return { label: 'Signed', actionLabel: 'View signed file', tone: 'green', hasRecord: true, mode: 'signed' }
   }
   if (hasRecord) {
-    const actionLabel = mode === 'send' ? 'Open Mandate Workspace' : 'View Mandate'
+    const actionLabel = mode === 'send' ? 'Review in Documents' : 'View in Documents'
     return { label: formatSellerJourneyValue({ value: status }).replace(/_/g, ' ') || 'Draft', actionLabel, tone: getSellerMandateTone(status, hasRecord), hasRecord: true, mode }
   }
-  return { label: 'Not Generated', actionLabel: 'Generate Mandate', tone: 'slate', hasRecord: false, mode: 'generate' }
+  return { label: 'Not Generated', actionLabel: 'Generate in Seller Profile', tone: 'slate', hasRecord: false, mode: 'generate' }
 }
 
 function buildSellerLeadMandateWorkspacePath({
@@ -16200,7 +16200,7 @@ function SellerActionsPanel({
           onClick={() => onGenerateMandate?.()}
           className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-left text-blue-800 transition hover:border-blue-300 hover:bg-blue-100"
         >
-          <span className="block text-sm font-semibold">Generate Mandate</span>
+          <span className="block text-sm font-semibold">Generate in Seller Profile</span>
           <span className="mt-1 block text-xs font-medium text-blue-700">{mandateReason}</span>
         </button>
       </div>
@@ -17260,7 +17260,7 @@ function SellerLeadHeader({
     { actionId: 'open_journey', label: 'Journey' },
     { actionId: 'open_readiness', label: 'Readiness' },
     { actionId: 'open_listing', label: 'Listing' },
-    { actionId: 'view_mandate', label: 'Mandate' },
+    { actionId: 'view_mandate', label: 'File' },
   ]
   const downloadSellerPack = useCallback(async () => {
     try {
@@ -17534,7 +17534,7 @@ function getSellerProcessPanelActionHint(actionKey = '') {
     schedule_valuation_appointment: 'Open appointment composer',
     upload_valuation_document: 'Open document center',
     schedule_valuation_presentation: 'Open presentation appointment',
-    complete_seller_pack: 'Open mandate workspace',
+    complete_seller_pack: 'Open Seller Profile',
     prepare_listing: 'Open listing workspace',
   }
   return hints[actionKey] || 'Open workspace'
@@ -17705,13 +17705,12 @@ function SellerWorkspaceTabs({ activeTab, onTabChange }) {
     { key: 'overview', label: 'Overview' },
     { key: 'seller', label: 'Seller Profile' },
     { key: 'property', label: 'Property' },
-    { key: 'mandate', label: 'Mandate' },
     { key: 'appointments', label: 'Appointments' },
     { key: 'documents', label: 'Documents' },
     { key: 'activity', label: 'Activity' },
   ]
   return (
-    <nav className={`${panelClass} sticky top-0 z-10 grid grid-cols-2 gap-2 p-2 shadow-[0_12px_30px_rgba(15,23,42,0.06)] sm:grid-cols-3 lg:grid-cols-7`} aria-label="Seller workspace tabs">
+    <nav className={`${panelClass} sticky top-0 z-10 grid grid-cols-2 gap-2 p-2 shadow-[0_12px_30px_rgba(15,23,42,0.06)] sm:grid-cols-3 lg:grid-cols-6`} aria-label="Seller workspace tabs">
       {tabs.map((tab) => (
         <button
           key={tab.key}
@@ -19691,6 +19690,8 @@ function SellerProfileTab({
   actor = null,
   sendingOnboarding = false,
   agentOnboardingSignal = 0,
+  mandatePacketStatus = null,
+  onGenerateMandate = null,
   onSaved,
   onSendSellerOnboarding,
   onAgentCompleteSellerOnboarding,
@@ -19790,6 +19791,15 @@ function SellerProfileTab({
   const documentBranding = useMemo(() => getSellerDocumentBranding(listing || {}, sourceFormData), [listing, sourceFormData])
   const annexureDisclosure = useMemo(() => getSellerAnnexureDisclosure(sourceFormData), [sourceFormData])
   const annexureHasCapturedData = hasValue(annexureDisclosure)
+  const mandatePacketSummary = useMemo(
+    () => getSellerMandatePacketSummary({ row, listing, journey, mandatePacketStatus }),
+    [journey, listing, mandatePacketStatus, row],
+  )
+  const mandateHasRecord = mandatePacketSummary.meta.hasRecord || Boolean(mandatePacketSummary.packetId)
+  const mandateActionLabel = mandateHasRecord ? 'Regenerate in Seller Profile' : 'Generate in Seller Profile'
+  const openDocumentsTab = useCallback(() => {
+    onTabChange?.('documents')
+  }, [onTabChange])
 
   const sellerName = normalizeText(row.name || row.contact?.name || requirementProfile.sellerName) || 'Seller lead'
   const sellerPhone = normalizeText(row.phone || row.contact?.phone || requirementProfile.sellerContactPhone)
@@ -20359,7 +20369,7 @@ function SellerProfileTab({
         </>
       ) : (
       <>
-        <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2">
         <SellerWorkspaceCard
           title="Seller Snapshot"
           action={(
@@ -20434,6 +20444,51 @@ function SellerProfileTab({
           )}
         </SellerWorkspaceCard>
       </div>
+
+      <SellerWorkspaceCard
+        title="Seller Profile document workflow"
+        action={(
+          <StatusPill tone={mandatePacketSummary.meta.tone}>
+            {mandatePacketSummary.meta.label || (mandateHasRecord ? 'Available in Documents' : 'Not generated')}
+          </StatusPill>
+        )}
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 max-w-3xl">
+            <p className="text-sm font-semibold text-slate-950">
+              {mandateHasRecord ? 'The latest file is tracked in Documents' : 'No file has been generated yet'}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              Seller Profile is the action surface for generating or regenerating the file. Documents remains the system of record for the file, history, and downloads.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 lg:justify-end">
+            <button
+              type="button"
+              onClick={() => onGenerateMandate?.({ mode: 'generate' })}
+              disabled={!onGenerateMandate}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              <FileText size={15} />
+              {mandateActionLabel}
+            </button>
+            <button
+              type="button"
+              onClick={openDocumentsTab}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              <FolderKanban size={15} />
+              View in Documents
+            </button>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <SellerInfoRow label="File status" value={mandatePacketSummary.meta.label || (mandateHasRecord ? 'Available' : 'Not generated')} />
+          <SellerInfoRow label="Latest version" value={mandatePacketSummary.latestVersion?.version_number || mandatePacketSummary.latestVersion?.versionNumber || (mandateHasRecord ? 'Latest' : 'Pending')} />
+          <SellerInfoRow label="Last generated" value={formatDateTime(mandatePacketSummary.generatedAt, 'Pending')} />
+          <SellerInfoRow label="Storage" value="Documents" />
+        </div>
+      </SellerWorkspaceCard>
 
       <SellerWorkspaceCard
         id="seller-onboarding-editor"
@@ -20939,8 +20994,8 @@ function getSellerMandateWorkflowState({ row = {}, listing = null, journey = nul
     return {
       key: 'signed',
       label: 'Signed',
-      title: 'Signed mandate received',
-      copy: 'The signed mandate is connected to the listing and available in the seller portal document center.',
+      title: 'Signed file received',
+      copy: 'The signed file is connected to the listing and available in the seller portal document center.',
       tone: 'green',
       mandateMeta,
       mandateStatus,
@@ -20952,11 +21007,11 @@ function getSellerMandateWorkflowState({ row = {}, listing = null, journey = nul
     const sent = ['sent', 'sent_to_seller', 'sent_to_agent', 'partially_signed'].includes(mandateStatus) || mandateStatus.includes('sent')
     return {
       key: sent ? 'sent' : 'generated',
-      label: sent ? 'Sent for signature' : 'Mandate generated',
-      title: sent ? 'Sent for signature' : 'Mandate generated',
+      label: sent ? 'Sent for signature' : 'File generated',
+      title: sent ? 'Sent for signature' : 'File generated',
       copy: sent
-        ? 'The mandate packet exists and is awaiting signature progress.'
-        : 'The mandate packet exists. Open the mandate workspace to download, send, or regenerate it.',
+        ? 'The file packet exists and is awaiting signature progress.'
+        : 'The file packet exists. Open Seller Profile to download, send, or regenerate it.',
       tone: sent ? 'blue' : 'amber',
       mandateMeta,
       mandateStatus,
@@ -20969,7 +21024,7 @@ function getSellerMandateWorkflowState({ row = {}, listing = null, journey = nul
       key: 'ready',
       label: 'Seller facts ready',
       title: 'Seller facts ready',
-      copy: 'Seller onboarding has been submitted, so mandate generation can use verified seller and property facts.',
+      copy: 'Seller onboarding has been submitted, so file generation can use verified seller and property facts.',
       tone: 'green',
       mandateMeta,
       mandateStatus,
@@ -20981,7 +21036,7 @@ function getSellerMandateWorkflowState({ row = {}, listing = null, journey = nul
     key: 'blocked',
     label: 'Seller onboarding required',
     title: 'Seller onboarding required',
-    copy: 'Complete seller onboarding before generating a mandate. The agent can complete it manually or send the seller onboarding link.',
+    copy: 'Complete seller onboarding before generating the file. The agent can complete it manually or send the seller onboarding link.',
     tone: onboardingStarted ? 'amber' : 'slate',
     mandateMeta,
     mandateStatus,
@@ -21009,18 +21064,18 @@ function SellerMandateWorkflowGate({
     { key: 'signed', label: 'Signed', complete: state.key === 'signed', current: state.key === 'sent' },
   ]
   const primaryActionLabel = state.key === 'signed'
-    ? 'View signed mandate'
+    ? 'View signed file'
     : state.key === 'sent'
       ? 'View signing status'
       : state.key === 'generated'
-        ? 'Open mandate workspace'
+        ? 'Open Seller Profile'
         : actionBusy
           ? 'Saving commission...'
-        : 'Generate mandate'
+        : 'Generate in Seller Profile'
 
   return (
     <SellerWorkspaceCard
-      title="Mandate Workflow"
+      title="Seller Profile file workflow"
       action={<StatusPill tone={state.tone}>{state.label}</StatusPill>}
       density="compact"
     >
@@ -21376,25 +21431,25 @@ function SellerMandatePacketCard({
   }
   const packetIdShort = summary.packetId ? `${summary.packetId.slice(0, 8)}...` : 'Not created'
   const primaryLabel = (() => {
-    if (hasPacket && summary.meta.mode === 'signed') return 'Open signed mandate'
+    if (hasPacket && summary.meta.mode === 'signed') return 'Open signed file'
     if (hasPacket && summary.meta.mode === 'send') return 'Open to send/download'
-    if (hasPacket) return 'Open mandate workspace'
+    if (hasPacket) return 'Open Seller Profile'
     if (savingCommission) return 'Saving commission...'
-    return onboardingSubmitted ? 'Save & generate mandate' : 'Choose start path'
+    return onboardingSubmitted ? 'Save & generate file' : 'Choose start path'
   })()
   const secondaryDateLabel = summary.meta.mode === 'signed' ? 'Signed' : 'Sent'
   const secondaryDateValue = summary.meta.mode === 'signed' ? summary.signedAt : summary.sentAt
 
   return (
     <SellerWorkspaceCard
-      title="Mandate Packet"
+      title="Seller Profile file packet"
       action={<StatusPill tone={summary.meta.tone}>{summary.meta.label}</StatusPill>}
       density="compact"
     >
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="min-w-0">
           <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">
-            {hasPacket ? 'Mandate workspace is ready' : 'No mandate packet yet'}
+            {hasPacket ? 'File workflow is ready' : 'No file packet yet'}
           </h3>
           <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">
             {hasPacket
@@ -22427,6 +22482,8 @@ function SellerTabContent({
         actor={actor}
         sendingOnboarding={sendingSellerOnboarding}
         agentOnboardingSignal={agentOnboardingSignal}
+        mandatePacketStatus={mandatePacketStatus}
+        onGenerateMandate={onGenerateMandate}
         onSaved={onSaved}
         onSendSellerOnboarding={onSendSellerOnboarding}
         onAgentCompleteSellerOnboarding={onAgentCompleteSellerOnboarding}
@@ -22437,26 +22494,6 @@ function SellerTabContent({
     )
   }
   if (activeTab === 'property') return <SellerPropertyTab row={row} listing={listing} onSavePropertyDetails={onSavePropertyDetails} />
-  if (activeTab === 'mandate') {
-    return (
-      <SellerMandateTab
-        row={row}
-        listing={listing}
-        journey={journey}
-        mandatePacketStatus={mandatePacketStatus}
-        onboardingStatus={onboardingStatus}
-        commissionDraft={commissionDraft}
-        commissionSummary={commissionSummary}
-        savingCommission={savingCommission}
-        sendingOnboarding={sendingSellerOnboarding}
-        onCommissionDraftChange={onCommissionDraftChange}
-        onSaveCommission={onSaveCommission}
-        onManualSellerOnboarding={onManualSellerOnboarding}
-        onSendSellerOnboarding={onSendSellerOnboarding}
-        onGenerateMandate={onGenerateMandate}
-      />
-    )
-  }
   if (activeTab === 'appointments') {
     return (
       <SellerAppointmentsTab
@@ -22665,7 +22702,7 @@ function SellerLeadWorkspaceLayout({
   useEffect(() => {
     const requestedTab = normalizeText(initialWorkspaceTab).toLowerCase()
     if (!requestedTab || initialWorkspaceTabHandledRef.current === requestedTab) return
-    if (!['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity'].includes(requestedTab)) return
+    if (!['overview', 'seller', 'property', 'appointments', 'documents', 'activity'].includes(requestedTab)) return
     initialWorkspaceTabHandledRef.current = requestedTab
     setActiveWorkspaceTab(requestedTab)
   }, [initialWorkspaceTab])
@@ -22692,6 +22729,10 @@ function SellerLeadWorkspaceLayout({
     setAgentOnboardingSignal((value) => value + 1)
     focusSellerWorkspaceSection('seller-onboarding-editor')
   }, [focusSellerWorkspaceSection])
+  const openSellerMandateWorkflow = useCallback(() => {
+    setActiveWorkspaceTab('seller')
+    focusSellerWorkspaceSection('seller-onboarding-editor')
+  }, [focusSellerWorkspaceSection])
   const openMandateWithLatestTerms = useCallback(async (options = {}) => {
     const mandateMeta = getSellerMandateMeta(row, linkedSellerListing, sellerJourney)
     const requestedSourceMode = normalizeText(options?.sourceMode)
@@ -22713,8 +22754,8 @@ function SellerLeadWorkspaceLayout({
     if (key === 'send_onboarding') onSendSellerOnboarding?.()
     else if (key === 'open_seller_portal') onOpenSellerPortalLink?.()
     else if (['generate_mandate', 'send_mandate', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(key)) void openMandateWithLatestTerms()
-    else if (['add_commission', 'review_commission', 'open_commission'].includes(key)) setActiveWorkspaceTab('mandate')
-    else if (['view_mandate_details', 'open_mandate'].includes(key)) setActiveWorkspaceTab('mandate')
+    else if (['add_commission', 'review_commission', 'open_commission'].includes(key)) openSellerMandateWorkflow()
+    else if (['view_mandate_details', 'open_mandate'].includes(key)) openSellerMandateWorkflow()
     else if (['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(key)) onOpenListing?.()
     else if (['open_documents'].includes(key)) setActiveWorkspaceTab('documents')
     else if (['view_enquiries', 'view_performance', 'monitor_performance'].includes(key)) {
@@ -22724,7 +22765,7 @@ function SellerLeadWorkspaceLayout({
     else if (key === 'schedule_valuation_appointment') openAppointmentComposer('seller_valuation')
     else if (key === 'schedule_valuation_presentation') openAppointmentComposer('valuation_presentation')
     else if (key === 'upload_valuation_document') setActiveWorkspaceTab('documents')
-    else if (key === 'complete_seller_pack') setActiveWorkspaceTab('mandate')
+    else if (key === 'complete_seller_pack') openSellerMandateWorkflow()
     else if (key === 'prepare_listing') onOpenListing?.()
     else if (['contact_seller', 'open_timeline'].includes(key)) setActiveWorkspaceTab('activity')
     else if (['capture_property_address'].includes(key)) setActiveWorkspaceTab('property')
@@ -22751,7 +22792,7 @@ function SellerLeadWorkspaceLayout({
       setActiveWorkspaceTab('seller')
     }
     else if (key.includes('mandate')) {
-      setActiveWorkspaceTab('mandate')
+      openSellerMandateWorkflow()
     }
     else if (key.includes('document')) {
       setActiveWorkspaceTab('documents')
@@ -22765,7 +22806,16 @@ function SellerLeadWorkspaceLayout({
     else if (key.includes('timeline') || key.includes('activity')) {
       setActiveWorkspaceTab('activity')
     }
-  }, [focusSellerWorkspaceSection, onOpenListing, onOpenSellerPortalLink, onSendSellerOnboarding, openAppointmentComposer, openManualSellerOnboarding, openMandateWithLatestTerms])
+  }, [
+    focusSellerWorkspaceSection,
+    onOpenListing,
+    onOpenSellerPortalLink,
+    onSendSellerOnboarding,
+    openAppointmentComposer,
+    openManualSellerOnboarding,
+    openMandateWithLatestTerms,
+    openSellerMandateWorkflow,
+  ])
 
   return (
     <div className="space-y-6">
@@ -23892,11 +23942,11 @@ function AgentLeadWorkspace() {
         outcome: formPatch.commissionStructure || formPatch.commissionType,
         activityDate: new Date().toISOString(),
       }, { actor }).catch(() => {})
-      setSellerActionMessage('Mandate saved. Commission saved.')
+      setSellerActionMessage('File saved. Commission saved.')
       await loadWorkspace()
       return true
     } catch (actionError) {
-      setSellerActionError(actionError?.message || 'Unable to save mandate right now.')
+      setSellerActionError(actionError?.message || 'Unable to save file right now.')
       return false
     } finally {
       setSavingSellerCommission(false)

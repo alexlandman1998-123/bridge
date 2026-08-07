@@ -1,4 +1,4 @@
-import { Building2, Download, FileUp, FolderKanban, UserCircle2 } from 'lucide-react'
+import { Building2, Download, FileSignature, FileUp, FolderKanban, UserCircle2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import Button from '../components/ui/Button'
@@ -7,6 +7,7 @@ import FilterBar, { FilterBarGroup } from '../components/ui/FilterBar'
 import SearchInput from '../components/ui/SearchInput'
 import SectionHeader from '../components/ui/SectionHeader'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { buildSellerMandateDocumentModel } from '../core/documents/sellerMandateInformationModel'
 import {
   deleteDevelopmentDocument,
   fetchDevelopmentDetail,
@@ -101,6 +102,28 @@ function groupChecklistByCategory(checklist = []) {
     grouped[label].push(row)
   }
   return grouped
+}
+
+function isMandateChecklistRequirement(item = {}) {
+  const source = `${item?.key || ''} ${item?.label || ''}`.toLowerCase()
+  return source.includes('mandate')
+}
+
+function normalizeDocumentTimestamp(value = '') {
+  if (!value) return 0
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+function getMandateLifecycleLabel(document = {}) {
+  return normalizeLabel(
+    document?.sellerMandateLifecycleState ||
+      document?.sellerMandateDocumentVariant ||
+      document?.portalDocumentType ||
+      document?.document_type ||
+      document?.category ||
+      'mandate',
+  )
 }
 
 function getCompanyDocsStorageKey(profileId) {
@@ -341,6 +364,37 @@ function Documents() {
 
   const selectedClientWorkspace = useMemo(() => clientScopedRows[0] || null, [clientScopedRows])
 
+  const clientMandateDocuments = useMemo(() => {
+    const mandateRows = (selectedClientWorkspace?.documents || [])
+      .map((document) => {
+        const model = buildSellerMandateDocumentModel(document)
+        return {
+          ...document,
+          ...model,
+        }
+      })
+      .filter((document) => document.isSellerMandate)
+      .sort((left, right) => {
+        const leftTimestamp = normalizeDocumentTimestamp(left?.updated_at || left?.created_at)
+        const rightTimestamp = normalizeDocumentTimestamp(right?.updated_at || right?.created_at)
+        if (rightTimestamp !== leftTimestamp) {
+          return rightTimestamp - leftTimestamp
+        }
+
+        return (right?.sellerMandateVersionNumber || 0) - (left?.sellerMandateVersionNumber || 0)
+      })
+
+    return mandateRows
+  }, [selectedClientWorkspace?.documents])
+
+  const latestMandateDocument = clientMandateDocuments[0] || null
+  const mandateHistoryDocuments = clientMandateDocuments.slice(1)
+
+  const clientChecklistRows = useMemo(
+    () => (selectedClientWorkspace?.requiredChecklist || []).filter((item) => !isMandateChecklistRequirement(item)),
+    [selectedClientWorkspace?.requiredChecklist],
+  )
+
   async function handleChecklistUpload(workspaceRow, item, file) {
     if (!file || !workspaceRow?.transaction?.id) return
 
@@ -465,10 +519,17 @@ function Documents() {
     }
   }
 
-  const groupedClientChecklist = useMemo(
-    () => groupChecklistByCategory(selectedClientWorkspace?.requiredChecklist || []),
-    [selectedClientWorkspace?.requiredChecklist],
-  )
+  const clientChecklistSummary = useMemo(() => {
+    const uploadedCount = clientChecklistRows.filter((item) => item.complete).length
+    const totalRequired = clientChecklistRows.length
+    return {
+      uploadedCount,
+      missingCount: totalRequired - uploadedCount,
+      totalRequired,
+    }
+  }, [clientChecklistRows])
+
+  const groupedClientChecklist = useMemo(() => groupChecklistByCategory(clientChecklistRows), [clientChecklistRows])
 
   const developmentDocuments = useMemo(() => developmentDetail?.documents || [], [developmentDetail?.documents])
 
@@ -581,16 +642,144 @@ function Documents() {
                     <div className="mt-5 grid gap-3 sm:grid-cols-3">
                       <div className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
                         <span className="text-[0.74rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Uploaded</span>
-                        <p className="mt-2 text-xl font-semibold text-[#142132]">{selectedClientWorkspace?.checklistSummary?.uploadedCount || 0}</p>
+                        <p className="mt-2 text-xl font-semibold text-[#142132]">{clientChecklistSummary.uploadedCount}</p>
                       </div>
                       <div className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
                         <span className="text-[0.74rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Missing</span>
-                        <p className="mt-2 text-xl font-semibold text-[#142132]">{selectedClientWorkspace?.checklistSummary?.missingCount || 0}</p>
+                        <p className="mt-2 text-xl font-semibold text-[#142132]">{clientChecklistSummary.missingCount}</p>
                       </div>
                       <div className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
                         <span className="text-[0.74rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Required</span>
-                        <p className="mt-2 text-xl font-semibold text-[#142132]">{selectedClientWorkspace?.checklistSummary?.totalRequired || 0}</p>
+                        <p className="mt-2 text-xl font-semibold text-[#142132]">{clientChecklistSummary.totalRequired}</p>
                       </div>
+                    </div>
+                  </section>
+
+                  <section className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                    <SectionHeader
+                      title="Seller mandate"
+                      copy="Seller Profile generates the latest file and Documents stores its version history."
+                      actions={
+                        <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-[#f7f9fc] px-3 py-1 text-[0.78rem] font-semibold text-[#66758b]">
+                          {clientMandateDocuments.length} version{clientMandateDocuments.length === 1 ? '' : 's'}
+                        </span>
+                      }
+                    />
+                    <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)]">
+                      <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfcfe] p-4">
+                        {latestMandateDocument ? (
+                          <div className="space-y-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#dbe6f2] bg-white text-[#35546c]">
+                                    <FileSignature size={18} />
+                                  </span>
+                                  <div>
+                                    <p className="text-[0.98rem] font-semibold text-[#142132]">
+                                      {latestMandateDocument?.sellerMandateTitle || latestMandateDocument?.name || latestMandateDocument?.title || 'Mandate'}
+                                    </p>
+                                    <p className="text-xs text-[#6b7d93]">
+                                      {getMandateLifecycleLabel(latestMandateDocument)}
+                                    </p>
+                                  </div>
+                                </div>
+                                <p className="mt-3 text-sm leading-6 text-[#5f7288]">
+                                  The newest file is kept here so Documents stays the source of truth.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-xs font-semibold text-[#35546c]">
+                                  Version {latestMandateDocument?.sellerMandateVersionNumber || 1}
+                                </span>
+                                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(latestMandateDocument?.status || latestMandateDocument?.sellerMandateLifecycleState || 'uploaded')}`}>
+                                  {normalizeLabel(latestMandateDocument?.status || latestMandateDocument?.sellerMandateLifecycleState || 'Uploaded')}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div className="rounded-[14px] border border-[#e4ebf4] bg-white px-4 py-3">
+                                <span className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Stored</span>
+                                <p className="mt-1 text-sm font-semibold text-[#142132]">
+                                  {formatDate(latestMandateDocument?.updated_at || latestMandateDocument?.created_at)}
+                                </p>
+                              </div>
+                              <div className="rounded-[14px] border border-[#e4ebf4] bg-white px-4 py-3">
+                                <span className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Source</span>
+                                <p className="mt-1 text-sm font-semibold text-[#142132]">Generated from Seller Profile</p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {latestMandateDocument?.url ? (
+                                <a
+                                  href={latestMandateDocument.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-[10px] border border-[#dbe6f2] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]"
+                                >
+                                  <Download size={13} />
+                                  Download latest file
+                                </a>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-start gap-3">
+                            <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#dbe6f2] bg-white text-[#35546c]">
+                              <FileSignature size={18} />
+                            </span>
+                            <div>
+                              <p className="text-[0.98rem] font-semibold text-[#142132]">No seller mandate file yet</p>
+                              <p className="mt-1 text-sm leading-6 text-[#5f7288]">
+                                Generate it from Seller Profile and it will appear here automatically.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </article>
+
+                      <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfcfe] p-4">
+                        <h4 className="text-sm font-semibold text-[#142132]">Version history</h4>
+                        <div className="mt-3 space-y-3">
+                          {mandateHistoryDocuments.length ? (
+                            mandateHistoryDocuments.map((document) => (
+                              <div key={document.id || `${document.document_type || 'mandate'}-${document.created_at || document.updated_at || ''}`} className="rounded-[14px] border border-[#e4ebf4] bg-white px-4 py-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-[#142132]">
+                                      {document?.sellerMandateTitle || document?.name || document?.title || 'Mandate'}
+                                    </p>
+                                    <p className="mt-1 text-xs text-[#6b7d93]">
+                                      {getMandateLifecycleLabel(document)}
+                                    </p>
+                                  </div>
+                                  <span className="inline-flex shrink-0 items-center rounded-full border border-[#dbe6f2] bg-[#f7f9fc] px-2.5 py-1 text-xs font-semibold text-[#35546c]">
+                                    v{document?.sellerMandateVersionNumber || 1}
+                                  </span>
+                                </div>
+                                <p className="mt-2 text-xs text-[#6b7d93]">
+                                  {formatDate(document?.updated_at || document?.created_at)}
+                                </p>
+                                {document?.url ? (
+                                  <a
+                                    href={document.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#35546c]"
+                                  >
+                                    <Download size={13} />
+                                    Download
+                                  </a>
+                                ) : null}
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-[#6b7d93]">No older versions yet.</p>
+                          )}
+                        </div>
+                      </article>
                     </div>
                   </section>
 

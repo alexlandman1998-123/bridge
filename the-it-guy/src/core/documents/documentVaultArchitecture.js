@@ -1,3 +1,8 @@
+import {
+  isSellerMandateDocument,
+  normalizeSellerMandateDocumentVariant,
+} from './sellerMandateInformationModel.js'
+
 const DOCUMENT_VAULT_GROUP_DEFINITIONS = [
   {
     key: 'sale',
@@ -96,6 +101,13 @@ function inferGroupKeyFromDocument(requirement = {}) {
   const label = String(requirement.label || '')
     .trim()
     .toLowerCase()
+  const mandateVariant = normalizeSellerMandateDocumentVariant(
+    requirement.documentType || requirement.document_type || requirement.key || requirement.label,
+  )
+
+  if (isSellerMandateDocument(requirement.documentType || requirement.document_type || requirement.key || requirement.label)) {
+    return 'sale'
+  }
 
   if (key.includes('handover') || key.includes('snag') || key.includes('warranty') || key.includes('occupation')) {
     return 'handover'
@@ -106,7 +118,8 @@ function inferGroupKeyFromDocument(requirement = {}) {
     key.includes('reservation') ||
     key.includes('sale') ||
     key.includes('annexure') ||
-    label.includes('offer to purchase')
+    label.includes('offer to purchase') ||
+    mandateVariant
   ) {
     return 'sale'
   }
@@ -157,6 +170,9 @@ function inferGroupKeyFromDocument(requirement = {}) {
 function inferExpectedFromRole(requirement = {}, groupKey = 'buyer_fica') {
   const key = String(requirement.key || '').toLowerCase()
   const label = String(requirement.label || '').toLowerCase()
+  const mandateVariant = normalizeSellerMandateDocumentVariant(
+    requirement.documentType || requirement.document_type || requirement.key || requirement.label,
+  )
 
   if (groupKey === 'transfer') {
     return 'attorney'
@@ -171,6 +187,12 @@ function inferExpectedFromRole(requirement = {}, groupKey = 'buyer_fica') {
     return 'client'
   }
   if (groupKey === 'sale') {
+    if (mandateVariant === 'generated_mandate') {
+      return 'agent'
+    }
+    if (mandateVariant === 'signed_mandate' || mandateVariant === 'draft_mandate' || mandateVariant === 'mandate') {
+      return 'seller'
+    }
     if (key.includes('signed_otp') || key.includes('otp')) {
       return 'client'
     }
