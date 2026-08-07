@@ -61,6 +61,8 @@ const liveNonWorkspaceSources = [
   assert.match(pageSource, /function hasKingstonsSellerWorkspaceSignal\(workspace = {}\)/)
   assert.match(pageSource, /KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS\.includes\(explicitOrganisationId\)/)
   assert.match(pageSource, /JSON\.stringify\(workspace\)\.toLowerCase\(\)/)
+  assert.match(pageSource, /workspace\?\.actor\?\.email/)
+  assert.match(pageSource, /currentMembership: workspaceContext\.currentMembership/)
   assert.match(pageSource, /sellerProcessProfile: KINGSTONS_SELLER_PROCESS_PROFILE/)
   assert.match(pageSource, /const hasKingstonsSellerProcess = sellerProcessPanelModel\?\.visible === true/)
   assert.match(pageSource, /<KingstonsNextBestActionCard model=\{sellerProcessPanelModel\} onAction=\{handleAcquisitionAction\} \/>/)

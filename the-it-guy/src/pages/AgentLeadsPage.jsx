@@ -915,7 +915,14 @@ function hasKingstonsSellerWorkspaceSignal(workspace = {}) {
       workspace?.organisation_id ||
       workspace?.organizationId ||
       workspace?.organization_id ||
-    row?.organisationId ||
+      workspace?.currentWorkspace?.organisationId ||
+      workspace?.currentWorkspace?.organisation_id ||
+      workspace?.currentWorkspace?.organizationId ||
+      workspace?.currentWorkspace?.organization_id ||
+      workspace?.currentWorkspace?.id ||
+      workspace?.currentMembership?.organisation_id ||
+      workspace?.currentMembership?.organization_id ||
+      row?.organisationId ||
       row?.organisation_id ||
       row?.organizationId ||
       row?.organization_id,
@@ -933,6 +940,14 @@ function hasKingstonsSellerWorkspaceSignal(workspace = {}) {
     row?.lead_owner_email,
     row?.ownerEmail,
     row?.owner_email,
+    workspace?.actor?.email,
+    workspace?.actor?.userEmail,
+    workspace?.actor?.user_email,
+    workspace?.profile?.email,
+    workspace?.currentMembership?.email,
+    workspace?.currentMembership?.userEmail,
+    workspace?.currentMembership?.user_email,
+    workspace?.currentMembership?.user?.email,
   ].map((value) => normalizeText(value).toLowerCase()).filter(Boolean)
 
   if (signal.some((value) => value.includes('kingstons.training@arch9.test') || value.includes('@kingstons.'))) {
@@ -23077,12 +23092,32 @@ function AgentLeadWorkspace() {
   const isSellerLeadWorkspace = leadCategory === 'seller'
   const sellerProcessPanelModel = useMemo(() => {
     if (baseSellerProcessPanelModel?.visible === true) return baseSellerProcessPanelModel
-    if (!row || !isSellerLeadWorkspace || !hasKingstonsSellerWorkspaceSignal(data || {})) return baseSellerProcessPanelModel
+    const kingstonsSignalSource = {
+      ...(data || {}),
+      actor,
+      currentMembership: workspaceContext.currentMembership,
+      currentWorkspace: workspaceContext.currentWorkspace,
+      organisationId,
+      organisationSettings,
+      profile: workspaceContext.profile,
+    }
+    if (!row || !isSellerLeadWorkspace || !hasKingstonsSellerWorkspaceSignal(kingstonsSignalSource)) return baseSellerProcessPanelModel
     return buildSellerProcessWorkspacePanelModel({
       ...(data || {}),
       sellerProcessProfile: KINGSTONS_SELLER_PROCESS_PROFILE,
     })
-  }, [baseSellerProcessPanelModel, data, isSellerLeadWorkspace, row])
+  }, [
+    actor,
+    baseSellerProcessPanelModel,
+    data,
+    isSellerLeadWorkspace,
+    organisationId,
+    organisationSettings,
+    row,
+    workspaceContext.currentMembership,
+    workspaceContext.currentWorkspace,
+    workspaceContext.profile,
+  ])
   const requestedSellerWorkspaceTab = useMemo(() => {
     if (!location.search) return ''
     return normalizeText(new URLSearchParams(location.search).get('sellerWorkspace')).toLowerCase()
