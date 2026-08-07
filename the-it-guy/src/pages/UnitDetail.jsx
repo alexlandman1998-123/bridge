@@ -118,6 +118,10 @@ import { resolveTransferWorkflowSnapshot } from '../core/transactions/transferWo
 import { buildWorkflowActivityEvent } from '../core/workflows/events'
 import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
+import {
+  applyKingstonsSellerPackReadinessToProgress,
+  buildKingstonsSellerPackTransactionReadiness,
+} from '../core/transactions/kingstonsSellerPackTransactionReadiness'
 import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
 import {
   buildTransactionWorkspaceMenuItems,
@@ -4902,6 +4906,11 @@ function UnitDetail() {
       return
     }
 
+    if (sellerPackAttorneyHandoffBlocked) {
+      setError(`Cannot move to Transfer yet. ${sellerPackAttorneyHandoffReason}`)
+      return
+    }
+
     try {
       setFinanceActionLoading('move_ready_for_transfer')
       setError('')
@@ -5536,7 +5545,7 @@ function UnitDetail() {
       return rightDate - leftDate
     })
   const onboardingEmailSent = onboardingEmailEvents.length > 0
-  const stageProgressModel = buildTransactionStageProgressModel({
+  const baseStageProgressModel = buildTransactionStageProgressModel({
     mainStage,
     transaction,
     unit,
@@ -6303,6 +6312,33 @@ function UnitDetail() {
         }
       }),
   ]
+  const sellerPackTransactionReadiness = buildKingstonsSellerPackTransactionReadiness({
+    documents: workspaceDocuments,
+    documentLibraryRows,
+  })
+  const shouldShowSellerPackTransactionReadiness = Boolean(
+    transaction?.listing_id ||
+      transaction?.listingId ||
+      sellerPackTransactionReadiness.rows.some((row) => row.documentId || row.sourceDocumentId),
+  )
+  const stageProgressModel = applyKingstonsSellerPackReadinessToProgress(
+    baseStageProgressModel,
+    sellerPackTransactionReadiness,
+    {
+      enabled: shouldShowSellerPackTransactionReadiness,
+    },
+  )
+  const sellerPackAttorneyHandoffBlockers = shouldShowSellerPackTransactionReadiness
+    ? stageProgressModel?.getTransitionBlockers?.('ATTY') || []
+    : []
+  const sellerPackAttorneyHandoffBlocked = Boolean(
+    shouldShowSellerPackTransactionReadiness &&
+      !sellerPackTransactionReadiness.gate.attorneyHandoffReady &&
+      sellerPackAttorneyHandoffBlockers.length,
+  )
+  const sellerPackAttorneyHandoffReason = sellerPackAttorneyHandoffBlockers.join(' • ') ||
+    sellerPackTransactionReadiness.gate.reason ||
+    'Signed Seller Pack must be complete before attorney handoff.'
 
   const activeDocumentLibraryCategoryKey = normalizeLibraryCategory(activeDocumentLibraryCategory)
   const activeDocumentLibraryStatusKey = String(activeDocumentLibraryStatus || 'all').trim().toLowerCase()
@@ -7599,9 +7635,13 @@ function UnitDetail() {
     ) {
       actions.push({
         id: 'move_to_transfer',
-        label: financeActionLoading === 'move_ready_for_transfer' ? 'Moving…' : 'Move to Transfer',
+        label: sellerPackAttorneyHandoffBlocked
+          ? 'Seller Pack Required'
+          : financeActionLoading === 'move_ready_for_transfer'
+            ? 'Moving…'
+            : 'Move to Transfer',
         variant: 'secondary',
-        disabled: isBusy,
+        disabled: isBusy || sellerPackAttorneyHandoffBlocked,
         onClick: () => void handleMoveToReadyForTransfer(),
       })
     }
@@ -9795,6 +9835,97 @@ function UnitDetail() {
                 })}
               </div>
             </section>
+
+            {shouldShowSellerPackTransactionReadiness ? (
+            <section className={`rounded-[24px] border p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)] ${
+              sellerPackTransactionReadiness.gate.status === 'pass'
+                ? 'border-[#cfe3d7] bg-[#f6fbf8]'
+                : sellerPackTransactionReadiness.gate.status === 'blocked'
+                  ? 'border-[#f1d0c8] bg-[#fff8f6]'
+                  : 'border-[#f2dfbf] bg-[#fffaf0]'
+            }`}>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-[1.08rem] font-semibold tracking-[-0.02em] text-[#142132]">Signed Seller Pack</h3>
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
+                      sellerPackTransactionReadiness.gate.status === 'pass'
+                        ? 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
+                        : sellerPackTransactionReadiness.gate.status === 'blocked'
+                          ? 'border-[#f1d0c8] bg-[#fff1ed] text-[#b5472d]'
+                          : 'border-[#f2dfbf] bg-[#fff8ea] text-[#8a5b16]'
+                    }`}>
+                      {sellerPackTransactionReadiness.gate.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 max-w-3xl text-sm leading-6 text-[#5f7086]">
+                    {sellerPackTransactionReadiness.gate.reason}
+                  </p>
+                  <p className="mt-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7086]">
+                    Attorney handoff: {sellerPackTransactionReadiness.gate.attorneyHandoffReady ? 'Ready' : 'Blocked'}
+                  </p>
+                  {sellerPackAttorneyHandoffBlocked ? (
+                    <div className="mt-3 rounded-[14px] border border-[#f1d0c8] bg-white/70 px-3 py-2 text-sm font-semibold text-[#b5472d]" data-testid="kingstons-attorney-handoff-gate">
+                      Attorney handoff is blocked until the signed Seller Pack is complete: {sellerPackAttorneyHandoffReason}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="grid min-w-[220px] grid-cols-3 gap-2 text-center">
+                  <div className="rounded-[14px] border border-white/70 bg-white/75 px-3 py-2">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Ready</p>
+                    <p className="mt-1 text-base font-semibold text-[#142132]">{sellerPackTransactionReadiness.summary.ready}</p>
+                  </div>
+                  <div className="rounded-[14px] border border-white/70 bg-white/75 px-3 py-2">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Missing</p>
+                    <p className="mt-1 text-base font-semibold text-[#142132]">{sellerPackTransactionReadiness.summary.missing}</p>
+                  </div>
+                  <div className="rounded-[14px] border border-white/70 bg-white/75 px-3 py-2">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Attention</p>
+                    <p className="mt-1 text-base font-semibold text-[#142132]">{sellerPackTransactionReadiness.summary.attention}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {sellerPackTransactionReadiness.rows.map((row) => (
+                  <div key={row.key} className="rounded-[16px] border border-white/70 bg-white/80 px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-semibold text-[#243d56]">{row.label}</p>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                          {row.documentId ? row.sourceLabel || 'Transaction document' : 'Not in transaction documents'}
+                        </p>
+                      </div>
+                      <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+                        row.state === 'ready'
+                          ? 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
+                          : row.state === 'attention'
+                            ? 'border-[#f1d0c8] bg-[#fff1ed] text-[#b5472d]'
+                            : 'border-[#f2dfbf] bg-[#fff8ea] text-[#8a5b16]'
+                      }`}>
+                        {row.statusLabel}
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-1 text-xs leading-5 text-[#6b7d93]">
+                      <p>
+                        <span className="font-semibold text-[#425970]">Transaction doc:</span>{' '}
+                        {row.documentId ? 'Linked' : 'Missing'}
+                      </p>
+                      <p>
+                        <span className="font-semibold text-[#425970]">Listing source:</span>{' '}
+                        {row.sourceDocumentId ? 'Preserved' : 'Not available'}
+                      </p>
+                      {row.uploadedAt ? (
+                        <p>
+                          <span className="font-semibold text-[#425970]">Updated:</span>{' '}
+                          {formatDate(row.uploadedAt)}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            ) : null}
 
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
               <nav className="grid gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2 md:grid-cols-2 xl:grid-cols-5 2xl:grid-cols-6">

@@ -1981,6 +1981,8 @@ function isMandateDocumentRow(row = {}) {
 
 const PRIVATE_LISTING_DOCUMENT_MATCH_ALIASES = {
   signed_mandate: ['mandate', 'mandate_signature', 'signed_mandate'],
+  signed_defect_form: ['signed_defect_form', 'defect_form', 'defects', 'property_condition_disclosure'],
+  signed_fica_form: ['signed_fica_form', 'fica_form', 'fica'],
   id_document: ['id_document', 'identity', 'identity_document', 'identity_documents', 'passport', 'seller_id'],
   proof_of_address: ['proof_of_address', 'residential_address', 'residence', 'address'],
   title_deed_reference: ['title_deed_reference', 'title_deed_copy', 'title_deed', 'deed'],
@@ -2078,6 +2080,9 @@ const PRIVATE_LISTING_DOCUMENT_INSERT_OPTIONAL_COLUMNS = [
   'canonical_requirement_instance_id',
   'requirement_id',
   'storage_path',
+  'pending_transaction_promotion',
+  'promotion_status',
+  'promotion_error',
   'uploaded_at',
 ]
 
@@ -6233,6 +6238,173 @@ export async function getPrivateListingDocuments(listingId) {
   return enrichPrivateListingDocumentRows(client, query.data)
 }
 
+export async function ensurePrivateListingDocumentRequirements(listingId, requirementRows = [], {
+  reason = 'manual_requirement_ensure',
+} = {}) {
+  const client = requireClient()
+  const normalizedListingId = normalizeUuid(listingId)
+  if (!normalizedListingId) throw new Error('Listing id is required.')
+  const sourceRows = Array.isArray(requirementRows) ? requirementRows : []
+  if (!sourceRows.length) return getPrivateListingDocumentRequirements(normalizedListingId)
+
+  const existingRequirements = await getPrivateListingDocumentRequirements(normalizedListingId).catch(() => [])
+  const missingRows = sourceRows
+    .map((row) => {
+      const requirementKey = normalizeCompatibilityKey(row?.requirementKey || row?.requirement_key || row?.key)
+      if (!requirementKey) return null
+      const existing = existingRequirements.find((requirement) => {
+        const rowKey = normalizeCompatibilityKey(requirement?.requirement_key || requirement?.key)
+        return privateListingDocumentKeysOverlap(requirementKey, rowKey)
+      })
+      if (existing) return null
+      return {
+        private_listing_id: normalizedListingId,
+        requirement_key: requirementKey,
+        requirement_name: normalizeText(row?.requirementName || row?.requirement_name || row?.label || row?.name) || requirementKey,
+        requirement_description: normalizeText(row?.requirementDescription || row?.requirement_description || row?.description),
+        requirement_group: normalizeText(row?.requirementGroup || row?.requirement_group || row?.group || 'compliance'),
+        document_visibility: normalizeText(row?.documentVisibility || row?.document_visibility || row?.visibility || 'seller_visible'),
+        status: normalizeText(row?.status || 'required'),
+        is_required: row?.isRequired !== false && row?.is_required !== false,
+        generated_from: {
+          ...(row?.generatedFrom && typeof row.generatedFrom === 'object' ? row.generatedFrom : {}),
+          ...(row?.generated_from && typeof row.generated_from === 'object' ? row.generated_from : {}),
+          source: 'manual_seller_pack',
+          reason,
+        },
+      }
+    })
+    .filter(Boolean)
+
+  if (!missingRows.length) return existingRequirements
+
+  const upsert = await upsertPrivateListingRequirementRows(client, missingRows)
+  if (upsert.error && !upsert.missingTable && !upsert.schemaIncompatible) throw upsert.error
+  if (upsert.missingTable || upsert.schemaIncompatible) return existingRequirements
+  return getPrivateListingDocumentRequirements(normalizedListingId)
+}
+
+export async function markPrivateListingDocumentsPendingTransactionPromotion(listingId, {
+  requirementKeys = [],
+  source = 'seller_pack_transaction_continuity',
+} = {}) {
+  const client = requireClient()
+  if (hasMissingTableCache('private_listing_documents')) {
+    return { listingId: normalizeText(listingId), updatedCount: 0, documentIds: [], skipped: true, failures: [] }
+  }
+
+  const normalizedListingId = normalizeUuid(listingId)
+  if (!normalizedListingId) throw new Error('Listing id is required.')
+
+  const targetRequirementKeys = (Array.isArray(requirementKeys) ? requirementKeys : [])
+    .map((key) => normalizeCompatibilityKey(key))
+    .filter(Boolean)
+  if (!targetRequirementKeys.length) {
+    return { listingId: normalizedListingId, updatedCount: 0, documentIds: [], skipped: true, failures: [] }
+  }
+
+  const [documents, requirements] = await Promise.all([
+    getPrivateListingDocuments(normalizedListingId),
+    getPrivateListingDocumentRequirements(normalizedListingId).catch(() => []),
+  ])
+  const requirementById = new Map(
+    (Array.isArray(requirements) ? requirements : [])
+      .map((requirement) => [normalizeText(requirement?.id), requirement])
+      .filter(([id]) => Boolean(id)),
+  )
+  const targetDocuments = (Array.isArray(documents) ? documents : []).filter((document) => {
+    const requirement = requirementById.get(normalizeText(document?.requirement_id)) || {}
+    const signals = [
+      requirement?.requirement_key,
+      requirement?.key,
+      document?.document_type,
+      document?.category,
+      document?.document_name,
+      document?.file_name,
+    ].filter(Boolean)
+    return targetRequirementKeys.some((targetKey) =>
+      signals.some((signal) => privateListingDocumentKeysOverlap(targetKey, signal)),
+    )
+  })
+
+  const updatedDocumentIds = []
+  const failures = []
+  for (const document of targetDocuments) {
+    const documentId = normalizeUuid(document?.id)
+    if (!documentId) continue
+
+    let updatePayload = {
+      pending_transaction_promotion: true,
+      promotion_status: 'pending_transaction',
+      promotion_error: null,
+    }
+
+    while (Object.keys(updatePayload).length) {
+      const updated = await client
+        .from('private_listing_documents')
+        .update(updatePayload)
+        .eq('id', documentId)
+        .select('id')
+        .maybeSingle()
+
+      if (!updated.error) {
+        updatedDocumentIds.push(documentId)
+        break
+      }
+
+      if (isMissingTableError(updated.error, 'private_listing_documents')) {
+        rememberMissingTable('private_listing_documents')
+        return {
+          listingId: normalizedListingId,
+          updatedCount: updatedDocumentIds.length,
+          documentIds: updatedDocumentIds,
+          skipped: true,
+          failures,
+        }
+      }
+
+      const missingColumn = Object.keys(updatePayload).find((columnName) =>
+        isMissingColumnError(updated.error, columnName),
+      )
+      if (missingColumn) {
+        const nextPayload = { ...updatePayload }
+        delete nextPayload[missingColumn]
+        updatePayload = nextPayload
+        continue
+      }
+
+      failures.push({
+        documentId,
+        error: updated.error?.message || 'Unable to mark listing document for transaction promotion.',
+      })
+      break
+    }
+  }
+
+  if (updatedDocumentIds.length) {
+    await createPrivateListingActivity({
+      privateListingId: normalizedListingId,
+      activityType: 'seller_pack_transaction_promotion_queued',
+      activityTitle: 'Seller Pack queued for transaction',
+      activityDescription: 'Seller Pack documents were marked for transaction handoff.',
+      visibility: 'internal',
+      metadata: {
+        source,
+        requirementKeys: targetRequirementKeys,
+        documentIds: updatedDocumentIds,
+      },
+    }).catch(() => null)
+  }
+
+  return {
+    listingId: normalizedListingId,
+    updatedCount: updatedDocumentIds.length,
+    documentIds: updatedDocumentIds,
+    skipped: false,
+    failures,
+  }
+}
+
 export async function linkPrivateListingDocument(listingId, {
   documentType = 'listing_document',
   documentCategory = '',
@@ -6242,6 +6414,8 @@ export async function linkPrivateListingDocument(listingId, {
   visibility = 'internal',
   status = 'uploaded',
   requirementKey = '',
+  pendingTransactionPromotion = false,
+  promotionStatus = '',
   uploadedAt = '',
   metadata = {},
 } = {}) {
@@ -6282,10 +6456,21 @@ export async function linkPrivateListingDocument(listingId, {
     )
   })
   if (existingRow) {
+    if (pendingTransactionPromotion) {
+      await markPrivateListingDocumentsPendingTransactionPromotion(normalizedListingId, {
+        requirementKeys: [requirementKey || documentType || documentCategory].filter(Boolean),
+        source: metadata?.source || 'linked_document_existing_row',
+      }).catch((error) => {
+        console.warn('[Private Listings] pending transaction promotion update skipped for existing listing document', error)
+        return null
+      })
+    }
     const enriched = await enrichPrivateListingDocumentRows(client, [existingRow])
     return {
       ...(enriched[0] || existingRow),
       privateListingId: normalizedListingId,
+      pending_transaction_promotion: pendingTransactionPromotion || Boolean(existingRow?.pending_transaction_promotion),
+      promotion_status: normalizeText(promotionStatus || existingRow?.promotion_status || (pendingTransactionPromotion ? 'pending_transaction' : '')),
     }
   }
 
@@ -6304,6 +6489,11 @@ export async function linkPrivateListingDocument(listingId, {
       document_name: documentName,
     })
   }) || null
+  const mandateDocument = isMandateDocumentRow({
+    document_type: documentType || matchedRequirement?.requirement_key,
+    category: documentCategory || matchedRequirement?.requirement_group,
+    document_name: documentName || matchedRequirement?.requirement_name,
+  })
 
   const uploadedTimestamp = normalizeText(uploadedAt) || new Date().toISOString()
   const insertPayload = {
@@ -6320,6 +6510,11 @@ export async function linkPrivateListingDocument(listingId, {
     canonical_requirement_instance_id: matchedRequirement?.canonical_requirement_instance_id || null,
     uploaded_at: uploadedTimestamp,
   }
+  if (pendingTransactionPromotion) {
+    insertPayload.pending_transaction_promotion = true
+    insertPayload.promotion_status = normalizeText(promotionStatus) || 'pending_transaction'
+    insertPayload.promotion_error = null
+  }
 
   const inserted = await insertPrivateListingDocumentRow(client, insertPayload)
   if (inserted.error) {
@@ -6333,11 +6528,26 @@ export async function linkPrivateListingDocument(listingId, {
   const documentRow = normalizeDocumentRows(inserted.data ? [{ ...insertPayload, ...inserted.data }] : [insertPayload])[0] || null
   const enrichedRows = documentRow ? await enrichPrivateListingDocumentRows(client, [documentRow]) : []
   const linkedDocument = enrichedRows[0] || documentRow
+  const linkedRequirementId = linkedDocument?.requirement_id || matchedRequirement?.id || null
+
+  if (linkedRequirementId) {
+    await updatePrivateListingRequirementStatus(linkedRequirementId, insertPayload.status === 'completed' ? 'completed' : 'uploaded').catch((error) => {
+      console.warn('[Private Listings] requirement status update skipped after listing document link', error)
+      return null
+    })
+  }
+
+  if (mandateDocument) {
+    await updatePrivateListing(normalizedListingId, { mandateStatus: 'signed_uploaded' }, { includeRequirementsAndDocuments: false }).catch((error) => {
+      console.warn('[Private Listings] mandate status update skipped after signed mandate link', error)
+      return null
+    })
+  }
 
   await createPrivateListingActivity({
     privateListingId: normalizedListingId,
-    activityType: 'listing_document_linked',
-    activityTitle: 'Listing document linked',
+    activityType: mandateDocument ? 'signed_mandate_linked' : 'listing_document_linked',
+    activityTitle: mandateDocument ? 'Signed mandate linked' : 'Listing document linked',
     activityDescription: `${insertPayload.document_name} linked to this listing.`,
     performedBy: user?.id || null,
     visibility: 'internal',
@@ -6350,6 +6560,7 @@ export async function linkPrivateListingDocument(listingId, {
       fileUrl: normalizedFileUrl || null,
       requirementKey: normalizedRequirementKey || null,
       source: metadata?.source || 'linked_document',
+      mandateStatus: mandateDocument ? 'signed_uploaded' : null,
     },
   }).catch(() => null)
 
@@ -6363,7 +6574,7 @@ export async function linkPrivateListingDocument(listingId, {
   return {
     ...(linkedDocument || {}),
     privateListingId: normalizedListingId,
-    requirementId: linkedDocument?.requirement_id || matchedRequirement?.id || null,
+    requirementId: linkedRequirementId,
     requirementKey: normalizedRequirementKey || matchedRequirement?.requirement_key || null,
   }
 }
@@ -8406,6 +8617,8 @@ export const __privateListingServiceTestUtils = Object.freeze({
 })
 
 export async function uploadPrivateListingDocument(listingId, file, {
+  requirementId = '',
+  requirementKey = '',
   documentType = 'listing_document',
   documentCategory = '',
   documentName = '',
@@ -8429,17 +8642,42 @@ export async function uploadPrivateListingDocument(listingId, file, {
     contentType: file.type || undefined,
   })
 
+  const requirements = await getPrivateListingDocumentRequirements(normalizedListingId).catch(() => [])
+  const normalizedRequirementId = normalizeUuid(requirementId)
+  const normalizedRequirementKey = normalizeCompatibilityKey(requirementKey || documentType || documentCategory)
+  const matchedRequirement = requirements.find((requirement) => {
+    if (normalizedRequirementId && normalizeUuid(requirement?.id) === normalizedRequirementId) return true
+    const rowKey = normalizeCompatibilityKey(requirement?.requirement_key || requirement?.key)
+    if (normalizedRequirementKey && privateListingDocumentKeysOverlap(normalizedRequirementKey, rowKey)) return true
+    return isMandateDocumentRow({
+      document_type: rowKey,
+      category: requirement?.requirement_group,
+      document_name: requirement?.requirement_name,
+    }) && isMandateDocumentRow({
+      document_type: documentType,
+      category: documentCategory,
+      document_name: documentName || file.name,
+    })
+  }) || null
+  const uploadedStatus = normalizeText(status) || 'uploaded'
+  const mandateUpload = isMandateDocumentRow({
+    document_type: documentType || matchedRequirement?.requirement_key,
+    category: documentCategory || matchedRequirement?.requirement_group,
+    document_name: documentName || file.name || matchedRequirement?.requirement_name,
+  })
+
   const insertPayload = {
     private_listing_id: normalizedListingId,
-    requirement_id: null,
+    requirement_id: matchedRequirement?.id || normalizedRequirementId || null,
     document_type: normalizeText(documentType) || 'listing_document',
     category: normalizeText(documentCategory || documentType) || 'Other',
     document_name: documentName || file.name || safeOriginalName,
     storage_path: filePath,
     file_url: null,
     uploaded_by: user?.id || null,
-    status: normalizeText(status) || 'uploaded',
+    status: uploadedStatus,
     visibility: normalizeText(visibility) || 'internal',
+    canonical_requirement_instance_id: matchedRequirement?.canonical_requirement_instance_id || null,
     uploaded_at: new Date().toISOString(),
   }
 
@@ -8448,11 +8686,26 @@ export async function uploadPrivateListingDocument(listingId, file, {
     throw inserted.error
   }
   const documentRow = normalizeDocumentRows(inserted.data ? [{ ...insertPayload, ...inserted.data }] : [insertPayload])[0] || null
+  const linkedRequirementId = documentRow?.requirement_id || matchedRequirement?.id || normalizedRequirementId || null
+
+  if (linkedRequirementId) {
+    await updatePrivateListingRequirementStatus(linkedRequirementId, uploadedStatus === 'completed' ? 'completed' : 'uploaded').catch((error) => {
+      console.warn('[Private Listings] requirement status update skipped after listing document upload', error)
+      return null
+    })
+  }
+
+  if (mandateUpload) {
+    await updatePrivateListing(normalizedListingId, { mandateStatus: 'signed_uploaded' }, { includeRequirementsAndDocuments: false }).catch((error) => {
+      console.warn('[Private Listings] mandate status update skipped after signed mandate upload', error)
+      return null
+    })
+  }
 
   await createPrivateListingActivity({
     privateListingId: normalizedListingId,
     activityType: 'listing_document_uploaded',
-    activityTitle: 'Listing document uploaded',
+    activityTitle: mandateUpload ? 'Signed mandate uploaded' : 'Listing document uploaded',
     activityDescription: `${insertPayload.document_name} uploaded.`,
     performedBy: user?.id || null,
     visibility: 'internal',
@@ -8460,8 +8713,11 @@ export async function uploadPrivateListingDocument(listingId, file, {
       documentType: insertPayload.document_type,
       documentCategory: insertPayload.category,
       documentName: insertPayload.document_name,
+      requirementId: linkedRequirementId,
+      requirementKey: matchedRequirement?.requirement_key || normalizedRequirementKey || null,
       storagePath: filePath,
-      source: 'quick_add',
+      source: mandateUpload ? 'physical_signed_mandate_upload' : 'quick_add',
+      mandateStatus: mandateUpload ? 'signed_uploaded' : null,
     },
   }).catch(() => null)
 
@@ -8476,6 +8732,9 @@ export async function uploadPrivateListingDocument(listingId, file, {
     id: documentRow?.id || filePath,
     document_name: documentRow?.document_name || insertPayload.document_name,
     document_type: documentRow?.document_type || insertPayload.document_type,
+    requirement_id: linkedRequirementId,
+    requirementId: linkedRequirementId,
+    requirementKey: matchedRequirement?.requirement_key || normalizedRequirementKey || '',
     category: documentRow?.category || insertPayload.category,
     status: documentRow?.status || insertPayload.status,
     storage_path: documentRow?.storage_path || filePath,

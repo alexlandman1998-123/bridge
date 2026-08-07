@@ -128,6 +128,7 @@ import {
   getSellerPortalSecurityDiagnostics,
   issueSellerPortalInvite,
   isSellerPortalInviteReadyAfterSignedMandate,
+  markPrivateListingDocumentsPendingTransactionPromotion,
   manageSellerPortalAccess,
   resetSellerPortalPassword,
   sendSellerOnboarding,
@@ -137,6 +138,7 @@ import {
   uploadPrivateListingDocument,
   uploadPrivateListingMediaAsset,
 } from '../services/privateListingService'
+import { repairSellerDocumentTransactionContinuity } from '../services/sellerDocumentTransactionContinuityService'
 import { listListingLeadInterests } from '../services/leadListingInterestService'
 import { listListingPropertyShares } from '../services/leadPropertySharingService'
 import {
@@ -156,6 +158,12 @@ import { buildSellerDocumentSourceOfTruth } from '../services/sellerDocumentRequ
 import { reviewSellerDocument, sendSellerDocumentManualReminder } from '../services/sellerDocumentReviewWorkflowService'
 import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
 import { buildSellerDocumentReviewSlaReport } from '../lib/sellerDocumentReviewSla'
+import {
+  KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS,
+  KINGSTONS_SELLER_PROCESS_PROFILE,
+  resolveSellerProcessProfile,
+} from '../services/sellerProcessProfileService'
+import { buildKingstonsDigitalSigningDecision } from '../core/kingstons/digitalSigningDecision'
 import {
   SELLER_PORTAL_ACTIVATION_SOURCES,
   activateSellerPortalForListing,
@@ -383,6 +391,57 @@ const EXTERNAL_LINK_STATUS_OPTIONS = ['Draft', 'Live', 'Removed', 'Expired']
 const PORTAL_STATUS_OPTIONS = ['not_published', 'draft', 'published', 'paused', 'removed']
 const ARCH9_PUBLIC_SITE_ORIGIN = 'https://www.arch9.co.za'
 const ARCH9_PUBLIC_LISTINGS_API_PATH = '/api/public/listings'
+const SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS = [
+  'signed_mandate',
+  'property_condition_disclosure',
+  'signed_fica_form',
+]
+const KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE = 'kingstons_seller_pack_phase5_transaction_handoff'
+const SELLER_PACK_TRANSACTION_REQUIREMENT_LABELS = Object.freeze({
+  signed_mandate: 'Signed Mandate',
+  property_condition_disclosure: 'Signed Defect Form',
+  signed_fica_form: 'Signed FICA Form',
+})
+const SELLER_PACK_TRANSACTION_REQUIREMENT_ALIASES = Object.freeze({
+  signed_mandate: ['signed_mandate', 'mandate', 'mandate_signature'],
+  property_condition_disclosure: ['property_condition_disclosure', 'signed_defect_form', 'defect_form', 'defects', 'disclosure'],
+  signed_fica_form: ['signed_fica_form', 'fica_form', 'fica'],
+})
+
+function hasKingstonsListingSignal({ listingRecord = {}, listingOrganisationId = '', profile = {} } = {}) {
+  const explicitOrganisationId = String(
+    listingOrganisationId ||
+      listingRecord?.organisationId ||
+      listingRecord?.organisation_id ||
+      profile?.organisationId ||
+      profile?.organisation_id ||
+      '',
+  ).trim().toLowerCase()
+  if (KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS.includes(explicitOrganisationId)) return true
+
+  const processProfile = resolveSellerProcessProfile({
+    listing: listingRecord,
+    row: listingRecord,
+    organisationId: explicitOrganisationId,
+    profile: listingRecord?.sellerProcessProfile || listingRecord?.seller_process_profile,
+  })
+  if (processProfile.profile === KINGSTONS_SELLER_PROCESS_PROFILE) return true
+
+  const signals = [
+    profile?.email,
+    listingRecord?.assignedAgentEmail,
+    listingRecord?.assigned_agent_email,
+    listingRecord?.assignedAgentName,
+    listingRecord?.assigned_agent_name,
+    listingRecord?.agencyName,
+    listingRecord?.agency_name,
+    profile?.organisationName,
+    profile?.companyName,
+    profile?.agencyName,
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean)
+
+  return signals.some((value) => value.includes('kingstons.training@arch9.test') || value.includes('@kingstons.') || value.includes('kingstons'))
+}
 
 function mergeListingRecord(existing = {}, incoming = {}) {
   return {
@@ -900,7 +959,15 @@ function getSellerDocumentSourceLabel(row = {}) {
 
 function mapSellerDocumentSourceRowForListing(row = {}) {
   const upload = row?.upload || {}
-  const originalDocument = row?.original?.document || {}
+  const linkedDocument = row?.linkedDocument && typeof row.linkedDocument === 'object'
+    ? row.linkedDocument
+    : row?.linked_document && typeof row.linked_document === 'object'
+      ? row.linked_document
+      : {}
+  const originalDocument = {
+    ...(row?.original?.document && typeof row.original.document === 'object' ? row.original.document : {}),
+    ...linkedDocument,
+  }
   const url = normalizeText(
     upload.url ||
       row.url ||
@@ -930,6 +997,12 @@ function mapSellerDocumentSourceRowForListing(row = {}) {
   const uploadedOn = normalizeText(upload.uploadedAt || row.uploadedAt || originalDocument.uploadedAt || originalDocument.uploaded_at || originalDocument.createdAt || originalDocument.created_at)
   const packetId = normalizeText(row.packetId || row.packet_id || originalDocument.packetId || originalDocument.packet_id)
   const packetVersionId = normalizeText(row.packetVersionId || row.packet_version_id || row.versionId || row.version_id || originalDocument.packetVersionId || originalDocument.packet_version_id || originalDocument.versionId || originalDocument.version_id)
+  const pendingTransactionPromotion = Boolean(row.pendingTransactionPromotion || row.pending_transaction_promotion || originalDocument.pendingTransactionPromotion || originalDocument.pending_transaction_promotion)
+  const promotedTransactionId = normalizeText(row.promotedTransactionId || row.promoted_transaction_id || originalDocument.promotedTransactionId || originalDocument.promoted_transaction_id)
+  const promotedDocumentId = normalizeText(row.promotedDocumentId || row.promoted_document_id || originalDocument.promotedDocumentId || originalDocument.promoted_document_id)
+  const promotionStatus = normalizeText(row.promotionStatus || row.promotion_status || originalDocument.promotionStatus || originalDocument.promotion_status)
+  const promotionError = normalizeText(row.promotionError || row.promotion_error || originalDocument.promotionError || originalDocument.promotion_error)
+  const promotionAttemptedAt = normalizeText(row.promotionAttemptedAt || row.promotion_attempted_at || originalDocument.promotionAttemptedAt || originalDocument.promotion_attempted_at)
   const hasUpload = Boolean(row.hasUpload || url || filePath || generatedHtml || uploadedOn)
   const key = normalizeText(row.key || row.id || row.title || row.label)
   const rowStatus = normalizeKey(row.status)
@@ -954,7 +1027,96 @@ function mapSellerDocumentSourceRowForListing(row = {}) {
     packetVersionId,
     generatedHtml,
     generatedFileName,
+    pendingTransactionPromotion,
+    pending_transaction_promotion: pendingTransactionPromotion,
+    promotedTransactionId,
+    promoted_transaction_id: promotedTransactionId,
+    promotedDocumentId,
+    promoted_document_id: promotedDocumentId,
+    promotionStatus,
+    promotion_status: promotionStatus,
+    promotionError,
+    promotion_error: promotionError,
+    promotionAttemptedAt,
+    promotion_attempted_at: promotionAttemptedAt,
     sourceLabel: getSellerDocumentSourceLabel(row),
+  }
+}
+
+function documentMatchesSellerPackTransactionKey(document = {}, targetKey = '') {
+  const aliases = SELLER_PACK_TRANSACTION_REQUIREMENT_ALIASES[targetKey] || [targetKey]
+  const signals = [
+    document.key,
+    document.id,
+    document.requirementKey,
+    document.requirement_key,
+    document.documentType,
+    document.document_type,
+    document.category,
+    document.label,
+    document.title,
+    document.fileName,
+    document.documentName,
+    document.document_name,
+    document.linkedDocument?.document_type,
+    document.linkedDocument?.document_name,
+    document.linkedDocument?.category,
+  ].map(normalizeKey).filter(Boolean)
+  return aliases.map(normalizeKey).some((alias) =>
+    signals.some((signal) => signal === alias || signal.includes(alias) || alias.includes(signal)),
+  )
+}
+
+function getSellerPackTransactionHandoffPresentation(document = null) {
+  if (!document) {
+    return {
+      status: 'missing',
+      label: 'Missing',
+      description: 'Upload the signed document before creating or repairing handoff.',
+      classes: 'border-[#f3d9b0] bg-[#fff9ee] text-[#8f5c18]',
+    }
+  }
+  const promotionStatus = normalizeKey(document.promotionStatus || document.promotion_status || document.handoff?.status)
+  const promotionError = normalizeText(document.promotionError || document.promotion_error || document.handoff?.error)
+  const promotedDocumentId = normalizeText(document.promotedDocumentId || document.promoted_document_id)
+  const pendingPromotion = Boolean(document.pendingTransactionPromotion || document.pending_transaction_promotion)
+  if (promotionError || ['blocked', 'failed', 'error'].includes(promotionStatus)) {
+    return {
+      status: 'attention',
+      label: 'Needs attention',
+      description: promotionError || 'Promotion to transaction documents failed.',
+      classes: 'border-[#f0c8c4] bg-[#fff7f6] text-[#963d35]',
+    }
+  }
+  if (promotedDocumentId || ['ready', 'promoted', 'completed', 'complete', 'synced'].includes(promotionStatus)) {
+    return {
+      status: 'promoted',
+      label: 'Promoted',
+      description: 'Available in the transaction document stream.',
+      classes: 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]',
+    }
+  }
+  if (pendingPromotion || ['pending', 'pending_transaction', 'queued', 'waiting'].includes(promotionStatus)) {
+    return {
+      status: 'queued',
+      label: 'Queued',
+      description: 'Ready to promote when the transaction continuity repair runs.',
+      classes: 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]',
+    }
+  }
+  if (document.uploaded) {
+    return {
+      status: 'uploaded',
+      label: 'Uploaded',
+      description: 'Uploaded on the listing, but not queued for transaction handoff yet.',
+      classes: 'border-[#f3d9b0] bg-[#fff9ee] text-[#8f5c18]',
+    }
+  }
+  return {
+    status: 'missing',
+    label: 'Missing',
+    description: 'Upload the signed document before creating or repairing handoff.',
+    classes: 'border-[#f3d9b0] bg-[#fff9ee] text-[#8f5c18]',
   }
 }
 
@@ -2403,6 +2565,7 @@ function AgentListingDetail() {
   const [sellerSectionDraft, setSellerSectionDraft] = useState({})
   const [sellerSectionSaving, setSellerSectionSaving] = useState(false)
   const [sellerDocumentUploadKey, setSellerDocumentUploadKey] = useState('')
+  const [sellerPackHandoffAction, setSellerPackHandoffAction] = useState('')
   const [listingPerformanceEditorOpen, setListingPerformanceEditorOpen] = useState(false)
   const [listingPerformanceDraft, setListingPerformanceDraft] = useState({})
   const [listingPerformanceSaving, setListingPerformanceSaving] = useState(false)
@@ -2569,6 +2732,17 @@ function AgentListingDetail() {
     profile?.id,
     profile?.lastName,
   ])
+  const listingHasKingstonsSellerProcess = useMemo(
+    () => hasKingstonsListingSignal({ listingRecord, listingOrganisationId, profile }),
+    [listingOrganisationId, listingRecord, profile],
+  )
+  const listingKingstonsDigitalSigningDecision = useMemo(
+    () => buildKingstonsDigitalSigningDecision({
+      isKingstons: listingHasKingstonsSellerProcess,
+      requestedAction: 'listing_mandate_signing',
+    }),
+    [listingHasKingstonsSellerProcess],
+  )
 
   useEffect(() => {
     const token = resolveSellerPortalTokenFromListing(listingRecord)
@@ -4109,6 +4283,12 @@ function AgentListingDetail() {
 
   async function handleStartListingMandateDocument(selection = {}) {
     if (!listingRecord?.id) return
+    if (listingKingstonsDigitalSigningDecision.blocked) {
+      setMandateStartOpen(false)
+      openSellerWorkspaceSection('documents')
+      setDetailError(listingKingstonsDigitalSigningDecision.message)
+      return
+    }
     const sourceMode = selection?.sourceMode || DOCUMENT_START_SOURCE_MODES.saved
     setDetailError('')
     setDetailMessage('')
@@ -4373,6 +4553,7 @@ function AgentListingDetail() {
       })
       const transactionId = String(createdTransaction?.transactionId || createdTransaction?.transactionRow?.transaction?.id || '').trim()
       const reusedTransaction = Boolean(createdTransaction?.alreadyConverted || (createdTransaction?.existing && transactionId))
+      let sellerPackPromotionError = ''
       const intakePreference = normalizeClientIntakePreference(
         acceptedOffer?.conditions?.clientIntakePreference ||
           acceptedOffer?.conditions?.deliveryMode ||
@@ -4392,8 +4573,22 @@ function AgentListingDetail() {
           actor: getCanonicalOfferActor(),
         }).catch(() => null)
       }
+      if (transactionId && listingRecord?.id && listingHasKingstonsSellerProcess) {
+        const handoffResult = await runKingstonsSellerPackTransactionHandoff({
+          listingId: listingRecord.id,
+          transactionId,
+          source: KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE,
+        })
+        sellerPackPromotionError = handoffResult.error
+      }
       setOfferNotesDraftById((previous) => ({ ...previous, [offerRow.id]: '' }))
-      setOfferActionMessage('Transaction ready. Confirm the preferred bond originator before sending buyer onboarding.')
+      setOfferActionMessage(
+        listingHasKingstonsSellerProcess
+          ? sellerPackPromotionError
+            ? 'Transaction ready. Seller Pack document handoff needs attention before attorney handoff.'
+            : 'Transaction ready. Seller Pack documents were queued for transaction handoff. Confirm the preferred bond originator before sending buyer onboarding.'
+          : 'Transaction ready. Confirm the preferred bond originator before sending buyer onboarding.',
+      )
       setOffersRefreshTick((value) => value + 1)
       if (transactionId) {
         navigate(`/transactions/${transactionId}`, {
@@ -4404,6 +4599,46 @@ function AgentListingDetail() {
       setOfferActionError(error?.message || 'Unable to create a transaction from this offer.')
     } finally {
       setCanonicalOfferActionId('')
+    }
+  }
+
+  async function runKingstonsSellerPackTransactionHandoff({
+    listingId = listingRecord?.id,
+    transactionId = '',
+    source = KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE,
+  } = {}) {
+    if (!listingHasKingstonsSellerProcess) return { skipped: true, reason: 'not_kingstons_listing', error: '' }
+    if (!listingId || !transactionId || !isSupabaseConfigured) {
+      return {
+        skipped: true,
+        reason: 'missing_live_transaction_context',
+        error: 'Seller Pack document handoff could not be completed.',
+      }
+    }
+    try {
+      const queued = await markPrivateListingDocumentsPendingTransactionPromotion(listingId, {
+        requirementKeys: SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS,
+        source,
+      })
+      const repair = await repairSellerDocumentTransactionContinuity({ listingId })
+      return {
+        skipped: false,
+        error: '',
+        source,
+        listingId,
+        transactionId,
+        queued,
+        repair,
+      }
+    } catch (promotionError) {
+      console.warn('[AgentListingDetail] Seller Pack transaction continuity repair skipped.', promotionError)
+      return {
+        skipped: false,
+        error: promotionError?.message || 'Seller Pack document handoff could not be completed.',
+        source,
+        listingId,
+        transactionId,
+      }
     }
   }
 
@@ -4936,6 +5171,40 @@ function AgentListingDetail() {
     })),
     [sellerDocumentExperience.items, sellerDocumentSlaById],
   )
+  const sellerPackTransactionRows = useMemo(
+    () => SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS.map((requirementKey) => {
+      const document = sellerDocumentExperienceItems.find((item) =>
+        documentMatchesSellerPackTransactionKey(item, requirementKey),
+      ) || null
+      const handoff = getSellerPackTransactionHandoffPresentation(document)
+      return {
+        key: requirementKey,
+        label: SELLER_PACK_TRANSACTION_REQUIREMENT_LABELS[requirementKey] || requirementKey,
+        document,
+        handoff,
+      }
+    }),
+    [sellerDocumentExperienceItems],
+  )
+  const sellerPackTransactionSummary = useMemo(() => {
+    const promoted = sellerPackTransactionRows.filter((row) => row.handoff.status === 'promoted').length
+    const queued = sellerPackTransactionRows.filter((row) => row.handoff.status === 'queued').length
+    const attention = sellerPackTransactionRows.filter((row) => row.handoff.status === 'attention').length
+    const missing = sellerPackTransactionRows.filter((row) => row.handoff.status === 'missing').length
+    const uploadedOnly = sellerPackTransactionRows.filter((row) => row.handoff.status === 'uploaded').length
+    const complete = sellerPackTransactionRows.length > 0 && promoted === sellerPackTransactionRows.length
+    return {
+      total: sellerPackTransactionRows.length,
+      promoted,
+      queued,
+      attention,
+      missing,
+      uploadedOnly,
+      complete,
+      status: complete ? 'complete' : attention ? 'attention' : missing || uploadedOnly ? 'pending' : 'queued',
+      label: complete ? 'Transaction-ready' : attention ? 'Needs attention' : missing || uploadedOnly ? 'Incomplete' : 'Queued',
+    }
+  }, [sellerPackTransactionRows])
 
   const propertyDocuments = useMemo(
     () => sellerDocumentExperienceItems.filter((doc) => getListingDocumentGroupingKey(doc) === 'property'),
@@ -5168,29 +5437,33 @@ function AgentListingDetail() {
     )
 
     return [
-      {
-        key: 'send_onboarding',
-        icon: Send,
-        title: 'Send seller onboarding',
-        copy: 'Create or resend the seller onboarding link so the seller can complete their profile.',
-        complete: onboardingStarted,
-        priorityLabel: onboardingStarted ? 'Complete' : 'High priority',
-        buttonLabel: onboardingStarted ? 'Resend onboarding' : 'Send onboarding',
-      },
-      {
-        key: 'generate_mandate',
-        icon: FileText,
-        title: 'Generate Mandate',
-        copy: 'Start the mandate from saved listing details or seller onboarding data.',
-        complete: mandateWorkspace.status === 'ready' || mandateWorkspace.isSigned,
-        priorityLabel: mandateWorkspace.isSigned ? 'Complete' : 'Required',
-        buttonLabel: 'Generate Mandate',
-      },
+      ...(listingHasKingstonsSellerProcess ? [] : [
+        {
+          key: 'send_onboarding',
+          icon: Send,
+          title: 'Send seller onboarding',
+          copy: 'Create or resend the seller onboarding link so the seller can complete their profile.',
+          complete: onboardingStarted,
+          priorityLabel: onboardingStarted ? 'Complete' : 'High priority',
+          buttonLabel: onboardingStarted ? 'Resend onboarding' : 'Send onboarding',
+        },
+        {
+          key: 'generate_mandate',
+          icon: FileText,
+          title: 'Generate Mandate',
+          copy: 'Start the mandate from saved listing details or seller onboarding data.',
+          complete: mandateWorkspace.status === 'ready' || mandateWorkspace.isSigned,
+          priorityLabel: mandateWorkspace.isSigned ? 'Complete' : 'Required',
+          buttonLabel: 'Generate Mandate',
+        },
+      ]),
       {
         key: 'upload_signed_mandate',
         icon: Upload,
-        title: 'Upload signed mandate',
-        copy: 'Signed manually outside the portal? Attach signed mandate evidence and keep the canonical mandate record current.',
+        title: listingHasKingstonsSellerProcess ? 'Upload signed Seller Pack' : 'Upload signed mandate',
+        copy: listingHasKingstonsSellerProcess
+          ? 'Upload the signed mandate, defect form, and FICA form from the manual Kingston Seller Pack.'
+          : 'Signed manually outside the portal? Attach signed mandate evidence and keep the canonical mandate record current.',
         complete: mandateWorkspace.isSigned,
         priorityLabel: mandateWorkspace.isSigned ? 'Complete' : 'Required',
         buttonLabel: 'Open documents',
@@ -5261,6 +5534,7 @@ function AgentListingDetail() {
     ]
   }, [
     commissionWorkspace.hasData,
+    listingHasKingstonsSellerProcess,
     listingRecord,
     mandateWorkspace.isSigned,
     mandateWorkspace.status,
@@ -5277,10 +5551,19 @@ function AgentListingDetail() {
   function handleListingFollowUpAction(action = {}) {
     const key = String(action.key || '').trim()
     if (key === 'send_onboarding') {
+      if (listingHasKingstonsSellerProcess) {
+        openSellerPortalActivationModal()
+        return
+      }
       void handleSendSellerOnboardingFollowUp()
       return
     }
     if (key === 'generate_mandate') {
+      if (listingKingstonsDigitalSigningDecision.blocked) {
+        openSellerWorkspaceSection('documents')
+        setDetailError(listingKingstonsDigitalSigningDecision.message)
+        return
+      }
       setMandateStartOpen(true)
       return
     }
@@ -6203,6 +6486,8 @@ function AgentListingDetail() {
     setDetailMessage('')
     try {
       const uploadedDocument = await uploadPrivateListingDocument(listingRecord.id, file, {
+        requirementId: doc.id || doc.requirementId || doc.requirement_id || '',
+        requirementKey: doc.key || doc.requirementKey || doc.requirement_key || '',
         documentType: doc.key || doc.documentType || doc.document_type || 'seller_document',
         documentCategory: getListingDocumentGroupingKey(doc),
         documentName: file.name || doc.label || 'Seller document',
@@ -6218,6 +6503,8 @@ function AgentListingDetail() {
             id: uploadedDocument?.id || generateId('seller-document'),
             documentName: uploadedDocument?.document_name || uploadedDocument?.documentName || file.name,
             documentType: uploadedDocument?.document_type || uploadedDocument?.documentType || doc.key || 'seller_document',
+            requirementId: uploadedDocument?.requirementId || uploadedDocument?.requirement_id || doc.id || doc.requirementId || '',
+            requirement_id: uploadedDocument?.requirement_id || uploadedDocument?.requirementId || doc.id || doc.requirement_id || '',
             category: uploadedDocument?.category || getListingDocumentGroupingKey(doc),
             status: uploadedDocument?.status || 'uploaded',
             uploadedAt: uploadedDocument?.uploaded_at || uploadedDocument?.uploadedAt || new Date().toISOString(),
@@ -6232,6 +6519,35 @@ function AgentListingDetail() {
     } finally {
       setSellerDocumentUploadKey('')
       event.target.value = ''
+    }
+  }
+
+  async function handleRepairSellerPackTransactionHandoff() {
+    if (!listingRecord?.id) return
+    if (!isSupabaseConfigured || !isUuidLike(listingRecord.id)) {
+      setDetailError('Seller Pack transaction handoff repair needs the live listing record.')
+      return
+    }
+
+    setSellerPackHandoffAction('repair')
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      const queued = await markPrivateListingDocumentsPendingTransactionPromotion(listingRecord.id, {
+        requirementKeys: SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS,
+        source: 'kingstons_seller_pack_phase4_manual_repair',
+      })
+      await repairSellerDocumentTransactionContinuity({ listingId: listingRecord.id })
+      await loadListingData()
+      setDetailMessage(
+        queued?.updatedCount
+          ? 'Seller Pack transaction handoff repaired. Check the handoff panel for promoted documents.'
+          : 'Seller Pack transaction handoff checked. Upload any missing Seller Pack documents before attorney handoff.',
+      )
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to repair Seller Pack transaction handoff.')
+    } finally {
+      setSellerPackHandoffAction('')
     }
   }
 
@@ -6921,7 +7237,7 @@ function AgentListingDetail() {
   return (
     <section className="space-y-5">
       <StartDocumentModal
-        open={mandateStartOpen}
+        open={mandateStartOpen && !listingHasKingstonsSellerProcess}
         onClose={() => setMandateStartOpen(false)}
         entryPoint={DOCUMENT_START_ENTRY_POINTS.listingMandate}
         packetType={DOCUMENT_START_PACKET_TYPES.mandate}
@@ -9626,10 +9942,12 @@ function AgentListingDetail() {
                     <FileText size={15} />
                     Download PDF
                   </Button>
-                  <Button size="sm" onClick={() => setMandateStartOpen(true)}>
-                    <FileText size={15} />
-                    Create Mandate
-                  </Button>
+                  {!listingHasKingstonsSellerProcess ? (
+                    <Button size="sm" onClick={() => setMandateStartOpen(true)}>
+                      <FileText size={15} />
+                      Create Mandate
+                    </Button>
+                  ) : null}
                   <Button size="sm" onClick={openSellerPortalActivationModal} disabled={sellerPortalActivationSending || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
                     <Link2 size={15} />
                     {sellerPortalActivationSending ? 'Sending...' : (resolveSellerPortalTokenFromListing(listingRecord) ? 'Resend Invitation' : 'Activate Seller Portal')}
@@ -9640,6 +9958,11 @@ function AgentListingDetail() {
                   </Button>
                 </div>
               </div>
+              {listingKingstonsDigitalSigningDecision.blocked ? (
+                <div className="rounded-[18px] border border-[#f2dfbd] bg-[#fff9ec] px-4 py-3 text-sm font-semibold text-[#7a5a17]" data-testid="kingstons-listing-digital-signing-decision">
+                  {listingKingstonsDigitalSigningDecision.label}: {listingKingstonsDigitalSigningDecision.agentAction}
+                </div>
+              ) : null}
 
               {sellerContactEditorOpen ? (
                 <form className="rounded-[24px] border border-[#bcd5ea] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]" onSubmit={handleSaveSellerContact}>
@@ -10482,6 +10805,66 @@ function AgentListingDetail() {
               ) : null}
             </section>
           ) : null}
+
+          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-[1rem] font-semibold text-[#142132]">Seller Pack Transaction Handoff</h3>
+                  <StatusPill status={sellerPackTransactionSummary.status} label={sellerPackTransactionSummary.label} />
+                </div>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
+                  Tracks whether the signed mandate, signed defect form, and signed FICA form are uploaded on the listing and ready for the transaction document stream.
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={() => void handleRepairSellerPackTransactionHandoff()}
+                disabled={sellerPackHandoffAction === 'repair' || !isSupabaseConfigured}
+                className="inline-flex items-center gap-2"
+              >
+                {sellerPackHandoffAction === 'repair' ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
+                Repair Handoff
+              </Button>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {sellerPackTransactionRows.map((row) => (
+                <div key={row.key} className={`rounded-[16px] border px-4 py-3 ${row.handoff.classes}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words text-sm font-semibold">{row.label}</p>
+                      <p className="mt-1 text-xs leading-5 opacity-90">{row.handoff.description}</p>
+                    </div>
+                    <span className="inline-flex shrink-0 rounded-full border border-current/20 bg-white/55 px-2.5 py-1 text-[0.68rem] font-semibold">
+                      {row.handoff.label}
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-1 text-xs leading-5 opacity-90">
+                    <p>
+                      <span className="font-semibold">Listing upload:</span>{' '}
+                      {row.document?.uploaded ? 'Uploaded' : 'Missing'}
+                    </p>
+                    <p>
+                      <span className="font-semibold">Transaction copy:</span>{' '}
+                      {row.document?.promotedDocumentId || row.document?.promoted_document_id ? 'Linked' : 'Not linked yet'}
+                    </p>
+                    {row.document?.promotionAttemptedAt || row.document?.promotion_attempted_at ? (
+                      <p>
+                        <span className="font-semibold">Last attempt:</span>{' '}
+                        {formatDate(row.document.promotionAttemptedAt || row.document.promotion_attempted_at)}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-4">
+              <MetricCard label="Promoted" value={sellerPackTransactionSummary.promoted} meta={`${sellerPackTransactionSummary.total} required`} />
+              <MetricCard label="Queued" value={sellerPackTransactionSummary.queued} meta="Waiting for repair" />
+              <MetricCard label="Attention" value={sellerPackTransactionSummary.attention} meta="Needs operator check" />
+              <MetricCard label="Missing" value={sellerPackTransactionSummary.missing + sellerPackTransactionSummary.uploadedOnly} meta="Upload or queue required" />
+            </div>
+          </section>
 
           <section className="grid gap-5 xl:grid-cols-3">
           {[

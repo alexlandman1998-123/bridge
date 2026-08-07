@@ -55,6 +55,75 @@ function normalizeDocumentMatchKey(value = '') {
     .replace(/^_+|_+$/g, '')
 }
 
+const KINGSTONS_SELLER_PORTAL_PACK_REQUIREMENTS = Object.freeze([
+  {
+    key: 'signed_mandate',
+    title: 'Signed Mandate',
+    aliases: ['signed_mandate', 'mandate_signature'],
+  },
+  {
+    key: 'property_condition_disclosure',
+    title: 'Signed Defect Form',
+    aliases: ['property_condition_disclosure', 'signed_defect_form', 'defect_form', 'defects'],
+  },
+  {
+    key: 'signed_fica_form',
+    title: 'Signed FICA Form',
+    aliases: ['signed_fica_form', 'fica_form', 'fica'],
+  },
+])
+
+function getRequirementMatchSignals(item = {}) {
+  return [
+    item?.sourceId,
+    item?.uploadKey,
+    item?.key,
+    item?.requirementKey,
+    item?.requirement_key,
+    item?.title,
+    item?.label,
+    item?.description,
+    item?.group,
+    item?.linkedDocument?.requirementKey,
+    item?.linkedDocument?.requirement_key,
+    item?.linkedDocument?.document_type,
+    item?.linkedDocument?.documentType,
+    item?.linkedDocument?.category,
+    item?.linkedDocument?.document_category,
+  ].map(normalizeDocumentMatchKey).filter(Boolean)
+}
+
+function getKingstonsSellerPortalPackRequirement(item = {}) {
+  const signals = getRequirementMatchSignals(item)
+  return KINGSTONS_SELLER_PORTAL_PACK_REQUIREMENTS.find((requirement) => {
+    const aliases = [requirement.key, ...requirement.aliases].map(normalizeDocumentMatchKey)
+    return aliases.some((alias) =>
+      signals.some((signal) => signal === alias || signal.includes(alias)),
+    )
+  }) || null
+}
+
+function isKingstonsSellerPortalPackRequirement(item = {}) {
+  return Boolean(getKingstonsSellerPortalPackRequirement(item))
+}
+
+function decorateKingstonsSellerPortalPackItem(item = {}) {
+  const requirement = getKingstonsSellerPortalPackRequirement(item)
+  return {
+    ...item,
+    title: requirement?.title || item.title,
+    sellerCategoryKey: 'seller_pack',
+    sellerCategoryLabel: 'Seller Pack',
+    uploadSpec: null,
+    lockedByTeam: true,
+    isCoreRequirement: false,
+    message: item?.hasUploadedDocument
+      ? 'Your agent has uploaded this signed Seller Pack document.'
+      : 'Your agent manages this signed Seller Pack document outside the seller portal.',
+    education: 'This signed form is part of the Kingston Seller Pack and is uploaded by the agency team after the physical signing process.',
+  }
+}
+
 function isSignedMandateRequirement(requirement = {}) {
   const source = normalizeDocumentMatchKey([
     requirement?.key,
@@ -488,24 +557,32 @@ function ClientDocumentCentre({
   const [activeBuyerDocumentTab, setActiveBuyerDocumentTab] = useState('sales')
   const sections = buildDocumentCentreSections(documentCenter, workspace)
   const isSelling = workspace === 'selling'
+  const sellerPortalRequiredItems = isSelling
+    ? sections.allRequired.filter((item) => !isKingstonsSellerPortalPackRequirement(item))
+    : sections.allRequired
+  const kingstonsSellerPortalPackItems = isSelling
+    ? sections.allRequired
+        .filter((item) => isKingstonsSellerPortalPackRequirement(item))
+        .map((item) => decorateKingstonsSellerPortalPackItem(item))
+    : []
   const sellerExperienceModel = isSelling
     ? buildSellerDocumentExperienceModel({
-        requirements: uniqueById([...sections.allRequired, ...sections.additionalRequests]),
+        requirements: uniqueById([...sellerPortalRequiredItems, ...sections.additionalRequests]),
         audience: 'seller',
       })
     : null
   const sellerExperienceById = new Map((sellerExperienceModel?.items || []).map((item) => [item.id, item]))
   const withSellerExperience = (item = {}) => sellerExperienceById.get(item.id) || item
-  const sellerFicaDocuments = sections.allRequired
+  const sellerFicaDocuments = sellerPortalRequiredItems
     .filter((item) => sellerRequirementGroup(item) === 'fica')
     .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'fica'))
-  const sellerPropertyDocuments = sections.allRequired
+  const sellerPropertyDocuments = sellerPortalRequiredItems
     .filter((item) => sellerRequirementGroup(item) === 'property')
     .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'property'))
   const sellerSalesDocuments = uniqueSellerPortalDocumentItems([
     ...(Array.isArray(documentCenter?.saleDocuments) ? documentCenter.saleDocuments : [])
       .map((item) => decoratePortalDocumentItem(item, 'sales')),
-    ...sections.allRequired
+    ...sellerPortalRequiredItems
       .filter((item) => sellerRequirementGroup(item) === 'sales')
       .map((item) => decoratePortalDocumentItem(withSellerExperience(item), 'sales')),
     ...sections.signedDocuments
@@ -528,6 +605,15 @@ function ClientDocumentCentre({
       items: sellerSalesDocuments,
       emptyState: 'No sales documents required in this category.',
     },
+    ...(kingstonsSellerPortalPackItems.length
+      ? [{
+          key: 'seller_pack',
+          title: 'Signed Seller Pack',
+          subtitle: 'Signed mandate, defect form, and FICA form managed by your agent.',
+          items: uniqueById(kingstonsSellerPortalPackItems),
+          emptyState: 'Your agent will upload signed Seller Pack documents.',
+        }]
+      : []),
     {
       key: 'fica',
       title: 'FICA Documents',
@@ -630,7 +716,7 @@ function ClientDocumentCentre({
         tabs={sellerDocumentTabs}
         activeTabKey={activeSellerDocumentSection.key}
         onTabChange={setActiveSellerDocumentTab}
-        requiredItems={sections.allRequired.map((item) => decoratePortalDocumentItem(item, sellerRequirementGroup(item)))}
+        requiredItems={sellerPortalRequiredItems.map((item) => decoratePortalDocumentItem(item, sellerRequirementGroup(item)))}
         experienceModel={sellerExperienceModel}
         errorMessage={documentCenter?.loadError || documentCenter?.error || ''}
         onPrimaryUploadAction={() => handlePrimaryUploadAction(sellerDocumentTabs, setActiveSellerDocumentTab, 'seller-document-list')}

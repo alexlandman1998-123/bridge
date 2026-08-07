@@ -76,8 +76,9 @@ import {
   updateSellerWorkflowRecordByToken,
 } from '../../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
-import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { DOCUMENTS_BUCKET_CANDIDATES, assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, ensurePrivateListingDocumentRequirements, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, linkPrivateListingDocument, markPrivateListingDocumentsPendingTransactionPromotion, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { repairSellerDocumentTransactionContinuity } from '../../services/sellerDocumentTransactionContinuityService'
 import { activateSellerPortalForListing, SELLER_PORTAL_ACTIVATION_SOURCES } from '../../services/sellerPortalActivationService'
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
@@ -87,6 +88,7 @@ import {
   KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS,
   KINGSTONS_SELLER_PROCESS_PROFILE,
 } from '../../services/sellerProcessProfileService'
+import { buildKingstonsDigitalSigningDecision } from '../../core/kingstons/digitalSigningDecision'
 import { buildSellerProcessWorkspacePanelModel } from '../../services/sellerProcessWorkspacePanelService'
 import { resolveLeadNextStep } from '../../services/leadNextActionService'
 import { buildAppointmentSaveFeedback } from '../../services/appointmentSaveFeedbackService'
@@ -526,9 +528,55 @@ const KINGSTONS_PIPELINE_ACTION_COPY = Object.freeze({
   schedule_valuation_appointment: 'Book the valuation appointment with the seller and any required roleplayers.',
   upload_valuation_document: 'Upload the completed formal valuation document to the seller document workspace.',
   schedule_valuation_presentation: 'Book the valuation presentation appointment with the seller.',
-  complete_seller_pack: 'Complete the seller pack once the mandate, defects, and FICA flow is enabled.',
-  prepare_listing: 'Prepare the listing once the Kingston seller process is ready.',
+  complete_seller_pack: 'Upload the signed mandate, defect form, and FICA form before preparing the listing.',
+  seller_pack_signed: 'Upload the signed mandate, defect form, and FICA form before preparing the listing.',
+  prepare_listing: 'Create the listing once the Kingston seller pack is complete.',
 })
+
+const KINGSTONS_SELLER_PACK_DOCUMENTS = Object.freeze([
+  {
+    key: 'signed_mandate',
+    label: 'Signed Mandate',
+    category: 'legal',
+    description: 'The physical mandate signed by the seller.',
+    fileName: 'Signed Mandate',
+  },
+  {
+    key: 'signed_defect_form',
+    label: 'Signed Defect Form',
+    category: 'property',
+    description: 'The seller disclosure or defect form signed by the seller.',
+    fileName: 'Signed Defect Form',
+  },
+  {
+    key: 'signed_fica_form',
+    label: 'Signed FICA Form',
+    category: 'seller',
+    description: 'The FICA form signed by the correct seller type.',
+    fileName: 'Signed FICA Form',
+    requiresSellerType: true,
+  },
+])
+
+const KINGSTONS_SELLER_PACK_KEY_SET = new Set(KINGSTONS_SELLER_PACK_DOCUMENTS.map((documentRow) => documentRow.key))
+const KINGSTONS_SELLER_PACK_STORAGE_FOLDER = 'kingstons-seller-pack'
+const KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE = 'kingstons_seller_pack_phase4_listing_handoff'
+const KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE = 'kingstons_seller_pack_phase5_transaction_handoff'
+const KINGSTONS_SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS = Object.freeze([
+  'signed_mandate',
+  'property_condition_disclosure',
+  'signed_fica_form',
+])
+const KINGSTONS_FICA_SELLER_TYPE_OPTIONS = Object.freeze([
+  { value: 'natural', label: 'Natural person' },
+  { value: 'juristic', label: 'Juristic person' },
+])
+const KINGSTONS_FICA_SELLER_TYPE_LABELS = Object.freeze(
+  KINGSTONS_FICA_SELLER_TYPE_OPTIONS.reduce((accumulator, option) => ({
+    ...accumulator,
+    [option.value]: option.label,
+  }), {}),
+)
 
 const KINGSTONS_PIPELINE_STAGE_LABELS = Object.freeze({
   first_contact: 'First Contact',
@@ -541,6 +589,7 @@ const KINGSTONS_PIPELINE_STAGE_LABELS = Object.freeze({
 
 function hasKingstonsPipelineSignal(source = {}) {
   const lead = source.selectedLead || source.lead || {}
+  const listing = source.listing || source.listingRecord || {}
   const exactOrganisationId = normalizeText(
     source.organisationId ||
       source.currentWorkspace?.id ||
@@ -548,10 +597,16 @@ function hasKingstonsPipelineSignal(source = {}) {
       source.currentWorkspace?.organisation_id ||
       source.currentMembership?.organisation_id ||
       source.currentMembership?.organization_id ||
+      listing.organisationId ||
+      listing.organisation_id ||
       lead.organisationId ||
       lead.organisation_id,
   ).toLowerCase()
   if (KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS.includes(exactOrganisationId)) return true
+
+  const listingFacts = asRecord(listing.sellerCanonicalFacts || listing.seller_canonical_facts_json)
+  const listingPackFacts = asRecord(listingFacts.kingstonsSellerPack || listingFacts.sellerPackHandoff || listing.kingstonsSellerPack || listing.sellerPackHandoff)
+  if (normalizeText(listingPackFacts.source).toLowerCase().includes('kingstons_seller_pack')) return true
 
   const signals = [
     source.selectedLeadAssignedAgentLabel,
@@ -561,6 +616,14 @@ function hasKingstonsPipelineSignal(source = {}) {
     source.currentMembership?.userEmail,
     source.currentMembership?.user_email,
     source.currentMembership?.user?.email,
+    listing.assignedAgentEmail,
+    listing.assigned_agent_email,
+    listing.assignedAgentName,
+    listing.assigned_agent_name,
+    listing.agencyName,
+    listing.agency_name,
+    listing.organisationName,
+    listing.organisation_name,
     lead.assignedAgentEmail,
     lead.assigned_agent_email,
     lead.assignedAgentName,
@@ -612,6 +675,328 @@ function buildKingstonsPipelineRailSteps(model = {}) {
         index,
       }
     })
+}
+
+function parseLeadRawEnquiryPayload(value) {
+  if (!value) return {}
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string') return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function getKingstonsSellerPackState(lead = {}) {
+  const rawPayload = parseLeadRawEnquiryPayload(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
+  const pack = asRecord(
+    lead?.kingstonsSellerPack ||
+      lead?.kingstons_seller_pack ||
+      lead?.sellerPack ||
+      lead?.seller_pack ||
+      rawPayload.kingstonsSellerPack ||
+      rawPayload.kingstons_seller_pack ||
+      rawPayload.sellerPack ||
+      rawPayload.seller_pack,
+  )
+  const rawDocuments = asRecord(pack.documents || pack.documentUploads || pack.uploads)
+  return {
+    ...pack,
+    sellerType: normalizeKey(pack.sellerType || pack.seller_type || pack.ficaSellerType || pack.fica_seller_type),
+    documents: rawDocuments,
+  }
+}
+
+function isValidKingstonsFicaSellerType(value = '') {
+  return Boolean(KINGSTONS_FICA_SELLER_TYPE_LABELS[normalizeKey(value)])
+}
+
+function getKingstonsFicaSellerTypeLabel(value = '') {
+  return KINGSTONS_FICA_SELLER_TYPE_LABELS[normalizeKey(value)] || 'Not selected'
+}
+
+function hasKingstonsSellerPackUploadEvidence(documentRow = {}) {
+  return Boolean(
+    documentRow.url ||
+      documentRow.fileUrl ||
+      documentRow.file_url ||
+      documentRow.downloadUrl ||
+      documentRow.download_url ||
+      documentRow.storagePath ||
+      documentRow.storage_path ||
+      documentRow.documentId ||
+      documentRow.document_id ||
+      documentRow.fileId ||
+      documentRow.file_id ||
+      documentRow.uploadedAt ||
+      documentRow.uploaded_at ||
+      Number(documentRow.fileSize || documentRow.file_size || 0) > 0,
+  )
+}
+
+function isKingstonsSellerPackDocumentUploaded(documentRow = {}) {
+  return hasKingstonsSellerPackUploadEvidence(documentRow)
+}
+
+function buildKingstonsSellerPackDocumentRows(lead = {}) {
+  const sellerPack = getKingstonsSellerPackState(lead)
+  return KINGSTONS_SELLER_PACK_DOCUMENTS.map((definition) => {
+    const uploaded = asRecord(sellerPack.documents?.[definition.key])
+    const uploadedAt = firstWorkspaceText(uploaded.uploadedAt, uploaded.uploaded_at)
+    const uploadedFileName = firstWorkspaceText(uploaded.uploadedFileName, uploaded.uploaded_file_name, uploaded.fileName, uploaded.file_name)
+    const storagePath = firstWorkspaceText(uploaded.storagePath, uploaded.storage_path)
+    const storageBucket = firstWorkspaceText(uploaded.storageBucket, uploaded.storage_bucket)
+    const url = firstWorkspaceText(uploaded.url, uploaded.fileUrl, uploaded.file_url, uploaded.downloadUrl, uploaded.download_url)
+    return {
+      ...definition,
+      ...uploaded,
+      id: definition.key,
+      key: definition.key,
+      requirementKey: definition.key,
+      requirement_key: definition.key,
+      title: definition.label,
+      label: definition.label,
+      required: true,
+      source: 'kingstons_seller_pack',
+      category: definition.category,
+      document_category: definition.category,
+      status: isKingstonsSellerPackDocumentUploaded(uploaded) ? 'uploaded' : 'required',
+      statusLabel: isKingstonsSellerPackDocumentUploaded(uploaded) ? 'Uploaded' : 'Required',
+      uploadedAt,
+      uploaded_at: uploadedAt,
+      uploadedFileName,
+      storagePath,
+      storage_path: storagePath,
+      storageBucket,
+      storage_bucket: storageBucket,
+      url,
+      fileUrl: url,
+      file_url: url,
+      downloadUrl: url,
+      download_url: url,
+      sellerType: definition.requiresSellerType ? sellerPack.sellerType : '',
+    }
+  })
+}
+
+function summarizeKingstonsSellerPack(documentRows = []) {
+  const rows = Array.isArray(documentRows) ? documentRows : []
+  const total = rows.length
+  const missingRows = rows.filter((row) => !isKingstonsSellerPackDocumentUploaded(row))
+  const completed = total - missingRows.length
+  const ficaRow = rows.find((row) => row.requiresSellerType || row.key === 'signed_fica_form') || {}
+  const sellerType = normalizeKey(ficaRow.sellerType)
+  const sellerTypeCaptured = isValidKingstonsFicaSellerType(sellerType)
+  const missingLabels = [
+    ...missingRows.map((row) => row.label).filter(Boolean),
+    ...(sellerTypeCaptured ? [] : ['FICA seller type']),
+  ]
+  const documentsComplete = total > 0 && completed === total
+  return {
+    total,
+    completed,
+    outstanding: Math.max(total - completed, 0),
+    progress: total ? Math.round((completed / total) * 100) : 0,
+    documentsComplete,
+    sellerType,
+    sellerTypeCaptured,
+    sellerTypeLabel: getKingstonsFicaSellerTypeLabel(sellerType),
+    complete: documentsComplete && sellerTypeCaptured,
+    requiredLabels: rows.map((row) => row.label).filter(Boolean),
+    missingLabels,
+  }
+}
+
+function buildKingstonsSellerPackListingHandoffPayload({
+  lead = {},
+  documentRows = [],
+  summary = null,
+  contact = {},
+  existingFacts = {},
+  existingReadiness = {},
+} = {}) {
+  const rows = Array.isArray(documentRows) ? documentRows : []
+  const packSummary = summary || summarizeKingstonsSellerPack(rows)
+  const sellerType = normalizeKey(packSummary.sellerType || getKingstonsSellerPackState(lead).sellerType)
+  const sellerTypeLabel = getKingstonsFicaSellerTypeLabel(sellerType)
+  const documents = rows.map((documentRow) => {
+    const meta = getKingstonsSellerPackListingRequirementMeta(documentRow.key)
+    return {
+      key: documentRow.key,
+      label: documentRow.label,
+      requirementKey: meta.requirementKey,
+      documentType: meta.documentType,
+      status: isKingstonsSellerPackDocumentUploaded(documentRow) ? 'uploaded' : 'required',
+      uploadedAt: normalizeText(documentRow.uploadedAt || documentRow.uploaded_at),
+      uploadedFileName: normalizeText(documentRow.uploadedFileName || documentRow.uploaded_file_name || documentRow.fileName || documentRow.file_name),
+      storagePath: normalizeText(documentRow.storagePath || documentRow.storage_path),
+      fileUrl: normalizeText(documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url),
+    }
+  })
+  const sellerPackFacts = {
+    source: KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE,
+    status: packSummary.complete ? 'complete' : 'incomplete',
+    complete: packSummary.complete === true,
+    documentsComplete: packSummary.documentsComplete === true,
+    sellerType,
+    sellerTypeLabel,
+    requiredLabels: packSummary.requiredLabels,
+    missingLabels: packSummary.missingLabels,
+    documents,
+  }
+  const sellerName = normalizeText(contact?.name || [contact?.firstName, contact?.lastName].filter(Boolean).join(' '))
+  const sellerEmail = normalizeText(contact?.email).toLowerCase()
+  const sellerPhone = normalizeText(contact?.phone)
+  const sellerCanonicalFacts = {
+    ...asRecord(existingFacts),
+    ...(sellerType ? { sellerType, ficaSellerType: sellerType } : {}),
+    ...(sellerName ? { sellerName } : {}),
+    ...(sellerEmail ? { sellerEmail } : {}),
+    ...(sellerPhone ? { sellerPhone } : {}),
+    kingstonsSellerPack: sellerPackFacts,
+    sellerPackHandoff: sellerPackFacts,
+  }
+  const sellerCanonicalFactReadiness = {
+    ...asRecord(existingReadiness),
+    sellerType: packSummary.sellerTypeCaptured === true,
+    ficaSellerType: packSummary.sellerTypeCaptured === true,
+    signedMandate: documents.some((document) => document.key === 'signed_mandate' && document.status === 'uploaded'),
+    signedDefectForm: documents.some((document) => document.key === 'signed_defect_form' && document.status === 'uploaded'),
+    signedFicaForm: documents.some((document) => document.key === 'signed_fica_form' && document.status === 'uploaded'),
+    kingstonsSellerPack: packSummary.complete === true,
+    listingHandoff: packSummary.complete === true,
+  }
+
+  return {
+    source: KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE,
+    sellerType,
+    sellerTypeLabel,
+    complete: packSummary.complete === true,
+    documents,
+    sellerCanonicalFacts,
+    sellerCanonicalFactReadiness,
+    listingPayload: {
+      sellerType,
+      mandateStatus: packSummary.complete ? 'signed_uploaded' : 'not_started',
+      sellerCanonicalFacts,
+      sellerCanonicalFactReadiness,
+      sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
+    },
+  }
+}
+
+function getKingstonsSellerPackListingRequirementMeta(documentKey = '') {
+  const key = normalizeKey(documentKey)
+  if (key === 'signed_defect_form') {
+    return {
+      requirementKey: 'property_condition_disclosure',
+      requirementName: 'Signed Defect Form',
+      requirementDescription: 'Signed seller defect disclosure required before listing.',
+      requirementGroup: 'property',
+      documentType: 'property_condition_disclosure',
+      documentCategory: 'property_condition_disclosure',
+    }
+  }
+  if (key === 'signed_fica_form') {
+    return {
+      requirementKey: 'signed_fica_form',
+      requirementName: 'Signed FICA Form',
+      requirementDescription: 'Signed FICA form for the selected seller type.',
+      requirementGroup: 'fica',
+      documentType: 'signed_fica_form',
+      documentCategory: 'fica',
+    }
+  }
+  return {
+    requirementKey: 'signed_mandate',
+    requirementName: 'Signed Mandate',
+    requirementDescription: 'Signed mandate required before listing.',
+    requirementGroup: 'mandate',
+    documentType: 'signed_mandate',
+    documentCategory: 'mandate_signature',
+  }
+}
+
+function buildKingstonsSellerPackListingRequirementRows() {
+  return KINGSTONS_SELLER_PACK_DOCUMENTS.map((documentRow) => {
+    const meta = getKingstonsSellerPackListingRequirementMeta(documentRow.key)
+    return {
+      ...meta,
+      status: 'required',
+      isRequired: true,
+      visibility: 'seller_visible',
+      generatedFrom: {
+        source: 'kingstons_seller_pack_phase2',
+        sellerPackDocumentKey: documentRow.key,
+      },
+    }
+  })
+}
+
+function sanitizeSellerPackStorageSegment(value = '', fallback = 'document') {
+  return normalizeText(value)
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase() || fallback
+}
+
+function buildKingstonsSellerPackStoragePath({
+  organisationId = '',
+  leadId = '',
+  documentKey = '',
+  fileName = '',
+} = {}) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  return [
+    KINGSTONS_SELLER_PACK_STORAGE_FOLDER,
+    sanitizeSellerPackStorageSegment(organisationId, 'organisation'),
+    sanitizeSellerPackStorageSegment(leadId, 'lead'),
+    sanitizeSellerPackStorageSegment(documentKey, 'document'),
+    `${timestamp}-${sanitizeSellerPackStorageSegment(fileName, 'upload')}`,
+  ].join('/')
+}
+
+async function uploadKingstonsSellerPackFile({
+  file,
+  organisationId = '',
+  leadId = '',
+  documentKey = '',
+} = {}) {
+  if (!file) throw new Error('Select a file before uploading.')
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase storage is required before uploading seller pack files.')
+  const objectPath = buildKingstonsSellerPackStoragePath({
+    organisationId,
+    leadId,
+    documentKey,
+    fileName: file.name || 'seller-pack-document',
+  })
+  let lastError = null
+  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
+    const { data, error: uploadError } = await supabase.storage
+      .from(bucketName)
+      .upload(objectPath, file, {
+        contentType: file.type || undefined,
+        upsert: true,
+      })
+    if (uploadError) {
+      lastError = uploadError
+      continue
+    }
+    const storagePath = data?.path || objectPath
+    const signedUrlResult = await supabase.storage
+      .from(bucketName)
+      .createSignedUrl(storagePath, 60 * 60 * 24 * 7)
+      .catch((signedUrlError) => ({ error: signedUrlError }))
+    return {
+      storageBucket: bucketName,
+      storagePath,
+      url: signedUrlResult?.data?.signedUrl || '',
+    }
+  }
+  throw lastError || new Error('Unable to upload the seller pack file.')
 }
 
 function resolveAgencyOfferEmailBranding({ organisationId = '', organisationName = '', profile = {}, currentWorkspace = {}, workspace = {} } = {}) {
@@ -1301,6 +1686,8 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
 function getSellerLeadDocumentCanonicalLabel(row = {}) {
   const key = normalizeKey(row?.key || row?.requirementKey || row?.requirement_key)
   if (key === 'signed_mandate') return 'Signed Mandate'
+  if (key === 'signed_defect_form') return 'Signed Defect Form'
+  if (key === 'signed_fica_form') return 'Signed FICA Form'
   if (key === 'property_condition_disclosure') return 'Seller Declaration / Disclosure'
   return row?.label || row?.title || row?.document_name || row?.name || 'Seller document'
 }
@@ -1320,6 +1707,8 @@ function getSellerLeadDocumentCanonicalKey(row = {}) {
     row?.name,
   ].filter(Boolean).join(' '))
   if (source.includes('signed_mandate') || source.includes('mandate_signature') || (source.includes('signed') && source.includes('mandate'))) return 'signed_mandate'
+  if (source.includes('signed_defect_form') || source.includes('defect_form') || (source.includes('signed') && source.includes('defect'))) return 'signed_defect_form'
+  if (source.includes('signed_fica_form') || source.includes('fica_form') || (source.includes('signed') && source.includes('fica'))) return 'signed_fica_form'
   if (
     source.includes('property_condition_disclosure') ||
     source.includes('condition_disclosure') ||
@@ -1366,6 +1755,10 @@ function mergeSellerLeadDocumentRows(existing = {}, incoming = {}) {
   const canonicalKey = getSellerLeadDocumentCanonicalKey(base) || getSellerLeadDocumentCanonicalKey(overlay)
   const canonicalLabel = canonicalKey === 'signed_mandate'
     ? 'Signed Mandate'
+    : canonicalKey === 'signed_defect_form'
+      ? 'Signed Defect Form'
+      : canonicalKey === 'signed_fica_form'
+        ? 'Signed FICA Form'
     : canonicalKey === 'property_condition_disclosure'
       ? 'Seller Declaration / Disclosure'
       : base.label || base.title || overlay.label || overlay.title
@@ -6213,6 +6606,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [openingSellerLeadDocumentId, setOpeningSellerLeadDocumentId] = useState('')
+  const [sellerPackUploadingKey, setSellerPackUploadingKey] = useState('')
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [organisationId, setOrganisationId] = useState('')
   const [organisationName, setOrganisationName] = useState('')
@@ -7809,6 +8203,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [records.tasks, selectedLead])
 
   const selectedLeadIsSeller = resolveLeadCategoryView(selectedLead) === 'seller'
+  const selectedLeadHasKingstonsPipelineSignal = useMemo(() => {
+    if (!selectedLeadIsSeller) return false
+    return hasKingstonsPipelineSignal({
+      organisationId,
+      selectedLead,
+      selectedLeadAssignedAgentLabel,
+      currentAgent,
+      currentMembership,
+      currentWorkspace,
+      profile,
+      workspace,
+    })
+  }, [
+    currentAgent,
+    currentMembership,
+    currentWorkspace,
+    organisationId,
+    profile,
+    selectedLead,
+    selectedLeadAssignedAgentLabel,
+    selectedLeadIsSeller,
+    workspace,
+  ])
+  const selectedLeadKingstonsDigitalSigningDecision = useMemo(
+    () => buildKingstonsDigitalSigningDecision({
+      isKingstons: selectedLeadHasKingstonsPipelineSignal,
+      requestedAction: 'seller_lead_mandate_signing',
+    }),
+    [selectedLeadHasKingstonsPipelineSignal],
+  )
 
   const reloadBuyerViewingPreferenceLinks = useCallback(async ({ showMessage = false } = {}) => {
     const workspaceId = normalizeWorkspaceUuid(organisationId)
@@ -8264,13 +8688,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             : selectedLeadLinkedTransactionId
               ? 'Resend Buyer Onboarding'
               : 'Send Offer + Onboarding Link'
-  const selectedLeadSellerOnboardingActionLabel = isSellerOnboardingSending
+  const selectedLeadSellerPortalActionLabel = isSellerOnboardingSending
     ? 'Sending...'
-    : selectedLeadOnboardingCompleted
-      ? 'Resend Link to Portal'
-      : selectedLeadOnboardingStatusKey === 'not_sent'
-        ? 'Send Seller Onboarding'
-        : 'Resend Seller Onboarding'
+    : 'Send Seller Portal Link'
   const selectedLeadFinanceFormData = useMemo(() => (
     selectedLeadLifecycleDiagnostic?.onboardingPrefill?.form_data ||
     selectedLeadLifecycleDiagnostic?.onboardingPrefill?.formData ||
@@ -8304,6 +8724,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (!selectedLead) return
+    if (selectedLeadIsSeller && selectedLeadHasKingstonsPipelineSignal && leadWorkspaceTab === 'mandate') {
+      setLeadWorkspaceTab('documents')
+      if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('documents')
+      return
+    }
     if (selectedLeadIsSeller && ['offers', 'tasks'].includes(leadWorkspaceTab)) {
       setLeadWorkspaceTab('overview')
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
@@ -8312,7 +8737,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('overview')
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
     }
-  }, [isLeadWorkspaceRoute, leadWorkspaceTab, selectedLead, selectedLeadIsSeller])
+  }, [isLeadWorkspaceRoute, leadWorkspaceTab, selectedLead, selectedLeadHasKingstonsPipelineSignal, selectedLeadIsSeller])
 
   useEffect(() => {
     if (!routeLeadId || hasExplicitLeadWorkspaceTab || !selectedLeadIsSeller) return
@@ -9747,17 +10172,42 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedSellerJourneyStageKey = normalizeKey(selectedSellerJourney?.stage?.key || selectedSellerJourney?.stageKey || selectedSellerJourney?.stage?.label)
   const selectedSellerCanSendOnboarding = !selectedLeadIsSeller || selectedSellerJourneyStageKey !== 'new_lead'
   const selectedLeadSellerOnboardingCommandLabel = selectedSellerCanSendOnboarding
-    ? selectedLeadSellerOnboardingActionLabel
+    ? selectedLeadSellerPortalActionLabel
     : 'Contact Seller First'
+  const selectedKingstonsSellerPackRows = useMemo(
+    () => selectedLeadHasKingstonsPipelineSignal ? buildKingstonsSellerPackDocumentRows(selectedLead || {}) : [],
+    [selectedLead, selectedLeadHasKingstonsPipelineSignal],
+  )
+  const selectedKingstonsSellerPackSummary = useMemo(
+    () => summarizeKingstonsSellerPack(selectedKingstonsSellerPackRows),
+    [selectedKingstonsSellerPackRows],
+  )
+  const selectedKingstonsSellerPack = useMemo(
+    () => selectedLeadHasKingstonsPipelineSignal ? getKingstonsSellerPackState(selectedLead || {}) : { documents: {}, sellerType: '' },
+    [selectedLead, selectedLeadHasKingstonsPipelineSignal],
+  )
 
   const selectedSellerDocumentCategories = useMemo(
-    () => buildSellerLeadDocumentCategories(buildSellerLeadDocumentRowsFromSource({
-      lead: selectedLead || {},
-      listing: selectedLeadLinkedListing,
-      journey: selectedSellerJourney,
+    () => {
+      const sourceRows = buildSellerLeadDocumentRowsFromSource({
+        lead: selectedLead || {},
+        listing: selectedLeadLinkedListing,
+        journey: selectedSellerJourney,
+        mandatePacketStatus,
+      })
+      return buildSellerLeadDocumentCategories(dedupeSellerLeadDocumentRows([
+        ...(selectedLeadHasKingstonsPipelineSignal ? selectedKingstonsSellerPackRows : []),
+        ...sourceRows,
+      ]))
+    },
+    [
       mandatePacketStatus,
-    })),
-    [mandatePacketStatus, selectedLead, selectedLeadLinkedListing, selectedSellerJourney],
+      selectedKingstonsSellerPackRows,
+      selectedLead,
+      selectedLeadHasKingstonsPipelineSignal,
+      selectedLeadLinkedListing,
+      selectedSellerJourney,
+    ],
   )
 
   const selectedSellerDocumentSummary = useMemo(() => {
@@ -9815,16 +10265,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedSellerProcessPanelModel = useMemo(() => {
     if (!selectedLeadIsSeller) return null
-    if (!hasKingstonsPipelineSignal({
-      organisationId,
-      selectedLead,
-      selectedLeadAssignedAgentLabel,
-      currentAgent,
-      currentMembership,
-      currentWorkspace,
-      profile,
-      workspace,
-    })) return null
+    if (!selectedLeadHasKingstonsPipelineSignal) return null
 
     return buildSellerProcessWorkspacePanelModel({
       row: selectedLead || {},
@@ -9837,26 +10278,44 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       sellerProcessProfile: KINGSTONS_SELLER_PROCESS_PROFILE,
     })
   }, [
-    currentAgent,
-    currentMembership,
-    currentWorkspace,
     mandatePacketStatus,
-    organisationId,
-    profile,
     selectedLead,
     selectedLeadAppointments,
-    selectedLeadAssignedAgentLabel,
     selectedLeadContact,
+    selectedLeadHasKingstonsPipelineSignal,
     selectedLeadIsSeller,
     selectedLeadLinkedListing,
-    workspace,
   ])
 
   const selectedLeadHasKingstonsSellerProcess = selectedSellerProcessPanelModel?.visible === true
-  const selectedKingstonsProcessAction = useMemo(
-    () => getKingstonsPipelineActionMeta(selectedSellerProcessPanelModel || {}),
-    [selectedSellerProcessPanelModel],
-  )
+  const selectedKingstonsProcessAction = useMemo(() => {
+    const action = getKingstonsPipelineActionMeta(selectedSellerProcessPanelModel || {})
+    if (!selectedLeadHasKingstonsPipelineSignal) return action
+    if (!selectedKingstonsSellerPackSummary.complete) {
+      return {
+        title: 'Seller Pack',
+        copy: `Still needed before listing can be created: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`,
+        actionId: 'complete_seller_pack',
+        label: 'Upload Seller Pack',
+        disabled: false,
+      }
+    }
+    if (['complete_seller_pack', 'seller_pack_signed'].includes(action.actionId)) {
+      return {
+        title: 'Seller Pack Complete',
+        copy: 'The signed mandate, defect form, and FICA form are uploaded. The listing can now be created.',
+        actionId: 'prepare_listing',
+        label: 'Create Listing',
+        disabled: false,
+      }
+    }
+    return action
+  }, [
+    selectedKingstonsSellerPackSummary.complete,
+    selectedKingstonsSellerPackSummary.missingLabels,
+    selectedLeadHasKingstonsPipelineSignal,
+    selectedSellerProcessPanelModel,
+  ])
   const selectedKingstonsRailSteps = useMemo(
     () => buildKingstonsPipelineRailSteps(selectedSellerProcessPanelModel || {}),
     [selectedSellerProcessPanelModel],
@@ -10157,8 +10616,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       {
         key: 'documents',
         label: 'Documents',
-        complete: selectedSellerDocumentSummary.total > 0 && selectedSellerDocumentSummary.outstanding === 0,
-        status: selectedSellerDocumentSummary.total ? `${selectedSellerDocumentSummary.completed} / ${selectedSellerDocumentSummary.total}` : 'Pending',
+        complete: selectedLeadHasKingstonsPipelineSignal
+          ? selectedKingstonsSellerPackSummary.complete
+          : selectedSellerDocumentSummary.total > 0 && selectedSellerDocumentSummary.outstanding === 0,
+        status: selectedLeadHasKingstonsPipelineSignal
+          ? `${selectedKingstonsSellerPackSummary.completed} / ${selectedKingstonsSellerPackSummary.total}`
+          : selectedSellerDocumentSummary.total ? `${selectedSellerDocumentSummary.completed} / ${selectedSellerDocumentSummary.total}` : 'Pending',
       },
       {
         key: 'compliance',
@@ -10186,8 +10649,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [
     selectedLead,
+    selectedLeadHasKingstonsPipelineSignal,
     selectedLeadLinkedListing,
     selectedLeadOnboardingCompleted,
+    selectedKingstonsSellerPackSummary.complete,
+    selectedKingstonsSellerPackSummary.completed,
+    selectedKingstonsSellerPackSummary.total,
     selectedSellerDocumentSummary.completed,
     selectedSellerDocumentSummary.outstanding,
     selectedSellerDocumentSummary.total,
@@ -15054,6 +15521,107 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
   generateMandateFromSellerLeadRef.current = handleGenerateMandateFromSellerLead
 
+  async function syncKingstonsSellerPackToListing(listingId, lead = selectedLead, handoffPayload = null) {
+    const resolvedListingId = normalizeText(listingId)
+    if (!resolvedListingId || !lead || !selectedLeadHasKingstonsPipelineSignal) {
+      return { attempted: 0, linked: 0, skipped: true, failures: [] }
+    }
+
+    const documentRows = buildKingstonsSellerPackDocumentRows(lead)
+    const summary = summarizeKingstonsSellerPack(documentRows)
+    if (!summary.complete) {
+      throw new Error('The Kingston seller pack must be complete before it can be linked to the listing.')
+    }
+
+    await ensurePrivateListingDocumentRequirements(
+      resolvedListingId,
+      buildKingstonsSellerPackListingRequirementRows(),
+      { reason: 'kingstons_seller_lead_pack_phase2' },
+    )
+
+    const results = []
+    for (const documentRow of documentRows) {
+      const meta = getKingstonsSellerPackListingRequirementMeta(documentRow.key)
+      const filePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
+      const fileUrl = normalizeText(documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url)
+      if (!filePath && !fileUrl) {
+        results.push({
+          key: documentRow.key,
+          status: 'skipped',
+          error: 'No storage path or URL available.',
+        })
+        continue
+      }
+      try {
+        const linked = await linkPrivateListingDocument(resolvedListingId, {
+          requirementKey: meta.requirementKey,
+          documentType: meta.documentType,
+          documentCategory: meta.documentCategory,
+          documentName: normalizeText(documentRow.uploadedFileName || documentRow.fileName || documentRow.label || meta.requirementName),
+          filePath,
+          fileUrl: filePath ? '' : fileUrl,
+          visibility: 'internal',
+          status: 'uploaded',
+          pendingTransactionPromotion: true,
+          promotionStatus: 'pending_transaction',
+          uploadedAt: normalizeText(documentRow.uploadedAt || documentRow.uploaded_at) || new Date().toISOString(),
+          metadata: {
+            handoffSource: KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE,
+            source: 'kingstons_seller_pack_transaction_continuity_phase3',
+            leadId: normalizeText(lead?.leadId || lead?.id),
+            sellerPackDocumentKey: documentRow.key,
+            sellerPackRequirementKey: meta.requirementKey,
+            sellerType: normalizeText(handoffPayload?.sellerType || getKingstonsSellerPackState(lead).sellerType),
+          },
+        })
+        results.push({
+          key: documentRow.key,
+          status: linked?.id ? 'linked' : 'skipped',
+          requirementKey: meta.requirementKey,
+          documentId: linked?.id || '',
+        })
+      } catch (linkError) {
+        results.push({
+          key: documentRow.key,
+          status: 'failed',
+          requirementKey: meta.requirementKey,
+          error: linkError?.message || 'Document link failed.',
+        })
+      }
+    }
+
+    const failures = results.filter((row) => row.status === 'failed' || row.status === 'skipped')
+    if (failures.length) {
+      throw new Error(`Seller Pack handoff incomplete: ${failures.map((row) => row.key).join(', ')}.`)
+    }
+
+    await createPrivateListingActivity({
+      privateListingId: resolvedListingId,
+      activityType: 'seller_pack_linked',
+      activityTitle: 'Seller Pack linked from lead',
+      activityDescription: 'Signed mandate, defect form, and FICA form were linked from the seller lead.',
+      performedBy: normalizeText(currentAgent.id),
+      visibility: 'internal',
+      metadata: {
+        source: KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE,
+        legacySource: 'kingstons_seller_lead_pack_phase2',
+        leadId: normalizeText(lead?.leadId || lead?.id),
+        sellerType: normalizeText(handoffPayload?.sellerType || getKingstonsSellerPackState(lead).sellerType),
+        sellerTypeLabel: normalizeText(handoffPayload?.sellerTypeLabel),
+        linkedDocuments: results,
+        sellerPackFacts: handoffPayload?.sellerCanonicalFacts?.kingstonsSellerPack || null,
+      },
+    }).catch(() => null)
+
+    return {
+      attempted: documentRows.length,
+      linked: results.filter((row) => row.status === 'linked').length,
+      skipped: false,
+      failures: [],
+      results,
+    }
+  }
+
   async function handleCreateListingFromSellerLead() {
     if (!selectedLead) return
     if (!organisationId) {
@@ -15061,11 +15629,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (!selectedLeadIsSeller) return
+    if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsSellerPackSummary.complete) {
+      setLeadWorkspaceTab('documents')
+      setError(`Complete the Kingston Seller Pack before creating the listing. Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`)
+      return
+    }
 
     const stageKey = normalizeText(selectedLead?.stage).toLowerCase()
     const hasMandateSigned = stageKey.includes('mandate signed')
+    let kingstonsListingHandoffPayload = selectedLeadHasKingstonsPipelineSignal
+      ? buildKingstonsSellerPackListingHandoffPayload({
+          lead: selectedLead,
+          documentRows: selectedKingstonsSellerPackRows,
+          summary: selectedKingstonsSellerPackSummary,
+          contact: selectedLeadContact,
+        })
+      : null
+    const hasKingstonsSellerPackListingHandoff = kingstonsListingHandoffPayload?.complete === true
+    const listingMandateSigned = hasMandateSigned || hasKingstonsSellerPackListingHandoff
+    const listingStatusForCreation = listingMandateSigned ? 'mandate_signed' : 'seller_lead'
+    const mandateStatusForCreation = hasKingstonsSellerPackListingHandoff
+      ? 'signed_uploaded'
+      : hasMandateSigned
+        ? 'signed'
+        : 'not_started'
     const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
     let createdListingId = ''
+    let sellerPackSyncResult = null
+    let sellerPackSyncError = ''
 
     if (useDbFirstListingPersistence) {
       const created = await createPrivateListing({
@@ -15073,12 +15664,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
         sellerLeadId: normalizeLeadIdentityKey(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
         originatingCrmLeadId: normalizeLeadIdentityKey(selectedLead?.leadId),
-        listingStatus: hasMandateSigned ? 'mandate_signed' : 'seller_lead',
+        listingStatus: listingStatusForCreation,
         sellerOnboardingStatus:
           normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
             ? 'completed'
             : 'not_started',
-        mandateStatus: hasMandateSigned ? 'signed' : 'not_started',
+        mandateStatus: mandateStatusForCreation,
         listingVisibility: 'internal',
         title: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
         propertyType: normalizeText(selectedLeadPropertyType) || 'House',
@@ -15096,6 +15687,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         latitude: selectedLead?.latitude ?? null,
         longitude: selectedLead?.longitude ?? null,
         googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
+        ...(kingstonsListingHandoffPayload?.listingPayload || {}),
         source: 'pipeline_seller_conversion',
       })
       createdListingId = normalizeText(created?.listing?.id)
@@ -15103,17 +15695,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setError('Unable to create canonical listing from this seller lead.')
         return
       }
+      if (selectedLeadHasKingstonsPipelineSignal) {
+        kingstonsListingHandoffPayload = buildKingstonsSellerPackListingHandoffPayload({
+          lead: selectedLead,
+          documentRows: selectedKingstonsSellerPackRows,
+          summary: selectedKingstonsSellerPackSummary,
+          contact: selectedLeadContact,
+          existingFacts: created?.listing?.sellerCanonicalFacts || created?.listing?.seller_canonical_facts_json,
+          existingReadiness: created?.listing?.sellerCanonicalFactReadiness || created?.listing?.seller_canonical_fact_readiness_json,
+        })
+        await updatePrivateListing(createdListingId, {
+          listingStatus: listingStatusForCreation,
+          ...(kingstonsListingHandoffPayload?.listingPayload || {}),
+        }, { includeRequirementsAndDocuments: false }).catch((listingHandoffError) => {
+          sellerPackSyncError = listingHandoffError?.message || 'Seller Pack handoff facts could not be saved to the listing.'
+          console.warn('[AgencyPipelinePage] Kingston Seller Pack listing payload update failed.', listingHandoffError)
+        })
+      }
 
       await createPrivateListingActivity({
         privateListingId: createdListingId,
         activityType: 'listing_updated',
         activityTitle: 'Listing linked from seller lead',
-        activityDescription: 'Seller lead converted to canonical private listing intake.',
+        activityDescription: selectedLeadHasKingstonsPipelineSignal
+          ? 'Seller lead converted to canonical private listing intake with Kingston Seller Pack evidence.'
+          : 'Seller lead converted to canonical private listing intake.',
         performedBy: normalizeText(currentAgent.id),
         visibility: 'internal',
         metadata: {
+          source: selectedLeadHasKingstonsPipelineSignal
+            ? KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE
+            : 'pipeline_seller_conversion',
           leadId: normalizeText(selectedLead?.leadId),
-          conversionType: 'pipeline_seller_conversion',
+          conversionType: selectedLeadHasKingstonsPipelineSignal
+            ? KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE
+            : 'pipeline_seller_conversion',
+          sellerType: kingstonsListingHandoffPayload?.sellerType || null,
+          sellerPackComplete: kingstonsListingHandoffPayload?.complete === true,
         },
       }).catch(() => {})
     } else {
@@ -15149,6 +15767,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           assignedAgentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
           assignedAgentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
           leadSource: normalizeText(selectedLead?.leadSource || 'Other'),
+          ...(kingstonsListingHandoffPayload ? {
+            sellerType: kingstonsListingHandoffPayload.sellerType,
+            kingstonsSellerPackListingHandoff: kingstonsListingHandoffPayload,
+            sellerCanonicalFacts: kingstonsListingHandoffPayload.sellerCanonicalFacts,
+            sellerCanonicalFactReadiness: kingstonsListingHandoffPayload.sellerCanonicalFactReadiness,
+          } : {}),
           sellerOnboarding: {
             token: normalizeText(selectedLead?.sellerOnboardingToken),
             link: normalizeText(selectedLead?.sellerOnboardingLink),
@@ -15172,12 +15796,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             },
           },
           mandate: {
-            status: hasMandateSigned ? 'signed' : 'draft',
-            signedAt: hasMandateSigned ? new Date().toISOString() : null,
+            status: listingMandateSigned ? 'signed_uploaded' : 'draft',
+            signedAt: listingMandateSigned ? new Date().toISOString() : null,
           },
         },
         {
-          stage: hasMandateSigned ? LISTING_STATUS.MANDATE_SIGNED : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+          stage: listingMandateSigned ? LISTING_STATUS.MANDATE_SIGNED : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
         },
       )
 
@@ -15189,8 +15813,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       updateAgentSellerLead(normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId), (row) => ({
         ...row,
         listingDraftId: listingDraft.id,
-        listingStatus: hasMandateSigned ? LISTING_STATUS.MANDATE_SIGNED : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+        listingStatus: listingMandateSigned ? LISTING_STATUS.MANDATE_SIGNED : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
       }))
+    }
+
+    if (useDbFirstListingPersistence && selectedLeadHasKingstonsPipelineSignal) {
+      try {
+        sellerPackSyncResult = await syncKingstonsSellerPackToListing(createdListingId, selectedLead, kingstonsListingHandoffPayload)
+      } catch (sellerPackError) {
+        sellerPackSyncError = sellerPackError?.message || 'Seller Pack could not be linked to the listing documents.'
+        console.warn('[AgencyPipelinePage] Kingston Seller Pack listing handoff failed.', sellerPackError)
+      }
     }
 
     await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
@@ -15201,13 +15834,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
       agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
       activityType: 'Listing Created',
-      activityNote: hasMandateSigned ? 'listing_created_after_mandate' : 'listing_created_before_mandate',
-      outcome: hasMandateSigned ? 'Mandate signed' : 'Manual override',
+      activityNote: selectedLeadHasKingstonsPipelineSignal
+        ? KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE
+        : hasMandateSigned
+          ? 'listing_created_after_mandate'
+          : 'listing_created_before_mandate',
+      outcome: selectedLeadHasKingstonsPipelineSignal
+        ? 'Seller Pack handoff'
+        : hasMandateSigned
+          ? 'Mandate signed'
+          : 'Manual override',
     }, { actor: currentAgent })
 
     setError('')
+    if (sellerPackSyncError) {
+      setError(`Listing created, but Seller Pack handoff needs attention. ${sellerPackSyncError}`)
+    }
     setMessage(
-      useDbFirstListingPersistence
+      sellerPackSyncResult?.linked === selectedKingstonsSellerPackSummary.total
+        ? 'Listing created and Seller Pack linked to the listing documents.'
+        : useDbFirstListingPersistence
         ? 'Canonical private listing created and linked to this seller lead.'
         : hasMandateSigned
           ? 'Listing handoff created from signed mandate.'
@@ -15322,7 +15968,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }))
       setSellerContactFeedbackModal(SELLER_CONTACT_FEEDBACK_DEFAULTS)
       setError('')
-      setMessage('Seller contact logged. Next best action is now Send Seller Onboarding.')
+      setMessage('Seller contact logged. Next best action is now Send Seller Portal Link.')
       scheduleRecordsReload(organisationId, 850)
     } catch (contactError) {
       const errorMessage = contactError?.message || 'Unable to save seller contact feedback.'
@@ -15336,7 +15982,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       openSellerContactFeedbackModal()
       return
     }
-    if (selectedLeadOnboardingCompleted) {
+    if (selectedLeadIsSeller) {
       void handleSendSellerPortalLink()
       return
     }
@@ -15346,6 +15992,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleSendSellerPortalLink() {
     if (!selectedLead || !selectedLeadIsSeller) return
     if (isSellerOnboardingSending) return
+    if (selectedLeadHasKingstonsPipelineSignal && !normalizeText(selectedKingstonsSellerPack.sellerType)) {
+      setLeadWorkspaceTab('documents')
+      setError('Choose whether the FICA seller is a natural person or juristic person before sending the Seller Portal link.')
+      return
+    }
     const listingId = normalizeText(
       selectedLeadLinkedListing?.id ||
         selectedLead?.listingId ||
@@ -15461,15 +16112,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('documents')
       return
     }
-    if (id === 'complete_seller_pack') {
-      setLeadWorkspaceTab('mandate')
+    if (id === 'complete_seller_pack' || id === 'seller_pack_signed') {
+      setLeadWorkspaceTab('documents')
       return
     }
     if (id === 'prepare_listing') {
+      if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsSellerPackSummary.complete) {
+        setLeadWorkspaceTab('documents')
+        setError(`Complete the Kingston Seller Pack before creating the listing. Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`)
+        return
+      }
       void handleCreateListingFromSellerLead()
       return
     }
     if (id === 'send_seller_onboarding') {
+      if (selectedLeadHasKingstonsPipelineSignal) {
+        void handleSendSellerPortalLink()
+        return
+      }
       if (selectedLeadOnboardingCompleted) {
         void handleSendSellerPortalLink()
         return
@@ -15487,10 +16147,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (['generate_mandate', 'send_mandate', 'view_signing_status', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(id)) {
+      if (selectedLeadKingstonsDigitalSigningDecision.blocked) {
+        setLeadWorkspaceTab('documents')
+        setError(selectedLeadKingstonsDigitalSigningDecision.message)
+        return
+      }
       void handleSelectedLeadMandatePrimaryAction()
       return
     }
     if (id === 'create_listing') {
+      if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsSellerPackSummary.complete) {
+        setLeadWorkspaceTab('documents')
+        setError(`Complete the Kingston Seller Pack before creating the listing. Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`)
+        return
+      }
       void handleCreateListingFromSellerLead()
       return
     }
@@ -16455,10 +17125,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleDownloadSellerLeadDocumentUrl(documentRow = {}) {
     const openingKey = normalizeText(documentRow?.id || documentRow?.key || documentRow?.url || documentRow?.downloadUrl)
-    const documentUrl = normalizeText(documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url)
+    let documentUrl = normalizeText(documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url)
     try {
       setError('')
       setOpeningSellerLeadDocumentId(openingKey)
+      if (!documentUrl && normalizeText(documentRow.storagePath || documentRow.storage_path)) {
+        const bucketName = normalizeText(documentRow.storageBucket || documentRow.storage_bucket) || DOCUMENTS_BUCKET_CANDIDATES[0]
+        const storagePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
+        const signedUrlResult = await supabase?.storage
+          ?.from(bucketName)
+          ?.createSignedUrl(storagePath, 60 * 60)
+        if (signedUrlResult?.error) throw signedUrlResult.error
+        documentUrl = normalizeText(signedUrlResult?.data?.signedUrl)
+      }
       await triggerSellerLeadBrowserDownload(
         documentUrl,
         documentRow.uploadedFileName || documentRow.generatedFileName || documentRow.label || documentRow.title || 'seller-document.pdf',
@@ -16467,6 +17146,127 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError(downloadError?.message || 'Unable to download this document right now.')
     } finally {
       setOpeningSellerLeadDocumentId('')
+    }
+  }
+
+  async function persistKingstonsSellerPack(nextSellerPack = {}, {
+    leadId = selectedLead?.leadId,
+    successMessage = '',
+    activityNote = '',
+    outcome = 'Seller pack updated',
+  } = {}) {
+    const resolvedLeadId = normalizeText(leadId)
+    if (!organisationId || !resolvedLeadId) throw new Error('Select a persisted seller lead before updating the seller pack.')
+    const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+    const normalizedSellerPack = {
+      ...nextSellerPack,
+      documents: asRecord(nextSellerPack.documents),
+      updatedAt: new Date().toISOString(),
+      updatedBy: normalizeText(currentAgent.email || currentAgent.id),
+    }
+    const rawEnquiryPayload = {
+      ...rawPayload,
+      kingstonsSellerPack: normalizedSellerPack,
+      sellerPack: normalizedSellerPack,
+    }
+    patchSelectedLeadRecord({
+      rawEnquiryPayload,
+      kingstonsSellerPack: normalizedSellerPack,
+      sellerPack: normalizedSellerPack,
+    }, resolvedLeadId)
+    await updateAgencyCrmLeadRecord(organisationId, resolvedLeadId, { rawEnquiryPayload })
+    if (activityNote) {
+      void createAgencyCrmLeadActivity(organisationId, resolvedLeadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Seller Pack Updated',
+        activityNote,
+        outcome,
+      }, { actor: currentAgent }).catch((activityError) => {
+        console.warn('[AgencyPipelinePage] Seller pack activity could not be recorded.', activityError)
+      })
+    }
+    if (successMessage) setMessage(successMessage)
+    return normalizedSellerPack
+  }
+
+  async function handleKingstonsSellerPackUpload(documentKey = '', event = null) {
+    const key = normalizeKey(documentKey)
+    const definition = KINGSTONS_SELLER_PACK_DOCUMENTS.find((documentRow) => documentRow.key === key)
+    const file = event?.target?.files?.[0] || null
+    if (event?.target) event.target.value = ''
+    if (!definition || !file || !selectedLead) return
+    if (key === 'signed_fica_form' && !isValidKingstonsFicaSellerType(selectedKingstonsSellerPack.sellerType)) {
+      setError('Choose whether the FICA seller is a natural person or juristic person before uploading the signed FICA form.')
+      return
+    }
+    try {
+      setError('')
+      setSellerPackUploadingKey(key)
+      const upload = await uploadKingstonsSellerPackFile({
+        file,
+        organisationId,
+        leadId: selectedLead.leadId,
+        documentKey: key,
+      })
+      const currentPack = getKingstonsSellerPackState(selectedLead)
+      const uploadedDocument = {
+        key,
+        label: definition.label,
+        status: 'uploaded',
+        statusLabel: 'Uploaded',
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+        uploadedFileName: file.name || definition.fileName,
+        fileName: file.name || definition.fileName,
+        fileSize: Number(file.size || 0) || null,
+        fileType: normalizeText(file.type),
+        storageBucket: upload.storageBucket,
+        storagePath: upload.storagePath,
+        url: upload.url,
+      }
+      await persistKingstonsSellerPack({
+        ...currentPack,
+        documents: {
+          ...asRecord(currentPack.documents),
+          [key]: uploadedDocument,
+        },
+      }, {
+        successMessage: `${definition.label} uploaded to the seller pack.`,
+        activityNote: `${definition.label} was uploaded to the Kingston seller pack.`,
+        outcome: definition.label,
+      })
+    } catch (uploadError) {
+      setError(uploadError?.message || `Unable to upload ${definition.label}.`)
+    } finally {
+      setSellerPackUploadingKey('')
+    }
+  }
+
+  async function handleKingstonsSellerPackSellerTypeChange(event) {
+    const sellerType = normalizeKey(event?.target?.value)
+    if (!selectedLead || !KINGSTONS_SELLER_PACK_KEY_SET.has('signed_fica_form')) return
+    if (sellerType && !isValidKingstonsFicaSellerType(sellerType)) {
+      setError('Choose natural person or juristic person for the FICA seller type.')
+      return
+    }
+    try {
+      setError('')
+      setSellerPackUploadingKey('signed_fica_form:type')
+      const currentPack = getKingstonsSellerPackState(selectedLead)
+      await persistKingstonsSellerPack({
+        ...currentPack,
+        sellerType,
+        ficaSellerType: sellerType,
+        documents: asRecord(currentPack.documents),
+      }, {
+        successMessage: sellerType ? 'FICA seller type saved.' : 'FICA seller type cleared.',
+        activityNote: sellerType ? `FICA seller type set to ${sellerType === 'juristic' ? 'juristic person' : 'natural person'}.` : 'FICA seller type was cleared.',
+        outcome: 'FICA seller type',
+      })
+    } catch (sellerTypeError) {
+      setError(sellerTypeError?.message || 'Unable to save the FICA seller type.')
+    } finally {
+      setSellerPackUploadingKey('')
     }
   }
 
@@ -17306,6 +18106,59 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function runKingstonsSellerPackTransactionHandoff({
+    listing = null,
+    listingId = '',
+    transactionId = '',
+    source = KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE,
+  } = {}) {
+    const resolvedListingId = normalizeText(listingId || listing?.id || listing?.listingId || listing?.listing_id)
+    const hasKingstonsSellerPackHandoff = hasKingstonsPipelineSignal({
+      organisationId,
+      listing,
+      selectedLead,
+      selectedLeadAssignedAgentLabel,
+      currentAgent,
+      currentMembership,
+      currentWorkspace,
+      profile,
+      workspace,
+    })
+    if (!hasKingstonsSellerPackHandoff) return { skipped: true, reason: 'not_kingstons_listing', error: '' }
+    if (!resolvedListingId || !transactionId || !isSupabaseConfigured) {
+      return {
+        skipped: true,
+        reason: 'missing_live_transaction_context',
+        error: 'Seller Pack document handoff could not be completed.',
+      }
+    }
+    try {
+      const queued = await markPrivateListingDocumentsPendingTransactionPromotion(resolvedListingId, {
+        requirementKeys: KINGSTONS_SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS,
+        source,
+      })
+      const repair = await repairSellerDocumentTransactionContinuity({ listingId: resolvedListingId })
+      return {
+        skipped: false,
+        error: '',
+        source,
+        listingId: resolvedListingId,
+        transactionId,
+        queued,
+        repair,
+      }
+    } catch (handoffError) {
+      console.warn('[PIPELINE] Kingston Seller Pack transaction handoff skipped.', handoffError)
+      return {
+        skipped: false,
+        error: handoffError?.message || 'Seller Pack document handoff could not be completed.',
+        source,
+        listingId: resolvedListingId,
+        transactionId,
+      }
+    }
+  }
+
   async function handleLeadCanonicalOfferSendToSeller(offer) {
     if (!organisationId || !offer?.id) return
     const note = canonicalOfferNotesById[offer.id] || ''
@@ -17485,6 +18338,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const transactionId = normalizeText(createdTransaction?.transactionId || createdTransaction?.transactionRow?.transaction?.id)
       const reusedTransaction = Boolean(createdTransaction?.alreadyConverted || (createdTransaction?.existing && transactionId))
       let onboardingSendWarning = ''
+      let sellerPackPromotionError = ''
+      if (transactionId) {
+        const handoffResult = await runKingstonsSellerPackTransactionHandoff({
+          listing: conversionListingPayload,
+          listingId,
+          transactionId,
+          source: KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE,
+        })
+        sellerPackPromotionError = handoffResult.error
+      }
       if (transactionId && isSupabaseConfigured) {
         const intakePreference = normalizeClientIntakePreference(
           acceptedOffer?.conditions?.clientIntakePreference ||
@@ -17534,8 +18397,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: '' }))
       setSelectedLeadOffersRefreshTick((value) => value + 1)
-      setMessage(onboardingSendWarning
-        ? `${reusedTransaction ? 'Buyer onboarding resend attempted' : 'Transaction created from accepted offer'}. ${onboardingSendWarning}`
+      const transactionHandoffWarning = sellerPackPromotionError || onboardingSendWarning
+      setMessage(transactionHandoffWarning
+        ? `${reusedTransaction ? 'Buyer onboarding resend attempted' : 'Transaction created from accepted offer'}. ${transactionHandoffWarning}`
         : ['agent_assisted', 'hard_copy'].includes(
             normalizeClientIntakePreference(
               acceptedOffer?.conditions?.clientIntakePreference ||
@@ -19540,18 +20404,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                            handleSellerJourneyAction('open_seller_portal')
 	                                          },
 	                                        },
-	                                        {
-	                                          label: selectedLeadMandatePrimaryLabel,
-	                                          Icon: FileText,
-	                                          tone: 'text-[#29435d]',
-	                                          disabled: selectedLeadMandateActionDisabled,
-	                                          title: selectedLeadMandateActionTitle,
-	                                          onClick: () => {
-	                                            if (selectedLeadMandateActionDisabled) return
-	                                            setLeadActionsMenuOpen(false)
-	                                            void handleSelectedLeadMandatePrimaryAction()
-	                                          },
-	                                        },
+                                        ...(selectedLeadHasKingstonsPipelineSignal ? [] : [{
+                                          label: selectedLeadMandatePrimaryLabel,
+                                          Icon: FileText,
+                                          tone: 'text-[#29435d]',
+                                          disabled: selectedLeadMandateActionDisabled,
+                                          title: selectedLeadMandateActionTitle,
+                                          onClick: () => {
+                                            if (selectedLeadMandateActionDisabled) return
+                                            setLeadActionsMenuOpen(false)
+                                            void handleSelectedLeadMandatePrimaryAction()
+                                          },
+                                        }]),
 	                                        {
 	                                          label: 'Schedule Appointment',
 	                                          Icon: CalendarDays,
@@ -19945,12 +20809,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </section>
 
                       <div className="mt-3 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)]" role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
-                        <div className="grid min-w-[860px] grid-cols-7 gap-2">
+                        <div className={`grid min-w-[860px] gap-2 ${selectedLeadHasKingstonsPipelineSignal ? 'grid-cols-6' : 'grid-cols-7'}`}>
                           {[
                             { key: 'overview', label: 'Overview', meta: '' },
                             { key: 'seller', label: 'Seller Profile', meta: '' },
                             { key: 'property', label: 'Property', meta: '' },
-                            { key: 'mandate', label: 'Mandate', meta: '' },
+                            ...(selectedLeadHasKingstonsPipelineSignal ? [] : [{ key: 'mandate', label: 'Mandate', meta: '' }]),
                             { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                             { key: 'documents', label: 'Documents', meta: '' },
                             { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
@@ -20516,6 +21380,88 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
                       </section>
                     </div>
+
+                    {selectedLeadHasKingstonsPipelineSignal ? (
+                      <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]" data-testid="kingstons-seller-pack-overview">
+                        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-5 py-4 sm:px-6">
+                          <div>
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Seller Pack</p>
+                            <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#102033]">Manual listing documents</h3>
+                            <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758b]" data-testid="kingstons-seller-pack-completion-rule">
+                              Seller Pack completion requires all three uploaded files: {selectedKingstonsSellerPackSummary.requiredLabels.join(', ')}.
+                            </p>
+                            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[#7a5a17]" data-testid="kingstons-digital-signing-decision">
+                              {selectedLeadKingstonsDigitalSigningDecision.label}: {selectedLeadKingstonsDigitalSigningDecision.agentAction}
+                            </p>
+                          </div>
+                          <span className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-bold uppercase tracking-[0.1em] ${selectedKingstonsSellerPackSummary.complete ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
+                            {selectedKingstonsSellerPackSummary.completed} of {selectedKingstonsSellerPackSummary.total} uploaded
+                          </span>
+                        </div>
+                        <div className={`border-b px-5 py-3 text-sm font-semibold sm:px-6 ${selectedKingstonsSellerPackSummary.complete ? 'border-[#d7eadf] bg-[#f4fbf6] text-[#25764a]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#8a641d]'}`} data-testid="kingstons-seller-pack-manual-completion-status">
+                          {selectedKingstonsSellerPackSummary.complete
+                            ? 'Manual Seller Pack complete. Listing can be prepared.'
+                            : `Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}`}
+                        </div>
+                        <div className="border-b border-[#edf3f8] px-5 py-3 sm:px-6" data-testid="kingstons-fica-seller-type-status">
+                          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
+                            FICA seller type: {selectedKingstonsSellerPackSummary.sellerTypeLabel}
+                          </span>
+                        </div>
+                        <div className="grid gap-4 p-5 md:grid-cols-3 sm:p-6">
+                          {selectedKingstonsSellerPackRows.map((documentRow) => {
+                            const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
+                            const StatusIcon = statusMeta.Icon
+                            const isUploading = sellerPackUploadingKey === documentRow.key
+                            return (
+                              <article key={documentRow.key} className="flex min-h-[210px] flex-col rounded-[18px] border border-[#e3edf7] bg-[#fbfdff] p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${statusMeta.iconClass}`}>
+                                    <StatusIcon className="h-4 w-4" />
+                                  </span>
+                                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
+                                </div>
+                                <h4 className="mt-4 text-sm font-semibold text-[#20364c]">{documentRow.label}</h4>
+                                <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-[#6d839b]">{documentRow.description}</p>
+                                {documentRow.key === 'signed_fica_form' ? (
+                                  <label className="mt-3 block text-xs font-semibold text-[#60758b]">
+                                    Seller type
+                                    <select
+                                      value={selectedKingstonsSellerPack.sellerType || ''}
+                                      onChange={handleKingstonsSellerPackSellerTypeChange}
+                                      disabled={sellerPackUploadingKey === 'signed_fica_form:type'}
+                                      className="mt-1 h-10 w-full rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-sm font-semibold text-[#20364c] outline-none transition focus:border-[#8ab7d8]"
+                                    >
+                                      <option value="">Select type</option>
+                                      {KINGSTONS_FICA_SELLER_TYPE_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                      ))}
+                                    </select>
+                                    {!selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
+                                      <span className="mt-1 block text-[0.7rem] font-semibold text-[#8a641d]">Required before signed FICA upload and listing creation.</span>
+                                    ) : null}
+                                  </label>
+                                ) : null}
+                                <p className="mt-auto truncate pt-4 text-xs font-medium text-[#6d839b]" title={documentRow.uploadedFileName || ''}>
+                                  {documentRow.uploadedFileName ? documentRow.uploadedFileName : 'No file uploaded yet'}
+                                </p>
+                                <label className="mt-3 inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#cfdceb] bg-white px-3 text-sm font-semibold text-[#315b7a] transition hover:border-[#a9bfd6]">
+                                  <Upload className="h-4 w-4" />
+                                  {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace File' : 'Upload File'}
+                                  <input
+                                    type="file"
+                                    className="sr-only"
+                                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                                    disabled={isUploading}
+                                    onChange={(event) => void handleKingstonsSellerPackUpload(documentRow.key, event)}
+                                  />
+                                </label>
+                              </article>
+                            )
+                          })}
+                        </div>
+                      </section>
+                    ) : null}
                   </div>
                   ) : null}
 
@@ -24022,35 +24968,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
                       </section>
 
-                      <section className="rounded-[22px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Seller Journey</p>
-                            <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">{selectedSellerJourney.status?.summary || selectedSellerJourney.stage?.label || 'Lead progress'}</h3>
-                          </div>
-                          <button type="button" className="text-xs font-semibold text-[#0f7b4e]" onClick={() => setLeadWorkspaceTab('overview')}>View Full Timeline</button>
-                        </div>
-                        <div className="mt-6 overflow-x-auto pb-1">
-                          <ol className="grid min-w-[920px] gap-0" style={{ gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(120px, 1fr))` }}>
-                            {selectedSellerJourney.steps.map((step, index) => {
-                              const isCompleted = step.state === 'completed'
-                              const isCurrent = step.state === 'current'
-                              return (
-                                <li key={step.key} className="relative px-2 text-center">
-                                  {index < selectedSellerJourney.steps.length - 1 ? (
-                                    <span className={`absolute left-1/2 right-[-50%] top-[17px] h-px ${isCompleted || isCurrent ? 'bg-[#9bd6b7]' : 'bg-[#dce6f1]'}`} aria-hidden="true" />
-                                  ) : null}
-                                  <span className={`relative z-10 mx-auto grid h-9 w-9 place-items-center rounded-full border-2 text-xs font-bold ${isCompleted ? 'border-[#0f8f59] bg-[#0f8f59] text-white' : isCurrent ? 'border-[#0f8f59] bg-white text-[#0f7b4e] ring-4 ring-[#e1f4ea]' : 'border-[#cbd8e6] bg-white text-[#91a2b5]'}`}>
-                                    {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
-                                  </span>
-                                  <p className="mt-3 line-clamp-2 min-h-[2.25rem] text-xs font-semibold leading-4 text-[#20364c]">{step.label}</p>
-                                  <p className="mt-1 truncate text-[0.68rem] font-semibold text-[#6d839b]">{step.status || (isCurrent ? 'Current' : isCompleted ? 'Complete' : 'Upcoming')}</p>
-                                </li>
-                              )
-                            })}
-                          </ol>
-                        </div>
-                      </section>
                     </div>
 
                     <aside className="space-y-4">
@@ -24084,13 +25001,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <div className="mt-4 space-y-2">
                           {[
                             ['Download Seller Summary', FileText, () => setLeadWorkspaceTab('documents')],
-                            ['Generate PDF', FileText, () => handleSellerJourneyAction('view_mandate')],
+                            ...(selectedLeadHasKingstonsPipelineSignal
+                              ? [['Upload Seller Pack', Upload, () => setLeadWorkspaceTab('documents')]]
+                              : [['Generate PDF', FileText, () => handleSellerJourneyAction('view_mandate')]]),
                             ['Email Seller', Mail, () => {
                               const email = normalizeText(selectedLeadContact?.email || selectedLead?.email)
                               if (email && typeof window !== 'undefined') window.location.href = `mailto:${email}`
                             }],
                             ['Open Portal', ExternalLink, () => handleSellerJourneyAction('open_seller_portal')],
-                            ['Resend Portal Link', Send, handleSellerOnboardingCommand],
+                            ['Send Seller Portal Link', Send, handleSellerOnboardingCommand],
                             ['Request Missing Documents', FileText, () => setLeadWorkspaceTab('documents')],
                           ].map(([label, Icon, onClick]) => (
                             <button
@@ -24407,7 +25326,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </div>
                   ) : null}
 
-                  {leadWorkspaceTab === 'mandate' && selectedLeadIsSeller ? (
+                  {leadWorkspaceTab === 'mandate' && selectedLeadIsSeller && !selectedLeadHasKingstonsPipelineSignal ? (
                   <div className="space-y-4">
                     <section className="rounded-[26px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] sm:p-6">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -24468,6 +25387,88 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
 
                         <div className="px-5 pb-6 pt-6 sm:px-6">
+                          {selectedLeadHasKingstonsPipelineSignal ? (
+                            <section className="mb-6 rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-4" data-testid="kingstons-seller-pack-documents">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">Kingston Seller Pack</p>
+                                  <h5 className="mt-1 text-base font-semibold text-[#20364c]">Listing document uploads</h5>
+                                  <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758b]" data-testid="kingstons-seller-pack-documents-completion-rule">
+                                    Manual completion requires uploaded files for {selectedKingstonsSellerPackSummary.requiredLabels.join(', ')}.
+                                  </p>
+                                </div>
+                                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${selectedKingstonsSellerPackSummary.complete ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
+                                  {selectedKingstonsSellerPackSummary.completed}/{selectedKingstonsSellerPackSummary.total} ready
+                                </span>
+                              </div>
+                              <div className={`mt-3 rounded-[14px] border px-3 py-2 text-sm font-semibold ${selectedKingstonsSellerPackSummary.complete ? 'border-[#d7eadf] bg-[#f4fbf6] text-[#25764a]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#8a641d]'}`} data-testid="kingstons-seller-pack-documents-manual-completion-status">
+                                {selectedKingstonsSellerPackSummary.complete
+                                  ? 'Manual Seller Pack complete.'
+                                  : `Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}`}
+                              </div>
+                              <div className="mt-3" data-testid="kingstons-documents-fica-seller-type-status">
+                                <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
+                                  FICA seller type: {selectedKingstonsSellerPackSummary.sellerTypeLabel}
+                                </span>
+                              </div>
+                              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                                {selectedKingstonsSellerPackRows.map((documentRow) => {
+                                  const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
+                                  const StatusIcon = statusMeta.Icon
+                                  const isUploading = sellerPackUploadingKey === documentRow.key
+                                  return (
+                                    <article key={documentRow.key} className="rounded-[18px] border border-[#e3edf7] bg-white p-4">
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="flex min-w-0 items-center gap-3">
+                                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${statusMeta.iconClass}`}>
+                                            <StatusIcon className="h-4 w-4" />
+                                          </span>
+                                          <div className="min-w-0">
+                                            <p className="truncate text-sm font-semibold text-[#20364c]" title={documentRow.label}>{documentRow.label}</p>
+                                            <p className="mt-0.5 truncate text-xs font-medium text-[#6d839b]" title={documentRow.uploadedFileName || ''}>
+                                              {documentRow.uploadedFileName || 'No upload yet'}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
+                                      </div>
+                                      {documentRow.key === 'signed_fica_form' ? (
+                                        <label className="mt-3 block text-xs font-semibold text-[#60758b]">
+                                          Seller type
+                                          <select
+                                            value={selectedKingstonsSellerPack.sellerType || ''}
+                                            onChange={handleKingstonsSellerPackSellerTypeChange}
+                                            disabled={sellerPackUploadingKey === 'signed_fica_form:type'}
+                                            className="mt-1 h-10 w-full rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-sm font-semibold text-[#20364c] outline-none transition focus:border-[#8ab7d8]"
+                                          >
+                                            <option value="">Select type</option>
+                                            {KINGSTONS_FICA_SELLER_TYPE_OPTIONS.map((option) => (
+                                              <option key={option.value} value={option.value}>{option.label}</option>
+                                            ))}
+                                          </select>
+                                          {!selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
+                                            <span className="mt-1 block text-[0.7rem] font-semibold text-[#8a641d]">Required before signed FICA upload and listing creation.</span>
+                                          ) : null}
+                                        </label>
+                                      ) : null}
+                                      <label className="mt-3 inline-flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#cfdceb] bg-white px-3 text-sm font-semibold text-[#315b7a] transition hover:border-[#a9bfd6]">
+                                        <Upload className="h-4 w-4" />
+                                        {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace File' : 'Upload File'}
+                                        <input
+                                          type="file"
+                                          className="sr-only"
+                                          accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                                          disabled={isUploading}
+                                          onChange={(event) => void handleKingstonsSellerPackUpload(documentRow.key, event)}
+                                        />
+                                      </label>
+                                    </article>
+                                  )
+                                })}
+                              </div>
+                            </section>
+                          ) : null}
+
                           <div className="grid gap-x-4 gap-y-8 pt-8 sm:grid-cols-2 xl:grid-cols-4">
                             {selectedSellerDocumentCategories.map((category) => {
                               const CategoryIcon = category.Icon

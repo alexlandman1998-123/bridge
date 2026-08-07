@@ -96,6 +96,14 @@ function getCategoryPresentation(categoryKey = '') {
       tileClasses: 'border-[#d8e0f1] bg-[#f8faff] text-[#48607e]',
     }
   }
+  if (normalized === 'seller_pack') {
+    return {
+      label: 'Seller Pack',
+      icon: FileSignature,
+      chipClasses: 'border-[#d8e0f1] bg-[#f8faff] text-[#48607e]',
+      tileClasses: 'border-[#d8e0f1] bg-[#f8faff] text-[#48607e]',
+    }
+  }
   if (normalized === 'transfer') {
     return {
       label: 'Transfer',
@@ -153,6 +161,9 @@ function getSupportingLine(item = {}, normalizedStatus = '') {
   }
   if (normalizedStatus === 'rejected') {
     return item?.metaLine || 'Please upload a corrected or clearer file to continue.'
+  }
+  if (item?.lockedByTeam) {
+    return item?.metaLine || 'Managed by your transaction team.'
   }
   return item?.metaLine || 'Required before your transaction can move forward.'
 }
@@ -219,6 +230,11 @@ function SellerDocumentRow({
               {item?.isCoreRequirement ? (
                 <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-2.5 py-1 text-[0.69rem] font-semibold text-[#52657b]">
                   Required
+                </span>
+              ) : null}
+              {item?.lockedByTeam ? (
+                <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-2.5 py-1 text-[0.69rem] font-semibold text-[#52657b]">
+                  Agent managed
                 </span>
               ) : null}
               {item?.stageLabel ? (
