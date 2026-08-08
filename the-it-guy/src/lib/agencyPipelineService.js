@@ -2763,11 +2763,35 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
   if (!suppressNotifications) {
     const taskResults = await runAppointmentNotificationTask('appointment_updated', async () => {
       const currentStatus = normalizeLowerText(updatedRecord?.status)
+      const shouldForceInviteResend =
+        updater?.forceResendInvite === true ||
+        updater?.resendInvite === true ||
+        updater?.sendInviteEmails === true
       const notificationMetadata = {
         source: 'updateAppointmentAsync',
         attachCalendarInvite: updater?.attachCalendarInvite !== false,
+        forceResendInvite: shouldForceInviteResend,
+        reason: shouldForceInviteResend ? 'manual_resend' : normalizeText(updater?.notificationReason || updater?.reason),
         listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
         listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
+      }
+      if (shouldForceInviteResend) {
+        const resendEventType = currentStatus.includes('confirm')
+          ? 'appointment_confirmed'
+          : currentStatus.includes('cancel') || currentStatus.includes('declin')
+            ? 'appointment_cancelled'
+            : currentStatus.includes('schedule')
+              ? 'appointment_scheduled'
+              : 'appointment_confirmation_required'
+        const results = await notifyAppointmentParticipants(updatedRecord.appointmentId, resendEventType, {
+          visibility: updatedRecord.visibility,
+          forceDelivery: true,
+          metadata: notificationMetadata,
+        })
+        if (!currentStatus.includes('cancel') && !currentStatus.includes('declin') && !currentStatus.includes('complete')) {
+          await scheduleAppointmentReminders(updatedRecord.appointmentId)
+        }
+        return results
       }
       if (currentStatus.includes('cancel') || currentStatus.includes('declin')) {
         await cancelAppointmentReminders(updatedRecord.appointmentId)

@@ -16341,7 +16341,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }))
       setSellerContactFeedbackModal(SELLER_CONTACT_FEEDBACK_DEFAULTS)
       setError('')
-      setMessage('Seller contact logged. Next best action is now Send Seller Portal Link.')
+      setMessage(selectedLeadHasKingstonsPipelineSignal
+        ? 'Seller contact logged. Next best action is now Schedule Valuation Appointment.'
+        : 'Seller contact logged. Next best action is now Send Seller Portal Link.')
       scheduleRecordsReload(organisationId, 850)
     } catch (contactError) {
       const errorMessage = contactError?.message || 'Unable to save seller contact feedback.'
@@ -19064,10 +19066,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleResendAppointmentInvite() {
     if (!organisationId || !selectedAppointmentId) return
     try {
+      const participantSeed = buildAppointmentParticipantsForSave(
+        appointmentForm.participants?.length ? appointmentForm.participants : selectedAppointment?.participants || [],
+      )
+      const recipientEmail = normalizeText(
+        appointmentForm.recipientEmail ||
+        selectedAppointment?.recipientEmail ||
+        selectedLeadContact?.email ||
+        selectedLead?.sellerEmail ||
+        selectedLead?.email,
+      ).toLowerCase()
       const updated = await updateAppointmentAsync(
         organisationId,
         selectedAppointmentId,
-        { status: selectedAppointment?.status || appointmentForm.status || 'requested' },
+        {
+          status: selectedAppointment?.status || appointmentForm.status || 'requested',
+          participants: participantSeed,
+          sendInviteEmails: true,
+          forceResendInvite: true,
+          attachCalendarInvite: appointmentForm.attachCalendarInvite !== false,
+          notifyCreatorOnRsvp: appointmentForm.notifyCreatorOnRsvp !== false,
+          recipientEmail,
+        },
         {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         },
@@ -19076,8 +19096,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         actionLabel: 'Appointment invite resent',
         requestedInvite: true,
         attachCalendarInvite: appointmentForm.attachCalendarInvite !== false,
-        participants: appointmentForm.participants,
-        recipientEmail: appointmentForm.recipientEmail,
+        participants: participantSeed,
+        recipientEmail,
       }))
       await reloadRecords(organisationId)
     } catch (resendError) {

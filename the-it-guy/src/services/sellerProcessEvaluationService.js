@@ -81,7 +81,14 @@ function appointmentTypeMatches(appointment = {}, appointmentType = '') {
     appointment?.appointment_type,
     appointment?.type,
     appointment?.title,
+    appointment?.linkedWorkflowStage,
+    appointment?.linked_workflow_stage,
   ].map(normalizeKey).filter(Boolean)
+  if (expected === 'seller_valuation') {
+    const savedAsSellerConsultation = keys.includes('seller_consultation')
+    const valuationSignal = keys.some((key) => key.includes('valuation'))
+    if (savedAsSellerConsultation && valuationSignal) return true
+  }
   return keys.some((key) => key === expected || key.includes(expected))
 }
 
