@@ -19319,58 +19319,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 )}
               </div>
             </article>
-                              </div>
-                            </section>
-                          <Modal
-                            open={kingstonsSellerTypePickerOpen}
-                            onClose={() => setKingstonsSellerTypePickerOpen(false)}
-                            title="Choose FICA seller type"
-                            subtitle="Pick the seller type once and we’ll keep the seller pack aligned to the right legal path."
-                            className="max-w-[820px]"
-                          >
-                            <div className="grid gap-4 md:grid-cols-2" data-testid="kingstons-fica-seller-type-picker">
-                              {KINGSTONS_FICA_SELLER_TYPE_OPTIONS.map((option) => {
-                                const detail = KINGSTONS_FICA_SELLER_TYPE_DETAILS[option.value] || {}
-                                const isSelected = normalizeKey(selectedKingstonsSellerPack.sellerType) === option.value
-                                return (
-                                  <button
-                                    key={option.value}
-                                    type="button"
-                                    className={`flex h-full min-h-[210px] flex-col rounded-[20px] border p-4 text-left transition ${
-                                      isSelected
-                                        ? 'border-[#9fc6f2] bg-[#f7fbff] shadow-[0_14px_30px_rgba(29,101,183,0.10)]'
-                                        : 'border-[#dbe7f3] bg-white hover:border-[#b8cadf] hover:bg-[#fcfdff]'
-                                    }`}
-                                    onClick={() => void handleKingstonsSellerPackSellerTypeChange(option.value)}
-                                  >
-                                    <div className="flex items-start justify-between gap-3">
-                                      <div>
-                                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Seller type</p>
-                                        <h4 className="mt-1 text-base font-semibold text-[#102033]">{detail.title || option.label}</h4>
-                                      </div>
-                                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${isSelected ? 'border-[#9fc6f2] bg-white text-[#1d65b7]' : 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]'}`}>
-                                        {isSelected ? 'Selected' : 'Choose'}
-                                      </span>
-                                    </div>
-                                    <p className="mt-3 text-sm leading-6 text-[#60758b]">
-                                      {detail.summary || option.label}
-                                    </p>
-                                    <ul className="mt-4 space-y-2 text-sm leading-6 text-[#60758b]">
-                                      {(detail.details || []).map((item) => (
-                                        <li key={item} className="flex gap-2">
-                                          <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ab7d8]" />
-                                          <span>{item}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </button>
-                                )
-                              })}
-                            </div>
-                            <p className="mt-4 text-sm leading-6 text-[#60758b]">
-                              Natural person usually needs marital details and, where relevant, spouse consent. Juristic person usually needs company, close corporation, or trust authority details.
-                            </p>
-                          </Modal>
+          </div>
+        </section>
                         ) : (
         <>
           {!isLeadWorkspaceRoute ? (
@@ -21476,6 +21426,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </div>
 
                     {selectedLeadHasKingstonsPipelineSignal ? (
+                      <>
                       <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]" data-testid="kingstons-seller-pack-overview">
                         <div className="border-b border-[#edf3f8] px-5 py-5 sm:px-6">
                           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -21640,6 +21591,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           Natural person usually needs marital details and, where relevant, spouse consent. Juristic person usually needs company, close corporation, or trust authority details.
                         </p>
                       </Modal>
+                      </>
                     ) : null}
                   </div>
                   ) : null}
