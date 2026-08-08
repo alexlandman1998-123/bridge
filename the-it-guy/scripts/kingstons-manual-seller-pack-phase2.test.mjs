@@ -24,11 +24,12 @@ assertNotIncludes('/(uploaded|submitted|received|signed|complete|completed|appro
 
 assertIncludes('...missingRows.map((row) => row.label).filter(Boolean)', 'Seller Pack summary must expose missing document labels.')
 assertIncludes('requiredLabels: rows.map((row) => row.label).filter(Boolean)', 'Seller Pack summary must expose the exact required document labels.')
-assertIncludes('kingstons-seller-pack-manual-completion-status', 'Overview tab must show the manual completion status.')
-assertIncludes('kingstons-seller-pack-documents-manual-completion-status', 'Documents tab must show the manual completion status.')
-assertIncludes('Seller Pack completion requires all three uploaded files', 'Overview tab must explain the three-upload completion rule.')
-assertIncludes('Manual completion requires uploaded files for', 'Documents tab must explain the manual upload completion rule.')
-assertIncludes('Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(\', \')}', 'Manual Seller Pack UI must name the outstanding required documents.')
-assertIncludes('Manual Seller Pack complete. Listing can be prepared.', 'Overview tab must clearly mark the manual pack complete.')
+assertIncludes('h3 className="text-lg font-semibold tracking-[-0.03em] text-[#102033]">Seller Pack</h3>', 'Overview tab must collapse to a single Seller Pack heading.')
+assertIncludes('Capture the seller type, marital setup, and any company or trust authority details before uploading the signed FICA form.', 'Documents tab must explain the wizard-backed capture step.')
+assertIncludes('Capture details first', 'FICA upload should point to the capture modal when details are missing.')
+assertNotIncludes('kingstons-seller-pack-manual-completion-status', 'The old completion banner should be removed from the page.')
+assertNotIncludes('kingstons-documents-fica-seller-type-status', 'The old FICA seller type badge should be removed from the page.')
+assertNotIncludes('Manual Seller Pack complete. Listing can be prepared.', 'The old completion banner should be removed from the page.')
+assertNotIncludes('FICA seller type:', 'The old FICA seller type badge should be removed from the page.')
 
 console.log('Kingstons manual seller pack phase 2 guard passed.')

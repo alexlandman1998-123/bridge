@@ -529,8 +529,8 @@ const KINGSTONS_PIPELINE_ACTION_COPY = Object.freeze({
   schedule_valuation_appointment: 'Book the valuation appointment with the seller and any required roleplayers.',
   upload_valuation_document: 'Upload the completed formal valuation document to the seller document workspace.',
   schedule_valuation_presentation: 'Book the valuation presentation appointment with the seller.',
-  complete_seller_pack: 'Upload the signed mandate, defect form, and FICA form before preparing the listing.',
-  seller_pack_signed: 'Upload the signed mandate, defect form, and FICA form before preparing the listing.',
+  complete_seller_pack: 'Capture the seller type and legal-path details, then upload the signed mandate, defect form, and FICA form.',
+  seller_pack_signed: 'Capture the seller type and legal-path details, then upload the signed mandate, defect form, and FICA form.',
   prepare_listing: 'Create the listing once the Kingston seller pack is complete.',
 })
 
@@ -575,23 +575,36 @@ const KINGSTONS_FICA_SELLER_TYPE_OPTIONS = Object.freeze([
 const KINGSTONS_FICA_SELLER_TYPE_DETAILS = Object.freeze({
   natural: {
     title: 'Natural person',
-    summary: 'Use this for an individual seller.',
+    summary: 'Use this for an individual seller and capture the marital details that affect the signing path.',
     details: [
-      'Capture the seller ID details and marital regime.',
-      'If the seller is married in community of property, keep spouse consent ready.',
+      'Capture the seller ID details and the marital setup that applies to the file.',
+      'If the seller is married in community of property, capture the spouse details that may be required.',
       'Use this path when the seller signs in a personal capacity.',
     ],
   },
   juristic: {
     title: 'Juristic person',
-    summary: 'Use this for companies, close corporations, and trusts.',
+    summary: 'Use this for companies, close corporations, and trusts and capture the authority chain.',
     details: [
-      'Capture the company or trust authority details.',
+      'Capture the company directors or trust trustees that support the signing authority.',
       'Keep the resolution or letters of authority ready for the signatory.',
       'Use this path when the seller signs as an authorised representative.',
     ],
   },
 })
+
+const KINGSTONS_FICA_NATURAL_SETUP_OPTIONS = Object.freeze([
+  { value: 'single', label: 'Not married / not applicable', description: 'No spouse signing path is expected.' },
+  { value: 'anc', label: 'Married out of community (ANC)', description: 'Capture the arrangement if it affects the seller file.' },
+  { value: 'in_community', label: 'Married in community of property', description: 'Capture spouse details and consent readiness.' },
+  { value: 'unknown', label: 'Not sure yet', description: 'We can capture the setup later if needed.' },
+])
+
+const KINGSTONS_FICA_JURISTIC_ENTITY_OPTIONS = Object.freeze([
+  { value: 'company', label: 'Company', description: 'Capture company details and directors.' },
+  { value: 'trust', label: 'Trust', description: 'Capture the trust details and trustees.' },
+  { value: 'close_corporation', label: 'Close corporation', description: 'Capture the CC details and authority chain.' },
+])
 
 const KINGSTONS_SELLER_PACK_DISPLAY_COPY = Object.freeze({
   signed_mandate: {
@@ -614,6 +627,199 @@ function getKingstonsSellerPackDisplayCopy(documentRow = {}) {
     description: normalizeText(documentRow?.description),
   }
 }
+
+function splitKingstonsSellerPackList(value = '') {
+  return String(value ?? '')
+    .split(/\r?\n|,/)
+    .map((item) => normalizeText(item))
+    .filter(Boolean)
+}
+
+function joinKingstonsSellerPackList(value = []) {
+  return asArray(value)
+    .map((item) => normalizeText(item?.name || item))
+    .filter(Boolean)
+    .join('\n')
+}
+
+function buildKingstonsSellerPackPersonRecords(value = '', prefix = 'person') {
+  return splitKingstonsSellerPackList(value).map((name, index) => ({
+    id: `${normalizeKey(prefix) || 'person'}-${index + 1}`,
+    name,
+  }))
+}
+
+function buildKingstonsSellerPackProfileDraft(pack = {}) {
+  const sellerPath = asRecord(pack.legalPath || pack.legal_path || pack.sellerProfile || pack.seller_profile)
+  const naturalPath = asRecord(sellerPath.natural || sellerPath.person || {})
+  const juristicPath = asRecord(sellerPath.juristic || sellerPath.entity || {})
+  const companyPath = asRecord(juristicPath.company || {})
+  const trustPath = asRecord(juristicPath.trust || {})
+  const sellerType = normalizeKey(pack.sellerType || pack.ficaSellerType || sellerPath.sellerType || sellerPath.seller_type)
+  return {
+    sellerType,
+    naturalSetup: normalizeKey(firstWorkspaceText(
+      sellerPath.naturalSetup,
+      sellerPath.maritalRegime,
+      pack.maritalRegime,
+      naturalPath.maritalSetup,
+      naturalPath.maritalRegime,
+    )),
+    spouseName: firstWorkspaceText(
+      sellerPath.spouse?.name,
+      pack.spouseName,
+      pack.spouse_full_name,
+      naturalPath.spouse?.name,
+    ),
+    spouseIdNumber: firstWorkspaceText(
+      sellerPath.spouse?.idNumber,
+      sellerPath.spouse?.id_number,
+      pack.spouseIdNumber,
+      pack.spouse_id_number,
+      naturalPath.spouse?.id_number,
+    ),
+    spouseEmail: firstWorkspaceText(
+      sellerPath.spouse?.email,
+      pack.spouseEmail,
+      pack.spouse_email,
+      naturalPath.spouse?.email,
+    ),
+    spousePhone: firstWorkspaceText(
+      sellerPath.spouse?.phone,
+      pack.spousePhone,
+      pack.spouse_phone,
+      naturalPath.spouse?.phone,
+    ),
+    juristicEntityType: normalizeKey(firstWorkspaceText(
+      sellerPath.juristicEntityType,
+      juristicPath.entityType,
+      pack.juristicEntityType,
+      pack.entityType,
+    )),
+    companyName: firstWorkspaceText(
+      sellerPath.company?.name,
+      pack.companyName,
+      pack.company_name,
+      companyPath.name,
+    ),
+    companyRegistrationNumber: firstWorkspaceText(
+      sellerPath.company?.registrationNumber,
+      sellerPath.company?.registration_number,
+      pack.companyRegistrationNumber,
+      pack.companyRegistrationNumber,
+      companyPath.registrationNumber,
+      companyPath.registration_number,
+    ),
+    companyDirectorsText: joinKingstonsSellerPackList(
+      sellerPath.company?.directors ||
+        pack.companyDirectors ||
+        pack.company_directors ||
+        companyPath.directors ||
+        [],
+    ),
+    trustName: firstWorkspaceText(
+      sellerPath.trust?.name,
+      pack.trustName,
+      pack.trust_name,
+      trustPath.name,
+    ),
+    trustRegistrationNumber: firstWorkspaceText(
+      sellerPath.trust?.registrationNumber,
+      sellerPath.trust?.registration_number,
+      pack.trustRegistrationNumber,
+      pack.trust_registration_number,
+      trustPath.registrationNumber,
+      trustPath.registration_number,
+    ),
+    trustTrusteesText: joinKingstonsSellerPackList(
+      sellerPath.trust?.trustees ||
+        pack.trustees ||
+        pack.trustees_list ||
+        trustPath.trustees ||
+        [],
+    ),
+  }
+}
+
+function buildKingstonsSellerPackProfilePayload(draft = {}) {
+  const sellerType = normalizeKey(draft.sellerType)
+  const naturalSetup = normalizeKey(draft.naturalSetup)
+  const companyDirectors = buildKingstonsSellerPackPersonRecords(draft.companyDirectorsText, 'director')
+  const trustTrustees = buildKingstonsSellerPackPersonRecords(draft.trustTrusteesText, 'trustee')
+  const profile = {
+    sellerType,
+    legalPathType: sellerType,
+    natural: {
+      maritalSetup: naturalSetup,
+      maritalRegime: naturalSetup,
+      spouse: {
+        name: normalizeText(draft.spouseName),
+        idNumber: normalizeText(draft.spouseIdNumber),
+        email: normalizeText(draft.spouseEmail).toLowerCase(),
+        phone: normalizeText(draft.spousePhone),
+      },
+    },
+    juristic: {
+      entityType: normalizeKey(draft.juristicEntityType),
+      company: {
+        name: normalizeText(draft.companyName),
+        registrationNumber: normalizeText(draft.companyRegistrationNumber),
+        directors: companyDirectors,
+      },
+      trust: {
+        name: normalizeText(draft.trustName),
+        registrationNumber: normalizeText(draft.trustRegistrationNumber),
+        trustees: trustTrustees,
+      },
+    },
+  }
+
+  return {
+    ...profile,
+    ...(sellerType === 'natural'
+      ? {
+          maritalSetup: naturalSetup,
+          maritalRegime: naturalSetup,
+          spouseName: profile.natural.spouse.name,
+          spouseIdNumber: profile.natural.spouse.idNumber,
+          spouseEmail: profile.natural.spouse.email,
+          spousePhone: profile.natural.spouse.phone,
+        }
+      : {}),
+    ...(sellerType === 'juristic'
+      ? {
+          juristicEntityType: normalizeKey(draft.juristicEntityType),
+          companyName: profile.juristic.company.name,
+          companyRegistrationNumber: profile.juristic.company.registrationNumber,
+          companyDirectors,
+          trustName: profile.juristic.trust.name,
+          trustRegistrationNumber: profile.juristic.trust.registrationNumber,
+          trustees: trustTrustees,
+        }
+      : {}),
+  }
+}
+
+function getKingstonsSellerPackCaptureSummaryLabel(pack = {}) {
+  const sellerType = normalizeKey(pack.sellerType || pack.ficaSellerType)
+  if (sellerType === 'natural') {
+    const setup = normalizeKey(pack.maritalRegime || pack.maritalSetup || pack.legalPath?.natural?.maritalSetup)
+    if (setup === 'in_community') return 'Natural person · Married in community of property'
+    if (setup === 'anc') return 'Natural person · Married out of community (ANC)'
+    return 'Natural person'
+  }
+  if (sellerType === 'juristic') {
+    const entityType = normalizeKey(pack.juristicEntityType || pack.entityType || pack.legalPath?.juristic?.entityType)
+    const directorCount = asArray(pack.companyDirectors || pack.legalPath?.juristic?.company?.directors).length
+    const trusteeCount = asArray(pack.trustees || pack.legalPath?.juristic?.trust?.trustees).length
+    if (entityType === 'company') return directorCount ? `Company · ${directorCount} director${directorCount === 1 ? '' : 's'} captured` : 'Company'
+    if (entityType === 'trust') return trusteeCount ? `Trust · ${trusteeCount} trustee${trusteeCount === 1 ? '' : 's'} captured` : 'Trust'
+    if (entityType === 'close_corporation') return 'Close corporation'
+    return 'Juristic person'
+  }
+  return 'Capture seller details'
+}
+
 const KINGSTONS_FICA_SELLER_TYPE_LABELS = Object.freeze(
   KINGSTONS_FICA_SELLER_TYPE_OPTIONS.reduce((accumulator, option) => ({
     ...accumulator,
@@ -6650,7 +6856,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [message, setMessage] = useState('')
   const [openingSellerLeadDocumentId, setOpeningSellerLeadDocumentId] = useState('')
   const [sellerPackUploadingKey, setSellerPackUploadingKey] = useState('')
-  const [kingstonsSellerTypePickerOpen, setKingstonsSellerTypePickerOpen] = useState(false)
+  const [kingstonsSellerPackWizardOpen, setKingstonsSellerPackWizardOpen] = useState(false)
+  const [kingstonsSellerPackWizardStep, setKingstonsSellerPackWizardStep] = useState('type')
+  const [kingstonsSellerPackWizardDraft, setKingstonsSellerPackWizardDraft] = useState(null)
+  const [kingstonsSellerPackWizardSaving, setKingstonsSellerPackWizardSaving] = useState(false)
+  const [kingstonsSellerPackWizardError, setKingstonsSellerPackWizardError] = useState('')
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [organisationId, setOrganisationId] = useState('')
   const [organisationName, setOrganisationName] = useState('')
@@ -16150,7 +16360,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (id === 'complete_seller_pack' || id === 'seller_pack_signed') {
-      setLeadWorkspaceTab('documents')
+      openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')
       return
     }
     if (id === 'prepare_listing') {
@@ -17236,7 +17446,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (event?.target) event.target.value = ''
     if (!definition || !file || !selectedLead) return
     if (key === 'signed_fica_form' && !isValidKingstonsFicaSellerType(selectedKingstonsSellerPack.sellerType)) {
-      setError('Choose whether the FICA seller is a natural person or juristic person before uploading the signed FICA form.')
+      setError('Capture the seller details before uploading the signed FICA form.')
       return
     }
     try {
@@ -17282,36 +17492,99 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleKingstonsSellerPackSellerTypeChange(eventOrValue) {
-    const sellerType = normalizeKey(
-      typeof eventOrValue === 'string'
-        ? eventOrValue
-        : eventOrValue?.target?.value,
-    )
-    if (!selectedLead || !KINGSTONS_SELLER_PACK_KEY_SET.has('signed_fica_form')) return
-    if (sellerType && !isValidKingstonsFicaSellerType(sellerType)) {
-      setError('Choose natural person or juristic person for the FICA seller type.')
+  function openKingstonsSellerPackWizard(initialStep = '') {
+    const currentPack = getKingstonsSellerPackState(selectedLead || {})
+    const draft = buildKingstonsSellerPackProfileDraft(currentPack)
+    const normalizedInitialStep = normalizeKey(initialStep)
+    setKingstonsSellerPackWizardDraft(draft)
+    setKingstonsSellerPackWizardStep(normalizedInitialStep || (draft.sellerType ? 'details' : 'type'))
+    setKingstonsSellerPackWizardError('')
+    setKingstonsSellerPackWizardOpen(true)
+  }
+
+  function closeKingstonsSellerPackWizard() {
+    if (kingstonsSellerPackWizardSaving) return
+    setKingstonsSellerPackWizardOpen(false)
+    setKingstonsSellerPackWizardError('')
+  }
+
+  function updateKingstonsSellerPackWizardDraftField(field, value) {
+    setKingstonsSellerPackWizardDraft((previous) => ({
+      ...buildKingstonsSellerPackProfileDraft(selectedKingstonsSellerPack),
+      ...(previous || {}),
+      [field]: value,
+    }))
+    setKingstonsSellerPackWizardError('')
+  }
+
+  function validateKingstonsSellerPackWizardDraft(draft = {}) {
+    const sellerType = normalizeKey(draft.sellerType)
+    if (!sellerType) return 'Choose whether the seller is a natural person or juristic person.'
+    if (sellerType === 'natural') {
+      const setup = normalizeKey(draft.naturalSetup)
+      if (!setup) return 'Choose the natural person marital setup.'
+      if (setup === 'in_community' && !normalizeText(draft.spouseName)) return 'Add the spouse name for a married in community seller.'
+      if (setup === 'in_community' && !normalizeText(draft.spouseIdNumber)) return 'Add the spouse ID number for a married in community seller.'
+      return ''
+    }
+    if (sellerType === 'juristic') {
+      const entityType = normalizeKey(draft.juristicEntityType)
+      if (!entityType) return 'Choose the juristic seller type.'
+      if (entityType === 'company' && !normalizeText(draft.companyName)) return 'Add the company name before saving the seller pack details.'
+      if (entityType === 'company' && !splitKingstonsSellerPackList(draft.companyDirectorsText).length) return 'Add at least one company director.'
+      if (entityType === 'trust' && !normalizeText(draft.trustName)) return 'Add the trust name before saving the seller pack details.'
+      if (entityType === 'trust' && !splitKingstonsSellerPackList(draft.trustTrusteesText).length) return 'Add at least one trust trustee.'
+      if (entityType === 'close_corporation' && !normalizeText(draft.companyName || draft.trustName)) return 'Add the close corporation name before saving the seller pack details.'
+    }
+    return ''
+  }
+
+  async function handleKingstonsSellerPackWizardSave() {
+    const draft = kingstonsSellerPackWizardDraft || buildKingstonsSellerPackProfileDraft(selectedKingstonsSellerPack)
+    const validationMessage = validateKingstonsSellerPackWizardDraft(draft)
+    if (validationMessage) {
+      setKingstonsSellerPackWizardError(validationMessage)
       return
     }
+    if (!selectedLead || !KINGSTONS_SELLER_PACK_KEY_SET.has('signed_fica_form')) return
+    const currentPack = getKingstonsSellerPackState(selectedLead)
+    const profilePayload = buildKingstonsSellerPackProfilePayload(draft)
     try {
-      setError('')
-      setSellerPackUploadingKey('signed_fica_form:type')
-      const currentPack = getKingstonsSellerPackState(selectedLead)
+      setKingstonsSellerPackWizardSaving(true)
+      setKingstonsSellerPackWizardError('')
       await persistKingstonsSellerPack({
         ...currentPack,
-        sellerType,
-        ficaSellerType: sellerType,
+        sellerType: draft.sellerType,
+        ficaSellerType: draft.sellerType,
+        legalPath: profilePayload,
+        sellerLegalPath: profilePayload,
+        sellerPackProfile: profilePayload,
+        sellerPackDetailsCapturedAt: new Date().toISOString(),
+        maritalSetup: profilePayload.maritalSetup || '',
+        maritalRegime: profilePayload.maritalRegime || '',
+        spouseName: profilePayload.spouseName || '',
+        spouseIdNumber: profilePayload.spouseIdNumber || '',
+        spouseEmail: profilePayload.spouseEmail || '',
+        spousePhone: profilePayload.spousePhone || '',
+        juristicEntityType: profilePayload.juristicEntityType || '',
+        companyName: profilePayload.companyName || '',
+        companyRegistrationNumber: profilePayload.companyRegistrationNumber || '',
+        companyDirectors: profilePayload.companyDirectors || [],
+        trustName: profilePayload.trustName || '',
+        trustRegistrationNumber: profilePayload.trustRegistrationNumber || '',
+        trustees: profilePayload.trustees || [],
         documents: asRecord(currentPack.documents),
       }, {
-        successMessage: sellerType ? 'FICA seller type saved.' : 'FICA seller type cleared.',
-        activityNote: sellerType ? `FICA seller type set to ${sellerType === 'juristic' ? 'juristic person' : 'natural person'}.` : 'FICA seller type was cleared.',
-        outcome: 'FICA seller type',
+        successMessage: 'Seller Pack details saved. Continue with the uploads.',
+        activityNote: `Seller Pack legal details captured for ${getKingstonsSellerPackCaptureSummaryLabel(profilePayload)}.`,
+        outcome: 'Seller Pack details',
       })
-      setKingstonsSellerTypePickerOpen(false)
-    } catch (sellerTypeError) {
-      setError(sellerTypeError?.message || 'Unable to save the FICA seller type.')
+      setKingstonsSellerPackWizardOpen(false)
+      setLeadWorkspaceTab('documents')
+    } catch (sellerPackError) {
+      setKingstonsSellerPackWizardError(sellerPackError?.message || 'Unable to save the Seller Pack details.')
     } finally {
-      setSellerPackUploadingKey('')
+      setKingstonsSellerPackWizardSaving(false)
     }
   }
 
@@ -21430,18 +21703,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <>
                       <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]" data-testid="kingstons-seller-pack-overview">
                         <div className="border-b border-[#edf3f8] px-5 py-5 sm:px-6">
-                          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                            <div className="flex min-w-0 items-start gap-4">
+                          <div className="flex flex-wrap items-center justify-between gap-4">
+                            <div className="flex min-w-0 items-center gap-4">
                               <div className="grid h-14 w-14 shrink-0 place-items-center rounded-[18px] bg-[#fff4d9] text-[#8f6111] shadow-[0_10px_22px_rgba(143,97,17,0.12)]">
                                 <FileText className="h-6 w-6" />
                               </div>
                               <div className="min-w-0">
-                                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Seller Pack</p>
-                                <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#102033]">Upload the three signed documents required before the property can be listed.</h3>
-                                <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758b]" data-testid="kingstons-seller-pack-completion-rule">
-                                  Seller Pack completion requires all three uploaded files: {selectedKingstonsSellerPackSummary.requiredLabels.join(', ')}.
-                                </p>
-                                <p className="sr-only">Seller Pack completion requires all three uploaded files: Signed Mandate, Signed Defect Form, Signed FICA Form.</p>
+                                <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#102033]">Seller Pack</h3>
                               </div>
                             </div>
                             <div className={`inline-flex items-center gap-3 rounded-full border px-4 py-2.5 text-sm font-semibold ${selectedKingstonsSellerPackSummary.complete ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
@@ -21465,7 +21733,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             const isUploading = sellerPackUploadingKey === documentRow.key
                             const displayCopy = getKingstonsSellerPackDisplayCopy(documentRow)
                             const isFicaRow = documentRow.key === 'signed_fica_form'
-                            const sellerTypeDetails = KINGSTONS_FICA_SELLER_TYPE_DETAILS[selectedKingstonsSellerPack.sellerType] || null
                             const canUploadFica = !isFicaRow || selectedKingstonsSellerPackSummary.sellerTypeCaptured
                             return (
                               <article key={documentRow.key} className="flex min-h-[218px] flex-col rounded-[20px] border border-[#dce7f2] bg-[#fbfdff] p-4 shadow-[0_10px_24px_rgba(31,54,78,0.04)]">
@@ -21478,38 +21745,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 <h4 className="mt-4 text-sm font-semibold text-[#20364c]">{displayCopy.title}</h4>
                                 <p className="mt-1 min-h-10 text-xs leading-5 text-[#6d839b]">{displayCopy.description}</p>
                                 {isFicaRow ? (
-                                  <div className="mt-3 grid gap-2">
+                                  <div className="mt-3 rounded-[16px] border border-[#e4edf7] bg-white px-3 py-3">
+                                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">Seller details</p>
+                                    <p className="mt-1 text-sm leading-6 text-[#60758b]">
+                                      Capture the seller type, marital setup, and any company or trust authority details before uploading the signed FICA form.
+                                    </p>
                                     <button
                                       type="button"
-                                      className="flex h-11 w-full items-center justify-between gap-3 rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-left text-sm font-semibold text-[#20364c] transition hover:border-[#b8cadf] hover:bg-[#fcfdff]"
-                                      onClick={() => setKingstonsSellerTypePickerOpen(true)}
+                                      className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-sm font-semibold text-[#20364c] transition hover:border-[#b8cadf] hover:bg-[#fcfdff]"
+                                      onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')}
                                     >
-                                      <span className="flex min-w-0 items-center gap-2">
-                                        <UserRound className="h-4 w-4 shrink-0 text-[#68809a]" />
-                                        <span className="truncate">Seller type</span>
-                                      </span>
-                                      <span className="flex min-w-0 items-center gap-2 text-[#315b7a]">
-                                        <span className="truncate">{selectedKingstonsSellerPackSummary.sellerTypeCaptured ? selectedKingstonsSellerPackSummary.sellerTypeLabel : 'Choose type'}</span>
-                                        <ChevronDown className="h-4 w-4 shrink-0 text-[#97a9bb]" />
-                                      </span>
+                                      <UserRound className="h-4 w-4 shrink-0 text-[#68809a]" />
+                                      {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'Edit details' : 'Capture details'}
                                     </button>
-                                    <p className={`text-[0.72rem] font-semibold ${selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'text-[#60758b]' : 'text-[#8a641d]'}`}>
-                                      {selectedKingstonsSellerPackSummary.sellerTypeCaptured
-                                        ? sellerTypeDetails?.summary || 'Choose the seller type again if the legal setup changes.'
-                                        : 'Required before signed FICA upload and listing creation.'}
-                                    </p>
-                                    {sellerTypeDetails ? (
-                                      <div className="rounded-[14px] border border-[#e4edf7] bg-white px-3 py-2">
-                                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8aa0b7]">Relevant details</p>
-                                        <ul className="mt-2 space-y-1.5 text-xs leading-5 text-[#60758b]">
-                                          {sellerTypeDetails.details.map((item) => (
-                                            <li key={item} className="flex gap-2">
-                                              <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ab7d8]" />
-                                              <span>{item}</span>
-                                            </li>
-                                          ))}
-                                        </ul>
-                                      </div>
+                                    {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
+                                      <p className="mt-2 text-xs font-medium text-[#6d839b]">{getKingstonsSellerPackCaptureSummaryLabel(selectedKingstonsSellerPack)}</p>
                                     ) : null}
                                   </div>
                                 ) : null}
@@ -21518,7 +21768,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 </p>
                                 <label className={`mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border px-3 text-sm font-semibold transition ${canUploadFica && !isUploading ? 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]' : 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]'}`}>
                                   <Upload className="h-4 w-4" />
-                                  {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace file' : isFicaRow && !canUploadFica ? 'Choose type first' : 'Upload file'}
+                                  {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace file' : isFicaRow && !canUploadFica ? 'Capture details first' : 'Upload file'}
                                   <input
                                     type="file"
                                     className="sr-only"
@@ -21531,66 +21781,334 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             )
                           })}
                         </div>
-                        <div className={`border-y px-5 py-3 text-sm font-semibold sm:px-6 ${selectedKingstonsSellerPackSummary.complete ? 'border-[#d7eadf] bg-[#f4fbf6] text-[#25764a]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#8a641d]'}`} data-testid="kingstons-seller-pack-manual-completion-status">
-                          {selectedKingstonsSellerPackSummary.complete
-                            ? 'Manual Seller Pack complete. Listing can be prepared.'
-                            : `Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}`}
-                        </div>
-                        <div className="border-b border-[#edf3f8] px-5 py-3 sm:px-6" data-testid="kingstons-fica-seller-type-status">
-                          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
-                            FICA seller type: {selectedKingstonsSellerPackSummary.sellerTypeLabel}
-                          </span>
-                        </div>
                       </section>
                       <Modal
-                        open={kingstonsSellerTypePickerOpen}
-                        onClose={() => setKingstonsSellerTypePickerOpen(false)}
-                        title="Choose FICA seller type"
-                        subtitle="Pick the seller type once and we’ll keep the seller pack aligned to the right legal path."
+                        open={kingstonsSellerPackWizardOpen}
+                        onClose={closeKingstonsSellerPackWizard}
+                        title={kingstonsSellerPackWizardStep === 'details' ? 'Capture seller pack details' : 'Choose seller type'}
+                        subtitle="Capture the legal path once, then upload the signed Seller Pack documents from the documents tab."
                         className="max-w-[820px]"
                       >
-                        <div className="grid gap-4 md:grid-cols-2" data-testid="kingstons-fica-seller-type-picker">
-                          {KINGSTONS_FICA_SELLER_TYPE_OPTIONS.map((option) => {
-                            const detail = KINGSTONS_FICA_SELLER_TYPE_DETAILS[option.value] || {}
-                            const isSelected = normalizeKey(selectedKingstonsSellerPack.sellerType) === option.value
-                            return (
-                              <button
-                                key={option.value}
-                                type="button"
-                                className={`flex h-full min-h-[210px] flex-col rounded-[20px] border p-4 text-left transition ${
-                                  isSelected
-                                    ? 'border-[#9fc6f2] bg-[#f7fbff] shadow-[0_14px_30px_rgba(29,101,183,0.10)]'
-                                    : 'border-[#dbe7f3] bg-white hover:border-[#b8cadf] hover:bg-[#fcfdff]'
-                                }`}
-                                onClick={() => void handleKingstonsSellerPackSellerTypeChange(option.value)}
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Seller type</p>
-                                    <h4 className="mt-1 text-base font-semibold text-[#102033]">{detail.title || option.label}</h4>
+                        {kingstonsSellerPackWizardError ? (
+                          <p className="mb-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">
+                            {kingstonsSellerPackWizardError}
+                          </p>
+                        ) : null}
+                        {kingstonsSellerPackWizardStep === 'type' ? (
+                          <div className="grid gap-4 md:grid-cols-2" data-testid="kingstons-fica-seller-type-picker">
+                            {KINGSTONS_FICA_SELLER_TYPE_OPTIONS.map((option) => {
+                              const detail = KINGSTONS_FICA_SELLER_TYPE_DETAILS[option.value] || {}
+                              const isSelected = normalizeKey(kingstonsSellerPackWizardDraft?.sellerType) === option.value
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  className={`flex h-full min-h-[210px] flex-col rounded-[20px] border p-4 text-left transition ${
+                                    isSelected
+                                      ? 'border-[#9fc6f2] bg-[#f7fbff] shadow-[0_14px_30px_rgba(29,101,183,0.10)]'
+                                      : 'border-[#dbe7f3] bg-white hover:border-[#b8cadf] hover:bg-[#fcfdff]'
+                                  }`}
+                                  onClick={() => {
+                                    setKingstonsSellerPackWizardDraft((previous) => ({
+                                      ...(previous || buildKingstonsSellerPackProfileDraft(selectedKingstonsSellerPack)),
+                                      sellerType: option.value,
+                                    }))
+                                    setKingstonsSellerPackWizardStep('details')
+                                    setKingstonsSellerPackWizardError('')
+                                  }}
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Seller type</p>
+                                      <h4 className="mt-1 text-base font-semibold text-[#102033]">{detail.title || option.label}</h4>
+                                    </div>
+                                    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${isSelected ? 'border-[#9fc6f2] bg-white text-[#1d65b7]' : 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]'}`}>
+                                      {isSelected ? 'Selected' : 'Choose'}
+                                    </span>
                                   </div>
-                                  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${isSelected ? 'border-[#9fc6f2] bg-white text-[#1d65b7]' : 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]'}`}>
-                                    {isSelected ? 'Selected' : 'Choose'}
-                                  </span>
-                                </div>
-                                <p className="mt-3 text-sm leading-6 text-[#60758b]">
-                                  {detail.summary || option.label}
-                                </p>
-                                <ul className="mt-4 space-y-2 text-sm leading-6 text-[#60758b]">
-                                  {(detail.details || []).map((item) => (
-                                    <li key={item} className="flex gap-2">
-                                      <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ab7d8]" />
-                                      <span>{item}</span>
-                                    </li>
-                                  ))}
-                                </ul>
+                                  <p className="mt-3 text-sm leading-6 text-[#60758b]">
+                                    {detail.summary || option.label}
+                                  </p>
+                                  <ul className="mt-4 space-y-2 text-sm leading-6 text-[#60758b]">
+                                    {(detail.details || []).map((item) => (
+                                      <li key={item} className="flex gap-2">
+                                        <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ab7d8]" />
+                                        <span>{item}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        ) : null}
+
+                        {kingstonsSellerPackWizardStep === 'details' ? (
+                          <div className="space-y-5">
+                            <div className="grid gap-3 rounded-[18px] border border-[#e4edf7] bg-[#fbfdff] p-4 md:grid-cols-[repeat(2,minmax(0,1fr))]">
+                              <button
+                                type="button"
+                                className={`rounded-[14px] border px-4 py-3 text-left transition ${normalizeKey(kingstonsSellerPackWizardDraft?.sellerType) === 'natural' ? 'border-[#9fc6f2] bg-white shadow-[0_14px_30px_rgba(29,101,183,0.10)]' : 'border-[#dbe7f3] bg-white hover:border-[#b8cadf]'}`}
+                                onClick={() => {
+                                  updateKingstonsSellerPackWizardDraftField('sellerType', 'natural')
+                                  setKingstonsSellerPackWizardStep('details')
+                                }}
+                              >
+                                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Seller type</p>
+                                <h4 className="mt-1 text-base font-semibold text-[#102033]">Natural person</h4>
+                                <p className="mt-2 text-sm leading-6 text-[#60758b]">Use this for an individual seller and capture the marital setup that affects signing.</p>
                               </button>
-                            )
-                          })}
+                              <button
+                                type="button"
+                                className={`rounded-[14px] border px-4 py-3 text-left transition ${normalizeKey(kingstonsSellerPackWizardDraft?.sellerType) === 'juristic' ? 'border-[#9fc6f2] bg-white shadow-[0_14px_30px_rgba(29,101,183,0.10)]' : 'border-[#dbe7f3] bg-white hover:border-[#b8cadf]'}`}
+                                onClick={() => {
+                                  updateKingstonsSellerPackWizardDraftField('sellerType', 'juristic')
+                                  setKingstonsSellerPackWizardStep('details')
+                                }}
+                              >
+                                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Seller type</p>
+                                <h4 className="mt-1 text-base font-semibold text-[#102033]">Juristic person</h4>
+                                <p className="mt-2 text-sm leading-6 text-[#60758b]">Use this for companies, close corporations, and trusts with authority details.</p>
+                              </button>
+                            </div>
+
+                            {normalizeKey(kingstonsSellerPackWizardDraft?.sellerType) === 'natural' ? (
+                              <div className="space-y-4 rounded-[18px] border border-[#e4edf7] bg-[#fbfdff] p-4">
+                                <div>
+                                  <h4 className="text-base font-semibold text-[#102033]">Marital setup</h4>
+                                  <p className="mt-1 text-sm leading-6 text-[#60758b]">We only ask for the spouse details that the legal path actually needs.</p>
+                                </div>
+                                <div className="grid gap-3 md:grid-cols-2">
+                                  {KINGSTONS_FICA_NATURAL_SETUP_OPTIONS.map((option) => {
+                                    const isSelected = normalizeKey(kingstonsSellerPackWizardDraft?.naturalSetup) === option.value
+                                    return (
+                                      <button
+                                        key={option.value}
+                                        type="button"
+                                        className={`rounded-[14px] border px-4 py-3 text-left transition ${isSelected ? 'border-[#9fc6f2] bg-white shadow-[0_14px_30px_rgba(29,101,183,0.10)]' : 'border-[#dbe7f3] bg-white hover:border-[#b8cadf]'}`}
+                                        onClick={() => updateKingstonsSellerPackWizardDraftField('naturalSetup', option.value)}
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <h5 className="text-sm font-semibold text-[#102033]">{option.label}</h5>
+                                          <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${isSelected ? 'border-[#9fc6f2] bg-[#f7fbff] text-[#1d65b7]' : 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]'}`}>
+                                            {isSelected ? 'Selected' : 'Choose'}
+                                          </span>
+                                        </div>
+                                        <p className="mt-2 text-sm leading-6 text-[#60758b]">{option.description}</p>
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+
+                                {normalizeKey(kingstonsSellerPackWizardDraft?.naturalSetup) === 'in_community' || normalizeKey(kingstonsSellerPackWizardDraft?.naturalSetup) === 'anc' ? (
+                                  <div className="rounded-[16px] border border-[#dbe6f2] bg-white p-4">
+                                    <div className="flex items-start gap-3">
+                                      <ShieldCheck className="mt-0.5 h-4 w-4 text-[#35546c]" />
+                                      <div>
+                                        <h5 className="text-sm font-semibold text-[#22364a]">Spouse details</h5>
+                                        <p className="mt-1 text-sm leading-6 text-[#60758b]">
+                                          {normalizeKey(kingstonsSellerPackWizardDraft?.naturalSetup) === 'in_community'
+                                            ? 'Capture the spouse details now because they often need to appear in the signing path.'
+                                            : 'Capture the spouse details if they will need to appear on the file or sign with the seller.'}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                        Spouse name
+                                        <Field
+                                          value={kingstonsSellerPackWizardDraft?.spouseName || ''}
+                                          onChange={(event) => updateKingstonsSellerPackWizardDraftField('spouseName', event.target.value)}
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                        Spouse ID number
+                                        <Field
+                                          value={kingstonsSellerPackWizardDraft?.spouseIdNumber || ''}
+                                          onChange={(event) => updateKingstonsSellerPackWizardDraftField('spouseIdNumber', event.target.value)}
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                        Spouse email
+                                        <Field
+                                          type="email"
+                                          inputMode="email"
+                                          value={kingstonsSellerPackWizardDraft?.spouseEmail || ''}
+                                          onChange={(event) => updateKingstonsSellerPackWizardDraftField('spouseEmail', event.target.value)}
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                        Spouse phone
+                                        <Field
+                                          type="tel"
+                                          inputMode="tel"
+                                          value={kingstonsSellerPackWizardDraft?.spousePhone || ''}
+                                          onChange={(event) => updateKingstonsSellerPackWizardDraftField('spousePhone', event.target.value)}
+                                        />
+                                      </label>
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+
+                            {normalizeKey(kingstonsSellerPackWizardDraft?.sellerType) === 'juristic' ? (
+                              <div className="space-y-4 rounded-[18px] border border-[#e4edf7] bg-[#fbfdff] p-4">
+                                <div>
+                                  <h4 className="text-base font-semibold text-[#102033]">Entity type</h4>
+                                  <p className="mt-1 text-sm leading-6 text-[#60758b]">Choose the legal wrapper, then we’ll capture the matching authority details.</p>
+                                </div>
+                                <div className="grid gap-3 md:grid-cols-3">
+                                  {KINGSTONS_FICA_JURISTIC_ENTITY_OPTIONS.map((option) => {
+                                    const isSelected = normalizeKey(kingstonsSellerPackWizardDraft?.juristicEntityType) === option.value
+                                    return (
+                                      <button
+                                        key={option.value}
+                                        type="button"
+                                        className={`rounded-[14px] border px-4 py-3 text-left transition ${isSelected ? 'border-[#9fc6f2] bg-white shadow-[0_14px_30px_rgba(29,101,183,0.10)]' : 'border-[#dbe7f3] bg-white hover:border-[#b8cadf]'}`}
+                                        onClick={() => updateKingstonsSellerPackWizardDraftField('juristicEntityType', option.value)}
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <h5 className="text-sm font-semibold text-[#102033]">{option.label}</h5>
+                                          <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${isSelected ? 'border-[#9fc6f2] bg-[#f7fbff] text-[#1d65b7]' : 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]'}`}>
+                                            {isSelected ? 'Selected' : 'Choose'}
+                                          </span>
+                                        </div>
+                                        <p className="mt-2 text-sm leading-6 text-[#60758b]">{option.description}</p>
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+
+                                {normalizeKey(kingstonsSellerPackWizardDraft?.juristicEntityType) === 'company' ? (
+                                  <div className="rounded-[16px] border border-[#dbe6f2] bg-white p-4">
+                                    <h5 className="text-sm font-semibold text-[#22364a]">Company details</h5>
+                                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                        Company name
+                                        <Field
+                                          value={kingstonsSellerPackWizardDraft?.companyName || ''}
+                                          onChange={(event) => updateKingstonsSellerPackWizardDraftField('companyName', event.target.value)}
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                        Registration number
+                                        <Field
+                                          value={kingstonsSellerPackWizardDraft?.companyRegistrationNumber || ''}
+                                          onChange={(event) => updateKingstonsSellerPackWizardDraftField('companyRegistrationNumber', event.target.value)}
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                                        Directors
+                                        <Field
+                                          as="textarea"
+                                          rows={3}
+                                          className="min-h-[112px] rounded-[12px] px-3 py-3 text-sm font-medium leading-6"
+                                          placeholder="List directors one per line"
+                                          value={kingstonsSellerPackWizardDraft?.companyDirectorsText || ''}
+                                          onChange={(event) => updateKingstonsSellerPackWizardDraftField('companyDirectorsText', event.target.value)}
+                                        />
+                                      </label>
+                                    </div>
+                                  </div>
+                                ) : null}
+
+                                {normalizeKey(kingstonsSellerPackWizardDraft?.juristicEntityType) === 'trust' ? (
+                                  <div className="rounded-[16px] border border-[#dbe6f2] bg-white p-4">
+                                    <h5 className="text-sm font-semibold text-[#22364a]">Trust details</h5>
+                                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                        Trust name
+                                        <Field
+                                          value={kingstonsSellerPackWizardDraft?.trustName || ''}
+                                          onChange={(event) => updateKingstonsSellerPackWizardDraftField('trustName', event.target.value)}
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                        Registration number
+                                        <Field
+                                          value={kingstonsSellerPackWizardDraft?.trustRegistrationNumber || ''}
+                                          onChange={(event) => updateKingstonsSellerPackWizardDraftField('trustRegistrationNumber', event.target.value)}
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                                        Trustees
+                                        <Field
+                                          as="textarea"
+                                          rows={3}
+                                          className="min-h-[112px] rounded-[12px] px-3 py-3 text-sm font-medium leading-6"
+                                          placeholder="List trustees one per line"
+                                          value={kingstonsSellerPackWizardDraft?.trustTrusteesText || ''}
+                                          onChange={(event) => updateKingstonsSellerPackWizardDraftField('trustTrusteesText', event.target.value)}
+                                        />
+                                      </label>
+                                    </div>
+                                  </div>
+                                ) : null}
+
+                                {normalizeKey(kingstonsSellerPackWizardDraft?.juristicEntityType) === 'close_corporation' ? (
+                                  <div className="rounded-[16px] border border-[#dbe6f2] bg-white p-4">
+                                    <h5 className="text-sm font-semibold text-[#22364a]">Close corporation details</h5>
+                                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                        Entity name
+                                        <Field
+                                          value={kingstonsSellerPackWizardDraft?.companyName || kingstonsSellerPackWizardDraft?.trustName || ''}
+                                          onChange={(event) => updateKingstonsSellerPackWizardDraftField('companyName', event.target.value)}
+                                        />
+                                      </label>
+                                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                        Registration number
+                                        <Field
+                                          value={kingstonsSellerPackWizardDraft?.companyRegistrationNumber || kingstonsSellerPackWizardDraft?.trustRegistrationNumber || ''}
+                                          onChange={(event) => updateKingstonsSellerPackWizardDraftField('companyRegistrationNumber', event.target.value)}
+                                        />
+                                      </label>
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+
+                            <div className="rounded-[16px] border border-[#e4edf7] bg-[#f8fbff] px-4 py-4">
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">Saved path</p>
+                              <p className="mt-1 text-sm font-semibold text-[#20364c]">{getKingstonsSellerPackCaptureSummaryLabel(kingstonsSellerPackWizardDraft || selectedKingstonsSellerPack)}</p>
+                              <p className="mt-1 text-sm leading-6 text-[#60758b]">
+                                {normalizeKey(kingstonsSellerPackWizardDraft?.sellerType) === 'natural'
+                                  ? 'We’ll keep the seller pack aligned to the relevant personal signing path.'
+                                  : 'We’ll keep the seller pack aligned to the relevant company, trust, or authorised signatory path.'}
+                              </p>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#edf3f8] pt-4">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className="rounded-[12px]"
+                            onClick={() => {
+                              if (kingstonsSellerPackWizardStep === 'details' && kingstonsSellerPackWizardDraft?.sellerType) {
+                                setKingstonsSellerPackWizardStep('type')
+                                return
+                              }
+                              closeKingstonsSellerPackWizard()
+                            }}
+                            disabled={kingstonsSellerPackWizardSaving}
+                          >
+                            {kingstonsSellerPackWizardStep === 'details' && kingstonsSellerPackWizardDraft?.sellerType ? 'Back' : 'Cancel'}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="rounded-[12px]"
+                            onClick={() => void handleKingstonsSellerPackWizardSave()}
+                            disabled={kingstonsSellerPackWizardSaving}
+                          >
+                            {kingstonsSellerPackWizardSaving ? 'Saving...' : 'Save & Continue'}
+                          </Button>
                         </div>
-                        <p className="mt-4 text-sm leading-6 text-[#60758b]">
-                          Natural person usually needs marital details and, where relevant, spouse consent. Juristic person usually needs company, close corporation, or trust authority details.
-                        </p>
                       </Modal>
                       </>
                     ) : null}
@@ -25134,7 +25652,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           {[
                             ['Download Seller Summary', FileText, () => setLeadWorkspaceTab('documents')],
                             ...(selectedLeadHasKingstonsPipelineSignal
-                              ? [['Upload Seller Pack', Upload, () => setLeadWorkspaceTab('documents')]]
+                              ? [['Upload Seller Pack', Upload, () => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')]]
                               : [['Generate PDF', FileText, () => handleSellerJourneyAction('view_mandate')]]),
                             ['Email Seller', Mail, () => {
                               const email = normalizeText(selectedLeadContact?.email || selectedLead?.email)
@@ -25524,24 +26042,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                   <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">Seller Pack</p>
-                                  <h5 className="mt-1 text-base font-semibold text-[#20364c]">Upload the three signed documents required before the property can be listed.</h5>
-                                  <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758b]" data-testid="kingstons-seller-pack-documents-completion-rule">
-                                    Upload the three signed documents required before the property can be listed.
-                                  </p>
-                                  <p className="sr-only">Manual completion requires uploaded files for {selectedKingstonsSellerPackSummary.requiredLabels.join(', ')}.</p>
+                                  <h5 className="mt-1 text-base font-semibold text-[#20364c]">Seller Pack</h5>
                                 </div>
                                 <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${selectedKingstonsSellerPackSummary.complete ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
                                   {selectedKingstonsSellerPackSummary.completed}/{selectedKingstonsSellerPackSummary.total} ready
-                                </span>
-                              </div>
-                              <div className={`mt-3 rounded-[14px] border px-3 py-2 text-sm font-semibold ${selectedKingstonsSellerPackSummary.complete ? 'border-[#d7eadf] bg-[#f4fbf6] text-[#25764a]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#8a641d]'}`} data-testid="kingstons-seller-pack-documents-manual-completion-status">
-                                {selectedKingstonsSellerPackSummary.complete
-                                  ? 'Manual Seller Pack complete.'
-                                  : `Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}`}
-                              </div>
-                              <div className="mt-3" data-testid="kingstons-documents-fica-seller-type-status">
-                                <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
-                                  FICA seller type: {selectedKingstonsSellerPackSummary.sellerTypeLabel}
                                 </span>
                               </div>
                               <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -25568,31 +26072,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       </div>
                                       <p className="mt-3 text-xs leading-5 text-[#60758b]">{displayCopy.description}</p>
                                       {documentRow.key === 'signed_fica_form' ? (
-                                        <div className="mt-3 grid gap-2">
+                                        <div className="mt-3 rounded-[16px] border border-[#e4edf7] bg-white px-3 py-3">
+                                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">Seller details</p>
+                                          <p className="mt-1 text-sm leading-6 text-[#60758b]">
+                                            Capture the legal-path details before you upload the signed FICA form.
+                                          </p>
                                           <button
                                             type="button"
-                                            className="flex h-11 w-full items-center justify-between gap-3 rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-left text-sm font-semibold text-[#20364c] transition hover:border-[#b8cadf] hover:bg-[#fcfdff]"
-                                            onClick={() => setKingstonsSellerTypePickerOpen(true)}
+                                            className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-sm font-semibold text-[#20364c] transition hover:border-[#b8cadf] hover:bg-[#fcfdff]"
+                                            onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')}
                                           >
-                                            <span className="flex min-w-0 items-center gap-2">
-                                              <UserRound className="h-4 w-4 shrink-0 text-[#68809a]" />
-                                              <span className="truncate">Seller type</span>
-                                            </span>
-                                            <span className="flex min-w-0 items-center gap-2 text-[#315b7a]">
-                                              <span className="truncate">{selectedKingstonsSellerPackSummary.sellerTypeCaptured ? selectedKingstonsSellerPackSummary.sellerTypeLabel : 'Choose type'}</span>
-                                              <ChevronDown className="h-4 w-4 shrink-0 text-[#97a9bb]" />
-                                            </span>
+                                            <UserRound className="h-4 w-4 shrink-0 text-[#68809a]" />
+                                            {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'Edit details' : 'Capture details'}
                                           </button>
-                                          <p className={`text-[0.72rem] font-semibold ${selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'text-[#60758b]' : 'text-[#8a641d]'}`}>
-                                            {selectedKingstonsSellerPackSummary.sellerTypeCaptured
-                                              ? (KINGSTONS_FICA_SELLER_TYPE_DETAILS[selectedKingstonsSellerPack.sellerType]?.summary || 'Choose the seller type again if the legal setup changes.')
-                                              : 'Required before signed FICA upload and listing creation.'}
-                                          </p>
+                                          {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
+                                            <p className="mt-2 text-xs font-medium text-[#6d839b]">{getKingstonsSellerPackCaptureSummaryLabel(selectedKingstonsSellerPack)}</p>
+                                          ) : null}
                                         </div>
                                       ) : null}
                                       <label className="mt-3 inline-flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#cfdceb] bg-white px-3 text-sm font-semibold text-[#315b7a] transition hover:border-[#a9bfd6]">
                                         <Upload className="h-4 w-4" />
-                                        {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace file' : documentRow.key === 'signed_fica_form' && !selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'Choose type first' : 'Upload file'}
+                                        {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace file' : documentRow.key === 'signed_fica_form' && !selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'Capture details first' : 'Upload file'}
                                         <input
                                           type="file"
                                           className="sr-only"
