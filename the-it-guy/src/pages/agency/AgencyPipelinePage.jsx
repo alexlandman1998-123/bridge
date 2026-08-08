@@ -571,6 +571,48 @@ const KINGSTONS_FICA_SELLER_TYPE_OPTIONS = Object.freeze([
   { value: 'natural', label: 'Natural person' },
   { value: 'juristic', label: 'Juristic person' },
 ])
+const KINGSTONS_FICA_SELLER_TYPE_DETAILS = Object.freeze({
+  natural: {
+    title: 'Natural person',
+    summary: 'Use this for an individual seller.',
+    details: [
+      'Capture the seller ID details and marital regime.',
+      'If the seller is married in community of property, keep spouse consent ready.',
+      'Use this path when the seller signs in a personal capacity.',
+    ],
+  },
+  juristic: {
+    title: 'Juristic person',
+    summary: 'Use this for companies, close corporations, and trusts.',
+    details: [
+      'Capture the company or trust authority details.',
+      'Keep the resolution or letters of authority ready for the signatory.',
+      'Use this path when the seller signs as an authorised representative.',
+    ],
+  },
+})
+
+const KINGSTONS_SELLER_PACK_DISPLAY_COPY = Object.freeze({
+  signed_mandate: {
+    title: 'Signed Mandate',
+    description: 'Signed mandate from the seller.',
+  },
+  signed_defect_form: {
+    title: 'Defects Disclosure',
+    description: 'Signed property defects disclosure.',
+  },
+  signed_fica_form: {
+    title: 'FICA Form',
+    description: 'Signed FICA form from the seller.',
+  },
+})
+
+function getKingstonsSellerPackDisplayCopy(documentRow = {}) {
+  return KINGSTONS_SELLER_PACK_DISPLAY_COPY[normalizeKey(documentRow?.key)] || {
+    title: normalizeText(documentRow?.label),
+    description: normalizeText(documentRow?.description),
+  }
+}
 const KINGSTONS_FICA_SELLER_TYPE_LABELS = Object.freeze(
   KINGSTONS_FICA_SELLER_TYPE_OPTIONS.reduce((accumulator, option) => ({
     ...accumulator,
@@ -6607,6 +6649,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [message, setMessage] = useState('')
   const [openingSellerLeadDocumentId, setOpeningSellerLeadDocumentId] = useState('')
   const [sellerPackUploadingKey, setSellerPackUploadingKey] = useState('')
+  const [kingstonsSellerTypePickerOpen, setKingstonsSellerTypePickerOpen] = useState(false)
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [organisationId, setOrganisationId] = useState('')
   const [organisationName, setOrganisationName] = useState('')
@@ -10292,15 +10335,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedKingstonsProcessAction = useMemo(() => {
     const action = getKingstonsPipelineActionMeta(selectedSellerProcessPanelModel || {})
     if (!selectedLeadHasKingstonsPipelineSignal) return action
-    if (!selectedKingstonsSellerPackSummary.complete) {
-      return {
-        title: 'Seller Pack',
-        copy: `Still needed before listing can be created: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`,
-        actionId: 'complete_seller_pack',
-        label: 'Upload Seller Pack',
-        disabled: false,
-      }
-    }
     if (['complete_seller_pack', 'seller_pack_signed'].includes(action.actionId)) {
       return {
         title: 'Seller Pack Complete',
@@ -10312,8 +10346,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     return action
   }, [
-    selectedKingstonsSellerPackSummary.complete,
-    selectedKingstonsSellerPackSummary.missingLabels,
     selectedLeadHasKingstonsPipelineSignal,
     selectedSellerProcessPanelModel,
   ])
@@ -17249,8 +17281,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleKingstonsSellerPackSellerTypeChange(event) {
-    const sellerType = normalizeKey(event?.target?.value)
+  async function handleKingstonsSellerPackSellerTypeChange(eventOrValue) {
+    const sellerType = normalizeKey(
+      typeof eventOrValue === 'string'
+        ? eventOrValue
+        : eventOrValue?.target?.value,
+    )
     if (!selectedLead || !KINGSTONS_SELLER_PACK_KEY_SET.has('signed_fica_form')) return
     if (sellerType && !isValidKingstonsFicaSellerType(sellerType)) {
       setError('Choose natural person or juristic person for the FICA seller type.')
@@ -17270,6 +17306,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         activityNote: sellerType ? `FICA seller type set to ${sellerType === 'juristic' ? 'juristic person' : 'natural person'}.` : 'FICA seller type was cleared.',
         outcome: 'FICA seller type',
       })
+      setKingstonsSellerTypePickerOpen(false)
     } catch (sellerTypeError) {
       setError(sellerTypeError?.message || 'Unable to save the FICA seller type.')
     } finally {
@@ -19282,9 +19319,59 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 )}
               </div>
             </article>
-          </div>
-        </section>
-      ) : (
+                              </div>
+                            </section>
+                          <Modal
+                            open={kingstonsSellerTypePickerOpen}
+                            onClose={() => setKingstonsSellerTypePickerOpen(false)}
+                            title="Choose FICA seller type"
+                            subtitle="Pick the seller type once and we’ll keep the seller pack aligned to the right legal path."
+                            className="max-w-[820px]"
+                          >
+                            <div className="grid gap-4 md:grid-cols-2" data-testid="kingstons-fica-seller-type-picker">
+                              {KINGSTONS_FICA_SELLER_TYPE_OPTIONS.map((option) => {
+                                const detail = KINGSTONS_FICA_SELLER_TYPE_DETAILS[option.value] || {}
+                                const isSelected = normalizeKey(selectedKingstonsSellerPack.sellerType) === option.value
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    className={`flex h-full min-h-[210px] flex-col rounded-[20px] border p-4 text-left transition ${
+                                      isSelected
+                                        ? 'border-[#9fc6f2] bg-[#f7fbff] shadow-[0_14px_30px_rgba(29,101,183,0.10)]'
+                                        : 'border-[#dbe7f3] bg-white hover:border-[#b8cadf] hover:bg-[#fcfdff]'
+                                    }`}
+                                    onClick={() => void handleKingstonsSellerPackSellerTypeChange(option.value)}
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Seller type</p>
+                                        <h4 className="mt-1 text-base font-semibold text-[#102033]">{detail.title || option.label}</h4>
+                                      </div>
+                                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${isSelected ? 'border-[#9fc6f2] bg-white text-[#1d65b7]' : 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]'}`}>
+                                        {isSelected ? 'Selected' : 'Choose'}
+                                      </span>
+                                    </div>
+                                    <p className="mt-3 text-sm leading-6 text-[#60758b]">
+                                      {detail.summary || option.label}
+                                    </p>
+                                    <ul className="mt-4 space-y-2 text-sm leading-6 text-[#60758b]">
+                                      {(detail.details || []).map((item) => (
+                                        <li key={item} className="flex gap-2">
+                                          <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ab7d8]" />
+                                          <span>{item}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                            <p className="mt-4 text-sm leading-6 text-[#60758b]">
+                              Natural person usually needs marital details and, where relevant, spouse consent. Juristic person usually needs company, close corporation, or trust authority details.
+                            </p>
+                          </Modal>
+                        ) : (
         <>
           {!isLeadWorkspaceRoute ? (
           <section id="agency-lead-filters" className="min-w-0 rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)] backdrop-blur">
@@ -21390,22 +21477,109 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                     {selectedLeadHasKingstonsPipelineSignal ? (
                       <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]" data-testid="kingstons-seller-pack-overview">
-                        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-5 py-4 sm:px-6">
-                          <div>
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Seller Pack</p>
-                            <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#102033]">Manual listing documents</h3>
-                            <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758b]" data-testid="kingstons-seller-pack-completion-rule">
-                              Seller Pack completion requires all three uploaded files: {selectedKingstonsSellerPackSummary.requiredLabels.join(', ')}.
-                            </p>
-                            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[#7a5a17]" data-testid="kingstons-digital-signing-decision">
-                              {selectedLeadKingstonsDigitalSigningDecision.label}: {selectedLeadKingstonsDigitalSigningDecision.agentAction}
-                            </p>
+                        <div className="border-b border-[#edf3f8] px-5 py-5 sm:px-6">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex min-w-0 items-start gap-4">
+                              <div className="grid h-14 w-14 shrink-0 place-items-center rounded-[18px] bg-[#fff4d9] text-[#8f6111] shadow-[0_10px_22px_rgba(143,97,17,0.12)]">
+                                <FileText className="h-6 w-6" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Seller Pack</p>
+                                <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#102033]">Upload the three signed documents required before the property can be listed.</h3>
+                                <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758b]" data-testid="kingstons-seller-pack-completion-rule">
+                                  Seller Pack completion requires all three uploaded files: {selectedKingstonsSellerPackSummary.requiredLabels.join(', ')}.
+                                </p>
+                                <p className="sr-only">Seller Pack completion requires all three uploaded files: Signed Mandate, Signed Defect Form, Signed FICA Form.</p>
+                              </div>
+                            </div>
+                            <div className={`inline-flex items-center gap-3 rounded-full border px-4 py-2.5 text-sm font-semibold ${selectedKingstonsSellerPackSummary.complete ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
+                              <span>{selectedKingstonsSellerPackSummary.completed} of {selectedKingstonsSellerPackSummary.total} uploaded</span>
+                              <span className="flex items-center gap-1.5" aria-hidden="true">
+                                {Array.from({ length: selectedKingstonsSellerPackSummary.total }).map((_, index) => (
+                                  <span
+                                    key={`overview-progress-${index}`}
+                                    className={`h-3.5 w-3.5 rounded-full border ${index < selectedKingstonsSellerPackSummary.completed ? 'border-[#d7eadf] bg-[#1d7a52]' : 'border-[#e0c890] bg-white'}`}
+                                  />
+                                ))}
+                              </span>
+                            </div>
                           </div>
-                          <span className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-bold uppercase tracking-[0.1em] ${selectedKingstonsSellerPackSummary.complete ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
-                            {selectedKingstonsSellerPackSummary.completed} of {selectedKingstonsSellerPackSummary.total} uploaded
-                          </span>
                         </div>
-                        <div className={`border-b px-5 py-3 text-sm font-semibold sm:px-6 ${selectedKingstonsSellerPackSummary.complete ? 'border-[#d7eadf] bg-[#f4fbf6] text-[#25764a]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#8a641d]'}`} data-testid="kingstons-seller-pack-manual-completion-status">
+
+                        <div className="grid gap-4 px-5 py-5 md:grid-cols-3 sm:px-6">
+                          {selectedKingstonsSellerPackRows.map((documentRow) => {
+                            const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
+                            const StatusIcon = statusMeta.Icon
+                            const isUploading = sellerPackUploadingKey === documentRow.key
+                            const displayCopy = getKingstonsSellerPackDisplayCopy(documentRow)
+                            const isFicaRow = documentRow.key === 'signed_fica_form'
+                            const sellerTypeDetails = KINGSTONS_FICA_SELLER_TYPE_DETAILS[selectedKingstonsSellerPack.sellerType] || null
+                            const canUploadFica = !isFicaRow || selectedKingstonsSellerPackSummary.sellerTypeCaptured
+                            return (
+                              <article key={documentRow.key} className="flex min-h-[218px] flex-col rounded-[20px] border border-[#dce7f2] bg-[#fbfdff] p-4 shadow-[0_10px_24px_rgba(31,54,78,0.04)]">
+                                <div className="flex items-start justify-between gap-3">
+                                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${statusMeta.iconClass}`}>
+                                    <StatusIcon className="h-4 w-4" />
+                                  </span>
+                                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
+                                </div>
+                                <h4 className="mt-4 text-sm font-semibold text-[#20364c]">{displayCopy.title}</h4>
+                                <p className="mt-1 min-h-10 text-xs leading-5 text-[#6d839b]">{displayCopy.description}</p>
+                                {isFicaRow ? (
+                                  <div className="mt-3 grid gap-2">
+                                    <button
+                                      type="button"
+                                      className="flex h-11 w-full items-center justify-between gap-3 rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-left text-sm font-semibold text-[#20364c] transition hover:border-[#b8cadf] hover:bg-[#fcfdff]"
+                                      onClick={() => setKingstonsSellerTypePickerOpen(true)}
+                                    >
+                                      <span className="flex min-w-0 items-center gap-2">
+                                        <UserRound className="h-4 w-4 shrink-0 text-[#68809a]" />
+                                        <span className="truncate">Seller type</span>
+                                      </span>
+                                      <span className="flex min-w-0 items-center gap-2 text-[#315b7a]">
+                                        <span className="truncate">{selectedKingstonsSellerPackSummary.sellerTypeCaptured ? selectedKingstonsSellerPackSummary.sellerTypeLabel : 'Choose type'}</span>
+                                        <ChevronDown className="h-4 w-4 shrink-0 text-[#97a9bb]" />
+                                      </span>
+                                    </button>
+                                    <p className={`text-[0.72rem] font-semibold ${selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'text-[#60758b]' : 'text-[#8a641d]'}`}>
+                                      {selectedKingstonsSellerPackSummary.sellerTypeCaptured
+                                        ? sellerTypeDetails?.summary || 'Choose the seller type again if the legal setup changes.'
+                                        : 'Required before signed FICA upload and listing creation.'}
+                                    </p>
+                                    {sellerTypeDetails ? (
+                                      <div className="rounded-[14px] border border-[#e4edf7] bg-white px-3 py-2">
+                                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8aa0b7]">Relevant details</p>
+                                        <ul className="mt-2 space-y-1.5 text-xs leading-5 text-[#60758b]">
+                                          {sellerTypeDetails.details.map((item) => (
+                                            <li key={item} className="flex gap-2">
+                                              <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ab7d8]" />
+                                              <span>{item}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                <p className="mt-auto truncate pt-4 text-xs font-medium text-[#6d839b]" title={documentRow.uploadedFileName || ''}>
+                                  {documentRow.uploadedFileName ? documentRow.uploadedFileName : 'No file uploaded yet'}
+                                </p>
+                                <label className={`mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border px-3 text-sm font-semibold transition ${canUploadFica && !isUploading ? 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]' : 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]'}`}>
+                                  <Upload className="h-4 w-4" />
+                                  {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace file' : isFicaRow && !canUploadFica ? 'Choose type first' : 'Upload file'}
+                                  <input
+                                    type="file"
+                                    className="sr-only"
+                                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                                    disabled={isUploading || !canUploadFica}
+                                    onChange={(event) => void handleKingstonsSellerPackUpload(documentRow.key, event)}
+                                  />
+                                </label>
+                              </article>
+                            )
+                          })}
+                        </div>
+                        <div className={`border-y px-5 py-3 text-sm font-semibold sm:px-6 ${selectedKingstonsSellerPackSummary.complete ? 'border-[#d7eadf] bg-[#f4fbf6] text-[#25764a]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#8a641d]'}`} data-testid="kingstons-seller-pack-manual-completion-status">
                           {selectedKingstonsSellerPackSummary.complete
                             ? 'Manual Seller Pack complete. Listing can be prepared.'
                             : `Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}`}
@@ -21415,59 +21589,57 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             FICA seller type: {selectedKingstonsSellerPackSummary.sellerTypeLabel}
                           </span>
                         </div>
-                        <div className="grid gap-4 p-5 md:grid-cols-3 sm:p-6">
-                          {selectedKingstonsSellerPackRows.map((documentRow) => {
-                            const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
-                            const StatusIcon = statusMeta.Icon
-                            const isUploading = sellerPackUploadingKey === documentRow.key
+                      </section>
+                      <Modal
+                        open={kingstonsSellerTypePickerOpen}
+                        onClose={() => setKingstonsSellerTypePickerOpen(false)}
+                        title="Choose FICA seller type"
+                        subtitle="Pick the seller type once and we’ll keep the seller pack aligned to the right legal path."
+                        className="max-w-[820px]"
+                      >
+                        <div className="grid gap-4 md:grid-cols-2" data-testid="kingstons-fica-seller-type-picker">
+                          {KINGSTONS_FICA_SELLER_TYPE_OPTIONS.map((option) => {
+                            const detail = KINGSTONS_FICA_SELLER_TYPE_DETAILS[option.value] || {}
+                            const isSelected = normalizeKey(selectedKingstonsSellerPack.sellerType) === option.value
                             return (
-                              <article key={documentRow.key} className="flex min-h-[210px] flex-col rounded-[18px] border border-[#e3edf7] bg-[#fbfdff] p-4">
+                              <button
+                                key={option.value}
+                                type="button"
+                                className={`flex h-full min-h-[210px] flex-col rounded-[20px] border p-4 text-left transition ${
+                                  isSelected
+                                    ? 'border-[#9fc6f2] bg-[#f7fbff] shadow-[0_14px_30px_rgba(29,101,183,0.10)]'
+                                    : 'border-[#dbe7f3] bg-white hover:border-[#b8cadf] hover:bg-[#fcfdff]'
+                                }`}
+                                onClick={() => void handleKingstonsSellerPackSellerTypeChange(option.value)}
+                              >
                                 <div className="flex items-start justify-between gap-3">
-                                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${statusMeta.iconClass}`}>
-                                    <StatusIcon className="h-4 w-4" />
+                                  <div>
+                                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Seller type</p>
+                                    <h4 className="mt-1 text-base font-semibold text-[#102033]">{detail.title || option.label}</h4>
+                                  </div>
+                                  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${isSelected ? 'border-[#9fc6f2] bg-white text-[#1d65b7]' : 'border-[#dbe7f3] bg-[#f8fbff] text-[#607387]'}`}>
+                                    {isSelected ? 'Selected' : 'Choose'}
                                   </span>
-                                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
                                 </div>
-                                <h4 className="mt-4 text-sm font-semibold text-[#20364c]">{documentRow.label}</h4>
-                                <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-[#6d839b]">{documentRow.description}</p>
-                                {documentRow.key === 'signed_fica_form' ? (
-                                  <label className="mt-3 block text-xs font-semibold text-[#60758b]">
-                                    Seller type
-                                    <select
-                                      value={selectedKingstonsSellerPack.sellerType || ''}
-                                      onChange={handleKingstonsSellerPackSellerTypeChange}
-                                      disabled={sellerPackUploadingKey === 'signed_fica_form:type'}
-                                      className="mt-1 h-10 w-full rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-sm font-semibold text-[#20364c] outline-none transition focus:border-[#8ab7d8]"
-                                    >
-                                      <option value="">Select type</option>
-                                      {KINGSTONS_FICA_SELLER_TYPE_OPTIONS.map((option) => (
-                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                      ))}
-                                    </select>
-                                    {!selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
-                                      <span className="mt-1 block text-[0.7rem] font-semibold text-[#8a641d]">Required before signed FICA upload and listing creation.</span>
-                                    ) : null}
-                                  </label>
-                                ) : null}
-                                <p className="mt-auto truncate pt-4 text-xs font-medium text-[#6d839b]" title={documentRow.uploadedFileName || ''}>
-                                  {documentRow.uploadedFileName ? documentRow.uploadedFileName : 'No file uploaded yet'}
+                                <p className="mt-3 text-sm leading-6 text-[#60758b]">
+                                  {detail.summary || option.label}
                                 </p>
-                                <label className="mt-3 inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#cfdceb] bg-white px-3 text-sm font-semibold text-[#315b7a] transition hover:border-[#a9bfd6]">
-                                  <Upload className="h-4 w-4" />
-                                  {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace File' : 'Upload File'}
-                                  <input
-                                    type="file"
-                                    className="sr-only"
-                                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                                    disabled={isUploading}
-                                    onChange={(event) => void handleKingstonsSellerPackUpload(documentRow.key, event)}
-                                  />
-                                </label>
-                              </article>
+                                <ul className="mt-4 space-y-2 text-sm leading-6 text-[#60758b]">
+                                  {(detail.details || []).map((item) => (
+                                    <li key={item} className="flex gap-2">
+                                      <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#8ab7d8]" />
+                                      <span>{item}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </button>
                             )
                           })}
                         </div>
-                      </section>
+                        <p className="mt-4 text-sm leading-6 text-[#60758b]">
+                          Natural person usually needs marital details and, where relevant, spouse consent. Juristic person usually needs company, close corporation, or trust authority details.
+                        </p>
+                      </Modal>
                     ) : null}
                   </div>
                   ) : null}
@@ -25398,11 +25570,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <section className="mb-6 rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-4" data-testid="kingstons-seller-pack-documents">
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
-                                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">Kingston Seller Pack</p>
-                                  <h5 className="mt-1 text-base font-semibold text-[#20364c]">Listing document uploads</h5>
+                                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">Seller Pack</p>
+                                  <h5 className="mt-1 text-base font-semibold text-[#20364c]">Upload the three signed documents required before the property can be listed.</h5>
                                   <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758b]" data-testid="kingstons-seller-pack-documents-completion-rule">
-                                    Manual completion requires uploaded files for {selectedKingstonsSellerPackSummary.requiredLabels.join(', ')}.
+                                    Upload the three signed documents required before the property can be listed.
                                   </p>
+                                  <p className="sr-only">Manual completion requires uploaded files for {selectedKingstonsSellerPackSummary.requiredLabels.join(', ')}.</p>
                                 </div>
                                 <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${selectedKingstonsSellerPackSummary.complete ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
                                   {selectedKingstonsSellerPackSummary.completed}/{selectedKingstonsSellerPackSummary.total} ready
@@ -25423,6 +25596,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
                                   const StatusIcon = statusMeta.Icon
                                   const isUploading = sellerPackUploadingKey === documentRow.key
+                                  const displayCopy = getKingstonsSellerPackDisplayCopy(documentRow)
                                   return (
                                     <article key={documentRow.key} className="rounded-[18px] border border-[#e3edf7] bg-white p-4">
                                       <div className="flex items-start justify-between gap-3">
@@ -25431,7 +25605,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             <StatusIcon className="h-4 w-4" />
                                           </span>
                                           <div className="min-w-0">
-                                            <p className="truncate text-sm font-semibold text-[#20364c]" title={documentRow.label}>{documentRow.label}</p>
+                                            <p className="truncate text-sm font-semibold text-[#20364c]" title={documentRow.label}>{displayCopy.title}</p>
                                             <p className="mt-0.5 truncate text-xs font-medium text-[#6d839b]" title={documentRow.uploadedFileName || ''}>
                                               {documentRow.uploadedFileName || 'No upload yet'}
                                             </p>
@@ -25439,33 +25613,38 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         </div>
                                         <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
                                       </div>
+                                      <p className="mt-3 text-xs leading-5 text-[#60758b]">{displayCopy.description}</p>
                                       {documentRow.key === 'signed_fica_form' ? (
-                                        <label className="mt-3 block text-xs font-semibold text-[#60758b]">
-                                          Seller type
-                                          <select
-                                            value={selectedKingstonsSellerPack.sellerType || ''}
-                                            onChange={handleKingstonsSellerPackSellerTypeChange}
-                                            disabled={sellerPackUploadingKey === 'signed_fica_form:type'}
-                                            className="mt-1 h-10 w-full rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-sm font-semibold text-[#20364c] outline-none transition focus:border-[#8ab7d8]"
+                                        <div className="mt-3 grid gap-2">
+                                          <button
+                                            type="button"
+                                            className="flex h-11 w-full items-center justify-between gap-3 rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-left text-sm font-semibold text-[#20364c] transition hover:border-[#b8cadf] hover:bg-[#fcfdff]"
+                                            onClick={() => setKingstonsSellerTypePickerOpen(true)}
                                           >
-                                            <option value="">Select type</option>
-                                            {KINGSTONS_FICA_SELLER_TYPE_OPTIONS.map((option) => (
-                                              <option key={option.value} value={option.value}>{option.label}</option>
-                                            ))}
-                                          </select>
-                                          {!selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
-                                            <span className="mt-1 block text-[0.7rem] font-semibold text-[#8a641d]">Required before signed FICA upload and listing creation.</span>
-                                          ) : null}
-                                        </label>
+                                            <span className="flex min-w-0 items-center gap-2">
+                                              <UserRound className="h-4 w-4 shrink-0 text-[#68809a]" />
+                                              <span className="truncate">Seller type</span>
+                                            </span>
+                                            <span className="flex min-w-0 items-center gap-2 text-[#315b7a]">
+                                              <span className="truncate">{selectedKingstonsSellerPackSummary.sellerTypeCaptured ? selectedKingstonsSellerPackSummary.sellerTypeLabel : 'Choose type'}</span>
+                                              <ChevronDown className="h-4 w-4 shrink-0 text-[#97a9bb]" />
+                                            </span>
+                                          </button>
+                                          <p className={`text-[0.72rem] font-semibold ${selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'text-[#60758b]' : 'text-[#8a641d]'}`}>
+                                            {selectedKingstonsSellerPackSummary.sellerTypeCaptured
+                                              ? (KINGSTONS_FICA_SELLER_TYPE_DETAILS[selectedKingstonsSellerPack.sellerType]?.summary || 'Choose the seller type again if the legal setup changes.')
+                                              : 'Required before signed FICA upload and listing creation.'}
+                                          </p>
+                                        </div>
                                       ) : null}
                                       <label className="mt-3 inline-flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#cfdceb] bg-white px-3 text-sm font-semibold text-[#315b7a] transition hover:border-[#a9bfd6]">
                                         <Upload className="h-4 w-4" />
-                                        {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace File' : 'Upload File'}
+                                        {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace file' : documentRow.key === 'signed_fica_form' && !selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'Choose type first' : 'Upload file'}
                                         <input
                                           type="file"
                                           className="sr-only"
                                           accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                                          disabled={isUploading}
+                                          disabled={isUploading || (documentRow.key === 'signed_fica_form' && !selectedKingstonsSellerPackSummary.sellerTypeCaptured)}
                                           onChange={(event) => void handleKingstonsSellerPackUpload(documentRow.key, event)}
                                         />
                                       </label>
