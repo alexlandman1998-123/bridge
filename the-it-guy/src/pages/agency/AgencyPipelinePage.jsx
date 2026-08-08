@@ -5523,9 +5523,215 @@ function getLeadSellerOnboardingFormData(lead = {}) {
     : lead?.seller_onboarding && typeof lead.seller_onboarding === 'object'
       ? lead.seller_onboarding
       : {}
+  const rawPayload = parseLeadRawEnquiryPayload(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
+  const rawOnboarding = rawPayload?.sellerOnboarding && typeof rawPayload.sellerOnboarding === 'object'
+    ? rawPayload.sellerOnboarding
+    : rawPayload?.seller_onboarding && typeof rawPayload.seller_onboarding === 'object'
+      ? rawPayload.seller_onboarding
+      : {}
+  const rawProfile = rawPayload?.kingstonsSellerProfile && typeof rawPayload.kingstonsSellerProfile === 'object'
+    ? rawPayload.kingstonsSellerProfile
+    : rawPayload?.kingstons_seller_profile && typeof rawPayload.kingstons_seller_profile === 'object'
+      ? rawPayload.kingstons_seller_profile
+      : {}
   return {
+    ...(rawOnboarding.form_data && typeof rawOnboarding.form_data === 'object' ? rawOnboarding.form_data : {}),
+    ...(rawOnboarding.formData && typeof rawOnboarding.formData === 'object' ? rawOnboarding.formData : {}),
+    ...(rawProfile.form_data && typeof rawProfile.form_data === 'object' ? rawProfile.form_data : {}),
+    ...(rawProfile.formData && typeof rawProfile.formData === 'object' ? rawProfile.formData : {}),
     ...(onboarding.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {}),
     ...(onboarding.formData && typeof onboarding.formData === 'object' ? onboarding.formData : {}),
+  }
+}
+
+function splitSellerNameParts(value = '') {
+  const parts = normalizeText(value).split(/\s+/).filter(Boolean)
+  if (!parts.length) return { firstName: '', lastName: '' }
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' }
+  return {
+    firstName: parts.slice(0, -1).join(' '),
+    lastName: parts.slice(-1).join(' '),
+  }
+}
+
+function joinSellerNameParts(firstName = '', lastName = '') {
+  return [normalizeText(firstName), normalizeText(lastName)].filter(Boolean).join(' ')
+}
+
+function toSellerProfileText(value) {
+  if (Array.isArray(value)) return value.map(normalizeText).filter(Boolean).join(', ')
+  if (value === true) return 'Yes'
+  if (value === false) return 'No'
+  return normalizeText(value)
+}
+
+function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing = {} } = {}) {
+  const listingSource = listing?.sourceListing && isPlainObject(listing.sourceListing) ? listing.sourceListing : (listing || {})
+  const onboarding = getWorkspaceSellerOnboarding(lead, listingSource)
+  const propertyDetails = {
+    ...(isPlainObject(listingSource?.propertyDetails) ? listingSource.propertyDetails : {}),
+    ...(isPlainObject(listingSource?.property_details) ? listingSource.property_details : {}),
+    ...(isPlainObject(lead?.propertyDetails) ? lead.propertyDetails : {}),
+    ...(isPlainObject(lead?.property_details) ? lead.property_details : {}),
+  }
+  const resolvedName = normalizeText(
+    onboarding?.fullName ||
+      onboarding?.sellerFullName ||
+      (lead?.sellerName && lead?.sellerSurname ? `${lead.sellerName} ${lead.sellerSurname}` : '') ||
+      lead?.name ||
+      contact?.fullName,
+  )
+  const nameParts = splitSellerNameParts(resolvedName)
+  return {
+    ...KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS,
+    firstName: normalizeText(contact?.firstName || lead?.sellerName || onboarding?.firstName || onboarding?.sellerFirstName || nameParts.firstName),
+    lastName: normalizeText(contact?.lastName || lead?.sellerSurname || onboarding?.lastName || onboarding?.sellerLastName || nameParts.lastName),
+    phone: normalizeText(contact?.phone || lead?.sellerPhone || lead?.phone || onboarding?.sellerPhone || onboarding?.phone || onboarding?.mobile),
+    email: normalizeText(contact?.email || lead?.sellerEmail || lead?.email || onboarding?.sellerEmail || onboarding?.email).toLowerCase(),
+    idNumber: normalizeText(onboarding?.idNumber || onboarding?.id_number || onboarding?.sellerIdNumber || lead?.sellerIdNumber || lead?.idNumber),
+    dateOfBirth: normalizeText(onboarding?.dateOfBirth || onboarding?.date_of_birth || onboarding?.birthDate),
+    nationality: normalizeText(onboarding?.nationality || lead?.nationality),
+    maritalStatus: normalizeText(onboarding?.maritalStatus || onboarding?.marital_status || lead?.maritalStatus),
+    occupation: normalizeText(onboarding?.occupation || lead?.occupation),
+    employer: normalizeText(onboarding?.employer || lead?.employer),
+    alternativeNumber: normalizeText(onboarding?.alternativeNumber || onboarding?.alternative_number || onboarding?.alternatePhone),
+    residentialStreet: normalizeText(onboarding?.residentialStreet || onboarding?.streetAddress || lead?.streetAddress),
+    residentialSuburb: normalizeText(onboarding?.residentialSuburb || onboarding?.suburb || lead?.suburb),
+    residentialCity: normalizeText(onboarding?.residentialCity || onboarding?.city || lead?.city),
+    residentialProvince: normalizeText(onboarding?.residentialProvince || onboarding?.province || lead?.province),
+    residentialPostalCode: normalizeText(onboarding?.residentialPostalCode || onboarding?.postalCode || lead?.postalCode),
+    residentialCountry: normalizeText(onboarding?.residentialCountry || onboarding?.country || lead?.country) || 'South Africa',
+    bankName: normalizeText(onboarding?.bankName || onboarding?.bank || lead?.bankName),
+    accountHolder: normalizeText(onboarding?.accountHolder || onboarding?.account_holder || resolvedName),
+    accountNumber: normalizeText(onboarding?.accountNumber || onboarding?.account_number || lead?.accountNumber || lead?.bankAccountNumber),
+    branchCode: normalizeText(onboarding?.branchCode || onboarding?.branch_code || lead?.branchCode),
+    accountType: normalizeText(onboarding?.accountType || onboarding?.account_type || lead?.accountType),
+    saResident: toSellerProfileText(onboarding?.saResident || onboarding?.sa_resident || onboarding?.taxResident),
+    incomeTaxNumber: normalizeText(onboarding?.incomeTaxNumber || onboarding?.income_tax_number || onboarding?.taxNumber),
+    vatRegistered: toSellerProfileText(onboarding?.vatRegistered || onboarding?.vat_registered),
+    ficaStatus: normalizeText(onboarding?.ficaStatus || onboarding?.fica_status),
+    popiConsent: toSellerProfileText(onboarding?.popiConsent || onboarding?.popi_consent),
+    electronicSignature: toSellerProfileText(onboarding?.electronicSignature || onboarding?.electronic_signature),
+    ownershipType: normalizeText(onboarding?.ownershipType || onboarding?.ownership_type || lead?.ownershipType),
+    purchaseDate: normalizeText(onboarding?.purchaseDate || onboarding?.purchase_date),
+    purchasePrice: normalizeText(onboarding?.purchasePrice || onboarding?.purchase_price),
+    bondExists: toSellerProfileText(onboarding?.bondExists || onboarding?.bond_exists || onboarding?.hasBond),
+    mortgageBank: normalizeText(onboarding?.mortgageBank || onboarding?.mortgage_bank),
+    bondBalance: normalizeText(onboarding?.bondBalance || onboarding?.bond_balance || onboarding?.approxBondBalance),
+    primaryResidence: toSellerProfileText(onboarding?.primaryResidence || onboarding?.primary_residence),
+    propertyAddress: normalizeText(onboarding?.propertyAddress || onboarding?.formattedAddress || lead?.sellerPropertyAddress || lead?.formattedAddress),
+    propertyType: normalizeText(lead?.propertyInterest || onboarding?.propertyType || onboarding?.property_type || propertyDetails?.propertyType),
+    propertySuburb: normalizeText(lead?.suburb || onboarding?.suburb || propertyDetails?.suburb),
+    propertyCity: normalizeText(lead?.city || onboarding?.city || propertyDetails?.city),
+    propertyProvince: normalizeText(lead?.province || onboarding?.province || propertyDetails?.province),
+    propertyPostalCode: normalizeText(lead?.postalCode || onboarding?.postalCode || propertyDetails?.postalCode),
+    bedrooms: normalizeText(lead?.bedrooms || onboarding?.bedrooms || propertyDetails?.bedrooms),
+    bathrooms: normalizeText(lead?.bathrooms || onboarding?.bathrooms || propertyDetails?.bathrooms),
+    garages: normalizeText(lead?.garages || onboarding?.garages || propertyDetails?.garages),
+    parking: normalizeText(lead?.parking || onboarding?.parking || onboarding?.parkingSpaces || propertyDetails?.parking),
+    erfSize: normalizeText(lead?.erfSize || onboarding?.erfSize || onboarding?.propertySize || propertyDetails?.erfSize),
+    floorSize: normalizeText(lead?.floorSize || onboarding?.floorSize || propertyDetails?.floorSize),
+    levies: normalizeText(onboarding?.levies || onboarding?.monthlyLevies),
+    ratesAndTaxes: normalizeText(onboarding?.ratesAndTaxes || onboarding?.ratesTaxes || onboarding?.monthlyRates),
+    askingPrice: normalizeText(listingSource?.askingPrice || listingSource?.asking_price || lead?.estimatedValue || onboarding?.askingPrice),
+    propertyFeaturesText: toSellerProfileText(onboarding?.propertyFeatures || onboarding?.features || onboarding?.property_features),
+    roofDefect: normalizeText(onboarding?.roofDefect || onboarding?.roof_defect || onboarding?.roofCondition),
+    plumbingDefect: normalizeText(onboarding?.plumbingDefect || onboarding?.plumbing_defect || onboarding?.plumbingCondition),
+    electricalDefect: normalizeText(onboarding?.electricalDefect || onboarding?.electrical_defect || onboarding?.electricalCondition),
+    dampDefect: normalizeText(onboarding?.dampDefect || onboarding?.damp_defect || onboarding?.damp),
+    cracks: normalizeText(onboarding?.cracks || onboarding?.structuralCracks),
+    pestDamage: normalizeText(onboarding?.pestDamage || onboarding?.pest_damage),
+    otherDefects: normalizeText(onboarding?.otherDefects || onboarding?.knownDefects || onboarding?.known_defects),
+    agentNotes: normalizeText(onboarding?.agentNotes || onboarding?.agent_notes || lead?.notes),
+  }
+}
+
+function splitKingstonsSellerProfileList(value = '') {
+  return normalizeText(value)
+    .split(/\r?\n|,/)
+    .map(normalizeText)
+    .filter(Boolean)
+}
+
+function buildKingstonsSellerProfileFormData(form = {}) {
+  const firstName = normalizeText(form.firstName)
+  const lastName = normalizeText(form.lastName)
+  const fullName = joinSellerNameParts(firstName, lastName)
+  const features = splitKingstonsSellerProfileList(form.propertyFeaturesText)
+  return {
+    fullName,
+    sellerFullName: fullName,
+    firstName,
+    lastName,
+    sellerFirstName: firstName,
+    sellerLastName: lastName,
+    sellerPhone: normalizeText(form.phone),
+    phone: normalizeText(form.phone),
+    mobile: normalizeText(form.phone),
+    sellerEmail: normalizeText(form.email).toLowerCase(),
+    email: normalizeText(form.email).toLowerCase(),
+    idNumber: normalizeText(form.idNumber),
+    sellerIdNumber: normalizeText(form.idNumber),
+    dateOfBirth: normalizeText(form.dateOfBirth),
+    nationality: normalizeText(form.nationality),
+    maritalStatus: normalizeText(form.maritalStatus),
+    occupation: normalizeText(form.occupation),
+    employer: normalizeText(form.employer),
+    alternativeNumber: normalizeText(form.alternativeNumber),
+    residentialStreet: normalizeText(form.residentialStreet),
+    streetAddress: normalizeText(form.residentialStreet),
+    residentialSuburb: normalizeText(form.residentialSuburb),
+    residentialCity: normalizeText(form.residentialCity),
+    residentialProvince: normalizeText(form.residentialProvince),
+    residentialPostalCode: normalizeText(form.residentialPostalCode),
+    postalCode: normalizeText(form.residentialPostalCode),
+    residentialCountry: normalizeText(form.residentialCountry) || 'South Africa',
+    country: normalizeText(form.residentialCountry) || 'South Africa',
+    bankName: normalizeText(form.bankName),
+    accountHolder: normalizeText(form.accountHolder) || fullName,
+    accountNumber: normalizeText(form.accountNumber),
+    branchCode: normalizeText(form.branchCode),
+    accountType: normalizeText(form.accountType),
+    saResident: normalizeText(form.saResident),
+    incomeTaxNumber: normalizeText(form.incomeTaxNumber),
+    vatRegistered: normalizeText(form.vatRegistered),
+    ficaStatus: normalizeText(form.ficaStatus),
+    popiConsent: normalizeText(form.popiConsent),
+    electronicSignature: normalizeText(form.electronicSignature),
+    ownershipType: normalizeText(form.ownershipType),
+    purchaseDate: normalizeText(form.purchaseDate),
+    purchasePrice: normalizeText(form.purchasePrice),
+    bondExists: normalizeText(form.bondExists),
+    mortgageBank: normalizeText(form.mortgageBank),
+    bondBalance: normalizeText(form.bondBalance),
+    primaryResidence: normalizeText(form.primaryResidence),
+    propertyAddress: normalizeText(form.propertyAddress),
+    formattedAddress: normalizeText(form.propertyAddress),
+    propertyType: normalizeText(form.propertyType),
+    suburb: normalizeText(form.propertySuburb),
+    city: normalizeText(form.propertyCity),
+    province: normalizeText(form.propertyProvince),
+    propertyPostalCode: normalizeText(form.propertyPostalCode),
+    bedrooms: normalizeText(form.bedrooms),
+    bathrooms: normalizeText(form.bathrooms),
+    garages: normalizeText(form.garages),
+    parking: normalizeText(form.parking),
+    erfSize: normalizeText(form.erfSize),
+    floorSize: normalizeText(form.floorSize),
+    levies: normalizeText(form.levies),
+    ratesAndTaxes: normalizeText(form.ratesAndTaxes),
+    askingPrice: normalizeText(form.askingPrice),
+    propertyFeatures: features,
+    features,
+    roofDefect: normalizeText(form.roofDefect),
+    plumbingDefect: normalizeText(form.plumbingDefect),
+    electricalDefect: normalizeText(form.electricalDefect),
+    dampDefect: normalizeText(form.dampDefect),
+    cracks: normalizeText(form.cracks),
+    pestDamage: normalizeText(form.pestDamage),
+    otherDefects: normalizeText(form.otherDefects),
+    knownDefects: normalizeText(form.otherDefects),
+    agentNotes: normalizeText(form.agentNotes),
   }
 }
 
@@ -6076,6 +6282,68 @@ const LEAD_DETAIL_DEFAULTS = {
   longitude: null,
   googlePlaceId: '',
   notes: '',
+}
+
+const KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS = {
+  firstName: '',
+  lastName: '',
+  phone: '',
+  email: '',
+  idNumber: '',
+  dateOfBirth: '',
+  nationality: '',
+  maritalStatus: '',
+  occupation: '',
+  employer: '',
+  alternativeNumber: '',
+  residentialStreet: '',
+  residentialSuburb: '',
+  residentialCity: '',
+  residentialProvince: '',
+  residentialPostalCode: '',
+  residentialCountry: 'South Africa',
+  bankName: '',
+  accountHolder: '',
+  accountNumber: '',
+  branchCode: '',
+  accountType: '',
+  saResident: '',
+  incomeTaxNumber: '',
+  vatRegistered: '',
+  ficaStatus: '',
+  popiConsent: '',
+  electronicSignature: '',
+  ownershipType: '',
+  purchaseDate: '',
+  purchasePrice: '',
+  bondExists: '',
+  mortgageBank: '',
+  bondBalance: '',
+  primaryResidence: '',
+  propertyAddress: '',
+  propertyType: '',
+  propertySuburb: '',
+  propertyCity: '',
+  propertyProvince: '',
+  propertyPostalCode: '',
+  bedrooms: '',
+  bathrooms: '',
+  garages: '',
+  parking: '',
+  erfSize: '',
+  floorSize: '',
+  levies: '',
+  ratesAndTaxes: '',
+  askingPrice: '',
+  propertyFeaturesText: '',
+  roofDefect: '',
+  plumbingDefect: '',
+  electricalDefect: '',
+  dampDefect: '',
+  cracks: '',
+  pestDamage: '',
+  otherDefects: '',
+  agentNotes: '',
 }
 
 const BUYER_QUALIFICATION_NOTE_START = '[Buyer qualification]'
@@ -7030,6 +7298,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerContactFeedbackModal, setSellerContactFeedbackModal] = useState(SELLER_CONTACT_FEEDBACK_DEFAULTS)
   const [sellerLeadEditModal, setSellerLeadEditModal] = useState({ open: false, mode: 'profile' })
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
+  const [sellerProfileEditForm, setSellerProfileEditForm] = useState(KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS)
   const [isLeadDetailSaving, setIsLeadDetailSaving] = useState(false)
   const [buyerQualificationEditing, setBuyerQualificationEditing] = useState(false)
   const [buyerQualificationForm, setBuyerQualificationForm] = useState(BUYER_QUALIFICATION_FORM_DEFAULTS)
@@ -8944,6 +9213,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     if (!selectedLead) {
       setLeadDetailForm(LEAD_DETAIL_DEFAULTS)
+      setSellerProfileEditForm(KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS)
       setBuyerQualificationForm(BUYER_QUALIFICATION_FORM_DEFAULTS)
       setBuyerQualificationEditing(false)
       setViewingPlanSelectedPropertyIds([])
@@ -8979,9 +9249,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
       notes: normalizeText(selectedLead?.notes),
     })
+    setSellerProfileEditForm(buildKingstonsSellerProfileEditForm({
+      lead: selectedLead,
+      contact: selectedLeadContact,
+      listing: selectedLeadLinkedListing,
+    }))
     setBuyerQualificationForm(buildBuyerQualificationFormFromLead(selectedLead))
     setBuyerQualificationEditing(false)
-  }, [selectedLead, selectedLeadContact])
+  }, [selectedLead, selectedLeadContact, selectedLeadLinkedListing])
 
   const selectedLeadRecordId = normalizeText(selectedLead?.leadId)
   const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id || selectedLead?.mandatePacket?.id)
@@ -12795,6 +13070,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }))
   }
 
+  function updateSellerProfileEditField(field, value) {
+    setSellerProfileEditForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }))
+  }
+
   function updateBuyerQualificationField(field, value) {
     setBuyerQualificationForm((previous) => ({
       ...previous,
@@ -14149,7 +14431,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   function openSellerLeadEditModal(mode = 'profile') {
-    setSellerLeadEditModal({ open: true, mode: mode === 'property' ? 'property' : 'profile' })
+    setSellerLeadEditModal({ open: true, mode: normalizeKey(mode) || 'personal' })
     setError('')
   }
 
@@ -14159,9 +14441,133 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   async function handleSaveSellerLeadEditDetails(event) {
-    const saved = await handleSaveLeadDetails(event)
-    if (saved) {
+    event.preventDefault()
+    if (!organisationId || !selectedLead) return
+    const email = normalizeText(sellerProfileEditForm.email).toLowerCase()
+    if (email && !isValidEmail(email)) {
+      setError('Enter a valid seller email before saving.')
+      return
+    }
+
+    setIsLeadDetailSaving(true)
+    try {
+      const savedAt = new Date().toISOString()
+      const formData = buildKingstonsSellerProfileFormData(sellerProfileEditForm)
+      const existingOnboarding = isPlainObject(selectedLead?.sellerOnboarding)
+        ? selectedLead.sellerOnboarding
+        : isPlainObject(selectedLead?.seller_onboarding)
+          ? selectedLead.seller_onboarding
+          : {}
+      const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+      const rawOnboarding = isPlainObject(rawPayload.sellerOnboarding)
+        ? rawPayload.sellerOnboarding
+        : isPlainObject(rawPayload.seller_onboarding)
+          ? rawPayload.seller_onboarding
+          : {}
+      const sellerOnboarding = {
+        ...existingOnboarding,
+        ...rawOnboarding,
+        status: normalizeText(existingOnboarding.status || rawOnboarding.status || selectedLead?.sellerOnboardingStatus),
+        formData: {
+          ...(isPlainObject(rawOnboarding.formData) ? rawOnboarding.formData : {}),
+          ...(isPlainObject(rawOnboarding.form_data) ? rawOnboarding.form_data : {}),
+          ...(isPlainObject(existingOnboarding.formData) ? existingOnboarding.formData : {}),
+          ...(isPlainObject(existingOnboarding.form_data) ? existingOnboarding.form_data : {}),
+          ...formData,
+        },
+        updatedAt: savedAt,
+        updatedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+      }
+      sellerOnboarding.form_data = sellerOnboarding.formData
+
+      const rawEnquiryPayload = {
+        ...rawPayload,
+        sellerOnboarding,
+        seller_onboarding: sellerOnboarding,
+        kingstonsSellerProfile: {
+          formData,
+          form_data: formData,
+          updatedAt: savedAt,
+          updatedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+        },
+      }
+      const leadPatch = {
+        rawEnquiryPayload,
+        sellerOnboarding,
+        seller_onboarding: sellerOnboarding,
+        sellerName: formData.firstName,
+        sellerSurname: formData.lastName,
+        sellerEmail: formData.sellerEmail,
+        sellerPhone: formData.sellerPhone,
+        sellerPropertyAddress: formData.propertyAddress,
+        formattedAddress: formData.propertyAddress,
+        streetAddress: formData.residentialStreet,
+        suburb: formData.propertySuburb || formData.residentialSuburb,
+        city: formData.propertyCity || formData.residentialCity,
+        province: formData.propertyProvince || formData.residentialProvince,
+        country: formData.residentialCountry || 'South Africa',
+        postalCode: formData.propertyPostalCode || formData.residentialPostalCode,
+        propertyInterest: formData.propertyType,
+        estimatedValue: Number(String(formData.askingPrice || '').replace(/[^\d.-]/g, '')) || Number(selectedLead?.estimatedValue || 0) || 0,
+        notes: formData.agentNotes || normalizeText(selectedLead?.notes),
+      }
+      const contactPatch = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        phone: formData.sellerPhone,
+        email: formData.sellerEmail,
+      }
+      const resolvedContactId = normalizeText(selectedLeadContact?.contactId || selectedLead?.contactId)
+
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      if (resolvedContactId) {
+        setRecords((previous) => ({
+          ...previous,
+          contacts: (Array.isArray(previous.contacts) ? previous.contacts : []).map((contact) =>
+            normalizeText(contact?.contactId) === resolvedContactId
+              ? { ...contact, ...contactPatch, updatedAt: savedAt }
+              : contact,
+          ),
+        }))
+        await updateAgencyCrmContactRecord(organisationId, resolvedContactId, contactPatch)
+      }
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Seller Profile Updated',
+        activityNote: `Kingstons seller profile ${sellerLeadEditModal.mode || 'details'} updated by ${currentAgent.fullName || 'agent'}.`,
+        outcome: 'Seller Profile',
+        activityDate: savedAt,
+      }, { actor: currentAgent }).catch((activityError) => {
+        console.warn('[AgencyPipelinePage] Seller profile update activity could not be recorded.', activityError)
+      })
+
+      setLeadDetailForm((previous) => ({
+        ...previous,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        phone: formData.sellerPhone,
+        email: formData.sellerEmail,
+        sellerPropertyAddress: formData.propertyAddress,
+        formattedAddress: formData.propertyAddress,
+        streetAddress: formData.residentialStreet,
+        suburb: leadPatch.suburb,
+        city: leadPatch.city,
+        province: leadPatch.province,
+        country: leadPatch.country,
+        postalCode: leadPatch.postalCode,
+        propertyInterest: formData.propertyType,
+        estimatedValue: String(leadPatch.estimatedValue || ''),
+        notes: leadPatch.notes,
+      }))
+      setError('')
+      setMessage('Seller profile saved.')
       setSellerLeadEditModal((previous) => ({ ...previous, open: false }))
+      scheduleRecordsReload(organisationId, 500)
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to save seller profile right now.')
+    } finally {
+      setIsLeadDetailSaving(false)
     }
   }
 
@@ -19696,12 +20102,50 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     )
   }
 
-  const sellerLeadEditMode = sellerLeadEditModal.mode === 'property' ? 'property' : 'profile'
-  const sellerLeadEditIsProperty = sellerLeadEditMode === 'property'
-  const sellerLeadEditTitle = sellerLeadEditIsProperty ? 'Edit Property Details' : 'Edit Seller Profile'
-  const sellerLeadEditSubtitle = sellerLeadEditIsProperty
-    ? 'Update the property details used by the Kingstons seller journey, appointment context, and listing preparation.'
-    : 'Update the seller contact details used by the Kingstons seller workspace and appointment invitations.'
+  const sellerLeadEditMode = normalizeKey(sellerLeadEditModal.mode) || 'personal'
+  const sellerLeadEditMeta = {
+    personal: {
+      title: 'Edit Personal Information',
+      subtitle: 'Update the seller details used by the Kingstons seller workspace and appointment invitations.',
+    },
+    profile: {
+      title: 'Edit Personal Information',
+      subtitle: 'Update the seller details used by the Kingstons seller workspace and appointment invitations.',
+    },
+    address: {
+      title: 'Edit Residential Address',
+      subtitle: 'Update the seller residential address captured for FICA and seller profile records.',
+    },
+    banking: {
+      title: 'Edit Banking Details',
+      subtitle: 'Update the account details captured against this seller lead.',
+    },
+    tax: {
+      title: 'Edit Tax & Compliance',
+      subtitle: 'Update tax, FICA, POPI, and electronic-signature readiness details.',
+    },
+    ownership: {
+      title: 'Edit Property Ownership',
+      subtitle: 'Update ownership, bond, and purchase information for this seller.',
+    },
+    property: {
+      title: 'Edit Property Information',
+      subtitle: 'Update the property details used by the seller rail, appointments, and listing preparation.',
+    },
+    features: {
+      title: 'Edit Property Features',
+      subtitle: 'Capture the property features that should remain linked to this seller profile.',
+    },
+    defects: {
+      title: 'Edit Known Defects',
+      subtitle: 'Capture the seller-disclosed defects and agent notes for this property.',
+    },
+  }[sellerLeadEditMode] || {
+    title: 'Edit Seller Profile',
+    subtitle: 'Update the seller details linked to this Kingstons lead.',
+  }
+  const sellerLeadEditTitle = sellerLeadEditMeta.title
+  const sellerLeadEditSubtitle = sellerLeadEditMeta.subtitle
   const showLegacyActivityComposer = false
 
   return (
@@ -26156,7 +26600,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 <button
                                   type="button"
                                   className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75] transition hover:border-[#bfd0e2] hover:bg-[#f8fbfe]"
-                                  onClick={() => openSellerLeadEditModal(card.key === 'property' ? 'property' : 'profile')}
+                                  onClick={() => openSellerLeadEditModal(card.key)}
                                 >
                                   Edit
                                 </button>
@@ -26179,7 +26623,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
                             <div className="flex items-center justify-between gap-3">
                               <h4 className="text-sm font-semibold text-[#102033]">Property Features</h4>
-                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('property')}>Edit</button>
+                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('features')}>Edit</button>
                             </div>
                             <div className="mt-4 flex flex-wrap gap-2">
                               {selectedSellerProfileWorkspace.features.length ? selectedSellerProfileWorkspace.features.map((feature) => (
@@ -26193,7 +26637,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
                             <div className="flex items-center justify-between gap-3">
                               <h4 className="text-sm font-semibold text-[#102033]">Known Defects</h4>
-                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('property')}>Edit</button>
+                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('defects')}>Edit</button>
                             </div>
                             <dl className="mt-4 grid gap-x-5 gap-y-2.5 sm:grid-cols-2">
                               {selectedSellerProfileWorkspace.defects.map(([label, value]) => {
@@ -27618,91 +28062,121 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           <section className="rounded-[18px] border border-[#dfe8f2] bg-[#fbfdff] p-4">
             <div className="flex items-start gap-3">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#eaf7ef] text-[#167348]">
-                <UserRound className="h-5 w-5" />
+                {sellerLeadEditMode === 'property' || sellerLeadEditMode === 'features' || sellerLeadEditMode === 'defects' ? <Home className="h-5 w-5" /> : sellerLeadEditMode === 'personal' || sellerLeadEditMode === 'profile' ? <UserRound className="h-5 w-5" /> : <FileText className="h-5 w-5" />}
               </span>
               <div>
-                <h4 className="text-sm font-semibold text-[#102033]">Seller contact</h4>
+                <h4 className="text-sm font-semibold text-[#102033]">{sellerLeadEditTitle}</h4>
                 <p className="mt-1 text-xs leading-5 text-[#60758b]">
-                  Required for saving lead details and for sending appointment invitations.
+                  Changes are saved to this Kingstons seller lead and reused by the seller workspace.
                 </p>
               </div>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <Field placeholder="First name *" value={leadDetailForm.firstName} onChange={(event) => updateLeadDetailField('firstName', event.target.value)} />
-              <Field placeholder="Last name" value={leadDetailForm.lastName} onChange={(event) => updateLeadDetailField('lastName', event.target.value)} />
-              <Field placeholder="Phone *" value={leadDetailForm.phone} onChange={(event) => updateLeadDetailField('phone', event.target.value)} />
-              <Field placeholder="Email *" value={leadDetailForm.email} onChange={(event) => updateLeadDetailField('email', event.target.value)} />
-            </div>
-          </section>
 
-          {sellerLeadEditIsProperty ? (
-            <section className="rounded-[18px] border border-[#dfe8f2] bg-white p-4">
-              <div className="flex items-start gap-3">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#fff7e6] text-[#8a641d]">
-                  <Home className="h-5 w-5" />
-                </span>
-                <div>
-                  <h4 className="text-sm font-semibold text-[#102033]">Property details</h4>
-                  <p className="mt-1 text-xs leading-5 text-[#60758b]">
-                    These details feed the seller rail, appointment location, and listing preparation.
-                  </p>
-                </div>
-              </div>
+            {sellerLeadEditMode === 'personal' || sellerLeadEditMode === 'profile' ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <AddressAutocomplete
-                    label="Seller property address"
-                    value={buildLeadAddressValue(leadDetailForm)}
-                    onChange={(nextAddress) => setLeadDetailForm((previous) => mergeLeadAddress(previous, nextAddress))}
-                    placeholder="409 Felix Dlamini Road, Overport"
-                    description="Used for valuation appointments and listing creation."
-                  />
-                </div>
-                <Field placeholder="Suburb" value={leadDetailForm.suburb} onChange={(event) => updateLeadDetailField('suburb', event.target.value)} />
-                <Field placeholder="City" value={leadDetailForm.city} onChange={(event) => updateLeadDetailField('city', event.target.value)} />
-                <Field placeholder="Province" value={leadDetailForm.province} onChange={(event) => updateLeadDetailField('province', event.target.value)} />
-                <Field placeholder="Postal code" value={leadDetailForm.postalCode} onChange={(event) => updateLeadDetailField('postalCode', event.target.value)} />
-                <Field placeholder="Property type / interest" value={leadDetailForm.propertyInterest} onChange={(event) => updateLeadDetailField('propertyInterest', event.target.value)} />
-                <Field placeholder="Estimated value" value={leadDetailForm.estimatedValue} onChange={(event) => updateLeadDetailField('estimatedValue', event.target.value)} />
-                <div className="sm:col-span-2">
-                  <AreaAutocomplete
-                    label="Area"
-                    value={leadDetailForm.areaInterest}
-                    onChange={(nextArea) => updateLeadDetailField('areaInterest', nextArea)}
-                    placeholder="Overport, Durban..."
-                    description="Keeps seller matching and reporting aligned."
-                  />
-                </div>
+                <Field placeholder="First name" value={sellerProfileEditForm.firstName} onChange={(event) => updateSellerProfileEditField('firstName', event.target.value)} />
+                <Field placeholder="Last name" value={sellerProfileEditForm.lastName} onChange={(event) => updateSellerProfileEditField('lastName', event.target.value)} />
+                <Field placeholder="Phone" value={sellerProfileEditForm.phone} onChange={(event) => updateSellerProfileEditField('phone', event.target.value)} />
+                <Field placeholder="Email" value={sellerProfileEditForm.email} onChange={(event) => updateSellerProfileEditField('email', event.target.value)} />
+                <Field placeholder="ID number" value={sellerProfileEditForm.idNumber} onChange={(event) => updateSellerProfileEditField('idNumber', event.target.value)} />
+                <Field type="date" placeholder="Date of birth" value={sellerProfileEditForm.dateOfBirth} onChange={(event) => updateSellerProfileEditField('dateOfBirth', event.target.value)} />
+                <Field placeholder="Nationality" value={sellerProfileEditForm.nationality} onChange={(event) => updateSellerProfileEditField('nationality', event.target.value)} />
+                <Field placeholder="Marital status" value={sellerProfileEditForm.maritalStatus} onChange={(event) => updateSellerProfileEditField('maritalStatus', event.target.value)} />
+                <Field placeholder="Occupation" value={sellerProfileEditForm.occupation} onChange={(event) => updateSellerProfileEditField('occupation', event.target.value)} />
+                <Field placeholder="Employer" value={sellerProfileEditForm.employer} onChange={(event) => updateSellerProfileEditField('employer', event.target.value)} />
+                <Field placeholder="Alternative number" className="sm:col-span-2" value={sellerProfileEditForm.alternativeNumber} onChange={(event) => updateSellerProfileEditField('alternativeNumber', event.target.value)} />
               </div>
-            </section>
-          ) : (
-            <section className="rounded-[18px] border border-[#dfe8f2] bg-white p-4">
-              <div className="flex items-start gap-3">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#eef5fb] text-[#315b7a]">
-                  <FileText className="h-5 w-5" />
-                </span>
-                <div>
-                  <h4 className="text-sm font-semibold text-[#102033]">Lead context</h4>
-                  <p className="mt-1 text-xs leading-5 text-[#60758b]">
-                    Keep ownership, source, and notes clean for the agent handover.
-                  </p>
-                </div>
-              </div>
+            ) : null}
+
+            {sellerLeadEditMode === 'address' ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <Field as="select" value={leadDetailForm.leadSource} onChange={(event) => updateLeadDetailField('leadSource', event.target.value)}>
-                  {MANUAL_LEAD_SOURCE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </Field>
-                <Field as="select" value={leadDetailForm.priority} onChange={(event) => updateLeadDetailField('priority', event.target.value)}>
-                  {LEAD_PRIORITIES.map((option) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </Field>
-                <Field as="textarea" rows={3} placeholder="Notes" className="sm:col-span-2" value={leadDetailForm.notes} onChange={(event) => updateLeadDetailField('notes', event.target.value)} />
+                <Field placeholder="Street" className="sm:col-span-2" value={sellerProfileEditForm.residentialStreet} onChange={(event) => updateSellerProfileEditField('residentialStreet', event.target.value)} />
+                <Field placeholder="Suburb" value={sellerProfileEditForm.residentialSuburb} onChange={(event) => updateSellerProfileEditField('residentialSuburb', event.target.value)} />
+                <Field placeholder="City" value={sellerProfileEditForm.residentialCity} onChange={(event) => updateSellerProfileEditField('residentialCity', event.target.value)} />
+                <Field placeholder="Province" value={sellerProfileEditForm.residentialProvince} onChange={(event) => updateSellerProfileEditField('residentialProvince', event.target.value)} />
+                <Field placeholder="Postal code" value={sellerProfileEditForm.residentialPostalCode} onChange={(event) => updateSellerProfileEditField('residentialPostalCode', event.target.value)} />
+                <Field placeholder="Country" className="sm:col-span-2" value={sellerProfileEditForm.residentialCountry} onChange={(event) => updateSellerProfileEditField('residentialCountry', event.target.value)} />
               </div>
-            </section>
-          )}
+            ) : null}
+
+            {sellerLeadEditMode === 'banking' ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Field placeholder="Bank" value={sellerProfileEditForm.bankName} onChange={(event) => updateSellerProfileEditField('bankName', event.target.value)} />
+                <Field placeholder="Account holder" value={sellerProfileEditForm.accountHolder} onChange={(event) => updateSellerProfileEditField('accountHolder', event.target.value)} />
+                <Field placeholder="Account number" value={sellerProfileEditForm.accountNumber} onChange={(event) => updateSellerProfileEditField('accountNumber', event.target.value)} />
+                <Field placeholder="Branch code" value={sellerProfileEditForm.branchCode} onChange={(event) => updateSellerProfileEditField('branchCode', event.target.value)} />
+                <Field placeholder="Account type" className="sm:col-span-2" value={sellerProfileEditForm.accountType} onChange={(event) => updateSellerProfileEditField('accountType', event.target.value)} />
+              </div>
+            ) : null}
+
+            {sellerLeadEditMode === 'tax' ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Field placeholder="SA resident" value={sellerProfileEditForm.saResident} onChange={(event) => updateSellerProfileEditField('saResident', event.target.value)} />
+                <Field placeholder="Income tax number" value={sellerProfileEditForm.incomeTaxNumber} onChange={(event) => updateSellerProfileEditField('incomeTaxNumber', event.target.value)} />
+                <Field placeholder="VAT registered" value={sellerProfileEditForm.vatRegistered} onChange={(event) => updateSellerProfileEditField('vatRegistered', event.target.value)} />
+                <Field placeholder="FICA status" value={sellerProfileEditForm.ficaStatus} onChange={(event) => updateSellerProfileEditField('ficaStatus', event.target.value)} />
+                <Field placeholder="POPI consent" value={sellerProfileEditForm.popiConsent} onChange={(event) => updateSellerProfileEditField('popiConsent', event.target.value)} />
+                <Field placeholder="Electronic signature" value={sellerProfileEditForm.electronicSignature} onChange={(event) => updateSellerProfileEditField('electronicSignature', event.target.value)} />
+              </div>
+            ) : null}
+
+            {sellerLeadEditMode === 'ownership' ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Field placeholder="Ownership type" value={sellerProfileEditForm.ownershipType} onChange={(event) => updateSellerProfileEditField('ownershipType', event.target.value)} />
+                <Field type="date" placeholder="Purchase date" value={sellerProfileEditForm.purchaseDate} onChange={(event) => updateSellerProfileEditField('purchaseDate', event.target.value)} />
+                <Field placeholder="Purchase price" value={sellerProfileEditForm.purchasePrice} onChange={(event) => updateSellerProfileEditField('purchasePrice', event.target.value)} />
+                <Field placeholder="Bond exists" value={sellerProfileEditForm.bondExists} onChange={(event) => updateSellerProfileEditField('bondExists', event.target.value)} />
+                <Field placeholder="Mortgage bank" value={sellerProfileEditForm.mortgageBank} onChange={(event) => updateSellerProfileEditField('mortgageBank', event.target.value)} />
+                <Field placeholder="Approx bond balance" value={sellerProfileEditForm.bondBalance} onChange={(event) => updateSellerProfileEditField('bondBalance', event.target.value)} />
+                <Field placeholder="Primary residence" className="sm:col-span-2" value={sellerProfileEditForm.primaryResidence} onChange={(event) => updateSellerProfileEditField('primaryResidence', event.target.value)} />
+              </div>
+            ) : null}
+
+            {sellerLeadEditMode === 'property' ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Field placeholder="Property address" className="sm:col-span-2" value={sellerProfileEditForm.propertyAddress} onChange={(event) => updateSellerProfileEditField('propertyAddress', event.target.value)} />
+                <Field placeholder="Property type" value={sellerProfileEditForm.propertyType} onChange={(event) => updateSellerProfileEditField('propertyType', event.target.value)} />
+                <Field placeholder="Estimated asking price" value={sellerProfileEditForm.askingPrice} onChange={(event) => updateSellerProfileEditField('askingPrice', event.target.value)} />
+                <Field placeholder="Suburb" value={sellerProfileEditForm.propertySuburb} onChange={(event) => updateSellerProfileEditField('propertySuburb', event.target.value)} />
+                <Field placeholder="City" value={sellerProfileEditForm.propertyCity} onChange={(event) => updateSellerProfileEditField('propertyCity', event.target.value)} />
+                <Field placeholder="Province" value={sellerProfileEditForm.propertyProvince} onChange={(event) => updateSellerProfileEditField('propertyProvince', event.target.value)} />
+                <Field placeholder="Postal code" value={sellerProfileEditForm.propertyPostalCode} onChange={(event) => updateSellerProfileEditField('propertyPostalCode', event.target.value)} />
+                <Field placeholder="Bedrooms" value={sellerProfileEditForm.bedrooms} onChange={(event) => updateSellerProfileEditField('bedrooms', event.target.value)} />
+                <Field placeholder="Bathrooms" value={sellerProfileEditForm.bathrooms} onChange={(event) => updateSellerProfileEditField('bathrooms', event.target.value)} />
+                <Field placeholder="Garages" value={sellerProfileEditForm.garages} onChange={(event) => updateSellerProfileEditField('garages', event.target.value)} />
+                <Field placeholder="Parking" value={sellerProfileEditForm.parking} onChange={(event) => updateSellerProfileEditField('parking', event.target.value)} />
+                <Field placeholder="Erf size" value={sellerProfileEditForm.erfSize} onChange={(event) => updateSellerProfileEditField('erfSize', event.target.value)} />
+                <Field placeholder="Floor size" value={sellerProfileEditForm.floorSize} onChange={(event) => updateSellerProfileEditField('floorSize', event.target.value)} />
+                <Field placeholder="Levies" value={sellerProfileEditForm.levies} onChange={(event) => updateSellerProfileEditField('levies', event.target.value)} />
+                <Field placeholder="Rates and taxes" value={sellerProfileEditForm.ratesAndTaxes} onChange={(event) => updateSellerProfileEditField('ratesAndTaxes', event.target.value)} />
+              </div>
+            ) : null}
+
+            {sellerLeadEditMode === 'features' ? (
+              <div className="mt-4">
+                <Field
+                  as="textarea"
+                  rows={5}
+                  placeholder="Features, separated by commas or new lines"
+                  value={sellerProfileEditForm.propertyFeaturesText}
+                  onChange={(event) => updateSellerProfileEditField('propertyFeaturesText', event.target.value)}
+                />
+              </div>
+            ) : null}
+
+            {sellerLeadEditMode === 'defects' ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Field placeholder="Roof" value={sellerProfileEditForm.roofDefect} onChange={(event) => updateSellerProfileEditField('roofDefect', event.target.value)} />
+                <Field placeholder="Plumbing" value={sellerProfileEditForm.plumbingDefect} onChange={(event) => updateSellerProfileEditField('plumbingDefect', event.target.value)} />
+                <Field placeholder="Electrical" value={sellerProfileEditForm.electricalDefect} onChange={(event) => updateSellerProfileEditField('electricalDefect', event.target.value)} />
+                <Field placeholder="Damp" value={sellerProfileEditForm.dampDefect} onChange={(event) => updateSellerProfileEditField('dampDefect', event.target.value)} />
+                <Field placeholder="Cracks" value={sellerProfileEditForm.cracks} onChange={(event) => updateSellerProfileEditField('cracks', event.target.value)} />
+                <Field placeholder="Pest damage" value={sellerProfileEditForm.pestDamage} onChange={(event) => updateSellerProfileEditField('pestDamage', event.target.value)} />
+                <Field placeholder="Other defects" className="sm:col-span-2" value={sellerProfileEditForm.otherDefects} onChange={(event) => updateSellerProfileEditField('otherDefects', event.target.value)} />
+                <Field as="textarea" rows={4} placeholder="Agent notes" className="sm:col-span-2" value={sellerProfileEditForm.agentNotes} onChange={(event) => updateSellerProfileEditField('agentNotes', event.target.value)} />
+              </div>
+            ) : null}
+          </section>
         </form>
       </Modal>
 
