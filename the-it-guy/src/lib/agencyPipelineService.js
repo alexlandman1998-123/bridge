@@ -355,6 +355,8 @@ const DEFAULT_APPOINTMENT_BUSINESS_HOURS = {
   start: '08:00',
   end: '17:00',
 }
+const APPOINTMENT_CREATE_NOTIFICATION_SOFT_TIMEOUT_MS = 6000
+const APPOINTMENT_NOTIFICATION_TIMEOUT_RESULT = '__appointment_notification_still_running__'
 
 function stripAppointmentWorkflowDbFields(payload = {}) {
   const clone = { ...payload }
@@ -372,12 +374,55 @@ function stripAppointmentParticipantV1DbFields(payload = {}) {
   return clone
 }
 
-async function runAppointmentNotificationTask(taskName, callback) {
+function serializeAppointmentNotificationError(error = {}) {
+  return {
+    message: normalizeText(error?.message || error?.error || 'Unknown appointment notification error'),
+    code: normalizeText(error?.code || ''),
+    details: error?.details ?? null,
+    hint: error?.hint ?? null,
+    status: error?.status ?? null,
+  }
+}
+
+async function runAppointmentNotificationTask(taskName, callback, options = {}) {
+  const softTimeoutMs = Math.max(0, Number(options?.softTimeoutMs || 0) || 0)
+  let timeoutId = null
   try {
-    return await callback()
+    const taskPromise = Promise.resolve().then(callback)
+    if (!softTimeoutMs) {
+      return await taskPromise
+    }
+    const timerApi = typeof window !== 'undefined' ? window : globalThis
+    const timeoutPromise = new Promise((resolve) => {
+      timeoutId = timerApi.setTimeout(() => resolve(APPOINTMENT_NOTIFICATION_TIMEOUT_RESULT), softTimeoutMs)
+    })
+    const result = await Promise.race([taskPromise, timeoutPromise])
+    if (result !== APPOINTMENT_NOTIFICATION_TIMEOUT_RESULT) {
+      return result
+    }
+    console.warn(`[appointments][notifications] ${taskName} still running after ${softTimeoutMs}ms`, {
+      taskName,
+      softTimeoutMs,
+    })
+    taskPromise
+      .then(() => {
+        console.info(`[appointments][notifications] ${taskName} completed after returning control to the UI`, {
+          taskName,
+          softTimeoutMs,
+        })
+      })
+      .catch((error) => {
+        console.warn(`[appointments][notifications] ${taskName} failed after returning control to the UI`, serializeAppointmentNotificationError(error))
+      })
+    return { timedOut: true, notificationsQueued: true }
   } catch (error) {
-    console.warn(`[appointments][notifications] ${taskName} failed`, error)
+    console.warn(`[appointments][notifications] ${taskName} failed`, serializeAppointmentNotificationError(error))
     return null
+  } finally {
+    if (timeoutId) {
+      const timerApi = typeof window !== 'undefined' ? window : globalThis
+      timerApi.clearTimeout(timeoutId)
+    }
   }
 }
 
@@ -2559,11 +2604,16 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
   let notificationError = null
   let documentNotificationResults = []
   let reminderResults = []
+  let notificationsQueued = false
   if (payload?.sendInviteEmails !== false) {
-    const sideEffectResults = await runAppointmentNotificationTask('appointment_created', () =>
-      runAppointmentCreateNotificationSideEffects(notificationSource, payload, actor),
+    const sideEffectResults = await runAppointmentNotificationTask(
+      'appointment_created',
+      () => runAppointmentCreateNotificationSideEffects(notificationSource, payload, actor),
+      { softTimeoutMs: APPOINTMENT_CREATE_NOTIFICATION_SOFT_TIMEOUT_MS },
     )
-    if (sideEffectResults) {
+    if (sideEffectResults?.timedOut) {
+      notificationsQueued = true
+    } else if (sideEffectResults) {
       notificationResults = Array.isArray(sideEffectResults.inviteNotificationResults)
         ? sideEffectResults.inviteNotificationResults
         : []
@@ -2581,7 +2631,7 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
   return {
     ...notificationSource,
     schedulingIntegrity,
-    notificationsQueued: false,
+    notificationsQueued,
     notificationResults,
     notificationError,
     documentNotificationResults,

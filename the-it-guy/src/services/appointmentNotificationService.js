@@ -109,6 +109,16 @@ function titleCaseStatus(value = '') {
     .join(' ')
 }
 
+function serializeNotificationError(error = {}) {
+  return {
+    message: normalizeText(error?.message || error?.error || 'Unknown notification error'),
+    code: normalizeText(error?.code || ''),
+    details: error?.details ?? null,
+    hint: error?.hint ?? null,
+    status: error?.status ?? null,
+  }
+}
+
 function formatDate(appointment = {}) {
   const dateText = normalizeText(appointment?.appointment_date || appointment?.date || '')
   if (dateText) return dateText
@@ -653,26 +663,38 @@ export async function notifyAppointmentParticipants(appointmentId, eventType, op
       scheduledFor: dedupeFingerprint,
     })
 
-    const eventRow = await createAppointmentNotificationEvent({
-      appointmentId,
-      transactionId: appointment?.transaction_id,
-      eventType: normalizedEventType,
-      visibility,
-      recipientId: participant?.participantId,
-      recipientRole: role,
-      recipientEmail,
-      title,
-      message,
-      metadata: {
-        ...(options?.metadata && typeof options.metadata === 'object' ? options.metadata : {}),
-        appointmentType: normalizeText(appointment?.appointment_type),
-        appointmentTitle: normalizeText(appointment?.title),
-        appointmentDate: formatDate(appointment),
-        appointmentTime: formatTime(appointment),
-        location: normalizeText(appointment?.location),
-      },
-      dedupeKey,
-    })
+    let eventRow = null
+    let eventError = null
+    try {
+      eventRow = await createAppointmentNotificationEvent({
+        appointmentId,
+        transactionId: appointment?.transaction_id,
+        eventType: normalizedEventType,
+        visibility,
+        recipientId: participant?.participantId,
+        recipientRole: role,
+        recipientEmail,
+        title,
+        message,
+        metadata: {
+          ...(options?.metadata && typeof options.metadata === 'object' ? options.metadata : {}),
+          appointmentType: normalizeText(appointment?.appointment_type),
+          appointmentTitle: normalizeText(appointment?.title),
+          appointmentDate: formatDate(appointment),
+          appointmentTime: formatTime(appointment),
+          location: normalizeText(appointment?.location),
+        },
+        dedupeKey,
+      })
+    } catch (notificationEventError) {
+      eventError = serializeNotificationError(notificationEventError)
+      console.warn('[appointment-notifications] event logging skipped; continuing with email delivery', {
+        appointmentId,
+        eventType: normalizedEventType,
+        recipientEmailPresent: Boolean(recipientEmail),
+        reason: eventError,
+      })
+    }
 
     let emailResult = { sent: false, status: 'skipped', reason: 'not_attempted' }
     const alreadyDelivered = eventRow?.email_status === 'sent'
@@ -777,6 +799,7 @@ export async function notifyAppointmentParticipants(appointmentId, eventType, op
 
     results.push({
       event: eventRow,
+      eventError,
       participant,
       email: emailResult,
       inAppStatus,
