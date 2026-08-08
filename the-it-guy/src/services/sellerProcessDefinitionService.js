@@ -141,7 +141,12 @@ const KINGSTONS_PROCESS_DEFINITION = Object.freeze({
     }),
   ]),
   evidenceGates: Object.freeze([
-    Object.freeze({ key: 'seller_contacted', source: 'activity', requiredForStage: 'first_contact' }),
+    Object.freeze({
+      key: 'seller_contacted',
+      source: 'activity',
+      requiredForStage: 'first_contact',
+      impliedByAppointmentTypes: Object.freeze(['seller_valuation', 'seller_consultation', 'viewing']),
+    }),
     Object.freeze({
       key: 'valuation_appointment_scheduled',
       source: 'appointment',

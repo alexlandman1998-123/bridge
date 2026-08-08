@@ -117,6 +117,12 @@ function leadHasSellerContactEvidence(lead = {}) {
   )
 }
 
+function appointmentImpliesSellerContact(appointment = {}, gate = {}) {
+  if (!asArray(gate.impliedByAppointmentTypes).length) return false
+  return appointmentTypeMatches(appointment, '', gate.impliedByAppointmentTypes) &&
+    !BLOCKED_APPOINTMENT_STATUSES.has(normalizeKey(appointment?.status || appointment?.appointmentStatus || appointment?.appointment_status))
+}
+
 function mandatePacketSatisfiesSignedEvidence({ mandatePacket = null, mandatePacketStatus = null } = {}) {
   const packet = mandatePacketStatus?.packet || mandatePacket || {}
   const version = mandatePacketStatus?.version || packet?.version || {}
@@ -139,7 +145,10 @@ function listingSatisfiesReadyEvidence(listing = {}, gate = {}) {
 
 function evaluateGate(gate = {}, context = {}) {
   if (gate.source === 'activity' && gate.key === 'seller_contacted') {
-    const satisfied = leadHasSellerContactEvidence(context.lead) || asArray(context.activities).some(activitySatisfiesSellerContact)
+    const satisfied =
+      leadHasSellerContactEvidence(context.lead) ||
+      asArray(context.activities).some(activitySatisfiesSellerContact) ||
+      asArray(context.appointments).some((appointment) => appointmentImpliesSellerContact(appointment, gate))
     return { key: gate.key, source: gate.source, satisfied, evidenceCount: satisfied ? 1 : 0 }
   }
 
