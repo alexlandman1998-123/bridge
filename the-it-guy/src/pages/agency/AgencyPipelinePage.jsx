@@ -18980,15 +18980,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleCancelAppointment() {
-    if (!organisationId || !selectedAppointmentId) return
+  async function handleCancelAppointment(appointment = null) {
+    const targetAppointmentId = normalizeText(appointment?.appointmentId || appointment?.appointment_id || appointment?.id || selectedAppointmentId)
+    if (!organisationId || !targetAppointmentId) return
     try {
       await updateAppointmentAsync(
         organisationId,
-        selectedAppointmentId,
+        targetAppointmentId,
         {
           status: 'cancelled',
-          cancellationReason: normalizeText(appointmentOutcomeForm.agentNotes || appointmentForm.notes) || 'Cancelled from Arch9 appointment detail.',
+          cancellationReason: normalizeText(
+            appointment?.cancellationReason
+            || appointmentOutcomeForm.agentNotes
+            || appointmentForm.notes
+            || appointment?.notes,
+          ) || 'Cancelled from Arch9 appointment detail.',
         },
         {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
@@ -18999,6 +19005,59 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       await reloadRecords(organisationId)
     } catch (cancelError) {
       setError(cancelError?.message || 'Unable to cancel appointment right now.')
+    }
+  }
+
+  async function handleMarkAppointmentComplete(appointment = null) {
+    const targetAppointmentId = normalizeText(appointment?.appointmentId || appointment?.appointment_id || appointment?.id || selectedAppointmentId)
+    if (!organisationId || !targetAppointmentId) return
+    const completionSummary = normalizeText(
+      appointment?.outcomeSummary
+      || appointment?.notes
+      || appointment?.agentNotes
+      || appointmentOutcomeForm.agentNotes
+      || 'Appointment completed.',
+    )
+    try {
+      const updated = await addAppointmentOutcomeAsync(
+        organisationId,
+        targetAppointmentId,
+        {
+          status: 'completed',
+          outcomeSummary: completionSummary,
+          clientFeedback: normalizeText(appointment?.clientFeedback),
+          agentNotes: normalizeText(
+            appointment?.agentNotes
+            || appointmentOutcomeForm.agentNotes
+            || appointmentForm.notes
+            || appointment?.notes,
+          ),
+          nextStep: normalizeText(appointment?.nextStep) || 'Follow up as needed',
+        },
+        {
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        },
+      )
+      if (selectedLeadIsSeller && selectedLead?.leadId) {
+        await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
+          stage: 'Appointment Completed',
+          status: 'Valuation Completed',
+        })
+        await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+          agent: currentAgent,
+          activityType: 'Valuation Completed',
+          activityNote: normalizeText(updated?.outcomeSummary || completionSummary) || 'Seller appointment completed.',
+          outcome: 'completed',
+          activityDate: new Date().toISOString(),
+        }, { actor: currentAgent })
+      }
+      setMessage('Appointment marked complete.')
+      if (normalizeText(selectedAppointmentId) === targetAppointmentId) {
+        setAppointmentModalOpen(false)
+      }
+      await reloadRecords(organisationId)
+    } catch (completionError) {
+      setError(completionError?.message || 'Unable to complete appointment right now.')
     }
   }
 
