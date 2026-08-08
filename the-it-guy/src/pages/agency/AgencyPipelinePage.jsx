@@ -529,11 +529,19 @@ function asRecord(value) {
 const KINGSTONS_PIPELINE_ACTION_COPY = Object.freeze({
   contact_seller: 'Log the first seller outreach call, email, or WhatsApp before moving on to valuation booking.',
   schedule_valuation_appointment: 'Book the valuation appointment with the seller and any required roleplayers.',
-  upload_valuation_document: 'Upload the completed formal valuation document to the seller document workspace.',
+  upload_valuation_document: 'Upload the completed formal valuation document before presenting the valuation to the seller.',
   schedule_valuation_presentation: 'Book the valuation presentation appointment with the seller.',
   complete_seller_pack: 'Capture the seller type and legal-path details, then upload the signed mandate, defect form, and FICA form.',
   seller_pack_signed: 'Capture the seller type and legal-path details, then upload the signed mandate, defect form, and FICA form.',
   prepare_listing: 'Create the listing once the Kingston seller pack is complete.',
+})
+
+const KINGSTONS_FORMAL_VALUATION_DOCUMENT = Object.freeze({
+  key: 'valuation_document',
+  label: 'Formal Valuation',
+  category: 'property',
+  description: 'The completed valuation document prepared after the valuation appointment.',
+  fileName: 'Formal Valuation',
 })
 
 const KINGSTONS_SELLER_PACK_DOCUMENTS = Object.freeze([
@@ -563,6 +571,7 @@ const KINGSTONS_SELLER_PACK_DOCUMENTS = Object.freeze([
 
 const KINGSTONS_SELLER_PACK_KEY_SET = new Set(KINGSTONS_SELLER_PACK_DOCUMENTS.map((documentRow) => documentRow.key))
 const KINGSTONS_SELLER_PACK_STORAGE_FOLDER = 'kingstons-seller-pack'
+const KINGSTONS_FORMAL_VALUATION_STORAGE_FOLDER = 'kingstons-formal-valuations'
 const KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE = 'kingstons_seller_pack_phase4_listing_handoff'
 const KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE = 'kingstons_seller_pack_phase5_transaction_handoff'
 const KINGSTONS_SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS = Object.freeze([
@@ -991,6 +1000,76 @@ function isKingstonsSellerPackDocumentUploaded(documentRow = {}) {
   return hasKingstonsSellerPackUploadEvidence(documentRow)
 }
 
+function getKingstonsFormalValuationState(lead = {}) {
+  const rawPayload = parseLeadRawEnquiryPayload(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
+  const formalValuation = asRecord(
+    lead?.kingstonsFormalValuation ||
+      lead?.kingstons_formal_valuation ||
+      lead?.formalValuation ||
+      lead?.formal_valuation ||
+      lead?.valuationDocument ||
+      lead?.valuation_document ||
+      rawPayload.kingstonsFormalValuation ||
+      rawPayload.kingstons_formal_valuation ||
+      rawPayload.formalValuation ||
+      rawPayload.formal_valuation ||
+      rawPayload.valuationDocument ||
+      rawPayload.valuation_document,
+  )
+  const document = asRecord(formalValuation.document || formalValuation.upload || formalValuation.file || formalValuation)
+  return {
+    ...formalValuation,
+    document,
+  }
+}
+
+function buildKingstonsFormalValuationDocumentRow(lead = {}) {
+  const valuation = getKingstonsFormalValuationState(lead)
+  const uploaded = asRecord(valuation.document)
+  const uploadedAt = firstWorkspaceText(uploaded.uploadedAt, uploaded.uploaded_at, valuation.uploadedAt, valuation.uploaded_at)
+  const uploadedFileName = firstWorkspaceText(uploaded.uploadedFileName, uploaded.uploaded_file_name, uploaded.fileName, uploaded.file_name, valuation.uploadedFileName, valuation.fileName)
+  const storagePath = firstWorkspaceText(uploaded.storagePath, uploaded.storage_path, valuation.storagePath, valuation.storage_path)
+  const storageBucket = firstWorkspaceText(uploaded.storageBucket, uploaded.storage_bucket, valuation.storageBucket, valuation.storage_bucket)
+  const url = firstWorkspaceText(uploaded.url, uploaded.fileUrl, uploaded.file_url, uploaded.downloadUrl, uploaded.download_url, valuation.url, valuation.fileUrl, valuation.downloadUrl)
+  const hasUpload = isKingstonsSellerPackDocumentUploaded({
+    ...uploaded,
+    uploadedAt,
+    storagePath,
+    url,
+  })
+
+  return {
+    ...KINGSTONS_FORMAL_VALUATION_DOCUMENT,
+    ...uploaded,
+    id: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+    key: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+    requirementKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+    requirement_key: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+    documentType: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+    document_type: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+    title: KINGSTONS_FORMAL_VALUATION_DOCUMENT.label,
+    label: KINGSTONS_FORMAL_VALUATION_DOCUMENT.label,
+    required: true,
+    source: 'kingstons_formal_valuation',
+    category: KINGSTONS_FORMAL_VALUATION_DOCUMENT.category,
+    document_category: KINGSTONS_FORMAL_VALUATION_DOCUMENT.category,
+    status: hasUpload ? 'uploaded' : 'required',
+    statusLabel: hasUpload ? 'Uploaded' : 'Required',
+    uploadedAt,
+    uploaded_at: uploadedAt,
+    uploadedFileName,
+    storagePath,
+    storage_path: storagePath,
+    storageBucket,
+    storage_bucket: storageBucket,
+    url,
+    fileUrl: url,
+    file_url: url,
+    downloadUrl: url,
+    download_url: url,
+  }
+}
+
 function buildKingstonsSellerPackDocumentRows(lead = {}) {
   const sellerPack = getKingstonsSellerPackState(lead)
   return KINGSTONS_SELLER_PACK_DOCUMENTS.map((definition) => {
@@ -1199,10 +1278,11 @@ function buildKingstonsSellerPackStoragePath({
   leadId = '',
   documentKey = '',
   fileName = '',
+  storageFolder = KINGSTONS_SELLER_PACK_STORAGE_FOLDER,
 } = {}) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
   return [
-    KINGSTONS_SELLER_PACK_STORAGE_FOLDER,
+    storageFolder,
     sanitizeSellerPackStorageSegment(organisationId, 'organisation'),
     sanitizeSellerPackStorageSegment(leadId, 'lead'),
     sanitizeSellerPackStorageSegment(documentKey, 'document'),
@@ -1215,6 +1295,7 @@ async function uploadKingstonsSellerPackFile({
   organisationId = '',
   leadId = '',
   documentKey = '',
+  storageFolder = KINGSTONS_SELLER_PACK_STORAGE_FOLDER,
 } = {}) {
   if (!file) throw new Error('Select a file before uploading.')
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase storage is required before uploading seller pack files.')
@@ -1223,6 +1304,7 @@ async function uploadKingstonsSellerPackFile({
     leadId,
     documentKey,
     fileName: file.name || 'seller-pack-document',
+    storageFolder,
   })
   let lastError = null
   for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
@@ -1904,7 +1986,7 @@ function getSellerLeadDocumentCategoryKey(documentRow = {}) {
 
   if (/(marketing|asset|photo|image|gallery|brochure|floor|plan|media|campaign|listing_photo|property_photo)/.test(source)) return 'marketing'
   if (/(legal|mandate|otp|offer|agreement|contract|signature|signed|transfer|attorney|conveyancer)/.test(source)) return 'legal'
-  if (/(property|title|deed|rates|levy|hoa|body|corporate|condition|disclosure|certificate|coc|occupancy|municipal|ownership)/.test(source)) return 'property'
+  if (/(property|valuation|appraisal|title|deed|rates|levy|hoa|body|corporate|condition|disclosure|certificate|coc|occupancy|municipal|ownership)/.test(source)) return 'property'
   return 'seller'
 }
 
@@ -6883,6 +6965,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [message, setMessage] = useState('')
   const [openingSellerLeadDocumentId, setOpeningSellerLeadDocumentId] = useState('')
   const [sellerPackUploadingKey, setSellerPackUploadingKey] = useState('')
+  const [formalValuationUploading, setFormalValuationUploading] = useState(false)
+  const formalValuationUploadInputRef = useRef(null)
   const [kingstonsSellerPackWizardOpen, setKingstonsSellerPackWizardOpen] = useState(false)
   const [kingstonsSellerPackWizardStep, setKingstonsSellerPackWizardStep] = useState('type')
   const [kingstonsSellerPackWizardDraft, setKingstonsSellerPackWizardDraft] = useState(null)
@@ -10536,6 +10620,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => selectedLeadHasKingstonsPipelineSignal ? getKingstonsSellerPackState(selectedLead || {}) : { documents: {}, sellerType: '' },
     [selectedLead, selectedLeadHasKingstonsPipelineSignal],
   )
+  const selectedKingstonsFormalValuationRow = useMemo(
+    () => selectedLeadHasKingstonsPipelineSignal ? buildKingstonsFormalValuationDocumentRow(selectedLead || {}) : null,
+    [selectedLead, selectedLeadHasKingstonsPipelineSignal],
+  )
+  const selectedKingstonsProcessDocuments = useMemo(
+    () => [
+      ...(selectedLeadLinkedListing?.documents || []),
+      ...(selectedKingstonsFormalValuationRow ? [selectedKingstonsFormalValuationRow] : []),
+    ],
+    [selectedKingstonsFormalValuationRow, selectedLeadLinkedListing?.documents],
+  )
 
   const selectedSellerDocumentCategories = useMemo(
     () => {
@@ -10546,12 +10641,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         mandatePacketStatus,
       })
       return buildSellerLeadDocumentCategories(dedupeSellerLeadDocumentRows([
+        ...(selectedKingstonsFormalValuationRow ? [selectedKingstonsFormalValuationRow] : []),
         ...(selectedLeadHasKingstonsPipelineSignal ? selectedKingstonsSellerPackRows : []),
         ...sourceRows,
       ]))
     },
     [
       mandatePacketStatus,
+      selectedKingstonsFormalValuationRow,
       selectedKingstonsSellerPackRows,
       selectedLead,
       selectedLeadHasKingstonsPipelineSignal,
@@ -10624,7 +10721,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       activities: selectedLeadActivities,
       appointments: selectedLeadAppointments,
       listings: selectedLeadLinkedListing ? [selectedLeadLinkedListing] : [],
-      documents: selectedLeadLinkedListing?.documents || [],
+      documents: selectedKingstonsProcessDocuments,
       mandatePacketStatus,
       sellerProcessProfile: KINGSTONS_SELLER_PROCESS_PROFILE,
     })
@@ -10637,6 +10734,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadHasKingstonsPipelineSignal,
     selectedLeadIsSeller,
     selectedLeadLinkedListing,
+    selectedKingstonsProcessDocuments,
   ])
 
   const selectedLeadHasKingstonsSellerProcess = selectedSellerProcessPanelModel?.visible === true
@@ -16614,6 +16712,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     if (id === 'upload_valuation_document') {
       handleLeadWorkspaceTabSelection('documents')
+      window.setTimeout(() => {
+        formalValuationUploadInputRef.current?.click?.()
+      }, 75)
       return
     }
     if (id === 'complete_seller_pack' || id === 'seller_pack_signed') {
@@ -17754,6 +17855,78 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError(uploadError?.message || `Unable to upload ${definition.label}.`)
     } finally {
       setSellerPackUploadingKey('')
+    }
+  }
+
+  async function handleKingstonsFormalValuationUpload(event = null) {
+    const file = event?.target?.files?.[0] || null
+    if (event?.target) event.target.value = ''
+    if (!file || !selectedLead) return
+    try {
+      setError('')
+      setFormalValuationUploading(true)
+      const uploadedAt = new Date().toISOString()
+      const upload = await uploadKingstonsSellerPackFile({
+        file,
+        organisationId,
+        leadId: selectedLead.leadId,
+        documentKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+        storageFolder: KINGSTONS_FORMAL_VALUATION_STORAGE_FOLDER,
+      })
+      const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+      const uploadedDocument = {
+        key: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+        label: KINGSTONS_FORMAL_VALUATION_DOCUMENT.label,
+        status: 'uploaded',
+        statusLabel: 'Uploaded',
+        uploadedAt,
+        uploadedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+        uploadedFileName: file.name || KINGSTONS_FORMAL_VALUATION_DOCUMENT.fileName,
+        fileName: file.name || KINGSTONS_FORMAL_VALUATION_DOCUMENT.fileName,
+        fileSize: Number(file.size || 0) || null,
+        fileType: normalizeText(file.type),
+        storageBucket: upload.storageBucket,
+        storagePath: upload.storagePath,
+        url: upload.url,
+      }
+      const formalValuation = {
+        document: uploadedDocument,
+        uploadedAt,
+        uploadedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+      }
+      const rawEnquiryPayload = {
+        ...rawPayload,
+        kingstonsFormalValuation: formalValuation,
+        formalValuation,
+        valuationDocument: uploadedDocument,
+      }
+      const leadPatch = {
+        rawEnquiryPayload,
+        kingstonsFormalValuation: formalValuation,
+        formalValuation,
+        valuationDocument: uploadedDocument,
+        valuationDocumentUploadedAt: uploadedAt,
+        stage: 'Valuation Presentation',
+        status: 'Formal Valuation Uploaded',
+      }
+
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Formal Valuation Uploaded',
+        activityNote: 'Formal valuation document uploaded. Seller process moved to Valuation Presentation.',
+        outcome: 'Formal Valuation',
+        activityDate: uploadedAt,
+      }, { actor: currentAgent }).catch((activityError) => {
+        console.warn('[AgencyPipelinePage] Formal valuation upload activity could not be recorded.', activityError)
+      })
+      setMessage('Formal valuation uploaded. Next best action is now Valuation Presentation.')
+      scheduleRecordsReload(organisationId, 850)
+    } catch (uploadError) {
+      setError(uploadError?.message || 'Unable to upload the formal valuation document.')
+    } finally {
+      setFormalValuationUploading(false)
     }
   }
 
@@ -26419,6 +26592,61 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
 
                         <div className="px-5 pb-6 pt-6 sm:px-6">
+                          {selectedLeadHasKingstonsPipelineSignal ? (
+                            <section className="mb-6 overflow-hidden rounded-[22px] border border-[#dbe7f2] bg-white shadow-[0_12px_30px_rgba(31,54,78,0.05)]" data-testid="kingstons-formal-valuation-document">
+                              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] bg-[#fbfdff] px-4 py-4">
+                                <div className="flex min-w-0 items-start gap-3">
+                                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[14px] ${getSellerLeadDocumentStatusMeta(selectedKingstonsFormalValuationRow || {}).iconClass}`}>
+                                    {createElement(getSellerLeadDocumentStatusMeta(selectedKingstonsFormalValuationRow || {}).Icon, { className: 'h-5 w-5' })}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">Formal Valuation</p>
+                                    <h5 className="mt-1 text-base font-semibold text-[#20364c]">Upload Formal Valuation</h5>
+                                    <p className="mt-1 text-sm leading-6 text-[#60758b]">
+                                      Upload the completed valuation document. Once uploaded, the seller process moves to Valuation Presentation.
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${getSellerLeadDocumentStatusMeta(selectedKingstonsFormalValuationRow || {}).pillClass}`}>
+                                  {getSellerLeadDocumentStatusMeta(selectedKingstonsFormalValuationRow || {}).label}
+                                </span>
+                              </div>
+                              <div className="grid gap-4 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-[#20364c]" title={selectedKingstonsFormalValuationRow?.uploadedFileName || ''}>
+                                    {selectedKingstonsFormalValuationRow?.uploadedFileName || 'No formal valuation uploaded yet'}
+                                  </p>
+                                  <p className="mt-1 text-xs font-medium text-[#7b8fa5]">
+                                    Accepted formats: PDF, Word, PNG, or JPG.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {selectedKingstonsFormalValuationRow?.url ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleDownloadSellerLeadDocumentUrl(selectedKingstonsFormalValuationRow)}
+                                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#315b7a] hover:border-[#b9cde3]"
+                                    >
+                                      Open <ExternalLink className="h-4 w-4" />
+                                    </button>
+                                  ) : null}
+                                  <label className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border px-4 text-sm font-semibold transition ${formalValuationUploading ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
+                                    <Upload className="h-4 w-4" />
+                                    {formalValuationUploading ? 'Uploading...' : selectedKingstonsFormalValuationRow?.uploadedFileName ? 'Replace file' : 'Upload file'}
+                                    <input
+                                      ref={formalValuationUploadInputRef}
+                                      type="file"
+                                      className="sr-only"
+                                      accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                                      disabled={formalValuationUploading}
+                                      onChange={(event) => void handleKingstonsFormalValuationUpload(event)}
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            </section>
+                          ) : null}
+
                           {selectedLeadHasKingstonsPipelineSignal ? (
                             <section className="mb-6 rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-4" data-testid="kingstons-seller-pack-documents">
                               <div className="flex flex-wrap items-center justify-between gap-3">

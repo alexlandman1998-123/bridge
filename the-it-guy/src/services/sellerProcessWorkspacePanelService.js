@@ -158,7 +158,7 @@ function buildActionCards(payload = {}) {
     },
     {
       key: 'upload_valuation_document',
-      label: 'Upload Valuation Document',
+      label: 'Upload Formal Valuation',
       surface: 'sellerDocumentCenter',
       pending: asArray(documentCenter.missingDocumentEvidenceKeys).includes('valuation_document_uploaded'),
       disabled: false,
