@@ -6919,6 +6919,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     error: '',
   })
   const [sellerContactFeedbackModal, setSellerContactFeedbackModal] = useState(SELLER_CONTACT_FEEDBACK_DEFAULTS)
+  const [sellerLeadEditModal, setSellerLeadEditModal] = useState({ open: false, mode: 'profile' })
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
   const [isLeadDetailSaving, setIsLeadDetailSaving] = useState(false)
   const [buyerQualificationEditing, setBuyerQualificationEditing] = useState(false)
@@ -7880,9 +7881,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   useEffect(() => {
     if (routeLeadRecord) {
       setRouteLeadHydrationNotice('')
-      setRouteLeadHydrationStatus('ready')
+      if (!isLeadWorkspaceRoute || !routeLeadId || !organisationId || !isSupabaseConfigured) {
+        setRouteLeadHydrationStatus('ready')
+      }
     }
-  }, [routeLeadRecord])
+  }, [isLeadWorkspaceRoute, organisationId, routeLeadId, routeLeadRecord])
 
   useEffect(() => {
     if (leadWorkspaceTab === 'tasks') {
@@ -13877,10 +13880,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleSaveLeadDetails(event) {
     event.preventDefault()
-    if (!organisationId || !selectedLead) return
+    if (!organisationId || !selectedLead) return false
     if (!normalizeText(leadDetailForm.firstName) || !normalizeText(leadDetailForm.phone) || !normalizeText(leadDetailForm.email)) {
       setError('First name, phone, and email are required before saving lead details.')
-      return
+      return false
     }
 
     setIsLeadDetailSaving(true)
@@ -14008,10 +14011,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('')
       setMessage('Lead details saved.')
       scheduleRecordsReload(organisationId, 250)
+      return true
     } catch (saveError) {
       setError(saveError?.message || 'Unable to save lead details right now.')
+      return false
     } finally {
       setIsLeadDetailSaving(false)
+    }
+  }
+
+  function openSellerLeadEditModal(mode = 'profile') {
+    setSellerLeadEditModal({ open: true, mode: mode === 'property' ? 'property' : 'profile' })
+    setError('')
+  }
+
+  function closeSellerLeadEditModal() {
+    if (isLeadDetailSaving) return
+    setSellerLeadEditModal((previous) => ({ ...previous, open: false }))
+  }
+
+  async function handleSaveSellerLeadEditDetails(event) {
+    const saved = await handleSaveLeadDetails(event)
+    if (saved) {
+      setSellerLeadEditModal((previous) => ({ ...previous, open: false }))
     }
   }
 
@@ -14505,10 +14527,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
       }
       if (linkedLead && resolveLeadCategoryView(linkedLead) === 'seller') {
-        const sellerAppointmentLeadPatch = {
-          stage: 'Appointment Scheduled',
-          status: 'Appointment Requested',
-        }
+        const isKingstonsValuationAppointment =
+          selectedLeadHasKingstonsPipelineSignal &&
+          normalizeKey(appointmentPayload.appointmentType) === 'seller_valuation'
+        const sellerAppointmentLeadPatch = isKingstonsValuationAppointment
+          ? {
+              stage: 'Formal Valuation',
+              status: 'Valuation Appointment Scheduled',
+            }
+          : {
+              stage: 'Appointment Scheduled',
+              status: 'Appointment Requested',
+            }
         await updateAgencyCrmLeadRecord(organisationId, linkedLead.leadId, sellerAppointmentLeadPatch)
         patchSelectedLeadRecord(sellerAppointmentLeadPatch, linkedLead.leadId)
       }
@@ -16052,7 +16082,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     if (!selectedLeadIsSeller) return
     if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsSellerPackSummary.complete) {
-      setLeadWorkspaceTab('documents')
+      handleLeadWorkspaceTabSelection('documents')
       setError(`Complete the Kingston Seller Pack before creating the listing. Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`)
       return
     }
@@ -16417,7 +16447,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLead || !selectedLeadIsSeller) return
     if (isSellerOnboardingSending) return
     if (selectedLeadHasKingstonsPipelineSignal && !normalizeText(selectedKingstonsSellerPack.sellerType)) {
-      setLeadWorkspaceTab('documents')
+      handleLeadWorkspaceTabSelection('documents')
       setError('Choose whether the FICA seller is a natural person or juristic person before sending the Seller Portal link.')
       return
     }
@@ -16482,11 +16512,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (id === 'open_timeline') {
-      setLeadWorkspaceTab('activity')
+      handleLeadWorkspaceTabSelection('activity')
       return
     }
     if (id === 'open_journey') {
-      setLeadWorkspaceTab('overview')
+      handleLeadWorkspaceTabSelection('overview')
       if (typeof document !== 'undefined') {
         window.setTimeout(() => {
           document.querySelector('[data-testid="seller-journey-rail"]')?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
@@ -16495,13 +16525,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (id === 'open_documents') {
-      setLeadWorkspaceTab('documents')
+      handleLeadWorkspaceTabSelection('documents')
       return
     }
     if (id === 'schedule_valuation_appointment' || id === 'schedule_valuation_presentation') {
       const appointmentType = id === 'schedule_valuation_presentation' ? 'valuation_presentation' : 'seller_valuation'
       const title = id === 'schedule_valuation_presentation' ? 'Valuation Presentation' : 'Valuation Appointment'
-      setLeadWorkspaceTab('appointments')
+      handleLeadWorkspaceTabSelection('appointments')
       setSelectedAppointmentId('')
       setAppointmentManualParticipantOpen(false)
       setAppointmentDeselectedParticipantKeys([])
@@ -16533,7 +16563,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (id === 'upload_valuation_document') {
-      setLeadWorkspaceTab('documents')
+      handleLeadWorkspaceTabSelection('documents')
       return
     }
     if (id === 'complete_seller_pack' || id === 'seller_pack_signed') {
@@ -16542,7 +16572,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     if (id === 'prepare_listing') {
       if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsSellerPackSummary.complete) {
-        setLeadWorkspaceTab('documents')
+        handleLeadWorkspaceTabSelection('documents')
         setError(`Complete the Kingston Seller Pack before creating the listing. Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`)
         return
       }
@@ -16562,7 +16592,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (id === 'capture_property_address') {
-      setLeadWorkspaceTab('overview')
+      openSellerLeadEditModal('property')
       setLeadForm((previous) => ({
         ...previous,
         leadCategory: 'seller',
@@ -16572,7 +16602,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     if (['generate_mandate', 'send_mandate', 'view_signing_status', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(id)) {
       if (selectedLeadKingstonsDigitalSigningDecision.blocked) {
-        setLeadWorkspaceTab('documents')
+        handleLeadWorkspaceTabSelection('documents')
         setError(selectedLeadKingstonsDigitalSigningDecision.message)
         return
       }
@@ -16581,7 +16611,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     if (id === 'create_listing') {
       if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsSellerPackSummary.complete) {
-        setLeadWorkspaceTab('documents')
+        handleLeadWorkspaceTabSelection('documents')
         setError(`Complete the Kingston Seller Pack before creating the listing. Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`)
         return
       }
@@ -17757,7 +17787,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         outcome: 'Seller Pack details',
       })
       setKingstonsSellerPackWizardOpen(false)
-      setLeadWorkspaceTab('documents')
+      handleLeadWorkspaceTabSelection('documents')
     } catch (sellerPackError) {
       setKingstonsSellerPackWizardError(sellerPackError?.message || 'Unable to save the Seller Pack details.')
     } finally {
@@ -19388,6 +19418,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       </section>
     )
   }
+
+  const sellerLeadEditMode = sellerLeadEditModal.mode === 'property' ? 'property' : 'profile'
+  const sellerLeadEditIsProperty = sellerLeadEditMode === 'property'
+  const sellerLeadEditTitle = sellerLeadEditIsProperty ? 'Edit Property Details' : 'Edit Seller Profile'
+  const sellerLeadEditSubtitle = sellerLeadEditIsProperty
+    ? 'Update the property details used by the Kingstons seller journey, appointment context, and listing preparation.'
+    : 'Update the seller contact details used by the Kingstons seller workspace and appointment invitations.'
+  const showLegacyActivityComposer = false
 
   return (
     <section className="min-w-0 max-w-full space-y-5 overflow-hidden">
@@ -21849,7 +21887,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <section className="flex min-h-[318px] min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
                           <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
                             <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#102033]">Documents</h3>
-                            <Button type="button" size="sm" variant="secondary" className="min-h-10 rounded-[14px] px-4 text-sm" onClick={() => setLeadWorkspaceTab('documents')}>
+                            <Button type="button" size="sm" variant="secondary" className="min-h-10 rounded-[14px] px-4 text-sm" onClick={() => handleLeadWorkspaceTabSelection('documents')}>
                               View All Documents
                             </Button>
                           </div>
@@ -21886,7 +21924,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <section className="flex min-h-[430px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
                         <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
                           <h3 className="text-base font-semibold text-[#102033]">Lead Activity</h3>
-                          <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => setLeadWorkspaceTab('activity')}>
+                          <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => handleLeadWorkspaceTabSelection('activity')}>
                             View All Activity
                           </Button>
                         </div>
@@ -21931,7 +21969,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <section className="flex min-h-[430px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]">
                         <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
                           <h3 className="text-base font-semibold text-[#102033]">Lead Summary</h3>
-                          <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => setLeadWorkspaceTab('seller')}>
+                          <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => handleLeadWorkspaceTabSelection('seller')}>
                             Edit
                           </Button>
                         </div>
@@ -24468,7 +24506,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       roleplayers={selectedLeadActivityRoleplayers}
                     />
                   ) : null}
-                  {false ? (
+                  {showLegacyActivityComposer ? (
                   <div className="space-y-6">
                     <section className="rounded-[28px] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.06)] sm:p-6">
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -25841,13 +25879,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 <button
                                   type="button"
                                   className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75] transition hover:border-[#bfd0e2] hover:bg-[#f8fbfe]"
-                                  onClick={() => {
-                                    if (card.key === 'property') {
-                                      setLeadWorkspaceTab('property')
-                                      return
-                                    }
-                                    openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')
-                                  }}
+                                  onClick={() => openSellerLeadEditModal(card.key === 'property' ? 'property' : 'profile')}
                                 >
                                   Edit
                                 </button>
@@ -25870,7 +25902,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
                             <div className="flex items-center justify-between gap-3">
                               <h4 className="text-sm font-semibold text-[#102033]">Property Features</h4>
-                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => setLeadWorkspaceTab('property')}>Edit</button>
+                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('property')}>Edit</button>
                             </div>
                             <div className="mt-4 flex flex-wrap gap-2">
                               {selectedSellerProfileWorkspace.features.length ? selectedSellerProfileWorkspace.features.map((feature) => (
@@ -25884,7 +25916,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
                             <div className="flex items-center justify-between gap-3">
                               <h4 className="text-sm font-semibold text-[#102033]">Known Defects</h4>
-                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => setLeadWorkspaceTab('property')}>Edit</button>
+                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('property')}>Edit</button>
                             </div>
                             <dl className="mt-4 grid gap-x-5 gap-y-2.5 sm:grid-cols-2">
                               {selectedSellerProfileWorkspace.defects.map(([label, value]) => {
@@ -25942,7 +25974,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <h3 className="text-base font-semibold text-[#102033]">Quick Actions</h3>
                         <div className="mt-4 space-y-2">
                           {[
-                            ['Download Seller Summary', FileText, () => setLeadWorkspaceTab('documents')],
+                            ['Download Seller Summary', FileText, () => handleLeadWorkspaceTabSelection('documents')],
                             ...(selectedLeadHasKingstonsPipelineSignal
                               ? [['Upload Seller Pack', Upload, () => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')]]
                               : [['Generate PDF', FileText, () => handleSellerJourneyAction('view_mandate')]]),
@@ -25952,7 +25984,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             }],
                             ['Open Portal', ExternalLink, () => handleSellerJourneyAction('open_seller_portal')],
                             ['Send Seller Portal Link', Send, handleSellerOnboardingCommand],
-                            ['Request Missing Documents', FileText, () => setLeadWorkspaceTab('documents')],
+                            ['Request Missing Documents', FileText, () => handleLeadWorkspaceTabSelection('documents')],
                           ].map(([label, Icon, onClick]) => (
                             <button
                               key={label}
@@ -25970,7 +26002,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
                         <div className="flex items-center justify-between gap-3">
                           <h3 className="text-base font-semibold text-[#102033]">Documents Overview</h3>
-                          <button type="button" className="text-xs font-semibold text-[#0f7b4e]" onClick={() => setLeadWorkspaceTab('documents')}>View All</button>
+                          <button type="button" className="text-xs font-semibold text-[#0f7b4e]" onClick={() => handleLeadWorkspaceTabSelection('documents')}>View All</button>
                         </div>
                         <div className="mt-5 flex items-center gap-5">
                           <div className="grid h-24 w-24 shrink-0 place-items-center rounded-full p-3" style={{ background: `conic-gradient(#0f8f59 ${selectedSellerDocumentSummary.progress * 3.6}deg, #edf1f5 0deg)` }}>
@@ -25998,11 +26030,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
                         <div className="flex items-center justify-between gap-3">
                           <h3 className="text-base font-semibold text-[#102033]">Recent Activity</h3>
-                          <button type="button" className="text-xs font-semibold text-[#0f7b4e]" onClick={() => setLeadWorkspaceTab('activity')}>View All</button>
+                          <button type="button" className="text-xs font-semibold text-[#0f7b4e]" onClick={() => handleLeadWorkspaceTabSelection('activity')}>View All</button>
                         </div>
                         <div className="mt-4 space-y-1">
                           {selectedLeadUnifiedTimeline.slice(0, 5).length ? selectedLeadUnifiedTimeline.slice(0, 5).map((row) => (
-                            <button key={row.id} type="button" className="grid w-full grid-cols-[30px_minmax(0,1fr)] gap-3 rounded-[12px] px-2 py-2.5 text-left transition hover:bg-[#f8fbff]" onClick={() => setLeadWorkspaceTab('activity')}>
+                            <button key={row.id} type="button" className="grid w-full grid-cols-[30px_minmax(0,1fr)] gap-3 rounded-[12px] px-2 py-2.5 text-left transition hover:bg-[#f8fbff]" onClick={() => handleLeadWorkspaceTabSelection('activity')}>
                               <span className="grid h-7 w-7 place-items-center rounded-full bg-[#eef5fb] text-[#285b7d]">
                                 {row.sourceType === 'appointment' ? <CalendarDays className="h-3.5 w-3.5" /> : row.sourceType === 'call' ? <Phone className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
                               </span>
@@ -26031,7 +26063,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <h4 className="mt-3 break-words text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadPropertyWorkspace.profile.address}</h4>
                           <p className="mt-2 text-sm leading-6 text-[#60758b]">Property information supplied during seller onboarding.</p>
                         </div>
-                        <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab('property')}>
+                        <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => openSellerLeadEditModal('property')}>
                           <Pencil className="mr-1.5 h-4 w-4" /> Edit Details
                         </Button>
                       </div>
@@ -26133,7 +26165,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Listing not created</p>
                           <p className="mt-2 text-sm leading-6 text-[#60758b]">Complete the missing information before creating the listing.</p>
                           <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                            <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab('overview')}>
+                            <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => openSellerLeadEditModal('property')}>
                               Complete Property Details
                             </Button>
                             <Button type="button" size="sm" className="rounded-[12px]" onClick={() => handleSellerJourneyAction('create_listing')}>
@@ -27142,6 +27174,115 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={sellerLeadEditModal.open && selectedLeadIsSeller && selectedLeadHasKingstonsPipelineSignal}
+        onClose={closeSellerLeadEditModal}
+        title={sellerLeadEditTitle}
+        subtitle={sellerLeadEditSubtitle}
+        className="!max-w-[760px]"
+        footer={(
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={closeSellerLeadEditModal} disabled={isLeadDetailSaving}>
+              Cancel
+            </Button>
+            <Button type="submit" form="kingstons-seller-lead-edit-form" disabled={isLeadDetailSaving}>
+              {isLeadDetailSaving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        )}
+      >
+        <form id="kingstons-seller-lead-edit-form" className="grid gap-5" onSubmit={(event) => void handleSaveSellerLeadEditDetails(event)}>
+          <section className="rounded-[18px] border border-[#dfe8f2] bg-[#fbfdff] p-4">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#eaf7ef] text-[#167348]">
+                <UserRound className="h-5 w-5" />
+              </span>
+              <div>
+                <h4 className="text-sm font-semibold text-[#102033]">Seller contact</h4>
+                <p className="mt-1 text-xs leading-5 text-[#60758b]">
+                  Required for saving lead details and for sending appointment invitations.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <Field placeholder="First name *" value={leadDetailForm.firstName} onChange={(event) => updateLeadDetailField('firstName', event.target.value)} />
+              <Field placeholder="Last name" value={leadDetailForm.lastName} onChange={(event) => updateLeadDetailField('lastName', event.target.value)} />
+              <Field placeholder="Phone *" value={leadDetailForm.phone} onChange={(event) => updateLeadDetailField('phone', event.target.value)} />
+              <Field placeholder="Email *" value={leadDetailForm.email} onChange={(event) => updateLeadDetailField('email', event.target.value)} />
+            </div>
+          </section>
+
+          {sellerLeadEditIsProperty ? (
+            <section className="rounded-[18px] border border-[#dfe8f2] bg-white p-4">
+              <div className="flex items-start gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#fff7e6] text-[#8a641d]">
+                  <Home className="h-5 w-5" />
+                </span>
+                <div>
+                  <h4 className="text-sm font-semibold text-[#102033]">Property details</h4>
+                  <p className="mt-1 text-xs leading-5 text-[#60758b]">
+                    These details feed the seller rail, appointment location, and listing preparation.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <AddressAutocomplete
+                    label="Seller property address"
+                    value={buildLeadAddressValue(leadDetailForm)}
+                    onChange={(nextAddress) => setLeadDetailForm((previous) => mergeLeadAddress(previous, nextAddress))}
+                    placeholder="409 Felix Dlamini Road, Overport"
+                    description="Used for valuation appointments and listing creation."
+                  />
+                </div>
+                <Field placeholder="Suburb" value={leadDetailForm.suburb} onChange={(event) => updateLeadDetailField('suburb', event.target.value)} />
+                <Field placeholder="City" value={leadDetailForm.city} onChange={(event) => updateLeadDetailField('city', event.target.value)} />
+                <Field placeholder="Province" value={leadDetailForm.province} onChange={(event) => updateLeadDetailField('province', event.target.value)} />
+                <Field placeholder="Postal code" value={leadDetailForm.postalCode} onChange={(event) => updateLeadDetailField('postalCode', event.target.value)} />
+                <Field placeholder="Property type / interest" value={leadDetailForm.propertyInterest} onChange={(event) => updateLeadDetailField('propertyInterest', event.target.value)} />
+                <Field placeholder="Estimated value" value={leadDetailForm.estimatedValue} onChange={(event) => updateLeadDetailField('estimatedValue', event.target.value)} />
+                <div className="sm:col-span-2">
+                  <AreaAutocomplete
+                    label="Area"
+                    value={leadDetailForm.areaInterest}
+                    onChange={(nextArea) => updateLeadDetailField('areaInterest', nextArea)}
+                    placeholder="Overport, Durban..."
+                    description="Keeps seller matching and reporting aligned."
+                  />
+                </div>
+              </div>
+            </section>
+          ) : (
+            <section className="rounded-[18px] border border-[#dfe8f2] bg-white p-4">
+              <div className="flex items-start gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#eef5fb] text-[#315b7a]">
+                  <FileText className="h-5 w-5" />
+                </span>
+                <div>
+                  <h4 className="text-sm font-semibold text-[#102033]">Lead context</h4>
+                  <p className="mt-1 text-xs leading-5 text-[#60758b]">
+                    Keep ownership, source, and notes clean for the agent handover.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Field as="select" value={leadDetailForm.leadSource} onChange={(event) => updateLeadDetailField('leadSource', event.target.value)}>
+                  {MANUAL_LEAD_SOURCE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </Field>
+                <Field as="select" value={leadDetailForm.priority} onChange={(event) => updateLeadDetailField('priority', event.target.value)}>
+                  {LEAD_PRIORITIES.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </Field>
+                <Field as="textarea" rows={3} placeholder="Notes" className="sm:col-span-2" value={leadDetailForm.notes} onChange={(event) => updateLeadDetailField('notes', event.target.value)} />
+              </div>
+            </section>
+          )}
+        </form>
       </Modal>
 
       <Modal

@@ -57,6 +57,16 @@ function resolveAppointmentEmailStatus({ result = {}, requestedInvite = true, ha
   return 'failed'
 }
 
+function resolveAppointmentEmailFailureReasons(result = {}) {
+  const rows = collectAppointmentEmailRows(result)
+  return uniqueValues([
+    result?.notificationError,
+    result?.emailError,
+    result?.delivery?.emailError,
+    ...rows.map((row) => row?.reason || row?.error || row?.message),
+  ]).filter((reason) => reason && reason !== 'duplicate_notification')
+}
+
 function shouldShowExternalCalendarNotSynced(result = {}, explicitStatus = '') {
   const status = normalizeLower(
     explicitStatus ||
@@ -77,6 +87,7 @@ export function buildAppointmentSaveFeedback(result = {}, options = {}) {
     requestedInvite,
     hasRecipient: recipientEmails.some(isValidEmail),
   })
+  const failureReasons = resolveAppointmentEmailFailureReasons(result)
   const deliveryRequestedOrHappened = requestedInvite || ['queued', 'sent'].includes(emailStatus)
   const icsAttached = deliveryRequestedOrHappened &&
     options?.attachCalendarInvite !== false &&
@@ -88,6 +99,9 @@ export function buildAppointmentSaveFeedback(result = {}, options = {}) {
     parts.push(`${normalizeText(options?.actionLabel) || 'Appointment saved'}.`)
   }
   parts.push(`Email ${emailStatus}.`)
+  if (emailStatus === 'failed' && failureReasons.length) {
+    parts.push(`Reason: ${failureReasons.join(', ')}.`)
+  }
   parts.push(`Recipient email: ${recipientEmailLabel}.`)
   parts.push(icsAttached ? 'ICS attached.' : 'ICS not attached.')
   if (shouldShowExternalCalendarNotSynced(result, options?.externalCalendarStatus)) {
