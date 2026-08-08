@@ -9,6 +9,7 @@ import AppointmentDashboardSection from '../../components/appointments/dashboard
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
 import KingstonsSellerAppointmentsWorkspace from '../../components/appointments/KingstonsSellerAppointmentsWorkspace'
 import LegalDocumentWorkspace from '../../components/documents/LegalDocumentWorkspace'
+import LeadActivityWorkspace from '../../components/lead-activity/LeadActivityWorkspace'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -6938,7 +6939,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [isFinanceReadinessSaving, setIsFinanceReadinessSaving] = useState(false)
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
   const [activityComposerMode, setActivityComposerMode] = useState('activity')
+  const [activityComposerOpen, setActivityComposerOpen] = useState(false)
   const [activityTimelineFilter, setActivityTimelineFilter] = useState('all')
+  const [activityTimelineSearch, setActivityTimelineSearch] = useState('')
   const [editingActivityId, setEditingActivityId] = useState('')
   const [taskForm, setTaskForm] = useState(LEAD_DETAIL_DEFAULT_TASK)
   const [editingTaskId, setEditingTaskId] = useState('')
@@ -9828,36 +9831,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     mandatePacketStatus,
   ])
 
-  const selectedLeadFilteredTimeline = useMemo(() => {
-    if (activityTimelineFilter === 'all') return selectedLeadUnifiedTimeline
-    return selectedLeadUnifiedTimeline.filter((item) => item.sourceType === activityTimelineFilter)
-  }, [activityTimelineFilter, selectedLeadUnifiedTimeline])
-
-  const selectedLeadActivityGroups = useMemo(() => {
-    const now = new Date()
-    const yesterday = new Date(now)
-    yesterday.setDate(now.getDate() - 1)
-    const groups = [
-      { key: 'today', label: 'Today', rows: [] },
-      { key: 'yesterday', label: 'Yesterday', rows: [] },
-      { key: 'earlier', label: 'Earlier', rows: [] },
-    ]
-
-    for (const item of selectedLeadFilteredTimeline) {
-      const date = new Date(item?.timestamp || item?.dueDate || 0)
-      if (!Number.isFinite(date.getTime())) {
-        groups[2].rows.push(item)
-      } else if (isSameDay(date, now)) {
-        groups[0].rows.push(item)
-      } else if (isSameDay(date, yesterday)) {
-        groups[1].rows.push(item)
-      } else {
-        groups[2].rows.push(item)
-      }
-    }
-
-    return groups.filter((group) => group.rows.length)
-  }, [selectedLeadFilteredTimeline])
+  const selectedLeadFilteredTimeline = selectedLeadUnifiedTimeline
+  const selectedLeadActivityGroups = []
 
   const selectedLeadActivityInsights = useMemo(() => {
     const rows = Array.isArray(selectedLeadActivities) ? selectedLeadActivities : []
@@ -9888,6 +9863,88 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       lastContacted: rows[0]?.activityDate || rows[0]?.createdAt || '',
     }
   }, [selectedLeadActivities, selectedLeadAppointments.length, selectedLeadOfferSummary.total])
+
+  const selectedLeadActivityRoleplayers = useMemo(() => {
+    const roleplayers = []
+    const addRoleplayer = (key, role, name, meta = [], status = '') => {
+      if (!normalizeText(name)) return
+      roleplayers.push({
+        key,
+        role,
+        name,
+        meta: Array.isArray(meta) ? meta.filter(Boolean) : [],
+        status,
+      })
+    }
+
+    addRoleplayer(
+      'primary-contact',
+      selectedLeadIsSeller ? 'Seller / primary contact' : 'Primary contact',
+      selectedLeadDisplayName,
+      [
+        normalizeText(selectedLeadContact?.email || selectedLead?.email),
+        normalizeText(selectedLeadContact?.phone || selectedLead?.phone),
+      ],
+      selectedLeadIsSeller ? 'Lead' : 'Contact',
+    )
+
+    addRoleplayer(
+      'assigned-agent',
+      'Assigned agent',
+      selectedLeadAssignedAgentLabel,
+      [
+        normalizeText(currentAgent?.fullName),
+        normalizeText(currentAgent?.email),
+      ],
+      'Assigned',
+    )
+
+    const linkedAttorneyName = normalizeText(
+      selectedLeadLinkedListing?.attorneyName ||
+      selectedLeadLinkedListing?.transferAttorneyName ||
+      selectedLeadLinkedTransaction?.attorneyName ||
+      selectedLeadLinkedTransaction?.transferAttorneyName ||
+      selectedLead?.attorneyName,
+    )
+    addRoleplayer(
+      'linked-attorney',
+      selectedLeadIsSeller ? 'Linked attorney' : 'Linked roleplayer',
+      linkedAttorneyName,
+      [
+        normalizeText(selectedLeadLinkedListing?.attorneyFirm || selectedLeadLinkedListing?.transferAttorneyFirm),
+      ],
+      linkedAttorneyName ? 'Captured' : '',
+    )
+
+    const linkedTransactionContact = normalizeText(
+      selectedLeadLinkedTransaction?.sellerName ||
+      selectedLeadLinkedTransaction?.buyerName ||
+      selectedLeadLinkedTransaction?.name,
+    )
+    addRoleplayer(
+      'linked-transaction',
+      'Linked transaction contact',
+      linkedTransactionContact,
+      [
+        normalizeText(selectedLeadLinkedTransactionId),
+        normalizeText(selectedLeadLinkedTransaction?.stage || selectedLeadLinkedTransaction?.status),
+      ],
+      normalizeText(selectedLeadLinkedTransactionId) ? 'Linked' : '',
+    )
+
+    return roleplayers
+  }, [
+    currentAgent?.email,
+    currentAgent?.fullName,
+    selectedLead,
+    selectedLeadAssignedAgentLabel,
+    selectedLeadContact,
+    selectedLeadDisplayName,
+    selectedLeadIsSeller,
+    selectedLeadLinkedListing,
+    selectedLeadLinkedTransaction,
+    selectedLeadLinkedTransactionId,
+  ])
 
   const selectedLeadOpenActions = useMemo(() => {
     const now = new Date()
@@ -12388,7 +12445,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function handleShowDayLogFollowUpCall() {
     setLeadWorkspaceTab('activity')
-    setActivityComposerMode('activity')
+    openActivityComposer('activity')
     setActivityForm((previous) => ({
       ...previous,
       activityType: 'Call',
@@ -13751,6 +13808,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   function handleActivityComposerModeChange(nextMode) {
     const mode = normalizeText(nextMode) || 'activity'
     setActivityComposerMode(mode)
+    setActivityComposerOpen(true)
     setEditingActivityId('')
     setEditingTaskId('')
     setError('')
@@ -13768,6 +13826,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   function resetActivityComposer() {
     setActivityForm(LEAD_DETAIL_DEFAULT_ACTIVITY)
     setEditingActivityId('')
+  }
+
+  function openActivityComposer(nextMode = 'activity') {
+    const mode = normalizeText(nextMode) || 'activity'
+    setActivityComposerMode(mode)
+    setActivityComposerOpen(true)
+    resetActivityComposer()
+    resetTaskComposer()
+    setError('')
+    if (mode === 'note') {
+      setActivityForm((previous) => ({ ...previous, activityType: 'Note', outcome: '' }))
+    } else if (mode === 'follow_up') {
+      setTaskForm((previous) => ({
+        ...previous,
+        title: normalizeText(previous.title) || 'Follow up with lead',
+        dueDate: normalizeText(previous.dueDate) || getTodayIsoDate(),
+      }))
+    }
+  }
+
+  function closeActivityComposer() {
+    setActivityComposerOpen(false)
+    resetActivityComposer()
+    resetTaskComposer()
+    setError('')
   }
 
   function handleAppendActivitySuggestion(text) {
@@ -13997,7 +14080,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
     }
-    resetActivityComposer()
+    closeActivityComposer()
     setError('')
     setMessage(editingActivityId ? 'Activity updated.' : 'Activity logged.')
     void reloadRecords(organisationId)
@@ -14024,6 +14107,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setEditingActivityId(normalizeText(activity?.activityId))
     setEditingTaskId('')
     setActivityComposerMode(normalizeText(activity?.activityType).toLowerCase() === 'note' ? 'note' : 'activity')
+    setActivityComposerOpen(true)
     setActivityForm({
       activityType: normalizeText(activity?.activityType) || LEAD_DETAIL_DEFAULT_ACTIVITY.activityType,
       activityNote: normalizeText(activity?.activityNote),
@@ -14085,7 +14169,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       )
     }
-    resetTaskComposer()
+    closeActivityComposer()
     setError('')
     setMessage(editingTaskId ? 'Task updated.' : 'Follow-up task created.')
     void reloadRecords(organisationId)
@@ -14109,6 +14193,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setEditingTaskId(normalizeText(task?.taskId))
     setEditingActivityId('')
     setActivityComposerMode(normalizeText(task?.title || task?.description).toLowerCase().includes('follow') ? 'follow_up' : 'task')
+    setActivityComposerOpen(true)
     setTaskForm({
       title: normalizeText(task?.title),
       description: normalizeText(task?.description),
@@ -14133,6 +14218,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setError('')
     setMessage('Task deleted.')
     void reloadRecords(organisationId)
+  }
+
+  function handleLeadActivityRowAction(row, action) {
+    const sourceType = normalizeText(row?.sourceType).toLowerCase()
+    const original = row?.original || null
+    if (!original) return
+
+    if (sourceType === 'appointment') {
+      if (action === 'complete') {
+        void handleMarkAppointmentComplete(original)
+        return
+      }
+      if (action === 'cancel') {
+        void handleCancelAppointment(original)
+        return
+      }
+      handleOpenAppointmentModal(original)
+      return
+    }
+
+    if (sourceType === 'task' || sourceType === 'follow_up') {
+      if (action === 'toggle-task') {
+        void handleTaskStatusToggle(original)
+        return
+      }
+      if (action === 'delete') {
+        void handleDeleteTask(original)
+        return
+      }
+      handleEditTask(original)
+      return
+    }
+
+    if (action === 'delete') {
+      void handleDeleteActivity(original)
+      return
+    }
+
+    handleEditActivity(original)
   }
 
   function handleAppointmentTypeChange(nextType) {
@@ -18967,7 +19091,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function handleBuyerJourneyQuickActivity(activityType) {
     setLeadWorkspaceTab('activity')
-    setActivityComposerMode('activity')
+    openActivityComposer('activity')
     setActivityForm((previous) => ({
       ...previous,
       activityType,
@@ -21377,7 +21501,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ['Send Listings', Send, handleBuyerCommandSendListings],
                           ['Create Task', CheckSquare, () => {
                             setLeadWorkspaceTab('activity')
-                            setActivityComposerMode('task')
+                            openActivityComposer('task')
                           }],
                         ].map(([label, Icon, onClick]) => (
                           <button
@@ -24202,6 +24326,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'activity' ? (
+                    <LeadActivityWorkspace
+                      title="Activity"
+                      helperText="Track all interactions, updates and actions related to this lead."
+                      rows={selectedLeadUnifiedTimeline}
+                      filters={LEAD_ACTIVITY_FILTERS}
+                      activeFilter={activityTimelineFilter}
+                      onFilterChange={setActivityTimelineFilter}
+                      searchValue={activityTimelineSearch}
+                      onSearchChange={setActivityTimelineSearch}
+                      onLogActivity={() => openActivityComposer('activity')}
+                      onRowAction={handleLeadActivityRowAction}
+                      roleplayers={selectedLeadActivityRoleplayers}
+                    />
+                  ) : null}
+                  {false ? (
                   <div className="space-y-6">
                     <section className="rounded-[28px] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.06)] sm:p-6">
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -25573,7 +25712,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 <button
                                   type="button"
                                   className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75] transition hover:border-[#bfd0e2] hover:bg-[#f8fbfe]"
-                                  onClick={() => setLeadWorkspaceTab(card.key === 'property' ? 'property' : 'overview')}
+                                  onClick={() => {
+                                    if (card.key === 'property') {
+                                      setLeadWorkspaceTab('property')
+                                      return
+                                    }
+                                    openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')
+                                  }}
                                 >
                                   Edit
                                 </button>
@@ -25757,7 +25902,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <h4 className="mt-3 break-words text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadPropertyWorkspace.profile.address}</h4>
                           <p className="mt-2 text-sm leading-6 text-[#60758b]">Property information supplied during seller onboarding.</p>
                         </div>
-                        <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab('overview')}>
+                        <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab('property')}>
                           <Pencil className="mr-1.5 h-4 w-4" /> Edit Details
                         </Button>
                       </div>
@@ -26594,15 +26739,152 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     {routeLeadId ? (routeLeadHydrationNotice || 'Opening this lead workspace. We are fetching the lead record and latest activity.') : 'Select a lead from the pipeline board to open the CRM workspace.'}
                   </p>
                 )
-              )}
-            </article>
-            ) : null}
-          </section>
-        </>
-	      )}
+      )}
+    </article>
+    ) : null}
+  </section>
+</>
+      )}
 
-	      <Modal
-	        open={sellerContactFeedbackModal.open}
+      <Modal
+        open={activityComposerOpen}
+        onClose={closeActivityComposer}
+        title={editingActivityId ? 'Edit Activity' : editingTaskId ? 'Edit Task' : 'Log Activity'}
+        subtitle="Capture interactions, notes, tasks, and follow-ups without leaving the lead workspace."
+        className="max-w-3xl"
+      >
+        <form className="grid gap-4" onSubmit={handleUnifiedActivitySubmit}>
+          {editingActivityId || editingTaskId ? (
+            <div className="flex justify-end">
+              <Button type="button" variant="ghost" size="sm" className="h-9 px-3 text-xs" onClick={closeActivityComposer}>
+                <X className="h-4 w-4" />
+                Cancel edit
+              </Button>
+            </div>
+          ) : null}
+
+          <div className="flex gap-1 overflow-x-auto rounded-full bg-[#f3f7fb] p-1">
+            {LEAD_ACTIVITY_COMPOSER_MODES.map((mode) => {
+              const active = activityComposerMode === mode.key
+              return (
+                <button
+                  key={mode.key}
+                  type="button"
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${active ? 'bg-white text-[#123955] shadow-[0_6px_16px_rgba(31,54,78,0.08)]' : 'text-[#60758b] hover:text-[#123955]'}`}
+                  onClick={() => handleActivityComposerModeChange(mode.key)}
+                >
+                  {mode.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {activityComposerMode === 'activity' ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field as="select" value={activityForm.activityType} onChange={(event) => setActivityForm((previous) => ({ ...previous, activityType: event.target.value }))}>
+                {ACTIVITY_TYPES.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Field>
+              <Field as="select" value={activityForm.outcome} onChange={(event) => setActivityForm((previous) => ({ ...previous, outcome: event.target.value }))}>
+                {activityOutcomeOptions.map((option) => (
+                  <option key={option || 'empty-outcome'} value={option}>
+                    {option || 'Outcome'}
+                  </option>
+                ))}
+              </Field>
+            </div>
+          ) : null}
+
+          {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field
+                placeholder={activityComposerMode === 'follow_up' ? 'Follow-up title' : 'Task title'}
+                value={taskForm.title}
+                onChange={(event) => setTaskForm((previous) => ({ ...previous, title: event.target.value }))}
+              />
+              <Field type="date" value={taskForm.dueDate} onChange={(event) => setTaskForm((previous) => ({ ...previous, dueDate: event.target.value }))} />
+              {activityComposerMode === 'task' && agentOptions.length ? (
+                <Field as="select" value={taskForm.assignedAgentId} onChange={(event) => setTaskForm((previous) => ({ ...previous, assignedAgentId: event.target.value }))}>
+                  <option value="">Assigned agent</option>
+                  {agentOptions.map((agent) => (
+                    <option key={`${agent.id}:${agent.email}:task`} value={agent.id || agent.email}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </Field>
+              ) : null}
+              <Field as="select" value={taskForm.priority} onChange={(event) => setTaskForm((previous) => ({ ...previous, priority: event.target.value }))}>
+                {TASK_PRIORITIES.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Field>
+            </div>
+          ) : null}
+
+          {activityComposerMode === 'note' ? (
+            <div className="flex flex-wrap gap-2 text-xs font-semibold text-[#60758b]">
+              <span className="rounded-full bg-[#eef5fb] px-3 py-1">Internal</span>
+              <span className="rounded-full bg-[#f3f7fb] px-3 py-1 text-[#8aa0b7]">Shared visibility coming later</span>
+            </div>
+          ) : null}
+
+          {activityComposerMode === 'activity' || activityComposerMode === 'note' ? (
+            <div className="overflow-hidden rounded-[22px] bg-[#f8fbfd] ring-1 ring-[#e6edf5] transition focus-within:bg-white focus-within:ring-[#b9d5eb]">
+              <Field
+                as="textarea"
+                rows={5}
+                className="min-h-[150px] border-0 bg-transparent px-4 py-4 text-[15px] leading-6 shadow-none outline-none ring-0 focus:ring-0"
+                placeholder={activityComposerMode === 'note' ? 'Write an internal note...' : 'What happened with this lead?'}
+                value={activityForm.activityNote}
+                onChange={(event) => setActivityForm((previous) => ({ ...previous, activityNote: event.target.value }))}
+              />
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-[22px] bg-[#f8fbfd] ring-1 ring-[#e6edf5] transition focus-within:bg-white focus-within:ring-[#b9d5eb]">
+              <Field
+                as="textarea"
+                rows={4}
+                className="min-h-[120px] border-0 bg-transparent px-4 py-4 text-[15px] leading-6 shadow-none outline-none ring-0 focus:ring-0"
+                placeholder={activityComposerMode === 'follow_up' ? 'Add context for this follow-up...' : 'Add task notes...'}
+                value={taskForm.description}
+                onChange={(event) => setTaskForm((previous) => ({ ...previous, description: event.target.value }))}
+              />
+            </div>
+          )}
+
+          {activityComposerMode === 'activity' || activityComposerMode === 'note' ? (
+            <div className="flex flex-wrap gap-2">
+              {LEAD_ACTIVITY_SUGGESTION_CHIPS.map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  className="rounded-full bg-[#f2f6fa] px-3 py-1.5 text-xs font-semibold text-[#557089] transition hover:bg-[#e7f0f8] hover:text-[#244f70]"
+                  onClick={() => handleAppendActivitySuggestion(chip)}
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="flex justify-end gap-2 border-t border-[#edf3f8] pt-4">
+            <Button type="button" variant="secondary" onClick={closeActivityComposer}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              {editingActivityId ? 'Save Activity' : editingTaskId ? 'Save Task' : activityComposerMode === 'follow_up' ? 'Create Follow-up' : activityComposerMode === 'task' ? 'Create Task' : activityComposerMode === 'note' ? 'Add Note' : 'Log Activity'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={sellerContactFeedbackModal.open}
 	        onClose={closeSellerContactFeedbackModal}
 	        title="Contact Seller"
 	        subtitle="Log the first seller contact so the journey can move to onboarding."
