@@ -27,6 +27,15 @@ function formatUtcIcsDate(value = "") {
   return parsed.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
 
+function encodeBase64Utf8(value = "") {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
 export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
   if (payload.attachCalendarInvite === false) return null;
   const date = normalizeText(payload.appointmentDate);
@@ -123,7 +132,7 @@ export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
     filename: normalizeText(payload.appointmentId)
       ? `arch9-appointment-${normalizeText(payload.appointmentId)}.ics`
       : "arch9-appointment.ics",
-    content: btoa(content),
+    content: encodeBase64Utf8(content),
     content_type: `text/calendar; method=${method}; charset=UTF-8`,
   };
 }
