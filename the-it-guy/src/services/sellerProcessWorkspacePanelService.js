@@ -129,11 +129,25 @@ function buildMissingEvidence(payload = {}) {
 }
 
 function buildActionCards(payload = {}) {
+  const sellerLeadWorkspace = payload.sellerLeadWorkspace || {}
   const documentCenter = payload.sellerDocumentCenter || {}
   const appointments = payload.appointments || {}
   const mandateFlow = payload.mandateFlow || {}
   const listingWorkspace = payload.listingWorkspace || {}
+  const currentStageKey = normalizeText(sellerLeadWorkspace.currentProcessStageKey).toLowerCase()
+  const missingEvidenceKeys = asArray(sellerLeadWorkspace.missingEvidenceKeys)
+  const needsFirstContact = currentStageKey === 'first_contact' || missingEvidenceKeys.includes('seller_contacted')
   return [
+    ...(needsFirstContact ? [
+      {
+        key: 'contact_seller',
+        label: 'Log First Contact',
+        surface: 'activityTimeline',
+        pending: true,
+        disabled: false,
+        readOnly: false,
+      },
+    ] : []),
     {
       key: 'schedule_valuation_appointment',
       label: 'Schedule Valuation Appointment',

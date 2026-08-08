@@ -525,6 +525,7 @@ function asRecord(value) {
 }
 
 const KINGSTONS_PIPELINE_ACTION_COPY = Object.freeze({
+  contact_seller: 'Log the first seller outreach call, email, or WhatsApp before moving on to valuation booking.',
   schedule_valuation_appointment: 'Book the valuation appointment with the seller and any required roleplayers.',
   upload_valuation_document: 'Upload the completed formal valuation document to the seller document workspace.',
   schedule_valuation_presentation: 'Book the valuation presentation appointment with the seller.',

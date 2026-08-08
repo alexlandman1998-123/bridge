@@ -100,6 +100,29 @@ function assertPartnerReadinessHidesInternalKeys(model) {
 }
 
 {
+  const payload = buildSellerProcessShadowIntegration({
+    organisationSettings: {
+      sellerProcess: {
+        profile: 'kingstons_residential',
+      },
+    },
+    lead: {
+      status: 'new',
+    },
+    activities: [],
+    appointments: [],
+    documents: [],
+  })
+  const model = buildSellerProcessWorkspacePanelModel({
+    [SELLER_PROCESS_SHADOW_WORKSPACE_KEY]: payload,
+  })
+  assert.equal(model.visible, true)
+  assert.equal(model.currentStageLabel, 'First Contact')
+  assert.equal(model.actionCards[0].key, 'contact_seller')
+  assert.equal(model.actionCards[0].label, 'Log First Contact')
+}
+
+{
   const model = buildSellerProcessWorkspacePanelModel({
     row: {
       leadId: 'lead-kingstons-route-state',
