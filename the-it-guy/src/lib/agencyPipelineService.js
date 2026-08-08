@@ -384,6 +384,17 @@ function serializeAppointmentNotificationError(error = {}) {
   }
 }
 
+function summarizeAppointmentNotificationError(error = {}) {
+  const summary = serializeAppointmentNotificationError(error)
+  return [
+    summary.message,
+    summary.code ? `code=${summary.code}` : '',
+    summary.status ? `status=${summary.status}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
 async function runAppointmentNotificationTask(taskName, callback, options = {}) {
   const softTimeoutMs = Math.max(0, Number(options?.softTimeoutMs || 0) || 0)
   let timeoutId = null
@@ -412,11 +423,17 @@ async function runAppointmentNotificationTask(taskName, callback, options = {}) 
         })
       })
       .catch((error) => {
-        console.warn(`[appointments][notifications] ${taskName} failed after returning control to the UI`, serializeAppointmentNotificationError(error))
+        console.warn(
+          `[appointments][notifications] ${taskName} failed after returning control to the UI: ${summarizeAppointmentNotificationError(error)}`,
+          serializeAppointmentNotificationError(error),
+        )
       })
     return { timedOut: true, notificationsQueued: true }
   } catch (error) {
-    console.warn(`[appointments][notifications] ${taskName} failed`, serializeAppointmentNotificationError(error))
+    console.warn(
+      `[appointments][notifications] ${taskName} failed: ${summarizeAppointmentNotificationError(error)}`,
+      serializeAppointmentNotificationError(error),
+    )
     return null
   } finally {
     if (timeoutId) {
@@ -2395,25 +2412,45 @@ async function runAppointmentCreateNotificationSideEffects(notificationSource = 
       ? 'appointment_scheduled'
       : 'appointment_confirmation_required'
 
-  inviteNotificationResults = await notifyAppointmentParticipants(notificationSource.appointmentId, notificationEventType, {
-    visibility: notificationSource.visibility,
-    metadata: {
-      source: 'createAppointmentAsync',
-      attachCalendarInvite: payload?.attachCalendarInvite !== false,
-      notifyCreatorOnRsvp: payload?.notifyCreatorOnRsvp !== false,
-      organisationId: normalizeText(notificationSource?.organisationId || payload?.organisationId || ''),
-      organisationName: normalizeText(payload?.organisationName || ''),
-      agentName: normalizeText(notificationSource?.assignedAgentName || payload?.assignedAgent?.name || payload?.agent?.name || actor?.name || ''),
-      agentEmail: normalizeText(notificationSource?.assignedAgentEmail || payload?.assignedAgent?.email || payload?.agent?.email || actor?.email || '').toLowerCase(),
-      agentRole: 'Agent',
-      replyTo: normalizeText(notificationSource?.assignedAgentEmail || payload?.assignedAgent?.email || payload?.agent?.email || actor?.email || '').toLowerCase(),
-      listingId: normalizeText(payload?.listingId || notificationSource?.listingId) || '',
-      listingLabel: normalizeText(payload?.listingLabel || payload?.listingReference || payload?.listingReferenceSnapshot) || '',
-    },
-  })
+  try {
+    inviteNotificationResults = await notifyAppointmentParticipants(notificationSource.appointmentId, notificationEventType, {
+      visibility: notificationSource.visibility,
+      fallbackParticipants: Array.isArray(payload?.participants) ? payload.participants : notificationSource?.participants,
+      metadata: {
+        source: 'createAppointmentAsync',
+        attachCalendarInvite: payload?.attachCalendarInvite !== false,
+        notifyCreatorOnRsvp: payload?.notifyCreatorOnRsvp !== false,
+        organisationId: normalizeText(notificationSource?.organisationId || payload?.organisationId || ''),
+        organisationName: normalizeText(payload?.organisationName || ''),
+        agentName: normalizeText(notificationSource?.assignedAgentName || payload?.assignedAgent?.name || payload?.agent?.name || actor?.name || ''),
+        agentEmail: normalizeText(notificationSource?.assignedAgentEmail || payload?.assignedAgent?.email || payload?.agent?.email || actor?.email || '').toLowerCase(),
+        agentRole: 'Agent',
+        replyTo: normalizeText(notificationSource?.assignedAgentEmail || payload?.assignedAgent?.email || payload?.agent?.email || actor?.email || '').toLowerCase(),
+        listingId: normalizeText(payload?.listingId || notificationSource?.listingId) || '',
+        listingLabel: normalizeText(payload?.listingLabel || payload?.listingReference || payload?.listingReferenceSnapshot) || '',
+      },
+    })
+  } catch (inviteError) {
+    console.warn(
+      `[appointments][notifications] appointment invite failed before delivery: ${summarizeAppointmentNotificationError(inviteError)}`,
+      serializeAppointmentNotificationError(inviteError),
+    )
+    throw inviteError
+  }
 
   if (['requested', 'pending', 'scheduled', 'confirmed', 'accepted'].includes(normalizedStatus)) {
-    reminderResults = await scheduleAppointmentReminders(notificationSource.appointmentId)
+    try {
+      reminderResults = await scheduleAppointmentReminders(notificationSource.appointmentId)
+    } catch (reminderError) {
+      console.warn(
+        `[appointments][notifications] reminder scheduling skipped after invite attempt: ${summarizeAppointmentNotificationError(reminderError)}`,
+        serializeAppointmentNotificationError(reminderError),
+      )
+      reminderResults = [{
+        status: 'failed',
+        reason: summarizeAppointmentNotificationError(reminderError),
+      }]
+    }
   }
 
   return { inviteNotificationResults, documentNotificationResults, reminderResults }
@@ -2608,7 +2645,14 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
   if (payload?.sendInviteEmails !== false) {
     const sideEffectResults = await runAppointmentNotificationTask(
       'appointment_created',
-      () => runAppointmentCreateNotificationSideEffects(notificationSource, payload, actor),
+      () => runAppointmentCreateNotificationSideEffects(
+        notificationSource,
+        {
+          ...payload,
+          participants: defaultParticipants,
+        },
+        actor,
+      ),
       { softTimeoutMs: APPOINTMENT_CREATE_NOTIFICATION_SOFT_TIMEOUT_MS },
     )
     if (sideEffectResults?.timedOut) {

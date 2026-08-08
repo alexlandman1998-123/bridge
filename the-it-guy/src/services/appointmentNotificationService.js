@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient'
+import { getEdgeFunctionInvokeError, invokeEdgeFunction, supabase, isSupabaseConfigured } from '../lib/supabaseClient'
 import { createClientPortalNotification } from './clientPortalNotificationsService'
 import { getAppointmentTypeTemplate } from './appointmentTemplateService'
 
@@ -212,6 +212,25 @@ function filterParticipantsForDelivery(participants = [], options = {}) {
     if (!targetEmails.size && !targetParticipantIds.size) return true
     return targetEmails.has(email) || targetParticipantIds.has(normalizeText(participant?.participantId))
   })
+}
+
+function normalizeParticipantForDelivery(participant = {}) {
+  return {
+    participantId: normalizeText(participant?.participantId || participant?.participant_id || participant?.id) || null,
+    name: normalizeText(participant?.name || participant?.displayName || participant?.full_name) || 'Participant',
+    email: normalizeLower(participant?.email),
+    phone: normalizeText(participant?.phone || participant?.mobile || participant?.phone_number),
+    participantRole: normalizeText(participant?.participantRole || participant?.participant_role || participant?.role) || 'Participant',
+    rsvpStatus: titleCaseStatus(participant?.rsvpStatus || participant?.rsvp_status || 'pending'),
+    rsvpToken: normalizeText(participant?.rsvpToken || participant?.rsvp_token),
+  }
+}
+
+function normalizeFallbackParticipantsForDelivery(participants = []) {
+  if (!Array.isArray(participants)) return []
+  return participants
+    .map((participant) => normalizeParticipantForDelivery(participant))
+    .filter((participant) => participant.email || participant.participantId)
 }
 
 function createDedupeKey({ appointmentId, eventType, recipientRole, recipientEmail = '', recipientId = '', scheduledFor = '' } = {}) {
@@ -433,10 +452,18 @@ async function sendAppointmentEmailToRecipient({ recipientEmail, eventType, appo
     attachCalendarInvite: metadata?.attachCalendarInvite !== false,
   }
 
-  const { data, error } = await supabase.functions.invoke('send-email', { body })
-  if (error || data?.ok === false) {
-    const reason = error?.message || data?.error || data?.message || 'unknown_send_error'
-    return { sent: false, status: 'failed', reason }
+  const result = await invokeEdgeFunction('send-email', { body })
+  const invokeError = getEdgeFunctionInvokeError(result)
+  const data = result?.data || null
+  if (invokeError || data?.ok === false) {
+    const reason = invokeError?.message || data?.error || data?.message || 'unknown_send_error'
+    return {
+      sent: false,
+      status: 'failed',
+      reason,
+      details: invokeError?.details ?? data?.details ?? null,
+      statusCode: invokeError?.status ?? data?.status ?? null,
+    }
   }
 
   if (participant?.participantId) {
@@ -632,12 +659,33 @@ export async function notifyAppointmentParticipants(appointmentId, eventType, op
   const message = normalizeText(options?.message) || resolveEventMessage(normalizedEventType, appointment)
   const title = normalizeText(options?.title) || resolveEventTitle(normalizedEventType)
 
+  const contextParticipants = Array.isArray(context.participants) ? context.participants : []
+  const fallbackParticipants = normalizeFallbackParticipantsForDelivery(options?.fallbackParticipants)
+  const deliverySourceParticipants = contextParticipants.length ? contextParticipants : fallbackParticipants
+
+  if (!contextParticipants.length && fallbackParticipants.length) {
+    console.info('[appointment-notifications] using fallback participants from appointment payload', {
+      appointmentId,
+      eventType: normalizedEventType,
+      fallbackParticipantCount: fallbackParticipants.length,
+    })
+  }
+
   const participants = filterParticipantsForDelivery(
-    (context.participants || []).filter((participant) =>
+    deliverySourceParticipants.filter((participant) =>
       shouldNotifyRoleForVisibility(participant?.participantRole, visibility),
     ),
     options,
   )
+
+  if (!participants.length) {
+    console.warn('[appointment-notifications] no deliverable participants found', {
+      appointmentId,
+      eventType: normalizedEventType,
+      contextParticipantCount: contextParticipants.length,
+      fallbackParticipantCount: fallbackParticipants.length,
+    })
+  }
 
   const results = []
 
