@@ -290,28 +290,30 @@ async function loadAppointmentContext(appointmentId) {
     throw new Error('Appointment is required.')
   }
 
-  let appointmentQuery = await supabase
-    .from('appointments')
-    .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, timezone, location, meeting_url, status, notes, visibility_scope, required_documents, linked_workflow_stage, linked_transaction_stage, assigned_agent_id, assigned_agent_name, assigned_agent_email')
-    .eq('appointment_id', scopedAppointmentId)
-    .maybeSingle()
+  const appointmentSelects = [
+    'appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, timezone, location, meeting_url, status, notes, visibility_scope, required_documents, linked_workflow_stage, linked_transaction_stage, assigned_agent_id, assigned_agent_name, assigned_agent_email',
+    'appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, timezone, location, meeting_url, status, notes, visibility_scope, required_documents, linked_workflow_stage, linked_transaction_stage',
+    'appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, notes, visibility_scope',
+    'appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, notes',
+  ]
 
-  if (
-    appointmentQuery.error &&
-    (
-      isMissingColumnError(appointmentQuery.error, 'required_documents') ||
-      isMissingColumnError(appointmentQuery.error, 'meeting_url') ||
-      isMissingColumnError(appointmentQuery.error, 'timezone') ||
-      isMissingColumnError(appointmentQuery.error, 'assigned_agent_id') ||
-      isMissingColumnError(appointmentQuery.error, 'assigned_agent_name') ||
-      isMissingColumnError(appointmentQuery.error, 'assigned_agent_email')
-    )
-  ) {
+  let appointmentQuery = { data: null, error: null }
+  for (const selectClause of appointmentSelects) {
     appointmentQuery = await supabase
       .from('appointments')
-      .select('appointment_id, organisation_id, transaction_id, appointment_type, title, appointment_date, start_time, end_time, date_time, location, status, notes, visibility_scope, assigned_agent_id, assigned_agent_name, assigned_agent_email')
+      .select(selectClause)
       .eq('appointment_id', scopedAppointmentId)
       .maybeSingle()
+
+    if (!appointmentQuery.error || !isMissingColumnError(appointmentQuery.error)) {
+      break
+    }
+
+    console.info('[appointment-notifications] retrying appointment context with legacy-safe columns', {
+      appointmentId: scopedAppointmentId,
+      missingColumnCode: appointmentQuery.error?.code || '',
+      missingColumnMessage: appointmentQuery.error?.message || '',
+    })
   }
 
   if (appointmentQuery.error) {
