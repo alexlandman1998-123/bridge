@@ -2343,9 +2343,12 @@ async function runAppointmentCreateNotificationSideEffects(notificationSource = 
   let inviteNotificationResults = []
   let documentNotificationResults = []
   let reminderResults = []
-  const notificationEventType = normalizeLowerText(notificationSource.status) === 'confirmed'
+  const normalizedStatus = normalizeLowerText(notificationSource.status)
+  const notificationEventType = normalizedStatus === 'confirmed'
     ? 'appointment_confirmed'
-    : 'appointment_confirmation_required'
+    : normalizedStatus === 'scheduled'
+      ? 'appointment_scheduled'
+      : 'appointment_confirmation_required'
 
   inviteNotificationResults = await notifyAppointmentParticipants(notificationSource.appointmentId, notificationEventType, {
     visibility: notificationSource.visibility,
@@ -2364,7 +2367,7 @@ async function runAppointmentCreateNotificationSideEffects(notificationSource = 
     },
   })
 
-  if (['requested', 'pending', 'confirmed', 'accepted'].includes(normalizeLowerText(notificationSource.status))) {
+  if (['requested', 'pending', 'scheduled', 'confirmed', 'accepted'].includes(normalizedStatus)) {
     reminderResults = await scheduleAppointmentReminders(notificationSource.appointmentId)
   }
 

@@ -10526,6 +10526,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       row: selectedLead || {},
       lead: selectedLead || {},
       contact: selectedLeadContact || {},
+      activities: selectedLeadActivities,
       appointments: selectedLeadAppointments,
       listings: selectedLeadLinkedListing ? [selectedLeadLinkedListing] : [],
       documents: selectedLeadLinkedListing?.documents || [],
@@ -16339,7 +16340,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         relatedEntityType: 'lead',
         relatedEntityId: normalizeText(selectedLead?.leadId) || '',
         location: normalizeText(selectedLeadLinkedListing?.address || selectedLeadLinkedListing?.propertyAddress || selectedLead?.sellerPropertyAddress || selectedLead?.propertyInterest) || '',
-        status: 'requested',
+        status: 'scheduled',
         recipientEmail: normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email).toLowerCase(),
         participants: [{
           name: normalizeText(selectedLeadContactName || selectedLeadDisplayName || selectedLead?.name) || 'Seller',
