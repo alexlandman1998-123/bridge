@@ -41,6 +41,7 @@ function KingstonsSellerAppointmentsWorkspace({
   formatAppointmentTimeRange = () => 'Time pending',
   getAppointmentStatusTone = () => 'border-[#dde7f2] bg-[#f7fbff] text-[#4c6680]',
   handleOpenAppointmentModal = () => {},
+  handleScheduleAppointment = () => {},
   handleCancelAppointment = () => {},
   handleMarkAppointmentComplete = () => {},
   resolveAgentById = () => null,
@@ -89,9 +90,9 @@ function KingstonsSellerAppointmentsWorkspace({
           <h3 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#18324b]">Appointments</h3>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6a8098]">Schedule and manage appointments with your seller.</p>
         </div>
-        <Button type="button" onClick={() => handleOpenAppointmentModal()}>
+        <Button type="button" onClick={() => handleScheduleAppointment()}>
           <Plus className="h-4 w-4" />
-          Schedule Appointment
+          Schedule Valuation Appointment
         </Button>
       </div>
 

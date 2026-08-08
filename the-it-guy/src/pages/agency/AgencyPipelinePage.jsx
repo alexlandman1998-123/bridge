@@ -10594,6 +10594,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [
     mandatePacketStatus,
     selectedLead,
+    selectedLeadActivities,
     selectedLeadAppointments,
     selectedLeadContact,
     selectedLeadHasKingstonsPipelineSignal,
@@ -14750,6 +14751,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLead) return
     setAppointmentManualParticipantOpen(false)
     setAppointmentDeselectedParticipantKeys([])
+    const isKingstonsSellerAppointment = selectedLeadIsSeller && selectedLeadHasKingstonsPipelineSignal
+    const appointmentType = isKingstonsSellerAppointment ? 'seller_valuation' : 'seller_consultation'
+    const appointmentTitle = isKingstonsSellerAppointment ? 'Valuation Appointment' : 'Seller Consultation'
     const sellerListingId = normalizeText(
       selectedLead?.listingId ||
       selectedLead?.listing_id ||
@@ -14766,9 +14770,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLeadPropertyLabel ||
       resolveAppointmentListingLabel(sellerListingId),
     )
-    setAppointmentForm((previous) => buildDefaultAppointmentFormForType('seller_consultation', {
+    const sellerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email).toLowerCase()
+    const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() ||
+      selectedLead?.name ||
+      sellerEmail
+    setSelectedAppointmentId('')
+    setAppointmentForm((previous) => buildDefaultAppointmentFormForType(appointmentType, {
       ...previous,
-      appointmentType: 'seller_consultation',
+      appointmentType,
+      title: appointmentTitle,
       date: previous.date || getTomorrowIsoDate(),
       startTime: previous.startTime || getCurrentTimeValue(),
       durationMinutes: previous.durationMinutes || 60,
@@ -14779,6 +14789,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       relatedEntityId: sellerLeadId || previous.relatedEntityId || '',
       location: normalizeText(previous.location) || sellerLocation,
       visibility: 'client_visible',
+      status: isKingstonsSellerAppointment ? 'scheduled' : (previous.status || 'requested'),
+      recipientEmail: sellerEmail,
+      participants: sellerEmail
+        ? [{
+            name: sellerName,
+            email: sellerEmail,
+            phone: normalizeText(selectedLeadContact?.phone || selectedLead?.phone),
+            participantRole: 'Seller',
+            isRequired: true,
+            rsvpStatus: 'Pending',
+          }]
+        : [],
     }))
     setAppointmentSchedulingIntegrity(null)
     setAppointmentSchedulingError('')
@@ -24793,6 +24815,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         formatAppointmentTimeRange={formatAppointmentTimeRange}
                         getAppointmentStatusTone={getAppointmentStatusTone}
                         handleOpenAppointmentModal={handleOpenAppointmentModal}
+                        handleScheduleAppointment={handleScheduleSellerAppointment}
                         handleCancelAppointment={handleCancelAppointment}
                         handleMarkAppointmentComplete={handleMarkAppointmentComplete}
                         resolveAgentById={resolveAgentById}

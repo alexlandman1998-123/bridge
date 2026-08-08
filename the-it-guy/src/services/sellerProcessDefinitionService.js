@@ -147,6 +147,7 @@ const KINGSTONS_PROCESS_DEFINITION = Object.freeze({
       source: 'appointment',
       requiredForStage: 'valuation_appointment_scheduled',
       appointmentType: 'seller_valuation',
+      appointmentTypeAliases: Object.freeze(['seller_consultation', 'viewing']),
       acceptedStatuses: Object.freeze(['scheduled', 'confirmed', 'awaiting_confirmation', 'completed']),
     }),
     Object.freeze({

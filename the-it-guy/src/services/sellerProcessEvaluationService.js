@@ -73,9 +73,10 @@ function documentSatisfiesGate(document = {}, gate = {}) {
   return Boolean(statusAccepted(status, gate.acceptedStatuses || []) || DOCUMENT_COMPLETE_STATUSES.has(status) || hasFileEvidence(document))
 }
 
-function appointmentTypeMatches(appointment = {}, appointmentType = '') {
+function appointmentTypeMatches(appointment = {}, appointmentType = '', appointmentTypeAliases = []) {
   const expected = normalizeKey(appointmentType)
-  if (!expected) return false
+  const acceptedTypes = [expected, ...asArray(appointmentTypeAliases).map(normalizeKey)].filter(Boolean)
+  if (!acceptedTypes.length) return false
   const keys = [
     appointment?.appointmentType,
     appointment?.appointment_type,
@@ -89,11 +90,11 @@ function appointmentTypeMatches(appointment = {}, appointmentType = '') {
     const valuationSignal = keys.some((key) => key.includes('valuation'))
     if (savedAsSellerConsultation && valuationSignal) return true
   }
-  return keys.some((key) => key === expected || key.includes(expected))
+  return acceptedTypes.some((type) => keys.some((key) => key === type || key.includes(type)))
 }
 
 function appointmentSatisfiesGate(appointment = {}, gate = {}) {
-  if (!appointmentTypeMatches(appointment, gate.appointmentType)) return false
+  if (!appointmentTypeMatches(appointment, gate.appointmentType, gate.appointmentTypeAliases)) return false
   const status = normalizeKey(appointment?.status || appointment?.appointmentStatus || appointment?.appointment_status)
   if (BLOCKED_APPOINTMENT_STATUSES.has(status)) return false
   return statusAccepted(status || 'scheduled', gate.acceptedStatuses || [])
