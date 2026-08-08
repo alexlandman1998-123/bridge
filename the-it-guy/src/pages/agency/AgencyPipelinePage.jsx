@@ -8565,6 +8565,54 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [selectedLeadAppointments],
   )
 
+  const appointmentListingById = useMemo(() => {
+    const map = new Map()
+    for (const option of appointmentListingOptions) {
+      if (option?.id) map.set(normalizeText(option.id), option)
+    }
+    return map
+  }, [appointmentListingOptions])
+
+  const appointmentListingByLabel = useMemo(() => {
+    const map = new Map()
+    for (const option of appointmentListingOptions) {
+      const labels = [
+        option?.label,
+        option?.title,
+        option?.address,
+        [option?.title, option?.address].filter(Boolean).join(' — '),
+      ]
+      for (const label of labels) {
+        const key = normalizeKey(label)
+        if (key && !map.has(key)) map.set(key, option)
+      }
+    }
+    return map
+  }, [appointmentListingOptions])
+
+  const resolveLeadLinkedListing = useCallback(
+    (lead = {}) => {
+      const listingId = normalizeText(lead?.listingId || lead?.listing_id)
+      if (listingId && appointmentListingById.has(listingId)) return appointmentListingById.get(listingId)
+      const possibleLabels = [
+        lead?.propertyInterest,
+        lead?.sellerPropertyAddress,
+        [lead?.propertyInterest, lead?.sellerPropertyAddress].filter(Boolean).join(' — '),
+      ]
+      for (const label of possibleLabels) {
+        const match = appointmentListingByLabel.get(normalizeKey(label))
+        if (match) return match
+      }
+      return null
+    },
+    [appointmentListingById, appointmentListingByLabel],
+  )
+
+  const selectedLeadLinkedListing = useMemo(
+    () => (selectedLead ? resolveLeadLinkedListing(selectedLead) : null),
+    [resolveLeadLinkedListing, selectedLead],
+  )
+
   const selectedLeadLinkedTransaction = useMemo(() => {
     if (!selectedLead) return null
     const leadKey = normalizeLeadIdentityKey(selectedLead?.leadId)
@@ -10419,54 +10467,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedAppointmentId) return null
     return records.appointments.find((appointment) => normalizeText(appointment?.appointmentId) === normalizeText(selectedAppointmentId)) || null
   }, [records.appointments, selectedAppointmentId])
-
-  const appointmentListingById = useMemo(() => {
-    const map = new Map()
-    for (const option of appointmentListingOptions) {
-      if (option?.id) map.set(normalizeText(option.id), option)
-    }
-    return map
-  }, [appointmentListingOptions])
-
-  const appointmentListingByLabel = useMemo(() => {
-    const map = new Map()
-    for (const option of appointmentListingOptions) {
-      const labels = [
-        option?.label,
-        option?.title,
-        option?.address,
-        [option?.title, option?.address].filter(Boolean).join(' — '),
-      ]
-      for (const label of labels) {
-        const key = normalizeKey(label)
-        if (key && !map.has(key)) map.set(key, option)
-      }
-    }
-    return map
-  }, [appointmentListingOptions])
-
-  const resolveLeadLinkedListing = useCallback(
-    (lead = {}) => {
-      const listingId = normalizeText(lead?.listingId || lead?.listing_id)
-      if (listingId && appointmentListingById.has(listingId)) return appointmentListingById.get(listingId)
-      const possibleLabels = [
-        lead?.propertyInterest,
-        lead?.sellerPropertyAddress,
-        [lead?.propertyInterest, lead?.sellerPropertyAddress].filter(Boolean).join(' — '),
-      ]
-      for (const label of possibleLabels) {
-        const match = appointmentListingByLabel.get(normalizeKey(label))
-        if (match) return match
-      }
-      return null
-    },
-    [appointmentListingById, appointmentListingByLabel],
-  )
-
-  const selectedLeadLinkedListing = useMemo(
-    () => (selectedLead ? resolveLeadLinkedListing(selectedLead) : null),
-    [resolveLeadLinkedListing, selectedLead],
-  )
 
   const selectedSellerJourney = useMemo(() => buildSellerJourney({
     lead: selectedLead || {},
