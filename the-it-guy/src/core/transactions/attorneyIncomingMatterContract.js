@@ -1,3 +1,5 @@
+import { buildKingstonsBuyerOtpReadiness } from './kingstonsBuyerOtpReadiness.js'
+
 export const ATTORNEY_INCOMING_INSTRUCTION_STATUSES = Object.freeze({
   newInstruction: 'new_instruction',
   awaitingClientOnboarding: 'awaiting_client_onboarding',
@@ -156,6 +158,22 @@ function hasValue(...values) {
   return values.some((value) => value !== null && value !== undefined && String(value).trim() !== '')
 }
 
+function hasKingstonsManualSignedOtpAttorneyEvidence({
+  allowKingstonsManualSignedOtp = false,
+  kingstonsBuyerOtpReadiness = null,
+  documents = [],
+  documentLibraryRows = [],
+} = {}) {
+  if (allowKingstonsManualSignedOtp !== true) return false
+  const documentRows = Array.isArray(documents) ? documents : []
+  const libraryRows = Array.isArray(documentLibraryRows) ? documentLibraryRows : []
+  const readiness = kingstonsBuyerOtpReadiness ||
+    (documentRows.length || libraryRows.length
+      ? buildKingstonsBuyerOtpReadiness({ documents: documentRows, documentLibraryRows: libraryRows })
+      : null)
+  return readiness?.gate?.attorneyReadinessReady === true || readiness?.gate?.transactionReadinessReady === true
+}
+
 export function normalizeAttorneyIncomingInstructionStatus(value, fallback = '') {
   const normalized = normalizeKey(value)
   if (!normalized) return fallback
@@ -234,14 +252,15 @@ export function hasBuyerOnboardingSubmitted({ transaction = {}, onboarding = {} 
   )
 }
 
-export function hasSignedOtpReceived(transaction = {}) {
+export function hasSignedOtpReceived(transaction = {}, options = {}) {
   const transactionRow = transaction || {}
   const onboardingStatus = normalizeKey(transactionRow.onboardingStatus || transactionRow.onboarding_status)
   const mainStage = String(transactionRow.currentMainStage || transactionRow.current_main_stage || '').trim().toUpperCase()
   return (
     SIGNED_OTP_STATUSES.has(onboardingStatus) ||
     hasValue(transactionRow.signedOtpReceivedAt, transactionRow.signed_otp_received_at, transactionRow.otpUploadedAt, transactionRow.otp_uploaded_at) ||
-    ['ATT', 'ATTY', 'XFER', 'REG'].includes(mainStage)
+    ['ATT', 'ATTY', 'XFER', 'REG'].includes(mainStage) ||
+    hasKingstonsManualSignedOtpAttorneyEvidence(options)
   )
 }
 
@@ -250,6 +269,10 @@ export function resolveAttorneyIncomingInstructionStatus({
   assignment = {},
   onboarding = {},
   documentRequests = [],
+  documents = [],
+  documentLibraryRows = [],
+  allowKingstonsManualSignedOtp = false,
+  kingstonsBuyerOtpReadiness = null,
 } = {}) {
   const transactionRow = transaction || {}
   const assignmentRow = assignment || {}
@@ -276,7 +299,14 @@ export function resolveAttorneyIncomingInstructionStatus({
     return ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance
   }
 
-  if (hasSignedOtpReceived(transactionRow)) {
+  const signedOtpOptions = {
+    allowKingstonsManualSignedOtp,
+    kingstonsBuyerOtpReadiness,
+    documents,
+    documentLibraryRows,
+  }
+
+  if (hasSignedOtpReceived(transactionRow, signedOtpOptions)) {
     return openDocuments.length || reviewDocuments.length
       ? ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingDocuments
       : ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance
@@ -312,6 +342,10 @@ export function resolveAttorneyIncomingWaitingOn({
   transaction = {},
   onboarding = {},
   documentRequests = [],
+  documents = [],
+  documentLibraryRows = [],
+  allowKingstonsManualSignedOtp = false,
+  kingstonsBuyerOtpReadiness = null,
 } = {}) {
   const resolvedStatus = normalizeAttorneyIncomingInstructionStatus(status, ATTORNEY_INCOMING_INSTRUCTION_STATUSES.newInstruction)
   const transactionRow = transaction || {}
@@ -320,6 +354,13 @@ export function resolveAttorneyIncomingWaitingOn({
   const waitingOn = []
   const openDocuments = getOpenAttorneyDocumentRequests(documentRequestRows)
   const reviewDocuments = getAttorneyDocumentRequestsInReview(documentRequestRows)
+
+  const signedOtpOptions = {
+    allowKingstonsManualSignedOtp,
+    kingstonsBuyerOtpReadiness,
+    documents,
+    documentLibraryRows,
+  }
 
   if (resolvedStatus === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.newInstruction) {
     waitingOn.push(ATTORNEY_INCOMING_WAITING_ON.instructionReview)
@@ -331,7 +372,7 @@ export function resolveAttorneyIncomingWaitingOn({
 
   if (
     resolvedStatus === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingSignedOtp ||
-    (hasBuyerOnboardingSubmitted({ transaction: transactionRow, onboarding: onboardingRow }) && !hasSignedOtpReceived(transactionRow))
+    (hasBuyerOnboardingSubmitted({ transaction: transactionRow, onboarding: onboardingRow }) && !hasSignedOtpReceived(transactionRow, signedOtpOptions))
   ) {
     waitingOn.push(ATTORNEY_INCOMING_WAITING_ON.signedOtp)
   }

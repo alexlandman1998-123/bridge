@@ -4823,7 +4823,7 @@ function resolveTransactionProgress({
   const otpSigned =
     hasTransactionEvent(transactionEvents, ['otp_signed', 'sale agreement signed', 'offer to purchase signed']) ||
     hasRequirementStatus(requiredDocumentChecklist, ['signed_otp', 'otp_signed', 'sale_agreement_signed']) ||
-    hasDocumentWithKeywords(documents, ['signed otp', 'signed sale agreement', 'signed offer to purchase']) ||
+    hasDocumentWithKeywords(documents, ['signed_otp', 'signed otp', 'signed sale agreement', 'signed offer to purchase']) ||
     ['FIN', 'ATTY', 'XFER', 'REG', 'TRANSFER', 'REGISTRATION', 'COMPLETE'].includes(mainStage)
   const proofOfFundsVerified =
     hasRequirementStatus(requiredDocumentChecklist, ['proof_of_funds', 'proof_of_funds_cash_component'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||

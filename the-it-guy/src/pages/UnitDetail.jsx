@@ -122,6 +122,11 @@ import {
   applyKingstonsSellerPackReadinessToProgress,
   buildKingstonsSellerPackTransactionReadiness,
 } from '../core/transactions/kingstonsSellerPackTransactionReadiness'
+import {
+  buildKingstonsBuyerOtpDigitalDecision,
+  buildKingstonsBuyerOtpReadiness,
+  buildKingstonsBuyerPortalDecision,
+} from '../core/transactions/kingstonsBuyerOtpReadiness'
 import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
 import {
   buildTransactionWorkspaceMenuItems,
@@ -143,6 +148,7 @@ import {
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
 import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
+import { resolveSellerProcessProfileForOrganisation } from '../services/sellerProcessProfileService'
 import { listPacketTemplates } from '../core/documents/packetService'
 import { resolveDocumentPacketActionState, resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
 import { createDocumentPacket, listDocumentPackets } from '../lib/documentPacketsApi'
@@ -4335,6 +4341,10 @@ function UnitDetail() {
   }
 
   async function ensureOnboardingToken() {
+    if (kingstonsBuyerOnboardingLinksDisabled) {
+      throw new Error(kingstonsBuyerPortalDecisionReason)
+    }
+
     if (!detail?.transaction?.id) {
       throw new Error('Transaction data is missing.')
     }
@@ -4355,6 +4365,9 @@ function UnitDetail() {
   async function handleCopyOnboardingLink() {
     try {
       setError('')
+      if (kingstonsBuyerOnboardingLinksDisabled) {
+        throw new Error(kingstonsBuyerPortalDecisionReason)
+      }
       const record = detail?.onboarding?.token ? detail.onboarding : await ensureOnboardingToken()
       const url = `${window.location.origin}/client/onboarding/${record.token}`
       await copyTextToClipboard(url)
@@ -4366,6 +4379,10 @@ function UnitDetail() {
   }
 
   async function ensureClientPortalLink() {
+    if (kingstonsBuyerPortalLinksDisabled) {
+      throw new Error(kingstonsBuyerPortalDecisionReason)
+    }
+
     if (clientPortalLink?.token) {
       return clientPortalLink
     }
@@ -4480,6 +4497,9 @@ function UnitDetail() {
 
   async function handleOpenOnboardingLink() {
     try {
+      if (kingstonsBuyerOnboardingLinksDisabled) {
+        throw new Error(kingstonsBuyerPortalDecisionReason)
+      }
       const record = detail?.onboarding?.token ? detail.onboarding : await ensureOnboardingToken()
       window.open(`/client/onboarding/${record.token}`, '_blank', 'noopener,noreferrer')
     } catch (openError) {
@@ -4490,6 +4510,11 @@ function UnitDetail() {
   async function handleSendOnboardingEmail({ resend = false } = {}) {
     if (!transaction?.id) {
       setError('Transaction data is not available for onboarding email.')
+      return
+    }
+
+    if (kingstonsBuyerOnboardingLinksDisabled) {
+      setError(kingstonsBuyerPortalDecisionReason)
       return
     }
 
@@ -4541,6 +4566,11 @@ function UnitDetail() {
   async function handleSendClientPortalLinkEmail() {
     if (!transaction?.id) {
       setError('Transaction data is not available for client portal email.')
+      return
+    }
+
+    if (kingstonsBuyerPortalLinksDisabled) {
+      setError(kingstonsBuyerPortalDecisionReason)
       return
     }
 
@@ -4602,6 +4632,12 @@ function UnitDetail() {
   }
 
   function openOtpLegalWorkspace(mode = 'view') {
+    const workspaceMode = resolveWorkspaceModeFromAction(mode)
+    if (kingstonsBuyerOtpDigitalDecision.blocked && ['generate', 'send'].includes(workspaceMode)) {
+      setError(kingstonsBuyerOtpDigitalDecision.message)
+      return
+    }
+
     const path = buildOtpLegalWorkspacePath(mode)
     if (!path) {
       setError('Transaction data is not available for the legal document workspace.')
@@ -4698,6 +4734,12 @@ function UnitDetail() {
   }
 
   function handleOtpPrimaryAction() {
+    if (kingstonsBuyerOtpDigitalDecision.blocked) {
+      setOtpStartOpen(false)
+      setError(kingstonsBuyerOtpDigitalDecision.message)
+      return
+    }
+
     const actionKey = String(otpPacketActionState?.actionKey || '').trim().toLowerCase()
     if (actionKey === 'generate') {
       if (!transaction?.id) {
@@ -4713,6 +4755,11 @@ function UnitDetail() {
   async function handleStartTransactionOtpDocument(selection = {}) {
     if (!transaction?.id) {
       setError('Transaction data is not available for OTP generation.')
+      return
+    }
+    if (kingstonsBuyerOtpDigitalDecision.blocked) {
+      setOtpStartOpen(false)
+      setError(kingstonsBuyerOtpDigitalDecision.message)
       return
     }
     const sourceMode = selection?.sourceMode || DOCUMENT_START_SOURCE_MODES.saved
@@ -4737,6 +4784,11 @@ function UnitDetail() {
   }
 
   async function handleApproveOtpDraft() {
+    if (kingstonsBuyerOtpDigitalDecision.blocked) {
+      setError(kingstonsBuyerOtpDigitalDecision.message)
+      return
+    }
+
     const generatedOtp = salesWorkflowSnapshot?.latestGeneratedOtpDocument
     if (!generatedOtp?.id) {
       setError('Generate an OTP draft before approval.')
@@ -5393,6 +5445,11 @@ function UnitDetail() {
   }
 
   function handleOpenClientPortalLink() {
+    if (kingstonsBuyerPortalLinksDisabled) {
+      setError(kingstonsBuyerPortalDecisionReason)
+      return
+    }
+
     if (!clientPortalLink?.token) {
       setError('Client portal link is not available yet for this transaction.')
       return
@@ -5727,6 +5784,38 @@ function UnitDetail() {
       transaction?.routing_profile_json?.clientIntakePreference ||
       transaction?.routing_profile_json?.deliveryMode,
   )
+  const sellerProcessProfileResolution = resolveSellerProcessProfileForOrganisation({
+    organisationId: transaction?.organisation_id || unit?.development?.organisation_id || '',
+    sellerProcessProfile:
+      transaction?.seller_process_profile ||
+      transaction?.sellerProcessProfile ||
+      unit?.seller_process_profile ||
+      unit?.sellerProcessProfile ||
+      '',
+    transaction,
+    unit,
+  })
+  const kingstonsBuyerOtpSalesWorkflowEnabled = Boolean(
+    sellerProcessProfileResolution.isKingstons &&
+      (transaction?.accepted_offer_id || transaction?.acceptedOfferId || transaction?.listing_id || transaction?.listingId),
+  )
+  const kingstonsBuyerOtpSalesWorkflowReadiness = kingstonsBuyerOtpSalesWorkflowEnabled
+    ? buildKingstonsBuyerOtpReadiness({
+        documents: documents || [],
+      })
+    : null
+  const kingstonsBuyerPortalDecision = kingstonsBuyerOtpSalesWorkflowEnabled
+    ? buildKingstonsBuyerPortalDecision({
+        readiness: kingstonsBuyerOtpSalesWorkflowReadiness,
+      })
+    : null
+  const kingstonsBuyerOtpDigitalDecision = buildKingstonsBuyerOtpDigitalDecision({
+    isKingstons: kingstonsBuyerOtpSalesWorkflowEnabled,
+    requestedAction: 'transaction_otp_generation_and_signing',
+  })
+  const kingstonsBuyerPortalLinksDisabled = kingstonsBuyerPortalDecision?.buyerPortalEnabled === false
+  const kingstonsBuyerOnboardingLinksDisabled = kingstonsBuyerPortalDecision?.onboardingLinkEnabled === false
+  const kingstonsBuyerPortalDecisionReason = kingstonsBuyerPortalDecision?.reason || ''
   const salesWorkflowSnapshot = resolveSalesWorkflowSnapshot({
     onboardingStatus,
     onboardingCompletedAt: transaction?.onboarding_completed_at || null,
@@ -5736,6 +5825,8 @@ function UnitDetail() {
     documents: documents || [],
     requiredDocuments: requiredDocumentChecklist || [],
     permissions: salesLanePermissions,
+    allowKingstonsManualSignedOtp: kingstonsBuyerOtpSalesWorkflowEnabled,
+    kingstonsBuyerOtpReadiness: kingstonsBuyerOtpSalesWorkflowReadiness,
   })
   const canEditSalesWorkflow = salesLanePermissions.canEditWorkflowLane
   const canEditFinanceWorkflowLane = financeLanePermissions.canEditWorkflowLane
@@ -6432,7 +6523,9 @@ function UnitDetail() {
   const otpGeneratedDocument = salesWorkflowSnapshot?.latestGeneratedOtpDocument || null
   const otpStatusLabel =
     salesWorkflowSnapshot?.signedOtpReceived
-      ? 'Signed / Final'
+      ? salesWorkflowSnapshot?.signedOtpSource === 'kingstons_manual_upload'
+        ? 'Signed / Uploaded'
+        : 'Signed / Final'
       : salesWorkflowSnapshot?.sentForSignature
         ? 'Sent for Signature'
         : salesWorkflowSnapshot?.approvedForRelease
@@ -6836,7 +6929,8 @@ function UnitDetail() {
       label: 'Message Parties',
       icon: MessageSquare,
       onClick: handleOpenClientPortalLink,
-      disabled: !clientPortalLink?.token,
+      disabled: kingstonsBuyerPortalLinksDisabled || !clientPortalLink?.token,
+      reason: kingstonsBuyerPortalLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
     },
   ]
   const developerUpcomingActionItems = Array.isArray(developerReadinessProfile?.actionQueue)
@@ -7171,17 +7265,19 @@ function UnitDetail() {
     },
     {
       id: 'client-portal',
-      label: 'Client Portal',
+      label: kingstonsBuyerPortalLinksDisabled ? 'Manual OTP Only' : 'Client Portal',
       icon: 'portal',
       onClick: handleOpenClientPortalLink,
-      disabled: !clientPortalLink?.token,
+      disabled: kingstonsBuyerPortalLinksDisabled || !clientPortalLink?.token,
+      reason: kingstonsBuyerPortalLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
     },
     {
       id: 'copy-client-portal-link',
       label: clientPortalLinkCopied ? 'Copied Portal Link' : 'Copy Portal Link',
       icon: 'portal',
       onClick: handleCopyClientPortalLink,
-      disabled: !transaction?.id || !canEditSalesWorkflow,
+      disabled: kingstonsBuyerPortalLinksDisabled || !transaction?.id || !canEditSalesWorkflow,
+      reason: kingstonsBuyerPortalLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
       hidden: !canEditSalesWorkflow,
     },
     {
@@ -7202,7 +7298,8 @@ function UnitDetail() {
       icon: 'onboarding_link',
       variant: 'primary',
       onClick: () => void handleSendOnboardingEmail({ resend: false }),
-      disabled: !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || (!onboardingRequiresManualHandoff && !buyer?.email),
+      disabled: kingstonsBuyerOnboardingLinksDisabled || !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || (!onboardingRequiresManualHandoff && !buyer?.email),
+      reason: kingstonsBuyerOnboardingLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
       hidden: !canEditSalesWorkflow,
     })
   } else if (onboardingEmailSent && !onboardingComplete) {
@@ -7212,7 +7309,8 @@ function UnitDetail() {
       icon: 'onboarding_link',
       variant: 'secondary',
       onClick: () => void handleSendOnboardingEmail({ resend: true }),
-      disabled: !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || (!onboardingRequiresManualHandoff && !buyer?.email),
+      disabled: kingstonsBuyerOnboardingLinksDisabled || !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || (!onboardingRequiresManualHandoff && !buyer?.email),
+      reason: kingstonsBuyerOnboardingLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
       hidden: !canEditSalesWorkflow,
     })
   }
@@ -7224,7 +7322,8 @@ function UnitDetail() {
       icon: 'portal',
       variant: 'primary',
       onClick: () => void handleSendClientPortalLinkEmail(),
-      disabled: !canEditSalesWorkflow || sendingClientPortalLink || !transaction?.id || !buyer?.email,
+      disabled: kingstonsBuyerPortalLinksDisabled || !canEditSalesWorkflow || sendingClientPortalLink || !transaction?.id || !buyer?.email,
+      reason: kingstonsBuyerPortalLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
       hidden: !canEditSalesWorkflow,
     })
   } else if (onboardingEmailSent) {
@@ -7234,7 +7333,8 @@ function UnitDetail() {
       icon: 'onboarding_link',
       variant: 'ghost',
       onClick: handleCopyOnboardingLink,
-      disabled: !transaction?.id || !canEditSalesWorkflow,
+      disabled: kingstonsBuyerOnboardingLinksDisabled || !transaction?.id || !canEditSalesWorkflow,
+      reason: kingstonsBuyerOnboardingLinksDisabled ? kingstonsBuyerPortalDecisionReason : '',
       hidden: !canEditSalesWorkflow,
     })
   }
@@ -7504,7 +7604,7 @@ function UnitDetail() {
           () => void handleSendOnboardingEmail({ resend: onboardingEmailSent }),
           {
             variant: 'primary',
-            disabled: sendingOnboardingEmail || !transaction?.id || (!onboardingRequiresManualHandoff && !buyer?.email),
+            disabled: kingstonsBuyerOnboardingLinksDisabled || sendingOnboardingEmail || !transaction?.id || (!onboardingRequiresManualHandoff && !buyer?.email),
           },
         )
         addAction(
@@ -7512,7 +7612,7 @@ function UnitDetail() {
           clientPortalLinkCopied ? 'Copied Portal Link' : 'Copy Portal Link',
           handleCopyClientPortalLink,
           {
-            disabled: !transaction?.id,
+            disabled: kingstonsBuyerPortalLinksDisabled || !transaction?.id,
           },
         )
         break
@@ -7523,7 +7623,7 @@ function UnitDetail() {
           handleOtpPrimaryAction,
           {
             variant: 'primary',
-            disabled: !transaction?.id || otpPacketStatusLoading,
+            disabled: kingstonsBuyerOtpDigitalDecision.blocked || !transaction?.id || otpPacketStatusLoading,
           },
         )
         break
@@ -7534,7 +7634,7 @@ function UnitDetail() {
           () => void handleApproveOtpDraft(),
           {
             variant: 'primary',
-            disabled: !salesWorkflowSnapshot.latestGeneratedOtpDocument?.id,
+            disabled: kingstonsBuyerOtpDigitalDecision.blocked || !salesWorkflowSnapshot.latestGeneratedOtpDocument?.id,
           },
         )
         if (generatedOtpUrl) {
@@ -7548,7 +7648,7 @@ function UnitDetail() {
           () => openOtpLegalWorkspace('send'),
           {
             variant: 'primary',
-            disabled: !salesWorkflowSnapshot.latestGeneratedOtpDocument?.id,
+            disabled: kingstonsBuyerOtpDigitalDecision.blocked || !salesWorkflowSnapshot.latestGeneratedOtpDocument?.id,
           },
         )
         if (generatedOtpUrl) {
@@ -7570,7 +7670,7 @@ function UnitDetail() {
           onboardingLinkCopied ? 'Copied Onboarding Link' : 'Copy Onboarding Link',
           handleCopyOnboardingLink,
           {
-            disabled: !transaction?.id,
+            disabled: kingstonsBuyerOnboardingLinksDisabled || !transaction?.id,
           },
         )
         break
@@ -8915,7 +9015,7 @@ function UnitDetail() {
                   >
                     Download Onboarding
                   </Button>
-                  {!onboardingComplete && onboardingMode !== 'manual' ? (
+                  {!onboardingComplete && onboardingMode !== 'manual' && !kingstonsBuyerOnboardingLinksDisabled ? (
                     <Button variant="secondary" onClick={handleOpenOnboardingLink} disabled={!onboarding?.token}>
                       Open Onboarding
                     </Button>
@@ -10758,7 +10858,7 @@ function UnitDetail() {
       </div>
     </SharedTransactionShell>
     <StartDocumentModal
-      open={otpStartOpen}
+      open={otpStartOpen && !kingstonsBuyerOtpDigitalDecision.blocked}
       onClose={() => setOtpStartOpen(false)}
       entryPoint={DOCUMENT_START_ENTRY_POINTS.transactionOtp}
       packetType={DOCUMENT_START_PACKET_TYPES.otp}

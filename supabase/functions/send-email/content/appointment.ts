@@ -6,6 +6,7 @@ import {
   renderBridgeEmailLayout,
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
+  renderBridgeSteps,
 } from "./bridgeEmailLayout.ts";
 import { normalizeBrandColor } from "../services/emailBranding.ts";
 
@@ -30,6 +31,85 @@ function eventTitle(eventType: string) {
 
 function isSellerParticipant(participantRole?: string) {
   return String(participantRole || "").trim().toLowerCase().includes("seller");
+}
+
+function humanizeAppointmentType(value?: string) {
+  const normalized = pickText(value, "");
+  if (!normalized) return "";
+  if (!/[_-]/.test(normalized)) return normalized;
+  return normalized
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => `${word.slice(0, 1).toUpperCase()}${word.slice(1)}`)
+    .join(" ");
+}
+
+function isKingstonsOrganisation(organisationName?: string) {
+  return pickText(organisationName, "").toLowerCase().includes("kingstons");
+}
+
+function buildKingstonsValuationInviteCopy({
+  eventType,
+  participantRole,
+  agentName,
+  agentRole,
+  agentBio,
+  organisationName,
+}: {
+  eventType: string;
+  participantRole?: string;
+  agentName?: string;
+  agentRole?: string;
+  agentBio?: string;
+  organisationName?: string;
+}) {
+  const sellerRecipient = isSellerParticipant(participantRole);
+  const hostSentence = buildHostSentence({
+    agentName,
+    agentRole,
+    organisationName,
+  });
+  const confirmationRequired = eventType === "appointment_confirmation_required";
+  const title = confirmationRequired
+    ? "Kingstons Valuation Request"
+    : eventType === "appointment_confirmed"
+      ? "Kingstons Valuation Confirmed"
+      : "Kingstons Valuation Appointment";
+
+  return {
+    title,
+    intro: [
+      confirmationRequired
+        ? "Thank you for considering Kingstons for your valuation."
+        : "Thank you for booking your valuation with Kingstons.",
+      hostSentence
+        ? `Your appointment will be hosted by ${hostSentence}.`
+        : `Your valuation will be looked after by the Kingstons team.`,
+      confirmationRequired
+        ? "Please use the RSVP link below to confirm a time that works for you."
+        : "We’ll walk you through the visit, explain the next steps, and keep the process clear from start to finish.",
+    ],
+    agentSummaryTitle: "Meet your agent",
+    howItWorks: [
+      "We arrive at the property and walk through the home with you.",
+      "We review the key value drivers, including condition, improvements, location, and comparable market activity.",
+      "We explain the valuation outcome and the recommended next steps before we leave.",
+    ],
+    whatToExpect: [
+      sellerRecipient
+        ? "Please make sure access is ready and let us know about any special instructions before the visit."
+        : "Please make sure access is ready and let us know about any special instructions before the visit.",
+      "Bring any questions, recent improvements, or notes you want us to consider.",
+      confirmationRequired
+        ? "Use the RSVP button below to confirm this time or request a change."
+        : "If the time no longer works, reply to the email and we will help adjust the booking.",
+    ],
+    ctaLabel: confirmationRequired ? "RSVP to this time" : "View appointment",
+    agentBio,
+  };
 }
 
 function buildHostSentence({
@@ -98,11 +178,28 @@ function buildWhatToExpect({
 export function buildAppointmentSubject(
   eventType: string,
   appointmentType = "Appointment",
-  options: { participantRole?: string } = {},
+  options: { participantRole?: string; appointmentTitle?: string; organisationName?: string } = {},
 ) {
   const title = eventTitle(eventType);
-  const typeLabel = pickText(appointmentType, "Appointment");
+  const typeLabel = pickText(
+    options.appointmentTitle || humanizeAppointmentType(appointmentType),
+    "Appointment",
+  );
   const participantRole = String(options.participantRole || "").trim().toLowerCase();
+  if (
+    participantRole.includes("seller") &&
+    isKingstonsOrganisation(options.organisationName)
+  ) {
+    if (eventType === "appointment_confirmation_required") {
+      return `Kingstons valuation request: ${typeLabel}`;
+    }
+    if (eventType === "appointment_confirmed") {
+      return `Kingstons valuation confirmed: ${typeLabel}`;
+    }
+    if (eventType === "appointment_scheduled") {
+      return `Kingstons valuation appointment: ${typeLabel}`;
+    }
+  }
   if (participantRole.includes("seller") && eventType === "appointment_scheduled") {
     return `Seller valuation appointment: ${typeLabel}`;
   }
@@ -168,7 +265,7 @@ export function buildAppointmentEmailHtml({
 }) {
   const typeLabel = pickText(
     appointmentTitle,
-    appointmentType || "Appointment",
+    humanizeAppointmentType(appointmentType) || "Appointment",
   );
   const primaryColor = normalizeBrandColor(branding?.primaryColor, "#214f75");
   const resolvedOrganisationName = pickText(organisationName || branding?.organisationName, "Arch9");
@@ -181,9 +278,105 @@ export function buildAppointmentEmailHtml({
     organisationName: resolvedOrganisationName,
   });
   const sellerRecipient = isSellerParticipant(participantRole);
+  const isKingstonsBrand = isKingstonsOrganisation(resolvedOrganisationName);
+  const isKingstonsValuationInvite = isKingstonsBrand && sellerRecipient && [
+    "appointment_scheduled",
+    "appointment_confirmed",
+    "appointment_confirmation_required",
+  ].includes(eventType);
   const safeAcceptLink = escapeHtml(acceptLink || "");
   const safeDeclineLink = escapeHtml(declineLink || "");
   const safeRescheduleLink = escapeHtml(rescheduleLink || "");
+
+  if (isKingstonsValuationInvite) {
+    const kingstons = buildKingstonsValuationInviteCopy({
+      eventType,
+      participantRole,
+      agentName: resolvedAgentName,
+      agentRole: resolvedAgentRole,
+      agentBio: resolvedAgentBio,
+      organisationName: resolvedOrganisationName,
+    });
+    const detailFields = [
+      { label: "Appointment", value: typeLabel },
+      { label: "Date", value: pickText(appointmentDate, "TBC") },
+      { label: "Time", value: pickText(appointmentTime, "TBC") },
+      ...(relatedListing ? [{ label: "Property", value: relatedListing }] : []),
+      { label: "Location", value: pickText(meetingUrl || location, "To be confirmed") },
+      { label: "Status", value: pickText(status, "Pending") },
+      attachCalendarInvite !== false
+        ? { label: "Calendar invite", value: "Attached" }
+        : { label: "Calendar invite", value: "Not attached" },
+    ];
+
+    const contentHtml = [
+      `<div style="margin: 8px 0 18px; padding: 18px 20px; border: 1px solid #e6dcc4; border-left: 4px solid ${primaryColor}; border-radius: 16px; background: linear-gradient(180deg, #fffaf2 0%, #fff4e4 100%);">
+        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #8a6a22; font-weight: 700;">Introduction</p>
+        ${renderBridgeIntroParagraphs(kingstons.intro)}
+      </div>`,
+      renderBridgeSummaryCard(
+        [
+          { label: "Agent", value: pickText(resolvedAgentName, "Your agent") },
+          { label: "Agency", value: resolvedOrganisationName },
+          ...(resolvedAgentRole ? [{ label: "Role", value: resolvedAgentRole }] : []),
+          ...(kingstons.agentBio ? [{ label: "About your agent", value: kingstons.agentBio }] : []),
+        ],
+        kingstons.agentSummaryTitle,
+      ),
+      `<div style="margin: 18px 0; padding: 18px 20px; border: 1px solid #e8dcc7; border-left: 4px solid ${primaryColor}; border-radius: 16px; background: #fffdfa;">
+        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #8a6a22; font-weight: 700;">How the valuation works</p>
+        ${renderBridgeSteps(kingstons.howItWorks)}
+      </div>`,
+      `<div style="margin: 18px 0; padding: 18px 20px; border: 1px solid #dbe6f2; border-left: 4px solid ${primaryColor}; border-radius: 16px; background: linear-gradient(180deg, #f9fcff 0%, #f4f8fc 100%);">
+        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What to expect</p>
+        ${renderBridgeBullets(kingstons.whatToExpect)}
+      </div>`,
+      notes
+        ? `<div style="margin: 16px 0 8px; padding: 16px 18px; border: 1px solid #e2eaf4; border-radius: 14px; background: #ffffff;">
+            <p style="margin: 0 0 8px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">Notes</p>
+            <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #35506d;">${escapeHtml(notes)}</p>
+          </div>`
+        : "",
+      renderBridgeSummaryCard(detailFields, "Appointment Details"),
+      actionLink
+        ? renderBridgeCta(kingstons.ctaLabel, actionLink, { primaryColor })
+        : "",
+      acceptLink || declineLink || rescheduleLink
+        ? `<div style="margin: 18px 0 16px;">
+            <p style="margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: #5d728a;">Please let us know whether this time works for you.</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+              ${
+        acceptLink
+          ? `<a href="${safeAcceptLink}" style="display: inline-block; border-radius: 999px; background: ${primaryColor}; color: #ffffff; font-size: 13px; font-weight: 700; text-decoration: none; padding: 10px 16px;">Accept</a>`
+          : ""
+      }
+              ${
+        declineLink
+          ? `<a href="${safeDeclineLink}" style="display: inline-block; border-radius: 999px; background: #ffffff; border: 1px solid #dce6f1; color: ${primaryColor}; font-size: 13px; font-weight: 700; text-decoration: none; padding: 9px 15px;">Decline</a>`
+          : ""
+      }
+              ${
+        rescheduleLink
+          ? `<a href="${safeRescheduleLink}" style="display: inline-block; border-radius: 999px; background: #f7fafc; border: 1px solid #dce6f1; color: #35506d; font-size: 13px; font-weight: 700; text-decoration: none; padding: 9px 15px;">Request Reschedule</a>`
+          : ""
+      }
+            </div>
+          </div>`
+        : "",
+    ].join("");
+
+    return renderBridgeEmailLayout({
+      preheader: `${kingstons.title} for ${typeLabel}`,
+      title: kingstons.title,
+      greeting: `Hi ${pickText(recipientName, "there")},`,
+      contentHtml,
+      helpBody: `Need help? Reply to this email and your ${organisationName || "Arch9"} team will assist you.`,
+      organisationName: organisationName || "Arch9",
+      supportEmail: supportEmail || "",
+      supportPhone: supportPhone || "",
+      branding,
+    });
+  }
 
   const intro = {
     appointment_scheduled: [
@@ -366,7 +559,7 @@ export function buildAppointmentEmailText({
 }) {
   const typeLabel = pickText(
     appointmentTitle,
-    appointmentType || "Appointment",
+    humanizeAppointmentType(appointmentType) || "Appointment",
   );
   const supportLine = [supportEmail, supportPhone].filter(Boolean).join(" | ");
   const resolvedOrganisationName = organisationName || "Arch9";
@@ -376,6 +569,66 @@ export function buildAppointmentEmailText({
     organisationName: resolvedOrganisationName,
   });
   const sellerRecipient = isSellerParticipant(participantRole);
+  const isKingstonsBrand = isKingstonsOrganisation(resolvedOrganisationName);
+  const isKingstonsValuationInvite = isKingstonsBrand && sellerRecipient && [
+    "appointment_scheduled",
+    "appointment_confirmed",
+    "appointment_confirmation_required",
+  ].includes(eventType);
+
+  if (isKingstonsValuationInvite) {
+    const kingstons = buildKingstonsValuationInviteCopy({
+      eventType,
+      participantRole,
+      agentName,
+      agentRole,
+      agentBio,
+      organisationName: resolvedOrganisationName,
+    });
+
+    return [
+      `Hi ${pickText(recipientName, "there")},`,
+      "",
+      kingstons.title,
+      "",
+      "Introduction",
+      ...kingstons.intro,
+      "",
+      kingstons.agentSummaryTitle,
+      `Agent: ${pickText(agentName, "Your agent")}`,
+      `Agency: ${resolvedOrganisationName}`,
+      agentRole ? `Role: ${agentRole}` : null,
+      agentBio ? `About your agent: ${agentBio}` : null,
+      "",
+      "How the valuation works",
+      ...kingstons.howItWorks.map((step, index) => `${index + 1}. ${step}`),
+      "",
+      "What to expect",
+      ...kingstons.whatToExpect.map((item) => `- ${item}`),
+      notes ? `Notes: ${notes}` : null,
+      "",
+      "Appointment details",
+      `Appointment: ${typeLabel}`,
+      `Date: ${appointmentDate ? appointmentDate : "TBC"}`,
+      `Time: ${appointmentTime ? appointmentTime : "TBC"}`,
+      relatedListing ? `Property: ${relatedListing}` : null,
+      `Location: ${meetingUrl || location || "To be confirmed"}`,
+      `Status: ${status || "Pending"}`,
+      attachCalendarInvite !== false ? "Calendar invite: Attached" : "Calendar invite: Not attached",
+      actionLink ? `${kingstons.ctaLabel}: ${actionLink}` : null,
+      acceptLink ? `Accept: ${acceptLink}` : null,
+      declineLink ? `Decline: ${declineLink}` : null,
+      rescheduleLink ? `Request reschedule: ${rescheduleLink}` : null,
+      "",
+      supportLine ? `Support: ${supportLine}` : null,
+      `Need help? Reply to this email and your ${resolvedOrganisationName} team will assist you.`,
+      "",
+      resolvedOrganisationName,
+      "Powered by Arch9",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
 
   return [
     `Hi ${pickText(recipientName, "there")},`,

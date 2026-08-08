@@ -1,3 +1,5 @@
+import { buildKingstonsBuyerOtpReadiness } from './kingstonsBuyerOtpReadiness.js'
+
 export const ATTORNEY_HANDOFF_REPAIR_QUEUE_VERSION = 'arch9_attorney_handoff_repair_queue_v1'
 export const ATTORNEY_HANDOFF_REPAIR_QUEUE_KEY = 'attorney_handoff_repair'
 
@@ -161,10 +163,27 @@ function requiresBondAttorney({ transaction = {}, routingProfile = {}, rolePlaye
   )
 }
 
-function hasSignedOtp(transaction = {}, completionHook = {}) {
+function hasKingstonsManualSignedOtpAttorneyEvidence({
+  allowKingstonsManualSignedOtp = false,
+  kingstonsBuyerOtpReadiness = null,
+  documents = [],
+  documentLibraryRows = [],
+} = {}) {
+  if (allowKingstonsManualSignedOtp !== true) return false
+  const documentRows = Array.isArray(documents) ? documents : []
+  const libraryRows = Array.isArray(documentLibraryRows) ? documentLibraryRows : []
+  const readiness = kingstonsBuyerOtpReadiness ||
+    (documentRows.length || libraryRows.length
+      ? buildKingstonsBuyerOtpReadiness({ documents: documentRows, documentLibraryRows: libraryRows })
+      : null)
+  return readiness?.gate?.attorneyReadinessReady === true || readiness?.gate?.transactionReadinessReady === true
+}
+
+function hasSignedOtp(transaction = {}, completionHook = {}, options = {}) {
   const status = lower(transaction.onboarding_status || transaction.onboardingStatus || completionHook.onboardingStatus)
   return SIGNED_OTP_STATUSES.has(status) ||
-    Boolean(firstText(transaction.signed_otp_received_at, transaction.signedOtpReceivedAt, transaction.otp_uploaded_at, transaction.otpUploadedAt))
+    Boolean(firstText(transaction.signed_otp_received_at, transaction.signedOtpReceivedAt, transaction.otp_uploaded_at, transaction.otpUploadedAt)) ||
+    hasKingstonsManualSignedOtpAttorneyEvidence(options)
 }
 
 function reason(role, key, detail, action = '') {
@@ -190,13 +209,22 @@ export function buildAttorneyHandoffRepairQueueCandidate({
   rolePlayers = [],
   routingProfile = {},
   completionHook = {},
+  documents = [],
+  documentLibraryRows = [],
+  allowKingstonsManualSignedOtp = false,
+  kingstonsBuyerOtpReadiness = null,
   completedAt = '',
   source = 'buyer_onboarding_completed',
 } = {}) {
   const transactionId = firstText(transaction.id, transaction.transactionId, transaction.transaction_id, onboarding.transaction_id)
   const rows = roleRows({ rolePlayers, transaction })
   const requiredRoles = requiredRolesForTransaction({ transaction, routingProfile, rolePlayers: rows })
-  const signedOtp = hasSignedOtp(transaction, completionHook)
+  const signedOtp = hasSignedOtp(transaction, completionHook, {
+    allowKingstonsManualSignedOtp,
+    kingstonsBuyerOtpReadiness,
+    documents,
+    documentLibraryRows,
+  })
   const reasons = []
 
   for (const role of requiredRoles) {

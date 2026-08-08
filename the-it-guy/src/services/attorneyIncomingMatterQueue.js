@@ -21,6 +21,7 @@ import {
   requireClient,
 } from './attorneyFirmServiceShared'
 import { getAttorneyFirmById, getCurrentUserPrimaryAttorneyFirm } from './attorneyFirms'
+import { resolveSellerProcessProfileForOrganisation } from './sellerProcessProfileService.js'
 import {
   resolvePortalBuyerName,
   resolvePortalPropertyLabel,
@@ -74,6 +75,7 @@ const ASSIGNMENT_COLUMNS = [
 const TRANSACTION_COLUMNS = [
   'id',
   'organisation_id',
+  'seller_process_profile',
   'development_id',
   'unit_id',
   'buyer_id',
@@ -138,6 +140,23 @@ const DOCUMENT_REQUEST_COLUMNS = [
   'attorney_role',
   'requested_from',
   'assigned_to_role',
+  'created_at',
+  'updated_at',
+]
+
+const DOCUMENT_COLUMNS = [
+  'id',
+  'transaction_id',
+  'name',
+  'document_name',
+  'category',
+  'document_type',
+  'file_path',
+  'storage_path',
+  'file_url',
+  'url',
+  'status',
+  'review_status',
   'created_at',
   'updated_at',
 ]
@@ -604,17 +623,24 @@ export function buildAttorneyPreInstructionRow(allocation = {}, firm = null, org
   return row
 }
 
-function buildIncomingMatterRow({ assignment, transaction, onboarding, documentRequests, buyer, unit, development, profilesById, organisationsById }) {
+function buildIncomingMatterRow({ assignment, transaction, onboarding, documentRequests, documents, buyer, unit, development, profilesById, organisationsById }) {
   const normalizedAssignment = normalizeAssignment(assignment)
   const laneKey = getAttorneyInstructionLane(normalizedAssignment) || 'transfer'
   const laneDocumentRequests = (documentRequests || []).filter((request) =>
     documentRequestMatchesAssignmentLane(request, normalizedAssignment),
   )
+  const sellerProcessProfileResolution = resolveSellerProcessProfileForOrganisation({
+    organisationId: transaction?.organisation_id || '',
+    sellerProcessProfile: transaction?.seller_process_profile || transaction?.sellerProcessProfile || '',
+    transaction,
+  })
   const contract = buildAttorneyIncomingMatterContract({
     assignment: normalizedAssignment,
     transaction,
     onboarding,
     documentRequests: laneDocumentRequests,
+    documents,
+    allowKingstonsManualSignedOtp: sellerProcessProfileResolution.isKingstons,
   })
   const primaryAttorneyId = normalizedAssignment.primary_attorney_id || normalizedAssignment.attorney_user_id || null
   const preferredAttorneyId = normalizedAssignment.preferred_attorney_user_id || null
@@ -789,6 +815,7 @@ export function buildAttorneyIncomingMatterQueueFromSources({
   transactions = [],
   onboardingRows = [],
   documentRequests = [],
+  documents = [],
   buyers = [],
   units = [],
   developments = [],
@@ -799,6 +826,7 @@ export function buildAttorneyIncomingMatterQueueFromSources({
   const transactionsById = mapById(transactions)
   const onboardingByTransactionId = groupBy(onboardingRows, 'transaction_id')
   const documentRequestsByTransactionId = groupBy(documentRequests, 'transaction_id')
+  const documentsByTransactionId = groupBy(documents, 'transaction_id')
   const buyersById = mapById(buyers)
   const unitsById = mapById(units)
   const developmentsById = mapById(developments)
@@ -820,6 +848,7 @@ export function buildAttorneyIncomingMatterQueueFromSources({
         transaction,
         onboarding,
         documentRequests: documentRequestsByTransactionId[transaction.id] || [],
+        documents: documentsByTransactionId[transaction.id] || [],
         buyer: buyersById[transaction.buyer_id] || null,
         unit,
         development,
@@ -973,6 +1002,17 @@ async function fetchDocumentRequests(client, transactionIds = []) {
   )
 }
 
+async function fetchDocuments(client, transactionIds = []) {
+  const ids = unique(transactionIds)
+  if (!ids.length) return []
+  return selectWithMissingColumnFallback(
+    client,
+    'documents',
+    DOCUMENT_COLUMNS,
+    (query) => query.in('transaction_id', ids).order('created_at', { ascending: false }),
+  )
+}
+
 async function fetchOnboardingRows(client, transactionIds = []) {
   const ids = unique(transactionIds)
   if (!ids.length) return []
@@ -1074,13 +1114,15 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
       transactionIds: transactionIds.length,
       transactions: transactions.length,
     })
-    const [onboardingRows, documentRequests] = await Promise.all([
+    const [onboardingRows, documentRequests, documents] = await Promise.all([
       fetchOnboardingRows(client, transactionIds),
       fetchDocumentRequests(client, transactionIds),
+      fetchDocuments(client, transactionIds),
     ])
     timer.mark('matterDependencies:loaded', {
       onboardingRows: onboardingRows?.length || 0,
       documentRequests: documentRequests?.length || 0,
+      documents: documents?.length || 0,
     })
 
     const buyerIds = unique(transactions.map((transaction) => transaction.buyer_id))
@@ -1132,6 +1174,7 @@ export async function getAttorneyIncomingMatterQueue(options = {}) {
       transactions,
       onboardingRows,
       documentRequests,
+      documents,
       buyers,
       units,
       developments,

@@ -6285,6 +6285,7 @@ export async function ensurePrivateListingDocumentRequirements(listingId, requir
 }
 
 export async function markPrivateListingDocumentsPendingTransactionPromotion(listingId, {
+  documentIds = [],
   requirementKeys = [],
   source = 'seller_pack_transaction_continuity',
 } = {}) {
@@ -6299,7 +6300,16 @@ export async function markPrivateListingDocumentsPendingTransactionPromotion(lis
   const targetRequirementKeys = (Array.isArray(requirementKeys) ? requirementKeys : [])
     .map((key) => normalizeCompatibilityKey(key))
     .filter(Boolean)
-  if (!targetRequirementKeys.length) {
+  const requestedDocumentIds = Array.isArray(documentIds) ? documentIds : []
+  const targetDocumentIds = new Set(
+    requestedDocumentIds
+      .map((documentId) => normalizeUuid(documentId))
+      .filter(Boolean),
+  )
+  if (!targetRequirementKeys.length && !targetDocumentIds.size) {
+    return { listingId: normalizedListingId, updatedCount: 0, documentIds: [], skipped: true, failures: [] }
+  }
+  if (requestedDocumentIds.length && !targetDocumentIds.size) {
     return { listingId: normalizedListingId, updatedCount: 0, documentIds: [], skipped: true, failures: [] }
   }
 
@@ -6313,6 +6323,10 @@ export async function markPrivateListingDocumentsPendingTransactionPromotion(lis
       .filter(([id]) => Boolean(id)),
   )
   const targetDocuments = (Array.isArray(documents) ? documents : []).filter((document) => {
+    const normalizedDocumentId = normalizeUuid(document?.id)
+    if (requestedDocumentIds.length && !targetDocumentIds.has(normalizedDocumentId)) return false
+    if (!targetRequirementKeys.length) return true
+
     const requirement = requirementById.get(normalizeText(document?.requirement_id)) || {}
     const signals = [
       requirement?.requirement_key,
@@ -6390,6 +6404,7 @@ export async function markPrivateListingDocumentsPendingTransactionPromotion(lis
       visibility: 'internal',
       metadata: {
         source,
+        targetDocumentIds: [...targetDocumentIds],
         requirementKeys: targetRequirementKeys,
         documentIds: updatedDocumentIds,
       },

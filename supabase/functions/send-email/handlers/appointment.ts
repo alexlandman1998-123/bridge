@@ -171,7 +171,11 @@ export async function handleAppointmentEmail(
   const subject = buildAppointmentSubject(
     eventType,
     normalizeText(payload.appointmentType) || "Appointment",
-    { participantRole: normalizeText(payload.participantRole) },
+    {
+      participantRole: normalizeText(payload.participantRole),
+      appointmentTitle: normalizeText(payload.appointmentTitle),
+      organisationName: branding.organisationName,
+    },
   );
   const html = buildAppointmentEmailHtml({
     eventType,

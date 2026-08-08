@@ -134,6 +134,8 @@ export function resolveSalesWorkflowSnapshot({
   documents = [],
   requiredDocuments = [],
   permissions = null,
+  allowKingstonsManualSignedOtp = false,
+  kingstonsBuyerOtpReadiness = null,
 } = {}) {
   const normalizedOnboardingStatus = normalizeText(onboardingStatus)
   const onboardingComplete =
@@ -142,7 +144,24 @@ export function resolveSalesWorkflowSnapshot({
 
   const sortedDocuments = [...(documents || [])].sort(byNewest)
   const latestGeneratedOtpDocument = sortedDocuments.find((item) => isGeneratedOtpDocument(item)) || null
-  const latestSignedOtpDocument = sortedDocuments.find((item) => isSignedOtpDocument(item)) || null
+  const latestCanonicalSignedOtpDocument = sortedDocuments.find((item) => isSignedOtpDocument(item)) || null
+  const kingstonsManualSignedOtpReady =
+    allowKingstonsManualSignedOtp === true &&
+    kingstonsBuyerOtpReadiness?.gate?.salesWorkflowReady === true
+  const kingstonsManualSignedOtpRow = kingstonsManualSignedOtpReady
+    ? (Array.isArray(kingstonsBuyerOtpReadiness?.rows) ? kingstonsBuyerOtpReadiness.rows : []).find((row) => row?.ready) || null
+    : null
+  const latestKingstonsManualSignedOtpDocument = kingstonsManualSignedOtpRow
+    ? {
+        ...(kingstonsManualSignedOtpRow.document || {}),
+        id: kingstonsManualSignedOtpRow.documentId || kingstonsManualSignedOtpRow.sourceDocumentId || kingstonsManualSignedOtpRow.document?.id,
+        document_type: kingstonsManualSignedOtpRow.key || 'signed_otp',
+        name: kingstonsManualSignedOtpRow.label || 'Signed OTP',
+        status: kingstonsManualSignedOtpRow.status || 'uploaded',
+        created_at: kingstonsManualSignedOtpRow.uploadedAt || kingstonsManualSignedOtpRow.document?.created_at,
+      }
+    : null
+  const latestSignedOtpDocument = latestCanonicalSignedOtpDocument || latestKingstonsManualSignedOtpDocument
   const generatedType = normalizeOtpDocumentType(latestGeneratedOtpDocument?.document_type)
   const generatedCategory = normalizeText(latestGeneratedOtpDocument?.category)
   const generatedName = normalizeText(latestGeneratedOtpDocument?.name)
@@ -163,6 +182,11 @@ export function resolveSalesWorkflowSnapshot({
       inferredApprovedFromText ||
       otpAvailableToClient)
   const signedOtpReceived = Boolean(latestSignedOtpDocument)
+  const signedOtpSource = latestCanonicalSignedOtpDocument
+    ? 'canonical_signed_final'
+    : latestKingstonsManualSignedOtpDocument
+      ? 'kingstons_manual_upload'
+      : ''
   const otpReleasedForSignature = otpAvailableToClient || (manualSignatureCapture && otpApproved)
 
   const activeRequiredDocuments = (requiredDocuments || []).filter((item) => item?.isEnabled !== false && item?.isRequired !== false)
@@ -176,7 +200,9 @@ export function resolveSalesWorkflowSnapshot({
   const stageOneBlocker = onboardingComplete ? '' : 'Client onboarding must be completed before moving ahead.'
   const stageTwoBlocker = !onboardingComplete
     ? 'Onboarding must be completed before OTP preparation starts.'
-    : !latestGeneratedOtpDocument
+    : signedOtpReceived
+      ? ''
+      : !latestGeneratedOtpDocument
       ? 'Generate the OTP document first.'
       : !otpApproved
         ? 'Approve the generated OTP before sharing it.'
@@ -208,18 +234,20 @@ export function resolveSalesWorkflowSnapshot({
   }
 
   let nextAction = 'move_ready_for_finance'
-  if (!onboardingComplete) {
-    nextAction = 'complete_onboarding'
-  } else if (!latestGeneratedOtpDocument) {
-    nextAction = 'generate_otp'
-  } else if (!otpApproved) {
-    nextAction = 'approve_otp'
-  } else if (!otpReleasedForSignature) {
-    nextAction = manualSignatureCapture ? 'upload_signed_otp' : 'share_otp'
-  } else if (!signedOtpReceived) {
-    nextAction = 'upload_signed_otp'
-  } else if (!supportingDocsComplete) {
-    nextAction = 'complete_supporting_documents'
+  if (!readyForFinance) {
+    if (!onboardingComplete) {
+      nextAction = 'complete_onboarding'
+    } else if (!signedOtpReceived && !latestGeneratedOtpDocument) {
+      nextAction = 'generate_otp'
+    } else if (!signedOtpReceived && !otpApproved) {
+      nextAction = 'approve_otp'
+    } else if (!signedOtpReceived && !otpReleasedForSignature) {
+      nextAction = manualSignatureCapture ? 'upload_signed_otp' : 'share_otp'
+    } else if (!signedOtpReceived) {
+      nextAction = 'upload_signed_otp'
+    } else if (!supportingDocsComplete) {
+      nextAction = 'complete_supporting_documents'
+    }
   }
 
   const nextActionLabelMap = {
@@ -277,6 +305,11 @@ export function resolveSalesWorkflowSnapshot({
     availableActions: laneState.availableActions,
     latestGeneratedOtpDocument,
     latestSignedOtpDocument,
+    latestCanonicalSignedOtpDocument,
+    latestKingstonsManualSignedOtpDocument,
+    signedOtpSource,
+    kingstonsManualSignedOtpReady,
+    kingstonsBuyerOtpReadiness: kingstonsBuyerOtpReadiness || null,
     otpApproved,
     otpAvailableToClient,
     otpReleasedForSignature,

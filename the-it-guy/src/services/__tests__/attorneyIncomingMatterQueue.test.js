@@ -321,6 +321,75 @@ try {
   }
 
   {
+    const manualOtpDocument = {
+      id: 'doc-kingstons-manual-otp',
+      transaction_id: 'tx-kingstons-manual-otp',
+      document_type: 'signed_otp',
+      name: 'Signed OTP - Kingston Buyer.pdf',
+      storage_path: 'transactions/tx-kingstons-manual-otp/signed-otp.pdf',
+      status: 'uploaded',
+    }
+    const kingstonsQueue = buildAttorneyIncomingMatterQueueFromSources({
+      firm: source.firm,
+      currentUser: source.currentUser,
+      assignments: [{
+        id: 'assign-kingstons-manual-otp',
+        transaction_id: 'tx-kingstons-manual-otp',
+        attorney_firm_id: 'firm-1',
+        assignment_type: 'transfer',
+        attorney_role: 'transfer_attorney',
+        instruction_status: 'new_instruction',
+        assignment_status: 'pending',
+        primary_attorney_id: 'att-1',
+      }],
+      transactions: [{
+        id: 'tx-kingstons-manual-otp',
+        organisation_id: 'org-kingstons',
+        seller_process_profile: 'kingstons',
+        transaction_reference: 'TRF-KING-MANUAL',
+        onboarding_status: 'awaiting_signed_otp',
+        onboarding_completed_at: '2026-08-01T08:00:00.000Z',
+        is_active: true,
+      }],
+      documents: [manualOtpDocument],
+      organisations: source.organisations,
+    }, { pageSize: 20 })
+
+    const kingstonsRow = kingstonsQueue.rows.find((row) => row.id === 'assign-kingstons-manual-otp')
+    assert.equal(kingstonsRow.status, 'ready_for_acceptance')
+    assert.deepEqual(kingstonsRow.waitingOn, ['attorney_acceptance'])
+
+    const genericQueue = buildAttorneyIncomingMatterQueueFromSources({
+      firm: source.firm,
+      currentUser: source.currentUser,
+      assignments: [{
+        id: 'assign-generic-manual-otp',
+        transaction_id: 'tx-generic-manual-otp',
+        attorney_firm_id: 'firm-1',
+        assignment_type: 'transfer',
+        attorney_role: 'transfer_attorney',
+        instruction_status: 'new_instruction',
+        assignment_status: 'pending',
+        primary_attorney_id: 'att-1',
+      }],
+      transactions: [{
+        id: 'tx-generic-manual-otp',
+        organisation_id: 'org-achiever',
+        transaction_reference: 'TRF-GENERIC-MANUAL',
+        onboarding_status: 'awaiting_signed_otp',
+        onboarding_completed_at: '2026-08-01T08:00:00.000Z',
+        is_active: true,
+      }],
+      documents: [{ ...manualOtpDocument, transaction_id: 'tx-generic-manual-otp' }],
+      organisations: source.organisations,
+    }, { pageSize: 20 })
+
+    const genericRow = genericQueue.rows.find((row) => row.id === 'assign-generic-manual-otp')
+    assert.equal(genericRow.status, 'awaiting_signed_otp')
+    assert.deepEqual(genericRow.waitingOn, ['signed_otp'])
+  }
+
+  {
     const queue = buildAttorneyIncomingMatterQueueFromSources(source, { includePreIncoming: true, pageSize: 20 })
     assert(queue.rows.some((row) => row.id === 'assign-pre'))
     assert(!queue.rows.some((row) => row.id === 'assign-accepted'))

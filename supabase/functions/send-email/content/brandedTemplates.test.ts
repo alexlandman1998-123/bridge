@@ -156,6 +156,56 @@ Deno.test("appointment template renders branded host guidance and RSVP buttons",
   assertIncludes(html, "We’ll walk through the property");
 });
 
+Deno.test("appointment template renders the Kingstons valuation invite experience", () => {
+  const html = buildAppointmentEmailHtml({
+    eventType: "appointment_confirmation_required",
+    recipientName: "Seller One",
+    appointmentType: "seller_valuation",
+    appointmentTitle: "Valuation Appointment - Seller One",
+    appointmentDate: "2026-07-28",
+    appointmentTime: "10:00",
+    participantRole: "seller",
+    agentName: "Alex Landman",
+    agentRole: "Property Consultant",
+    agentBio: "Specialist in residential sales across the local market.",
+    organisationName: branding.organisationName,
+    attachCalendarInvite: true,
+    actionLink: "https://app.example.test/appointment-rsvp/token-123",
+    acceptLink: "https://app.example.test/accept",
+    rescheduleLink: "https://app.example.test/reschedule",
+    branding,
+  });
+  const text = buildAppointmentEmailText({
+    eventType: "appointment_confirmation_required",
+    recipientName: "Seller One",
+    appointmentType: "seller_valuation",
+    appointmentTitle: "Valuation Appointment - Seller One",
+    appointmentDate: "2026-07-28",
+    appointmentTime: "10:00",
+    participantRole: "seller",
+    agentName: "Alex Landman",
+    agentRole: "Property Consultant",
+    agentBio: "Specialist in residential sales across the local market.",
+    organisationName: branding.organisationName,
+    attachCalendarInvite: true,
+    actionLink: "https://app.example.test/appointment-rsvp/token-123",
+    branding,
+  });
+
+  assertIncludes(html, "Kingstons Valuation Request");
+  assertIncludes(html, "Introduction");
+  assertIncludes(html, "Meet your agent");
+  assertIncludes(html, "How the valuation works");
+  assertIncludes(html, "What to expect");
+  assertIncludes(html, "RSVP to this time");
+  assertIncludes(html, "Specialist in residential sales across the local market.");
+  assertIncludes(html, "https://app.example.test/appointment-rsvp/token-123");
+  assertIncludes(text, "Kingstons Valuation Request");
+  assertIncludes(text, "How the valuation works");
+  assertIncludes(text, "RSVP to this time: https://app.example.test/appointment-rsvp/token-123");
+  assertIncludes(text, "Specialist in residential sales across the local market.");
+});
+
 Deno.test("appointment template preserves notes and branded plain-text support", () => {
   const html = buildAppointmentEmailHtml({
     eventType: "appointment_confirmation_required",

@@ -165,6 +165,13 @@ import {
 } from '../services/sellerProcessProfileService'
 import { buildKingstonsDigitalSigningDecision } from '../core/kingstons/digitalSigningDecision'
 import {
+  buildKingstonsBuyerOtpDigitalDecision,
+  buildKingstonsBuyerOtpOfferLink,
+  buildKingstonsBuyerOtpReadiness,
+  KINGSTONS_BUYER_OTP_REQUIREMENT,
+  KINGSTONS_BUYER_OTP_TRANSACTION_HANDOFF_SOURCE,
+} from '../core/transactions/kingstonsBuyerOtpReadiness'
+import {
   SELLER_PORTAL_ACTIVATION_SOURCES,
   activateSellerPortalForListing,
   buildSellerPortalInvitationPreview,
@@ -1064,6 +1071,59 @@ function documentMatchesSellerPackTransactionKey(document = {}, targetKey = '') 
   ].map(normalizeKey).filter(Boolean)
   return aliases.map(normalizeKey).some((alias) =>
     signals.some((signal) => signal === alias || signal.includes(alias) || alias.includes(signal)),
+  )
+}
+
+function getOfferIdentitySignals(offer = {}) {
+  return [
+    offer.id,
+    offer.offerId,
+    offer.offer_id,
+    offer.canonicalOfferId,
+    offer.canonical_offer_id,
+    offer.buyerLeadId,
+    offer.buyer_lead_id,
+    offer.buyerContactId,
+    offer.buyer_contact_id,
+  ].map(normalizeKey).filter(Boolean)
+}
+
+function documentMatchesKingstonsBuyerOtpOffer(document = {}, offer = {}) {
+  const documentType = normalizeKey(document?.document_type || document?.documentType)
+  const category = normalizeKey(document?.category)
+  const requirementKey = normalizeKey(document?.requirementKey || document?.requirement_key)
+  const otpRequirementAliases = [
+    KINGSTONS_BUYER_OTP_REQUIREMENT.key,
+    ...KINGSTONS_BUYER_OTP_REQUIREMENT.aliases,
+  ].map(normalizeKey)
+  const isSignedOtpDocument = otpRequirementAliases.some((alias) =>
+    [documentType, category, requirementKey].some((signal) => signal && (signal === alias || signal.includes(alias) || alias.includes(signal))),
+  )
+  if (!isSignedOtpDocument) return false
+
+  const offerSignals = getOfferIdentitySignals(offer)
+  if (!offerSignals.length) return true
+
+  const documentSignals = [
+    document?.offerId,
+    document?.offer_id,
+    document?.canonicalOfferId,
+    document?.canonical_offer_id,
+    document?.buyerLeadId,
+    document?.buyer_lead_id,
+    document?.buyerContactId,
+    document?.buyer_contact_id,
+    document?.document_name,
+    document?.documentName,
+    document?.name,
+    document?.fileName,
+    document?.file_name,
+    document?.storage_path,
+    document?.file_url,
+  ].map(normalizeKey).filter(Boolean)
+
+  return offerSignals.some((offerSignal) =>
+    documentSignals.some((documentSignal) => documentSignal === offerSignal || documentSignal.includes(offerSignal)),
   )
 }
 
@@ -2565,6 +2625,7 @@ function AgentListingDetail() {
   const [sellerSectionDraft, setSellerSectionDraft] = useState({})
   const [sellerSectionSaving, setSellerSectionSaving] = useState(false)
   const [sellerDocumentUploadKey, setSellerDocumentUploadKey] = useState('')
+  const [buyerOtpUploadKey, setBuyerOtpUploadKey] = useState('')
   const [sellerPackHandoffAction, setSellerPackHandoffAction] = useState('')
   const [listingPerformanceEditorOpen, setListingPerformanceEditorOpen] = useState(false)
   const [listingPerformanceDraft, setListingPerformanceDraft] = useState({})
@@ -2740,6 +2801,13 @@ function AgentListingDetail() {
     () => buildKingstonsDigitalSigningDecision({
       isKingstons: listingHasKingstonsSellerProcess,
       requestedAction: 'listing_mandate_signing',
+    }),
+    [listingHasKingstonsSellerProcess],
+  )
+  const listingKingstonsBuyerOtpDigitalDecision = useMemo(
+    () => buildKingstonsBuyerOtpDigitalDecision({
+      isKingstons: listingHasKingstonsSellerProcess,
+      requestedAction: 'accepted_offer_otp_generation_and_signing',
     }),
     [listingHasKingstonsSellerProcess],
   )
@@ -4508,6 +4576,15 @@ function AgentListingDetail() {
     try {
       setCanonicalOfferActionId(`${offerRow.id}:convert`)
       const currentStatus = normalizeOfferWorkflowStatus(canonicalOffer?.status || offerRow.status)
+      const kingstonsBuyerOtpReadiness = offerRow.kingstonsBuyerOtpReadiness || buildKingstonsBuyerOtpReadiness({
+        documents: [
+          canonicalOffer?.conditions?.kingstonsBuyerOtp,
+          canonicalOffer?.conditions?.signedOtpDocument,
+        ].filter(Boolean),
+      })
+      if (listingHasKingstonsSellerProcess && kingstonsBuyerOtpReadiness?.gate?.offerConversionReady !== true) {
+        throw new Error(kingstonsBuyerOtpReadiness?.gate?.reason || 'Upload the manually signed OTP before converting this Kingston buyer offer.')
+      }
       const acceptedOffer = [
           OFFER_WORKFLOW_STATUS.ACCEPTED,
           OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION,
@@ -4554,6 +4631,7 @@ function AgentListingDetail() {
       const transactionId = String(createdTransaction?.transactionId || createdTransaction?.transactionRow?.transaction?.id || '').trim()
       const reusedTransaction = Boolean(createdTransaction?.alreadyConverted || (createdTransaction?.existing && transactionId))
       let sellerPackPromotionError = ''
+      let buyerOtpPromotionError = ''
       const intakePreference = normalizeClientIntakePreference(
         acceptedOffer?.conditions?.clientIntakePreference ||
           acceptedOffer?.conditions?.deliveryMode ||
@@ -4580,13 +4658,22 @@ function AgentListingDetail() {
           source: KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE,
         })
         sellerPackPromotionError = handoffResult.error
+        const buyerOtpHandoffResult = await runKingstonsBuyerOtpTransactionHandoff({
+          listingId: listingRecord.id,
+          transactionId,
+          offer: { ...offerRow, kingstonsBuyerOtpReadiness },
+          source: KINGSTONS_BUYER_OTP_TRANSACTION_HANDOFF_SOURCE,
+        })
+        buyerOtpPromotionError = buyerOtpHandoffResult.error
       }
       setOfferNotesDraftById((previous) => ({ ...previous, [offerRow.id]: '' }))
       setOfferActionMessage(
         listingHasKingstonsSellerProcess
-          ? sellerPackPromotionError
-            ? 'Transaction ready. Seller Pack document handoff needs attention before attorney handoff.'
-            : 'Transaction ready. Seller Pack documents were queued for transaction handoff. Confirm the preferred bond originator before sending buyer onboarding.'
+          ? sellerPackPromotionError || buyerOtpPromotionError
+            ? buyerOtpPromotionError
+              ? 'Transaction ready. Signed OTP handoff needs attention before transaction document readiness.'
+              : 'Transaction ready. Seller Pack document handoff needs attention before attorney handoff.'
+            : 'Transaction ready. Seller Pack documents were queued for transaction handoff. Signed OTP was queued for transaction handoff. Confirm the preferred bond originator before sending buyer onboarding.'
           : 'Transaction ready. Confirm the preferred bond originator before sending buyer onboarding.',
       )
       setOffersRefreshTick((value) => value + 1)
@@ -4642,6 +4729,98 @@ function AgentListingDetail() {
     }
   }
 
+  async function runKingstonsBuyerOtpTransactionHandoff({
+    listingId = listingRecord?.id,
+    transactionId = '',
+    offer = {},
+    source = KINGSTONS_BUYER_OTP_TRANSACTION_HANDOFF_SOURCE,
+  } = {}) {
+    if (!listingHasKingstonsSellerProcess) return { skipped: true, reason: 'not_kingstons_listing', error: '' }
+    if (!listingId || !transactionId || !isSupabaseConfigured) {
+      return {
+        skipped: true,
+        reason: 'missing_live_transaction_context',
+        error: 'Signed OTP handoff could not be completed.',
+      }
+    }
+
+    const readiness = offer?.kingstonsBuyerOtpReadiness || buildKingstonsBuyerOtpReadiness({
+      documents: [
+        offer?.kingstonsBuyerOtp,
+        offer?.signedOtpDocument,
+        offer?.conditions?.kingstonsBuyerOtp,
+        offer?.conditions?.signedOtpDocument,
+      ].filter(Boolean),
+    })
+    if (readiness?.gate?.transactionHandoffReady !== true) {
+      return {
+        skipped: false,
+        error: readiness?.gate?.reason || 'Signed OTP handoff could not be completed.',
+        source,
+        listingId,
+        transactionId,
+        readiness,
+      }
+    }
+
+    const buyerOtpDocumentIds = [...new Set(
+      (Array.isArray(readiness?.rows) ? readiness.rows : [])
+        .flatMap((row) => [row?.documentId, row?.sourceDocumentId])
+        .map((documentId) => normalizeText(documentId))
+        .filter(Boolean),
+    )]
+    if (!buyerOtpDocumentIds.length) {
+      return {
+        skipped: false,
+        error: 'Signed OTP handoff could not identify the accepted offer document.',
+        source,
+        listingId,
+        transactionId,
+        readiness,
+      }
+    }
+
+    try {
+      const queued = await markPrivateListingDocumentsPendingTransactionPromotion(listingId, {
+        documentIds: buyerOtpDocumentIds,
+        requirementKeys: [KINGSTONS_BUYER_OTP_REQUIREMENT.key],
+        source,
+      })
+      if (!queued?.updatedCount) {
+        return {
+          skipped: false,
+          error: 'Signed OTP handoff could not find the accepted offer document in the listing document store.',
+          source,
+          listingId,
+          transactionId,
+          documentIds: buyerOtpDocumentIds,
+          queued,
+        }
+      }
+      const repair = await repairSellerDocumentTransactionContinuity({ listingId })
+      return {
+        skipped: false,
+        error: '',
+        source,
+        listingId,
+        transactionId,
+        documentIds: buyerOtpDocumentIds,
+        queued,
+        repair,
+      }
+    } catch (promotionError) {
+      console.warn('[AgentListingDetail] Signed OTP transaction continuity repair skipped.', promotionError)
+      return {
+        skipped: false,
+        error: promotionError?.message || 'Signed OTP handoff could not be completed.',
+        source,
+        listingId,
+        transactionId,
+        documentIds: buyerOtpDocumentIds,
+      }
+    }
+  }
+
   async function handleStartAcceptedOfferOtpDocument(selection = {}) {
     const offer = acceptedOfferOtpStartOffer || {}
     const transactionId = normalizeText(offer.transactionId || offer.transaction_id)
@@ -4650,6 +4829,11 @@ function AgentListingDetail() {
     setAcceptedOfferOtpStartOffer(null)
     setOfferActionError('')
     setOfferActionMessage('')
+
+    if (listingKingstonsBuyerOtpDigitalDecision.blocked) {
+      setOfferActionError(listingKingstonsBuyerOtpDigitalDecision.message)
+      return
+    }
 
     if (!transactionId) {
       setOfferActionError('Create the transaction before preparing the OTP.')
@@ -4701,6 +4885,16 @@ function AgentListingDetail() {
     navigate(path)
   }
 
+  function handleAcceptedOfferPrepareOtpClick(offer) {
+    if (listingKingstonsBuyerOtpDigitalDecision.blocked) {
+      setAcceptedOfferOtpStartOffer(null)
+      setOfferActionMessage('')
+      setOfferActionError(listingKingstonsBuyerOtpDigitalDecision.message)
+      return
+    }
+    setAcceptedOfferOtpStartOffer(offer)
+  }
+
   const legacyOfferRows = useMemo(() => {
     void offersRefreshTick
     if (!listingRecord?.id) return []
@@ -4744,6 +4938,7 @@ function AgentListingDetail() {
       sellerViewedAt: offer.sellerViewedAt,
       sellerReviewSession: offer.sellerReviewSession,
       conversionCandidate: offer.conditions?.conversionCandidate || null,
+      kingstonsBuyerOtp: offer.conditions?.kingstonsBuyerOtp || offer.conditions?.signedOtpDocument || null,
       conditionsJson: offer.conditions || {},
     }))
   }, [canonicalListingOffers])
@@ -4755,8 +4950,20 @@ function AgentListingDetail() {
       return !offer.buyerLeadId || !canonicalLeadKeys.has(key)
     })
     return [...canonicalOfferRows, ...nonDuplicatedLegacyRows]
+      .map((offer) => {
+        if (!listingHasKingstonsSellerProcess) return offer
+        const documents = (Array.isArray(listingRecord?.documents) ? listingRecord.documents : [])
+          .filter((document) => documentMatchesKingstonsBuyerOtpOffer(document, offer))
+        const linkedOfferOtp = offer.kingstonsBuyerOtp && typeof offer.kingstonsBuyerOtp === 'object'
+          ? [offer.kingstonsBuyerOtp]
+          : []
+        return {
+          ...offer,
+          kingstonsBuyerOtpReadiness: buildKingstonsBuyerOtpReadiness({ documents: [...documents, ...linkedOfferOtp] }),
+        }
+      })
       .sort((left, right) => new Date(right.offerDate || 0) - new Date(left.offerDate || 0))
-  }, [canonicalOfferRows, legacyOfferRows])
+  }, [canonicalOfferRows, legacyOfferRows, listingHasKingstonsSellerProcess, listingRecord?.documents])
 
   const offerInviteRows = useMemo(() => {
     void offersRefreshTick
@@ -6522,6 +6729,114 @@ function AgentListingDetail() {
     }
   }
 
+  async function handleKingstonsBuyerOtpUpload(offer, event) {
+    const file = event.target.files?.[0]
+    if (!file || !listingRecord?.id) return
+    if (!isSupabaseConfigured || !isUuidLike(listingRecord.id)) {
+      setOfferActionError('Signed OTP upload needs the shared listing record in Supabase so it can pull through to the transaction later.')
+      event.target.value = ''
+      return
+    }
+
+    const offerReference = normalizeText(offer?.canonicalOfferId || offer?.offerId || offer?.offer_id || offer?.id)
+    const buyerLeadId = normalizeText(offer?.buyerLeadId || offer?.buyer_lead_id)
+    const buyerContactId = normalizeText(offer?.buyerContactId || offer?.buyer_contact_id)
+    const buyerName = normalizeText(offer?.buyerName) || 'Buyer'
+    const uploadKey = `kingstons-buyer-otp:${offerReference || buyerLeadId || file.name}`
+    const documentName = `Signed OTP - ${buyerName}${offerReference ? ` - ${offerReference}` : ''}${buyerLeadId ? ` - ${buyerLeadId}` : ''}`
+
+    setBuyerOtpUploadKey(uploadKey)
+    setOfferActionError('')
+    setOfferActionMessage('')
+    try {
+      const uploadedDocument = await uploadPrivateListingDocument(listingRecord.id, file, {
+        requirementKey: KINGSTONS_BUYER_OTP_REQUIREMENT.key,
+        documentType: KINGSTONS_BUYER_OTP_REQUIREMENT.key,
+        documentCategory: 'buyer_offer',
+        documentName,
+        visibility: 'internal',
+        status: 'uploaded',
+      })
+      const now = new Date().toISOString()
+      const kingstonsBuyerOtpLink = buildKingstonsBuyerOtpOfferLink({
+        offer: {
+          ...offer,
+          offerId: offerReference,
+          buyerLeadId,
+          buyerContactId,
+          buyerName,
+        },
+        document: uploadedDocument,
+        actor: getCanonicalOfferActor(),
+        now,
+      })
+      if (offer?.canonicalOfferId && listingOrganisationId) {
+        const canonicalOffer = canonicalListingOffers.find((item) => String(item.id) === String(offer.canonicalOfferId))
+        const existingConditions = canonicalOffer?.conditions || offer?.conditionsJson || {}
+        await updateCanonicalOfferStatus(offer.canonicalOfferId, normalizeOfferWorkflowStatus(canonicalOffer?.status || offer?.status), {
+          organisationId: listingOrganisationId,
+          actor: getCanonicalOfferActor(),
+          patch: {
+            conditions_json: {
+              ...existingConditions,
+              kingstonsBuyerOtp: kingstonsBuyerOtpLink,
+              signedOtpDocument: kingstonsBuyerOtpLink,
+              kingstonsBuyerOtpStatus: 'signed_otp_received',
+              agentActionHistory: [
+                ...(Array.isArray(existingConditions.agentActionHistory) ? existingConditions.agentActionHistory : []),
+                {
+                  action: 'Signed OTP uploaded',
+                  note: `${file.name || 'Signed OTP'} linked to the buyer offer.`,
+                  at: now,
+                  actorId: getCanonicalOfferActor().id,
+                  actorName: getCanonicalOfferActor().name,
+                },
+              ],
+            },
+          },
+        })
+      }
+      patchListing((row) => ({
+        ...row,
+        documents: [
+          ...(Array.isArray(row?.documents) ? row.documents : []),
+          {
+            ...uploadedDocument,
+            ...kingstonsBuyerOtpLink,
+            id: uploadedDocument?.id || generateId('signed-otp'),
+            documentName: uploadedDocument?.document_name || uploadedDocument?.documentName || documentName,
+            document_name: uploadedDocument?.document_name || uploadedDocument?.documentName || documentName,
+            documentType: KINGSTONS_BUYER_OTP_REQUIREMENT.key,
+            document_type: KINGSTONS_BUYER_OTP_REQUIREMENT.key,
+            category: uploadedDocument?.category || 'buyer_offer',
+            status: uploadedDocument?.status || 'uploaded',
+            uploadedAt: uploadedDocument?.uploaded_at || uploadedDocument?.uploadedAt || now,
+            uploaded_at: uploadedDocument?.uploaded_at || uploadedDocument?.uploadedAt || now,
+            url: uploadedDocument?.url || uploadedDocument?.fileUrl || uploadedDocument?.file_url || '',
+            file_url: uploadedDocument?.file_url || uploadedDocument?.fileUrl || uploadedDocument?.url || '',
+            storage_path: uploadedDocument?.storage_path || '',
+            offerId: offerReference,
+            offer_id: offerReference,
+            canonicalOfferId: normalizeText(offer?.canonicalOfferId),
+            canonical_offer_id: normalizeText(offer?.canonicalOfferId),
+            buyerLeadId,
+            buyer_lead_id: buyerLeadId,
+            buyerContactId,
+            buyer_contact_id: buyerContactId,
+          },
+        ],
+      }))
+      setOfferActionMessage(`Signed OTP uploaded for ${buyerName}.`)
+      setOffersRefreshTick((value) => value + 1)
+      await loadListingData()
+    } catch (error) {
+      setOfferActionError(error?.message || 'Unable to upload the signed OTP.')
+    } finally {
+      setBuyerOtpUploadKey('')
+      event.target.value = ''
+    }
+  }
+
   async function handleRepairSellerPackTransactionHandoff() {
     if (!listingRecord?.id) return
     if (!isSupabaseConfigured || !isUuidLike(listingRecord.id)) {
@@ -7254,7 +7569,7 @@ function AgentListingDetail() {
         onContinue={(selection) => void handleStartListingMandateDocument(selection)}
       />
       <StartDocumentModal
-        open={Boolean(acceptedOfferOtpStartOffer)}
+        open={Boolean(acceptedOfferOtpStartOffer) && !listingKingstonsBuyerOtpDigitalDecision.blocked}
         onClose={() => setAcceptedOfferOtpStartOffer(null)}
         entryPoint={DOCUMENT_START_ENTRY_POINTS.acceptedOfferOtp}
         packetType={DOCUMENT_START_PACKET_TYPES.otp}
@@ -7280,6 +7595,11 @@ function AgentListingDetail() {
       ) : null}
       {detailMessage ? (
         <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-4 py-3 text-sm font-medium text-[#1f7d44]">{detailMessage}</div>
+      ) : null}
+      {listingKingstonsBuyerOtpDigitalDecision.blocked ? (
+        <div className="rounded-[14px] border border-[#f2dfbd] bg-[#fff9ec] px-4 py-3 text-sm font-semibold text-[#7a5a17]" data-testid="kingstons-buyer-otp-digital-decision">
+          {listingKingstonsBuyerOtpDigitalDecision.label}: {listingKingstonsBuyerOtpDigitalDecision.agentAction}
+        </div>
       ) : null}
       <Modal
         open={Boolean(activeSellerSectionEditor)}
@@ -8981,6 +9301,10 @@ function AgentListingDetail() {
                     OFFER_WORKFLOW_STATUS.SELLER_REVIEW,
                     OFFER_WORKFLOW_STATUS.SELLER_VIEWED,
                   ].includes(statusKey))
+                  const buyerOtpReadiness = offer.kingstonsBuyerOtpReadiness || null
+                  const buyerOtpRow = buyerOtpReadiness?.rows?.[0] || null
+                  const buyerOtpReady = buyerOtpReadiness?.gate?.offerConversionReady === true
+                  const buyerOtpUploadControlKey = `kingstons-buyer-otp:${offer.canonicalOfferId || offer.offerId || offer.id || offer.buyerLeadId || ''}`
                   return (
                   <article key={offer.id} className="rounded-[18px] border border-[#dce6f2] bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -9061,6 +9385,26 @@ function AgentListingDetail() {
                         placeholder="Optional note for this action"
                       />
                     </label>
+                    {listingHasKingstonsSellerProcess ? (
+                      <div data-testid="kingstons-buyer-otp-upload-card" className="mt-3 flex flex-col gap-3 rounded-[14px] border border-[#dbe6f2] bg-[#f8fbff] p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#607387]">Signed OTP</p>
+                          <p className="mt-1 text-sm font-semibold text-[#243d56]">{buyerOtpRow?.statusLabel || 'Missing'}</p>
+                          <p className="mt-1 text-xs leading-5 text-[#607387]">{buyerOtpReadiness?.gate?.reason || 'Upload the manually signed OTP.'}</p>
+                        </div>
+                        <label className={`inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${buyerOtpUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
+                          {buyerOtpUploadKey === buyerOtpUploadControlKey ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                          {buyerOtpReady ? 'Replace OTP' : 'Upload OTP'}
+                          <input
+                            type="file"
+                            accept=".pdf,image/*"
+                            className="hidden"
+                            disabled={Boolean(buyerOtpUploadKey)}
+                            onChange={(event) => void handleKingstonsBuyerOtpUpload(offer, event)}
+                          />
+                        </label>
+                      </div>
+                    ) : null}
                     {[
                       OFFER_WORKFLOW_STATUS.SUBMITTED,
                       OFFER_WORKFLOW_STATUS.AGENT_REVIEW,
@@ -9156,8 +9500,8 @@ function AgentListingDetail() {
                         {offer.transactionId ? (
                           <>
                             <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>Open Transaction</Button>
-                            <Button size="sm" type="button" variant="secondary" onClick={() => setAcceptedOfferOtpStartOffer(offer)}>
-                              Prepare OTP
+                            <Button size="sm" type="button" variant="secondary" onClick={() => handleAcceptedOfferPrepareOtpClick(offer)}>
+                              {listingKingstonsBuyerOtpDigitalDecision.blocked ? 'Manual OTP Only' : 'Prepare OTP'}
                             </Button>
                           </>
                         ) : null}
@@ -9764,6 +10108,10 @@ function AgentListingDetail() {
                           statusKey === OFFER_WORKFLOW_STATUS.ACCEPTED ||
                           (statusKey === OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION && offer.transactionId)
                         )
+                        const buyerOtpReadiness = offer.kingstonsBuyerOtpReadiness || null
+                        const buyerOtpRow = buyerOtpReadiness?.rows?.[0] || null
+                        const buyerOtpReady = buyerOtpReadiness?.gate?.offerConversionReady === true
+                        const buyerOtpUploadControlKey = `kingstons-buyer-otp:${offer.canonicalOfferId || offer.offerId || offer.id || offer.buyerLeadId || ''}`
                         return (
                           <tr key={offer.id} className="align-top text-[#425970] transition hover:bg-[#fbfdff]">
                             <td className="px-5 py-4">
@@ -9823,6 +10171,36 @@ function AgentListingDetail() {
                             </td>
                             <td className="px-5 py-4">
                               <div className="flex flex-col items-end gap-2">
+                                {listingHasKingstonsSellerProcess ? (
+                                  <div data-testid="kingstons-buyer-otp-upload" className="w-full min-w-[170px] rounded-[12px] border border-[#dbe6f2] bg-[#f8fbff] p-2 text-left">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#607387]">Signed OTP</span>
+                                      <span className={`rounded-full border px-2 py-0.5 text-[0.65rem] font-semibold ${
+                                        buyerOtpReady
+                                          ? 'border-[#cfe9d8] bg-[#ecfaf1] text-[#1f7d44]'
+                                          : buyerOtpRow?.attention
+                                            ? 'border-[#f0c8c4] bg-[#fff7f6] text-[#963d35]'
+                                            : 'border-[#f3d9b0] bg-[#fff9ee] text-[#8f5c18]'
+                                      }`}>
+                                        {buyerOtpRow?.statusLabel || 'Missing'}
+                                      </span>
+                                    </div>
+                                    <p className="mt-1 text-xs leading-5 text-[#607387]">
+                                      {buyerOtpReadiness?.gate?.reason || 'Upload the manually signed OTP.'}
+                                    </p>
+                                    <label className={`mt-2 inline-flex min-h-8 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-2.5 text-xs font-semibold text-[#1f4f78] transition ${buyerOtpUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
+                                      {buyerOtpUploadKey === buyerOtpUploadControlKey ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                                      {buyerOtpReady ? 'Replace OTP' : 'Upload OTP'}
+                                      <input
+                                        type="file"
+                                        accept=".pdf,image/*"
+                                        className="hidden"
+                                        disabled={Boolean(buyerOtpUploadKey)}
+                                        onChange={(event) => void handleKingstonsBuyerOtpUpload(offer, event)}
+                                      />
+                                    </label>
+                                  </div>
+                                ) : null}
                                 {canSendToSeller ? (
                                   <>
                                     <Field
@@ -9861,8 +10239,8 @@ function AgentListingDetail() {
                                     <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>
                                       Transaction
                                     </Button>
-                                    <Button size="sm" type="button" variant="secondary" onClick={() => setAcceptedOfferOtpStartOffer(offer)}>
-                                      Prepare OTP
+                                    <Button size="sm" type="button" variant="secondary" onClick={() => handleAcceptedOfferPrepareOtpClick(offer)}>
+                                      {listingKingstonsBuyerOtpDigitalDecision.blocked ? 'Manual OTP Only' : 'Prepare OTP'}
                                     </Button>
                                   </>
                                 ) : null}

@@ -1,4 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
+import { buildKingstonsBuyerOtpReadiness } from '../core/transactions/kingstonsBuyerOtpReadiness.js'
+import { resolveSellerProcessProfileForOrganisation } from './sellerProcessProfileService.js'
 
 const COMPLETE_ONBOARDING_STATUSES = new Set([
   'submitted',
@@ -54,9 +56,22 @@ export function buildTransferInstructionLifecycle({
   allocations = [],
   roleplayers = [],
   assignments = [],
+  documents = [],
+  documentLibraryRows = [],
+  allowKingstonsManualSignedOtp = false,
+  kingstonsBuyerOtpReadiness = null,
 } = {}) {
   const onboardingStatus = normalize(transaction.onboarding_status || transaction.onboardingStatus)
-  const signedOtp = ['signed_otp_received', 'otp_uploaded'].includes(onboardingStatus)
+  const statusSignedOtp = ['signed_otp_received', 'otp_uploaded'].includes(onboardingStatus)
+  const documentRows = Array.isArray(documents) ? documents : []
+  const libraryRows = Array.isArray(documentLibraryRows) ? documentLibraryRows : []
+  const readiness = kingstonsBuyerOtpReadiness ||
+    (allowKingstonsManualSignedOtp === true && (documentRows.length || libraryRows.length)
+      ? buildKingstonsBuyerOtpReadiness({ documents: documentRows, documentLibraryRows: libraryRows })
+      : null)
+  const kingstonsManualSignedOtp = allowKingstonsManualSignedOtp === true &&
+    (readiness?.gate?.attorneyReadinessReady === true || readiness?.gate?.transactionReadinessReady === true)
+  const signedOtp = statusSignedOtp || kingstonsManualSignedOtp
   const onboardingComplete = COMPLETE_ONBOARDING_STATUSES.has(onboardingStatus) || Boolean(
     transaction.onboarding_completed_at || transaction.onboardingCompletedAt || transaction.external_onboarding_submitted_at,
   )
@@ -209,6 +224,7 @@ export function buildTransferInstructionLifecycle({
     listingId: transaction.listing_id || transaction.listingId || '',
     onboardingStatus,
     signedOtp,
+    signedOtpSource: statusSignedOtp ? 'transaction_status' : kingstonsManualSignedOtp ? 'kingstons_manual_upload' : '',
     decisionState,
     health: issues.length ? (issues.some((issue) => blockedIssues.has(issue)) ? 'blocked' : 'attention') : allocationState === 'declined' ? 'blocked' : 'on_track',
     issues: compact(issues),
@@ -238,7 +254,7 @@ export async function getTransferInstructionLifecycle(transactionId) {
   const transaction = transactionResult.data
   if (!transaction) return null
 
-  const [allocations, roleplayers, assignments] = await Promise.all([
+  const [allocations, roleplayers, assignments, documents] = await Promise.all([
     transaction.listing_id
       ? fetchRows('private_listing_role_players', (query) =>
           query.eq('private_listing_id', transaction.listing_id).eq('role_type', 'transfer_attorney').order('selected_at', { ascending: false }))
@@ -247,7 +263,22 @@ export async function getTransferInstructionLifecycle(transactionId) {
       query.eq('transaction_id', normalizedTransactionId).eq('role_type', 'transfer_attorney').order('updated_at', { ascending: false })),
     fetchRows('transaction_attorney_assignments', (query) =>
       query.eq('transaction_id', normalizedTransactionId).order('updated_at', { ascending: false })),
+    fetchRows('documents', (query) =>
+      query.eq('transaction_id', normalizedTransactionId).order('created_at', { ascending: false })),
   ])
 
-  return buildTransferInstructionLifecycle({ transaction, allocations, roleplayers, assignments })
+  const sellerProcessProfileResolution = resolveSellerProcessProfileForOrganisation({
+    organisationId: transaction.organisation_id || '',
+    sellerProcessProfile: transaction.seller_process_profile || transaction.sellerProcessProfile || '',
+    transaction,
+  })
+
+  return buildTransferInstructionLifecycle({
+    transaction,
+    allocations,
+    roleplayers,
+    assignments,
+    documents,
+    allowKingstonsManualSignedOtp: sellerProcessProfileResolution.isKingstons,
+  })
 }
