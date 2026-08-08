@@ -237,7 +237,10 @@ export function buildSellerProcessWorkspacePanelModel(workspaceOrPayload = {}) {
     readOnly: false,
     shadowOnly: false,
     title: 'Kingstons Seller Process',
-    currentStageLabel: payload.sellerLeadWorkspace?.currentProcessStageLabel || labelForStage(payload.sellerLeadWorkspace?.currentProcessStageKey),
+    currentStageLabel: labelForStage(
+      payload.sellerLeadWorkspace?.currentProcessStageKey,
+      payload.sellerLeadWorkspace?.currentProcessStageLabel,
+    ),
     percent: payload.sellerLeadWorkspace?.percent || 0,
     sections: [
       {

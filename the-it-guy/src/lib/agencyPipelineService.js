@@ -2374,14 +2374,6 @@ async function runAppointmentCreateNotificationSideEffects(notificationSource = 
   return { inviteNotificationResults, documentNotificationResults, reminderResults }
 }
 
-function queueAppointmentCreateNotificationSideEffects(notificationSource = {}, payload = {}, actor = null) {
-  void Promise.resolve()
-    .then(() => runAppointmentCreateNotificationSideEffects(notificationSource, payload, actor))
-    .catch((notificationError) => {
-      console.warn('[appointments][notifications] queued appointment notification work failed', notificationError)
-    })
-}
-
 export async function createAppointmentAsync(organisationId, payload = {}, { actor = null } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
@@ -2563,22 +2555,37 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
 
   const saved = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, appointment.appointmentId)
   const notificationSource = saved || { ...appointment, participants: defaultParticipants }
-  let notificationsQueued = false
+  let notificationResults = []
+  let notificationError = null
+  let documentNotificationResults = []
+  let reminderResults = []
   if (payload?.sendInviteEmails !== false) {
-    notificationsQueued = true
-    queueAppointmentCreateNotificationSideEffects(notificationSource, payload, actor)
+    const sideEffectResults = await runAppointmentNotificationTask('appointment_created', () =>
+      runAppointmentCreateNotificationSideEffects(notificationSource, payload, actor),
+    )
+    if (sideEffectResults) {
+      notificationResults = Array.isArray(sideEffectResults.inviteNotificationResults)
+        ? sideEffectResults.inviteNotificationResults
+        : []
+      documentNotificationResults = Array.isArray(sideEffectResults.documentNotificationResults)
+        ? sideEffectResults.documentNotificationResults
+        : []
+      reminderResults = Array.isArray(sideEffectResults.reminderResults)
+        ? sideEffectResults.reminderResults
+        : []
+    } else {
+      notificationError = 'appointment_notification_task_failed'
+    }
   }
   emitAgencyCrmUpdated()
   return {
     ...notificationSource,
     schedulingIntegrity,
-    notificationsQueued,
-    notificationResults: notificationsQueued
-      ? [{ email: { sent: false, status: 'queued', reason: 'background_delivery' } }]
-      : [],
-    notificationError: null,
-    documentNotificationResults: [],
-    reminderResults: [],
+    notificationsQueued: false,
+    notificationResults,
+    notificationError,
+    documentNotificationResults,
+    reminderResults,
   }
 }
 

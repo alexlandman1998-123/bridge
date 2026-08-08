@@ -8553,7 +8553,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLead) return []
     const leadKey = normalizeLeadIdentityKey(selectedLead.leadId)
     return records.appointments
-      .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadKey)
+      .filter((row) => {
+        const appointmentLeadKey = normalizeLeadIdentityKey(row?.leadId)
+        const appointmentRelatedKey = normalizeLeadIdentityKey(row?.relatedEntityId)
+        return appointmentLeadKey === leadKey || appointmentRelatedKey === leadKey
+      })
       .sort((a, b) => new Date(a.dateTime || a.createdAt || 0) - new Date(b.dateTime || b.createdAt || 0))
   }, [records.appointments, selectedLead])
 
@@ -14477,6 +14481,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       )
       const createdAppointmentId = normalizeText(created?.appointmentId || created?.id)
+      if (createdAppointmentId) {
+        const createdAppointmentSnapshot = {
+          ...created,
+          appointmentId: createdAppointmentId,
+          leadId: normalizeText(created?.leadId || appointmentPayload.leadId) || null,
+          relatedEntityId: normalizeText(created?.relatedEntityId || appointmentPayload.relatedEntityId) || null,
+          relatedEntityType: normalizeText(created?.relatedEntityType || appointmentPayload.relatedEntityType) || null,
+        }
+        setRecords((previous) => {
+          const rows = Array.isArray(previous.appointments) ? previous.appointments : []
+          const matched = rows.some((row) => normalizeText(row?.appointmentId || row?.id) === createdAppointmentId)
+          return {
+            ...previous,
+            appointments: matched
+              ? rows.map((row) =>
+                  normalizeText(row?.appointmentId || row?.id) === createdAppointmentId
+                    ? { ...row, ...createdAppointmentSnapshot, updatedAt: createdAppointmentSnapshot.updatedAt || new Date().toISOString() }
+                    : row,
+                )
+              : [...rows, createdAppointmentSnapshot],
+          }
+        })
+      }
+      if (linkedLead && resolveLeadCategoryView(linkedLead) === 'seller') {
+        const sellerAppointmentLeadPatch = {
+          stage: 'Appointment Scheduled',
+          status: 'Appointment Requested',
+        }
+        await updateAgencyCrmLeadRecord(organisationId, linkedLead.leadId, sellerAppointmentLeadPatch)
+        patchSelectedLeadRecord(sellerAppointmentLeadPatch, linkedLead.leadId)
+      }
       const bookingContextLeadId = normalizeLeadIdentityKey(viewingPlanBookingContext.leadId)
       const bookingContextPropertyId = normalizeText(viewingPlanBookingContext.propertyId || appointmentPayload.listingId)
       if (
@@ -14580,19 +14615,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (createdAppointmentId) {
         setSelectedAppointmentId(createdAppointmentId)
       }
-      void (async () => {
-        try {
-          if (linkedLead && resolveLeadCategoryView(linkedLead) === 'seller') {
-            await updateAgencyCrmLeadRecord(organisationId, linkedLead.leadId, {
-              stage: 'Appointment Scheduled',
-              status: 'Appointment Requested',
-            })
-          }
-          await reloadRecords(organisationId)
-        } catch (postSaveError) {
-          console.warn('[appointments] post-save refresh failed', postSaveError)
-        }
-      })()
+      try {
+        await reloadRecords(organisationId)
+      } catch (postSaveError) {
+        console.warn('[appointments] post-save refresh failed', postSaveError)
+      }
     } catch (createError) {
       if (createError?.code === 'APPOINTMENT_HARD_CONFLICT') {
         setAppointmentSchedulingIntegrity(createError?.schedulingConflicts || null)
