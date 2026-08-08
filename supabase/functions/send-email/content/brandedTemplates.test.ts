@@ -189,19 +189,22 @@ Deno.test("appointment template renders the Kingstons valuation invite experienc
     organisationName: branding.organisationName,
     attachCalendarInvite: true,
     actionLink: "https://app.example.test/appointment-rsvp/token-123",
-    branding,
   });
 
   assertIncludes(html, "Kingstons Valuation Request");
   assertIncludes(html, "Introduction");
-  assertIncludes(html, "Meet your agent");
-  assertIncludes(html, "How the valuation works");
-  assertIncludes(html, "What to expect");
+  assertIncludes(html, "We are so excited to valuate your property");
+  assertIncludes(html, "This is your agent");
+  assertIncludes(html, "This is our agency");
+  assertIncludes(html, "This is what to expect");
+  assertIncludes(html, "Before we arrive");
   assertIncludes(html, "RSVP to this time");
   assertIncludes(html, "Specialist in residential sales across the local market.");
   assertIncludes(html, "https://app.example.test/appointment-rsvp/token-123");
   assertIncludes(text, "Kingstons Valuation Request");
-  assertIncludes(text, "How the valuation works");
+  assertIncludes(text, "This is your agent");
+  assertIncludes(text, "This is our agency");
+  assertIncludes(text, "This is what to expect");
   assertIncludes(text, "RSVP to this time: https://app.example.test/appointment-rsvp/token-123");
   assertIncludes(text, "Specialist in residential sales across the local market.");
 });
@@ -220,7 +223,6 @@ Deno.test("appointment template preserves notes and branded plain-text support",
     attachCalendarInvite: true,
     notes: `<script>alert("x")</script> Bring ID.`,
     acceptLink: `https://app.example.test/accept?next="quoted"`,
-    organisationName: branding.organisationName,
     supportEmail: branding.supportEmail,
     supportPhone: branding.supportPhone,
     branding,
@@ -237,7 +239,6 @@ Deno.test("appointment template preserves notes and branded plain-text support",
     organisationName: branding.organisationName,
     attachCalendarInvite: true,
     notes: "Bring ID.",
-    organisationName: branding.organisationName,
     supportEmail: branding.supportEmail,
     supportPhone: branding.supportPhone,
   });

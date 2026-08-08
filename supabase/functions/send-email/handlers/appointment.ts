@@ -169,6 +169,8 @@ export async function handleAppointmentEmail(
     defaults: { organisationName, supportEmail, supportPhone },
   });
   const baseSender =
+    normalizeText(branding.fromEmail) ||
+    normalizeText(rawPayload.fromEmail || rawPayload.from_email) ||
     normalizeText(Deno.env.get("RESEND_APPOINTMENTS_FROM_EMAIL")) ||
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Arch9 Appointments <appointments@bridge.co.za>";

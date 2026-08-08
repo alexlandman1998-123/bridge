@@ -51,6 +51,12 @@ function isKingstonsOrganisation(organisationName?: string) {
   return pickText(organisationName, "").toLowerCase().includes("kingstons");
 }
 
+function isValuationAppointment(appointmentType?: string, appointmentTitle?: string) {
+  const haystack = `${pickText(appointmentType, "")} ${pickText(appointmentTitle, "")}`
+    .toLowerCase();
+  return haystack.includes("valuation") || haystack.includes("seller_valuation");
+}
+
 function buildKingstonsValuationInviteCopy({
   eventType,
   participantRole,
@@ -83,29 +89,31 @@ function buildKingstonsValuationInviteCopy({
     title,
     intro: [
       confirmationRequired
-        ? "Thank you for considering Kingstons for your valuation."
-        : "Thank you for booking your valuation with Kingstons.",
+        ? "We are so excited to valuate your property with you."
+        : "We are so excited to valuate your property with you, and your appointment is now in our diary.",
+      "Your Kingstons valuation is the start of a clear, practical selling plan for your property.",
       hostSentence
         ? `Your appointment will be hosted by ${hostSentence}.`
         : `Your valuation will be looked after by the Kingstons team.`,
       confirmationRequired
-        ? "Please use the RSVP link below to confirm a time that works for you."
+        ? "Please RSVP below so we can lock in the visit and prepare properly before we arrive."
         : "We’ll walk you through the visit, explain the next steps, and keep the process clear from start to finish.",
     ],
-    agentSummaryTitle: "Meet your agent",
+    agentSummaryTitle: "This is your agent",
+    agencySummaryTitle: "This is our agency",
     howItWorks: [
-      "We arrive at the property and walk through the home with you.",
-      "We review the key value drivers, including condition, improvements, location, and comparable market activity.",
-      "We explain the valuation outcome and the recommended next steps before we leave.",
+      "We arrive at the property and walk through the home with you, room by room, at a calm and practical pace.",
+      "We look at the value drivers buyers care about most: condition, improvements, position, demand, and comparable sales activity.",
+      "We talk through the likely buyer profile, pricing strategy, and the strongest next step if you choose to list.",
     ],
     whatToExpect: [
       sellerRecipient
-        ? "Please make sure access is ready and let us know about any special instructions before the visit."
-        : "Please make sure access is ready and let us know about any special instructions before the visit.",
-      "Bring any questions, recent improvements, or notes you want us to consider.",
+        ? "Please make sure access is ready and let us know about any gate codes, pets, tenants, parking, or access notes before the visit."
+        : "Please make sure access is ready and let us know about any gate codes, pets, tenants, parking, or access notes before the visit.",
+      "Bring any questions, recent improvements, approved plans, or notes you want us to consider.",
       confirmationRequired
-        ? "Use the RSVP button below to confirm this time or request a change."
-        : "If the time no longer works, reply to the email and we will help adjust the booking.",
+        ? "Use the RSVP button below to confirm this time, decline it, or request a change."
+        : "If the time no longer works, reply to this email and we will help adjust the booking.",
     ],
     ctaLabel: confirmationRequired ? "RSVP to this time" : "View appointment",
     agentBio,
@@ -188,7 +196,8 @@ export function buildAppointmentSubject(
   const participantRole = String(options.participantRole || "").trim().toLowerCase();
   if (
     participantRole.includes("seller") &&
-    isKingstonsOrganisation(options.organisationName)
+    isKingstonsOrganisation(options.organisationName) &&
+    isValuationAppointment(appointmentType, options.appointmentTitle)
   ) {
     if (eventType === "appointment_confirmation_required") {
       return `Kingstons valuation request: ${typeLabel}`;
@@ -279,7 +288,8 @@ export function buildAppointmentEmailHtml({
   });
   const sellerRecipient = isSellerParticipant(participantRole);
   const isKingstonsBrand = isKingstonsOrganisation(resolvedOrganisationName);
-  const isKingstonsValuationInvite = isKingstonsBrand && sellerRecipient && [
+  const isKingstonsValuationInvite = isKingstonsBrand && sellerRecipient &&
+    isValuationAppointment(appointmentType, appointmentTitle) && [
     "appointment_scheduled",
     "appointment_confirmed",
     "appointment_confirmation_required",
@@ -317,18 +327,25 @@ export function buildAppointmentEmailHtml({
       renderBridgeSummaryCard(
         [
           { label: "Agent", value: pickText(resolvedAgentName, "Your agent") },
-          { label: "Agency", value: resolvedOrganisationName },
           ...(resolvedAgentRole ? [{ label: "Role", value: resolvedAgentRole }] : []),
           ...(kingstons.agentBio ? [{ label: "About your agent", value: kingstons.agentBio }] : []),
         ],
         kingstons.agentSummaryTitle,
       ),
+      renderBridgeSummaryCard(
+        [
+          { label: "Agency", value: resolvedOrganisationName },
+          ...(supportEmail ? [{ label: "Email", value: supportEmail }] : []),
+          ...(supportPhone ? [{ label: "Phone", value: supportPhone }] : []),
+        ],
+        kingstons.agencySummaryTitle,
+      ),
       `<div style="margin: 18px 0; padding: 18px 20px; border: 1px solid #e8dcc7; border-left: 4px solid ${primaryColor}; border-radius: 16px; background: #fffdfa;">
-        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #8a6a22; font-weight: 700;">How the valuation works</p>
+        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #8a6a22; font-weight: 700;">This is what to expect</p>
         ${renderBridgeSteps(kingstons.howItWorks)}
       </div>`,
       `<div style="margin: 18px 0; padding: 18px 20px; border: 1px solid #dbe6f2; border-left: 4px solid ${primaryColor}; border-radius: 16px; background: linear-gradient(180deg, #f9fcff 0%, #f4f8fc 100%);">
-        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What to expect</p>
+        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">Before we arrive</p>
         ${renderBridgeBullets(kingstons.whatToExpect)}
       </div>`,
       notes
@@ -570,7 +587,8 @@ export function buildAppointmentEmailText({
   });
   const sellerRecipient = isSellerParticipant(participantRole);
   const isKingstonsBrand = isKingstonsOrganisation(resolvedOrganisationName);
-  const isKingstonsValuationInvite = isKingstonsBrand && sellerRecipient && [
+  const isKingstonsValuationInvite = isKingstonsBrand && sellerRecipient &&
+    isValuationAppointment(appointmentType, appointmentTitle) && [
     "appointment_scheduled",
     "appointment_confirmed",
     "appointment_confirmation_required",
@@ -596,14 +614,18 @@ export function buildAppointmentEmailText({
       "",
       kingstons.agentSummaryTitle,
       `Agent: ${pickText(agentName, "Your agent")}`,
-      `Agency: ${resolvedOrganisationName}`,
       agentRole ? `Role: ${agentRole}` : null,
       agentBio ? `About your agent: ${agentBio}` : null,
       "",
-      "How the valuation works",
+      kingstons.agencySummaryTitle,
+      `Agency: ${resolvedOrganisationName}`,
+      supportEmail ? `Email: ${supportEmail}` : null,
+      supportPhone ? `Phone: ${supportPhone}` : null,
+      "",
+      "This is what to expect",
       ...kingstons.howItWorks.map((step, index) => `${index + 1}. ${step}`),
       "",
-      "What to expect",
+      "Before we arrive",
       ...kingstons.whatToExpect.map((item) => `- ${item}`),
       notes ? `Notes: ${notes}` : null,
       "",

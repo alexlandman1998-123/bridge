@@ -1281,6 +1281,29 @@ function resolveAgencyOfferEmailBranding({ organisationId = '', organisationName
       workspace?.supportPhone ||
       workspace?.support_phone,
   )
+  const fromName = normalizeText(
+    profile?.appointmentsFromName ||
+      profile?.appointments_from_name ||
+      profile?.emailFromName ||
+      profile?.email_from_name ||
+      currentWorkspace?.appointmentsFromName ||
+      currentWorkspace?.appointments_from_name ||
+      currentWorkspace?.emailFromName ||
+      currentWorkspace?.email_from_name ||
+      workspace?.appointmentsFromName ||
+      workspace?.appointments_from_name ||
+      workspace?.emailFromName ||
+      workspace?.email_from_name ||
+      fallbackName,
+  )
+  const fromEmail = normalizeText(
+    profile?.appointmentsFromEmail ||
+      profile?.appointments_from_email ||
+      currentWorkspace?.appointmentsFromEmail ||
+      currentWorkspace?.appointments_from_email ||
+      workspace?.appointmentsFromEmail ||
+      workspace?.appointments_from_email,
+  )
 
   return {
     organisationId,
@@ -1293,6 +1316,8 @@ function resolveAgencyOfferEmailBranding({ organisationId = '', organisationName
     organisationBrandSecondaryColor: normalizeText(resolved.secondaryColour || resolved.accentColour),
     supportEmail,
     supportPhone,
+    fromName,
+    fromEmail,
   }
 }
 
@@ -10153,7 +10178,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     for (const appointment of Array.isArray(records.appointments) ? records.appointments : []) {
       const type = normalizeText(appointment?.appointmentType).toLowerCase()
-      if (!type.includes('viewing')) continue
+      const title = normalizeText(appointment?.title || appointment?.customTypeLabel).toLowerCase()
+      const isPerformanceAppointment =
+        type.includes('viewing') ||
+        type.includes('valuation') ||
+        title.includes('valuation')
+      if (!isPerformanceAppointment) continue
       const leadId = normalizeText(appointment?.leadId)
       const leadKey = normalizeLeadIdentityKey(leadId)
       const linkedLead = leadId ? (leadById.get(leadId) || allLeadById.get(leadId) || leadById.get(leadKey) || allLeadById.get(leadKey) || null) : null
@@ -12349,7 +12379,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   )
 
   const appointmentHasHardConflicts = appointmentSchedulingIntegrity?.hasHardConflicts === true
-  const appointmentCanSave = !appointmentSchedulingLoading && !appointmentHasHardConflicts
+  const appointmentCanSave = !appointmentHasHardConflicts
 
   useEffect(() => {
     if (!appointmentModalOpen) {
@@ -14442,6 +14472,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         rsvpStatus: 'Pending',
       })
     }
+    const appointmentEmailBranding = resolveAgencyOfferEmailBranding({
+      organisationId,
+      organisationName,
+      profile,
+      currentWorkspace,
+      workspace,
+    })
     const appointmentPayload = applyAppointmentTemplate(appointmentForm.appointmentType, {
       title: normalizeText(appointmentForm.title) || getAppointmentTypeLabel(appointmentForm.appointmentType),
       appointmentType: appointmentForm.appointmentType,
@@ -14480,6 +14517,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       workflowCompletionEffect: appointmentForm.workflowCompletionEffect && typeof appointmentForm.workflowCompletionEffect === 'object'
         ? appointmentForm.workflowCompletionEffect
         : undefined,
+      ...appointmentEmailBranding,
       sendInviteEmails: appointmentForm.sendInviteEmails !== false,
       attachCalendarInvite: appointmentForm.attachCalendarInvite !== false,
       notifyCreatorOnRsvp: appointmentForm.notifyCreatorOnRsvp !== false,
@@ -14527,8 +14565,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
       }
       if (linkedLead && resolveLeadCategoryView(linkedLead) === 'seller') {
+        const linkedLeadHasKingstonsPipelineSignal = hasKingstonsPipelineSignal({
+          organisationId,
+          selectedLead: linkedLead,
+          lead: linkedLead,
+          listing: selectedLeadLinkedListing,
+          selectedLeadAssignedAgentLabel,
+          currentAgent,
+          currentMembership,
+          currentWorkspace,
+          profile,
+          workspace,
+        })
         const isKingstonsValuationAppointment =
-          selectedLeadHasKingstonsPipelineSignal &&
+          (selectedLeadHasKingstonsPipelineSignal || linkedLeadHasKingstonsPipelineSignal) &&
           normalizeKey(appointmentPayload.appointmentType) === 'seller_valuation'
         const sellerAppointmentLeadPatch = isKingstonsValuationAppointment
           ? {
@@ -16691,6 +16741,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     setAppointmentSchedulingSubmitting(true)
     try {
+      const appointmentEmailBranding = resolveAgencyOfferEmailBranding({
+        organisationId,
+        organisationName,
+        profile,
+        currentWorkspace,
+        workspace,
+      })
       const updatePayload = applyAppointmentTemplate(appointmentForm.appointmentType, {
         title: normalizeText(appointmentForm.title) || getAppointmentTypeLabel(appointmentForm.appointmentType),
         appointmentType: appointmentForm.appointmentType,
@@ -16727,6 +16784,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         workflowCompletionEffect: appointmentForm.workflowCompletionEffect && typeof appointmentForm.workflowCompletionEffect === 'object'
           ? appointmentForm.workflowCompletionEffect
           : undefined,
+        ...appointmentEmailBranding,
         sendInviteEmails: appointmentForm.sendInviteEmails !== false,
         attachCalendarInvite: appointmentForm.attachCalendarInvite !== false,
         notifyCreatorOnRsvp: appointmentForm.notifyCreatorOnRsvp !== false,
@@ -19726,7 +19784,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <th className="px-3 py-2">Agent</th>
                     <th className="px-3 py-2">New Leads</th>
                     <th className="px-3 py-2">Contacted</th>
-                    <th className="px-3 py-2">Viewings Scheduled</th>
+                    <th className="px-3 py-2">Appointments</th>
                     <th className="px-3 py-2">Follow-ups</th>
                     <th className="px-3 py-2">Converted</th>
                     <th className="px-3 py-2">Conversion Rate</th>

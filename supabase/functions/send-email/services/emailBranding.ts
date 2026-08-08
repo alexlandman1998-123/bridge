@@ -22,6 +22,7 @@ export type EmailBranding = {
   website?: string;
   replyTo?: string;
   fromName?: string;
+  fromEmail?: string;
 };
 
 export type EmailBrandingInput =
@@ -272,6 +273,7 @@ export function normalizeEmailBranding(
     ) || undefined,
     replyTo: firstText(input.replyTo, input.reply_to) || undefined,
     fromName: firstText(input.fromName, input.from_name) || undefined,
+    fromEmail: firstText(input.fromEmail, input.from_email) || undefined,
   };
 }
 
@@ -413,6 +415,12 @@ export function extractEmailBrandingFromPayload(
       metadata.fromName,
       metadata.from_name,
     ) || undefined,
+    fromEmail: firstText(
+      payload.fromEmail,
+      payload.from_email,
+      metadata.fromEmail,
+      metadata.from_email,
+    ) || undefined,
   };
 }
 
@@ -466,6 +474,13 @@ export function extractEmailBrandingFromOrganisation(
       row.lead_acknowledgement_sender_name,
       row.display_name,
       row.name,
+    ) || undefined,
+    fromEmail: firstText(
+      row.appointments_from_email,
+      row.email_from_address,
+      row.from_email,
+      row.support_email,
+      row.company_email,
     ) || undefined,
   };
 }
@@ -573,6 +588,12 @@ export function extractEmailBrandingFromOrganisationBranding(
       metadata.from_name,
       row.organisation_display_name,
     ) || undefined,
+    fromEmail: firstText(
+      row.email_from_address,
+      row.from_email,
+      metadata.fromEmail,
+      metadata.from_email,
+    ) || undefined,
   };
 }
 
@@ -657,6 +678,14 @@ export function extractEmailBrandingFromSettings(
     ) || undefined,
     replyTo: firstText(settings.replyTo, settings.reply_to) || undefined,
     fromName: firstText(settings.fromName, settings.from_name) || undefined,
+    fromEmail: firstText(
+      settings.appointmentsFromEmail,
+      settings.appointments_from_email,
+      settings.fromEmail,
+      settings.from_email,
+      settings.emailFromAddress,
+      settings.email_from_address,
+    ) || undefined,
   };
 }
 

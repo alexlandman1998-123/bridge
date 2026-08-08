@@ -219,9 +219,9 @@ export function renderBridgeEmailLayout({
   const safeFooterText = escapeHtml(footerText || `${resolvedBranding.organisationName} · Powered by Arch9`);
   const headerBrandHtml = renderBridgeBrandMark({
     organisationName: resolvedBranding.organisationName,
-    logoUrl: resolvedBranding.logoLightUrl ||
+    logoUrl: resolvedBranding.logoDarkUrl ||
+      resolvedBranding.logoLightUrl ||
       resolvedBranding.logoUrl ||
-      resolvedBranding.logoDarkUrl ||
       resolvedBranding.logoIconUrl,
     primaryColor,
     onDark: true,
