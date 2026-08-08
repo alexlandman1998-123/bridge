@@ -7,6 +7,7 @@ import AreaAutocomplete from '../../components/location/AreaAutocomplete'
 import AreaMultiSelect from '../../components/location/AreaMultiSelect'
 import AppointmentDashboardSection from '../../components/appointments/dashboard/AppointmentDashboardSection'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
+import KingstonsSellerAppointmentsWorkspace from '../../components/appointments/KingstonsSellerAppointmentsWorkspace'
 import LegalDocumentWorkspace from '../../components/documents/LegalDocumentWorkspace'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
@@ -24564,6 +24565,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'appointments' ? (
+                    selectedLeadIsSeller && selectedLeadHasKingstonsPipelineSignal ? (
+                      <KingstonsSellerAppointmentsWorkspace
+                        appointments={selectedLeadAppointments}
+                        currentAgent={currentAgent}
+                        resolveAppointmentListingLabel={resolveAppointmentListingLabel}
+                        getAppointmentTypeLabel={getAppointmentTypeLabel}
+                        formatDateShort={formatDateShort}
+                        formatAppointmentTimeRange={formatAppointmentTimeRange}
+                        getAppointmentStatusTone={getAppointmentStatusTone}
+                        handleOpenAppointmentModal={handleOpenAppointmentModal}
+                        handleCancelAppointment={handleCancelAppointment}
+                        handleMarkAppointmentComplete={handleMarkAppointmentComplete}
+                        resolveAgentById={resolveAgentById}
+                      />
+                    ) : (
                   <div className="space-y-4">
                     <AppointmentDashboardSection
                       module="lead"
@@ -24951,6 +24967,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                     </section>
                   </div>
+                    )
                   ) : null}
 
                   {leadWorkspaceTab === 'offers' ? (
