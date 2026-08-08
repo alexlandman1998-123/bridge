@@ -199,14 +199,68 @@ Deno.test("appointment template renders the Kingstons valuation invite experienc
   assertIncludes(html, "This is what to expect");
   assertIncludes(html, "Before we arrive");
   assertIncludes(html, "RSVP to this time");
-  assertIncludes(html, "Specialist in residential sales across the local market.");
+  assertIncludes(
+    html,
+    "Specialist in residential sales across the local market.",
+  );
   assertIncludes(html, "https://app.example.test/appointment-rsvp/token-123");
   assertIncludes(text, "Kingstons Valuation Request");
   assertIncludes(text, "This is your agent");
   assertIncludes(text, "This is our agency");
   assertIncludes(text, "This is what to expect");
-  assertIncludes(text, "RSVP to this time: https://app.example.test/appointment-rsvp/token-123");
-  assertIncludes(text, "Specialist in residential sales across the local market.");
+  assertIncludes(
+    text,
+    "RSVP to this time: https://app.example.test/appointment-rsvp/token-123",
+  );
+  assertIncludes(
+    text,
+    "Specialist in residential sales across the local market.",
+  );
+});
+
+Deno.test("appointment template renders the Kingstons valuation presentation invite experience", () => {
+  const html = buildAppointmentEmailHtml({
+    eventType: "appointment_confirmation_required",
+    recipientName: "Seller One",
+    appointmentType: "valuation_presentation",
+    appointmentTitle: "Valuation Presentation - Seller One",
+    appointmentDate: "2026-07-30",
+    appointmentTime: "14:00",
+    participantRole: "seller",
+    agentName: "Alex Landman",
+    agentRole: "Property Consultant",
+    organisationName: branding.organisationName,
+    attachCalendarInvite: true,
+    actionLink: "https://app.example.test/appointment-rsvp/token-456",
+    acceptLink: "https://app.example.test/accept",
+    branding,
+  });
+  const text = buildAppointmentEmailText({
+    eventType: "appointment_confirmation_required",
+    recipientName: "Seller One",
+    appointmentType: "valuation_presentation",
+    appointmentTitle: "Valuation Presentation - Seller One",
+    appointmentDate: "2026-07-30",
+    appointmentTime: "14:00",
+    participantRole: "seller",
+    agentName: "Alex Landman",
+    agentRole: "Property Consultant",
+    organisationName: branding.organisationName,
+    attachCalendarInvite: true,
+    actionLink: "https://app.example.test/appointment-rsvp/token-456",
+  });
+
+  assertIncludes(html, "Kingstons Valuation Presentation Request");
+  assertIncludes(html, "present your formal valuation");
+  assertIncludes(html, "Seller Pack stage");
+  assertIncludes(html, "seller portal");
+  assertIncludes(html, "RSVP to this time");
+  assertIncludes(text, "Kingstons Valuation Presentation Request");
+  assertIncludes(text, "Seller Pack stage");
+  assertIncludes(
+    text,
+    "RSVP to this time: https://app.example.test/appointment-rsvp/token-456",
+  );
 });
 
 Deno.test("appointment template preserves notes and branded plain-text support", () => {
@@ -251,7 +305,10 @@ Deno.test("appointment template preserves notes and branded plain-text support",
   assertNotIncludes(html, `<script>alert("x")</script>`);
   assertIncludes(text, "Support: support@example.test | +27 21 000 0000");
   assertIncludes(text, "Kingstons Property");
-  assertIncludes(text, "Host: Alex Landman, Property Consultant at Kingstons Property");
+  assertIncludes(
+    text,
+    "Host: Alex Landman, Property Consultant at Kingstons Property",
+  );
   assertIncludes(text, "Calendar invite: Attached");
   assertIncludes(text, "Powered by Arch9");
 });
@@ -293,7 +350,10 @@ Deno.test("buyer viewing availability request renders company branding and prope
   assertIncludes(html, "border-bottom: 4px solid #fedcba");
   assertIncludes(html, "Viewing Options");
   assertIncludes(html, "Confirm viewings");
-  assertIncludes(html, "https://app.example.test/viewing-preferences/token-123");
+  assertIncludes(
+    html,
+    "https://app.example.test/viewing-preferences/token-123",
+  );
   assertIncludes(html, "114 West Street");
   assertIncludes(html, "https://cdn.example.test/listings/114.jpg");
   assertIncludes(html, `alt="114 West Street"`);

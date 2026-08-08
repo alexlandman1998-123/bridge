@@ -14678,17 +14678,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const isKingstonsValuationAppointment =
           (selectedLeadHasKingstonsPipelineSignal || linkedLeadHasKingstonsPipelineSignal) &&
           normalizeKey(appointmentPayload.appointmentType) === 'seller_valuation'
+        const isKingstonsValuationPresentation =
+          (selectedLeadHasKingstonsPipelineSignal || linkedLeadHasKingstonsPipelineSignal) &&
+          normalizeKey(appointmentPayload.appointmentType) === 'valuation_presentation'
         const sellerAppointmentLeadPatch = isKingstonsValuationAppointment
           ? {
               stage: 'Formal Valuation',
               status: 'Valuation Appointment Scheduled',
             }
+          : isKingstonsValuationPresentation
+            ? {
+                stage: 'Seller Pack',
+                status: 'Valuation Presentation Scheduled',
+              }
           : {
               stage: 'Appointment Scheduled',
               status: 'Appointment Requested',
             }
         await updateAgencyCrmLeadRecord(organisationId, linkedLead.leadId, sellerAppointmentLeadPatch)
         patchSelectedLeadRecord(sellerAppointmentLeadPatch, linkedLead.leadId)
+        if (isKingstonsValuationPresentation) {
+          void createAgencyCrmLeadActivity(organisationId, linkedLead.leadId, {
+            agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+            activityType: 'Valuation Presentation Scheduled',
+            activityNote: 'Valuation presentation meeting scheduled. Seller process moved to Seller Pack.',
+            outcome: 'Seller Pack',
+            activityDate: new Date().toISOString(),
+          }, { actor: currentAgent }).catch((activityError) => {
+            console.warn('[AgencyPipelinePage] Valuation presentation activity could not be recorded.', activityError)
+          })
+        }
       }
       const bookingContextLeadId = normalizeLeadIdentityKey(viewingPlanBookingContext.leadId)
       const bookingContextPropertyId = normalizeText(viewingPlanBookingContext.propertyId || appointmentPayload.listingId)
@@ -17762,6 +17781,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError(downloadError?.message || 'Unable to download this document right now.')
     } finally {
       setOpeningSellerLeadDocumentId('')
+    }
+  }
+
+  async function resolveSellerLeadDocumentShareUrl(documentRow = {}) {
+    let documentUrl = normalizeText(documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url)
+    if (!documentUrl && normalizeText(documentRow.storagePath || documentRow.storage_path)) {
+      const bucketName = normalizeText(documentRow.storageBucket || documentRow.storage_bucket) || DOCUMENTS_BUCKET_CANDIDATES[0]
+      const storagePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
+      const signedUrlResult = await supabase?.storage
+        ?.from(bucketName)
+        ?.createSignedUrl(storagePath, 60 * 60 * 24 * 7)
+      if (signedUrlResult?.error) throw signedUrlResult.error
+      documentUrl = normalizeText(signedUrlResult?.data?.signedUrl)
+    }
+    return documentUrl
+  }
+
+  async function handleCopyKingstonsFormalValuationLink() {
+    if (!selectedKingstonsFormalValuationRow) return
+    try {
+      setError('')
+      const documentUrl = await resolveSellerLeadDocumentShareUrl(selectedKingstonsFormalValuationRow)
+      if (!documentUrl) throw new Error('Upload the Formal Valuation before sharing a download link.')
+      await navigator.clipboard.writeText(documentUrl)
+      setMessage('Formal valuation download link copied. You can share it with the seller.')
+    } catch (copyError) {
+      setError(copyError?.message || 'Unable to copy the formal valuation link.')
     }
   }
 
@@ -26657,6 +26703,95 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${selectedKingstonsSellerPackSummary.complete ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
                                   {selectedKingstonsSellerPackSummary.completed}/{selectedKingstonsSellerPackSummary.total} ready
                                 </span>
+                              </div>
+                              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                                <article className="rounded-[18px] border border-[#e3edf7] bg-white p-4">
+                                  <div className="flex items-start gap-3">
+                                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-[#fff8e8] text-[#8a641d]">
+                                      <FileText className="h-4 w-4" />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-[#20364c]">Send copy of valuation</p>
+                                      <p className="mt-1 text-xs leading-5 text-[#60758b]">
+                                        Share the uploaded Formal Valuation as a download link for the seller.
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="mt-4 flex flex-wrap gap-2">
+                                    {selectedKingstonsFormalValuationRow?.uploadedFileName ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => void handleCopyKingstonsFormalValuationLink()}
+                                          className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#315b7a] hover:border-[#b9cde3]"
+                                        >
+                                          <Copy className="h-4 w-4" />
+                                          Copy link
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => void handleDownloadSellerLeadDocumentUrl(selectedKingstonsFormalValuationRow)}
+                                          className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#315b7a] hover:border-[#b9cde3]"
+                                        >
+                                          Open
+                                          <ExternalLink className="h-4 w-4" />
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => formalValuationUploadInputRef.current?.click?.()}
+                                        className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] border border-[#cfdceb] bg-white px-3 text-sm font-semibold text-[#315b7a] hover:border-[#a9bfd6]"
+                                      >
+                                        <Upload className="h-4 w-4" />
+                                        Upload valuation first
+                                      </button>
+                                    )}
+                                  </div>
+                                </article>
+                                <article className="rounded-[18px] border border-[#e3edf7] bg-white p-4">
+                                  <div className="flex items-start gap-3">
+                                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-[#eef8f2] text-[#157b4f]">
+                                      <Send className="h-4 w-4" />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-[#20364c]">Send seller portal link</p>
+                                      <p className="mt-1 text-xs leading-5 text-[#60758b]">
+                                        Invite the seller to the portal so they can access requests and upload securely.
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={handleSellerOnboardingCommand}
+                                    disabled={isSellerOnboardingSending}
+                                    className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] bg-[#13784f] px-3 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(19,120,79,0.18)] transition hover:bg-[#0f6845] disabled:cursor-not-allowed disabled:opacity-70"
+                                  >
+                                    <Send className="h-4 w-4" />
+                                    {selectedLeadSellerOnboardingCommandLabel}
+                                  </button>
+                                </article>
+                                <article className="rounded-[18px] border border-[#e3edf7] bg-white p-4">
+                                  <div className="flex items-start gap-3">
+                                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-[#f1f6fb] text-[#315b7a]">
+                                      <Upload className="h-4 w-4" />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-[#20364c]">Upload required documents</p>
+                                      <p className="mt-1 text-xs leading-5 text-[#60758b]">
+                                        Signed Mandate, Defects Disclosure, and FICA Form are required before listing.
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')}
+                                    className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-sm font-semibold text-[#20364c] transition hover:border-[#b8cadf] hover:bg-[#fcfdff]"
+                                  >
+                                    <UserRound className="h-4 w-4" />
+                                    {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'Edit seller details' : 'Capture seller details'}
+                                  </button>
+                                </article>
                               </div>
                               <div className="mt-4 grid gap-3 md:grid-cols-3">
                                 {selectedKingstonsSellerPackRows.map((documentRow) => {

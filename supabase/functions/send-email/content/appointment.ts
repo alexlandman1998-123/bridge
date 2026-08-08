@@ -1,12 +1,12 @@
 import {
   type BridgeEmailLayoutBranding,
   escapeHtml,
-  renderBridgeCta,
   renderBridgeBullets,
+  renderBridgeCta,
   renderBridgeEmailLayout,
   renderBridgeIntroParagraphs,
-  renderBridgeSummaryCard,
   renderBridgeSteps,
+  renderBridgeSummaryCard,
 } from "./bridgeEmailLayout.ts";
 import { normalizeBrandColor } from "../services/emailBranding.ts";
 
@@ -51,10 +51,28 @@ function isKingstonsOrganisation(organisationName?: string) {
   return pickText(organisationName, "").toLowerCase().includes("kingstons");
 }
 
-function isValuationAppointment(appointmentType?: string, appointmentTitle?: string) {
-  const haystack = `${pickText(appointmentType, "")} ${pickText(appointmentTitle, "")}`
+function isValuationAppointment(
+  appointmentType?: string,
+  appointmentTitle?: string,
+) {
+  const haystack = `${pickText(appointmentType, "")} ${
+    pickText(appointmentTitle, "")
+  }`
     .toLowerCase();
-  return haystack.includes("valuation") || haystack.includes("seller_valuation");
+  return haystack.includes("valuation") ||
+    haystack.includes("seller_valuation");
+}
+
+function isValuationPresentation(
+  appointmentType?: string,
+  appointmentTitle?: string,
+) {
+  const haystack = `${pickText(appointmentType, "")} ${
+    pickText(appointmentTitle, "")
+  }`
+    .toLowerCase();
+  return haystack.includes("valuation_presentation") ||
+    (haystack.includes("valuation") && haystack.includes("presentation"));
 }
 
 function buildKingstonsValuationInviteCopy({
@@ -64,6 +82,7 @@ function buildKingstonsValuationInviteCopy({
   agentRole,
   agentBio,
   organisationName,
+  isPresentation,
 }: {
   eventType: string;
   participantRole?: string;
@@ -71,6 +90,7 @@ function buildKingstonsValuationInviteCopy({
   agentRole?: string;
   agentBio?: string;
   organisationName?: string;
+  isPresentation?: boolean;
 }) {
   const sellerRecipient = isSellerParticipant(participantRole);
   const hostSentence = buildHostSentence({
@@ -78,43 +98,77 @@ function buildKingstonsValuationInviteCopy({
     agentRole,
     organisationName,
   });
-  const confirmationRequired = eventType === "appointment_confirmation_required";
-  const title = confirmationRequired
+  const confirmationRequired =
+    eventType === "appointment_confirmation_required";
+  const title = isPresentation
+    ? confirmationRequired
+      ? "Kingstons Valuation Presentation Request"
+      : eventType === "appointment_confirmed"
+      ? "Kingstons Valuation Presentation Confirmed"
+      : "Kingstons Valuation Presentation"
+    : confirmationRequired
     ? "Kingstons Valuation Request"
     : eventType === "appointment_confirmed"
-      ? "Kingstons Valuation Confirmed"
-      : "Kingstons Valuation Appointment";
+    ? "Kingstons Valuation Confirmed"
+    : "Kingstons Valuation Appointment";
 
   return {
     title,
-    intro: [
-      confirmationRequired
-        ? "We are so excited to valuate your property with you."
-        : "We are so excited to valuate your property with you, and your appointment is now in our diary.",
-      "Your Kingstons valuation is the start of a clear, practical selling plan for your property.",
-      hostSentence
-        ? `Your appointment will be hosted by ${hostSentence}.`
-        : `Your valuation will be looked after by the Kingstons team.`,
-      confirmationRequired
-        ? "Please RSVP below so we can lock in the visit and prepare properly before we arrive."
-        : "We’ll walk you through the visit, explain the next steps, and keep the process clear from start to finish.",
-    ],
+    intro: isPresentation
+      ? [
+        confirmationRequired
+          ? "We are excited to present your formal valuation and talk through the strongest next step for your property."
+          : "Your valuation presentation is now in our diary, and we are looking forward to walking you through the recommendation.",
+        "This meeting is where we turn the valuation into a clear listing plan: pricing, positioning, timing, and the seller pack steps needed before launch.",
+        hostSentence
+          ? `Your presentation will be hosted by ${hostSentence}.`
+          : `Your presentation will be looked after by the Kingstons team.`,
+        confirmationRequired
+          ? "Please RSVP below so we can lock in the meeting and prepare the right valuation pack for you."
+          : "We’ll explain the recommendation, answer your questions, and guide you into the Seller Pack stage.",
+      ]
+      : [
+        confirmationRequired
+          ? "We are so excited to valuate your property with you."
+          : "We are so excited to valuate your property with you, and your appointment is now in our diary.",
+        "Your Kingstons valuation is the start of a clear, practical selling plan for your property.",
+        hostSentence
+          ? `Your appointment will be hosted by ${hostSentence}.`
+          : `Your valuation will be looked after by the Kingstons team.`,
+        confirmationRequired
+          ? "Please RSVP below so we can lock in the visit and prepare properly before we arrive."
+          : "We’ll walk you through the visit, explain the next steps, and keep the process clear from start to finish.",
+      ],
     agentSummaryTitle: "This is your agent",
     agencySummaryTitle: "This is our agency",
-    howItWorks: [
-      "We arrive at the property and walk through the home with you, room by room, at a calm and practical pace.",
-      "We look at the value drivers buyers care about most: condition, improvements, position, demand, and comparable sales activity.",
-      "We talk through the likely buyer profile, pricing strategy, and the strongest next step if you choose to list.",
-    ],
-    whatToExpect: [
-      sellerRecipient
-        ? "Please make sure access is ready and let us know about any gate codes, pets, tenants, parking, or access notes before the visit."
-        : "Please make sure access is ready and let us know about any gate codes, pets, tenants, parking, or access notes before the visit.",
-      "Bring any questions, recent improvements, approved plans, or notes you want us to consider.",
-      confirmationRequired
-        ? "Use the RSVP button below to confirm this time, decline it, or request a change."
-        : "If the time no longer works, reply to this email and we will help adjust the booking.",
-    ],
+    howItWorks: isPresentation
+      ? [
+        "We present the formal valuation and show how the recommendation was reached.",
+        "We talk through price strategy, likely buyer response, timing, and how to position the property well.",
+        "If you are ready to proceed, we guide you into the Seller Pack stage: valuation copy, seller portal link, and signed listing documents.",
+      ]
+      : [
+        "We arrive at the property and walk through the home with you, room by room, at a calm and practical pace.",
+        "We look at the value drivers buyers care about most: condition, improvements, position, demand, and comparable sales activity.",
+        "We talk through the likely buyer profile, pricing strategy, and the strongest next step if you choose to list.",
+      ],
+    whatToExpect: isPresentation
+      ? [
+        "Have any pricing questions ready so we can talk through them properly.",
+        "We will explain the Seller Pack requirements and how the seller portal helps collect documents securely.",
+        confirmationRequired
+          ? "Use the RSVP button below to confirm this time, decline it, or request a change."
+          : "If the time no longer works, reply to this email and we will help adjust the booking.",
+      ]
+      : [
+        sellerRecipient
+          ? "Please make sure access is ready and let us know about any gate codes, pets, tenants, parking, or access notes before the visit."
+          : "Please make sure access is ready and let us know about any gate codes, pets, tenants, parking, or access notes before the visit.",
+        "Bring any questions, recent improvements, approved plans, or notes you want us to consider.",
+        confirmationRequired
+          ? "Use the RSVP button below to confirm this time, decline it, or request a change."
+          : "If the time no longer works, reply to this email and we will help adjust the booking.",
+      ],
     ctaLabel: confirmationRequired ? "RSVP to this time" : "View appointment",
     agentBio,
   };
@@ -186,19 +240,37 @@ function buildWhatToExpect({
 export function buildAppointmentSubject(
   eventType: string,
   appointmentType = "Appointment",
-  options: { participantRole?: string; appointmentTitle?: string; organisationName?: string } = {},
+  options: {
+    participantRole?: string;
+    appointmentTitle?: string;
+    organisationName?: string;
+  } = {},
 ) {
   const title = eventTitle(eventType);
   const typeLabel = pickText(
     options.appointmentTitle || humanizeAppointmentType(appointmentType),
     "Appointment",
   );
-  const participantRole = String(options.participantRole || "").trim().toLowerCase();
+  const participantRole = String(options.participantRole || "").trim()
+    .toLowerCase();
   if (
     participantRole.includes("seller") &&
     isKingstonsOrganisation(options.organisationName) &&
     isValuationAppointment(appointmentType, options.appointmentTitle)
   ) {
+    const presentation = isValuationPresentation(
+      appointmentType,
+      options.appointmentTitle,
+    );
+    if (presentation && eventType === "appointment_confirmation_required") {
+      return `Kingstons valuation presentation request: ${typeLabel}`;
+    }
+    if (presentation && eventType === "appointment_confirmed") {
+      return `Kingstons valuation presentation confirmed: ${typeLabel}`;
+    }
+    if (presentation && eventType === "appointment_scheduled") {
+      return `Kingstons valuation presentation: ${typeLabel}`;
+    }
     if (eventType === "appointment_confirmation_required") {
       return `Kingstons valuation request: ${typeLabel}`;
     }
@@ -209,10 +281,14 @@ export function buildAppointmentSubject(
       return `Kingstons valuation appointment: ${typeLabel}`;
     }
   }
-  if (participantRole.includes("seller") && eventType === "appointment_scheduled") {
+  if (
+    participantRole.includes("seller") && eventType === "appointment_scheduled"
+  ) {
     return `Seller valuation appointment: ${typeLabel}`;
   }
-  if (participantRole.includes("seller") && eventType === "appointment_confirmed") {
+  if (
+    participantRole.includes("seller") && eventType === "appointment_confirmed"
+  ) {
     return `Seller valuation confirmed: ${typeLabel}`;
   }
   if (eventType === "appointment_confirmation_required") {
@@ -277,7 +353,10 @@ export function buildAppointmentEmailHtml({
     humanizeAppointmentType(appointmentType) || "Appointment",
   );
   const primaryColor = normalizeBrandColor(branding?.primaryColor, "#214f75");
-  const resolvedOrganisationName = pickText(organisationName || branding?.organisationName, "Arch9");
+  const resolvedOrganisationName = pickText(
+    organisationName || branding?.organisationName,
+    "Arch9",
+  );
   const resolvedAgentName = pickText(agentName, "");
   const resolvedAgentRole = pickText(agentRole, "");
   const resolvedAgentBio = pickText(agentBio, "");
@@ -288,6 +367,10 @@ export function buildAppointmentEmailHtml({
   });
   const sellerRecipient = isSellerParticipant(participantRole);
   const isKingstonsBrand = isKingstonsOrganisation(resolvedOrganisationName);
+  const isKingstonsValuationPresentation = isValuationPresentation(
+    appointmentType,
+    appointmentTitle,
+  );
   const isKingstonsValuationInvite = isKingstonsBrand && sellerRecipient &&
     isValuationAppointment(appointmentType, appointmentTitle) && [
     "appointment_scheduled",
@@ -306,13 +389,17 @@ export function buildAppointmentEmailHtml({
       agentRole: resolvedAgentRole,
       agentBio: resolvedAgentBio,
       organisationName: resolvedOrganisationName,
+      isPresentation: isKingstonsValuationPresentation,
     });
     const detailFields = [
       { label: "Appointment", value: typeLabel },
       { label: "Date", value: pickText(appointmentDate, "TBC") },
       { label: "Time", value: pickText(appointmentTime, "TBC") },
       ...(relatedListing ? [{ label: "Property", value: relatedListing }] : []),
-      { label: "Location", value: pickText(meetingUrl || location, "To be confirmed") },
+      {
+        label: "Location",
+        value: pickText(meetingUrl || location, "To be confirmed"),
+      },
       { label: "Status", value: pickText(status, "Pending") },
       attachCalendarInvite !== false
         ? { label: "Calendar invite", value: "Attached" }
@@ -327,8 +414,12 @@ export function buildAppointmentEmailHtml({
       renderBridgeSummaryCard(
         [
           { label: "Agent", value: pickText(resolvedAgentName, "Your agent") },
-          ...(resolvedAgentRole ? [{ label: "Role", value: resolvedAgentRole }] : []),
-          ...(kingstons.agentBio ? [{ label: "About your agent", value: kingstons.agentBio }] : []),
+          ...(resolvedAgentRole
+            ? [{ label: "Role", value: resolvedAgentRole }]
+            : []),
+          ...(kingstons.agentBio
+            ? [{ label: "About your agent", value: kingstons.agentBio }]
+            : []),
         ],
         kingstons.agentSummaryTitle,
       ),
@@ -351,7 +442,9 @@ export function buildAppointmentEmailHtml({
       notes
         ? `<div style="margin: 16px 0 8px; padding: 16px 18px; border: 1px solid #e2eaf4; border-radius: 14px; background: #ffffff;">
             <p style="margin: 0 0 8px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">Notes</p>
-            <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #35506d;">${escapeHtml(notes)}</p>
+            <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #35506d;">${
+          escapeHtml(notes)
+        }</p>
           </div>`
         : "",
       renderBridgeSummaryCard(detailFields, "Appointment Details"),
@@ -363,20 +456,20 @@ export function buildAppointmentEmailHtml({
             <p style="margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: #5d728a;">Please let us know whether this time works for you.</p>
             <div style="display: flex; flex-wrap: wrap; gap: 8px;">
               ${
-        acceptLink
-          ? `<a href="${safeAcceptLink}" style="display: inline-block; border-radius: 999px; background: ${primaryColor}; color: #ffffff; font-size: 13px; font-weight: 700; text-decoration: none; padding: 10px 16px;">Accept</a>`
-          : ""
-      }
+          acceptLink
+            ? `<a href="${safeAcceptLink}" style="display: inline-block; border-radius: 999px; background: ${primaryColor}; color: #ffffff; font-size: 13px; font-weight: 700; text-decoration: none; padding: 10px 16px;">Accept</a>`
+            : ""
+        }
               ${
-        declineLink
-          ? `<a href="${safeDeclineLink}" style="display: inline-block; border-radius: 999px; background: #ffffff; border: 1px solid #dce6f1; color: ${primaryColor}; font-size: 13px; font-weight: 700; text-decoration: none; padding: 9px 15px;">Decline</a>`
-          : ""
-      }
+          declineLink
+            ? `<a href="${safeDeclineLink}" style="display: inline-block; border-radius: 999px; background: #ffffff; border: 1px solid #dce6f1; color: ${primaryColor}; font-size: 13px; font-weight: 700; text-decoration: none; padding: 9px 15px;">Decline</a>`
+            : ""
+        }
               ${
-        rescheduleLink
-          ? `<a href="${safeRescheduleLink}" style="display: inline-block; border-radius: 999px; background: #f7fafc; border: 1px solid #dce6f1; color: #35506d; font-size: 13px; font-weight: 700; text-decoration: none; padding: 9px 15px;">Request Reschedule</a>`
-          : ""
-      }
+          rescheduleLink
+            ? `<a href="${safeRescheduleLink}" style="display: inline-block; border-radius: 999px; background: #f7fafc; border: 1px solid #dce6f1; color: #35506d; font-size: 13px; font-weight: 700; text-decoration: none; padding: 9px 15px;">Request Reschedule</a>`
+            : ""
+        }
             </div>
           </div>`
         : "",
@@ -387,7 +480,9 @@ export function buildAppointmentEmailHtml({
       title: kingstons.title,
       greeting: `Hi ${pickText(recipientName, "there")},`,
       contentHtml,
-      helpBody: `Need help? Reply to this email and your ${organisationName || "Arch9"} team will assist you.`,
+      helpBody: `Need help? Reply to this email and your ${
+        organisationName || "Arch9"
+      } team will assist you.`,
       organisationName: organisationName || "Arch9",
       supportEmail: supportEmail || "",
       supportPhone: supportPhone || "",
@@ -447,7 +542,16 @@ export function buildAppointmentEmailHtml({
     renderBridgeIntroParagraphs(intro),
     `<div style="margin: 18px 0; padding: 16px 18px; border: 1px solid #dbe6f2; border-left: 4px solid ${primaryColor}; border-radius: 14px; background: linear-gradient(180deg, #f8fbff 0%, #eef5fb 100%);">
       <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What to expect</p>
-      ${renderBridgeBullets(buildWhatToExpect({ eventType, participantRole, location: meetingUrl || location, attachCalendarInvite }))}
+      ${
+      renderBridgeBullets(
+        buildWhatToExpect({
+          eventType,
+          participantRole,
+          location: meetingUrl || location,
+          attachCalendarInvite,
+        }),
+      )
+    }
     </div>`,
     renderBridgeSummaryCard(
       [
@@ -472,15 +576,21 @@ export function buildAppointmentEmailHtml({
       [
         { label: "Agent", value: pickText(resolvedAgentName, "Your agent") },
         { label: "Agency", value: resolvedOrganisationName },
-        ...(resolvedAgentRole ? [{ label: "Role", value: resolvedAgentRole }] : []),
-        ...(resolvedAgentBio ? [{ label: "About your agent", value: resolvedAgentBio }] : []),
+        ...(resolvedAgentRole
+          ? [{ label: "Role", value: resolvedAgentRole }]
+          : []),
+        ...(resolvedAgentBio
+          ? [{ label: "About your agent", value: resolvedAgentBio }]
+          : []),
       ],
       "Your Host",
     ),
     notes
       ? `<div style="margin: 16px 0 8px; padding: 16px 18px; border: 1px solid #e2eaf4; border-radius: 14px; background: #ffffff;">
         <p style="margin: 0 0 8px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">Notes</p>
-        <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #35506d;">${escapeHtml(notes)}</p>
+        <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #35506d;">${
+        escapeHtml(notes)
+      }</p>
       </div>`
       : "",
     acceptLink || declineLink || rescheduleLink
@@ -587,6 +697,10 @@ export function buildAppointmentEmailText({
   });
   const sellerRecipient = isSellerParticipant(participantRole);
   const isKingstonsBrand = isKingstonsOrganisation(resolvedOrganisationName);
+  const isKingstonsValuationPresentation = isValuationPresentation(
+    appointmentType,
+    appointmentTitle,
+  );
   const isKingstonsValuationInvite = isKingstonsBrand && sellerRecipient &&
     isValuationAppointment(appointmentType, appointmentTitle) && [
     "appointment_scheduled",
@@ -602,6 +716,7 @@ export function buildAppointmentEmailText({
       agentRole,
       agentBio,
       organisationName: resolvedOrganisationName,
+      isPresentation: isKingstonsValuationPresentation,
     });
 
     return [
@@ -636,7 +751,9 @@ export function buildAppointmentEmailText({
       relatedListing ? `Property: ${relatedListing}` : null,
       `Location: ${meetingUrl || location || "To be confirmed"}`,
       `Status: ${status || "Pending"}`,
-      attachCalendarInvite !== false ? "Calendar invite: Attached" : "Calendar invite: Not attached",
+      attachCalendarInvite !== false
+        ? "Calendar invite: Attached"
+        : "Calendar invite: Not attached",
       actionLink ? `${kingstons.ctaLabel}: ${actionLink}` : null,
       acceptLink ? `Accept: ${acceptLink}` : null,
       declineLink ? `Decline: ${declineLink}` : null,
@@ -664,7 +781,9 @@ export function buildAppointmentEmailText({
     status ? `Status: ${status}` : null,
     hostSentence ? `Host: ${hostSentence}` : null,
     agentBio ? `About your agent: ${agentBio}` : null,
-    attachCalendarInvite !== false ? "Calendar invite: Attached" : "Calendar invite: Not attached",
+    attachCalendarInvite !== false
+      ? "Calendar invite: Attached"
+      : "Calendar invite: Not attached",
     notes ? `Notes: ${notes}` : null,
     acceptLink ? `Accept: ${acceptLink}` : null,
     declineLink ? `Decline: ${declineLink}` : null,

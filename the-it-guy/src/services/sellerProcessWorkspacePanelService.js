@@ -13,7 +13,6 @@ const EVIDENCE_LABELS = Object.freeze({
   valuation_appointment_scheduled: 'Valuation appointment scheduled',
   valuation_document_uploaded: 'Formal valuation uploaded',
   valuation_presentation_scheduled: 'Valuation presentation scheduled',
-  valuation_presented: 'Valuation presented in person',
   mandate_signed: 'Mandate signed',
   defects_form_signed: 'Defects form signed',
   fica_pack_signed: 'FICA pack signed',
@@ -24,9 +23,8 @@ const STAGE_LABELS = Object.freeze({
   first_contact: 'First Contact',
   valuation_appointment_scheduled: 'Valuation Appointment',
   formal_valuation_completed: 'Formal Valuation',
-  valuation_presentation_scheduled: 'Presentation Appointment',
-  valuation_presented: 'Valuation Presented',
-  seller_pack_signed: 'Seller Pack Signed',
+  valuation_presentation_scheduled: 'Valuation Presentation',
+  seller_pack_signed: 'Seller Pack',
   listing_ready: 'List Property',
 })
 
@@ -168,8 +166,7 @@ function buildActionCards(payload = {}) {
       key: 'schedule_valuation_presentation',
       label: 'Schedule Valuation Presentation',
       surface: 'appointments',
-      pending: asArray(appointments.missingAppointmentEvidenceKeys).includes('valuation_presentation_scheduled') ||
-        asArray(appointments.missingAppointmentEvidenceKeys).includes('valuation_presented'),
+      pending: asArray(appointments.missingAppointmentEvidenceKeys).includes('valuation_presentation_scheduled'),
       disabled: false,
       readOnly: false,
     },
