@@ -116,6 +116,20 @@ function appointmentSatisfiesGate(appointment = {}, gate = {}) {
   return statusAccepted(status || 'scheduled', gate.acceptedStatuses || [])
 }
 
+function leadHasValuationAppointmentScheduledEvidence(lead = {}) {
+  const stage = normalizeKey(lead?.stage || lead?.currentStage || lead?.current_stage)
+  const status = normalizeKey(lead?.status || lead?.currentStatus || lead?.current_status)
+  const nextStep = normalizeKey(lead?.nextStep || lead?.next_step || lead?.nextFollowUp || lead?.next_follow_up)
+  const signals = [stage, status, nextStep].filter(Boolean)
+  return signals.some((signal) =>
+    signal === 'formal_valuation' ||
+      signal === 'formal_valuation_completed' ||
+      signal === 'valuation_appointment_scheduled' ||
+      signal === 'valuation_scheduled' ||
+      signal === 'valuation_appointment_booked'
+  )
+}
+
 function activitySatisfiesSellerContact(activity = {}) {
   const type = normalizeKey(activity?.activityType || activity?.activity_type || activity?.eventType || activity?.event_type || activity?.type || activity?.title)
   const status = normalizeKey(activity?.status)
@@ -252,7 +266,13 @@ function evaluateGate(gate = {}, context = {}) {
 
   if (gate.source === 'appointment') {
     const matches = asArray(context.appointments).filter((appointment) => appointmentSatisfiesGate(appointment, gate))
-    return { key: gate.key, source: gate.source, satisfied: matches.length > 0, evidenceCount: matches.length }
+    const leadFallback = gate.key === 'valuation_appointment_scheduled' && leadHasValuationAppointmentScheduledEvidence(context.lead)
+    return {
+      key: gate.key,
+      source: gate.source,
+      satisfied: matches.length > 0 || leadFallback,
+      evidenceCount: matches.length + (leadFallback ? 1 : 0),
+    }
   }
 
   if (gate.source === 'document') {

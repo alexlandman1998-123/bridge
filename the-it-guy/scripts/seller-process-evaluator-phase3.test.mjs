@@ -102,6 +102,49 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
   const evaluation = evaluateSellerProcess({
     ...kingstonsProfile,
     lead: {
+      stage: 'Formal Valuation',
+      status: 'Valuation Appointment Scheduled',
+    },
+    activities: [
+      { activityType: 'Valuation Scheduled', activityNote: 'Valuation appointment email sent.' },
+    ],
+    appointments: [],
+  })
+
+  assert.equal(evaluation.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(evaluation.evidence.seller_contacted.satisfied, false)
+  assert.equal(evaluation.evidence.valuation_appointment_scheduled.satisfied, true)
+  assert.equal(evaluation.currentStage.key, 'first_contact')
+}
+
+{
+  const evaluation = evaluateSellerProcess({
+    ...kingstonsProfile,
+    lead: {
+      contactedAt: '2026-08-09T18:00:00.000Z',
+      stage: 'Formal Valuation',
+      status: 'Valuation Appointment Scheduled',
+    },
+    activities: [
+      { activityType: 'Valuation Scheduled', activityNote: 'Valuation appointment email sent.' },
+    ],
+    appointments: [],
+  })
+
+  assert.equal(evaluation.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(evaluation.evidence.seller_contacted.satisfied, true)
+  assert.equal(evaluation.evidence.valuation_appointment_scheduled.satisfied, true)
+  assert.equal(evaluation.currentStage.key, 'formal_valuation_completed')
+  assert.deepEqual(evaluation.completedStageKeys, [
+    'first_contact',
+    'valuation_appointment_scheduled',
+  ])
+}
+
+{
+  const evaluation = evaluateSellerProcess({
+    ...kingstonsProfile,
+    lead: {
       stage: 'Contacted',
       rawEnquiryPayload: {
         kingstonsListingTerms: {
