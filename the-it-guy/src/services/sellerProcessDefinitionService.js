@@ -69,6 +69,15 @@ const KINGSTONS_PROCESS_STAGES = Object.freeze([
     ]),
   }),
   Object.freeze({
+    key: 'listing_terms_confirmed',
+    label: 'Listing Terms',
+    defaultStageKey: 'mandate_signed',
+    requiredEvidenceKeys: Object.freeze([
+      'commission_terms_confirmed',
+      'transfer_attorney_nominated',
+    ]),
+  }),
+  Object.freeze({
     key: 'listing_ready',
     label: 'List Property',
     defaultStageKey: 'listing_created',
@@ -185,6 +194,16 @@ const KINGSTONS_PROCESS_DEFINITION = Object.freeze({
       acceptedStatuses: Object.freeze(['signed', 'uploaded', 'approved', 'completed']),
     }),
     Object.freeze({
+      key: 'commission_terms_confirmed',
+      source: 'listing_terms',
+      requiredForStage: 'listing_terms_confirmed',
+    }),
+    Object.freeze({
+      key: 'transfer_attorney_nominated',
+      source: 'listing_terms',
+      requiredForStage: 'listing_terms_confirmed',
+    }),
+    Object.freeze({
       key: 'listing_ready',
       source: 'listing',
       requiredForStage: 'listing_ready',
@@ -195,13 +214,13 @@ const KINGSTONS_PROCESS_DEFINITION = Object.freeze({
     Object.freeze({
       key: 'transfer_attorney_handoff',
       partnerType: 'attorney_firm',
-      readyAfterStage: 'seller_pack_signed',
+      readyAfterStage: 'listing_terms_confirmed',
       exposesInternalKingstonsStages: false,
     }),
     Object.freeze({
       key: 'bond_originator_context',
       partnerType: 'bond_originator',
-      readyAfterStage: 'seller_pack_signed',
+      readyAfterStage: 'listing_terms_confirmed',
       exposesInternalKingstonsStages: false,
     }),
   ]),

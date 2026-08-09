@@ -30,8 +30,8 @@ const internalKingstonsKeys = [
   'valuation_appointment_scheduled',
   'formal_valuation_completed',
   'valuation_presentation_scheduled',
-  'valuation_presented',
   'seller_pack_signed',
+  'listing_terms_confirmed',
   'defects_form_signed',
   'fica_pack_signed',
 ]
@@ -91,11 +91,12 @@ function assertPartnerReadinessHidesInternalKeys(model) {
   assert.equal(model.readOnly, false)
   assert.equal(model.shadowOnly, false)
   assert.equal(model.title, 'Kingstons Seller Process')
-  assert.equal(model.currentStageLabel, 'Valuation Presented In Person')
+  assert.equal(model.currentStageLabel, 'Seller Pack')
   assert.equal(model.sections.find((section) => section.key === 'progress').items.length, 5)
-  assert.equal(model.sections.find((section) => section.key === 'missing_evidence').items.some((item) => item.key === 'valuation_presented'), true)
+  assert.equal(model.sections.find((section) => section.key === 'missing_evidence').items.some((item) => item.key === 'mandate_signed'), true)
   assert.equal(model.actionCards.every((card) => card.disabled === false && card.readOnly === false), true)
   assert.equal(model.actionCards.some((card) => card.key === 'complete_seller_pack' && card.pending === true), true)
+  assert.equal(model.actionCards.some((card) => card.key === 'confirm_listing_terms'), true)
   assertPartnerReadinessHidesInternalKeys(model)
 }
 
@@ -138,7 +139,7 @@ function assertPartnerReadinessHidesInternalKeys(model) {
   assert.equal(model.visible, true)
   assert.equal(model.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
   assert.equal(model.title, 'Kingstons Seller Process')
-  assert.equal(model.currentStageLabel, 'Schedule Valuation Appointment')
+  assert.equal(model.currentStageLabel, 'Valuation Appointment')
   assert.equal(model.actionCards.find((card) => card.key === 'schedule_valuation_appointment').pending, true)
 }
 
@@ -153,7 +154,7 @@ function assertPartnerReadinessHidesInternalKeys(model) {
   })
   assert.equal(model.visible, true)
   assert.equal(model.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
-  assert.equal(model.currentStageLabel, 'Schedule Valuation Appointment')
+  assert.equal(model.currentStageLabel, 'Valuation Appointment')
   assert.equal(model.actionCards.find((card) => card.key === 'schedule_valuation_appointment').pending, true)
 }
 
@@ -164,7 +165,17 @@ function assertPartnerReadinessHidesInternalKeys(model) {
         profile: 'kingstons_residential',
       },
     },
-    lead: { status: 'contacted' },
+    lead: {
+      status: 'contacted',
+      rawEnquiryPayload: {
+        kingstonsListingTerms: {
+          commissionConfirmed: true,
+          transferAttorneyNominated: true,
+          commission: { type: 'percentage', percentage: 5, confirmed: true },
+          transferAttorney: { companyName: 'Kingstons Conveyancers', email: 'transfers@example.test', nominated: true },
+        },
+      },
+    },
     appointments: [
       { appointmentType: 'seller_valuation', status: 'completed' },
       { appointmentType: 'valuation_presentation', status: 'completed' },

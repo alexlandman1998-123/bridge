@@ -16,6 +16,8 @@ const EVIDENCE_LABELS = Object.freeze({
   mandate_signed: 'Mandate signed',
   defects_form_signed: 'Defects form signed',
   fica_pack_signed: 'FICA pack signed',
+  commission_terms_confirmed: 'Commission terms confirmed',
+  transfer_attorney_nominated: 'Transfer attorney nominated',
   listing_ready: 'Listing ready',
 })
 
@@ -25,6 +27,7 @@ const STAGE_LABELS = Object.freeze({
   formal_valuation_completed: 'Formal Valuation',
   valuation_presentation_scheduled: 'Valuation Presentation',
   seller_pack_signed: 'Seller Pack',
+  listing_terms_confirmed: 'Listing Terms',
   listing_ready: 'List Property',
 })
 
@@ -175,6 +178,14 @@ function buildActionCards(payload = {}) {
       label: 'Complete Seller Pack',
       surface: 'mandateFlow',
       pending: asArray(mandateFlow.missingSellerPackEvidenceKeys).length > 0,
+      disabled: false,
+      readOnly: false,
+    },
+    {
+      key: 'confirm_listing_terms',
+      label: 'Confirm Listing Terms',
+      surface: 'listingWorkspace',
+      pending: missingEvidenceKeys.includes('commission_terms_confirmed') || missingEvidenceKeys.includes('transfer_attorney_nominated'),
       disabled: false,
       readOnly: false,
     },

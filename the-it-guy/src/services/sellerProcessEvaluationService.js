@@ -20,6 +20,22 @@ function firstPresent(...values) {
   return values.map(normalizeText).find(Boolean) || ''
 }
 
+function asRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function parseJsonRecord(value) {
+  if (!value) return {}
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string') return {}
+  try {
+    const parsed = JSON.parse(value)
+    return asRecord(parsed)
+  } catch {
+    return {}
+  }
+}
+
 function hasFileEvidence(row = {}) {
   return Boolean(firstPresent(
     row?.url,
@@ -143,6 +159,88 @@ function listingSatisfiesReadyEvidence(listing = {}, gate = {}) {
   return statusAccepted(status || 'created', gate.acceptedStatuses || [])
 }
 
+function collectListingTermsSources(context = {}) {
+  const lead = asRecord(context.lead)
+  const listing = asRecord(context.listing)
+  const leadPayload = parseJsonRecord(lead.rawEnquiryPayload || lead.raw_enquiry_payload)
+  const listingFacts = parseJsonRecord(listing.sellerCanonicalFacts || listing.seller_canonical_facts_json)
+  return [
+    lead.kingstonsListingTerms,
+    lead.kingstons_listing_terms,
+    lead.listingTerms,
+    lead.listing_terms,
+    leadPayload.kingstonsListingTerms,
+    leadPayload.kingstons_listing_terms,
+    leadPayload.listingTerms,
+    leadPayload.listing_terms,
+    listing.kingstonsListingTerms,
+    listing.kingstons_listing_terms,
+    listing.listingTerms,
+    listing.listing_terms,
+    listingFacts.kingstonsListingTerms,
+    listingFacts.listingTerms,
+  ].map(asRecord).filter((source) => Object.keys(source).length > 0)
+}
+
+function hasCommissionTermsEvidence(context = {}) {
+  const sources = collectListingTermsSources(context)
+  const listing = asRecord(context.listing)
+  return sources.some((terms) => {
+    const commission = asRecord(terms.commission || terms.commissionTerms || terms.commission_terms || terms)
+    return Boolean(
+      terms.commissionConfirmed === true ||
+        terms.commission_confirmed === true ||
+        commission.confirmed === true ||
+        firstPresent(commission.type, commission.commissionType, commission.commission_type, terms.commissionType, terms.commission_type) ||
+        Number(commission.percentage || commission.commissionPercentage || commission.commission_percentage || terms.commissionPercentage || terms.commission_percentage || 0) > 0 ||
+        Number(commission.amount || commission.commissionAmount || commission.commission_amount || terms.commissionAmount || terms.commission_amount || 0) > 0
+    )
+  }) || Boolean(
+    firstPresent(listing.commissionType, listing.commission_type) ||
+      Number(listing.commissionPercentage || listing.commission_percentage || listing.commissionAmount || listing.commission_amount || 0) > 0 ||
+      Object.keys(asRecord(listing.commission || listing.commissionTerms || listing.commission_terms)).length > 0
+  )
+}
+
+function hasTransferAttorneyEvidence(context = {}) {
+  const sources = collectListingTermsSources(context)
+  const listing = asRecord(context.listing)
+  const rolePlayers = asRecord(listing.rolePlayers || listing.role_players)
+  return sources.some((terms) => {
+    const attorney = asRecord(
+      terms.transferAttorney ||
+        terms.transfer_attorney ||
+        terms.attorney ||
+        terms.nominatedAttorney ||
+        terms.nominated_attorney,
+    )
+    return Boolean(
+      terms.transferAttorneyNominated === true ||
+        terms.transfer_attorney_nominated === true ||
+        attorney.nominated === true ||
+        firstPresent(
+          attorney.id,
+          attorney.preferredPartnerId,
+          attorney.preferred_partner_id,
+          attorney.companyName,
+          attorney.company_name,
+          attorney.email,
+          attorney.emailAddress,
+          attorney.email_address,
+        )
+    )
+  }) || Boolean(
+    firstPresent(
+      listing.transferAttorneyName,
+      listing.transfer_attorney_name,
+      listing.attorneyName,
+      listing.attorney_name,
+      rolePlayers.transferAttorney?.companyName,
+      rolePlayers.transfer_attorney?.company_name,
+    )
+  )
+}
+
 function evaluateGate(gate = {}, context = {}) {
   if (gate.source === 'activity' && gate.key === 'seller_contacted') {
     const satisfied =
@@ -170,6 +268,15 @@ function evaluateGate(gate = {}, context = {}) {
 
   if (gate.source === 'listing') {
     const satisfied = listingSatisfiesReadyEvidence(context.listing || {}, gate)
+    return { key: gate.key, source: gate.source, satisfied, evidenceCount: satisfied ? 1 : 0 }
+  }
+
+  if (gate.source === 'listing_terms') {
+    const satisfied = gate.key === 'commission_terms_confirmed'
+      ? hasCommissionTermsEvidence(context)
+      : gate.key === 'transfer_attorney_nominated'
+        ? hasTransferAttorneyEvidence(context)
+        : false
     return { key: gate.key, source: gate.source, satisfied, evidenceCount: satisfied ? 1 : 0 }
   }
 

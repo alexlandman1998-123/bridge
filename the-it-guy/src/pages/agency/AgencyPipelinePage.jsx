@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, Box, Building2, CalendarDays, Car, CheckCircle2, CheckSquare, ChevronDown, ChevronRight, Clock3, Columns3, Copy, Download, ExternalLink, Eye, FileText, Filter, Gauge, Home, ImageIcon, Italic, Link2, List, Lock, Mail, MapPin, MessageCircle, MoreHorizontal, Paperclip, Pencil, Phone, Plus, RefreshCw, Ruler, Search, Send, Settings, ShieldCheck, Smile, Star, Table2, Tag, Trash2, TrendingUp, Upload, UserRound, X, Zap } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
@@ -80,6 +80,7 @@ import {
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { DOCUMENTS_BUCKET_CANDIDATES, assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, ensurePrivateListingDocumentRequirements, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, linkPrivateListingDocument, markPrivateListingDocumentsPendingTransactionPromotion, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { allocatePrivateListingTransferAttorneyPreInstruction, getPrivateListingTransferAttorneyAllocation, listPrivateListingTransferAttorneyAllocations } from '../../services/privateListingAttorneyAllocationService'
 import { repairSellerDocumentTransactionContinuity } from '../../services/sellerDocumentTransactionContinuityService'
 import { activateSellerPortalForListing, SELLER_PORTAL_ACTIVATION_SOURCES } from '../../services/sellerPortalActivationService'
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
@@ -533,7 +534,20 @@ const KINGSTONS_PIPELINE_ACTION_COPY = Object.freeze({
   schedule_valuation_presentation: 'Book the valuation presentation appointment with the seller.',
   complete_seller_pack: 'Capture the seller type and legal-path details, then upload the signed mandate, defect form, and FICA form.',
   seller_pack_signed: 'Capture the seller type and legal-path details, then upload the signed mandate, defect form, and FICA form.',
-  prepare_listing: 'Create the listing once the Kingston seller pack is complete.',
+  confirm_listing_terms: 'Confirm the commission and nominated transfer attorney before the listing is created.',
+  listing_terms_confirmed: 'Confirm the commission and nominated transfer attorney before the listing is created.',
+  prepare_listing: 'Create the listing once the Kingston seller pack and listing terms are complete.',
+})
+
+const KINGSTONS_COMMISSION_TYPE_OPTIONS = Object.freeze([
+  { value: 'percentage', label: 'Percentage' },
+  { value: 'fixed', label: 'Fixed amount' },
+])
+
+const KINGSTONS_LISTING_TERMS_EXCEPTION_THRESHOLDS = Object.freeze({
+  listingTermsDays: 2,
+  listPropertyDays: 2,
+  attorneyPipelineDays: 1,
 })
 
 const KINGSTONS_FORMAL_VALUATION_DOCUMENT = Object.freeze({
@@ -844,6 +858,7 @@ const KINGSTONS_PIPELINE_STAGE_LABELS = Object.freeze({
   formal_valuation_completed: 'Formal Valuation',
   valuation_presentation_scheduled: 'Valuation Presentation',
   seller_pack_signed: 'Seller Pack',
+  listing_terms_confirmed: 'Listing Terms',
   listing_ready: 'List Property',
 })
 
@@ -967,6 +982,1081 @@ function getKingstonsSellerPackState(lead = {}) {
     sellerType: normalizeKey(pack.sellerType || pack.seller_type || pack.ficaSellerType || pack.fica_seller_type),
     documents: rawDocuments,
   }
+}
+
+function getKingstonsListingTermsState(lead = {}, listing = {}) {
+  const rawPayload = parseLeadRawEnquiryPayload(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
+  const listingFacts = parseLeadRawEnquiryPayload(listing?.sellerCanonicalFacts || listing?.seller_canonical_facts_json)
+  const terms = asRecord(
+    lead?.kingstonsListingTerms ||
+      lead?.kingstons_listing_terms ||
+      lead?.listingTerms ||
+      lead?.listing_terms ||
+      rawPayload.kingstonsListingTerms ||
+      rawPayload.kingstons_listing_terms ||
+      rawPayload.listingTerms ||
+      rawPayload.listing_terms ||
+      listing?.kingstonsListingTerms ||
+      listing?.kingstons_listing_terms ||
+      listingFacts.kingstonsListingTerms ||
+      listingFacts.listingTerms,
+  )
+  const commission = asRecord(terms.commission || terms.commissionTerms || terms.commission_terms)
+  const transferAttorney = asRecord(terms.transferAttorney || terms.transfer_attorney || terms.attorney || terms.nominatedAttorney)
+  return {
+    ...terms,
+    commission,
+    transferAttorney,
+  }
+}
+
+function buildKingstonsListingTermsDraft(terms = {}) {
+  const commission = asRecord(terms.commission || terms.commissionTerms || terms.commission_terms)
+  const attorney = asRecord(terms.transferAttorney || terms.transfer_attorney || terms.attorney || terms.nominatedAttorney)
+  return {
+    commissionType: normalizeKey(commission.type || commission.commissionType || commission.commission_type || terms.commissionType || terms.commission_type) || 'percentage',
+    commissionPercentage: normalizeText(commission.percentage || commission.commissionPercentage || commission.commission_percentage || terms.commissionPercentage || terms.commission_percentage),
+    commissionAmount: normalizeText(commission.amount || commission.commissionAmount || commission.commission_amount || terms.commissionAmount || terms.commission_amount),
+    commissionNotes: normalizeText(commission.notes || commission.commissionNotes || commission.commission_notes || terms.commissionNotes || terms.notes),
+    transferAttorneyMode: normalizeKey(attorney.mode || attorney.selectionSource || attorney.selection_source || terms.transferAttorneyMode || terms.transfer_attorney_mode) || 'agency_recommended',
+    transferAttorneyId: normalizeText(attorney.id || attorney.preferredPartnerId || attorney.preferred_partner_id || terms.transferAttorneyId || terms.transfer_attorney_id),
+    transferAttorneyCompany: normalizeText(attorney.companyName || attorney.company_name || attorney.name || attorney.label || terms.transferAttorneyCompany || terms.transfer_attorney_company),
+    transferAttorneyContact: normalizeText(attorney.contactPerson || attorney.contact_person || attorney.contactName || attorney.contact_name || terms.transferAttorneyContact || terms.transfer_attorney_contact),
+    transferAttorneyEmail: normalizeText(attorney.email || attorney.emailAddress || attorney.email_address || terms.transferAttorneyEmail || terms.transfer_attorney_email).toLowerCase(),
+    transferAttorneyPhone: normalizeText(attorney.phone || attorney.phoneNumber || attorney.phone_number || terms.transferAttorneyPhone || terms.transfer_attorney_phone),
+  }
+}
+
+function summarizeKingstonsListingTerms(terms = {}) {
+  const draft = buildKingstonsListingTermsDraft(terms)
+  const commissionType = normalizeKey(draft.commissionType)
+  const commissionComplete = commissionType === 'fixed'
+    ? Number(draft.commissionAmount || 0) > 0
+    : Number(draft.commissionPercentage || 0) > 0
+  const attorneyComplete = Boolean(
+    normalizeText(draft.transferAttorneyId) ||
+      normalizeText(draft.transferAttorneyCompany) ||
+      normalizeText(draft.transferAttorneyEmail),
+  )
+  const missingLabels = [
+    ...(commissionComplete ? [] : ['Commission terms']),
+    ...(attorneyComplete ? [] : ['Transfer attorney']),
+  ]
+  return {
+    commissionComplete,
+    attorneyComplete,
+    complete: commissionComplete && attorneyComplete,
+    missingLabels,
+    commissionLabel: commissionComplete
+      ? commissionType === 'fixed'
+        ? `Fixed fee R ${Number(draft.commissionAmount || 0).toLocaleString('en-ZA')}`
+        : `${draft.commissionPercentage}% commission`
+      : 'Commission not captured',
+    attorneyLabel: attorneyComplete
+      ? normalizeText(draft.transferAttorneyCompany || draft.transferAttorneyEmail || draft.transferAttorneyId)
+      : 'Attorney not nominated',
+  }
+}
+
+function getKingstonsListingTermsPipelineStatus(terms = {}, summary = {}) {
+  const attorney = asRecord(terms.transferAttorney || terms.transfer_attorney || terms.attorney || terms.nominatedAttorney)
+  const partnerOrganisationId = normalizeText(
+    attorney.partnerOrganisationId ||
+      attorney.partner_organisation_id ||
+      attorney.partnerOrgId ||
+      attorney.partner_org_id,
+  )
+
+  if (!summary.complete) {
+    return {
+      label: 'Not ready',
+      copy: 'Confirm commission and transfer attorney before listing.',
+    }
+  }
+
+  if (partnerOrganisationId) {
+    return {
+      label: 'Awaiting buyer',
+      copy: 'Connected attorney is visible in the pre-instruction pipeline.',
+    }
+  }
+
+  return {
+    label: 'Pending connection',
+    copy: 'Attorney is captured, but not routed until the firm is connected.',
+  }
+}
+
+function buildKingstonsAttorneyPipelineVerification({
+  listingId = '',
+  summary = {},
+  terms = {},
+  allocation = null,
+  loading = false,
+  error = '',
+} = {}) {
+  const attorney = asRecord(terms.transferAttorney || terms.transfer_attorney || terms.attorney || terms.nominatedAttorney)
+  const partnerOrganisationId = normalizeText(
+    attorney.partnerOrganisationId ||
+      attorney.partner_organisation_id ||
+      attorney.partnerOrgId ||
+      attorney.partner_org_id,
+  )
+  const allocationStatus = normalizeKey(allocation?.status || allocation?.allocationStatus || allocation?.allocation_status)
+
+  if (!summary.complete) {
+    return {
+      state: 'not_ready',
+      label: 'Not ready',
+      copy: 'Confirm commission and transfer attorney before listing.',
+    }
+  }
+
+  if (!normalizeText(listingId)) {
+    return {
+      state: 'not_listed',
+      label: 'Not listed yet',
+      copy: 'Create the listing to add a connected attorney to the pre-instruction pipeline.',
+    }
+  }
+
+  if (loading) {
+    return {
+      state: 'checking',
+      label: 'Checking pipeline',
+      copy: 'Verifying the transfer attorney allocation against the attorney pipeline.',
+    }
+  }
+
+  if (error) {
+    return {
+      state: 'error',
+      label: 'Check failed',
+      copy: error,
+    }
+  }
+
+  if (allocationStatus === 'awaiting_buyer') {
+    return {
+      state: 'verified_pre_instruction',
+      label: 'Verified in attorney pipeline',
+      copy: 'Attorney can see this as awaiting buyer. Signed OTP still sends the formal instruction.',
+      allocation,
+    }
+  }
+
+  if (allocationStatus === 'under_offer') {
+    return {
+      state: 'under_offer',
+      label: 'Buyer offer active',
+      copy: 'Attorney allocation has moved beyond pre-instruction, but is not formally instructed until signed OTP.',
+      allocation,
+    }
+  }
+
+  if (['instructed', 'converted'].includes(allocationStatus)) {
+    return {
+      state: allocationStatus,
+      label: 'Formal instruction active',
+      copy: 'Signed OTP has promoted this transfer attorney allocation into the instruction lane.',
+      allocation,
+    }
+  }
+
+  if (allocation) {
+    return {
+      state: allocationStatus || 'allocated',
+      label: allocationStatus ? titleCaseWorkspaceValue(allocationStatus) : 'Allocated',
+      copy: 'Transfer attorney allocation exists for this listing.',
+      allocation,
+    }
+  }
+
+  if (!partnerOrganisationId) {
+    return {
+      state: 'pending_connection',
+      label: 'Pending connection',
+      copy: 'Attorney is captured, but not routed until the firm is connected.',
+    }
+  }
+
+  return {
+    state: 'missing_allocation',
+    label: 'Not visible in pipeline',
+    copy: 'A connected attorney is nominated, but no awaiting-buyer allocation was found for this listing.',
+  }
+}
+
+function getKingstonsExceptionSeverityClass(severity = '') {
+  const normalized = normalizeKey(severity)
+  if (normalized === 'critical') {
+    return {
+      rail: 'border-[#f3c6c3] bg-[#fff5f4]',
+      icon: 'bg-white text-[#b42318]',
+      badge: 'border-[#f3c6c3] bg-white text-[#b42318]',
+    }
+  }
+  if (normalized === 'warning') {
+    return {
+      rail: 'border-[#f0d9ab] bg-[#fff8e8]',
+      icon: 'bg-white text-[#9a6b19]',
+      badge: 'border-[#f0d9ab] bg-white text-[#8a641d]',
+    }
+  }
+  return {
+    rail: 'border-[#dce8f4] bg-[#fbfdff]',
+    icon: 'bg-white text-[#315b7a]',
+    badge: 'border-[#dce8f4] bg-white text-[#315b7a]',
+  }
+}
+
+function buildKingstonsListingTermsExceptionReport({
+  sellerJourney = {},
+  sellerPackSummary = {},
+  listingTermsSummary = {},
+  listingTerms = {},
+  listingId = '',
+  pipelineVerification = {},
+  thresholds = KINGSTONS_LISTING_TERMS_EXCEPTION_THRESHOLDS,
+} = {}) {
+  const currentStageDays = Math.max(0, Number(sellerJourney?.daysInCurrentStage || 0) || 0)
+  const pipelineState = normalizeKey(pipelineVerification?.state)
+  const listingCreated = Boolean(normalizeText(listingId))
+  const sellerPackComplete = sellerPackSummary?.complete === true
+  const listingTermsComplete = listingTermsSummary?.complete === true
+  const termsConfirmedAt = normalizeText(listingTerms?.confirmedAt || listingTerms?.confirmed_at)
+  const items = []
+
+  if (sellerPackComplete && !listingTermsComplete) {
+    const stale = currentStageDays >= thresholds.listingTermsDays
+    items.push({
+      key: 'listing_terms_stale',
+      severity: stale ? 'warning' : 'info',
+      title: stale ? 'Listing Terms is waiting' : 'Listing Terms still outstanding',
+      copy: `Capture commission and the nominated transfer attorney before List Property. Still needed: ${(listingTermsSummary?.missingLabels || []).join(', ') || 'Listing Terms'}.`,
+      ageLabel: `${currentStageDays} days in current stage`,
+      action: 'confirm_terms',
+      actionLabel: 'Confirm terms',
+    })
+  }
+
+  if (sellerPackComplete && listingTermsComplete && !listingCreated) {
+    const stale = currentStageDays >= thresholds.listPropertyDays
+    items.push({
+      key: 'list_property_stale',
+      severity: stale ? 'warning' : 'info',
+      title: stale ? 'Ready to list, but not listed' : 'Ready for List Property',
+      copy: 'Seller Pack and Listing Terms are complete. Create the listing to open the pre-instruction attorney visibility path.',
+      ageLabel: termsConfirmedAt ? `Terms confirmed ${termsConfirmedAt}` : `${currentStageDays} days in current stage`,
+      action: 'create_listing',
+      actionLabel: 'Create listing',
+    })
+  }
+
+  if (sellerPackComplete && listingTermsComplete && ['missing_allocation', 'error'].includes(pipelineState)) {
+    items.push({
+      key: 'attorney_pipeline_exception',
+      severity: 'critical',
+      title: 'Transfer attorney is not visible',
+      copy: pipelineVerification?.copy || 'The nominated transfer attorney should be in the awaiting-buyer pipeline, but the allocation was not found.',
+      ageLabel: `${Math.max(currentStageDays, thresholds.attorneyPipelineDays)} day watch`,
+      action: 'retry_pipeline_sync',
+      actionLabel: 'Retry pipeline sync',
+    })
+  }
+
+  if (sellerPackComplete && listingTermsComplete && pipelineState === 'pending_connection') {
+    items.push({
+      key: 'attorney_connection_pending',
+      severity: 'warning',
+      title: 'Attorney connection required',
+      copy: pipelineVerification?.copy || 'The seller-selected attorney is captured, but the firm is not connected to this agency yet.',
+      ageLabel: 'Partner setup needed',
+      action: 'confirm_terms',
+      actionLabel: 'Review terms',
+    })
+  }
+
+  const criticalCount = items.filter((item) => item.severity === 'critical').length
+  const warningCount = items.filter((item) => item.severity === 'warning').length
+  const health = criticalCount ? 'critical' : warningCount ? 'attention' : items.length ? 'watch' : 'clear'
+
+  return {
+    health,
+    statusLabel: health === 'clear'
+      ? 'Clear'
+      : criticalCount
+        ? `${criticalCount} critical`
+        : `${warningCount || items.length} on watch`,
+    currentStageDays,
+    items,
+    metrics: [
+      {
+        key: 'seller_pack',
+        label: 'Seller Pack',
+        value: sellerPackComplete ? 'Complete' : `${sellerPackSummary?.completed || 0} of ${sellerPackSummary?.total || 0}`,
+      },
+      {
+        key: 'listing_terms',
+        label: 'Listing Terms',
+        value: listingTermsComplete ? 'Confirmed' : 'Outstanding',
+      },
+      {
+        key: 'list_property',
+        label: 'List Property',
+        value: listingCreated ? 'Created' : 'Not created',
+      },
+      {
+        key: 'attorney_pipeline',
+        label: 'Attorney Pipeline',
+        value: pipelineVerification?.label || 'Not checked',
+      },
+    ],
+  }
+}
+
+function buildKingstonsPrincipalListingTermsExceptionReport({
+  leads = [],
+  appointments = [],
+  organisationId = '',
+  currentAgent = {},
+  resolveLeadLinkedListing = null,
+  allocationByListingId = {},
+  checkedListingIds = [],
+  allocationsLoading = false,
+  allocationsError = '',
+} = {}) {
+  const rows = []
+  let totalKingstonsLeads = 0
+  const checkedIds = new Set((Array.isArray(checkedListingIds) ? checkedListingIds : []).map(normalizeText).filter(Boolean))
+
+  for (const lead of Array.isArray(leads) ? leads : []) {
+    if (resolveLeadCategoryView(lead) !== 'seller') continue
+    const listing = typeof resolveLeadLinkedListing === 'function' ? resolveLeadLinkedListing(lead) : null
+    const isKingstons = hasKingstonsPipelineSignal({
+      lead,
+      listing,
+      organisationId,
+      currentAgent,
+    })
+    if (!isKingstons) continue
+    totalKingstonsLeads += 1
+
+    const leadKey = normalizeLeadIdentityKey(lead?.leadId || lead?.id)
+    const leadAppointments = (Array.isArray(appointments) ? appointments : []).filter(
+      (appointment) => normalizeLeadIdentityKey(appointment?.leadId) === leadKey,
+    )
+    const sellerJourney = buildSellerJourney({
+      lead,
+      appointments: leadAppointments,
+      listing,
+      documents: listing?.documents || [],
+    })
+    const sellerPackSummary = summarizeKingstonsSellerPack(buildKingstonsSellerPackDocumentRows(lead))
+    const listingTerms = getKingstonsListingTermsState(lead, listing || {})
+    const listingTermsSummary = summarizeKingstonsListingTerms(listingTerms)
+    const listingId = normalizeText(
+      listing?.id ||
+        listing?.listingId ||
+        listing?.listing_id ||
+        lead?.listingId ||
+        lead?.listing_id ||
+        lead?.privateListingId ||
+        lead?.private_listing_id,
+    )
+    const allocation = listingId
+      ? allocationByListingId?.[listingId] || allocationByListingId?.[normalizeText(listingId)] || null
+      : null
+    const allocationChecked = listingId ? checkedIds.has(listingId) : false
+    const pipelineVerification = buildKingstonsAttorneyPipelineVerification({
+      listingId,
+      summary: listingTermsSummary,
+      terms: listingTerms,
+      allocation,
+      loading: Boolean(allocationsLoading && listingId && !allocationChecked),
+    })
+    const report = buildKingstonsListingTermsExceptionReport({
+      sellerJourney,
+      sellerPackSummary,
+      listingTermsSummary,
+      listingTerms,
+      listingId,
+      pipelineVerification,
+    })
+
+    for (const item of report.items || []) {
+      rows.push({
+        ...item,
+        leadId: normalizeText(lead?.leadId || lead?.id),
+        leadName: resolveLeadDisplayName(lead, null, null, 'Unnamed seller'),
+        agent: normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || currentAgent?.fullName || currentAgent?.email) || 'Unassigned',
+        property: normalizeText(lead?.sellerPropertyAddress || lead?.propertyInterest || listing?.address || listing?.label || listing?.title) || 'Property pending',
+        stage: sellerJourney?.stage?.label || KINGSTONS_PIPELINE_STAGE_LABELS[normalizeKey(sellerJourney?.stage?.key)] || 'Kingstons Seller Process',
+        days: report.currentStageDays,
+        pipelineLabel: pipelineVerification?.label || 'Not checked',
+        allocationChecked,
+      })
+    }
+  }
+
+  const severityRank = { critical: 0, warning: 1, info: 2 }
+  const sortedRows = rows.sort((left, right) => {
+    const leftRank = severityRank[normalizeKey(left.severity)] ?? 3
+    const rightRank = severityRank[normalizeKey(right.severity)] ?? 3
+    if (leftRank !== rightRank) return leftRank - rightRank
+    return Number(right.days || 0) - Number(left.days || 0)
+  })
+  const criticalCount = sortedRows.filter((row) => normalizeKey(row.severity) === 'critical').length
+  const warningCount = sortedRows.filter((row) => normalizeKey(row.severity) === 'warning').length
+  const listingTermsCount = sortedRows.filter((row) => row.key === 'listing_terms_stale').length
+  const listPropertyCount = sortedRows.filter((row) => row.key === 'list_property_stale').length
+  const attorneyCount = sortedRows.filter((row) => row.key === 'attorney_pipeline_exception' || row.key === 'attorney_connection_pending').length
+
+  return {
+    totalKingstonsLeads,
+    totalExceptions: sortedRows.length,
+    criticalCount,
+    warningCount,
+    listingTermsCount,
+    listPropertyCount,
+    attorneyCount,
+    allocationsLoading: allocationsLoading === true,
+    allocationsError: normalizeText(allocationsError),
+    checkedListingCount: checkedIds.size,
+    averageDays: sortedRows.length
+      ? Math.round(sortedRows.reduce((sum, row) => sum + Number(row.days || 0), 0) / sortedRows.length)
+      : 0,
+    rows: sortedRows,
+  }
+}
+
+function KingstonsListingTermsExceptionReportCard({
+  report = {},
+  onConfirmTerms = null,
+  onCreateListing = null,
+  onRetryPipelineSync = null,
+  retryingPipelineSync = false,
+}) {
+  const items = Array.isArray(report.items) ? report.items : []
+  const health = normalizeKey(report.health)
+  const clear = health === 'clear'
+  const statusClass = clear
+    ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]'
+    : health === 'critical'
+      ? 'border-[#f3c6c3] bg-[#fff5f4] text-[#b42318]'
+      : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'
+
+  const handleAction = (action) => {
+    if (action === 'confirm_terms') onConfirmTerms?.()
+    if (action === 'create_listing') onCreateListing?.()
+    if (action === 'retry_pipeline_sync') onRetryPipelineSync?.()
+  }
+
+  return (
+    <section
+      className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]"
+      data-testid="kingstons-listing-terms-exception-report"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-5 py-5 sm:px-6">
+        <div className="flex min-w-0 items-start gap-4">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[16px] bg-[#edf8f1] text-[#147a4f] shadow-[0_10px_22px_rgba(20,122,79,0.10)]">
+            <Gauge className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Kingstons Exception Report</p>
+            <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#102033]">Seller Pack to List Property watch</h3>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758b]">
+              Tracks stuck Listing Terms, listing handoff, and transfer attorney visibility without changing the workflow.
+            </p>
+          </div>
+        </div>
+        <span className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-semibold ${statusClass}`}>
+          {report.statusLabel || 'Clear'}
+        </span>
+      </div>
+
+      <div className="grid gap-3 px-5 pt-5 sm:px-6 md:grid-cols-4">
+        {(report.metrics || []).map((metric) => (
+          <div key={metric.key} className="rounded-[16px] border border-[#e5eef7] bg-[#fbfdff] px-4 py-3">
+            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{metric.label}</p>
+            <p className="mt-1 truncate text-sm font-semibold text-[#20364c]" title={metric.value}>{metric.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="px-5 py-5 sm:px-6">
+        {items.length ? (
+          <div className="grid gap-3">
+            {items.map((item) => {
+              const style = getKingstonsExceptionSeverityClass(item.severity)
+              const canRunAction =
+                (item.action === 'confirm_terms' && onConfirmTerms) ||
+                (item.action === 'create_listing' && onCreateListing) ||
+                (item.action === 'retry_pipeline_sync' && onRetryPipelineSync)
+              return (
+                <article key={item.key} className={`flex flex-wrap items-center justify-between gap-3 rounded-[18px] border px-4 py-4 ${style.rail}`}>
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[12px] shadow-[0_6px_16px_rgba(31,54,78,0.05)] ${style.icon}`}>
+                      {item.severity === 'critical' ? <AlertTriangle className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-[#20364c]">{item.title}</p>
+                        <span className={`rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${style.badge}`}>{item.ageLabel}</span>
+                      </div>
+                      <p className="mt-1 max-w-4xl text-sm leading-5 text-[#60758b]">{item.copy}</p>
+                    </div>
+                  </div>
+                  {canRunAction ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={item.severity === 'critical' ? undefined : 'secondary'}
+                      className="min-h-9 rounded-[12px] px-3 text-xs"
+                      onClick={() => handleAction(item.action)}
+                      disabled={item.action === 'retry_pipeline_sync' && retryingPipelineSync}
+                    >
+                      {item.action === 'retry_pipeline_sync' && retryingPipelineSync ? 'Retrying...' : item.actionLabel}
+                    </Button>
+                  ) : null}
+                </article>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#dcebdc] bg-[#f7fcf8] px-4 py-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-white text-[#147a4f] shadow-[0_8px_20px_rgba(20,122,79,0.08)]">
+                <CheckCircle2 className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[#20364c]">No Kingstons exceptions right now</p>
+                <p className="mt-1 text-sm text-[#60758b]">Seller Pack, Listing Terms, listing handoff, and attorney visibility are not showing blockers.</p>
+              </div>
+            </div>
+            <span className="rounded-full border border-[#c8e7d4] bg-white px-3 py-1 text-xs font-semibold text-[#1d7a52]">Healthy</span>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function escapeKingstonsPrincipalCsvCell(value = '') {
+  const text = String(value ?? '')
+  if (!/[",\n\r]/.test(text)) return text
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function formatKingstonsPrincipalActionLabel(action = '') {
+  const normalized = normalizeKey(action)
+  if (normalized === 'confirm_terms') return 'Confirm listing terms'
+  if (normalized === 'create_listing') return 'Create private listing'
+  if (normalized === 'retry_pipeline_sync') return 'Retry attorney pipeline sync'
+  if (normalized === 'connect_attorney') return 'Connect nominated attorney'
+  return 'Review lead'
+}
+
+function buildKingstonsPrincipalExceptionReportCsv(report = {}, { generatedAt = new Date() } = {}) {
+  const rows = Array.isArray(report.rows) ? report.rows : []
+  const generatedIso = generatedAt instanceof Date && !Number.isNaN(generatedAt.getTime())
+    ? generatedAt.toISOString()
+    : new Date().toISOString()
+  const headers = [
+    'Generated At',
+    'Seller',
+    'Property',
+    'Agent',
+    'Stage',
+    'Days In Stage',
+    'Severity',
+    'Exception',
+    'Detail',
+    'Recommended Action',
+    'Attorney Pipeline',
+    'Allocation Checked',
+    'Lead ID',
+  ]
+  const bodyRows = rows.length
+    ? rows.map((row) => [
+        generatedIso,
+        row.leadName,
+        row.property,
+        row.agent,
+        row.stage,
+        row.days,
+        row.severity,
+        row.title,
+        row.copy,
+        formatKingstonsPrincipalActionLabel(row.action),
+        row.pipelineLabel,
+        row.allocationChecked ? 'Yes' : 'No',
+        row.leadId,
+      ])
+    : [[
+        generatedIso,
+        'No open Kingstons seller workflow exceptions',
+        '',
+        '',
+        '',
+        '',
+        'clear',
+        'Clear',
+        `Kingstons leads checked: ${report.totalKingstonsLeads || 0}; listings checked: ${report.checkedListingCount || 0}`,
+        'No action required',
+        report.allocationsError ? `Verification failed: ${report.allocationsError}` : 'Verified from loaded workspace data',
+        report.checkedListingCount ? 'Yes' : 'No',
+        '',
+      ]]
+
+  return [headers, ...bodyRows]
+    .map((row) => row.map(escapeKingstonsPrincipalCsvCell).join(','))
+    .join('\n')
+}
+
+function downloadKingstonsPrincipalExceptionReportCsv(report = {}) {
+  if (typeof document === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined') return
+  const today = new Date().toISOString().slice(0, 10)
+  const csv = buildKingstonsPrincipalExceptionReportCsv(report)
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const objectUrl = URL.createObjectURL(blob)
+  try {
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = `kingstons-seller-workflow-exceptions-${today}.csv`
+    link.rel = 'noopener'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
+function buildKingstonsPrincipalExceptionDigest(report = {}, { generatedAt = new Date(), maxRows = 8 } = {}) {
+  const rows = Array.isArray(report.rows) ? report.rows : []
+  const generatedIso = generatedAt instanceof Date && !Number.isNaN(generatedAt.getTime())
+    ? generatedAt.toISOString()
+    : new Date().toISOString()
+  const lines = [
+    'Kingstons Seller Workflow Digest',
+    `Generated: ${generatedIso}`,
+    '',
+    'Summary',
+    `- Kingstons seller leads checked: ${report.totalKingstonsLeads || 0}`,
+    `- Open exceptions: ${report.totalExceptions || 0}`,
+    `- Critical: ${report.criticalCount || 0}`,
+    `- Warnings: ${report.warningCount || 0}`,
+    `- Listing Terms exceptions: ${report.listingTermsCount || 0}`,
+    `- Attorney watch exceptions: ${report.attorneyCount || 0}`,
+    `- Transfer-attorney allocations checked: ${report.checkedListingCount || 0}`,
+  ]
+
+  if (report.allocationsError) {
+    lines.push(`- Allocation verification issue: ${report.allocationsError}`)
+  } else if (report.allocationsLoading) {
+    lines.push('- Allocation verification: still checking loaded Kingstons listings')
+  } else {
+    lines.push('- Allocation verification: complete for loaded Kingstons listings')
+  }
+
+  lines.push('')
+
+  if (!rows.length) {
+    lines.push('No open Kingstons seller workflow exceptions right now.')
+    lines.push('Recommended action: no principal follow-up required.')
+    return lines.join('\n')
+  }
+
+  lines.push(`Top ${Math.min(rows.length, maxRows)} exceptions`)
+  rows.slice(0, maxRows).forEach((row, index) => {
+    lines.push(`${index + 1}. ${row.leadName || 'Unnamed seller'} - ${row.title || 'Workflow exception'}`)
+    lines.push(`   Property: ${row.property || 'Property pending'}`)
+    lines.push(`   Agent: ${row.agent || 'Unassigned'}`)
+    lines.push(`   Stage: ${row.stage || 'Kingstons Seller Process'} (${row.days || 0} days)`)
+    lines.push(`   Severity: ${row.severity || 'warning'}`)
+    lines.push(`   Attorney pipeline: ${row.pipelineLabel || 'Not checked'}; allocation checked: ${row.allocationChecked ? 'yes' : 'no'}`)
+    lines.push(`   Recommended action: ${formatKingstonsPrincipalActionLabel(row.action)}`)
+    if (row.copy) lines.push(`   Detail: ${row.copy}`)
+  })
+
+  if (rows.length > maxRows) {
+    lines.push('')
+    lines.push(`${rows.length - maxRows} more exception${rows.length - maxRows === 1 ? '' : 's'} in the principal report. Export CSV for the full list.`)
+  }
+
+  return lines.join('\n')
+}
+
+async function copyKingstonsPrincipalExceptionDigest(report = {}) {
+  const digest = buildKingstonsPrincipalExceptionDigest(report)
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(digest)
+    return digest
+  }
+  if (typeof document === 'undefined') return digest
+  const textarea = document.createElement('textarea')
+  textarea.value = digest
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand?.('copy')
+  textarea.remove()
+  if (copied === false) throw new Error('Clipboard copy was not allowed by the browser.')
+  return digest
+}
+
+function KingstonsPrincipalExceptionReportCard({
+  report = {},
+  onOpenLead = null,
+  onExportCsv = null,
+  onCopyDigest = null,
+}) {
+  const rows = Array.isArray(report.rows) ? report.rows : []
+  const healthClass = report.criticalCount
+    ? 'border-[#f3c6c3] bg-[#fff5f4] text-[#b42318]'
+    : report.totalExceptions
+      ? 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'
+      : 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]'
+  const metrics = [
+    { key: 'kingstons', label: 'Kingstons Leads', value: report.totalKingstonsLeads || 0 },
+    { key: 'exceptions', label: 'Open Exceptions', value: report.totalExceptions || 0 },
+    { key: 'listing_terms', label: 'Listing Terms', value: report.listingTermsCount || 0 },
+    { key: 'attorney', label: 'Attorney Watch', value: report.attorneyCount || 0 },
+    { key: 'verified', label: 'Listings Checked', value: report.checkedListingCount || 0 },
+  ]
+
+  return (
+    <article
+      className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]"
+      data-testid="kingstons-principal-exception-report"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-5 py-5">
+        <div className="flex min-w-0 items-start gap-4">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[16px] bg-[#edf8f1] text-[#147a4f] shadow-[0_10px_22px_rgba(20,122,79,0.10)]">
+            <Gauge className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Kingstons Seller Workflow</p>
+            <h3 className="mt-1 text-base font-semibold text-[#20344b]">Principal exception report</h3>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758d]">
+              Aggregates seller leads stuck between Seller Pack, Listing Terms, List Property, and transfer-attorney visibility.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {onCopyDigest ? (
+            <button
+              type="button"
+              className="inline-flex min-h-9 items-center gap-2 rounded-full border border-[#d9e4ef] bg-white px-3 text-xs font-semibold text-[#2d4560] shadow-[0_8px_18px_rgba(31,54,78,0.06)] transition hover:border-[#b9cadd] hover:bg-[#f7faff] disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => onCopyDigest?.()}
+              disabled={report.allocationsLoading}
+            >
+              <Copy className="h-3.5 w-3.5" />
+              Copy Digest
+            </button>
+          ) : null}
+          {onExportCsv ? (
+            <button
+              type="button"
+              className="inline-flex min-h-9 items-center gap-2 rounded-full border border-[#d9e4ef] bg-white px-3 text-xs font-semibold text-[#2d4560] shadow-[0_8px_18px_rgba(31,54,78,0.06)] transition hover:border-[#b9cadd] hover:bg-[#f7faff] disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => onExportCsv?.()}
+              disabled={report.allocationsLoading}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </button>
+          ) : null}
+          <span className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-semibold ${healthClass}`}>
+            {report.totalExceptions ? `${report.totalExceptions} open` : 'Clear'}
+          </span>
+        </div>
+      </div>
+
+      {report.allocationsLoading || report.allocationsError ? (
+        <div className={`border-b px-5 py-3 text-sm ${report.allocationsError ? 'border-[#f3c6c3] bg-[#fff5f4] text-[#b42318]' : 'border-[#e4ebf4] bg-[#f7faff] text-[#60758b]'}`}>
+          {report.allocationsError
+            ? `Attorney allocation verification failed: ${report.allocationsError}`
+            : 'Checking transfer-attorney allocations across loaded Kingstons listings...'}
+        </div>
+      ) : null}
+
+      <div className="grid gap-3 px-5 pt-5 sm:grid-cols-2 xl:grid-cols-5">
+        {metrics.map((metric) => (
+          <div key={metric.key} className="rounded-[16px] border border-[#e5eef7] bg-[#fbfdff] px-4 py-3">
+            <p className="text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{metric.label}</p>
+            <p className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[#102033]">{metric.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="px-5 py-5">
+        {rows.length ? (
+          <div className="overflow-hidden rounded-[16px] border border-[#e4ebf4]">
+            <table className="min-w-[980px] w-full text-sm">
+              <thead className="bg-[#f7faff] text-left text-[0.68rem] uppercase tracking-[0.08em] text-[#6f839a]">
+                <tr>
+                  <th className="px-3 py-2">Seller</th>
+                  <th className="px-3 py-2">Exception</th>
+                  <th className="px-3 py-2">Agent</th>
+                  <th className="px-3 py-2">Stage</th>
+                  <th className="px-3 py-2">Age</th>
+                  <th className="px-3 py-2">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, 8).map((row) => {
+                  const style = getKingstonsExceptionSeverityClass(row.severity)
+                  return (
+                    <tr key={`${row.leadId}:${row.key}`} className="border-t border-[#e8eef5] text-[#2d4560]">
+                      <td className="px-3 py-3">
+                        <p className="font-semibold text-[#20364c]">{row.leadName}</p>
+                        <p className="mt-0.5 truncate text-xs text-[#7b8fa5]" title={row.property}>{row.property}</p>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${style.badge}`}>{row.title}</span>
+                        <p className="mt-1 line-clamp-1 text-xs text-[#6d839b]">{row.copy}</p>
+                      </td>
+                      <td className="px-3 py-3">{row.agent}</td>
+                      <td className="px-3 py-3">{row.stage}</td>
+                      <td className="px-3 py-3">{row.days} days</td>
+                      <td className="px-3 py-3">
+                        <button
+                          type="button"
+                          className="text-xs font-semibold text-[#13784f] hover:text-[#0f6845]"
+                          onClick={() => onOpenLead?.(row.leadId, row.action === 'retry_pipeline_sync' ? 'overview' : row.action === 'confirm_terms' ? 'overview' : 'documents')}
+                        >
+                          Open lead
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#dcebdc] bg-[#f7fcf8] px-4 py-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-white text-[#147a4f] shadow-[0_8px_20px_rgba(20,122,79,0.08)]">
+                <CheckCircle2 className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-[#20364c]">No aggregate Kingstons exceptions</p>
+                <p className="mt-1 text-sm text-[#60758b]">Nothing is currently stuck in Listing Terms, List Property, or attorney visibility.</p>
+              </div>
+            </div>
+            <span className="rounded-full border border-[#c8e7d4] bg-white px-3 py-1 text-xs font-semibold text-[#1d7a52]">Healthy</span>
+          </div>
+        )}
+      </div>
+    </article>
+  )
+}
+
+function KingstonsListingTermsSummaryCard({
+  terms = {},
+  summary = {},
+  pipelineVerification = null,
+  onEdit = null,
+  onRetryPipelineSync = null,
+  retryingPipelineSync = false,
+  compact = false,
+  testId = 'kingstons-listing-terms-summary',
+}) {
+  const pipelineStatus = pipelineVerification || getKingstonsListingTermsPipelineStatus(terms, summary)
+  const needsPipelineAttention = ['missing_allocation', 'error'].includes(normalizeKey(pipelineStatus?.state))
+  const statusLabel = summary.complete ? 'Complete' : `${summary.missingLabels?.length || 0} needed`
+  const statusClass = summary.complete
+    ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]'
+    : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'
+  const rows = [
+    {
+      label: 'Commission',
+      value: summary.commissionLabel || 'Commission not captured',
+      Icon: CheckCircle2,
+    },
+    {
+      label: 'Transfer attorney',
+      value: summary.attorneyLabel || 'Attorney not nominated',
+      Icon: Building2,
+    },
+    {
+      label: 'Attorney pipeline',
+      value: pipelineStatus.label,
+      detail: pipelineStatus.copy,
+      Icon: ShieldCheck,
+    },
+  ]
+
+  return (
+    <section
+      className={`overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)] ${compact ? '' : 'mt-0'}`}
+      data-testid={testId}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-5 py-5 sm:px-6">
+        <div className="flex min-w-0 items-start gap-4">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[16px] bg-[#edf8f1] text-[#147a4f] shadow-[0_10px_22px_rgba(20,122,79,0.10)]">
+            <ShieldCheck className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Listing Terms</p>
+            <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#102033]">
+              Commission and transfer attorney
+            </h3>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758b]">
+              Confirm the commercial terms before List Property. Signed OTP sends the formal instruction to the attorney.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-semibold ${statusClass}`}>
+            {statusLabel}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant={summary.complete ? 'secondary' : undefined}
+            className="min-h-9 rounded-[12px] px-3 text-xs"
+            onClick={onEdit}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            {summary.complete ? 'Edit terms' : 'Confirm terms'}
+          </Button>
+        </div>
+      </div>
+      {needsPipelineAttention ? (
+        <div className="border-b border-[#f3dfb8] bg-[#fff8e8] px-5 py-4 sm:px-6" data-testid="kingstons-attorney-pipeline-alert">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-[11px] bg-white text-[#9a6b19] shadow-[0_6px_16px_rgba(154,107,25,0.08)]">
+                <AlertTriangle className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[#5f4314]">Attorney pipeline needs attention</p>
+                <p className="mt-1 text-sm leading-5 text-[#7a5a20]">
+                  {pipelineStatus.copy || 'The nominated transfer attorney is not currently visible in the attorney pipeline.'}
+                </p>
+              </div>
+            </div>
+            {onRetryPipelineSync ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="min-h-9 rounded-[12px] border-[#e9cc91] bg-white px-3 text-xs text-[#694a17] hover:bg-[#fffdf7]"
+                onClick={onRetryPipelineSync}
+                disabled={retryingPipelineSync}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${retryingPipelineSync ? 'animate-spin' : ''}`} />
+                {retryingPipelineSync ? 'Retrying...' : 'Retry pipeline sync'}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      <div className={`grid gap-3 px-5 py-5 sm:px-6 ${compact ? 'lg:grid-cols-3' : 'md:grid-cols-3'}`}>
+        {rows.map(({ label, value, detail, Icon }) => (
+          <div key={label} className="rounded-[18px] border border-[#e5eef7] bg-[#fbfdff] px-4 py-4">
+            <div className="flex items-start gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-white text-[#315b7a] shadow-[0_6px_16px_rgba(31,54,78,0.05)]">
+                <Icon className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{label}</p>
+                <p className="mt-1 truncate text-sm font-semibold text-[#20364c]" title={value}>{value}</p>
+                {detail ? <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#6d839b]">{detail}</p> : null}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function buildKingstonsListingTermsPayload(draft = {}, attorneyOption = null, actorLabel = '') {
+  const selectedAttorney = asRecord(attorneyOption)
+  const companyName = normalizeText(
+    selectedAttorney.companyName ||
+      selectedAttorney.company_name ||
+      selectedAttorney.name ||
+      draft.transferAttorneyCompany,
+  )
+  const contactPerson = normalizeText(
+    selectedAttorney.contactPerson ||
+      selectedAttorney.contact_person ||
+      selectedAttorney.preferredAttorneyName ||
+      selectedAttorney.selectedPerson?.name ||
+      draft.transferAttorneyContact,
+  )
+  const email = normalizeText(
+    selectedAttorney.email ||
+      selectedAttorney.emailAddress ||
+      selectedAttorney.email_address ||
+      selectedAttorney.preferredAttorneyEmail ||
+      selectedAttorney.selectedPerson?.email ||
+      draft.transferAttorneyEmail,
+  ).toLowerCase()
+  const phone = normalizeText(
+    selectedAttorney.phone ||
+      selectedAttorney.phoneNumber ||
+      selectedAttorney.phone_number ||
+      selectedAttorney.preferredAttorneyPhone ||
+      selectedAttorney.selectedPerson?.phone ||
+      draft.transferAttorneyPhone,
+  )
+  const commissionType = normalizeKey(draft.commissionType) || 'percentage'
+  const commissionPercentage = Number(draft.commissionPercentage || 0) || null
+  const commissionAmount = Number(draft.commissionAmount || 0) || null
+  return {
+    source: 'kingstons_listing_terms_phase1',
+    status: 'confirmed',
+    commissionConfirmed: true,
+    transferAttorneyNominated: true,
+    confirmedAt: new Date().toISOString(),
+    confirmedBy: actorLabel,
+    commission: {
+      type: commissionType,
+      commissionType,
+      percentage: commissionType === 'percentage' ? commissionPercentage : null,
+      commissionPercentage: commissionType === 'percentage' ? commissionPercentage : null,
+      amount: commissionType === 'fixed' ? commissionAmount : null,
+      commissionAmount: commissionType === 'fixed' ? commissionAmount : null,
+      notes: normalizeText(draft.commissionNotes),
+      confirmed: true,
+    },
+    transferAttorney: {
+      id: normalizeText(selectedAttorney.id || draft.transferAttorneyId),
+      preferredPartnerId: normalizeText(selectedAttorney.preferredPartnerId || selectedAttorney.preferred_partner_id || selectedAttorney.id || draft.transferAttorneyId),
+      partnerOrganisationId: normalizeText(selectedAttorney.partnerOrganisationId || selectedAttorney.partner_organisation_id),
+      preferredAttorneyUserId: normalizeText(selectedAttorney.preferredAttorneyUserId || selectedAttorney.preferred_attorney_user_id),
+      companyName,
+      contactPerson,
+      email,
+      phone,
+      selectionSource: normalizeKey(draft.transferAttorneyMode) || 'agency_recommended',
+      allocationStatus: 'awaiting_buyer',
+      nominated: true,
+    },
+  }
+}
+
+function validateKingstonsListingTermsDraft(draft = {}) {
+  const commissionType = normalizeKey(draft.commissionType)
+  if (!commissionType) return 'Choose the commission type.'
+  if (commissionType === 'fixed') {
+    if (!(Number(draft.commissionAmount || 0) > 0)) return 'Add the fixed commission amount.'
+  } else if (!(Number(draft.commissionPercentage || 0) > 0)) {
+    return 'Add the commission percentage.'
+  }
+  if (!normalizeText(draft.transferAttorneyId || draft.transferAttorneyCompany || draft.transferAttorneyEmail)) {
+    return 'Choose or capture the nominated transfer attorney.'
+  }
+  return ''
 }
 
 function isValidKingstonsFicaSellerType(value = '') {
@@ -1151,6 +2241,16 @@ function buildKingstonsSellerPackListingHandoffPayload({
   const packSummary = summary || summarizeKingstonsSellerPack(rows)
   const sellerType = normalizeKey(packSummary.sellerType || getKingstonsSellerPackState(lead).sellerType)
   const sellerTypeLabel = getKingstonsFicaSellerTypeLabel(sellerType)
+  const listingTerms = getKingstonsListingTermsState(lead)
+  const listingTermsSummary = summarizeKingstonsListingTerms(listingTerms)
+  const listingTermsFacts = {
+    ...listingTerms,
+    source: listingTerms.source || 'kingstons_listing_terms_phase1',
+    status: listingTermsSummary.complete ? 'confirmed' : 'incomplete',
+    complete: listingTermsSummary.complete === true,
+    commissionConfirmed: listingTermsSummary.commissionComplete === true,
+    transferAttorneyNominated: listingTermsSummary.attorneyComplete === true,
+  }
   const documents = rows.map((documentRow) => {
     const meta = getKingstonsSellerPackListingRequirementMeta(documentRow.key)
     return {
@@ -1187,6 +2287,8 @@ function buildKingstonsSellerPackListingHandoffPayload({
     ...(sellerPhone ? { sellerPhone } : {}),
     kingstonsSellerPack: sellerPackFacts,
     sellerPackHandoff: sellerPackFacts,
+    kingstonsListingTerms: listingTermsFacts,
+    listingTerms: listingTermsFacts,
   }
   const sellerCanonicalFactReadiness = {
     ...asRecord(existingReadiness),
@@ -1196,7 +2298,10 @@ function buildKingstonsSellerPackListingHandoffPayload({
     signedDefectForm: documents.some((document) => document.key === 'signed_defect_form' && document.status === 'uploaded'),
     signedFicaForm: documents.some((document) => document.key === 'signed_fica_form' && document.status === 'uploaded'),
     kingstonsSellerPack: packSummary.complete === true,
-    listingHandoff: packSummary.complete === true,
+    commissionTerms: listingTermsSummary.commissionComplete === true,
+    transferAttorney: listingTermsSummary.attorneyComplete === true,
+    kingstonsListingTerms: listingTermsSummary.complete === true,
+    listingHandoff: packSummary.complete === true && listingTermsSummary.complete === true,
   }
 
   return {
@@ -1213,6 +2318,13 @@ function buildKingstonsSellerPackListingHandoffPayload({
       sellerCanonicalFacts,
       sellerCanonicalFactReadiness,
       sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
+      commission: listingTermsFacts.commission,
+      commissionTerms: listingTermsFacts.commission,
+      rolePlayers: {
+        transferAttorney: listingTermsFacts.transferAttorney,
+      },
+      transferAttorneyName: listingTermsFacts.transferAttorney?.companyName || listingTermsFacts.transferAttorney?.contactPerson || '',
+      transferAttorneyEmail: listingTermsFacts.transferAttorney?.email || '',
     },
   }
 }
@@ -7254,6 +8366,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [kingstonsSellerPackWizardDraft, setKingstonsSellerPackWizardDraft] = useState(null)
   const [kingstonsSellerPackWizardSaving, setKingstonsSellerPackWizardSaving] = useState(false)
   const [kingstonsSellerPackWizardError, setKingstonsSellerPackWizardError] = useState('')
+  const [kingstonsListingTermsModalOpen, setKingstonsListingTermsModalOpen] = useState(false)
+  const [kingstonsListingTermsDraft, setKingstonsListingTermsDraft] = useState(null)
+  const [kingstonsListingTermsSaving, setKingstonsListingTermsSaving] = useState(false)
+  const [kingstonsListingTermsError, setKingstonsListingTermsError] = useState('')
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [organisationId, setOrganisationId] = useState('')
   const [organisationName, setOrganisationName] = useState('')
@@ -7395,6 +8511,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [selectedLeadLifecycleDiagnostic, setSelectedLeadLifecycleDiagnostic] = useState(null)
   const [selectedLeadLifecycleDiagnosticLoading, setSelectedLeadLifecycleDiagnosticLoading] = useState(false)
   const [selectedLeadLifecycleDiagnosticError, setSelectedLeadLifecycleDiagnosticError] = useState('')
+  const [kingstonsAttorneyPipelineAllocationState, setKingstonsAttorneyPipelineAllocationState] = useState({
+    listingId: '',
+    allocation: null,
+    loading: false,
+    error: '',
+  })
+  const [kingstonsAttorneyPipelineSyncing, setKingstonsAttorneyPipelineSyncing] = useState(false)
+  const [kingstonsPrincipalAttorneyAllocationsState, setKingstonsPrincipalAttorneyAllocationsState] = useState({
+    key: '',
+    loading: false,
+    error: '',
+    byListingId: {},
+    checkedListingIds: [],
+  })
   const [canonicalOfferActionId, setCanonicalOfferActionId] = useState('')
   const [canonicalOfferNotesById, setCanonicalOfferNotesById] = useState({})
   const [sellerReviewDeliveryModeByOfferId, setSellerReviewDeliveryModeByOfferId] = useState({})
@@ -9011,6 +10141,96 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => (selectedLead ? resolveLeadLinkedListing(selectedLead) : null),
     [resolveLeadLinkedListing, selectedLead],
   )
+  const selectedKingstonsLinkedListingId = useMemo(() => normalizeText(
+    selectedLeadLinkedListing?.id ||
+      selectedLeadLinkedListing?.listingId ||
+      selectedLeadLinkedListing?.listing_id ||
+      selectedLead?.listingId ||
+      selectedLead?.listing_id ||
+      selectedLead?.privateListingId ||
+      selectedLead?.private_listing_id,
+  ), [selectedLead, selectedLeadLinkedListing])
+
+  const kingstonsPrincipalLinkedListingIds = useMemo(() => {
+    if (!isPrincipal) return []
+    const ids = []
+    for (const lead of records.leads) {
+      if (resolveLeadCategoryView(lead) !== 'seller') continue
+      const listing = resolveLeadLinkedListing(lead)
+      if (!hasKingstonsPipelineSignal({
+        lead,
+        listing,
+        organisationId,
+        currentAgent,
+      })) continue
+      const listingId = normalizeText(
+        listing?.id ||
+          listing?.listingId ||
+          listing?.listing_id ||
+          lead?.listingId ||
+          lead?.listing_id ||
+          lead?.privateListingId ||
+          lead?.private_listing_id,
+      )
+      if (listingId) ids.push(listingId)
+    }
+    return [...new Set(ids)].sort()
+  }, [currentAgent, isPrincipal, organisationId, records.leads, resolveLeadLinkedListing])
+
+  const kingstonsPrincipalLinkedListingIdsKey = kingstonsPrincipalLinkedListingIds.join('|')
+
+  useEffect(() => {
+    if (!isPrincipal || !kingstonsPrincipalLinkedListingIds.length) {
+      setKingstonsPrincipalAttorneyAllocationsState({
+        key: '',
+        loading: false,
+        error: '',
+        byListingId: {},
+        checkedListingIds: [],
+      })
+      return
+    }
+
+    let cancelled = false
+    const key = kingstonsPrincipalLinkedListingIdsKey
+    setKingstonsPrincipalAttorneyAllocationsState((previous) => ({
+      ...previous,
+      key,
+      loading: true,
+      error: '',
+    }))
+
+    listPrivateListingTransferAttorneyAllocations(kingstonsPrincipalLinkedListingIds)
+      .then((allocations) => {
+        if (cancelled) return
+        const byListingId = {}
+        for (const allocation of Array.isArray(allocations) ? allocations : []) {
+          const listingId = normalizeText(allocation?.privateListingId)
+          if (listingId) byListingId[listingId] = allocation
+        }
+        setKingstonsPrincipalAttorneyAllocationsState({
+          key,
+          loading: false,
+          error: '',
+          byListingId,
+          checkedListingIds: kingstonsPrincipalLinkedListingIds,
+        })
+      })
+      .catch((allocationError) => {
+        if (cancelled) return
+        setKingstonsPrincipalAttorneyAllocationsState({
+          key,
+          loading: false,
+          error: allocationError?.message || 'Unable to verify Kingstons attorney pipeline allocations.',
+          byListingId: {},
+          checkedListingIds: [],
+        })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isPrincipal, kingstonsPrincipalLinkedListingIds, kingstonsPrincipalLinkedListingIdsKey])
 
   const selectedLeadLinkedTransaction = useMemo(() => {
     if (!selectedLead) return null
@@ -9053,6 +10273,58 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => normalizeText(selectedLeadLinkedTransaction?.transactionId || selectedLeadLinkedTransaction?.dealId || selectedLeadLinkedTransaction?.id),
     [selectedLeadLinkedTransaction],
   )
+
+  useEffect(() => {
+    if (!selectedLeadIsSeller || !selectedLeadHasKingstonsPipelineSignal || !selectedKingstonsLinkedListingId) {
+      setKingstonsAttorneyPipelineAllocationState({
+        listingId: '',
+        allocation: null,
+        loading: false,
+        error: '',
+      })
+      return undefined
+    }
+
+    let cancelled = false
+    setKingstonsAttorneyPipelineAllocationState((previous) => ({
+      ...previous,
+      listingId: selectedKingstonsLinkedListingId,
+      loading: true,
+      error: '',
+    }))
+
+    getPrivateListingTransferAttorneyAllocation(selectedKingstonsLinkedListingId)
+      .then((allocation) => {
+        if (cancelled) return
+        setKingstonsAttorneyPipelineAllocationState({
+          listingId: selectedKingstonsLinkedListingId,
+          allocation,
+          loading: false,
+          error: '',
+        })
+      })
+      .catch((allocationError) => {
+        if (cancelled) return
+        setKingstonsAttorneyPipelineAllocationState({
+          listingId: selectedKingstonsLinkedListingId,
+          allocation: null,
+          loading: false,
+          error: allocationError?.message || 'Unable to verify the attorney pipeline allocation.',
+        })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    selectedKingstonsLinkedListingId,
+    selectedLead?.updatedAt,
+    selectedLead?.updated_at,
+    selectedLeadHasKingstonsPipelineSignal,
+    selectedLeadIsSeller,
+    selectedLeadLinkedListing?.updatedAt,
+    selectedLeadLinkedListing?.updated_at,
+  ])
 
   useEffect(() => {
     const leadId = normalizeText(selectedLead?.leadId)
@@ -10925,6 +12197,52 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => selectedLeadHasKingstonsPipelineSignal ? getKingstonsSellerPackState(selectedLead || {}) : { documents: {}, sellerType: '' },
     [selectedLead, selectedLeadHasKingstonsPipelineSignal],
   )
+  const selectedKingstonsListingTerms = useMemo(
+    () => selectedLeadHasKingstonsPipelineSignal
+      ? getKingstonsListingTermsState(selectedLead || {}, selectedLeadLinkedListing || {})
+      : {},
+    [selectedLead, selectedLeadHasKingstonsPipelineSignal, selectedLeadLinkedListing],
+  )
+  const selectedKingstonsListingTermsSummary = useMemo(
+    () => summarizeKingstonsListingTerms(selectedKingstonsListingTerms),
+    [selectedKingstonsListingTerms],
+  )
+  const selectedKingstonsAttorneyPipelineVerification = useMemo(
+    () => buildKingstonsAttorneyPipelineVerification({
+      listingId: selectedKingstonsLinkedListingId,
+      summary: selectedKingstonsListingTermsSummary,
+      terms: selectedKingstonsListingTerms,
+      allocation: kingstonsAttorneyPipelineAllocationState.allocation,
+      loading: kingstonsAttorneyPipelineAllocationState.loading,
+      error: kingstonsAttorneyPipelineAllocationState.error,
+    }),
+    [
+      kingstonsAttorneyPipelineAllocationState.allocation,
+      kingstonsAttorneyPipelineAllocationState.error,
+      kingstonsAttorneyPipelineAllocationState.loading,
+      selectedKingstonsLinkedListingId,
+      selectedKingstonsListingTerms,
+      selectedKingstonsListingTermsSummary,
+    ],
+  )
+  const selectedKingstonsListingTermsExceptionReport = useMemo(
+    () => buildKingstonsListingTermsExceptionReport({
+      sellerJourney: selectedSellerJourney,
+      sellerPackSummary: selectedKingstonsSellerPackSummary,
+      listingTermsSummary: selectedKingstonsListingTermsSummary,
+      listingTerms: selectedKingstonsListingTerms,
+      listingId: selectedKingstonsLinkedListingId,
+      pipelineVerification: selectedKingstonsAttorneyPipelineVerification,
+    }),
+    [
+      selectedKingstonsAttorneyPipelineVerification,
+      selectedKingstonsLinkedListingId,
+      selectedKingstonsListingTerms,
+      selectedKingstonsListingTermsSummary,
+      selectedKingstonsSellerPackSummary,
+      selectedSellerJourney,
+    ],
+  )
   const selectedKingstonsFormalValuationRow = useMemo(
     () => selectedLeadHasKingstonsPipelineSignal ? buildKingstonsFormalValuationDocumentRow(selectedLead || {}) : null,
     [selectedLead, selectedLeadHasKingstonsPipelineSignal],
@@ -10933,8 +12251,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => [
       ...(selectedLeadLinkedListing?.documents || []),
       ...(selectedKingstonsFormalValuationRow ? [selectedKingstonsFormalValuationRow] : []),
+      ...selectedKingstonsSellerPackRows,
     ],
-    [selectedKingstonsFormalValuationRow, selectedLeadLinkedListing?.documents],
+    [selectedKingstonsFormalValuationRow, selectedKingstonsSellerPackRows, selectedLeadLinkedListing?.documents],
   )
 
   const selectedSellerDocumentCategories = useMemo(
@@ -12781,6 +14100,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [filteredLeads, records.appointments, records.deals, records.leadActivities],
   )
 
+  const kingstonsPrincipalExceptionReport = useMemo(
+    () =>
+      buildKingstonsPrincipalListingTermsExceptionReport({
+        leads: records.leads,
+        appointments: records.appointments,
+        organisationId,
+        currentAgent,
+        resolveLeadLinkedListing,
+        allocationByListingId: kingstonsPrincipalAttorneyAllocationsState.byListingId,
+        checkedListingIds: kingstonsPrincipalAttorneyAllocationsState.checkedListingIds,
+        allocationsLoading: kingstonsPrincipalAttorneyAllocationsState.loading,
+        allocationsError: kingstonsPrincipalAttorneyAllocationsState.error,
+      }),
+    [
+      currentAgent,
+      kingstonsPrincipalAttorneyAllocationsState.byListingId,
+      kingstonsPrincipalAttorneyAllocationsState.checkedListingIds,
+      kingstonsPrincipalAttorneyAllocationsState.error,
+      kingstonsPrincipalAttorneyAllocationsState.loading,
+      organisationId,
+      records.appointments,
+      records.leads,
+      resolveLeadLinkedListing,
+    ],
+  )
+
   const appointmentHasHardConflicts = appointmentSchedulingIntegrity?.hasHardConflicts === true
   const appointmentCanSave = !appointmentHasHardConflicts
 
@@ -12882,6 +14227,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setSelectedLeadId(leadId)
     setLeadWorkspaceTab(tab)
     navigate(`/pipeline/leads/${encodeURIComponent(leadId)}`)
+  }
+
+  function openKingstonsPrincipalExceptionLead(leadId = '', tab = 'overview') {
+    const resolvedLeadId = normalizeText(leadId)
+    if (!resolvedLeadId) return
+    const resolvedTab = normalizeKey(tab) || 'overview'
+    setLeadTypeView('seller')
+    setSelectedLeadId(resolvedLeadId)
+    setLeadWorkspaceTab(resolvedTab)
+    navigate(`/pipeline/leads/${encodeURIComponent(resolvedLeadId)}?tab=${encodeURIComponent(resolvedTab)}`)
+  }
+
+  function handleDownloadKingstonsPrincipalExceptionReport() {
+    downloadKingstonsPrincipalExceptionReportCsv(kingstonsPrincipalExceptionReport)
+  }
+
+  async function handleCopyKingstonsPrincipalExceptionDigest() {
+    if (kingstonsPrincipalExceptionReport?.allocationsLoading) {
+      setError('Wait for transfer-attorney allocation verification before copying the Kingstons digest.')
+      return
+    }
+    try {
+      await copyKingstonsPrincipalExceptionDigest(kingstonsPrincipalExceptionReport)
+      setError('')
+      setMessage('Kingstons principal digest copied.')
+    } catch (copyError) {
+      setError(copyError?.message || 'Unable to copy the Kingstons principal digest right now.')
+    }
   }
 
   function handleShowDayLogFollowUpCall() {
@@ -15485,11 +16858,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ])
 
   const selectedLeadPreferredTransferAttorneyId = useMemo(() => normalizeText(
-    selectedLead?.sellerOnboarding?.formData?.preferredTransferAttorney?.preferredPartnerId ||
+    selectedKingstonsListingTerms?.transferAttorney?.preferredPartnerId ||
+      selectedKingstonsListingTerms?.transferAttorney?.preferred_partner_id ||
+      selectedKingstonsListingTerms?.transferAttorney?.id ||
+      selectedLead?.sellerOnboarding?.formData?.preferredTransferAttorney?.preferredPartnerId ||
       selectedLead?.seller_onboarding?.form_data?.preferredTransferAttorney?.preferredPartnerId ||
       selectedLeadLinkedListing?.sellerOnboarding?.formData?.preferredTransferAttorney?.preferredPartnerId ||
       selectedLeadLinkedListing?.seller_onboarding?.form_data?.preferredTransferAttorney?.preferredPartnerId,
-  ), [selectedLead, selectedLeadLinkedListing])
+  ), [selectedKingstonsListingTerms, selectedLead, selectedLeadLinkedListing])
 
   const applySellerPreferredAttorneyOptions = useCallback((attorneys = []) => {
     const normalizedAttorneys = Array.isArray(attorneys) ? attorneys : []
@@ -15615,6 +16991,94 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadIsSeller,
     sellerPreferredAttorneyCacheKey,
   ])
+
+  function updateKingstonsListingTermsDraftField(field, value) {
+    setKingstonsListingTermsDraft((previous) => ({
+      ...buildKingstonsListingTermsDraft(selectedKingstonsListingTerms),
+      ...(previous || {}),
+      [field]: value,
+    }))
+    setKingstonsListingTermsError('')
+  }
+
+  function openKingstonsListingTermsModal() {
+    const draft = buildKingstonsListingTermsDraft(selectedKingstonsListingTerms)
+    setKingstonsListingTermsDraft(draft)
+    setKingstonsListingTermsError('')
+    setKingstonsListingTermsModalOpen(true)
+    const cached = sellerPreferredAttorneysCacheRef.current.get(sellerPreferredAttorneyCacheKey)
+    if (cached?.attorneys) {
+      applySellerPreferredAttorneyOptions(cached.attorneys)
+      setSellerPreferredAttorneysLoading(false)
+    } else {
+      void loadSellerPreferredAttorneyOptions({ applyState: true, showLoading: true })
+    }
+  }
+
+  function closeKingstonsListingTermsModal() {
+    if (kingstonsListingTermsSaving) return
+    setKingstonsListingTermsModalOpen(false)
+    setKingstonsListingTermsError('')
+  }
+
+  async function handleSaveKingstonsListingTerms() {
+    if (!selectedLead || !organisationId) return
+    const draft = kingstonsListingTermsDraft || buildKingstonsListingTermsDraft(selectedKingstonsListingTerms)
+    const selectedAttorney = sellerPreferredAttorneys.find((attorney) => (
+      normalizeText(attorney.id) === normalizeText(draft.transferAttorneyId) ||
+      normalizeText(attorney.preferredPartnerId) === normalizeText(draft.transferAttorneyId)
+    )) || null
+    const validationMessage = validateKingstonsListingTermsDraft({
+      ...draft,
+      transferAttorneyCompany: selectedAttorney?.companyName || draft.transferAttorneyCompany,
+      transferAttorneyEmail: selectedAttorney?.email || draft.transferAttorneyEmail,
+    })
+    if (validationMessage) {
+      setKingstonsListingTermsError(validationMessage)
+      return
+    }
+
+    try {
+      setKingstonsListingTermsSaving(true)
+      setKingstonsListingTermsError('')
+      const listingTerms = buildKingstonsListingTermsPayload(
+        draft,
+        selectedAttorney,
+        normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+      )
+      const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+      const rawEnquiryPayload = {
+        ...rawPayload,
+        kingstonsListingTerms: listingTerms,
+        listingTerms,
+      }
+      const leadPatch = {
+        rawEnquiryPayload,
+        kingstonsListingTerms: listingTerms,
+        listingTerms,
+        stage: 'Listing Terms Confirmed',
+        status: 'Listing Terms Confirmed',
+      }
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Listing Terms Confirmed',
+        activityNote: `Commission and transfer attorney confirmed for Kingstons listing creation. Attorney: ${listingTerms.transferAttorney.companyName || listingTerms.transferAttorney.email}.`,
+        outcome: 'Listing Terms',
+        activityDate: listingTerms.confirmedAt,
+      }, { actor: currentAgent }).catch((activityError) => {
+        console.warn('[AgencyPipelinePage] Listing terms activity could not be recorded.', activityError)
+      })
+      setMessage('Listing terms confirmed. The property can now move to List Property.')
+      setKingstonsListingTermsModalOpen(false)
+      scheduleRecordsReload(organisationId, 850)
+    } catch (saveError) {
+      setKingstonsListingTermsError(saveError?.message || 'Unable to save listing terms.')
+    } finally {
+      setKingstonsListingTermsSaving(false)
+    }
+  }
 
   function requestSellerOnboardingAttorneySelection() {
     if (!selectedLead) return
@@ -16677,6 +18141,129 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function syncKingstonsTransferAttorneyPreInstruction(listingId, lead = selectedLead, listingTerms = null) {
+    const resolvedListingId = normalizeText(listingId)
+    const terms = listingTerms && typeof listingTerms === 'object' ? listingTerms : getKingstonsListingTermsState(lead)
+    const attorney = terms?.transferAttorney && typeof terms.transferAttorney === 'object'
+      ? terms.transferAttorney
+      : {}
+    const companyName = normalizeText(attorney.companyName || attorney.company_name || attorney.name)
+    if (!resolvedListingId || !companyName) {
+      return { skipped: true, reason: 'missing_listing_or_attorney' }
+    }
+
+    const result = await allocatePrivateListingTransferAttorneyPreInstruction({
+      privateListingId: resolvedListingId,
+      organisationId,
+      attorney,
+      source: normalizeKey(attorney.selectionSource) === 'seller_selected' ? 'seller_selected' : 'agency_recommended',
+      metadata: {
+        source: 'kingstons_listing_terms_phase2',
+        leadId: normalizeText(lead?.leadId || lead?.id),
+        listingTermsConfirmedAt: normalizeText(terms.confirmedAt || terms.confirmed_at),
+        commission: terms.commission || null,
+        instructionBoundary: 'pre_instruction_only_until_signed_otp',
+      },
+    })
+
+    if (result?.skipped) {
+      await createPrivateListingActivity({
+        privateListingId: resolvedListingId,
+        activityType: 'transfer_attorney_nomination_pending_connection',
+        activityTitle: 'Transfer attorney nomination captured',
+        activityDescription: `${companyName} was captured from Listing Terms, but was not added to the attorney pipeline because the firm is not connected to this agency.`,
+        performedBy: normalizeText(currentAgent.id),
+        visibility: 'internal',
+        metadata: {
+          source: 'kingstons_listing_terms_phase2',
+          leadId: normalizeText(lead?.leadId || lead?.id),
+          reason: result.reason,
+          attorney,
+        },
+      }).catch(() => null)
+      return result
+    }
+
+    await createPrivateListingActivity({
+      privateListingId: resolvedListingId,
+      activityType: 'transfer_attorney_pre_instruction_allocated',
+      activityTitle: 'Transfer attorney added to pre-instruction pipeline',
+      activityDescription: `${result.allocation.companyName} was allocated as awaiting buyer. The formal instruction remains locked until signed OTP is uploaded.`,
+      performedBy: normalizeText(currentAgent.id),
+      visibility: 'internal',
+      metadata: {
+        source: 'kingstons_listing_terms_phase2',
+        leadId: normalizeText(lead?.leadId || lead?.id),
+        allocationId: result.allocation.id,
+        allocationStatus: result.allocation.status,
+        preferredPartnerId: result.allocation.preferredPartnerId,
+        partnerOrganisationId: result.allocation.partnerOrganisationId,
+        instructionBoundary: 'pre_instruction_only_until_signed_otp',
+      },
+    }).catch(() => null)
+
+    return result
+  }
+
+  async function handleRetryKingstonsAttorneyPipelineSync() {
+    const listingId = normalizeText(selectedKingstonsLinkedListingId)
+    if (!listingId || !selectedLeadHasKingstonsPipelineSignal || !selectedLead) {
+      setError('Create the listing before retrying the transfer attorney pipeline sync.')
+      return
+    }
+
+    setKingstonsAttorneyPipelineSyncing(true)
+    setKingstonsAttorneyPipelineAllocationState((previous) => ({
+      ...previous,
+      listingId,
+      loading: true,
+      error: '',
+    }))
+    try {
+      const result = await syncKingstonsTransferAttorneyPreInstruction(
+        listingId,
+        selectedLead,
+        selectedKingstonsListingTerms,
+      )
+
+      if (result?.allocation) {
+        setKingstonsAttorneyPipelineAllocationState({
+          listingId,
+          allocation: result.allocation,
+          loading: false,
+          error: '',
+        })
+        setError('')
+        setMessage('Transfer attorney pipeline sync repaired. The attorney is now awaiting buyer.')
+        return
+      }
+
+      const reason = result?.reason === 'partner_role_configuration_not_found'
+        ? 'The attorney firm is connected, but the transfer-attorney role configuration could not be resolved.'
+        : result?.reason === 'attorney_not_connected'
+          ? 'The attorney nomination is captured, but the firm is not connected to this agency.'
+          : 'The transfer attorney could not be added to the attorney pipeline.'
+      setKingstonsAttorneyPipelineAllocationState({
+        listingId,
+        allocation: null,
+        loading: false,
+        error: reason,
+      })
+      setError(reason)
+    } catch (syncError) {
+      const message = syncError?.message || 'Transfer attorney pipeline sync failed.'
+      setKingstonsAttorneyPipelineAllocationState({
+        listingId,
+        allocation: null,
+        loading: false,
+        error: message,
+      })
+      setError(message)
+    } finally {
+      setKingstonsAttorneyPipelineSyncing(false)
+    }
+  }
+
   async function handleCreateListingFromSellerLead() {
     if (!selectedLead) return
     if (!organisationId) {
@@ -16687,6 +18274,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsSellerPackSummary.complete) {
       handleLeadWorkspaceTabSelection('documents')
       setError(`Complete the Kingston Seller Pack before creating the listing. Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`)
+      return
+    }
+    if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsListingTermsSummary.complete) {
+      openKingstonsListingTermsModal()
+      setError(`Confirm the Kingston listing terms before creating the listing. Still needed: ${selectedKingstonsListingTermsSummary.missingLabels.join(', ')}.`)
       return
     }
 
@@ -16712,6 +18304,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     let createdListingId = ''
     let sellerPackSyncResult = null
     let sellerPackSyncError = ''
+    let attorneyPreInstructionResult = null
+    let attorneyPreInstructionError = ''
 
     if (useDbFirstListingPersistence) {
       const created = await createPrivateListing({
@@ -16874,6 +18468,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     if (useDbFirstListingPersistence && selectedLeadHasKingstonsPipelineSignal) {
       try {
+        attorneyPreInstructionResult = await syncKingstonsTransferAttorneyPreInstruction(
+          createdListingId,
+          selectedLead,
+          selectedKingstonsListingTerms,
+        )
+        if (attorneyPreInstructionResult?.allocation) {
+          setKingstonsAttorneyPipelineAllocationState({
+            listingId: createdListingId,
+            allocation: attorneyPreInstructionResult.allocation,
+            loading: false,
+            error: '',
+          })
+        }
+      } catch (attorneyAllocationError) {
+        attorneyPreInstructionError = attorneyAllocationError?.message || 'Transfer attorney could not be added to the pre-instruction pipeline.'
+        console.warn('[AgencyPipelinePage] Kingston transfer attorney pre-instruction allocation failed.', attorneyAllocationError)
+      }
+      try {
         sellerPackSyncResult = await syncKingstonsSellerPackToListing(createdListingId, selectedLead, kingstonsListingHandoffPayload)
       } catch (sellerPackError) {
         sellerPackSyncError = sellerPackError?.message || 'Seller Pack could not be linked to the listing documents.'
@@ -16899,14 +18511,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         : hasMandateSigned
           ? 'Mandate signed'
           : 'Manual override',
+      metadata: selectedLeadHasKingstonsPipelineSignal
+        ? {
+            attorneyPreInstructionStatus: attorneyPreInstructionResult?.allocation?.status || null,
+            attorneyPreInstructionSkipped: attorneyPreInstructionResult?.skipped === true,
+            attorneyPreInstructionSkipReason: attorneyPreInstructionResult?.reason || null,
+          }
+        : undefined,
     }, { actor: currentAgent })
 
     setError('')
-    if (sellerPackSyncError) {
-      setError(`Listing created, but Seller Pack handoff needs attention. ${sellerPackSyncError}`)
+    if (sellerPackSyncError || attorneyPreInstructionError) {
+      setError([
+        sellerPackSyncError && `Seller Pack handoff needs attention. ${sellerPackSyncError}`,
+        attorneyPreInstructionError && `Transfer attorney allocation needs attention. ${attorneyPreInstructionError}`,
+      ].filter(Boolean).join(' '))
     }
     setMessage(
-      sellerPackSyncResult?.linked === selectedKingstonsSellerPackSummary.total
+      attorneyPreInstructionResult?.allocation?.status === 'awaiting_buyer'
+        ? 'Listing created, Seller Pack linked, and transfer attorney added to the awaiting-buyer pipeline.'
+        : attorneyPreInstructionResult?.skipped
+          ? 'Listing created and attorney nomination captured. Connect the attorney firm to add it to their pipeline.'
+          : sellerPackSyncResult?.linked === selectedKingstonsSellerPackSummary.total
         ? 'Listing created and Seller Pack linked to the listing documents.'
         : useDbFirstListingPersistence
         ? 'Canonical private listing created and linked to this seller lead.'
@@ -17176,10 +18802,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')
       return
     }
+    if (id === 'confirm_listing_terms' || id === 'listing_terms_confirmed') {
+      openKingstonsListingTermsModal()
+      return
+    }
     if (id === 'prepare_listing') {
       if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsSellerPackSummary.complete) {
         handleLeadWorkspaceTabSelection('documents')
         setError(`Complete the Kingston Seller Pack before creating the listing. Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`)
+        return
+      }
+      if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsListingTermsSummary.complete) {
+        openKingstonsListingTermsModal()
+        setError(`Confirm the Kingston listing terms before creating the listing. Still needed: ${selectedKingstonsListingTermsSummary.missingLabels.join(', ')}.`)
         return
       }
       void handleCreateListingFromSellerLead()
@@ -20467,6 +22102,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         </section>
       ) : isPrincipal && principalView === 'reporting' ? (
         <section className="space-y-4">
+          <KingstonsPrincipalExceptionReportCard
+            report={kingstonsPrincipalExceptionReport}
+            onOpenLead={openKingstonsPrincipalExceptionLead}
+            onExportCsv={handleDownloadKingstonsPrincipalExceptionReport}
+            onCopyDigest={handleCopyKingstonsPrincipalExceptionDigest}
+          />
+
           <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
             <h3 className="text-base font-semibold text-[#20344b]">Agent Productivity</h3>
             <p className="mt-1 text-sm text-[#60758d]">Agency-wide lead throughput, follow-ups, conversion, and recent activity.</p>
@@ -22741,6 +24383,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
                       </section>
                     </div>
+
+                    {selectedLeadHasKingstonsPipelineSignal ? (
+                      <KingstonsListingTermsSummaryCard
+                        terms={selectedKingstonsListingTerms}
+                        summary={selectedKingstonsListingTermsSummary}
+                        pipelineVerification={selectedKingstonsAttorneyPipelineVerification}
+                        onEdit={openKingstonsListingTermsModal}
+                        onRetryPipelineSync={handleRetryKingstonsAttorneyPipelineSync}
+                        retryingPipelineSync={kingstonsAttorneyPipelineSyncing}
+                      />
+                    ) : null}
+
+                    {selectedLeadHasKingstonsPipelineSignal ? (
+                      <KingstonsListingTermsExceptionReportCard
+                        report={selectedKingstonsListingTermsExceptionReport}
+                        onConfirmTerms={openKingstonsListingTermsModal}
+                        onCreateListing={() => void handleCreateListingFromSellerLead()}
+                        onRetryPipelineSync={handleRetryKingstonsAttorneyPipelineSync}
+                        retryingPipelineSync={kingstonsAttorneyPipelineSyncing}
+                      />
+                    ) : null}
 
                     {selectedLeadHasKingstonsPipelineSignal ? (
                       <>
@@ -27124,233 +28787,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
 
                         <div className="px-5 pb-6 pt-6 sm:px-6">
-                          {selectedLeadHasKingstonsPipelineSignal ? (
-                            <section className="mb-6 overflow-hidden rounded-[22px] border border-[#dbe7f2] bg-white shadow-[0_12px_30px_rgba(31,54,78,0.05)]" data-testid="kingstons-formal-valuation-document">
-                              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] bg-[#fbfdff] px-4 py-4">
-                                <div className="flex min-w-0 items-start gap-3">
-                                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[14px] ${getSellerLeadDocumentStatusMeta(selectedKingstonsFormalValuationRow || {}).iconClass}`}>
-                                    {createElement(getSellerLeadDocumentStatusMeta(selectedKingstonsFormalValuationRow || {}).Icon, { className: 'h-5 w-5' })}
-                                  </span>
-                                  <div className="min-w-0">
-                                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">Formal Valuation</p>
-                                    <h5 className="mt-1 text-base font-semibold text-[#20364c]">Upload Formal Valuation</h5>
-                                    <p className="mt-1 text-sm leading-6 text-[#60758b]">
-                                      Upload the completed valuation document. Once uploaded, the seller process moves to Valuation Presentation.
-                                    </p>
-                                  </div>
-                                </div>
-                                <span className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${getSellerLeadDocumentStatusMeta(selectedKingstonsFormalValuationRow || {}).pillClass}`}>
-                                  {getSellerLeadDocumentStatusMeta(selectedKingstonsFormalValuationRow || {}).label}
-                                </span>
-                              </div>
-                              <div className="grid gap-4 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-[#20364c]" title={selectedKingstonsFormalValuationRow?.uploadedFileName || ''}>
-                                    {selectedKingstonsFormalValuationRow?.uploadedFileName || 'No formal valuation uploaded yet'}
-                                  </p>
-                                  <p className="mt-1 text-xs font-medium text-[#7b8fa5]">
-                                    Accepted formats: PDF, Word, PNG, or JPG.
-                                  </p>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {selectedKingstonsFormalValuationRow?.url ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleDownloadSellerLeadDocumentUrl(selectedKingstonsFormalValuationRow)}
-                                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#315b7a] hover:border-[#b9cde3]"
-                                    >
-                                      Open <ExternalLink className="h-4 w-4" />
-                                    </button>
-                                  ) : null}
-                                  <label className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border px-4 text-sm font-semibold transition ${formalValuationUploading ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
-                                    <Upload className="h-4 w-4" />
-                                    {formalValuationUploading ? 'Uploading...' : selectedKingstonsFormalValuationRow?.uploadedFileName ? 'Replace file' : 'Upload file'}
-                                    <input
-                                      ref={formalValuationUploadInputRef}
-                                      type="file"
-                                      className="sr-only"
-                                      accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                                      disabled={formalValuationUploading}
-                                      onChange={(event) => void handleKingstonsFormalValuationUpload(event)}
-                                    />
-                                  </label>
-                                </div>
-                              </div>
-                            </section>
-                          ) : null}
-
-                          {selectedLeadHasKingstonsPipelineSignal ? (
-                            <section className="mb-6 rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-4" data-testid="kingstons-seller-pack-documents">
-                              <div className="flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#8aa0b7]">Seller Pack</p>
-                                  <h5 className="mt-1 text-base font-semibold text-[#20364c]">Seller Pack</h5>
-                                </div>
-                                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${selectedKingstonsSellerPackSummary.complete ? 'border-[#c8e7d4] bg-[#effaf3] text-[#1d7a52]' : 'border-[#f0d9ab] bg-[#fff8e8] text-[#8a641d]'}`}>
-                                  {selectedKingstonsSellerPackSummary.completed}/{selectedKingstonsSellerPackSummary.total} ready
-                                </span>
-                              </div>
-                              <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                                <article className="rounded-[18px] border border-[#e3edf7] bg-white p-4">
-                                  <div className="flex items-start gap-3">
-                                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-[#fff8e8] text-[#8a641d]">
-                                      <FileText className="h-4 w-4" />
-                                    </span>
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-semibold text-[#20364c]">Send copy of valuation</p>
-                                      <p className="mt-1 text-xs leading-5 text-[#60758b]">
-                                        Share the uploaded Formal Valuation as a download link for the seller.
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="mt-4 flex flex-wrap gap-2">
-                                    {selectedKingstonsFormalValuationRow?.uploadedFileName ? (
-                                      <>
-                                        <button
-                                          type="button"
-                                          onClick={() => void handleCopyKingstonsFormalValuationLink()}
-                                          className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#315b7a] hover:border-[#b9cde3]"
-                                        >
-                                          <Copy className="h-4 w-4" />
-                                          Copy link
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => void handleDownloadSellerLeadDocumentUrl(selectedKingstonsFormalValuationRow)}
-                                          className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#315b7a] hover:border-[#b9cde3]"
-                                        >
-                                          Open
-                                          <ExternalLink className="h-4 w-4" />
-                                        </button>
-                                      </>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => formalValuationUploadInputRef.current?.click?.()}
-                                        className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] border border-[#cfdceb] bg-white px-3 text-sm font-semibold text-[#315b7a] hover:border-[#a9bfd6]"
-                                      >
-                                        <Upload className="h-4 w-4" />
-                                        Upload valuation first
-                                      </button>
-                                    )}
-                                  </div>
-                                </article>
-                                <article className="rounded-[18px] border border-[#e3edf7] bg-white p-4">
-                                  <div className="flex items-start gap-3">
-                                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-[#eef8f2] text-[#157b4f]">
-                                      <Send className="h-4 w-4" />
-                                    </span>
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-semibold text-[#20364c]">Send seller portal link</p>
-                                      <p className="mt-1 text-xs leading-5 text-[#60758b]">
-                                        Invite the seller to the portal so they can access requests and upload securely.
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={handleSellerOnboardingCommand}
-                                    disabled={isSellerOnboardingSending}
-                                    className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] bg-[#13784f] px-3 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(19,120,79,0.18)] transition hover:bg-[#0f6845] disabled:cursor-not-allowed disabled:opacity-70"
-                                  >
-                                    <Send className="h-4 w-4" />
-                                    {selectedLeadSellerOnboardingCommandLabel}
-                                  </button>
-                                </article>
-                                <article className="rounded-[18px] border border-[#e3edf7] bg-white p-4">
-                                  <div className="flex items-start gap-3">
-                                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] bg-[#f1f6fb] text-[#315b7a]">
-                                      <Upload className="h-4 w-4" />
-                                    </span>
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-semibold text-[#20364c]">Upload required documents</p>
-                                      <p className="mt-1 text-xs leading-5 text-[#60758b]">
-                                        Signed Mandate, Defects Disclosure, and FICA Form are required before listing.
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')}
-                                    className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-sm font-semibold text-[#20364c] transition hover:border-[#b8cadf] hover:bg-[#fcfdff]"
-                                  >
-                                    <UserRound className="h-4 w-4" />
-                                    {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'Edit seller details' : 'Capture seller details'}
-                                  </button>
-                                </article>
-                              </div>
-                              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                                {selectedKingstonsSellerPackRows.map((documentRow) => {
-                                  const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
-	                                  const StatusIcon = statusMeta.Icon
-	                                  const isUploading = sellerPackUploadingKey === documentRow.key
-	                                  const displayCopy = getKingstonsSellerPackDisplayCopy(documentRow)
-	                                  const isFicaRow = documentRow.key === 'signed_fica_form'
-	                                  const canUploadFica = !isFicaRow || selectedKingstonsSellerPackSummary.sellerTypeCaptured
-	                                  return (
-	                                    <article key={documentRow.key} className="flex min-h-[178px] flex-col rounded-[18px] border border-[#e3edf7] bg-white p-4 shadow-[0_10px_22px_rgba(31,54,78,0.025)]">
-	                                      <div className="flex items-start justify-between gap-3">
-	                                        <div className="flex min-w-0 items-start gap-3">
-	                                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${statusMeta.iconClass}`}>
-	                                            <StatusIcon className="h-4 w-4" />
-	                                          </span>
-	                                          <div className="min-w-0">
-	                                            <p className="truncate text-sm font-semibold text-[#20364c]" title={documentRow.label}>{displayCopy.title}</p>
-	                                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#60758b]">{displayCopy.description}</p>
-	                                          </div>
-	                                        </div>
-	                                        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
-	                                      </div>
-	                                      <div className="mt-4 rounded-[14px] border border-[#e7eff7] bg-[#fbfdff] px-3 py-2.5">
-	                                        <p className="truncate text-xs font-semibold text-[#20364c]" title={documentRow.uploadedFileName || ''}>
-	                                          {documentRow.uploadedFileName || 'No file uploaded yet'}
-	                                        </p>
-	                                        {isFicaRow ? (
-	                                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6d839b]">
-	                                            <span>{selectedKingstonsSellerPackSummary.sellerTypeCaptured ? getKingstonsSellerPackCaptureSummaryLabel(selectedKingstonsSellerPack) : 'Seller details required before upload'}</span>
-	                                            {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
-	                                              <button
-	                                                type="button"
-	                                                className="font-semibold text-[#13784f] hover:text-[#0f6845]"
-	                                                onClick={() => openKingstonsSellerPackWizard('details')}
-	                                              >
-	                                                Edit details
-	                                              </button>
-	                                            ) : null}
-	                                          </div>
-	                                        ) : null}
-	                                      </div>
-	                                      {isFicaRow && !canUploadFica ? (
-	                                        <button
-	                                          type="button"
-	                                          className="mt-auto inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] bg-[#13784f] px-3 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(19,120,79,0.16)] transition hover:bg-[#0f6845]"
-	                                          onClick={() => openKingstonsSellerPackWizard('type')}
-	                                        >
-	                                          <UserRound className="h-4 w-4" />
-	                                          Capture details
-	                                        </button>
-	                                      ) : null}
-	                                      {canUploadFica ? (
-	                                        <label className={`mt-auto inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] border px-3 text-sm font-semibold transition ${!isUploading ? 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]' : 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]'}`}>
-	                                          <Upload className="h-4 w-4" />
-	                                          {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace file' : 'Upload file'}
-	                                          <input
-	                                            type="file"
-	                                            className="sr-only"
-	                                            accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-	                                            disabled={isUploading}
-	                                            onChange={(event) => void handleKingstonsSellerPackUpload(documentRow.key, event)}
-	                                          />
-	                                        </label>
-	                                      ) : null}
-	                                    </article>
-	                                  )
-                                })}
-                              </div>
-                            </section>
-                          ) : null}
-
-                          <div className="grid gap-x-4 gap-y-8 pt-8 sm:grid-cols-2 xl:grid-cols-4">
+                          <div className="grid gap-x-4 gap-y-8 pt-2 sm:grid-cols-2 xl:grid-cols-4">
                             {selectedSellerDocumentCategories.map((category) => {
                               const CategoryIcon = category.Icon
                               return (
@@ -27391,6 +28828,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             ))}
                           </div>
 
+                          {selectedLeadHasKingstonsPipelineSignal ? (
+                            <div className="mt-6">
+                              <KingstonsListingTermsSummaryCard
+                                terms={selectedKingstonsListingTerms}
+                                summary={selectedKingstonsListingTermsSummary}
+                                pipelineVerification={selectedKingstonsAttorneyPipelineVerification}
+                                onEdit={openKingstonsListingTermsModal}
+                                onRetryPipelineSync={handleRetryKingstonsAttorneyPipelineSync}
+                                retryingPipelineSync={kingstonsAttorneyPipelineSyncing}
+                                compact
+                                testId="kingstons-documents-listing-terms-summary"
+                              />
+                            </div>
+                          ) : null}
+
                           <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
                             <div className="space-y-4" data-testid="seller-documents-list">
                               {selectedSellerDocumentCategories.map((category) => {
@@ -27415,14 +28867,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         const StatusIcon = statusMeta.Icon
                                         const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
                                         const generatedHtml = normalizeText(documentRow.generatedHtml || documentRow.generated_html)
-                                        const documentKey = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
-                                        const canOpenCanonicalFinalArtifact = Boolean(documentRow.canonicalFinalArtifact && documentRow.packetId && documentRow.packetVersionId)
-                                        const openingCanonicalArtifact = openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)
-                                        const documentActionLabel = ['signed_mandate', 'property_condition_disclosure'].includes(documentKey) ? 'Download' : 'Open'
-                                        const shouldDownloadDocument = documentActionLabel === 'Download'
-                                        return (
-                                          <div key={documentRow.id || documentRow.key || documentRow.label} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#e6eef7] bg-white px-4 py-3">
-                                            <div className="flex min-w-0 items-center gap-3">
+	                                        const documentKey = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
+	                                        const canOpenCanonicalFinalArtifact = Boolean(documentRow.canonicalFinalArtifact && documentRow.packetId && documentRow.packetVersionId)
+	                                        const openingCanonicalArtifact = openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)
+	                                        const documentActionLabel = ['signed_mandate', 'property_condition_disclosure'].includes(documentKey) ? 'Download' : 'Open'
+	                                        const shouldDownloadDocument = documentActionLabel === 'Download'
+	                                        const isKingstonsFormalValuationDocument = selectedLeadHasKingstonsPipelineSignal && documentKey === 'valuation_document'
+	                                        const isKingstonsSellerPackDocument = selectedLeadHasKingstonsPipelineSignal && KINGSTONS_SELLER_PACK_KEY_SET.has(documentKey)
+	                                        const isKingstonsFicaDocument = documentKey === 'signed_fica_form'
+	                                        const canUploadKingstonsSellerPackDocument = !isKingstonsFicaDocument || selectedKingstonsSellerPackSummary.sellerTypeCaptured
+	                                        const canUploadKingstonsDocument = isKingstonsFormalValuationDocument || (isKingstonsSellerPackDocument && canUploadKingstonsSellerPackDocument)
+	                                        const isUploadingKingstonsDocument = isKingstonsFormalValuationDocument ? formalValuationUploading : sellerPackUploadingKey === documentKey
+	                                        return (
+	                                          <div key={documentRow.id || documentRow.key || documentRow.label} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#e6eef7] bg-white px-4 py-3">
+	                                            <div className="flex min-w-0 items-center gap-3">
                                               <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${statusMeta.iconClass}`}>
                                                 <StatusIcon className="h-4 w-4" />
                                               </span>
@@ -27477,12 +28935,42 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                                   disabled={openingCanonicalArtifact}
                                                   className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3] disabled:cursor-not-allowed disabled:opacity-70"
                                                 >
-                                                  {openingCanonicalArtifact ? 'Downloading...' : documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
-                                                </button>
-                                              ) : null}
-                                            </div>
-                                          </div>
-                                        )
+	                                                  {openingCanonicalArtifact ? 'Downloading...' : documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
+	                                                </button>
+	                                              ) : null}
+	                                              {isKingstonsFicaDocument && !selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
+	                                                <button
+	                                                  type="button"
+	                                                  onClick={() => openKingstonsSellerPackWizard('type')}
+	                                                  className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] bg-[#13784f] px-3 text-xs font-semibold text-white shadow-[0_8px_16px_rgba(19,120,79,0.16)] hover:bg-[#0f6845]"
+	                                                >
+	                                                  <UserRound className="h-3.5 w-3.5" />
+	                                                  Capture details
+	                                                </button>
+	                                              ) : null}
+	                                              {canUploadKingstonsDocument ? (
+	                                                <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border px-3 text-xs font-semibold transition ${isUploadingKingstonsDocument ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
+	                                                  <Upload className="h-3.5 w-3.5" />
+	                                                  {isUploadingKingstonsDocument ? 'Uploading...' : documentUrl ? 'Replace' : 'Upload'}
+	                                                  <input
+	                                                    ref={isKingstonsFormalValuationDocument ? formalValuationUploadInputRef : null}
+	                                                    type="file"
+	                                                    className="sr-only"
+	                                                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+	                                                    disabled={isUploadingKingstonsDocument}
+	                                                    onChange={(event) => {
+	                                                      if (isKingstonsFormalValuationDocument) {
+	                                                        void handleKingstonsFormalValuationUpload(event)
+	                                                        return
+	                                                      }
+	                                                      void handleKingstonsSellerPackUpload(documentKey, event)
+	                                                    }}
+	                                                  />
+	                                                </label>
+	                                              ) : null}
+	                                            </div>
+	                                          </div>
+	                                        )
                                       }) : (
                                         <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-white px-4 py-5 text-sm font-semibold text-[#7890a8]">
                                           No {category.label.toLowerCase()} have been requested yet.
@@ -28647,11 +30135,190 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             />
           </section>
         </form>
-      </Modal>
+	      </Modal>
 
-      <PreferredAttorneySelectionModal
-        open={sellerAttorneyPickerOpen}
-        attorneys={sellerPreferredAttorneys}
+	      <Modal
+	        open={kingstonsListingTermsModalOpen}
+	        onClose={closeKingstonsListingTermsModal}
+	        title="Confirm listing terms"
+	        subtitle="Capture the commission and nominated transfer attorney before this Kingstons seller lead becomes a listing."
+	        className="max-w-3xl"
+	      >
+	        {kingstonsListingTermsError ? (
+	          <p className="mb-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">
+	            {kingstonsListingTermsError}
+	          </p>
+	        ) : null}
+	        <div className="grid gap-4">
+	          <section className="rounded-[18px] border border-[#e2ebf4] bg-[#fbfdff] p-4">
+	            <div className="flex items-start gap-3">
+	              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#fff4dc] text-[#8a5c10]">
+	                <Tag className="h-4 w-4" />
+	              </span>
+	              <div>
+	                <h4 className="text-base font-semibold text-[#102033]">Commission</h4>
+	                <p className="mt-1 text-sm leading-5 text-[#60758b]">Store the agreed agency commission before the listing is created.</p>
+	              </div>
+	            </div>
+	            <div className="mt-4 grid gap-3 md:grid-cols-[180px_1fr]">
+	              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+	                Type
+	                <Field
+	                  as="select"
+	                  value={kingstonsListingTermsDraft?.commissionType || 'percentage'}
+	                  onChange={(event) => updateKingstonsListingTermsDraftField('commissionType', event.target.value)}
+	                >
+	                  {KINGSTONS_COMMISSION_TYPE_OPTIONS.map((option) => (
+	                    <option key={option.value} value={option.value}>{option.label}</option>
+	                  ))}
+	                </Field>
+	              </label>
+	              {normalizeKey(kingstonsListingTermsDraft?.commissionType) === 'fixed' ? (
+	                <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+	                  Amount
+	                  <Field
+	                    type="number"
+	                    min="0"
+	                    step="100"
+	                    placeholder="Example: 85000"
+	                    value={kingstonsListingTermsDraft?.commissionAmount || ''}
+	                    onChange={(event) => updateKingstonsListingTermsDraftField('commissionAmount', event.target.value)}
+	                  />
+	                </label>
+	              ) : (
+	                <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+	                  Percentage
+	                  <Field
+	                    type="number"
+	                    min="0"
+	                    step="0.1"
+	                    placeholder="Example: 5"
+	                    value={kingstonsListingTermsDraft?.commissionPercentage || ''}
+	                    onChange={(event) => updateKingstonsListingTermsDraftField('commissionPercentage', event.target.value)}
+	                  />
+	                </label>
+	              )}
+	            </div>
+	            <label className="mt-3 grid gap-2 text-sm font-medium text-[#2a4057]">
+	              Notes <span className="font-normal text-[#7a8da3]">(optional)</span>
+	              <Field
+	                as="textarea"
+	                rows={2}
+	                placeholder="Add VAT, split, or mandate notes if needed..."
+	                value={kingstonsListingTermsDraft?.commissionNotes || ''}
+	                onChange={(event) => updateKingstonsListingTermsDraftField('commissionNotes', event.target.value)}
+	              />
+	            </label>
+	          </section>
+
+	          <section className="rounded-[18px] border border-[#e2ebf4] bg-white p-4">
+	            <div className="flex items-start justify-between gap-3">
+	              <div className="flex items-start gap-3">
+	                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#edf8f2] text-[#13784f]">
+	                  <Building2 className="h-4 w-4" />
+	                </span>
+	                <div>
+	                  <h4 className="text-base font-semibold text-[#102033]">Transfer attorney nomination</h4>
+	                  <p className="mt-1 text-sm leading-5 text-[#60758b]">This creates pre-instruction context only. The formal instruction remains locked until signed OTP.</p>
+	                </div>
+	              </div>
+	              {sellerPreferredAttorneysLoading ? (
+	                <span className="rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758b]">Loading attorneys...</span>
+	              ) : null}
+	            </div>
+	            {sellerPreferredAttorneysError ? (
+	              <p className="mt-3 rounded-[12px] border border-[#f5dfbb] bg-[#fff9ee] px-3 py-2 text-sm text-[#8a5c10]">
+	                {sellerPreferredAttorneysError}
+	              </p>
+	            ) : null}
+	            <div className="mt-4 grid gap-3 md:grid-cols-[180px_1fr]">
+	              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+	                Source
+	                <Field
+	                  as="select"
+	                  value={kingstonsListingTermsDraft?.transferAttorneyMode || 'agency_recommended'}
+	                  onChange={(event) => updateKingstonsListingTermsDraftField('transferAttorneyMode', event.target.value)}
+	                >
+	                  <option value="agency_recommended">Agency panel</option>
+	                  <option value="seller_selected">Seller selected</option>
+	                </Field>
+	              </label>
+	              {normalizeKey(kingstonsListingTermsDraft?.transferAttorneyMode) !== 'seller_selected' ? (
+	                <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+	                  Attorney
+	                  <Field
+	                    as="select"
+	                    value={kingstonsListingTermsDraft?.transferAttorneyId || ''}
+	                    onChange={(event) => {
+	                      const attorneyId = event.target.value
+	                      const attorney = sellerPreferredAttorneys.find((row) => normalizeText(row.id) === normalizeText(attorneyId) || normalizeText(row.preferredPartnerId) === normalizeText(attorneyId))
+	                      setKingstonsListingTermsDraft((previous) => ({
+	                        ...buildKingstonsListingTermsDraft(selectedKingstonsListingTerms),
+	                        ...(previous || {}),
+	                        transferAttorneyId: attorneyId,
+	                        transferAttorneyCompany: attorney?.companyName || previous?.transferAttorneyCompany || '',
+	                        transferAttorneyContact: attorney?.contactPerson || previous?.transferAttorneyContact || '',
+	                        transferAttorneyEmail: attorney?.email || previous?.transferAttorneyEmail || '',
+	                        transferAttorneyPhone: attorney?.phone || previous?.transferAttorneyPhone || '',
+	                      }))
+	                      setKingstonsListingTermsError('')
+	                    }}
+	                  >
+	                    <option value="">Choose transfer attorney</option>
+	                    {sellerPreferredAttorneys.map((attorney) => (
+	                      <option key={attorney.id} value={attorney.id}>{attorney.companyName}</option>
+	                    ))}
+	                  </Field>
+	                </label>
+	              ) : (
+	                <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+	                  Firm name
+	                  <Field
+	                    placeholder="Seller appointed firm"
+	                    value={kingstonsListingTermsDraft?.transferAttorneyCompany || ''}
+	                    onChange={(event) => updateKingstonsListingTermsDraftField('transferAttorneyCompany', event.target.value)}
+	                  />
+	                </label>
+	              )}
+	            </div>
+	            {normalizeKey(kingstonsListingTermsDraft?.transferAttorneyMode) === 'seller_selected' ? (
+	              <div className="mt-3 grid gap-3 md:grid-cols-3">
+	                <Field
+	                  placeholder="Contact person"
+	                  value={kingstonsListingTermsDraft?.transferAttorneyContact || ''}
+	                  onChange={(event) => updateKingstonsListingTermsDraftField('transferAttorneyContact', event.target.value)}
+	                />
+	                <Field
+	                  type="email"
+	                  inputMode="email"
+	                  placeholder="Email"
+	                  value={kingstonsListingTermsDraft?.transferAttorneyEmail || ''}
+	                  onChange={(event) => updateKingstonsListingTermsDraftField('transferAttorneyEmail', event.target.value)}
+	                />
+	                <Field
+	                  type="tel"
+	                  inputMode="tel"
+	                  placeholder="Phone"
+	                  value={kingstonsListingTermsDraft?.transferAttorneyPhone || ''}
+	                  onChange={(event) => updateKingstonsListingTermsDraftField('transferAttorneyPhone', event.target.value)}
+	                />
+	              </div>
+	            ) : null}
+	          </section>
+	        </div>
+	        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-[#edf3f8] pt-4 sm:flex-row sm:justify-end">
+	          <Button type="button" variant="ghost" onClick={closeKingstonsListingTermsModal} disabled={kingstonsListingTermsSaving}>
+	            Cancel
+	          </Button>
+	          <Button type="button" onClick={() => void handleSaveKingstonsListingTerms()} disabled={kingstonsListingTermsSaving}>
+	            {kingstonsListingTermsSaving ? 'Saving...' : 'Confirm Terms'}
+	          </Button>
+	        </div>
+	      </Modal>
+
+	      <PreferredAttorneySelectionModal
+	        open={sellerAttorneyPickerOpen}
+	        attorneys={sellerPreferredAttorneys}
         loading={sellerPreferredAttorneysLoading}
         error={sellerPreferredAttorneysError}
         selectedId={selectedSellerAttorneyId}
