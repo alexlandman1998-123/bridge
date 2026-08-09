@@ -4246,6 +4246,20 @@ function formatRelativeTime(value) {
   return formatDateShort(value)
 }
 
+function getLeadTimelineGroupLabel(value) {
+  if (!value) return 'Recent'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Recent'
+  const today = new Date()
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const dayDiff = Math.round((startOfToday - startOfDate) / 86400000)
+  if (dayDiff === 0) return 'Today'
+  if (dayDiff === 1) return 'Yesterday'
+  if (dayDiff > 1 && dayDiff < 7) return date.toLocaleDateString('en-ZA', { weekday: 'long' })
+  return date.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
 function getLeadNextActionMeta(lead = {}, tasks = [], linkedAppointment = null, nextStep = '') {
   const openTask = (Array.isArray(tasks) ? tasks : [])
     .filter((task) => normalizeText(task?.status) !== 'Completed')
@@ -10271,7 +10285,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ])
 
   const selectedLeadFilteredTimeline = selectedLeadUnifiedTimeline
-  const selectedLeadActivityGroups = []
+  const selectedLeadActivityGroups = useMemo(() => {
+    const groups = []
+    const groupByKey = new Map()
+    for (const item of selectedLeadFilteredTimeline) {
+      const timestamp = item?.timestamp || item?.dueDate
+      const label = getLeadTimelineGroupLabel(timestamp)
+      const keyDate = new Date(timestamp || 0)
+      const key = Number.isNaN(keyDate.getTime()) ? 'recent' : keyDate.toISOString().slice(0, 10)
+      if (!groupByKey.has(key)) {
+        const group = { key, label, rows: [] }
+        groupByKey.set(key, group)
+        groups.push(group)
+      }
+      groupByKey.get(key).rows.push(item)
+    }
+    return groups
+  }, [selectedLeadFilteredTimeline])
 
   const selectedLeadActivityInsights = useMemo(() => {
     const rows = Array.isArray(selectedLeadActivities) ? selectedLeadActivities : []
@@ -22747,51 +22777,63 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             const displayCopy = getKingstonsSellerPackDisplayCopy(documentRow)
                             const isFicaRow = documentRow.key === 'signed_fica_form'
                             const canUploadFica = !isFicaRow || selectedKingstonsSellerPackSummary.sellerTypeCaptured
-                            return (
-                              <article key={documentRow.key} className="flex min-h-[218px] flex-col rounded-[20px] border border-[#dce7f2] bg-[#fbfdff] p-4 shadow-[0_10px_24px_rgba(31,54,78,0.04)]">
-                                <div className="flex items-start justify-between gap-3">
-                                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${statusMeta.iconClass}`}>
-                                    <StatusIcon className="h-4 w-4" />
-                                  </span>
-                                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
-                                </div>
-                                <h4 className="mt-4 text-sm font-semibold text-[#20364c]">{displayCopy.title}</h4>
-                                <p className="mt-1 min-h-10 text-xs leading-5 text-[#6d839b]">{displayCopy.description}</p>
-                                {isFicaRow ? (
-                                  <div className="mt-3 rounded-[16px] border border-[#e4edf7] bg-white px-3 py-3">
-                                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">Seller details</p>
-                                    <p className="mt-1 text-sm leading-6 text-[#60758b]">
-                                      Capture the seller type, marital setup, and any company or trust authority details before uploading the signed FICA form.
-                                    </p>
-                                    <button
-                                      type="button"
-                                      className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-sm font-semibold text-[#20364c] transition hover:border-[#b8cadf] hover:bg-[#fcfdff]"
-                                      onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')}
-                                    >
-                                      <UserRound className="h-4 w-4 shrink-0 text-[#68809a]" />
-                                      {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'Edit details' : 'Capture details'}
-                                    </button>
-                                    {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
-                                      <p className="mt-2 text-xs font-medium text-[#6d839b]">{getKingstonsSellerPackCaptureSummaryLabel(selectedKingstonsSellerPack)}</p>
-                                    ) : null}
-                                  </div>
-                                ) : null}
-                                <p className="mt-auto truncate pt-4 text-xs font-medium text-[#6d839b]" title={documentRow.uploadedFileName || ''}>
-                                  {documentRow.uploadedFileName ? documentRow.uploadedFileName : 'No file uploaded yet'}
-                                </p>
-                                <label className={`mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border px-3 text-sm font-semibold transition ${canUploadFica && !isUploading ? 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]' : 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]'}`}>
-                                  <Upload className="h-4 w-4" />
-                                  {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace file' : isFicaRow && !canUploadFica ? 'Capture details first' : 'Upload file'}
-                                  <input
-                                    type="file"
-                                    className="sr-only"
-                                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                                    disabled={isUploading || !canUploadFica}
-                                    onChange={(event) => void handleKingstonsSellerPackUpload(documentRow.key, event)}
-                                  />
-                                </label>
-                              </article>
-                            )
+	                            return (
+	                              <article key={documentRow.key} className="flex min-h-[178px] flex-col rounded-[18px] border border-[#dce7f2] bg-[#fbfdff] p-4 shadow-[0_10px_24px_rgba(31,54,78,0.035)]">
+	                                <div className="flex items-start justify-between gap-3">
+	                                  <div className="flex min-w-0 items-start gap-3">
+	                                    <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${statusMeta.iconClass}`}>
+	                                      <StatusIcon className="h-4 w-4" />
+	                                    </span>
+	                                    <div className="min-w-0">
+	                                      <h4 className="truncate text-sm font-semibold text-[#20364c]" title={displayCopy.title}>{displayCopy.title}</h4>
+	                                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#6d839b]">{displayCopy.description}</p>
+	                                    </div>
+	                                  </div>
+	                                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
+	                                </div>
+	                                <div className="mt-4 rounded-[14px] border border-[#e7eff7] bg-white px-3 py-2.5">
+	                                  <p className="truncate text-xs font-semibold text-[#20364c]" title={documentRow.uploadedFileName || ''}>
+	                                    {documentRow.uploadedFileName || 'No file uploaded yet'}
+	                                  </p>
+	                                  {isFicaRow ? (
+	                                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6d839b]">
+	                                      <span>{selectedKingstonsSellerPackSummary.sellerTypeCaptured ? getKingstonsSellerPackCaptureSummaryLabel(selectedKingstonsSellerPack) : 'Seller details required before upload'}</span>
+	                                      {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
+	                                        <button
+	                                          type="button"
+	                                          className="font-semibold text-[#13784f] hover:text-[#0f6845]"
+	                                          onClick={() => openKingstonsSellerPackWizard('details')}
+	                                        >
+	                                          Edit details
+	                                        </button>
+	                                      ) : null}
+	                                    </div>
+	                                  ) : null}
+	                                </div>
+	                                {isFicaRow && !canUploadFica ? (
+	                                  <button
+	                                    type="button"
+	                                    className="mt-auto inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] bg-[#13784f] px-3 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(19,120,79,0.16)] transition hover:bg-[#0f6845]"
+	                                    onClick={() => openKingstonsSellerPackWizard('type')}
+	                                  >
+	                                    <UserRound className="h-4 w-4" />
+	                                    Capture details
+	                                  </button>
+	                                ) : (
+	                                  <label className={`mt-auto inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border px-3 text-sm font-semibold transition ${!isUploading ? 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]' : 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]'}`}>
+	                                    <Upload className="h-4 w-4" />
+	                                    {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace file' : 'Upload file'}
+	                                    <input
+	                                      type="file"
+	                                      className="sr-only"
+	                                      accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+	                                      disabled={isUploading}
+	                                      onChange={(event) => void handleKingstonsSellerPackUpload(documentRow.key, event)}
+	                                    />
+	                                  </label>
+	                                )}
+	                              </article>
+	                            )
                           })}
                         </div>
                       </section>
@@ -27240,58 +27282,69 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <div className="mt-4 grid gap-3 md:grid-cols-3">
                                 {selectedKingstonsSellerPackRows.map((documentRow) => {
                                   const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
-                                  const StatusIcon = statusMeta.Icon
-                                  const isUploading = sellerPackUploadingKey === documentRow.key
-                                  const displayCopy = getKingstonsSellerPackDisplayCopy(documentRow)
-                                  return (
-                                    <article key={documentRow.key} className="rounded-[18px] border border-[#e3edf7] bg-white p-4">
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div className="flex min-w-0 items-center gap-3">
-                                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${statusMeta.iconClass}`}>
-                                            <StatusIcon className="h-4 w-4" />
-                                          </span>
-                                          <div className="min-w-0">
-                                            <p className="truncate text-sm font-semibold text-[#20364c]" title={documentRow.label}>{displayCopy.title}</p>
-                                            <p className="mt-0.5 truncate text-xs font-medium text-[#6d839b]" title={documentRow.uploadedFileName || ''}>
-                                              {documentRow.uploadedFileName || 'No upload yet'}
-                                            </p>
-                                          </div>
-                                        </div>
-                                        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
-                                      </div>
-                                      <p className="mt-3 text-xs leading-5 text-[#60758b]">{displayCopy.description}</p>
-                                      {documentRow.key === 'signed_fica_form' ? (
-                                        <div className="mt-3 rounded-[16px] border border-[#e4edf7] bg-white px-3 py-3">
-                                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">Seller details</p>
-                                          <p className="mt-1 text-sm leading-6 text-[#60758b]">
-                                            Capture the legal-path details before you upload the signed FICA form.
-                                          </p>
-                                          <button
-                                            type="button"
-                                            className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] border border-[#dbe7f2] bg-white px-3 text-sm font-semibold text-[#20364c] transition hover:border-[#b8cadf] hover:bg-[#fcfdff]"
-                                            onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')}
-                                          >
-                                            <UserRound className="h-4 w-4 shrink-0 text-[#68809a]" />
-                                            {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'Edit details' : 'Capture details'}
-                                          </button>
-                                          {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
-                                            <p className="mt-2 text-xs font-medium text-[#6d839b]">{getKingstonsSellerPackCaptureSummaryLabel(selectedKingstonsSellerPack)}</p>
-                                          ) : null}
-                                        </div>
-                                      ) : null}
-                                      <label className="mt-3 inline-flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#cfdceb] bg-white px-3 text-sm font-semibold text-[#315b7a] transition hover:border-[#a9bfd6]">
-                                        <Upload className="h-4 w-4" />
-                                        {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace file' : documentRow.key === 'signed_fica_form' && !selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'Capture details first' : 'Upload file'}
-                                        <input
-                                          type="file"
-                                          className="sr-only"
-                                          accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                                          disabled={isUploading || (documentRow.key === 'signed_fica_form' && !selectedKingstonsSellerPackSummary.sellerTypeCaptured)}
-                                          onChange={(event) => void handleKingstonsSellerPackUpload(documentRow.key, event)}
-                                        />
-                                      </label>
-                                    </article>
-                                  )
+	                                  const StatusIcon = statusMeta.Icon
+	                                  const isUploading = sellerPackUploadingKey === documentRow.key
+	                                  const displayCopy = getKingstonsSellerPackDisplayCopy(documentRow)
+	                                  const isFicaRow = documentRow.key === 'signed_fica_form'
+	                                  const canUploadFica = !isFicaRow || selectedKingstonsSellerPackSummary.sellerTypeCaptured
+	                                  return (
+	                                    <article key={documentRow.key} className="flex min-h-[178px] flex-col rounded-[18px] border border-[#e3edf7] bg-white p-4 shadow-[0_10px_22px_rgba(31,54,78,0.025)]">
+	                                      <div className="flex items-start justify-between gap-3">
+	                                        <div className="flex min-w-0 items-start gap-3">
+	                                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${statusMeta.iconClass}`}>
+	                                            <StatusIcon className="h-4 w-4" />
+	                                          </span>
+	                                          <div className="min-w-0">
+	                                            <p className="truncate text-sm font-semibold text-[#20364c]" title={documentRow.label}>{displayCopy.title}</p>
+	                                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#60758b]">{displayCopy.description}</p>
+	                                          </div>
+	                                        </div>
+	                                        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
+	                                      </div>
+	                                      <div className="mt-4 rounded-[14px] border border-[#e7eff7] bg-[#fbfdff] px-3 py-2.5">
+	                                        <p className="truncate text-xs font-semibold text-[#20364c]" title={documentRow.uploadedFileName || ''}>
+	                                          {documentRow.uploadedFileName || 'No file uploaded yet'}
+	                                        </p>
+	                                        {isFicaRow ? (
+	                                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6d839b]">
+	                                            <span>{selectedKingstonsSellerPackSummary.sellerTypeCaptured ? getKingstonsSellerPackCaptureSummaryLabel(selectedKingstonsSellerPack) : 'Seller details required before upload'}</span>
+	                                            {selectedKingstonsSellerPackSummary.sellerTypeCaptured ? (
+	                                              <button
+	                                                type="button"
+	                                                className="font-semibold text-[#13784f] hover:text-[#0f6845]"
+	                                                onClick={() => openKingstonsSellerPackWizard('details')}
+	                                              >
+	                                                Edit details
+	                                              </button>
+	                                            ) : null}
+	                                          </div>
+	                                        ) : null}
+	                                      </div>
+	                                      {isFicaRow && !canUploadFica ? (
+	                                        <button
+	                                          type="button"
+	                                          className="mt-auto inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] bg-[#13784f] px-3 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(19,120,79,0.16)] transition hover:bg-[#0f6845]"
+	                                          onClick={() => openKingstonsSellerPackWizard('type')}
+	                                        >
+	                                          <UserRound className="h-4 w-4" />
+	                                          Capture details
+	                                        </button>
+	                                      ) : null}
+	                                      {canUploadFica ? (
+	                                        <label className={`mt-auto inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] border px-3 text-sm font-semibold transition ${!isUploading ? 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]' : 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]'}`}>
+	                                          <Upload className="h-4 w-4" />
+	                                          {isUploading ? 'Uploading...' : documentRow.uploadedFileName ? 'Replace file' : 'Upload file'}
+	                                          <input
+	                                            type="file"
+	                                            className="sr-only"
+	                                            accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+	                                            disabled={isUploading}
+	                                            onChange={(event) => void handleKingstonsSellerPackUpload(documentRow.key, event)}
+	                                          />
+	                                        </label>
+	                                      ) : null}
+	                                    </article>
+	                                  )
                                 })}
                               </div>
                             </section>
