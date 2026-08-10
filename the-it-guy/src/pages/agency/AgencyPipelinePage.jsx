@@ -16782,9 +16782,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const createdAppointmentSnapshot = {
           ...created,
           appointmentId: createdAppointmentId,
+          appointment_id: normalizeText(created?.appointment_id || createdAppointmentId) || createdAppointmentId,
           leadId: normalizeText(created?.leadId || appointmentPayload.leadId) || null,
+          lead_id: normalizeText(created?.lead_id || created?.leadId || appointmentPayload.leadId) || null,
           relatedEntityId: normalizeText(created?.relatedEntityId || appointmentPayload.relatedEntityId) || null,
+          related_entity_id: normalizeText(created?.related_entity_id || created?.relatedEntityId || appointmentPayload.relatedEntityId) || null,
           relatedEntityType: normalizeText(created?.relatedEntityType || appointmentPayload.relatedEntityType) || null,
+          related_entity_type: normalizeText(created?.related_entity_type || created?.relatedEntityType || appointmentPayload.relatedEntityType) || null,
+          appointmentType: normalizeText(created?.appointmentType || appointmentPayload.appointmentType) || '',
+          appointment_type: normalizeText(created?.appointment_type || created?.appointmentType || appointmentPayload.appointmentType) || '',
+          title: normalizeText(created?.title || appointmentPayload.title) || '',
+          status: normalizeText(created?.status || appointmentPayload.status || 'scheduled') || 'scheduled',
+          dateTime: normalizeText(created?.dateTime || appointmentPayload.dateTime || appointmentPayload.date) || null,
+          date_time: normalizeText(created?.date_time || created?.dateTime || appointmentPayload.dateTime || appointmentPayload.date) || null,
+          appointmentDate: normalizeText(created?.appointmentDate || appointmentPayload.appointmentDate || appointmentPayload.date) || null,
+          appointment_date: normalizeText(created?.appointment_date || created?.appointmentDate || appointmentPayload.appointmentDate || appointmentPayload.date) || null,
+          startTime: normalizeText(created?.startTime || appointmentPayload.startTime) || null,
+          start_time: normalizeText(created?.start_time || created?.startTime || appointmentPayload.startTime) || null,
         }
         setRecords((previous) => {
           const rows = Array.isArray(previous.appointments) ? previous.appointments : []
@@ -20428,18 +20442,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
       const uploadedDocument = {
         key: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+        requirementKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+        requirement_key: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+        documentType: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+        document_type: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
         label: KINGSTONS_FORMAL_VALUATION_DOCUMENT.label,
+        title: KINGSTONS_FORMAL_VALUATION_DOCUMENT.label,
+        category: KINGSTONS_FORMAL_VALUATION_DOCUMENT.category,
+        document_category: KINGSTONS_FORMAL_VALUATION_DOCUMENT.category,
         status: 'uploaded',
         statusLabel: 'Uploaded',
         uploadedAt,
+        uploaded_at: uploadedAt,
         uploadedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+        uploaded_by: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
         uploadedFileName: file.name || KINGSTONS_FORMAL_VALUATION_DOCUMENT.fileName,
+        uploaded_file_name: file.name || KINGSTONS_FORMAL_VALUATION_DOCUMENT.fileName,
         fileName: file.name || KINGSTONS_FORMAL_VALUATION_DOCUMENT.fileName,
+        file_name: file.name || KINGSTONS_FORMAL_VALUATION_DOCUMENT.fileName,
         fileSize: Number(file.size || 0) || null,
+        file_size: Number(file.size || 0) || null,
         fileType: normalizeText(file.type),
+        file_type: normalizeText(file.type),
         storageBucket: upload.storageBucket,
+        storage_bucket: upload.storageBucket,
         storagePath: upload.storagePath,
+        storage_path: upload.storagePath,
         url: upload.url,
+        fileUrl: upload.url,
+        file_url: upload.url,
+        downloadUrl: upload.url,
+        download_url: upload.url,
       }
       const formalValuation = {
         document: uploadedDocument,
@@ -20449,15 +20482,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const rawEnquiryPayload = {
         ...rawPayload,
         kingstonsFormalValuation: formalValuation,
+        kingstons_formal_valuation: formalValuation,
         formalValuation,
+        formal_valuation: formalValuation,
         valuationDocument: uploadedDocument,
+        valuation_document: uploadedDocument,
+        kingstonsSellerPack: {
+          ...asRecord(rawPayload.kingstonsSellerPack || rawPayload.kingstons_seller_pack || rawPayload.sellerPack || rawPayload.seller_pack),
+          documents: {
+            ...asRecord(asRecord(rawPayload.kingstonsSellerPack || rawPayload.kingstons_seller_pack || rawPayload.sellerPack || rawPayload.seller_pack).documents),
+            [KINGSTONS_FORMAL_VALUATION_DOCUMENT.key]: uploadedDocument,
+          },
+        },
       }
+      rawEnquiryPayload.sellerPack = rawEnquiryPayload.kingstonsSellerPack
+      rawEnquiryPayload.kingstons_seller_pack = rawEnquiryPayload.kingstonsSellerPack
+      rawEnquiryPayload.seller_pack = rawEnquiryPayload.kingstonsSellerPack
       const leadPatch = {
         rawEnquiryPayload,
         kingstonsFormalValuation: formalValuation,
+        kingstons_formal_valuation: formalValuation,
         formalValuation,
+        formal_valuation: formalValuation,
         valuationDocument: uploadedDocument,
+        valuation_document: uploadedDocument,
+        kingstonsSellerPack: rawEnquiryPayload.kingstonsSellerPack,
+        kingstons_seller_pack: rawEnquiryPayload.kingstonsSellerPack,
+        sellerPack: rawEnquiryPayload.kingstonsSellerPack,
+        seller_pack: rawEnquiryPayload.kingstonsSellerPack,
         valuationDocumentUploadedAt: uploadedAt,
+        valuation_document_uploaded_at: uploadedAt,
         stage: 'Valuation Presentation',
         status: 'Formal Valuation Uploaded',
       }
@@ -29719,11 +29773,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
                                         const StatusIcon = statusMeta.Icon
                                         const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
+                                        const documentStoragePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
+                                        const documentHasFile = Boolean(documentUrl || documentStoragePath)
                                         const generatedHtml = normalizeText(documentRow.generatedHtml || documentRow.generated_html)
 	                                        const documentKey = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
 	                                        const canOpenCanonicalFinalArtifact = Boolean(documentRow.canonicalFinalArtifact && documentRow.packetId && documentRow.packetVersionId)
 	                                        const openingCanonicalArtifact = openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)
-	                                        const documentActionLabel = ['signed_mandate', 'property_condition_disclosure'].includes(documentKey) ? 'Download' : 'Open'
+	                                        const documentActionLabel = ['signed_mandate', 'property_condition_disclosure', 'valuation_document'].includes(documentKey) ? 'Download' : 'Open'
 	                                        const shouldDownloadDocument = documentActionLabel === 'Download'
 	                                        const isKingstonsFormalValuationDocument = selectedLeadHasKingstonsPipelineSignal && documentKey === 'valuation_document'
 	                                        const documentRequirementLane = normalizeKey(documentRow.requirementLane || documentRow.requirement_lane)
@@ -29751,8 +29807,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             </div>
                                             <div className="flex items-center gap-2">
                                               <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
-                                              {documentUrl ? (
-                                                shouldDownloadDocument ? (
+                                              {documentHasFile ? (
+                                                shouldDownloadDocument || !documentUrl ? (
                                                   <button
                                                     type="button"
                                                     onClick={() => void handleDownloadSellerLeadDocumentUrl(documentRow)}
@@ -29811,7 +29867,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                              {canUploadKingstonsDocument ? (
 	                                                <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border px-3 text-xs font-semibold transition ${isUploadingKingstonsDocument ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
 	                                                  <Upload className="h-3.5 w-3.5" />
-	                                                  {isUploadingKingstonsDocument ? 'Uploading...' : documentUrl ? 'Replace' : 'Upload'}
+	                                                  {isUploadingKingstonsDocument ? 'Uploading...' : documentHasFile ? 'Replace' : 'Upload'}
 	                                                  <input
 	                                                    ref={isKingstonsFormalValuationDocument ? formalValuationUploadInputRef : null}
 	                                                    type="file"
