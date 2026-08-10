@@ -1346,7 +1346,7 @@ export async function resolveCurrentWorkspace(userId, options = {}) {
         timeoutMs: queryTimeoutMs,
       })
     } catch (error) {
-      if (isMissingWorkspaceContextRpcError(error)) {
+      if (isMissingWorkspaceContextRpcError(error) || isWorkspaceQueryTimeoutError(error)) {
         workspaceContextRpcUnavailable = true
         console.warn('[WORKSPACE_RESOLUTION] consolidated workspace resolver RPC unavailable; falling back to legacy queries', {
           rpc: WORKSPACE_CONTEXT_RPC_NAME,
