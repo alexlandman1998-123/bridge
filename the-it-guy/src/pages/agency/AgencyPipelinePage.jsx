@@ -17421,6 +17421,47 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      const linkedListingId = normalizeText(
+        selectedLeadLinkedListing?.id ||
+          selectedLeadLinkedListing?.listingId ||
+          selectedLeadLinkedListing?.listing_id ||
+          selectedLead?.listingId ||
+          selectedLead?.listing_id ||
+          selectedLead?.privateListingId ||
+          selectedLead?.private_listing_id,
+      )
+      if (linkedListingId) {
+        const requirementMeta = getKingstonsSellerPackListingRequirementMeta(
+          KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+          uploadedDocument,
+        )
+        try {
+          await ensurePrivateListingDocumentRequirements(
+            linkedListingId,
+            buildKingstonsSellerPackListingRequirementRows([uploadedDocument]),
+            { reason: 'kingstons_formal_valuation_upload_status_sync' },
+          )
+          await linkPrivateListingDocument(linkedListingId, {
+            requirementKey: requirementMeta.requirementKey || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+            documentType: requirementMeta.documentType || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+            documentCategory: requirementMeta.documentCategory || KINGSTONS_FORMAL_VALUATION_DOCUMENT.category,
+            documentName: normalizeText(file.name || KINGSTONS_FORMAL_VALUATION_DOCUMENT.fileName || KINGSTONS_FORMAL_VALUATION_DOCUMENT.label),
+            filePath: upload.storagePath,
+            fileUrl: upload.storagePath ? '' : upload.url,
+            visibility: 'internal',
+            status: 'uploaded',
+            uploadedAt,
+            metadata: {
+              source: 'kingstons_formal_valuation_upload_status_sync',
+              leadId: normalizeText(selectedLead.leadId),
+              sellerPackDocumentKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+              sellerPackRequirementKey: requirementMeta.requirementKey || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+            },
+          })
+        } catch (linkError) {
+          console.warn('[AgencyPipelinePage] Formal valuation saved on lead but could not be linked to listing documents.', linkError)
+        }
+      }
       void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Listing Terms Confirmed',
