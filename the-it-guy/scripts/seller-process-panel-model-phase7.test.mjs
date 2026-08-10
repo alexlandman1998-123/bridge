@@ -30,7 +30,6 @@ const internalKingstonsKeys = [
   'valuation_appointment_scheduled',
   'formal_valuation_completed',
   'valuation_presentation_scheduled',
-  'valuation_presented',
   'seller_pack_signed',
   'listing_terms_confirmed',
   'defects_form_signed',
@@ -92,9 +91,9 @@ function assertPartnerReadinessHidesInternalKeys(model) {
   assert.equal(model.readOnly, false)
   assert.equal(model.shadowOnly, false)
   assert.equal(model.title, 'Kingstons Seller Process')
-  assert.equal(model.currentStageLabel, 'Valuation Presented')
+  assert.equal(model.currentStageLabel, 'Seller Pack')
   assert.equal(model.sections.find((section) => section.key === 'progress').items.length, 5)
-  assert.equal(model.sections.find((section) => section.key === 'missing_evidence').items.some((item) => item.key === 'valuation_presented'), true)
+  assert.equal(model.sections.find((section) => section.key === 'missing_evidence').items.some((item) => item.key === 'mandate_signed'), true)
   assert.equal(model.actionCards.every((card) => card.disabled === false && card.readOnly === false), true)
   assert.equal(model.actionCards.some((card) => card.key === 'complete_seller_pack' && card.pending === true), true)
   assert.equal(model.actionCards.some((card) => card.key === 'confirm_listing_terms'), true)

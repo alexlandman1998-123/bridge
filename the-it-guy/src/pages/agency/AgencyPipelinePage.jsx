@@ -165,6 +165,7 @@ import {
   updateCanonicalOfferStatus,
   upsertAppointmentViewedListings,
 } from '../../lib/buyerLifecycleService'
+import { deriveOnboardingConfiguration } from '../../lib/purchaserPersonas'
 import { isBuyerWorkflowStage, transitionBuyerLeadStage } from '../../lib/workflowEngine'
 import {
   FINANCE_READINESS_DISCLAIMER,
@@ -646,6 +647,40 @@ const KINGSTONS_SELLER_PACK_DISPLAY_COPY = Object.freeze({
   },
 })
 
+const KINGSTONS_SELLER_FICA_ROLEPLAYER_DOCUMENTS = Object.freeze([
+  {
+    key: 'id_or_passport',
+    label: 'ID / Passport',
+    description: 'Clear copy of the person ID document, smart ID card, or passport.',
+  },
+  {
+    key: 'proof_of_address',
+    label: 'Proof of Residential Address',
+    description: 'Recent municipal account, bank statement, lease, or other accepted proof of address.',
+  },
+  {
+    key: 'tax_number_confirmation',
+    label: 'Tax Number / SARS Confirmation',
+    description: 'SARS tax number confirmation or current tax reference details for compliance capture.',
+  },
+  {
+    key: 'signed_fica_declaration',
+    label: 'Signed FICA Declaration',
+    description: 'Signed FICA declaration or questionnaire for this roleplayer.',
+  },
+])
+
+const BUYER_FICA_ROLEPLAYER_DOCUMENTS = Object.freeze([
+  ...KINGSTONS_SELLER_FICA_ROLEPLAYER_DOCUMENTS,
+  {
+    key: 'source_of_funds',
+    label: 'Source of Funds Evidence',
+    description: 'Proof of deposit, bank statement, proceeds of sale, bond grant, or other funding evidence.',
+  },
+])
+
+const KINGSTONS_FICA_ROLEPLAYER_SOURCE = 'kingstons_roleplayer_fica_checklist_v1'
+
 function getKingstonsSellerPackDisplayCopy(documentRow = {}) {
   return KINGSTONS_SELLER_PACK_DISPLAY_COPY[normalizeKey(documentRow?.key)] || {
     title: normalizeText(documentRow?.label),
@@ -672,6 +707,176 @@ function buildKingstonsSellerPackPersonRecords(value = '', prefix = 'person') {
     id: `${normalizeKey(prefix) || 'person'}-${index + 1}`,
     name,
   }))
+}
+
+function normalizeKingstonsFicaPersonRecord(value = {}, fallback = {}) {
+  const record = typeof value === 'string' ? { name: value } : asRecord(value)
+  const fallbackRecord = asRecord(fallback)
+  const name = firstWorkspaceText(
+    record.name,
+    record.fullName,
+    record.full_name,
+    record.displayName,
+    fallbackRecord.name,
+    fallbackRecord.fullName,
+  )
+  return {
+    ...record,
+    id: normalizeKey(record.id || record.key || name || fallbackRecord.id || fallbackRecord.key),
+    name,
+    idNumber: firstWorkspaceText(record.idNumber, record.id_number, record.identityNumber, record.identity_number),
+    email: firstWorkspaceText(record.email, record.emailAddress, record.email_address).toLowerCase(),
+    phone: firstWorkspaceText(record.phone, record.mobile, record.mobileNumber, record.mobile_number),
+  }
+}
+
+function getLeadPrimaryPersonName(lead = {}, contact = {}) {
+  return firstWorkspaceText(
+    [contact?.firstName, contact?.lastName].map(normalizeText).filter(Boolean).join(' '),
+    contact?.name,
+    contact?.fullName,
+    lead?.sellerName,
+    lead?.buyerName,
+    lead?.name,
+    lead?.fullName,
+    [lead?.firstName, lead?.lastName].map(normalizeText).filter(Boolean).join(' '),
+  )
+}
+
+function buildKingstonsSellerFicaRoleplayers(lead = {}, contact = {}) {
+  const pack = getKingstonsSellerPackState(lead)
+  const legalPath = asRecord(pack.legalPath || pack.legal_path || pack.sellerProfile || pack.seller_profile)
+  const naturalPath = asRecord(legalPath.natural || legalPath.person)
+  const juristicPath = asRecord(legalPath.juristic || legalPath.entity)
+  const sellerType = normalizeKey(pack.sellerType || pack.ficaSellerType || legalPath.sellerType || legalPath.seller_type)
+  const roleplayers = []
+  const addRoleplayer = (person = {}, role = 'owner', index = 0, labelPrefix = 'Seller') => {
+    const normalized = normalizeKingstonsFicaPersonRecord(person, { id: `${role}-${index + 1}` })
+    const roleKey = normalizeKey(role) || 'roleplayer'
+    const sequence = index + 1
+    const id = normalizeKey(normalized.id || `${roleKey}-${sequence}`)
+    roleplayers.push({
+      ...normalized,
+      id,
+      role: roleKey,
+      roleLabel: labelPrefix,
+      tabLabel: `${labelPrefix} ${sequence}`,
+      displayName: normalized.name || `${labelPrefix} ${sequence}`,
+    })
+  }
+
+  if (sellerType === 'juristic') {
+    const entityType = normalizeKey(pack.juristicEntityType || pack.entityType || legalPath.juristicEntityType || juristicPath.entityType)
+    const companyDirectors = asArray(pack.companyDirectors || pack.company_directors || legalPath.company?.directors || juristicPath.company?.directors)
+    const trustees = asArray(pack.trustees || pack.trustees_list || legalPath.trust?.trustees || juristicPath.trust?.trustees)
+    const members = asArray(pack.closeCorporationMembers || pack.close_corporation_members || legalPath.closeCorporation?.members || juristicPath.closeCorporation?.members)
+    const people = entityType === 'trust'
+      ? trustees
+      : entityType === 'close_corporation'
+        ? members
+        : companyDirectors
+    const role = entityType === 'trust' ? 'trustee' : entityType === 'close_corporation' ? 'member' : 'director'
+    const label = entityType === 'trust' ? 'Trustee' : entityType === 'close_corporation' ? 'Member' : 'Director'
+    ;(people.length ? people : [{ name: `${label} 1` }]).forEach((person, index) => addRoleplayer(person, role, index, label))
+    return roleplayers
+  }
+
+  const owners = asArray(pack.owners || legalPath.owners || naturalPath.owners)
+  const primaryName = getLeadPrimaryPersonName(lead, contact)
+  ;(owners.length ? owners : [{ name: primaryName || 'Seller 1' }]).forEach((person, index) => addRoleplayer(person, 'owner', index, 'Seller'))
+
+  const maritalSetup = normalizeKey(pack.maritalSetup || pack.maritalRegime || legalPath.naturalSetup || naturalPath.maritalSetup || naturalPath.maritalRegime)
+  const spouse = normalizeKingstonsFicaPersonRecord(
+    legalPath.spouse || naturalPath.spouse || {
+      name: pack.spouseName,
+      idNumber: pack.spouseIdNumber,
+      email: pack.spouseEmail,
+      phone: pack.spousePhone,
+    },
+    { id: 'spouse-1' },
+  )
+  if ((maritalSetup === 'in_community' || spouse.name) && spouse.name) {
+    roleplayers.push({
+      ...spouse,
+      id: normalizeKey(spouse.id || 'spouse-1'),
+      role: 'spouse',
+      roleLabel: 'Spouse',
+      tabLabel: 'Spouse',
+      displayName: spouse.name || 'Spouse',
+    })
+  }
+
+  return roleplayers
+}
+
+function buildKingstonsSellerFicaRoleplayerDocumentRows(lead = {}, contact = {}) {
+  const pack = getKingstonsSellerPackState(lead)
+  const roleplayers = buildKingstonsSellerFicaRoleplayers(lead, contact)
+  return roleplayers.flatMap((roleplayer) =>
+    KINGSTONS_SELLER_FICA_ROLEPLAYER_DOCUMENTS.map((definition, index) => {
+      const key = normalizeKey(`seller_fica_${roleplayer.id}_${definition.key}`)
+      const uploaded = asRecord(pack.documents?.[key])
+      const uploadedAt = firstWorkspaceText(uploaded.uploadedAt, uploaded.uploaded_at)
+      const uploadedFileName = firstWorkspaceText(uploaded.uploadedFileName, uploaded.uploaded_file_name, uploaded.fileName, uploaded.file_name)
+      const storagePath = firstWorkspaceText(uploaded.storagePath, uploaded.storage_path)
+      const storageBucket = firstWorkspaceText(uploaded.storageBucket, uploaded.storage_bucket)
+      const url = firstWorkspaceText(uploaded.url, uploaded.fileUrl, uploaded.file_url, uploaded.downloadUrl, uploaded.download_url)
+      const hasUpload = sellerLeadDocumentHasFileEvidence({ ...uploaded, uploadedAt, storagePath, url })
+      return {
+        ...definition,
+        ...uploaded,
+        id: key,
+        key,
+        requirementKey: key,
+        requirement_key: key,
+        documentType: key,
+        document_type: key,
+        title: `${definition.label}: ${roleplayer.displayName}`,
+        label: `${definition.label}: ${roleplayer.displayName}`,
+        required: true,
+        source: KINGSTONS_FICA_ROLEPLAYER_SOURCE,
+        category: 'seller',
+        document_category: 'seller',
+        group: 'seller_fica',
+        requirement_group: 'seller_fica',
+        requirementLane: 'ownership_driven',
+        requirement_lane: 'ownership_driven',
+        documentRequirementSection: 'seller_identity_fica',
+        document_requirement_section: 'seller_identity_fica',
+        partyRole: roleplayer.role,
+        party_role: roleplayer.role,
+        partyName: roleplayer.displayName,
+        party_name: roleplayer.displayName,
+        partyIdNumber: roleplayer.idNumber,
+        party_id_number: roleplayer.idNumber,
+        partyEmail: roleplayer.email,
+        party_email: roleplayer.email,
+        ficaRoleplayerId: roleplayer.id,
+        fica_roleplayer_id: roleplayer.id,
+        ficaRoleplayerLabel: roleplayer.displayName,
+        fica_roleplayer_label: roleplayer.displayName,
+        ficaRoleplayerTabLabel: roleplayer.tabLabel,
+        fica_roleplayer_tab_label: roleplayer.tabLabel,
+        ficaDocumentOrder: index,
+        fica_document_order: index,
+        status: hasUpload ? 'uploaded' : 'required',
+        statusLabel: hasUpload ? 'Uploaded' : 'Required',
+        uploadedAt,
+        uploaded_at: uploadedAt,
+        uploadedFileName,
+        uploaded_file_name: uploadedFileName,
+        storagePath,
+        storage_path: storagePath,
+        storageBucket,
+        storage_bucket: storageBucket,
+        url,
+        fileUrl: url,
+        file_url: url,
+        downloadUrl: url,
+        download_url: url,
+      }
+    }),
+  )
 }
 
 function buildKingstonsSellerPackProfileDraft(pack = {}) {
@@ -2234,15 +2439,18 @@ function isKingstonsGeneratedSellerPackRequirementRow(documentRow = {}) {
   return lane === 'ownership_driven' ||
     section === 'seller_identity_fica' ||
     section === 'authority_documents' ||
-    /(owner_fica|director_fica|trustee_fica|member_fica|spouse_fica|resolution_to_sell|letters_of_authority|trust_deed|spouse_consent|owner_authority_consent)/.test(key)
+    normalizeKey(documentRow.source) === normalizeKey(KINGSTONS_FICA_ROLEPLAYER_SOURCE) ||
+    /(seller_fica|owner_fica|director_fica|trustee_fica|member_fica|spouse_fica|resolution_to_sell|letters_of_authority|trust_deed|spouse_consent|owner_authority_consent)/.test(key)
 }
 
 function buildKingstonsSellerPackDocumentRows(lead = {}, {
   listing = null,
   journey = null,
   mandatePacketStatus = null,
+  contact = null,
 } = {}) {
   const baselineRows = buildKingstonsSellerPackBaselineDocumentRows(lead)
+  const roleplayerFicaRows = buildKingstonsSellerFicaRoleplayerDocumentRows(lead, contact || {})
   const sourceRows = buildSellerLeadDocumentRowsFromSource({
     lead,
     listing,
@@ -2257,6 +2465,7 @@ function buildKingstonsSellerPackDocumentRows(lead = {}, {
 
   return dedupeSellerLeadDocumentRows([
     ...baselineRows,
+    ...roleplayerFicaRows,
     ...generatedRows,
   ])
 }
@@ -3913,6 +4122,140 @@ function buildSellerLeadDocumentCategories(documents = []) {
       progress,
     }
   })
+}
+
+function isKingstonsFicaRoleplayerDocumentRow(documentRow = {}) {
+  const key = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key || documentRow.documentType || documentRow.document_type)
+  const source = normalizeKey(documentRow.source || documentRow.generatedBy || documentRow.generated_by)
+  const section = normalizeKey(documentRow.documentRequirementSection || documentRow.document_requirement_section)
+  return source === normalizeKey(KINGSTONS_FICA_ROLEPLAYER_SOURCE) ||
+    section === 'seller_identity_fica' ||
+    key.startsWith('seller_fica_') ||
+    /(owner_fica|director_fica|trustee_fica|member_fica|spouse_fica)/.test(key)
+}
+
+function buildRoleplayerFicaDocumentModel(rows = [], { fallbackTitle = 'FICA' } = {}) {
+  const groups = []
+  const groupIndexById = new Map()
+  ;(Array.isArray(rows) ? rows : []).filter(isKingstonsFicaRoleplayerDocumentRow).forEach((documentRow) => {
+    const partyName = normalizeText(documentRow.ficaRoleplayerLabel || documentRow.fica_roleplayer_label || documentRow.partyName || documentRow.party_name)
+    const partyRole = normalizeKey(documentRow.partyRole || documentRow.party_role || 'roleplayer')
+    const rawGroupId = normalizeText(documentRow.ficaRoleplayerId || documentRow.fica_roleplayer_id)
+    const groupId = normalizeKey((partyName && `${partyRole}-${partyName}`) || rawGroupId || documentRow.key || documentRow.id)
+    if (!groupId) return
+    if (!groupIndexById.has(groupId)) {
+      groupIndexById.set(groupId, groups.length)
+      groups.push({
+        id: groupId,
+        role: partyRole,
+        tabLabel: normalizeText(documentRow.ficaRoleplayerTabLabel || documentRow.fica_roleplayer_tab_label) || (
+          partyRole === 'spouse'
+            ? 'Spouse'
+            : partyRole === 'director'
+              ? `Director ${groups.length + 1}`
+              : partyRole === 'trustee'
+                ? `Trustee ${groups.length + 1}`
+                : partyRole === 'member'
+                  ? `Member ${groups.length + 1}`
+                  : `Seller ${groups.length + 1}`
+        ),
+        title: partyName || fallbackTitle,
+        items: [],
+      })
+    }
+    groups[groupIndexById.get(groupId)].items.push(documentRow)
+  })
+
+  return groups.map((group) => {
+    const items = [...group.items].sort((left, right) => {
+      const leftOrder = Number(left.ficaDocumentOrder ?? left.fica_document_order ?? 999)
+      const rightOrder = Number(right.ficaDocumentOrder ?? right.fica_document_order ?? 999)
+      return leftOrder - rightOrder || normalizeText(left.label).localeCompare(normalizeText(right.label))
+    })
+    const completed = items.filter((documentRow) => {
+      const state = getSellerLeadDocumentStatusMeta(documentRow).state
+      return state === 'complete' || state === 'review'
+    }).length
+    return {
+      ...group,
+      items,
+      completed,
+      total: items.length,
+      progress: items.length ? Math.round((completed / items.length) * 100) : 0,
+    }
+  })
+}
+
+function getBuyerFicaRoleplayerDocumentDefinitions(roleplayer = {}) {
+  if (roleplayer.type === 'entity') return []
+  return BUYER_FICA_ROLEPLAYER_DOCUMENTS
+}
+
+function buildBuyerFicaRoleplayerModel({
+  lead = {},
+  contact = {},
+  formData = {},
+  transaction = {},
+  onboardingSubmitted = false,
+} = {}) {
+  let configuration = null
+  try {
+    configuration = deriveOnboardingConfiguration(formData, {
+      transaction,
+      purchaserType: formData.purchaser_type || transaction?.purchaser_type || lead?.purchaserType || lead?.buyerType,
+      financeType: formData.purchase_finance_type || transaction?.finance_type || lead?.financeType || lead?.finance_type,
+    })
+  } catch {
+    configuration = null
+  }
+  const parties = Array.isArray(configuration?.parties) ? configuration.parties : []
+  const people = parties.filter((party) => party?.type !== 'entity')
+  const fallbackName = getLeadPrimaryPersonName(lead, contact) || 'Buyer 1'
+  const roleplayers = (people.length ? people : [{ role: 'primary_purchaser', name: fallbackName, purchaser: true, signatory: true }])
+    .map((party, index) => {
+      const role = normalizeKey(party.role || party.relationship || (index ? 'co_purchaser' : 'primary_purchaser'))
+      const name = normalizeText(party.name || party.fullName || party.full_name) || (index ? `Buyer ${index + 1}` : fallbackName)
+      const tabLabel = role.includes('spouse')
+        ? 'Spouse'
+        : role.includes('director')
+          ? `Director ${index + 1}`
+          : role.includes('trustee')
+            ? `Trustee ${index + 1}`
+            : `Buyer ${index + 1}`
+      return {
+        ...party,
+        id: normalizeKey(party.id || party.key || `${role}-${name}` || `buyer-${index + 1}`),
+        role,
+        name,
+        tabLabel,
+      }
+    })
+
+  return roleplayers.map((roleplayer) => {
+    const items = getBuyerFicaRoleplayerDocumentDefinitions(roleplayer).map((definition, index) => ({
+      ...definition,
+      id: normalizeKey(`buyer_fica_${roleplayer.id}_${definition.key}`),
+      key: normalizeKey(`buyer_fica_${roleplayer.id}_${definition.key}`),
+      label: definition.label,
+      title: definition.label,
+      description: definition.description,
+      required: true,
+      status: onboardingSubmitted ? 'In review' : 'Not requested',
+      statusLabel: onboardingSubmitted ? 'In review' : 'Not requested',
+      ficaDocumentOrder: index,
+      fica_document_order: index,
+    }))
+    return {
+      id: roleplayer.id,
+      role: roleplayer.role,
+      tabLabel: roleplayer.tabLabel,
+      title: roleplayer.name,
+      items,
+      completed: onboardingSubmitted ? items.length : 0,
+      total: items.length,
+      progress: onboardingSubmitted && items.length ? 100 : 0,
+    }
+  }).filter((group) => group.items.length)
 }
 
 function normalizeAppointmentCategorySignal(value) {
@@ -8695,6 +9038,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerPackUploadingKey, setSellerPackUploadingKey] = useState('')
   const [formalValuationUploading, setFormalValuationUploading] = useState(false)
   const [buyerOfferDocumentUploading, setBuyerOfferDocumentUploading] = useState(false)
+  const [activeSellerFicaRoleplayerId, setActiveSellerFicaRoleplayerId] = useState('')
+  const [activeBuyerFicaRoleplayerId, setActiveBuyerFicaRoleplayerId] = useState('')
   const formalValuationUploadInputRef = useRef(null)
   const [kingstonsSellerPackWizardOpen, setKingstonsSellerPackWizardOpen] = useState(false)
   const [kingstonsSellerPackWizardStep, setKingstonsSellerPackWizardStep] = useState('type')
@@ -9112,8 +9457,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             .map((value) => normalizeLeadIdentityKey(value))
             .filter(Boolean),
         )
-        const sourceHasRouteLead = sourceLeads.some((lead) => pinnedLeadKeys.has(normalizeLeadIdentityKey(lead?.leadId)))
-        if (sourceHasRouteLead) return sourceSnapshot
+        const scopedPinnedLeads = pinned.leads.filter((lead) => pinnedLeadKeys.has(normalizeLeadIdentityKey(lead?.leadId)))
+        const routeLeadRows = mergeLeadRowsForReload(sourceLeads, scopedPinnedLeads)
 
         return {
           ...sourceSnapshot,
@@ -9124,7 +9469,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             ],
             (row) => row?.contactId,
           ),
-          leads: mergeLeadRowsForReload(sourceLeads, pinned.leads),
+          leads: routeLeadRows,
           leadActivities: dedupeByKey(
             [
               ...(Array.isArray(sourceSnapshot?.leadActivities) ? sourceSnapshot.leadActivities : []),
@@ -9138,6 +9483,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ...(Array.isArray(pinned.tasks) ? pinned.tasks : []),
             ],
             (row) => row?.taskId,
+          ),
+          linkedListings: dedupeByKey(
+            [
+              ...(Array.isArray(sourceSnapshot?.linkedListings) ? sourceSnapshot.linkedListings : []),
+              ...(Array.isArray(pinned.linkedListings) ? pinned.linkedListings : []),
+            ],
+            (listing) => listing?.id || listing?.listingId || listing?.listing_id,
           ),
         }
       }
@@ -9354,8 +9706,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         markPrimaryRecordsReady()
         return
       }
+      const pinnedRouteLinkedListingOptions =
+        routeLeadWorkspaceSnapshotRef.current?.organisationId === normalizeText(orgId) &&
+        Array.isArray(routeLeadWorkspaceSnapshotRef.current?.linkedListings)
+          ? routeLeadWorkspaceSnapshotRef.current.linkedListings
+            .map((listing) => normalizeAppointmentListingOption(listing))
+            .filter(Boolean)
+          : []
       setAppointmentListingOptions(dedupeListingOptions([
         ...listingOptionsForAppointments,
+        ...pinnedRouteLinkedListingOptions,
         ...buildListingOptionsFromLeads(mergedSnapshot.leads),
       ]))
       applySnapshotRecords(mergedSnapshot, appointmentRows)
@@ -10939,13 +11299,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const patchSelectedLeadRecord = useCallback((patch = {}, leadId = selectedLeadRecordId) => {
     const resolvedLeadId = normalizeLeadIdentityKey(leadId)
     if (!resolvedLeadId || !patch || typeof patch !== 'object') return
+    const patchedUpdatedAt = patch.updatedAt || new Date().toISOString()
+    const applyLeadPatch = (lead) =>
+      normalizeLeadIdentityKey(lead?.leadId) === resolvedLeadId
+        ? { ...lead, ...patch, updatedAt: patchedUpdatedAt }
+        : lead
+    const routeSnapshot = routeLeadWorkspaceSnapshotRef.current
+    if (routeSnapshot && Array.isArray(routeSnapshot.leads)) {
+      routeLeadWorkspaceSnapshotRef.current = {
+        ...routeSnapshot,
+        leads: routeSnapshot.leads.map(applyLeadPatch),
+      }
+    }
     setRecords((previous) => ({
       ...previous,
-      leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) =>
-        normalizeLeadIdentityKey(lead?.leadId) === resolvedLeadId
-          ? { ...lead, ...patch, updatedAt: patch.updatedAt || new Date().toISOString() }
-          : lead,
-      ),
+      leads: (Array.isArray(previous.leads) ? previous.leads : []).map(applyLeadPatch),
     }))
   }, [selectedLeadRecordId])
 
@@ -12578,11 +12946,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           listing: selectedLeadLinkedListing,
           journey: selectedSellerJourney,
           mandatePacketStatus,
+          contact: selectedLeadContact,
         })
       : [],
     [
       mandatePacketStatus,
       selectedLead,
+      selectedLeadContact,
       selectedLeadHasKingstonsPipelineSignal,
       selectedLeadLinkedListing,
       selectedSellerJourney,
@@ -12709,6 +13079,53 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedSellerJourney,
     ],
   )
+
+  const selectedSellerFicaRoleplayerModel = useMemo(
+    () => buildRoleplayerFicaDocumentModel(
+      selectedSellerDocumentCategories.flatMap((category) => category.items || []),
+      { fallbackTitle: selectedLeadDisplayName || 'Seller FICA' },
+    ),
+    [selectedLeadDisplayName, selectedSellerDocumentCategories],
+  )
+
+  const selectedBuyerFicaRoleplayerModel = useMemo(
+    () => buildBuyerFicaRoleplayerModel({
+      lead: selectedLead || {},
+      contact: selectedLeadContact || {},
+      formData: selectedLeadFinanceFormData || {},
+      transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {},
+      onboardingSubmitted: selectedLeadBuyerOnboardingSubmitted,
+    }),
+    [
+      selectedLead,
+      selectedLeadBuyerOnboardingSubmitted,
+      selectedLeadContact,
+      selectedLeadFinanceFormData,
+      selectedLeadLinkedTransaction,
+    ],
+  )
+
+  useEffect(() => {
+    const firstId = selectedSellerFicaRoleplayerModel[0]?.id || ''
+    if (!firstId) {
+      if (activeSellerFicaRoleplayerId) setActiveSellerFicaRoleplayerId('')
+      return
+    }
+    if (!selectedSellerFicaRoleplayerModel.some((group) => group.id === activeSellerFicaRoleplayerId)) {
+      setActiveSellerFicaRoleplayerId(firstId)
+    }
+  }, [activeSellerFicaRoleplayerId, selectedSellerFicaRoleplayerModel])
+
+  useEffect(() => {
+    const firstId = selectedBuyerFicaRoleplayerModel[0]?.id || ''
+    if (!firstId) {
+      if (activeBuyerFicaRoleplayerId) setActiveBuyerFicaRoleplayerId('')
+      return
+    }
+    if (!selectedBuyerFicaRoleplayerModel.some((group) => group.id === activeBuyerFicaRoleplayerId)) {
+      setActiveBuyerFicaRoleplayerId(firstId)
+    }
+  }, [activeBuyerFicaRoleplayerId, selectedBuyerFicaRoleplayerModel])
 
   const selectedSellerDocumentSummary = useMemo(() => {
     const total = selectedSellerDocumentCategories.reduce((sum, category) => sum + category.total, 0)
@@ -17566,47 +17983,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
-      const linkedListingId = normalizeText(
-        selectedLeadLinkedListing?.id ||
-          selectedLeadLinkedListing?.listingId ||
-          selectedLeadLinkedListing?.listing_id ||
-          selectedLead?.listingId ||
-          selectedLead?.listing_id ||
-          selectedLead?.privateListingId ||
-          selectedLead?.private_listing_id,
-      )
-      if (linkedListingId) {
-        const requirementMeta = getKingstonsSellerPackListingRequirementMeta(
-          KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
-          uploadedDocument,
-        )
-        try {
-          await ensurePrivateListingDocumentRequirements(
-            linkedListingId,
-            buildKingstonsSellerPackListingRequirementRows([uploadedDocument]),
-            { reason: 'kingstons_formal_valuation_upload_status_sync' },
-          )
-          await linkPrivateListingDocument(linkedListingId, {
-            requirementKey: requirementMeta.requirementKey || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
-            documentType: requirementMeta.documentType || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
-            documentCategory: requirementMeta.documentCategory || KINGSTONS_FORMAL_VALUATION_DOCUMENT.category,
-            documentName: normalizeText(file.name || KINGSTONS_FORMAL_VALUATION_DOCUMENT.fileName || KINGSTONS_FORMAL_VALUATION_DOCUMENT.label),
-            filePath: upload.storagePath,
-            fileUrl: upload.storagePath ? '' : upload.url,
-            visibility: 'internal',
-            status: 'uploaded',
-            uploadedAt,
-            metadata: {
-              source: 'kingstons_formal_valuation_upload_status_sync',
-              leadId: normalizeText(selectedLead.leadId),
-              sellerPackDocumentKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
-              sellerPackRequirementKey: requirementMeta.requirementKey || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
-            },
-          })
-        } catch (linkError) {
-          console.warn('[AgencyPipelinePage] Formal valuation saved on lead but could not be linked to listing documents.', linkError)
-        }
-      }
       void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Listing Terms Confirmed',
@@ -20711,6 +21087,47 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      const linkedListingId = normalizeText(
+        selectedLeadLinkedListing?.id ||
+          selectedLeadLinkedListing?.listingId ||
+          selectedLeadLinkedListing?.listing_id ||
+          selectedLead?.listingId ||
+          selectedLead?.listing_id ||
+          selectedLead?.privateListingId ||
+          selectedLead?.private_listing_id,
+      )
+      if (linkedListingId) {
+        const requirementMeta = getKingstonsSellerPackListingRequirementMeta(
+          KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+          uploadedDocument,
+        )
+        try {
+          await ensurePrivateListingDocumentRequirements(
+            linkedListingId,
+            buildKingstonsSellerPackListingRequirementRows([uploadedDocument]),
+            { reason: 'kingstons_formal_valuation_upload_status_sync' },
+          )
+          await linkPrivateListingDocument(linkedListingId, {
+            requirementKey: requirementMeta.requirementKey || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+            documentType: requirementMeta.documentType || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+            documentCategory: requirementMeta.documentCategory || KINGSTONS_FORMAL_VALUATION_DOCUMENT.category,
+            documentName: normalizeText(file.name || KINGSTONS_FORMAL_VALUATION_DOCUMENT.fileName || KINGSTONS_FORMAL_VALUATION_DOCUMENT.label),
+            filePath: upload.storagePath,
+            fileUrl: upload.storagePath ? '' : upload.url,
+            visibility: 'internal',
+            status: 'uploaded',
+            uploadedAt,
+            metadata: {
+              source: 'kingstons_formal_valuation_upload_status_sync',
+              leadId: normalizeText(selectedLead.leadId),
+              sellerPackDocumentKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+              sellerPackRequirementKey: requirementMeta.requirementKey || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+            },
+          })
+        } catch (linkError) {
+          console.warn('[AgencyPipelinePage] Formal valuation saved on lead but could not be linked to listing documents.', linkError)
+        }
+      }
       void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Formal Valuation Uploaded',
@@ -20721,7 +21138,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         console.warn('[AgencyPipelinePage] Formal valuation upload activity could not be recorded.', activityError)
       })
       setMessage('Formal valuation uploaded. Next best action is now Valuation Presentation.')
-      scheduleRecordsReload(organisationId, 850)
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the formal valuation document.')
     } finally {
@@ -29947,6 +30363,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <div className="space-y-4" data-testid="seller-documents-list">
                               {selectedSellerDocumentCategories.map((category) => {
                                 const CategoryIcon = category.Icon
+                                const ficaRoleplayerGroups = category.key === 'seller' ? selectedSellerFicaRoleplayerModel : []
+                                const activeFicaRoleplayer = ficaRoleplayerGroups.find((group) => group.id === activeSellerFicaRoleplayerId) || ficaRoleplayerGroups[0] || null
+                                const nonFicaItems = category.items.filter((documentRow) => !isKingstonsFicaRoleplayerDocumentRow(documentRow))
+                                const displayDocumentItems = ficaRoleplayerGroups.length
+                                  ? [
+                                      ...(activeFicaRoleplayer?.items || []),
+                                      ...nonFicaItems,
+                                    ]
+                                  : category.items
                                 return (
                                   <section key={category.key} className="rounded-[22px] border border-[#e3edf7] bg-[#fbfdff] p-4">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -29961,8 +30386,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       </div>
                                       <span className="rounded-full border border-[#dbe7f2] bg-white px-3 py-1 text-xs font-semibold text-[#607891]">{category.progress}%</span>
                                     </div>
+                                    {ficaRoleplayerGroups.length ? (
+                                      <div className="mt-4 rounded-[18px] border border-[#dbe7f2] bg-white p-3">
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                          <div>
+                                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">FICA Roleplayers</p>
+                                            <p className="mt-1 text-sm font-semibold text-[#20364c]">{activeFicaRoleplayer?.title || 'Select a roleplayer'}</p>
+                                          </div>
+                                          <span className="rounded-full border border-[#dbe7f2] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#607891]">
+                                            {activeFicaRoleplayer ? `${activeFicaRoleplayer.completed} of ${activeFicaRoleplayer.total}` : '0 of 0'}
+                                          </span>
+                                        </div>
+                                        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                                          {ficaRoleplayerGroups.map((group) => {
+                                            const active = group.id === (activeFicaRoleplayer?.id || activeSellerFicaRoleplayerId)
+                                            return (
+                                              <button
+                                                key={group.id}
+                                                type="button"
+                                                onClick={() => setActiveSellerFicaRoleplayerId(group.id)}
+                                                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${active ? 'border-[#13784f] bg-[#eaf7ef] text-[#126946]' : 'border-[#dbe7f2] bg-white text-[#607891] hover:border-[#b9cde3]'}`}
+                                              >
+                                                {group.tabLabel}
+                                              </button>
+                                            )
+                                          })}
+                                        </div>
+                                      </div>
+                                    ) : null}
                                     <div className="mt-4 grid gap-2">
-                                      {category.items.length ? category.items.map((documentRow) => {
+                                      {displayDocumentItems.length ? displayDocumentItems.map((documentRow) => {
                                         const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
                                         const StatusIcon = statusMeta.Icon
                                         const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
@@ -30143,6 +30596,61 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </div>
                           ))}
                         </div>
+                        {selectedBuyerFicaRoleplayerModel.length ? (
+                          <div className="mt-4 rounded-[16px] border border-[#dbe7f2] bg-[#fbfdff] p-4">
+                            {(() => {
+                              const activeBuyerFicaRoleplayer = selectedBuyerFicaRoleplayerModel.find((group) => group.id === activeBuyerFicaRoleplayerId) || selectedBuyerFicaRoleplayerModel[0]
+                              return (
+                                <>
+                                  <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">FICA Roleplayers</p>
+                                      <p className="mt-1 text-sm font-semibold text-[#20364c]">{activeBuyerFicaRoleplayer?.title || 'Buyer FICA'}</p>
+                                    </div>
+                                    <span className="rounded-full border border-[#dbe7f2] bg-white px-3 py-1 text-xs font-semibold text-[#607891]">
+                                      {activeBuyerFicaRoleplayer ? `${activeBuyerFicaRoleplayer.completed} of ${activeBuyerFicaRoleplayer.total}` : '0 of 0'}
+                                    </span>
+                                  </div>
+                                  <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                                    {selectedBuyerFicaRoleplayerModel.map((group) => {
+                                      const active = group.id === activeBuyerFicaRoleplayer?.id
+                                      return (
+                                        <button
+                                          key={group.id}
+                                          type="button"
+                                          onClick={() => setActiveBuyerFicaRoleplayerId(group.id)}
+                                          className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${active ? 'border-[#13784f] bg-[#eaf7ef] text-[#126946]' : 'border-[#dbe7f2] bg-white text-[#607891] hover:border-[#b9cde3]'}`}
+                                        >
+                                          {group.tabLabel}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                  <div className="mt-3 grid gap-2">
+                                    {(activeBuyerFicaRoleplayer?.items || []).map((documentRow) => {
+                                      const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
+                                      const StatusIcon = statusMeta.Icon
+                                      return (
+                                        <div key={documentRow.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-white px-4 py-3">
+                                          <div className="flex min-w-0 items-center gap-3">
+                                            <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[12px] ${statusMeta.iconClass}`}>
+                                              <StatusIcon className="h-4 w-4" />
+                                            </span>
+                                            <div className="min-w-0">
+                                              <p className="truncate text-sm font-semibold text-[#203a54]" title={documentRow.label}>{documentRow.label}</p>
+                                              <p className="mt-0.5 text-xs font-medium text-[#6a8098]">{documentRow.description}</p>
+                                            </div>
+                                          </div>
+                                          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                </>
+                              )
+                            })()}
+                          </div>
+                        ) : null}
                         <div className="mt-4 grid gap-2" data-testid="seller-documents-list">
                           {[
                             { id: 'buyer-upload', label: 'Buyer upload pack', status: selectedLeadBuyerOnboardingSubmitted ? 'Submitted' : 'Pending' },

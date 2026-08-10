@@ -75,6 +75,14 @@ const liveNonWorkspaceSources = [
   assert.match(pipelinePageSource, /Kingstons Seller Process/)
   assert.match(pipelinePageSource, /schedule_valuation_appointment/)
   assert.match(pipelinePageSource, /schedule_valuation_presentation/)
+  assert.doesNotMatch(
+    pipelinePageSource,
+    /if \(sourceHasRouteLead\) return sourceSnapshot/,
+    'route lead workspace data must not be discarded just because a thinner reload includes the same lead',
+  )
+  assert.match(pipelinePageSource, /const scopedPinnedLeads = pinned\.leads\.filter/)
+  assert.match(pipelinePageSource, /leads: routeLeadRows/)
+  assert.match(pipelinePageSource, /pinnedRouteLinkedListingOptions/)
   {
     const actionStart = pipelinePageSource.indexOf('const selectedKingstonsProcessAction = useMemo(')
     assert.notEqual(actionStart, -1, 'selectedKingstonsProcessAction should exist')
