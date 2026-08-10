@@ -106,7 +106,7 @@ const KINGSTONS_PROCESS_DEFINITION = Object.freeze({
       label: 'Valuation Presentation Appointment',
       appointmentType: 'valuation_presentation',
       requiredBeforeStage: 'seller_pack_signed',
-      acceptedStatuses: Object.freeze(['scheduled', 'confirmed', 'completed']),
+      acceptedStatuses: Object.freeze(['requested', 'scheduled', 'confirmed', 'awaiting_confirmation', 'completed']),
       evidenceKey: 'valuation_presentation_scheduled',
     }),
   ]),
@@ -179,7 +179,7 @@ const KINGSTONS_PROCESS_DEFINITION = Object.freeze({
       source: 'appointment',
       requiredForStage: 'valuation_presentation_scheduled',
       appointmentType: 'valuation_presentation',
-      acceptedStatuses: Object.freeze(['scheduled', 'confirmed', 'awaiting_confirmation', 'completed']),
+      acceptedStatuses: Object.freeze(['requested', 'scheduled', 'confirmed', 'awaiting_confirmation', 'completed']),
     }),
     Object.freeze({
       key: 'mandate_signed',

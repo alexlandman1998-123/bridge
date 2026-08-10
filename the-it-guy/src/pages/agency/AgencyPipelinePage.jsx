@@ -16974,12 +16974,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           profile,
           workspace,
         })
+        const appointmentWorkflowStageKey = normalizeKey(appointmentPayload.linkedWorkflowStage || appointmentPayload.linked_workflow_stage)
+        const appointmentTitleKey = normalizeKey(appointmentPayload.title)
         const isKingstonsValuationAppointment =
           (selectedLeadHasKingstonsPipelineSignal || linkedLeadHasKingstonsPipelineSignal) &&
-          normalizeKey(appointmentPayload.appointmentType) === 'seller_valuation'
+          (normalizeKey(appointmentPayload.appointmentType) === 'seller_valuation' || appointmentWorkflowStageKey === 'valuation_appointment')
         const isKingstonsValuationPresentation =
           (selectedLeadHasKingstonsPipelineSignal || linkedLeadHasKingstonsPipelineSignal) &&
-          normalizeKey(appointmentPayload.appointmentType) === 'valuation_presentation'
+          (
+            normalizeKey(appointmentPayload.appointmentType) === 'valuation_presentation' ||
+            appointmentWorkflowStageKey === 'valuation_presentation' ||
+            appointmentTitleKey.includes('valuation_presentation')
+          )
         const sellerAppointmentScheduledAt = new Date().toISOString()
         const sellerAppointmentLeadPatch = isKingstonsValuationAppointment
           ? {
@@ -28439,7 +28445,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <Field type="date" value={appointmentForm.date} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, date: event.target.value }))} />
                           <Field type="time" value={appointmentForm.startTime} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, startTime: event.target.value }))} />
                         </div>
-                        <Field className="mt-2" placeholder="Viewing notes" value={appointmentForm.notes} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, notes: event.target.value, appointmentType: 'viewing', title: previous.title || 'Viewing' }))} />
+                        <Field className="mt-2" placeholder="Appointment notes" value={appointmentForm.notes} onChange={(event) => setAppointmentForm((previous) => ({ ...previous, notes: event.target.value }))} />
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Button type="submit">Book Viewing</Button>
                         </div>
