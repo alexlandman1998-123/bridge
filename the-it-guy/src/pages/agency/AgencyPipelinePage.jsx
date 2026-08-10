@@ -101,6 +101,7 @@ import {
   getBuyerProcessDefinition,
   normalizeBuyerProcessStageKey,
 } from '../../services/buyerProcessDefinitionService'
+import { BUYER_ONBOARDING_FLOW_VERSION } from '../../lib/buyerOnboardingFlowContract'
 import { BUYER_OTP_DEPRECATION_NOTICE } from '../../services/buyerProcessMigrationService'
 import { generatePacketVersion, generateSigningLinks, prepareSigningFields, resetSigningFields, resolveActiveTemplate } from '../../core/documents/packetService'
 import { assessSigningFieldLayout } from '../../core/documents/signingFieldLayout'
@@ -4979,12 +4980,235 @@ function resolveBuyerWorkspaceTabKey(tabKey = '') {
   return normalized
 }
 
+function getListingPublicationData(listing = {}) {
+  return asRecord(
+    listing?.listingPublicationData ||
+      listing?.listing_publication_data ||
+      listing?.publicationData ||
+      listing?.publication_data ||
+      listing?.publication,
+  )
+}
+
+function isRecoverableMissingTableError(error = {}, tableName = '') {
+  const message = normalizeText(error?.message || error?.details || error?.hint).toLowerCase()
+  const code = normalizeText(error?.code)
+  return code === '42P01' ||
+    message.includes('does not exist') ||
+    (tableName && message.includes(tableName.toLowerCase()) && message.includes('not found'))
+}
+
+const BUYER_INFO_FORM_DEFAULTS = Object.freeze({
+  firstName: '',
+  lastName: '',
+  dateOfBirth: '',
+  identityNumberOrPassportNumber: '',
+  nationality: '',
+  residencyStatus: '',
+  taxNumber: '',
+  email: '',
+  phone: '',
+  residentialAddressLine1: '',
+  residentialAddressSuburb: '',
+  residentialAddressCity: '',
+  residentialAddressPostalCode: '',
+  maritalStatus: '',
+  occupation: '',
+  incomeSource: '',
+  numberOfDependants: '',
+  monthlyCreditCommitments: '',
+  firstTimeBuyer: '',
+  primaryResidence: '',
+  investmentPurchase: '',
+  purchaserType: 'individual',
+  purchaseFinanceType: '',
+  depositAmount: '',
+  cashAmount: '',
+  bondAmount: '',
+  proofOfFundsUrl: '',
+  bondBankName: '',
+  bondProcessStarted: '',
+  bondCurrentStatus: '',
+  bondOriginatorName: '',
+  bondOriginatorContact: '',
+})
+
+const BUYER_INFO_REQUIRED_FIELDS = Object.freeze([
+  'firstName',
+  'lastName',
+  'identityNumberOrPassportNumber',
+  'email',
+  'phone',
+  'residentialAddressLine1',
+  'residentialAddressSuburb',
+  'residentialAddressCity',
+  'residentialAddressPostalCode',
+  'maritalStatus',
+  'numberOfDependants',
+  'monthlyCreditCommitments',
+  'firstTimeBuyer',
+  'primaryResidence',
+  'investmentPurchase',
+  'purchaseFinanceType',
+])
+
+function readObjectPathValue(source = {}, path = '') {
+  if (!source || typeof source !== 'object' || !path) return undefined
+  return path.split('.').reduce((cursor, key) => (
+    cursor && typeof cursor === 'object' ? cursor[key] : undefined
+  ), source)
+}
+
+function setObjectPathValue(source = {}, path = '', value) {
+  if (!path) return source
+  const keys = path.split('.').filter(Boolean)
+  if (!keys.length) return source
+  const root = { ...(source || {}) }
+  let cursor = root
+  keys.forEach((key, index) => {
+    if (index === keys.length - 1) {
+      cursor[key] = value
+      return
+    }
+    cursor[key] = cursor[key] && typeof cursor[key] === 'object' && !Array.isArray(cursor[key])
+      ? { ...cursor[key] }
+      : {}
+    cursor = cursor[key]
+  })
+  return root
+}
+
+function firstBuyerInfoValue(source = {}, paths = []) {
+  for (const path of paths) {
+    const value = path.includes('.') ? readObjectPathValue(source, path) : source?.[path]
+    const normalized = normalizeText(value)
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+function buildBuyerInfoDraft({ lead = {}, contact = {}, formData = {}, transaction = {} } = {}) {
+  const buyerPerson = asRecord(formData?.buyer?.person)
+  const fullName = firstWorkspaceText(
+    formData.full_name,
+    formData.buyer_full_name,
+    [buyerPerson.first_name, buyerPerson.last_name].filter(Boolean).join(' '),
+    [contact?.firstName, contact?.lastName].filter(Boolean).join(' '),
+    lead?.buyerName,
+    lead?.name,
+  )
+  const [fallbackFirstName = '', ...fallbackLastNameParts] = fullName.split(/\s+/).filter(Boolean)
+  return {
+    ...BUYER_INFO_FORM_DEFAULTS,
+    firstName: firstBuyerInfoValue(formData, ['buyer.person.first_name', 'first_name', 'buyer_first_name']) || normalizeText(contact?.firstName) || fallbackFirstName,
+    lastName: firstBuyerInfoValue(formData, ['buyer.person.last_name', 'last_name', 'buyer_last_name']) || normalizeText(contact?.lastName) || fallbackLastNameParts.join(' '),
+    dateOfBirth: firstBuyerInfoValue(formData, ['buyer.person.date_of_birth', 'date_of_birth', 'buyer_date_of_birth']),
+    identityNumberOrPassportNumber: firstBuyerInfoValue(formData, ['buyer.person.identity_number_or_passport_number', 'identity_number_or_passport_number', 'id_number', 'idNumber']),
+    nationality: firstBuyerInfoValue(formData, ['buyer.person.nationality', 'nationality']) || 'South African',
+    residencyStatus: firstBuyerInfoValue(formData, ['buyer.person.residency_status', 'residency_status']) || 'resident',
+    taxNumber: firstBuyerInfoValue(formData, ['buyer.person.tax_number', 'tax_number']),
+    email: firstBuyerInfoValue(formData, ['buyer.person.email', 'email', 'buyer_email']) || normalizeText(contact?.email || lead?.email).toLowerCase(),
+    phone: firstBuyerInfoValue(formData, ['buyer.person.phone', 'phone', 'buyer_phone']) || normalizeText(contact?.phone || lead?.phone),
+    residentialAddressLine1: firstBuyerInfoValue(formData, ['buyer.person.residential_address.line_1', 'residential_address_line_1', 'address_line_1']),
+    residentialAddressSuburb: firstBuyerInfoValue(formData, ['buyer.person.residential_address.suburb', 'residential_address_suburb', 'suburb']),
+    residentialAddressCity: firstBuyerInfoValue(formData, ['buyer.person.residential_address.city', 'residential_address_city', 'city']),
+    residentialAddressPostalCode: firstBuyerInfoValue(formData, ['buyer.person.residential_address.postal_code', 'residential_address_postal_code', 'postal_code']),
+    maritalStatus: firstBuyerInfoValue(formData, ['buyer.person.marital_status', 'marital_status']),
+    occupation: firstBuyerInfoValue(formData, ['buyer.person.occupation', 'occupation']),
+    incomeSource: firstBuyerInfoValue(formData, ['buyer.person.income_source', 'income_source']),
+    numberOfDependants: firstBuyerInfoValue(formData, ['buyer.person.number_of_dependants', 'number_of_dependants']),
+    monthlyCreditCommitments: firstBuyerInfoValue(formData, ['buyer.person.monthly_credit_commitments', 'monthly_credit_commitments']),
+    firstTimeBuyer: firstBuyerInfoValue(formData, ['buyer.person.first_time_buyer', 'first_time_buyer']),
+    primaryResidence: firstBuyerInfoValue(formData, ['buyer.person.primary_residence', 'primary_residence']),
+    investmentPurchase: firstBuyerInfoValue(formData, ['buyer.person.investment_purchase', 'investment_purchase']),
+    purchaserType: firstBuyerInfoValue(formData, ['purchaser_type', 'buyer.branch']) || normalizeText(transaction?.purchaser_type) || 'individual',
+    purchaseFinanceType: firstBuyerInfoValue(formData, ['purchase_finance_type', 'finance.purchase_finance_type', 'finance_type']) || normalizeText(transaction?.finance_type || lead?.financeType || lead?.finance_type),
+    depositAmount: firstBuyerInfoValue(formData, ['deposit_amount']) || normalizeText(transaction?.deposit_amount || lead?.depositAmount),
+    cashAmount: firstBuyerInfoValue(formData, ['cash_amount']) || normalizeText(transaction?.cash_amount),
+    bondAmount: firstBuyerInfoValue(formData, ['bond_amount']) || normalizeText(transaction?.bond_amount),
+    proofOfFundsUrl: firstBuyerInfoValue(formData, ['proof_of_funds_url', 'proofOfFundsUrl']),
+    bondBankName: firstBuyerInfoValue(formData, ['finance.bond_bank_name', 'bond_bank_name']),
+    bondProcessStarted: firstBuyerInfoValue(formData, ['finance.bond_process_started', 'bond_process_started']),
+    bondCurrentStatus: firstBuyerInfoValue(formData, ['finance.bond_current_status', 'bond_current_status']),
+    bondOriginatorName: firstBuyerInfoValue(formData, ['finance.bond_originator_name', 'bond_originator_name']),
+    bondOriginatorContact: firstBuyerInfoValue(formData, ['finance.bond_originator_contact', 'bond_originator_contact']),
+  }
+}
+
+function buildBuyerInfoOnboardingFormData(draft = {}, existingFormData = {}, { actor = {}, capturedAt = '' } = {}) {
+  const normalized = { ...(existingFormData && typeof existingFormData === 'object' ? existingFormData : {}) }
+  const setField = (path, value) => {
+    const nextValue = typeof value === 'boolean' ? value : normalizeText(value)
+    if (nextValue === '') return
+    Object.assign(normalized, setObjectPathValue(normalized, path, nextValue))
+  }
+
+  setField('buyer.person.first_name', draft.firstName)
+  setField('buyer.person.last_name', draft.lastName)
+  setField('buyer.person.date_of_birth', draft.dateOfBirth)
+  setField('buyer.person.identity_number_or_passport_number', draft.identityNumberOrPassportNumber)
+  setField('buyer.person.nationality', draft.nationality)
+  setField('buyer.person.residency_status', draft.residencyStatus)
+  setField('buyer.person.tax_number', draft.taxNumber)
+  setField('buyer.person.email', normalizeText(draft.email).toLowerCase())
+  setField('buyer.person.phone', draft.phone)
+  setField('buyer.person.residential_address.line_1', draft.residentialAddressLine1)
+  setField('buyer.person.residential_address.suburb', draft.residentialAddressSuburb)
+  setField('buyer.person.residential_address.city', draft.residentialAddressCity)
+  setField('buyer.person.residential_address.postal_code', draft.residentialAddressPostalCode)
+  setField('buyer.person.marital_status', draft.maritalStatus)
+  setField('buyer.person.occupation', draft.occupation)
+  setField('buyer.person.income_source', draft.incomeSource)
+  setField('buyer.person.number_of_dependants', draft.numberOfDependants)
+  setField('buyer.person.monthly_credit_commitments', draft.monthlyCreditCommitments)
+  setField('buyer.person.first_time_buyer', draft.firstTimeBuyer)
+  setField('buyer.person.primary_residence', draft.primaryResidence)
+  setField('buyer.person.investment_purchase', draft.investmentPurchase)
+  setField('purchaser_type', draft.purchaserType)
+  setField('purchase_finance_type', draft.purchaseFinanceType)
+  setField('finance.purchase_finance_type', draft.purchaseFinanceType)
+  setField('deposit_amount', draft.depositAmount)
+  setField('cash_amount', draft.cashAmount)
+  setField('bond_amount', draft.bondAmount)
+  setField('proof_of_funds_url', draft.proofOfFundsUrl)
+  setField('finance.bond_bank_name', draft.bondBankName)
+  setField('finance.bond_process_started', draft.bondProcessStarted)
+  setField('finance.bond_current_status', draft.bondCurrentStatus)
+  setField('finance.bond_originator_name', draft.bondOriginatorName)
+  setField('finance.bond_originator_contact', draft.bondOriginatorContact)
+
+  const buyerFullName = [draft.firstName, draft.lastName].map(normalizeText).filter(Boolean).join(' ')
+  return {
+    ...normalized,
+    full_name: buyerFullName || normalized.full_name || '',
+    email: normalizeText(draft.email).toLowerCase() || normalized.email || '',
+    phone: normalizeText(draft.phone) || normalized.phone || '',
+    buyer_onboarding_flow_version: BUYER_ONBOARDING_FLOW_VERSION,
+    onboarding_flow_version: BUYER_ONBOARDING_FLOW_VERSION,
+    manual_agent_capture: true,
+    buyer_info_manually_captured: true,
+    buyer_info_manually_captured_at: capturedAt,
+    buyer_info_manually_captured_by: normalizeText(actor.email || actor.name || actor.id),
+  }
+}
+
+function getBuyerInfoCompletion(formData = {}) {
+  const draft = buildBuyerInfoDraft({ formData })
+  const completed = BUYER_INFO_REQUIRED_FIELDS.filter((key) => normalizeText(draft[key])).length
+  return {
+    completed,
+    total: BUYER_INFO_REQUIRED_FIELDS.length,
+    percent: BUYER_INFO_REQUIRED_FIELDS.length ? Math.round((completed / BUYER_INFO_REQUIRED_FIELDS.length) * 100) : 0,
+  }
+}
+
 function buildAppointmentListingLabel(listing = {}) {
+  const publicationData = getListingPublicationData(listing)
   const reference = normalizeText(listing?.listingReference || listing?.reference || listing?.listing_reference)
-  const title = normalizeText(listing?.listingTitle || listing?.title || listing?.propertyName || listing?.property_name)
-  const address = normalizeText(listing?.propertyAddress || listing?.address || listing?.addressLine1 || listing?.address_line_1)
-  const suburb = normalizeText(listing?.suburb)
-  const price = Number(listing?.askingPrice || listing?.asking_price || listing?.price || listing?.estimatedValue || 0)
+  const title = firstWorkspaceText(listing?.listingTitle, listing?.title, publicationData.title, listing?.propertyName, listing?.property_name)
+  const address = firstWorkspaceText(listing?.propertyAddress, listing?.address, publicationData.address, listing?.addressLine1, listing?.address_line_1)
+  const suburb = firstWorkspaceText(listing?.suburb, publicationData.suburb)
+  const price = Number(listing?.askingPrice || listing?.asking_price || publicationData.askingPrice || publicationData.asking_price || listing?.price || listing?.estimatedValue || 0)
   const displayReference = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(reference)
     ? ''
     : reference
@@ -5177,24 +5401,48 @@ function buildRouteLeadLinkedListingSyncPatch(lead = {}, listing = null) {
 function normalizeAppointmentListingOption(listing = {}) {
   const id = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
   if (!id) return null
+  const publicationData = getListingPublicationData(listing)
+  const propertyDetails = asRecord(listing?.propertyDetails || listing?.property_details)
   const status = normalizeText(listing?.status || listing?.listingStatus || listing?.lifecycleStatus || listing?.listing_status).toLowerCase()
   if (['archived', 'deleted', 'withdrawn', 'removed'].some((blocked) => status.includes(blocked))) return null
-  const bedrooms = Number(listing?.bedrooms || listing?.propertyDetails?.bedrooms || 0) || 0
-  const bathrooms = Number(listing?.bathrooms || listing?.propertyDetails?.bathrooms || 0) || 0
-  const parking = Number(listing?.garages || listing?.coveredParking || listing?.openParking || listing?.propertyDetails?.garages || listing?.propertyDetails?.coveredParking || listing?.propertyDetails?.openParking || 0) || 0
-  const askingPrice = Number(listing?.askingPrice || listing?.asking_price || listing?.price || listing?.propertyDetails?.price || listing?.estimatedValue || 0) || 0
+  const bedrooms = Number(listing?.bedrooms || publicationData.bedrooms || propertyDetails.bedrooms || 0) || 0
+  const bathrooms = Number(listing?.bathrooms || publicationData.bathrooms || propertyDetails.bathrooms || 0) || 0
+  const parking = Number(
+    listing?.garages ||
+      listing?.coveredParking ||
+      listing?.openParking ||
+      publicationData.garages ||
+      publicationData.parkingBays ||
+      publicationData.parking_bays ||
+      propertyDetails.garages ||
+      propertyDetails.coveredParking ||
+      propertyDetails.openParking ||
+      0,
+  ) || 0
+  const askingPrice = Number(
+    listing?.askingPrice ||
+      listing?.asking_price ||
+      publicationData.askingPrice ||
+      publicationData.asking_price ||
+      listing?.price ||
+      propertyDetails.price ||
+      listing?.estimatedValue ||
+      0,
+  ) || 0
   return {
     id,
     sourceListing: listing,
     label: buildAppointmentListingLabel(listing),
     status: status || 'active',
-    title: normalizeText(listing?.listingTitle || listing?.title || listing?.propertyName || listing?.property_name),
-    address: normalizeText(listing?.propertyAddress || listing?.address || listing?.addressLine1 || listing?.address_line_1),
-    suburb: normalizeText(listing?.suburb),
+    title: firstWorkspaceText(listing?.listingTitle, listing?.title, publicationData.title, listing?.propertyName, listing?.property_name),
+    address: firstWorkspaceText(listing?.propertyAddress, listing?.address, publicationData.address, listing?.addressLine1, listing?.address_line_1),
+    suburb: firstWorkspaceText(listing?.suburb, publicationData.suburb),
     askingPrice,
     bedrooms,
     bathrooms,
     parking,
+    floorSize: Number(listing?.floorSize || publicationData.floorSize || publicationData.floor_size || propertyDetails.floorSize || 0) || 0,
+    erfSize: Number(listing?.erfSize || publicationData.erfSize || publicationData.erf_size || propertyDetails.erfSize || 0) || 0,
     thumbnailUrl: resolveListingImageUrl(listing),
     assignedAgentId: normalizeText(listing?.assignedAgentId || listing?.assigned_agent_id || listing?.agentId || listing?.agent_id),
     assignedAgentEmail: normalizeText(listing?.assignedAgentEmail || listing?.assigned_agent_email || listing?.agentEmail || listing?.agent_email).toLowerCase(),
@@ -9182,6 +9430,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   })
   const [offerPropertySelectorOpen, setOfferPropertySelectorOpen] = useState(false)
   const [offerPropertySearch, setOfferPropertySearch] = useState('')
+  const [buyerInfoModalOpen, setBuyerInfoModalOpen] = useState(false)
+  const [buyerInfoForm, setBuyerInfoForm] = useState(BUYER_INFO_FORM_DEFAULTS)
+  const [buyerInfoSaving, setBuyerInfoSaving] = useState(false)
+  const [buyerInfoError, setBuyerInfoError] = useState('')
   const [offerLinkChannels, setOfferLinkChannels] = useState({
     email: true,
     sms: false,
@@ -11695,6 +11947,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadLifecycleDiagnostic?.onboardingPrefill?.formData ||
     {}
   ), [selectedLeadLifecycleDiagnostic?.onboardingPrefill])
+  const selectedLeadManualBuyerInfoFormData = useMemo(() => {
+    const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+    return asRecord(
+      rawPayload.buyerOnboardingFormData ||
+        rawPayload.buyer_onboarding_form_data ||
+        selectedLead?.buyerOnboardingFormData ||
+        selectedLead?.buyer_onboarding_form_data,
+    )
+  }, [selectedLead])
+  const selectedLeadBuyerInfoFormData = useMemo(() => ({
+    ...(selectedLeadFinanceFormData || {}),
+    ...(selectedLeadManualBuyerInfoFormData || {}),
+  }), [selectedLeadFinanceFormData, selectedLeadManualBuyerInfoFormData])
+  const selectedLeadBuyerInfoCompletion = useMemo(
+    () => getBuyerInfoCompletion(selectedLeadBuyerInfoFormData),
+    [selectedLeadBuyerInfoFormData],
+  )
   const selectedLeadFinanceReadinessSummary = useMemo(() => getFinanceReadinessSummary({
     transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {
       id: selectedLeadLinkedTransactionId,
@@ -11702,7 +11971,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       purchase_price: selectedLead?.budget || selectedLead?.estimatedValue,
       deposit_amount: selectedLead?.depositAmount,
     },
-    onboardingFormData: selectedLeadFinanceFormData,
+    onboardingFormData: selectedLeadBuyerInfoFormData,
     documentSummary: selectedLeadLinkedTransaction?.documentSummary || {},
     onboardingPrefill: selectedLeadLifecycleDiagnostic?.onboardingPrefill || null,
   }), [
@@ -11711,7 +11980,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLead?.estimatedValue,
     selectedLead?.financeType,
     selectedLead?.finance_type,
-    selectedLeadFinanceFormData,
+    selectedLeadBuyerInfoFormData,
     selectedLeadLifecycleDiagnostic?.onboardingPrefill,
     selectedLeadLinkedTransaction,
     selectedLeadLinkedTransactionId,
@@ -11756,7 +12025,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       purchase_price: selectedLead?.budget || selectedLead?.estimatedValue,
       deposit_amount: selectedLead?.depositAmount,
     },
-    onboardingFormData: selectedLeadFinanceFormData,
+    onboardingFormData: selectedLeadBuyerInfoFormData,
     documentSummary: selectedLeadLinkedTransaction?.documentSummary || {},
     onboardingPrefill: selectedLeadLifecycleDiagnostic?.onboardingPrefill || null,
   }), [
@@ -11765,7 +12034,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLead?.estimatedValue,
     selectedLead?.financeType,
     selectedLead?.finance_type,
-    selectedLeadFinanceFormData,
+    selectedLeadBuyerInfoFormData,
     selectedLeadLifecycleDiagnostic?.onboardingPrefill,
     selectedLeadLinkedTransaction,
     selectedLeadLinkedTransactionId,
@@ -13330,7 +13599,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => buildBuyerFicaRoleplayerModel({
       lead: selectedLead || {},
       contact: selectedLeadContact || {},
-      formData: selectedLeadFinanceFormData || {},
+      formData: selectedLeadBuyerInfoFormData || {},
       transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {},
       onboardingSubmitted: selectedLeadBuyerOnboardingSubmitted,
     }),
@@ -13338,7 +13607,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead,
       selectedLeadBuyerOnboardingSubmitted,
       selectedLeadContact,
-      selectedLeadFinanceFormData,
+      selectedLeadBuyerInfoFormData,
       selectedLeadLinkedTransaction,
     ],
   )
@@ -14166,7 +14435,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         purchasePrice: normalizeText((selectedLeadAcceptedOffer || selectedLeadLifecycleDiagnosticOffer)?.offerAmount || selectedLeadOfferCentreProperty?.price || selectedLeadBuyerBudgetLabel),
       },
       onboardingFormData: {
-        ...(selectedLeadFinanceFormData || {}),
+        ...(selectedLeadBuyerInfoFormData || {}),
         status: selectedLeadLifecycleDiagnostic?.onboarding?.status,
         submitted_at: selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at,
         onboarding_status: selectedLeadLifecycleDiagnostic?.transaction?.onboarding_status,
@@ -14201,7 +14470,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadLifecycleDiagnostic?.transaction,
     selectedLeadLifecycleDiagnostic?.transaction?.onboarding_status,
     selectedLeadBuyerOnboardingSubmitted,
-    selectedLeadFinanceFormData,
+    selectedLeadBuyerInfoFormData,
     selectedLeadLinkedTransaction,
     selectedLeadOfferCentreProperty,
     selectedLeadOtpTemplateReadiness,
@@ -14273,7 +14542,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             purchasePrice: normalizeText((selectedLeadAcceptedOffer || selectedLeadLifecycleDiagnosticOffer)?.offerAmount || selectedLeadOfferCentreProperty?.price || selectedLeadBuyerBudgetLabel),
           },
           onboardingFormData: {
-            ...(selectedLeadFinanceFormData || {}),
+            ...(selectedLeadBuyerInfoFormData || {}),
             status: selectedLeadLifecycleDiagnostic?.onboarding?.status,
             submitted_at: selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at,
             onboarding_status: selectedLeadLifecycleDiagnostic?.transaction?.onboarding_status,
@@ -14342,7 +14611,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadLifecycleDiagnostic?.transaction,
     selectedLeadLifecycleDiagnostic?.transaction?.onboarding_status,
     selectedLeadBuyerOnboardingSubmitted,
-    selectedLeadFinanceFormData,
+    selectedLeadBuyerInfoFormData,
     selectedLeadLinkedTransaction,
     selectedLeadOfferCentreProperty,
   ])
@@ -14629,6 +14898,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadEffectiveLifecycleStage,
     selectedLeadLastActiveAt,
     selectedLeadLastContactedAt,
+    selectedLeadLinkedTransactionId,
+    selectedLeadOfferSummary.total,
+    selectedLeadViewingAppointments,
+  ])
+
+  const selectedLeadBuyerInfoUnlocked = useMemo(() => {
+    if (!selectedLead || selectedLeadIsSeller) return false
+    const stageKey = normalizeBuyerProcessStageKey(selectedLeadEffectiveLifecycleStage || selectedLead?.stage || selectedLead?.status, '')
+    const completedViewing = selectedLeadBuyerJourneyStages.some((stage) => stage.key === 'viewing' && stage.done) ||
+      selectedLeadViewingAppointments.some((appointment) => normalizeText(appointment?.status).toLowerCase() === 'completed')
+    return Boolean(
+      completedViewing ||
+        ['buyer_onboarding_sent', 'offer_received', 'transaction', 'closed_won'].includes(stageKey) ||
+        selectedLeadOfferSummary.total > 0 ||
+        selectedLeadLinkedTransactionId ||
+        selectedLeadBuyerOnboardingSubmitted,
+    )
+  }, [
+    selectedLead,
+    selectedLeadBuyerJourneyStages,
+    selectedLeadBuyerOnboardingSubmitted,
+    selectedLeadEffectiveLifecycleStage,
+    selectedLeadIsSeller,
     selectedLeadLinkedTransactionId,
     selectedLeadOfferSummary.total,
     selectedLeadViewingAppointments,
@@ -22970,6 +23262,127 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function openBuyerInfoModal() {
+    if (!selectedLead || selectedLeadIsSeller) return
+    setBuyerInfoForm(buildBuyerInfoDraft({
+      lead: selectedLead,
+      contact: selectedLeadContact || {},
+      formData: selectedLeadBuyerInfoFormData,
+      transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {},
+    }))
+    setBuyerInfoError('')
+    setBuyerInfoModalOpen(true)
+  }
+
+  function updateBuyerInfoField(field, value) {
+    setBuyerInfoForm((previous) => ({ ...previous, [field]: value }))
+    setBuyerInfoError('')
+  }
+
+  async function persistBuyerInfoOnboardingFormData(formData = {}) {
+    const transactionId = normalizeText(selectedLeadLinkedTransactionId)
+    if (!isSupabaseConfigured || !supabase || !isUuidLike(transactionId)) return null
+
+    const existingQuery = await supabase
+      .from('onboarding_form_data')
+      .select('id, form_data, purchaser_type')
+      .eq('transaction_id', transactionId)
+      .maybeSingle()
+
+    if (existingQuery.error && !isRecoverableMissingTableError(existingQuery.error, 'onboarding_form_data')) {
+      throw existingQuery.error
+    }
+    if (existingQuery.error && isRecoverableMissingTableError(existingQuery.error, 'onboarding_form_data')) {
+      return null
+    }
+
+    const mergedFormData = {
+      ...(existingQuery.data?.form_data && typeof existingQuery.data.form_data === 'object' ? existingQuery.data.form_data : {}),
+      ...formData,
+    }
+    const payload = {
+      transaction_id: transactionId,
+      purchaser_type: normalizeText(formData.purchaser_type || existingQuery.data?.purchaser_type || 'individual'),
+      form_data: mergedFormData,
+      updated_at: new Date().toISOString(),
+    }
+
+    const result = existingQuery.data?.id
+      ? await supabase
+        .from('onboarding_form_data')
+        .update(payload)
+        .eq('id', existingQuery.data.id)
+        .select('id, transaction_id, purchaser_type, updated_at')
+        .maybeSingle()
+      : await supabase
+        .from('onboarding_form_data')
+        .insert(payload)
+        .select('id, transaction_id, purchaser_type, updated_at')
+        .maybeSingle()
+    if (result.error) {
+      if (isRecoverableMissingTableError(result.error, 'onboarding_form_data')) return null
+      throw result.error
+    }
+    return result.data
+  }
+
+  async function handleSaveBuyerInfo(event = null) {
+    event?.preventDefault?.()
+    if (!organisationId || !selectedLead || selectedLeadIsSeller) return
+    if (!selectedLeadBuyerInfoUnlocked) {
+      setBuyerInfoError('Buyer Info unlocks after a completed viewing or once the buyer moves into onboarding / offer stage.')
+      return
+    }
+    const capturedAt = new Date().toISOString()
+    const nextFormData = buildBuyerInfoOnboardingFormData(buyerInfoForm, selectedLeadBuyerInfoFormData, {
+      actor: currentAgent,
+      capturedAt,
+    })
+    const completion = getBuyerInfoCompletion(nextFormData)
+    try {
+      setBuyerInfoSaving(true)
+      setBuyerInfoError('')
+      const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+      const rawEnquiryPayload = {
+        ...rawPayload,
+        buyerOnboardingFormData: nextFormData,
+        buyer_onboarding_form_data: nextFormData,
+        buyerInfoManualCapture: {
+          completed: completion.completed,
+          total: completion.total,
+          percent: completion.percent,
+          capturedAt,
+          capturedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+        },
+      }
+      const leadPatch = {
+        rawEnquiryPayload,
+        buyerOnboardingFormData: nextFormData,
+        buyer_onboarding_form_data: nextFormData,
+        buyerInfoManualCapture: rawEnquiryPayload.buyerInfoManualCapture,
+        buyerInfoCapturedAt: capturedAt,
+        buyer_info_captured_at: capturedAt,
+      }
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      await persistBuyerInfoOnboardingFormData(nextFormData)
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Buyer Info Captured',
+        activityNote: `Agent captured buyer onboarding information manually (${completion.completed}/${completion.total} key fields).`,
+        outcome: completion.percent >= 100 ? 'Complete' : 'Partial',
+        activityDate: capturedAt,
+      }, { actor: currentAgent }).catch(() => null)
+      setMessage('Buyer Info saved to the buyer onboarding record.')
+      setBuyerInfoModalOpen(false)
+      await reloadRecords(organisationId)
+    } catch (saveError) {
+      setBuyerInfoError(saveError?.message || 'Unable to save Buyer Info right now.')
+    } finally {
+      setBuyerInfoSaving(false)
+    }
+  }
+
   async function handleUploadBuyerOfferDocument(event = null) {
     const file = event?.target?.files?.[0] || null
     if (event?.target) event.target.value = ''
@@ -23674,7 +24087,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         transactionId,
         purchaserType: selectedLeadLinkedTransaction?.transaction?.purchaser_type || 'individual',
         input: financeReadinessForm,
-        existingFormData: selectedLeadFinanceFormData,
+        existingFormData: selectedLeadBuyerInfoFormData,
       })
       await recordBuyerLeadActivity({
         organisationId,
@@ -25782,6 +26195,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                            void handleSendBuyerOnboardingFromLead()
 	                                          },
 	                                        },
+                                        {
+                                          label: 'Buyer Info',
+                                          Icon: UserRound,
+                                          tone: 'text-[#29435d]',
+                                          disabled: !selectedLeadBuyerInfoUnlocked,
+                                          title: selectedLeadBuyerInfoUnlocked
+                                            ? `Capture buyer onboarding info (${selectedLeadBuyerInfoCompletion.completed}/${selectedLeadBuyerInfoCompletion.total})`
+                                            : 'Buyer Info unlocks after a completed viewing or once the buyer moves to onboarding / offer stage.',
+                                          onClick: () => {
+                                            setLeadActionsMenuOpen(false)
+                                            openBuyerInfoModal()
+                                          },
+                                        },
 	                                        {
 	                                          label: 'Schedule Appointment',
 	                                          Icon: CalendarDays,
@@ -30072,15 +30498,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <span className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#eef5ff] text-[#0b63f6]">
                           <Tag className="h-5 w-5" />
                         </span>
-                        <div>
+	                        <div>
 	                          <h3 className="text-2xl font-semibold text-[#0c2440]">Buyer Onboarding + Offer Upload</h3>
 	                          <p className="mt-1 text-sm text-[#5f7690]">Send onboarding first, then upload the buyer's offer document as the source of truth.</p>
                         </div>
                       </div>
-                      <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab('overview')}>
-                        <Settings className="h-4 w-4" />
-                        Offer Settings
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={selectedLeadBuyerInfoUnlocked ? 'secondary' : 'ghost'}
+                          className="rounded-[12px]"
+                          onClick={openBuyerInfoModal}
+                          disabled={!selectedLeadBuyerInfoUnlocked}
+                          title={selectedLeadBuyerInfoUnlocked ? 'Capture buyer onboarding information manually.' : 'Buyer Info unlocks after a completed viewing or once the buyer moves to onboarding / offer stage.'}
+                        >
+                          <UserRound className="h-4 w-4" />
+                          Buyer Info
+                        </Button>
+                        <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab('overview')}>
+                          <Settings className="h-4 w-4" />
+                          Offer Settings
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_430px]">
@@ -32333,6 +32773,140 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </Button>
             <Button type="submit" disabled={isLeadCreating || !organisationId}>
               {isLeadCreating ? 'Creating...' : `Create ${leadCategoryLabelForView(leadForm.leadCategory)} Lead`}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={buyerInfoModalOpen}
+        onClose={() => {
+          if (buyerInfoSaving) return
+          setBuyerInfoModalOpen(false)
+          setBuyerInfoError('')
+        }}
+        title="Buyer Info"
+        subtitle="Agent-assisted buyer onboarding capture. These fields use the same canonical field names as the buyer onboarding link."
+        className="max-w-[980px]"
+      >
+        <form className="grid gap-5" onSubmit={handleSaveBuyerInfo}>
+          <div className={`rounded-[16px] border px-4 py-3 text-sm ${selectedLeadBuyerInfoUnlocked ? 'border-[#cfe8dc] bg-[#f5fcf8] text-[#286b43]' : 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]'}`}>
+            <p className="font-semibold">
+              {selectedLeadBuyerInfoUnlocked
+                ? `${selectedLeadBuyerInfoCompletion.completed}/${selectedLeadBuyerInfoCompletion.total} key buyer onboarding fields captured`
+                : 'Locked until viewing is completed or the buyer reaches onboarding / offer stage'}
+            </p>
+            <p className="mt-1 text-xs opacity-80">
+              Manual capture writes to `buyerOnboardingFormData` and mirrors the buyer onboarding v2 schema.
+            </p>
+          </div>
+
+          {buyerInfoError ? (
+            <div className="rounded-[14px] border border-[#f3c8c5] bg-[#fff5f4] px-4 py-3 text-sm font-semibold text-[#a94442]">
+              {buyerInfoError}
+            </div>
+          ) : null}
+
+          <section className="rounded-[18px] border border-[#e1eaf4] bg-[#fbfdff] p-4">
+            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Identity</h4>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <Field placeholder="First name" value={buyerInfoForm.firstName} onChange={(event) => updateBuyerInfoField('firstName', event.target.value)} />
+              <Field placeholder="Last name" value={buyerInfoForm.lastName} onChange={(event) => updateBuyerInfoField('lastName', event.target.value)} />
+              <Field type="date" value={buyerInfoForm.dateOfBirth} onChange={(event) => updateBuyerInfoField('dateOfBirth', event.target.value)} />
+              <Field placeholder="ID / Passport number" value={buyerInfoForm.identityNumberOrPassportNumber} onChange={(event) => updateBuyerInfoField('identityNumberOrPassportNumber', event.target.value)} />
+              <Field placeholder="Nationality" value={buyerInfoForm.nationality} onChange={(event) => updateBuyerInfoField('nationality', event.target.value)} />
+              <Field as="select" value={buyerInfoForm.residencyStatus} onChange={(event) => updateBuyerInfoField('residencyStatus', event.target.value)}>
+                <option value="">Residency status</option>
+                <option value="resident">Resident</option>
+                <option value="non_resident">Non-resident</option>
+                <option value="foreign_purchaser">Foreign purchaser</option>
+              </Field>
+              <Field placeholder="Tax number" value={buyerInfoForm.taxNumber} onChange={(event) => updateBuyerInfoField('taxNumber', event.target.value)} />
+              <Field as="select" value={buyerInfoForm.purchaserType} onChange={(event) => updateBuyerInfoField('purchaserType', event.target.value)}>
+                <option value="individual">Individual</option>
+                <option value="married_coc">Married in community</option>
+                <option value="married_anc">Married ANC</option>
+                <option value="married_anc_accrual">Married ANC with accrual</option>
+                <option value="company">Company</option>
+                <option value="trust">Trust</option>
+                <option value="foreign_purchaser">Foreign purchaser</option>
+                <option value="other">Other</option>
+              </Field>
+            </div>
+          </section>
+
+          <section className="rounded-[18px] border border-[#e1eaf4] bg-[#fbfdff] p-4">
+            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Contact + Address</h4>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <Field type="email" placeholder="Email" value={buyerInfoForm.email} onChange={(event) => updateBuyerInfoField('email', event.target.value)} />
+              <Field placeholder="Phone" value={buyerInfoForm.phone} onChange={(event) => updateBuyerInfoField('phone', event.target.value)} />
+              <Field className="md:col-span-2" placeholder="Residential address line 1" value={buyerInfoForm.residentialAddressLine1} onChange={(event) => updateBuyerInfoField('residentialAddressLine1', event.target.value)} />
+              <Field placeholder="Suburb" value={buyerInfoForm.residentialAddressSuburb} onChange={(event) => updateBuyerInfoField('residentialAddressSuburb', event.target.value)} />
+              <Field placeholder="City" value={buyerInfoForm.residentialAddressCity} onChange={(event) => updateBuyerInfoField('residentialAddressCity', event.target.value)} />
+              <Field placeholder="Postal code" value={buyerInfoForm.residentialAddressPostalCode} onChange={(event) => updateBuyerInfoField('residentialAddressPostalCode', event.target.value)} />
+            </div>
+          </section>
+
+          <section className="rounded-[18px] border border-[#e1eaf4] bg-[#fbfdff] p-4">
+            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Household + Intent</h4>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <Field as="select" value={buyerInfoForm.maritalStatus} onChange={(event) => updateBuyerInfoField('maritalStatus', event.target.value)}>
+                <option value="">Marital status</option>
+                <option value="single">Single</option>
+                <option value="married_coc">Married in community</option>
+                <option value="married_anc">Married ANC</option>
+                <option value="divorced">Divorced</option>
+                <option value="widowed">Widowed</option>
+              </Field>
+              <Field placeholder="Number of dependants" value={buyerInfoForm.numberOfDependants} onChange={(event) => updateBuyerInfoField('numberOfDependants', event.target.value)} />
+              <Field placeholder="Occupation" value={buyerInfoForm.occupation} onChange={(event) => updateBuyerInfoField('occupation', event.target.value)} />
+              <Field placeholder="Income source" value={buyerInfoForm.incomeSource} onChange={(event) => updateBuyerInfoField('incomeSource', event.target.value)} />
+              <Field placeholder="Monthly credit commitments" value={buyerInfoForm.monthlyCreditCommitments} onChange={(event) => updateBuyerInfoField('monthlyCreditCommitments', event.target.value)} />
+              {[
+                ['firstTimeBuyer', 'First-time buyer?'],
+                ['primaryResidence', 'Primary residence?'],
+                ['investmentPurchase', 'Investment purchase?'],
+              ].map(([field, label]) => (
+                <Field key={field} as="select" value={buyerInfoForm[field]} onChange={(event) => updateBuyerInfoField(field, event.target.value)}>
+                  <option value="">{label}</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </Field>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-[18px] border border-[#e1eaf4] bg-[#fbfdff] p-4">
+            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Finance</h4>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <Field as="select" value={buyerInfoForm.purchaseFinanceType} onChange={(event) => updateBuyerInfoField('purchaseFinanceType', event.target.value)}>
+                <option value="">Finance type</option>
+                <option value="cash">Cash</option>
+                <option value="bond">Bond</option>
+                <option value="hybrid">Cash + bond</option>
+              </Field>
+              <Field placeholder="Deposit amount" value={buyerInfoForm.depositAmount} onChange={(event) => updateBuyerInfoField('depositAmount', event.target.value)} />
+              <Field placeholder="Cash amount" value={buyerInfoForm.cashAmount} onChange={(event) => updateBuyerInfoField('cashAmount', event.target.value)} />
+              <Field placeholder="Bond amount" value={buyerInfoForm.bondAmount} onChange={(event) => updateBuyerInfoField('bondAmount', event.target.value)} />
+              <Field placeholder="Proof of funds URL" value={buyerInfoForm.proofOfFundsUrl} onChange={(event) => updateBuyerInfoField('proofOfFundsUrl', event.target.value)} />
+              <Field placeholder="Bond bank name" value={buyerInfoForm.bondBankName} onChange={(event) => updateBuyerInfoField('bondBankName', event.target.value)} />
+              <Field as="select" value={buyerInfoForm.bondProcessStarted} onChange={(event) => updateBuyerInfoField('bondProcessStarted', event.target.value)}>
+                <option value="">Bond process started?</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </Field>
+              <Field placeholder="Bond current status" value={buyerInfoForm.bondCurrentStatus} onChange={(event) => updateBuyerInfoField('bondCurrentStatus', event.target.value)} />
+              <Field placeholder="Bond originator name" value={buyerInfoForm.bondOriginatorName} onChange={(event) => updateBuyerInfoField('bondOriginatorName', event.target.value)} />
+              <Field placeholder="Bond originator contact" value={buyerInfoForm.bondOriginatorContact} onChange={(event) => updateBuyerInfoField('bondOriginatorContact', event.target.value)} />
+            </div>
+          </section>
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setBuyerInfoModalOpen(false)} disabled={buyerInfoSaving}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={buyerInfoSaving || !selectedLeadBuyerInfoUnlocked}>
+              {buyerInfoSaving ? 'Saving...' : 'Save Buyer Info'}
             </Button>
           </div>
         </form>

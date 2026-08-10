@@ -20,13 +20,17 @@ assert.notEqual(tasksStart, -1, 'Tasks workspace tab should follow Documents tab
 
 const documentsBlock = source.slice(documentsStart, tasksStart)
 const archlineDocumentsStart = source.indexOf('function ArchlineDocumentsWorkspace(')
-const archlineDocumentsEnd = source.indexOf('function MatterOverviewHeader(', archlineDocumentsStart)
+const archlineDocumentsEnd = source.indexOf('function ArchlineTasksWorkspace(', archlineDocumentsStart)
 assert.notEqual(archlineDocumentsStart, -1, 'Archline documents workspace component should exist')
 assert.notEqual(archlineDocumentsEnd, -1, 'Archline documents workspace block should be extractable')
 const archlineDocumentsBlock = source.slice(archlineDocumentsStart, archlineDocumentsEnd)
 const workflowDetailBlock = source.slice(
   source.indexOf('const openWorkspaceMenu = useCallback'),
   source.indexOf('function handleOverviewActionTarget'),
+)
+const matterHeaderBlock = source.slice(
+  source.indexOf('const MATTER_OVERVIEW_HEADER_THEMES'),
+  source.indexOf('function LegalWorkflowHubCard'),
 )
 
 assert.match(source, /buildMatterDocumentWorkspaceModel/, 'document workspace derivation should use the extracted matter document model')
@@ -44,11 +48,14 @@ assert.match(source, /activeWorkspaceMenu === 'documents' && workspaceRole !== '
 assert.match(source, /ATTORNEY_DOCUMENT_DASHBOARD_PARTIES/, 'Documents workspace should derive buyer and seller document parties')
 assert.match(source, /Buyer Documents/, 'Documents workspace should expose buyer document categories')
 assert.match(source, /Seller Documents/, 'Documents workspace should expose seller document categories')
+for (const categoryLabel of ['Property Documents', 'Sales Documents', 'FICA Documents', 'Finance Documents', 'Additional Requests']) {
+  assert.match(source, new RegExp(categoryLabel), `Documents workspace should align to the shared ${categoryLabel} category label`)
+}
 assert.match(source, /<h3 className="text-sm font-semibold text-slate-950">Required Documents<\/h3>/, 'Documents workspace category modal should render required documents')
 assert.match(source, /<h3 className="text-sm font-semibold text-slate-950">Uploaded Files<\/h3>/, 'Documents workspace category modal should render uploaded files')
-assert.match(source, /ArchlinePanel title="Document Health"/, 'Documents workspace should render the right-sidebar document health')
-assert.match(source, /ArchlinePanel title="Quick Actions"/, 'Documents workspace should render the right-sidebar quick actions')
-assert.match(source, /Document Activity/, 'Documents workspace should render document activity')
+assert.doesNotMatch(archlineDocumentsBlock, /ArchlinePanel title="Document Health"/, 'Documents workspace should not render the removed right-sidebar document health')
+assert.doesNotMatch(archlineDocumentsBlock, /ArchlinePanel title="Quick Actions"/, 'Documents workspace should not render the removed right-sidebar quick actions')
+assert.doesNotMatch(archlineDocumentsBlock, /Document Activity/, 'Documents workspace should not render the removed bottom document activity panel')
 assert.match(archlineDocumentsBlock, /<h2 className="text-xl font-semibold tracking-\[-0\.02em\] text-slate-950">Documents<\/h2>[\s\S]*Request Document[\s\S]*Upload Document/, 'Documents workspace actions should sit in the page heading row')
 assert.doesNotMatch(archlineDocumentsBlock, /Search documents\.\.\./, 'Documents workspace should not render the clipped in-card search bar')
 assert.match(documentsBlock, /open=\{uploadDocumentModalOpen\}/, 'Upload should be modal-driven')
@@ -59,6 +66,11 @@ assert.match(source, /routeLegalWorkflowDetailKey \|\| localLegalWorkflowDetailK
 assert.match(workflowDetailBlock, /setLocalLegalWorkflowDetailKey\(normalized\)/, 'opening a workflow detail from the workspace should not require a route change')
 assert.doesNotMatch(workflowDetailBlock, /navigate\(`\$\{transactionWorkspaceBasePath\}\/transfer\/\$\{normalized\}`\)/, 'opening a workflow detail should not remount the matter workspace via nested route navigation')
 assert.match(workflowDetailBlock, /if \(routeLegalWorkflowDetailKey\) \{\s*navigate\(transactionWorkspaceBasePath\)/, 'direct workflow-detail URLs should still be able to return to the base matter route')
+assert.match(source, /MATTER_OVERVIEW_HEADER_THEMES/, 'Matter overview header should use explicit role-aware themes')
+assert.match(source, /rgba\(13,92,163,0\.96\)/, 'Buyer-focused transaction headers should use the blue contrast theme')
+assert.match(source, /rgba\(7,120,87,0\.96\)/, 'Seller-focused transaction headers should use the green contrast theme')
+assert.match(source, /getMatterOverviewHeaderTheme/, 'Matter overview header should resolve the contrast theme from the current transaction context')
+assert.doesNotMatch(matterHeaderBlock, /border border-\[#d8e4ef\] bg-\[#f8fbfd\]/, 'Matter overview command header should not regress to the pale white treatment')
 
 assert.doesNotMatch(documentsBlock, /Finance Documents/, 'Documents tab should not render a Finance Documents panel')
 assert.doesNotMatch(documentsBlock, /Transfer \/ Attorney Documents/, 'Documents tab should not render a Transfer / Attorney Documents panel')

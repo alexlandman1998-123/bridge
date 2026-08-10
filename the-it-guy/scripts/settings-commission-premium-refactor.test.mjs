@@ -12,6 +12,7 @@ const files = {
 
 for (const token of [
   "label: 'Overview'",
+  "label: 'Company Target'",
   "label: 'Levels'",
   "label: 'Agents'",
   "label: 'Rules'",
@@ -23,6 +24,10 @@ for (const token of [
   'Manage Levels',
   'Manage Agents',
   'Manage Rules',
+  'Company Commission Target',
+  'Set Company Target',
+  'Target Period',
+  'Company Commission',
   'Referral Rules',
   'Commission Levels',
   'Overrides',
@@ -50,6 +55,7 @@ for (const token of [
 for (const token of [
   'OverviewMetric',
   'CommissionOverviewDashboard',
+  'CompanyTargetWorkspace',
   'CommissionLevelsWorkspace',
   'BusinessRulesWorkspace',
   'ReferralRulesWorkspace',
@@ -105,11 +111,12 @@ for (const token of [
 }
 
 assert.doesNotMatch(files.navigation, /to: '\/settings\/commission'/, 'settings navigation should not advertise Commission as a setting')
+assert.match(files.navigation, /to: '\/agency\/commission'[\s\S]*label: 'Commissions'/, 'organisation settings navigation should expose Commissions')
 assert.match(files.app, /path="\/agency\/commission"[\s\S]*<SettingsCommissionStructuresPage \/>/)
 assert.match(files.app, /path="commission"[\s\S]*<Navigate to="\/agency\/commission" replace \/>/)
 assert.match(files.app, /path="commission-structures"[\s\S]*<Navigate to="\/agency\/commission" replace \/>/)
-assert.match(files.reports, /PerformanceTargetsPanel/)
-assert.match(files.reports, /updateCommissionTarget\(/)
+assert.doesNotMatch(files.reports, /PerformanceTargetsPanel/, 'reports should no longer own company target editing')
+assert.doesNotMatch(files.reports, /updateCommissionTarget\(/, 'reports should not save commission targets directly')
 assert.match(files.reports, /value: 'performance', label: 'Performance'/)
 assert.match(files.packageJson, /"test:settings-commission-premium-refactor": "node scripts\/settings-commission-premium-refactor\.test\.mjs"/)
 

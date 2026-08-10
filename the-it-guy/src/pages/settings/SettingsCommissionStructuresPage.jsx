@@ -6,6 +6,7 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  Target,
   UsersRound,
   X,
 } from 'lucide-react'
@@ -20,11 +21,13 @@ import {
 } from '../../lib/settingsApi'
 import {
   DEFAULT_AGENT_MONTHLY_TARGET,
+  DEFAULT_COMPANY_MONTHLY_TARGET,
   assignUserCommissionLevel,
   createCommissionLevel,
   getCommissionAssignableUsers,
   getCommissionOverview,
   updateCommissionLevel,
+  updateCommissionTarget,
   updateReferralCommissionRule,
 } from '../../services/commissionService'
 import {
@@ -35,9 +38,16 @@ import {
 
 const COMMISSION_TABS = [
   { key: 'overview', label: 'Overview' },
+  { key: 'company-target', label: 'Company Target' },
   { key: 'levels', label: 'Levels' },
   { key: 'agents', label: 'Agents' },
   { key: 'rules', label: 'Rules' },
+]
+
+const COMPANY_TARGET_PERIOD_OPTIONS = [
+  { key: 'monthly', label: 'Monthly' },
+  { key: 'quarterly', label: 'Quarterly' },
+  { key: 'yearly', label: 'Yearly' },
 ]
 
 const INPUT_CLASS = 'h-11 rounded-[12px] border-[#d8e3ee] bg-white text-sm text-[#17233a] shadow-[0_1px_0_rgba(15,23,42,0.02)] placeholder:text-[#9aa8b8] focus:border-[#0f7f4f] focus:ring-[#dff2e8]'
@@ -116,6 +126,45 @@ function createReferralDraft(rule = {}) {
     isDefault: Boolean(rule.isDefault),
     isActive: rule.isActive !== false,
   }
+}
+
+function getCurrentMonthInputValue() {
+  return new Date().toISOString().slice(0, 7)
+}
+
+function toMonthInputValue(value = '') {
+  if (!value) return getCurrentMonthInputValue()
+  const directMatch = normalizeText(value).match(/^(\d{4}-\d{2})/)
+  if (directMatch) return directMatch[1]
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return getCurrentMonthInputValue()
+  return date.toISOString().slice(0, 7)
+}
+
+function createCompanyTargetDraft(tracker = {}) {
+  const targetAmount = Number(tracker?.targetAmount || 0)
+  return {
+    period: tracker?.period || 'monthly',
+    targetAmount: targetAmount > 0 ? String(targetAmount) : String(DEFAULT_COMPANY_MONTHLY_TARGET),
+    startMonth: toMonthInputValue(tracker?.periodStart || tracker?.startMonth),
+  }
+}
+
+function getCompanyTargetPeriodStart(period = 'monthly', monthValue = '') {
+  const normalizedPeriod = COMPANY_TARGET_PERIOD_OPTIONS.some((option) => option.key === period) ? period : 'monthly'
+  const [yearPart, monthPart] = toMonthInputValue(monthValue).split('-')
+  const year = Number(yearPart) || new Date().getFullYear()
+  const monthIndex = Math.max(0, Math.min(11, (Number(monthPart) || 1) - 1))
+  const startMonthIndex = normalizedPeriod === 'yearly'
+    ? 0
+    : normalizedPeriod === 'quarterly'
+      ? Math.floor(monthIndex / 3) * 3
+      : monthIndex
+  return new Date(Date.UTC(year, startMonthIndex, 1)).toISOString().slice(0, 10)
+}
+
+function getCommissionPeriodLabel(period = 'monthly') {
+  return COMPANY_TARGET_PERIOD_OPTIONS.find((option) => option.key === period)?.label || 'Monthly'
 }
 
 function getListingCommissionValue(row = {}, fallback = '7.5%') {
@@ -596,6 +645,101 @@ function TargetMetric({ label, value }) {
   )
 }
 
+function CompanyTargetWorkspace({ tracker = {}, draft, updateDraft, saveCompanyTarget, saving }) {
+  const targetAmount = Number(draft.targetAmount || tracker.targetAmount || DEFAULT_COMPANY_MONTHLY_TARGET)
+  const currentAmount = Number(tracker.currentAmount || 0)
+  const projectedAmount = Number(tracker.projectedCommission || tracker.currentAmount || 0)
+  const achievedPercent = targetAmount > 0 ? Math.min(100, Math.round((currentAmount / targetAmount) * 100)) : 0
+  const projectedPercent = targetAmount > 0 ? Math.min(100, Math.round((projectedAmount / targetAmount) * 100)) : 0
+  const periodLabel = getCommissionPeriodLabel(draft.period || tracker.period)
+  const periodStart = getCompanyTargetPeriodStart(draft.period, draft.startMonth)
+
+  return (
+    <div className="space-y-6">
+      <section className="grid gap-4 rounded-[24px] border border-[#e1eaf2] bg-[linear-gradient(135deg,#ffffff_0%,#f7fbf8_100%)] p-6 shadow-[0_20px_60px_rgba(15,23,42,0.06)] lg:grid-cols-[minmax(0,1fr)_340px] lg:items-center lg:p-8">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="grid h-12 w-12 place-items-center rounded-[18px] bg-[#eef8f2] text-[#0f7f4f]">
+              <Target className="h-5 w-5" strokeWidth={2} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-[#40566d]">Company Commission Target</p>
+              <h2 className="mt-1 text-4xl font-semibold tracking-[-0.02em] text-[#101828]">{formatCurrency(targetAmount)}</h2>
+            </div>
+          </div>
+          <div className="mt-6 h-3 overflow-hidden rounded-full bg-[#dfe8f1]">
+            <span className="block h-full rounded-full bg-[#0f7f4f]" style={{ width: `${achievedPercent}%` }} />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm font-semibold text-[#60758d]">
+            <span>{formatCurrency(currentAmount)} captured</span>
+            <span>{achievedPercent}% of {periodLabel.toLowerCase()} target</span>
+          </div>
+        </div>
+
+        <div className="grid gap-3 rounded-[22px] bg-white/75 p-4 shadow-[inset_0_0_0_1px_rgba(226,235,244,0.9)]">
+          <TargetMetric label="Period" value={periodLabel} />
+          <TargetMetric label="Projected" value={`${formatCurrency(projectedAmount)} (${projectedPercent}%)`} />
+          <TargetMetric label="Days Left" value={tracker.daysLeftInPeriod ?? tracker.daysLeftInMonth ?? 0} />
+        </div>
+      </section>
+
+      <CommissionCard
+        title="Set Company Target"
+        description="This target is used by company commission dashboards and performance reporting."
+      >
+        <form className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end" onSubmit={saveCompanyTarget}>
+          <FieldLabel label="Target Period" id="company-target-period">
+            <Field
+              as="select"
+              id="company-target-period"
+              className={INPUT_CLASS}
+              value={draft.period}
+              onChange={(event) => updateDraft('period', event.target.value)}
+            >
+              {COMPANY_TARGET_PERIOD_OPTIONS.map((option) => (
+                <option key={option.key} value={option.key}>{option.label}</option>
+              ))}
+            </Field>
+          </FieldLabel>
+
+          <FieldLabel label="Commission Target" id="company-target-amount">
+            <Field
+              id="company-target-amount"
+              type="number"
+              min="0"
+              step="1000"
+              className={INPUT_CLASS}
+              value={draft.targetAmount}
+              onChange={(event) => updateDraft('targetAmount', event.target.value)}
+            />
+          </FieldLabel>
+
+          <FieldLabel label="Effective From" id="company-target-start">
+            <Field
+              id="company-target-start"
+              type="month"
+              className={INPUT_CLASS}
+              value={draft.startMonth}
+              onChange={(event) => updateDraft('startMonth', event.target.value)}
+            />
+          </FieldLabel>
+
+          <IconButton variant="primary" type="submit" disabled={saving}>
+            <CheckCircle2 className="h-4 w-4" strokeWidth={2} />
+            {saving ? 'Saving...' : 'Save Target'}
+          </IconButton>
+        </form>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <TargetMetric label="Metric" value="Company Commission" />
+          <TargetMetric label="Stored Period Start" value={new Date(periodStart).toLocaleDateString('en-ZA', { month: 'short', year: 'numeric' })} />
+          <TargetMetric label="Tracker Status" value={tracker.statusLabel || 'No target set'} />
+        </div>
+      </CommissionCard>
+    </div>
+  )
+}
+
 function ReferralRulesWorkspace({ referralRules, referralDraft, setReferralDraft, updateReferralDraft, saveReferral, saving }) {
   return (
     <CommissionCard title="Referral Rules" description="Manage referral payouts with a clear rule list and preview.">
@@ -998,6 +1142,7 @@ export default function SettingsCommissionStructuresPage() {
   const [levelDraft, setLevelDraft] = useState(createLevelDraft())
   const [structureDraft, setStructureDraft] = useState(createStructureDraft())
   const [referralDraft, setReferralDraft] = useState(createReferralDraft())
+  const [companyTargetDraft, setCompanyTargetDraft] = useState(createCompanyTargetDraft())
   const [modal, setModal] = useState({ type: '', payload: null })
   const [overrideFilters, setOverrideFilters] = useState({ search: '', branch: '', level: '' })
 
@@ -1036,6 +1181,7 @@ export default function SettingsCommissionStructuresPage() {
       ])
       setOverview(overviewResult)
       setAssignmentData(assignableResult)
+      setCompanyTargetDraft(createCompanyTargetDraft(overviewResult?.companyTracker || {}))
       const firstReferral = overviewResult.referralRules?.find((rule) => rule.isActive !== false) || overviewResult.referralRules?.[0]
       if (firstReferral) setReferralDraft(createReferralDraft(firstReferral))
       setLevelDraft(createLevelDraft())
@@ -1149,6 +1295,10 @@ export default function SettingsCommissionStructuresPage() {
     setReferralDraft((previous) => ({ ...previous, [key]: value }))
   }
 
+  function updateCompanyTargetDraft(key, value) {
+    setCompanyTargetDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
   async function saveLevel(event) {
     event.preventDefault()
     if (!canEdit) return
@@ -1197,6 +1347,35 @@ export default function SettingsCommissionStructuresPage() {
       await loadData()
     } catch (saveError) {
       setError(saveError.message || 'Unable to save referral rule.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveCompanyTarget(event) {
+    event.preventDefault()
+    if (!canEdit) return
+    const targetAmount = Number(companyTargetDraft.targetAmount || 0)
+    if (!Number.isFinite(targetAmount) || targetAmount < 0) {
+      setError('Company commission target must be a valid amount.')
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+      await updateCommissionTarget({
+        targetType: 'company',
+        targetMetric: 'company_commission',
+        period: companyTargetDraft.period || 'monthly',
+        targetAmount,
+        startMonth: getCompanyTargetPeriodStart(companyTargetDraft.period, companyTargetDraft.startMonth),
+      })
+      setMessage('Company commission target updated.')
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save company commission target.')
     } finally {
       setSaving(false)
     }
@@ -1310,6 +1489,16 @@ export default function SettingsCommissionStructuresPage() {
             assignableRows={assignableRows}
             defaultLevel={defaultLevel}
             setActiveTab={setActiveTab}
+          />
+        ) : null}
+
+        {activeTab === 'company-target' ? (
+          <CompanyTargetWorkspace
+            tracker={overview?.companyTracker || {}}
+            draft={companyTargetDraft}
+            updateDraft={updateCompanyTargetDraft}
+            saveCompanyTarget={saveCompanyTarget}
+            saving={saving}
           />
         ) : null}
 

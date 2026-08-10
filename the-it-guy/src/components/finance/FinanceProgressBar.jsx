@@ -1,4 +1,4 @@
-import { Check, LockKeyhole, Landmark } from 'lucide-react'
+import { ArrowRight, Check, FileText, Landmark, LockKeyhole, Upload } from 'lucide-react'
 import Button from '../ui/Button'
 import {
   BOND_HYBRID_FINANCE_STAGES,
@@ -68,14 +68,33 @@ function canEditStage({ mode, viewerRole }) {
   return mode === 'editable' && ['bond_originator', 'internal_admin', 'admin'].includes(role)
 }
 
+const STEP_NAVIGATION_ACTIONS = {
+  documents: { target: 'documents', label: 'Open Documents', icon: FileText },
+  submitted_to_banks: { target: 'quotes_grant', label: 'Open Quotes & Grant', icon: Upload },
+  bank_review: { target: 'quotes_grant', label: 'Open Quotes & Grant', icon: Upload },
+  quote_received: { target: 'quotes_grant', label: 'Open Quotes & Grant', icon: Upload },
+  quote_accepted: { target: 'quotes_grant', label: 'Open Quotes & Grant', icon: Upload },
+  bond_approved: { target: 'quotes_grant', label: 'Open Quotes & Grant', icon: Upload },
+  grant_received: { target: 'quotes_grant', label: 'Open Quotes & Grant', icon: Upload },
+  grant_signed: { target: 'quotes_grant', label: 'Open Quotes & Grant', icon: Upload },
+  grant_submitted: { target: 'quotes_grant', label: 'Open Quotes & Grant', icon: Upload },
+}
+
+function getNextStageKey(stageKey = '') {
+  const index = BOND_HYBRID_FINANCE_STAGES.indexOf(normalizeBondHybridFinanceStage(stageKey))
+  if (index < 0) return BOND_HYBRID_FINANCE_STAGES[0]
+  return BOND_HYBRID_FINANCE_STAGES[Math.min(index + 1, BOND_HYBRID_FINANCE_STAGES.length - 1)]
+}
+
 function FinanceProgressBar({
   workflowData = null,
   mode = 'readonly',
   viewerRole = '',
   loadingStage = '',
   onStageChange,
+  onStepNavigate,
   title = 'Bond Application Progress',
-  description = 'Bond finance workflow status shared across Arch9.',
+  description = '',
   className = '',
 }) {
   const workflow = workflowData?.workflow || workflowData || null
@@ -90,7 +109,7 @@ function FinanceProgressBar({
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h3 className="text-base font-semibold tracking-[-0.02em] text-[#101b2d]">{title}</h3>
-          <p className="mt-1 text-sm text-[#66758b]">{description}</p>
+          {description ? <p className="mt-1 text-sm text-[#66758b]">{description}</p> : null}
         </div>
         <strong className="text-sm font-semibold text-[#0b57d0]">{progress}% Complete</strong>
       </div>
@@ -108,6 +127,18 @@ function FinanceProgressBar({
               const isCurrent = step.status === 'current'
               const isCompleted = step.status === 'completed'
               const stageDate = formatDate(findStageDate(workflowData || {}, step.key))
+              const navigationAction = STEP_NAVIGATION_ACTIONS[step.key] || null
+              const canActOnStep = editable && step.status === 'current'
+              const actionDisabled = Boolean(loadingStage)
+              const StepActionIcon = navigationAction?.icon || ArrowRight
+              const handleStepAction = () => {
+                if (!canActOnStep || actionDisabled) return
+                if (navigationAction) {
+                  onStepNavigate?.(navigationAction.target, step)
+                  return
+                }
+                onStageChange?.(getNextStageKey(step.key), step)
+              }
               return (
                 <div key={step.key} className="min-w-0 text-center">
                   <span
@@ -128,6 +159,34 @@ function FinanceProgressBar({
                   <span className={`mt-1 block text-[0.72rem] ${isCurrent ? 'font-semibold text-[#155eef]' : 'text-[#728198]'}`}>
                     {isCurrent ? 'In Progress' : stageDate || (index > currentIndex ? 'Pending' : '')}
                   </span>
+                  {editable ? (
+                    <div className="mt-3 flex justify-center">
+                      {isCompleted ? (
+                        <span className="inline-flex h-8 items-center justify-center gap-1.5 rounded-full border border-[#bfead8] bg-[#effaf5] px-3 text-[0.7rem] font-semibold text-[#0f7a52]">
+                          <Check size={13} />
+                          Completed
+                        </span>
+                      ) : canActOnStep ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={navigationAction ? 'secondary' : 'primary'}
+                          disabled={actionDisabled}
+                          className="h-8 rounded-full px-3 text-[0.7rem]"
+                          onClick={handleStepAction}
+                        >
+                          <StepActionIcon size={13} />
+                          {loadingStage === getNextStageKey(step.key) || loadingStage === step.key
+                            ? 'Updating...'
+                            : navigationAction?.label || (step.key === 'instruction_sent' ? 'Complete Workflow' : 'Complete Step')}
+                        </Button>
+                      ) : (
+                        <span className="inline-flex h-8 items-center justify-center rounded-full border border-[#d8e2ef] bg-white px-3 text-[0.7rem] font-semibold text-[#728198]">
+                          Pending
+                        </span>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               )
             })}
@@ -139,22 +198,6 @@ function FinanceProgressBar({
         <div className="h-full rounded-full bg-[#155eef]" style={{ width: `${progress}%` }} />
       </div>
 
-      {editable ? (
-        <div className="mt-5 flex flex-wrap gap-2 border-t border-[#edf2f7] pt-4">
-          {steps.map((step, index) => (
-            <Button
-              key={step.key}
-              type="button"
-              size="sm"
-              variant={index === currentIndex ? 'primary' : 'secondary'}
-              disabled={Boolean(loadingStage) || index > currentIndex + 1}
-              onClick={() => onStageChange?.(step.key)}
-            >
-              {loadingStage === step.key ? 'Updating...' : step.label}
-            </Button>
-          ))}
-        </div>
-      ) : null}
     </section>
   )
 }

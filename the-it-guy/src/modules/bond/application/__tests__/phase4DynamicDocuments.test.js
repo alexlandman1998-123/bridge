@@ -107,6 +107,10 @@ function runResolutionTests() {
   const permanent = resolveBondApplicationDocumentRequirements({ applicationState: employmentState('permanent_employee') })
   assert.ok(permanent.activeRequirements.some((item) => item.key === 'bond_application_salary_income_evidence'))
   assert.ok(permanent.activeRequirements.some((item) => item.key === 'bond_application_deposit_proof'))
+  const permanentBankStatements = permanent.activeRequirements.find((item) => item.key === 'bond_application_primary_applicant_bank_statements')
+  assert.equal(permanentBankStatements?.title, 'Latest 3 months bank statements')
+  assert.equal(permanentBankStatements?.minimumFileCount, 3)
+  assert.equal(permanent.activeRequirements.some((item) => item.key === 'bond_application_self_employed_bank_statements'), false)
 
   const noDeposit = setPath(employmentState('permanent_employee'), 'application.finance.depositAmount', '0')
   const noDepositResolution = resolveBondApplicationDocumentRequirements({ applicationState: noDeposit })
@@ -123,6 +127,11 @@ function runResolutionTests() {
     const resolved = resolveBondApplicationDocumentRequirements({ applicationState: employmentState(type) })
     assert.ok(resolved.activeRequirements.some((item) => item.key === expectedKey), `${type} should require ${expectedKey}`)
   })
+  const selfEmployed = resolveBondApplicationDocumentRequirements({ applicationState: employmentState('self_employed') })
+  const selfEmployedBankStatements = selfEmployed.activeRequirements.find((item) => item.key === 'bond_application_self_employed_bank_statements')
+  assert.equal(selfEmployedBankStatements?.title, 'Latest 6 months bank statements')
+  assert.equal(selfEmployedBankStatements?.minimumFileCount, 6)
+  assert.equal(selfEmployed.activeRequirements.some((item) => item.key === 'bond_application_primary_applicant_bank_statements'), false)
 
   let propertyState = employmentState('permanent_employee')
   propertyState = setPath(propertyState, 'participants.primaryApplicant.credit.owns_property', 'yes')

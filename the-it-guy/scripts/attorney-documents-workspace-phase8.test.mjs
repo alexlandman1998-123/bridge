@@ -51,7 +51,6 @@ for (const expected of [
   'ATTORNEY_DOCUMENT_DASHBOARD_CATEGORY_DEFINITIONS',
   'ATTORNEY_DOCUMENT_DASHBOARD_PARTIES',
   'buildAttorneyDocumentsDashboardModel',
-  'buildDocumentHealthDonutSegments',
 ]) {
   assert.ok(source.includes(expected), `Phase 8 dashboard helpers should include ${expected}`)
 }
@@ -59,18 +58,33 @@ for (const expected of [
 for (const expected of [
   'activePartyView',
   'activeCategory',
-  'activeActivityFilter',
-  'Document Health',
-  'Quick Actions',
-  'Document Activity',
   'Uploaded Files',
   'Required Documents',
   'activeCategoryRequirements',
   'activeCategoryFiles',
+]) {
+  assert.ok(component.includes(expected), `Phase 8 workspace should include ${expected}`)
+}
+
+for (const categoryLabel of [
+  'Property Documents',
+  'Sales Documents',
+  'FICA Documents',
+  'Finance Documents',
+  'Additional Requests',
+]) {
+  assert.ok(source.includes(categoryLabel), `Phase 8 workspace should align to the shared ${categoryLabel} category label`)
+}
+
+for (const removed of [
+  'activeActivityFilter',
+  'Document Health',
+  'Quick Actions',
+  'Document Activity',
   'Bulk Download',
   'Document Checklist',
 ]) {
-  assert.ok(component.includes(expected), `Phase 8 workspace should include ${expected}`)
+  assert.ok(!component.includes(removed), `Phase 8 workspace should not include removed ${removed}`)
 }
 
 for (const expected of [

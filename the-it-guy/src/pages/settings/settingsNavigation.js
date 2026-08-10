@@ -1,4 +1,5 @@
 import {
+  BadgePercent,
   Building2,
   CreditCard,
   FileText,
@@ -77,6 +78,15 @@ export const SETTINGS_NAV_GROUPS = [
         roles: ['developer', 'agent'],
         permission: PERMISSIONS.manageWorkspaceSettings,
         keywords: 'legal templates document builder signing documents contracts mandate otp publish save wording clauses',
+      },
+      {
+        to: '/agency/commission',
+        label: 'Commissions',
+        description: 'Commission structures, agent splits, referral rules, and company targets.',
+        icon: BadgePercent,
+        roles: ['developer', 'agent'],
+        permission: PERMISSIONS.manageWorkspaceSettings,
+        keywords: 'commission company target agent split referral rules sales monthly quarterly yearly targets',
       },
       {
         to: '/settings/roles',

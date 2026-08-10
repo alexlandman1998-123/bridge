@@ -43,12 +43,10 @@ import {
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
 import AttorneyMatterAccountsPanel from '../components/AttorneyMatterAccountsPanel'
-import BondOriginatorAgentProgressView from '../components/bond/BondOriginatorAgentProgressView'
 import BondOriginatorAttorneyHandoffView from '../components/bond/BondOriginatorAttorneyHandoffView'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionNotificationDeliveryPanel from '../components/transaction/TransactionNotificationDeliveryPanel'
@@ -71,7 +69,13 @@ import {
   CONVEYANCING_DOCUMENT_SHORTCUTS,
 } from '../core/transactions/attorneyDocumentControl'
 import { buildAttorneyCommunicationControl } from '../core/transactions/attorneyCommunicationControl'
-import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
+import {
+  deriveFinanceManagedBy,
+  FINANCE_MANAGED_BY,
+  isBondFinanceType,
+  isFinanceAssistanceDeclined,
+  normalizeFinanceType,
+} from '../core/transactions/financeType'
 import {
   buildTransactionLifecycleSummaryFromRollup,
   formatTransactionRollupStatusLabel,
@@ -88,6 +92,7 @@ import {
   requestAttorneyWorkflowLaneDocument,
   updateAttorneyWorkflowStepStatus,
 } from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
+import { buildConveyancingLaneModel } from '../services/attorneyWorkflow/conveyancingLaneModel.js'
 import { buildTransferWorkspaceViewModel } from '../services/attorneyWorkflow/transferWorkspaceViewModel.js'
 import { getAttorneyStageDefinitionsForLane, normalizeAttorneyStageKey } from '../constants/attorneyWorkflowStages.js'
 import {
@@ -98,7 +103,6 @@ import {
 import {
   addTransactionDiscussionComment,
   addBondApplication,
-  addBondQuote,
   approveBondQuote,
   archiveTransactionLifecycle,
   cancelTransactionLifecycle,
@@ -141,6 +145,7 @@ import { getTransferInstructionLifecycle } from '../services/transferInstruction
 import { buildMatterDocumentWorkspaceModel } from '../services/documents/matterDocumentWorkspaceModel'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
 import {
+  captureBondOffer,
   markBondGrantMilestone,
   markBondInstructionSent,
 } from '../services/transactionFinanceService'
@@ -183,16 +188,16 @@ const AGENT_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'documents', label: 'Documents' },
   { id: 'finance', label: 'Finance' },
-  { id: 'transfer', label: 'Transfer' },
+  { id: 'transfer', label: 'Conveyancing' },
   { id: 'activity', label: 'Activity' },
   { id: 'stakeholders', label: 'Roleplayers' },
 ]
 
 const BOND_ORIGINATOR_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'workflow', label: 'Workflow' },
   { id: 'application', label: 'Bond Application' },
   { id: 'documents', label: 'Documents' },
+  { id: 'workflow', label: 'Quotes & Grant' },
   { id: 'activity', label: 'Activity' },
 ]
 
@@ -451,6 +456,71 @@ function isBondOriginatorFinanceDocument(document = {}) {
     .join(' ')
     .toLowerCase()
   return /(bank statement|payslip|salary|income|affordability|credit|proof of funds|deposit|bond|grant|approval letter|identity|fica|passport)/.test(tokens)
+}
+
+function getBondApplicationFactText(...sources) {
+  const fragments = []
+  const visit = (value) => {
+    if (value === null || value === undefined) return
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      fragments.push(String(value))
+      return
+    }
+    if (Array.isArray(value)) {
+      value.slice(0, 40).forEach(visit)
+      return
+    }
+    if (typeof value === 'object') {
+      Object.values(value).slice(0, 80).forEach(visit)
+    }
+  }
+  sources.forEach(visit)
+  return fragments.join(' ').toLowerCase()
+}
+
+function getBondBankStatementMonths({ transaction = null, onboardingFormData = null } = {}) {
+  const formData = onboardingFormData?.form_data || onboardingFormData?.formData || onboardingFormData || {}
+  const factText = getBondApplicationFactText(
+    transaction?.purchaser_type,
+    transaction?.buyer_entity_type,
+    transaction?.buyerEntityType,
+    transaction?.entity_type,
+    formData?.purchaser_type,
+    formData?.purchaserType,
+    formData?.buyer_entity_type,
+    formData?.buyerEntityType,
+    formData?.bond_application,
+    formData?.bondApplication,
+    formData?.employment,
+    formData?.financial_profile,
+    formData?.finance,
+    formData?.participants,
+  )
+  return /(self[_\s-]?employed|own[_\s-]?business|sole[_\s-]?proprietor|company|pty|cc\b|juristic|trust)/.test(factText) ? 6 : 3
+}
+
+function isBankStatementDocumentRow(row = {}) {
+  const tokens = [
+    row?.displayName,
+    row?.documentType,
+    row?.document_type,
+    row?.requiredDocumentKey,
+    row?.key,
+    row?.categoryLabel,
+    row?.category,
+    row?.requirement?.key,
+    row?.requirement?.canonicalDocumentType,
+    row?.requiredDocument?.key,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return /bank[_\s-]?statement|bank[_\s-]?statements/.test(tokens)
+}
+
+function getBondDocumentDisplayName(row = {}, bankStatementMonths = 3) {
+  if (isBankStatementDocumentRow(row)) return `Latest ${bankStatementMonths} months bank statements`
+  return row.displayName || row.title || row.label || row.documentType || 'Requested document'
 }
 
 function resolveRequirementLibraryCategory(requirement = {}) {
@@ -4461,7 +4531,16 @@ function getInvitationEventCopy(eventType = '', eventData = {}) {
 function humanizeTransactionEvent(event = {}) {
   const eventType = getActivityEventType(event)
   const eventData = getActivityEventData(event)
-  const laneCategory = getLaneCategory(eventData.laneKey || eventData.lane_key || eventData.workflowLane || eventData.attorneyRole)
+  const rawLaneKey = eventData.laneKey || eventData.lane_key || eventData.workflowLane || eventData.attorneyRole || ''
+  const laneCategory = getLaneCategory(rawLaneKey)
+  const eventVisibility = String(
+    event.visibility ||
+      event.visibility_scope ||
+      eventData.visibility ||
+      eventData.visibilityScope ||
+      eventData.visibility_scope ||
+      '',
+  ).trim().toLowerCase()
   const lowerType = eventType.toLowerCase()
   const source = String(eventData.source || eventData.trigger || '').trim().toLowerCase()
   const isAdditionalDocumentRequest = source === 'additional_document_requested'
@@ -4553,15 +4632,17 @@ function humanizeTransactionEvent(event = {}) {
     createdAt: event.createdAt || event.created_at,
     kind: category === 'system' ? 'system' : 'event',
     authorName: eventData.actorName || eventData.createdByName || (category === 'system' ? 'Arch9' : 'Matter team'),
-    roleLabel: toTitle(event.createdByRole || event.created_by_role || eventData.actorRole || 'system'),
+    roleLabel: toTitle(event.createdByRole || event.created_by_role || eventData.actorRole || eventData.attorneyRole || eventData.attorney_role || 'system'),
     category,
     categoryLabel: meta.label,
     commentType: meta.label,
-    filterKeys: buildActivityFilterKeys(category, [laneCategory, ...extraFilterKeys]),
+    filterKeys: buildActivityFilterKeys(category, [laneCategory, eventVisibility, ...extraFilterKeys]),
+    laneKey: laneCategory,
+    attorneyRole: eventData.attorneyRole || eventData.attorney_role || '',
     attachmentName: category === 'documents' ? attachmentName : '',
     meta,
     messageType,
-    visibility: category === 'system' ? 'system' : 'shared',
+    visibility: category === 'system' && !eventVisibility ? 'system' : eventVisibility || 'shared',
   }
 }
 
@@ -4633,6 +4714,8 @@ function humanizeLegalTimelineActivity(item = {}) {
     categoryLabel: meta.label,
     commentType: meta.label,
     filterKeys: buildActivityFilterKeys(category, [laneCategory, item.visibility]),
+    laneKey: laneCategory,
+    attorneyRole: item.attorneyRole || item.attorney_role || '',
     attachmentName: item.relatedDocumentId ? item.title || 'Document' : '',
     meta,
     messageType: item.source === 'document_request' ? 'document_request' : item.type || 'workflow_update',
@@ -4934,6 +5017,329 @@ function resolveTransactionProgress({
       openTransferRequirementCount: countOutstandingRequirements(requiredDocumentChecklist, ['transfer_signature', 'signed_transfer', 'transfer_document']),
     },
   }
+}
+
+function getFinanceEvidenceRequirement(requirements = [], keywords = []) {
+  return getRequirementEntriesByKeywords(requirements, keywords)[0] || null
+}
+
+function getFinanceEvidenceDocument(documents = [], keywords = []) {
+  return (documents || []).find((document) => {
+    const signal = [
+      document?.name,
+      document?.label,
+      document?.document_type,
+      document?.documentType,
+      document?.category,
+      document?.stage_key,
+      document?.stageKey,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return matchesSignalText(signal, keywords)
+  }) || null
+}
+
+function getFinanceEvidenceDate({ requirement = null, document = null, transaction = null, fallbackKeys = [] } = {}) {
+  const direct = [
+    document?.updated_at,
+    document?.updatedAt,
+    document?.created_at,
+    document?.createdAt,
+    requirement?.updated_at,
+    requirement?.updatedAt,
+    requirement?.created_at,
+    requirement?.createdAt,
+    ...fallbackKeys.map((key) => transaction?.[key]).filter(Boolean),
+  ].filter(Boolean)
+  return direct[0] || null
+}
+
+function getFinanceDocumentStatusCounts(requirements = []) {
+  const rows = (requirements || []).filter(isBondOriginatorFinanceDocument)
+  const total = rows.length
+  const submitted = rows.filter((requirement) =>
+    PRESENT_WORKFLOW_DOCUMENT_STATUSES.has(normalizeWorkflowDocumentStatus(requirement?.status || requirement?.requiredDocumentStatus)),
+  ).length
+  const outstanding = rows.filter((requirement) => {
+    const status = normalizeWorkflowDocumentStatus(requirement?.status || requirement?.requiredDocumentStatus)
+    return !APPROVED_WORKFLOW_DOCUMENT_STATUSES.has(status) && status !== 'not_applicable'
+  }).length
+  return { total, submitted, outstanding }
+}
+
+function getAgentFinanceBankRows(financeWorkflow = {}) {
+  const applications = Array.isArray(financeWorkflow?.applications) ? financeWorkflow.applications : []
+  const offers = Array.isArray(financeWorkflow?.offers)
+    ? financeWorkflow.offers
+    : Array.isArray(financeWorkflow?.quotes)
+      ? financeWorkflow.quotes
+      : []
+  const byBank = new Map()
+  applications.forEach((application, index) => {
+    const bankName = application?.bankName || application?.bank_name || `Bank ${index + 1}`
+    byBank.set(bankName, {
+      id: application?.id || bankName,
+      bankName,
+      status: application?.statusLabel || toTitle(application?.status || 'Submitted'),
+      waiting: !['approved', 'accepted', 'declined', 'rejected', 'withdrawn'].includes(String(application?.status || '').trim().toLowerCase()),
+      updatedAt: application?.feedbackReceivedAt || application?.feedback_received_at || application?.submittedAt || application?.submitted_at || application?.updatedAt || application?.updated_at,
+      offer: null,
+    })
+  })
+  offers.forEach((offer, index) => {
+    const bankName = offer?.bankName || offer?.bank_name || `Offer ${index + 1}`
+    const existing = byBank.get(bankName) || {
+      id: offer?.id || bankName,
+      bankName,
+      status: '',
+      waiting: false,
+      updatedAt: '',
+      offer: null,
+    }
+    const status = offer?.statusLabel || offer?.quoteStatusLabel || toTitle(offer?.status || offer?.quoteStatus || offer?.quote_status || 'Offer received')
+    byBank.set(bankName, {
+      ...existing,
+      status,
+      waiting: ['awaiting_buyer_decision', 'pending', 'received', 'offer_received'].includes(String(offer?.status || offer?.quoteStatus || offer?.quote_status || '').trim().toLowerCase()),
+      updatedAt: offer?.decisionAt || offer?.decision_at || offer?.quoteReceivedAt || offer?.quote_received_at || offer?.updatedAt || offer?.updated_at || existing.updatedAt,
+      offer: offer?.offeredAmount || offer?.offered_amount || offer?.quotedAmount || offer?.quoted_amount || existing.offer,
+    })
+  })
+  return [...byBank.values()]
+}
+
+function buildAgentFinanceWorkspaceModel({
+  transaction = null,
+  onboardingFormData = {},
+  progressState = null,
+  requiredDocumentChecklist = [],
+  documents = [],
+  transactionFinanceWorkflow = null,
+} = {}) {
+  const financeType = progressState?.flags?.financeType || normalizeFinanceType(transaction?.finance_type, { allowUnknown: true })
+  const buyerDeclinedBondAssistance = isFinanceAssistanceDeclined(transaction || {})
+  const financeManagedBy = buyerDeclinedBondAssistance
+    ? FINANCE_MANAGED_BY.CLIENT
+    : deriveFinanceManagedBy({
+        financeType,
+        financeManagedBy:
+          transaction?.finance_managed_by ||
+          transaction?.financeManagedBy ||
+          transaction?.bond_finance_managed_by ||
+          transaction?.bondFinanceManagedBy ||
+          '',
+        formData: onboardingFormData,
+      })
+  const bondLike = isBondFinanceType(financeType)
+  const originatorManaged = bondLike && financeManagedBy === FINANCE_MANAGED_BY.BOND_ORIGINATOR
+  const proofRequirement = getFinanceEvidenceRequirement(requiredDocumentChecklist, ['proof_of_funds', 'proof of funds', 'cash proof'])
+  const proofDocument = getFinanceEvidenceDocument(documents, ['proof_of_funds', 'cash proof', 'proof of funds'])
+  const grantRequirement = getFinanceEvidenceRequirement(requiredDocumentChecklist, ['bond_grant', 'grant_letter', 'bond_approval', 'bond approved'])
+  const grantDocument = getFinanceEvidenceDocument(documents, ['bond grant', 'grant letter', 'bond approval', 'bond approved'])
+  const proofUploaded = Boolean(progressState?.flags?.proofOfFundsVerified)
+  const grantUploaded = Boolean(progressState?.flags?.bondGrantUploaded)
+  const financeCounts = getFinanceDocumentStatusCounts(requiredDocumentChecklist)
+  const bankRows = getAgentFinanceBankRows(transactionFinanceWorkflow)
+  const waitingBanks = bankRows.filter((bank) => bank.waiting)
+
+  return {
+    financeType,
+    financeManagedBy,
+    bondLike,
+    originatorManaged,
+    selfManagedBond: bondLike && !originatorManaged,
+    cash: financeType === 'cash',
+    proofOfFunds: {
+      uploaded: proofUploaded,
+      requirement: proofRequirement,
+      document: proofDocument,
+      updatedAt: getFinanceEvidenceDate({
+        requirement: proofRequirement,
+        document: proofDocument,
+        transaction,
+        fallbackKeys: ['proof_of_funds_uploaded_at', 'proofOfFundsUploadedAt'],
+      }),
+    },
+    bondGrant: {
+      uploaded: grantUploaded,
+      requirement: grantRequirement,
+      document: grantDocument,
+      updatedAt: getFinanceEvidenceDate({
+        requirement: grantRequirement,
+        document: grantDocument,
+        transaction,
+        fallbackKeys: ['bond_grant_uploaded_at', 'bondGrantUploadedAt'],
+      }),
+    },
+    financeCounts,
+    bankRows,
+    waitingBanks,
+    originatorName:
+      transaction?.bond_originator ||
+      transaction?.assigned_bond_originator_name ||
+      transaction?.assignedBondOriginatorName ||
+      'Bond originator',
+    nextAction: originatorManaged
+      ? waitingBanks.length
+        ? `${waitingBanks.length} bank${waitingBanks.length === 1 ? '' : 's'} still pending feedback.`
+        : financeCounts.outstanding
+          ? `${financeCounts.outstanding} finance document${financeCounts.outstanding === 1 ? '' : 's'} outstanding.`
+          : 'Finance package is up to date.'
+      : bondLike
+        ? grantUploaded
+          ? 'Bond grant has been uploaded.'
+          : 'Upload the buyer bond grant when received.'
+        : proofUploaded
+          ? 'Proof of funds has been uploaded.'
+          : 'Upload proof of funds for this cash transaction.',
+  }
+}
+
+function FinanceEvidenceCard({ title, description, uploaded = false, updatedAt = null, icon: EvidenceIcon = FileText, onUpload }) {
+  return (
+    <article className="rounded-[16px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 gap-3">
+          <span className={`inline-flex size-11 shrink-0 items-center justify-center rounded-[12px] ${uploaded ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+            {uploaded ? <CheckCircle2 size={19} /> : createElement(EvidenceIcon, { size: 19 })}
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">{title}</h3>
+            <p className="mt-1 text-sm leading-6 text-textMuted">{description}</p>
+            <p className="mt-2 text-xs font-semibold text-textMuted">
+              {uploaded ? `Uploaded${updatedAt ? ` ${formatDateTime(updatedAt)}` : ''}` : 'Not uploaded yet'}
+            </p>
+          </div>
+        </div>
+        <Button type="button" variant={uploaded ? 'secondary' : 'primary'} size="sm" onClick={onUpload} className="justify-center">
+          <Upload size={14} />
+          {uploaded ? 'Replace' : 'Upload'}
+        </Button>
+      </div>
+    </article>
+  )
+}
+
+function AgentFinanceWorkspace({ model, onUploadProofOfFunds, onUploadBondGrant, onOpenDocuments }) {
+  const isOriginatorManaged = model?.originatorManaged
+  const isSelfManagedBond = model?.selfManagedBond
+  const isCash = model?.cash || (!model?.bondLike && !isOriginatorManaged)
+  const financeLabel = model?.financeType === 'combination' ? 'Combination finance' : model?.bondLike ? 'Bond finance' : 'Cash finance'
+
+  return (
+    <section className="space-y-5">
+      <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textMuted">Finance</p>
+            <h2 className="mt-2 text-[1.35rem] font-semibold tracking-[-0.035em] text-textStrong">{financeLabel}</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">
+              {isOriginatorManaged
+                ? `Track buyer finance documents, bank submissions, and outstanding lender feedback from ${model.originatorName}.`
+                : isSelfManagedBond
+                  ? 'The buyer is handling bond finance outside the Arch9 originator workflow. Keep the bond grant evidence here.'
+                  : 'This is a cash transaction. Keep proof of funds evidence here so finance can be marked complete.'}
+            </p>
+          </div>
+          <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
+            isOriginatorManaged
+              ? 'border-blue-100 bg-blue-50 text-blue-700'
+              : 'border-slate-200 bg-slate-50 text-slate-700'
+          }`}>
+            {isOriginatorManaged ? 'Originator managed' : isSelfManagedBond ? 'Buyer managed bond' : 'Cash evidence'}
+          </span>
+        </div>
+      </section>
+
+      {isOriginatorManaged ? (
+        <>
+          <section className="grid gap-3 md:grid-cols-3">
+            {[
+              ['Documents Submitted', `${model.financeCounts.submitted}/${model.financeCounts.total || 0}`, FileCheck2, 'bg-emerald-50 text-emerald-700'],
+              ['Outstanding', model.financeCounts.outstanding, AlertTriangle, model.financeCounts.outstanding ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'],
+              ['Banks Waiting', model.waitingBanks.length, Landmark, model.waitingBanks.length ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'],
+            ].map(([label, value, Icon, tone]) => (
+              <article key={label} className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                <span className={`inline-flex size-10 items-center justify-center rounded-[12px] ${tone}`}>
+                  {createElement(Icon, { size: 18 })}
+                </span>
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.1em] text-textMuted">{label}</p>
+                <strong className="mt-1 block text-xl font-semibold text-textStrong">{value}</strong>
+              </article>
+            ))}
+          </section>
+
+          <section className="rounded-[16px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Bank Feedback</h3>
+                <p className="mt-1 text-sm text-textMuted">{model.nextAction}</p>
+              </div>
+              <Button type="button" variant="secondary" size="sm" onClick={onOpenDocuments}>
+                <FileText size={14} />
+                Documents
+              </Button>
+            </div>
+            <div className="mt-4 overflow-hidden rounded-[12px] border border-borderDefault">
+              {model.bankRows.length ? (
+                <div className="divide-y divide-borderSoft">
+                  {model.bankRows.map((bank) => (
+                    <article key={bank.id} className="grid gap-3 bg-white px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+                      <div className="min-w-0">
+                        <strong className="block truncate text-sm text-textStrong">{bank.bankName}</strong>
+                        <p className="mt-1 text-xs text-textMuted">{bank.updatedAt ? `Updated ${formatDateTime(bank.updatedAt)}` : 'No update captured yet'}</p>
+                      </div>
+                      <span className={`w-fit rounded-full border px-2.5 py-1 text-xs font-semibold ${bank.waiting ? 'border-blue-100 bg-blue-50 text-blue-700' : 'border-emerald-100 bg-emerald-50 text-emerald-700'}`}>
+                        {bank.status}
+                      </span>
+                      <span className="text-sm font-semibold text-textStrong">{bank.offer ? currency.format(Number(bank.offer || 0)) : '-'}</span>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="bg-slate-50 px-4 py-8 text-sm text-textMuted">No bank submissions have been captured yet.</p>
+              )}
+            </div>
+          </section>
+        </>
+      ) : null}
+
+      {!isOriginatorManaged && isSelfManagedBond ? (
+        <FinanceEvidenceCard
+          title="Bond Grant"
+          description="Upload the buyer's bond grant or approval letter once their external bank or originator provides it."
+          uploaded={model.bondGrant.uploaded}
+          updatedAt={model.bondGrant.updatedAt}
+          icon={Landmark}
+          onUpload={onUploadBondGrant}
+        />
+      ) : null}
+
+      {isCash ? (
+        <FinanceEvidenceCard
+          title="Proof Of Funds"
+          description="Upload proof of funds for this cash purchase so the transaction can progress beyond finance."
+          uploaded={model.proofOfFunds.uploaded}
+          updatedAt={model.proofOfFunds.updatedAt}
+          icon={CircleDollarSign}
+          onUpload={onUploadProofOfFunds}
+        />
+      ) : null}
+
+      {model?.financeType === 'combination' && !isOriginatorManaged ? (
+        <FinanceEvidenceCard
+          title="Proof Of Funds"
+          description="Upload proof of funds for the cash portion of the transaction."
+          uploaded={model.proofOfFunds.uploaded}
+          updatedAt={model.proofOfFunds.updatedAt}
+          icon={CircleDollarSign}
+          onUpload={onUploadProofOfFunds}
+        />
+      ) : null}
+    </section>
+  )
 }
 
 function resolveTransactionNextAction({
@@ -7064,18 +7470,17 @@ function ArchlineTransferWorkspace({
 
 const ATTORNEY_DOCUMENT_DASHBOARD_CATEGORY_DEFINITIONS = {
   buyer: [
-    { key: 'buyer_fica_id', label: 'Buyer FICA & ID Documents', icon: FileCheck2, tokens: ['fica', 'identity', ' id ', '_id', 'passport', 'marriage', 'spouse', 'trust', 'company', 'authority'] },
-    { key: 'buyer_proof_of_residence', label: 'Proof of Residence', icon: Building2, tokens: ['proof of residence', 'proof_of_residence', 'proof of address', 'proof_of_address', 'utility', 'municipal', 'lease'] },
-    { key: 'buyer_employment_income', label: 'Employment & Income', icon: BriefcaseBusiness, tokens: ['employment', 'income', 'payslip', 'salary', 'tax', 'bank statement'] },
-    { key: 'buyer_finance_bond', label: 'Finance & Bond Documents', icon: FileText, tokens: ['finance', 'bond', 'loan', 'guarantee', 'approval', 'pre-approval', 'proof of funds', 'deposit'] },
-    { key: 'buyer_other', label: 'Other Buyer Documents', icon: FileText, tokens: [] },
+    { key: 'buyer_sales', label: 'Sales Documents', icon: FileCheck2, tokens: ['offer', 'otp', 'sale agreement', 'purchase agreement', 'reservation', 'agreement of sale', 'signed document'] },
+    { key: 'buyer_fica', label: 'FICA Documents', icon: UserCircle, tokens: ['fica', 'identity', ' id ', '_id', 'passport', 'marriage', 'spouse', 'trust', 'company', 'authority', 'proof of residence', 'proof_of_residence', 'proof of address', 'proof_of_address'] },
+    { key: 'buyer_finance', label: 'Finance Documents', icon: CircleDollarSign, tokens: ['finance', 'bond', 'loan', 'guarantee', 'approval', 'pre-approval', 'proof of funds', 'deposit', 'employment', 'income', 'payslip', 'salary', 'tax', 'bank statement'] },
+    { key: 'buyer_property', label: 'Property Documents', icon: Building2, tokens: ['property', 'unit', 'development', 'developer', 'levy', 'rates', 'body corporate', 'municipal', 'handover'] },
+    { key: 'buyer_additional', label: 'Additional Requests', icon: FileText, tokens: [] },
   ],
   seller: [
     { key: 'seller_property', label: 'Property Documents', icon: FileCheck2, tokens: ['property', 'title deed', 'building plan', 'sectional', 'body corporate', 'compliance', 'disclosure'] },
-    { key: 'seller_sale', label: 'Sale Documents', icon: Building2, tokens: ['sale', 'otp', 'offer to purchase', 'agreement', 'mandate', 'addenda', 'addendum', 'suspensive'] },
-    { key: 'seller_fica_id', label: 'FICA & ID Documents', icon: UserCircle, tokens: ['fica', 'identity', ' id ', '_id', 'passport', 'marriage', 'spouse', 'trust', 'company', 'tax'] },
-    { key: 'seller_rates_levies', label: 'Rates & Levies', icon: CircleDollarSign, tokens: ['rates', 'levy', 'levies', 'clearance', 'municipal'] },
-    { key: 'seller_other', label: 'Other Seller Documents', icon: FileText, tokens: [] },
+    { key: 'seller_sales', label: 'Sales Documents', icon: Building2, tokens: ['sale', 'otp', 'offer to purchase', 'agreement', 'agreement of sale', 'mandate', 'seller instruction', 'addenda', 'addendum', 'suspensive'] },
+    { key: 'seller_fica', label: 'FICA Documents', icon: UserCircle, tokens: ['fica', 'identity', ' id ', '_id', 'passport', 'marriage', 'spouse', 'trust', 'company', 'tax', 'authority', 'beneficial ownership'] },
+    { key: 'seller_additional', label: 'Additional Requests', icon: FileText, tokens: [] },
   ],
 }
 
@@ -7281,35 +7686,6 @@ function buildAttorneyDocumentsDashboardModel({
   return { totalRequired, verified, received, missing, pendingReview, completionPercent, summaryCards, parties, activityRows }
 }
 
-function buildDocumentHealthDonutSegments({ total = 0, verified = 0, pending = 0, missing = 0, outstanding = 0 } = {}) {
-  if (!total) {
-    return {
-      gradient: 'conic-gradient(#e2e8f0 0deg 360deg)',
-      receivedPercent: 0,
-      pendingPercent: 0,
-      missingPercent: 0,
-      outstandingPercent: 0,
-    }
-  }
-  const clampCount = (value) => Math.max(0, Math.min(total, Number(value || 0)))
-  const verifiedCount = clampCount(verified)
-  const pendingCount = clampCount(pending)
-  const missingCount = clampCount(missing)
-  const outstandingCount = clampCount(outstanding)
-  const toDegrees = (value) => (clampCount(value) / total) * 360
-  const verifiedEnd = toDegrees(verifiedCount)
-  const pendingEnd = verifiedEnd + toDegrees(pendingCount)
-  const missingEnd = pendingEnd + toDegrees(missingCount)
-  const outstandingEnd = Math.min(360, missingEnd + toDegrees(outstandingCount))
-  return {
-    gradient: `conic-gradient(#059669 0deg ${verifiedEnd}deg, #2563eb ${verifiedEnd}deg ${pendingEnd}deg, #ea580c ${pendingEnd}deg ${missingEnd}deg, #cbd5e1 ${missingEnd}deg ${outstandingEnd}deg, #e2e8f0 ${outstandingEnd}deg 360deg)`,
-    receivedPercent: Math.round((clampCount(verified + pending) / total) * 100),
-    pendingPercent: Math.round((pendingCount / total) * 100),
-    missingPercent: Math.round((missingCount / total) * 100),
-    outstandingPercent: Math.round((outstandingCount / total) * 100),
-  }
-}
-
 function ArchlineDocumentsWorkspace({
   documentHealthSummary = {},
   ficaSummary = {},
@@ -7327,7 +7703,6 @@ function ArchlineDocumentsWorkspace({
 }) {
   const [activePartyView, setActivePartyView] = useState('all')
   const [activeCategory, setActiveCategory] = useState(null)
-  const [activeActivityFilter, setActiveActivityFilter] = useState('all')
 
   const dashboardModel = useMemo(
     () =>
@@ -7344,21 +7719,6 @@ function ArchlineDocumentsWorkspace({
   const visibleParties = activePartyView === 'all'
     ? dashboardModel.parties
     : dashboardModel.parties.filter((party) => party.key === activePartyView)
-  const visibleActivityRows = dashboardModel.activityRows.filter((row) => activeActivityFilter === 'all' || row.type === activeActivityFilter)
-  const attentionCount = (documentHealthSummary.missingCount || missingRows.length || 0) + (documentHealthSummary.pendingReviewCount || 0)
-  const healthTotal = documentHealthSummary.requiredCount || requiredRows.length || dashboardModel.totalRequired || 0
-  const healthReceived = documentHealthSummary.uploadedCount || dashboardModel.received || 0
-  const healthPending = documentHealthSummary.pendingReviewCount || dashboardModel.pendingReview || 0
-  const healthMissing = documentHealthSummary.missingCount || missingRows.length || dashboardModel.missing || 0
-  const healthVerified = documentHealthSummary.approvedCount || dashboardModel.verified || 0
-  const healthOutstanding = Math.max(healthTotal - healthReceived, 0)
-  const healthSegments = buildDocumentHealthDonutSegments({
-    total: healthTotal,
-    verified: healthVerified,
-    pending: healthPending,
-    missing: healthMissing,
-    outstanding: healthOutstanding,
-  })
   const activeCategoryFiles = activeCategory?.documents || []
   const activeCategoryRequirements = activeCategory?.requirements || []
 
@@ -7407,7 +7767,6 @@ function ArchlineDocumentsWorkspace({
           })}
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.25fr)]">
         <div className="space-y-4">
           <ArchlinePanel className="overflow-hidden">
             <div className="border-b border-slate-200 p-4">
@@ -7471,142 +7830,7 @@ function ArchlineDocumentsWorkspace({
               ))}
             </div>
           </ArchlinePanel>
-
-          <ArchlinePanel className="overflow-hidden">
-            <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-sm font-semibold text-slate-950">Document Activity</h3>
-              <div className="flex gap-1 overflow-x-auto">
-                {[
-                  ['all', 'All Activity'],
-                  ['upload', 'Uploads'],
-                  ['request', 'Requests'],
-                  ['status', 'Status Changes'],
-                ].map(([keyValue, label]) => (
-                  <button
-                    key={keyValue}
-                    type="button"
-                    className={`shrink-0 border-b-2 px-3 py-2 text-xs font-semibold ${
-                      activeActivityFilter === keyValue ? 'border-emerald-700 text-emerald-800' : 'border-transparent text-slate-500 hover:text-slate-800'
-                    }`}
-                    onClick={() => setActiveActivityFilter(keyValue)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {visibleActivityRows.slice(0, 6).map((row) => {
-                const ActivityIcon = row.icon
-                return (
-                  <article key={row.id} className="flex items-center gap-3 px-4 py-3">
-                    <span className={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg ${row.iconTone}`}>
-                      <ActivityIcon size={14} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <strong className="block truncate text-sm font-semibold text-slate-950">{row.label}</strong>
-                      <span className="mt-0.5 block truncate text-xs text-slate-500">{row.detail}</span>
-                    </span>
-                    <span className="hidden shrink-0 text-xs text-slate-500 sm:block">{row.timeLabel}</span>
-                    <span className={`shrink-0 rounded-full px-2 py-1 text-[0.68rem] font-semibold ${row.badgeTone}`}>{row.badge}</span>
-                  </article>
-                )
-              })}
-              {!visibleActivityRows.length ? (
-                <p className="px-4 py-8 text-sm text-slate-500">No document activity matches this filter.</p>
-              ) : null}
-            </div>
-            {dashboardModel.activityRows.length ? (
-              <div className="border-t border-slate-100 px-4 py-3">
-                <Button type="button" variant="ghost" size="sm" onClick={() => onFilterChange?.('all')}>
-                  View all activity
-                  <ChevronRight size={14} />
-                </Button>
-              </div>
-            ) : null}
-          </ArchlinePanel>
         </div>
-
-        <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-          <ArchlinePanel title="Document Health" className="p-4">
-            <div className="flex flex-col items-center gap-4 sm:flex-row xl:flex-col">
-              <div
-                className="grid size-32 shrink-0 place-items-center rounded-full"
-                style={{ background: healthSegments.gradient }}
-                aria-label={`${healthTotal} total required documents`}
-              >
-                <div className="grid size-24 place-items-center rounded-full bg-white text-center shadow-inner">
-                  <strong className="block text-2xl font-semibold text-slate-950">{healthTotal}</strong>
-                  <span className="block text-[0.68rem] font-semibold text-slate-500">Total Required</span>
-                </div>
-              </div>
-              <div className="grid w-full gap-2">
-                {[
-                  ['Received', healthReceived, healthSegments.receivedPercent, 'bg-emerald-600'],
-                  ['Pending Review', healthPending, healthSegments.pendingPercent, 'bg-blue-600'],
-                  ['Missing', healthMissing, healthSegments.missingPercent, 'bg-orange-600'],
-                  ['Outstanding', healthOutstanding, healthSegments.outstandingPercent, 'bg-slate-300'],
-                ].map(([label, value, percent, dot]) => (
-                  <div key={label} className="flex items-center gap-2 text-xs text-slate-600">
-                    <span className={`size-2 rounded-full ${dot}`} />
-                    <span className="min-w-0 flex-1 truncate">{value} {label}</span>
-                    <span className="font-semibold text-slate-500">{percent}%</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            {attentionCount ? (
-              <div className="mt-4 rounded-lg border border-red-100 bg-red-50 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-start gap-2">
-                    <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-600" />
-                    <div>
-                      <strong className="block text-xs font-semibold text-red-700">{attentionCount} document{attentionCount === 1 ? '' : 's'} need your attention</strong>
-                      <p className="mt-1 text-xs leading-5 text-red-700">Review and request outstanding items.</p>
-                    </div>
-                  </div>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => onFilterChange?.('missing')}>
-                    View
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </ArchlinePanel>
-
-          <ArchlinePanel title="Quick Actions" className="p-4">
-            <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
-              {[
-                ['Upload Document', 'Upload files to this matter', Upload, onUpload],
-                ['Request Document', 'Request from buyer, seller or bank', FileText, onRequest],
-                ['Bulk Download', 'Review received files', Download, () => onFilterChange?.('verified')],
-                ['Document Checklist', 'View required document list', ListChecks, () => onFilterChange?.('missing')],
-              ].map(([label, helper, Icon, action]) => (
-                <button key={label} type="button" className="flex w-full items-center gap-3 bg-white px-3 py-3 text-left transition hover:bg-slate-50" onClick={action}>
-                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600">
-                    {createElement(Icon, { size: 14 })}
-                  </span>
-                  <span className="min-w-0">
-                    <strong className="block truncate text-sm font-semibold text-slate-950">{label}</strong>
-                    <span className="mt-0.5 block truncate text-xs text-slate-500">{helper}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </ArchlinePanel>
-
-          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-            <div className="flex gap-3">
-              <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-blue-700">
-                <AtSign size={15} />
-              </span>
-              <p className="text-xs leading-5 text-blue-900">
-                <strong className="block text-sm text-blue-950">Tip</strong>
-                Use document categories to keep files organised and ensure nothing is missed.
-              </p>
-            </div>
-          </div>
-        </aside>
-      </div>
       </section>
 
       <Modal
@@ -7936,55 +8160,329 @@ function BondApplicationHeader({
   owner = '',
   statusLabel = '',
 }) {
+  const metricRows = [
+    { label: 'Application Age', value: ageLabel || 'New', icon: Clock3 },
+    { label: 'Consultant', value: consultant || 'Unassigned', icon: UserRound },
+    { label: 'Owner', value: owner || 'Unassigned', icon: UsersRound },
+    { label: 'Status', value: statusLabel || 'In Progress', icon: CheckCircle2 },
+  ]
+
   return (
-    <section className="rounded-[18px] border border-borderDefault bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+    <section className="relative overflow-hidden rounded-[26px] border border-[#d8e4ef] bg-[#f8fbfd] px-5 py-6 shadow-[0_18px_42px_rgba(15,23,42,0.07)] sm:px-6 lg:px-7">
+      <div aria-hidden="true" className="absolute inset-0 bg-[url('/brand/future-of-property-preview.jpg')] bg-cover bg-center opacity-[0.06]" />
+      <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(112deg,rgba(255,255,255,0.97)_0%,rgba(255,255,255,0.91)_48%,rgba(239,247,252,0.82)_100%)]" />
+      <div className="relative flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-textMuted">
             <span>Applications</span>
             <ChevronRight size={14} />
             <strong className="text-textStrong">{reference}</strong>
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-textStrong">{buyerName || 'Bond Applicant'}</h1>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <h1 className="min-w-0 text-[2rem] font-semibold leading-none text-[#142132] md:text-[2.45rem]">
+              {buyerName || 'Bond Applicant'}
+            </h1>
             {statusLabel ? (
-              <span className="inline-flex rounded-full border border-success/25 bg-successSoft px-3 py-1 text-xs font-semibold text-success">
+              <span className="inline-flex items-center gap-2 rounded-full border border-success/25 bg-successSoft px-3 py-1.5 text-xs font-semibold text-success">
+                <span className="size-1.5 rounded-full bg-current" />
                 {statusLabel}
               </span>
             ) : null}
           </div>
-          <p className="mt-2 text-base text-[#243b5a]">{[propertyLabel, purchasePrice].filter(Boolean).join(' • ')}</p>
+          <p className="mt-3 flex max-w-4xl items-start gap-2 text-[1.02rem] font-medium leading-7 text-[#294158]">
+            <MapPin size={17} className="mt-1 shrink-0 text-[#6c8198]" />
+            {[propertyLabel, purchasePrice].filter(Boolean).join(' • ') || 'Property and purchase value pending'}
+          </p>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
-            <Button type="button" size="sm">
-              <Plus size={14} />
-              Create
-            </Button>
-            <Button type="button" variant="secondary" size="sm">
-              <Search size={14} />
-              Search
-            </Button>
-            <button type="button" className="ui-icon-button" aria-label="Notifications"><Bell size={16} /></button>
-            <button type="button" className="ui-icon-button" aria-label="Profile"><UserCircle size={17} /></button>
-            <button type="button" className="ui-icon-button" aria-label="More actions"><MoreHorizontal size={17} /></button>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-4">
-            {[
-              ['Application Age', ageLabel],
-              ['Consultant', consultant],
-              ['Owner', owner],
-              ['Status', statusLabel],
-            ].map(([label, value]) => (
-              <article key={label} className="min-w-0 border-l border-borderSoft pl-4 first:border-l-0 first:pl-0">
-                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
-                <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{value || 'Not assigned'}</strong>
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:w-[560px]">
+          {metricRows.map((item) => {
+            const Icon = item.icon
+            return (
+              <article key={item.label} className="flex min-w-0 items-start gap-3 rounded-[16px] border border-[#edf2f7] bg-white/84 px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.035)] backdrop-blur">
+                <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#eef5fb] text-[#1769d1]">
+                  <Icon size={16} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">{item.label}</span>
+                  <strong className="mt-1 block truncate text-sm font-semibold text-[#1d3144]" title={item.value}>{item.value}</strong>
+                </span>
               </article>
-            ))}
-          </div>
+            )
+          })}
         </div>
       </div>
+    </section>
+  )
+}
+
+function BondDocumentStatusPill({ children, tone = 'slate', className = '' }) {
+  const tones = {
+    slate: 'bg-slate-100 text-slate-700',
+    blue: 'bg-blue-50 text-blue-700',
+    green: 'bg-emerald-50 text-emerald-700',
+    amber: 'bg-amber-50 text-amber-700',
+    red: 'bg-rose-50 text-rose-700',
+  }
+  return <span className={`inline-flex min-h-7 items-center rounded-full px-2.5 text-xs font-semibold ${tones[tone] || tones.slate} ${className}`.trim()}>{children}</span>
+}
+
+function BondDocumentInfoRow({ label, value }) {
+  return (
+    <div className="min-w-0 rounded-xl bg-slate-50 px-3 py-2.5">
+      <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-semibold text-slate-900">{value || '-'}</dd>
+    </div>
+  )
+}
+
+function getBondDocumentTone(status = '') {
+  const normalized = normalizeDocumentCommandStatus(status)
+  if (['verified', 'uploaded'].includes(normalized)) return 'green'
+  if (['requested', 'pending_review'].includes(normalized)) return 'amber'
+  if (['missing', 'rejected', 'expired'].includes(normalized)) return 'red'
+  return 'blue'
+}
+
+function BondDocumentRow({
+  row = {},
+  bankStatementMonths = 3,
+  onRequest,
+  onUpload,
+  onUploadRequest,
+  onView,
+  onReplace,
+  saving = false,
+}) {
+  const title = getBondDocumentDisplayName(row, bankStatementMonths)
+  const status = row.status || (row.fileUrl ? 'uploaded' : 'missing')
+  const canUploadRequirementRow = !row.fileUrl && (row.requirement || row.requiredDocument || row.source === 'requirement')
+  const canUploadRequestRow = !row.fileUrl && row.source === 'document_request'
+
+  return (
+    <article className="flex flex-col gap-3 rounded-2xl bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+          <BondDocumentStatusPill tone={getBondDocumentTone(status)}>{row.statusLabel || getDocumentCommandStatusLabel(status)}</BondDocumentStatusPill>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">
+          {row.requiredParty || row.categoryLabel || row.documentTypeLabel || row.detail || 'Buyer finance document'}
+        </p>
+        {row.uploadedAt ? <p className="mt-1 text-xs font-semibold text-slate-400">Uploaded {formatDateTime(row.uploadedAt)}</p> : null}
+      </div>
+      <div className="flex shrink-0 flex-wrap gap-2">
+        {row.fileUrl ? (
+          <>
+            <a href={row.fileUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              View
+            </a>
+            <a href={row.fileUrl} download className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              Download
+            </a>
+            <Button type="button" variant="secondary" size="sm" onClick={() => onReplace?.(row.raw || row.linkedDocument || {}, row.requiredDocument || row.requirement)} disabled={saving}>
+              Replace
+            </Button>
+          </>
+        ) : null}
+        {!row.fileUrl ? (
+          <Button type="button" variant="secondary" size="sm" onClick={() => onRequest?.(row)} disabled={saving}>
+            Request
+          </Button>
+        ) : null}
+        {canUploadRequirementRow ? (
+          <Button type="button" size="sm" onClick={() => onUpload?.(row.requirement || row.requiredDocument || row)} disabled={saving}>
+            <Upload size={14} />
+            Upload
+          </Button>
+        ) : null}
+        {canUploadRequestRow ? (
+          <Button type="button" size="sm" onClick={() => onUploadRequest?.(row)} disabled={saving}>
+            <Upload size={14} />
+            Upload
+          </Button>
+        ) : null}
+        {row.fileUrl && onView ? (
+          <Button type="button" variant="secondary" size="sm" onClick={() => onView(row.raw || row.linkedDocument || row)}>
+            Open
+          </Button>
+        ) : null}
+      </div>
+    </article>
+  )
+}
+
+function BondOriginatorDocumentCentre({
+  documentHealthSummary = {},
+  documentReadiness = {},
+  documentLibraryRows = [],
+  bankStatementMonths = 3,
+  documentLibrarySearch = '',
+  onSearchChange,
+  onRequestDocument,
+  onRequestBankStatements,
+  onUploadGeneral,
+  onUploadRequirement,
+  onUploadRequest,
+  onViewDocument,
+  onReplaceDocument,
+  saving = false,
+}) {
+  const requiredRows = documentHealthSummary.requiredDocuments?.length ? documentHealthSummary.requiredDocuments : []
+  const missingRows = documentReadiness.missingDocuments || []
+  const uploadedRows = documentLibraryRows.filter((row) => row.fileUrl).slice(0, 8)
+  const requestRows = documentLibraryRows.filter((row) => row.source === 'document_request' && !row.fileUrl).slice(0, 8)
+  const hasBankStatementRequirement = [...requiredRows, ...missingRows, ...requestRows, ...uploadedRows].some(isBankStatementDocumentRow)
+  const defaultBankStatementRow = hasBankStatementRequirement
+    ? null
+    : {
+        id: 'default-bank-statement-request',
+        displayName: `Latest ${bankStatementMonths} months bank statements`,
+        status: 'requested',
+        statusLabel: 'Default request',
+        requiredParty: 'Buyer',
+        categoryLabel: 'Financial documents',
+      }
+  const visibleRequiredRows = [
+    ...(defaultBankStatementRow ? [defaultBankStatementRow] : []),
+    ...requiredRows.slice(0, 8),
+  ]
+  const completeCount = documentHealthSummary.approvedCount || documentHealthSummary.uploadedCount || uploadedRows.length || 0
+  const totalCount = Math.max(documentHealthSummary.requiredCount || 0, visibleRequiredRows.length)
+  const outstandingCount = documentHealthSummary.missingCount || missingRows.length || Math.max(totalCount - completeCount, 0)
+  const stateLabel = documentHealthSummary.submissionReady ? 'Ready' : documentHealthSummary.scoreLabel || 'Needs documents'
+
+  return (
+    <section className="rounded-[24px] border border-slate-200/80 bg-white p-6 shadow-[0_16px_36px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Documents</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-slate-950">Bond document centre</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+            Track requested, missing, uploaded, and in-review finance documents for this bond application.
+          </p>
+        </div>
+        <BondDocumentStatusPill tone={documentHealthSummary.submissionReady ? 'green' : 'amber'}>{documentHealthSummary.score || 0}% complete</BondDocumentStatusPill>
+      </div>
+
+      <div className="mt-5 grid gap-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 lg:grid-cols-[1fr_auto_auto] lg:items-end">
+        <label className="grid gap-2 text-sm font-semibold text-slate-700">
+          Search documents
+          <span className="relative">
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Field
+              value={documentLibrarySearch}
+              onChange={(event) => onSearchChange?.(event.target.value)}
+              placeholder="Search finance documents..."
+              className="min-h-11 rounded-xl border-slate-200 bg-white pl-9 text-sm"
+            />
+          </span>
+          <span className="text-xs font-medium text-slate-500">Requests are saved on the transaction and notify portal users when possible.</span>
+        </label>
+        <Button type="button" variant="secondary" onClick={onRequestBankStatements} disabled={saving}>
+          <FileText size={14} />
+          {`Request ${bankStatementMonths} Months Statements`}
+        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" onClick={() => onRequestDocument?.()} disabled={saving}>
+            <Plus size={14} />
+            New Request
+          </Button>
+          <Button type="button" onClick={onUploadGeneral} disabled={saving}>
+            <Upload size={14} />
+            Upload
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <BondDocumentInfoRow label="Complete" value={`${completeCount}/${totalCount || 0}`} />
+        <BondDocumentInfoRow label="Outstanding" value={outstandingCount} />
+        <BondDocumentInfoRow label="Requested" value={requestRows.length + (defaultBankStatementRow ? 1 : 0)} />
+        <BondDocumentInfoRow label="State" value={stateLabel} />
+      </div>
+
+      <div className="mt-6 grid gap-5 xl:grid-cols-2">
+        <section className="min-w-0">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Required Pack</h3>
+            <BondDocumentStatusPill tone="blue">{bankStatementMonths} months bank statements</BondDocumentStatusPill>
+          </div>
+          <div className="grid gap-3">
+            {visibleRequiredRows.length ? visibleRequiredRows.map((row) => (
+              <BondDocumentRow
+                key={row.id || row.key || row.displayName}
+                row={row}
+                bankStatementMonths={bankStatementMonths}
+                saving={saving}
+                onRequest={isBankStatementDocumentRow(row) ? onRequestBankStatements : onRequestDocument}
+                onUpload={(requirement) => onUploadRequirement?.(requirement)}
+                onUploadRequest={onUploadRequest}
+                onView={onViewDocument}
+                onReplace={onReplaceDocument}
+              />
+            )) : (
+              <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                No finance requirements are active yet.
+              </p>
+            )}
+          </div>
+        </section>
+
+        <section className="min-w-0">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Open Requests</h3>
+            <button type="button" className="text-sm font-semibold text-primary hover:text-primaryDark" onClick={() => onRequestDocument?.()}>
+              New request
+            </button>
+          </div>
+          <div className="grid gap-3">
+            {requestRows.length ? requestRows.map((row) => (
+              <BondDocumentRow
+                key={row.id || row.displayName}
+                row={row}
+                bankStatementMonths={bankStatementMonths}
+                saving={saving}
+                onRequest={onRequestDocument}
+                onUploadRequest={onUploadRequest}
+                onView={onViewDocument}
+                onReplace={onReplaceDocument}
+              />
+            )) : (
+              <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                No custom document requests are open.
+              </p>
+            )}
+          </div>
+        </section>
+      </div>
+
+      <section className="mt-6">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Uploaded Documents</h3>
+          <span className="text-xs font-semibold text-slate-400">
+            Showing {uploadedRows.length} of {documentLibraryRows.filter((row) => row.fileUrl).length}
+          </span>
+        </div>
+        <div className="grid gap-3">
+          {uploadedRows.length ? uploadedRows.map((row) => (
+            <BondDocumentRow
+              key={row.id || row.displayName}
+              row={row}
+              bankStatementMonths={bankStatementMonths}
+              saving={saving}
+              onRequest={onRequestDocument}
+              onUploadRequest={onUploadRequest}
+              onView={onViewDocument}
+              onReplace={onReplaceDocument}
+            />
+          )) : (
+            <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+              Uploaded finance documents will appear here once linked to this transaction.
+            </p>
+          )}
+        </div>
+      </section>
     </section>
   )
 }
@@ -8395,15 +8893,105 @@ function BondBankSubmissionCommandCenter({
   )
 }
 
-function QuoteComparisonCommandCenter({ quotes = [], recommendedQuote = null, loadingAction = '', onAcceptQuote, onRequestRevision, onDeclineAll, onViewAll }) {
+function BondQuoteCaptureForm({ loadingAction = '', onCaptureQuote }) {
+  const [form, setForm] = useState({
+    bankName: '',
+    quotedAmount: '',
+    interestRateDisplay: '',
+    monthlyRepayment: '',
+    termMonths: '',
+    validUntil: '',
+    notes: '',
+    quoteFile: null,
+  })
+
+  function updateField(key, value) {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    const result = onCaptureQuote?.({
+      bankName: form.bankName,
+      quotedAmount: form.quotedAmount,
+      interestRateDisplay: form.interestRateDisplay,
+      monthlyRepayment: form.monthlyRepayment,
+      termMonths: form.termMonths,
+      validUntil: form.validUntil,
+      notes: form.notes,
+      quoteDocumentFile: form.quoteFile,
+    })
+    if (result?.then) await result
+    setForm({
+      bankName: '',
+      quotedAmount: '',
+      interestRateDisplay: '',
+      monthlyRepayment: '',
+      termMonths: '',
+      validUntil: '',
+      notes: '',
+      quoteFile: null,
+    })
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-[14px] border border-blue-100 bg-blue-50/50 p-4">
+      <div className="grid gap-3 md:grid-cols-2">
+        <Field placeholder="Bank / lender" value={form.bankName} onChange={(event) => updateField('bankName', event.target.value)} required />
+        <Field placeholder="Approved amount" type="number" value={form.quotedAmount} onChange={(event) => updateField('quotedAmount', event.target.value)} />
+        <Field placeholder="Interest rate, e.g. Prime - 0.25%" value={form.interestRateDisplay} onChange={(event) => updateField('interestRateDisplay', event.target.value)} />
+        <Field placeholder="Monthly repayment" type="number" value={form.monthlyRepayment} onChange={(event) => updateField('monthlyRepayment', event.target.value)} />
+        <Field placeholder="Term months" type="number" value={form.termMonths} onChange={(event) => updateField('termMonths', event.target.value)} />
+        <Field type="date" value={form.validUntil} onChange={(event) => updateField('validUntil', event.target.value)} />
+      </div>
+      <Field
+        as="textarea"
+        rows={3}
+        className="mt-3"
+        placeholder="Quote notes"
+        value={form.notes}
+        onChange={(event) => updateField('notes', event.target.value)}
+      />
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <label className="flex min-w-0 flex-1 items-center gap-3 rounded-[12px] border border-borderSoft bg-white px-3 py-2 text-sm font-semibold text-textBody">
+          <Upload size={15} className="shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 truncate">{form.quoteFile?.name || 'Attach quote document'}</span>
+          <input type="file" className="sr-only" onChange={(event) => updateField('quoteFile', event.target.files?.[0] || null)} />
+        </label>
+        <Button type="submit" disabled={loadingAction === 'add_quote' || !form.bankName.trim()}>
+          <Plus size={14} />
+          Capture Quote
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function QuoteComparisonCommandCenter({
+  quotes = [],
+  recommendedQuote = null,
+  loadingAction = '',
+  onCaptureQuote,
+  onAcceptQuote,
+  onRequestRevision,
+  onDeclineAll,
+  onViewAll,
+}) {
   if (!quotes.length) {
     return (
       <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-        <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Quote Comparison</h3>
-        <p className="mt-1 text-sm text-textMuted">Compare quotes from responding banks.</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Quote Uploads</h3>
+            <p className="mt-1 text-sm text-textMuted">Capture every bank quote and attach the supporting quote document.</p>
+          </div>
+        </div>
         <p className="mt-5 rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm leading-6 text-textMuted">
-          No quotes received yet. Quotes will appear once banks return offers.
+          No quotes received yet. Capture the first bank quote when it arrives.
         </p>
+        <div className="mt-4">
+          <BondQuoteCaptureForm loadingAction={loadingAction} onCaptureQuote={onCaptureQuote} />
+        </div>
       </section>
     )
   }
@@ -8412,14 +9000,17 @@ function QuoteComparisonCommandCenter({ quotes = [], recommendedQuote = null, lo
     <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Quote Comparison</h3>
-          <p className="mt-1 text-sm text-textMuted">Compare quotes from responding banks.</p>
+          <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Quote Uploads</h3>
+          <p className="mt-1 text-sm text-textMuted">Capture, compare, and attach all bank quote documents for the client.</p>
         </div>
         {recommendedQuote ? (
           <span className="rounded-full border border-success/25 bg-successSoft px-3 py-1 text-xs font-semibold text-success">
             {getQuoteBankName(recommendedQuote)} Offer Recommended
           </span>
         ) : null}
+      </div>
+      <div className="mt-5">
+        <BondQuoteCaptureForm loadingAction={loadingAction} onCaptureQuote={onCaptureQuote} />
       </div>
       <div className="mt-5 overflow-x-auto">
         <table className="min-w-[860px] w-full border-collapse text-sm">
@@ -8517,6 +9108,143 @@ function BuyerDecisionPanel({ acceptedQuote = null, quotes = [], onRecordDecisio
         </Button>
       </div>
     </aside>
+  )
+}
+
+function BondGrantPackPanel({
+  instruction = {},
+  acceptedQuote = null,
+  documents = [],
+  loadingAction = '',
+  onMarkGrantMilestone,
+  onOpenDocument,
+}) {
+  const [notes, setNotes] = useState('')
+  const [grantFile, setGrantFile] = useState(null)
+  const [signedGrantFile, setSignedGrantFile] = useState(null)
+  const grantReceived = Boolean(instruction?.grantReceived || instruction?.grant_received || instruction?.grantDocumentId || instruction?.grant_document_id)
+  const grantSigned = Boolean(instruction?.grantSigned || instruction?.grant_signed || instruction?.signedGrantDocumentId || instruction?.signed_grant_document_id)
+  const grantSubmitted = Boolean(instruction?.grantSubmitted || instruction?.grant_submitted)
+  const grantDocumentId = instruction?.grantDocumentId || instruction?.grant_document_id || null
+  const signedGrantDocumentId = instruction?.signedGrantDocumentId || instruction?.signed_grant_document_id || null
+  const findDocument = (documentId) => documents.find((item) => String(item?.id || item?.documentId || item?.document_id || '') === String(documentId || '')) || null
+  const grantDocument = findDocument(grantDocumentId)
+  const signedGrantDocument = findDocument(signedGrantDocumentId)
+
+  async function submitMilestone(stage) {
+    const result = onMarkGrantMilestone?.({
+      stage,
+      notes,
+      file: stage === 'grant_received' ? grantFile : null,
+      signedFile: ['grant_signed', 'grant_submitted'].includes(stage) ? signedGrantFile : null,
+      grantDocumentId,
+      signedGrantDocumentId,
+    })
+    if (result?.then) await result
+    setNotes('')
+    if (stage === 'grant_received') setGrantFile(null)
+    if (['grant_signed', 'grant_submitted'].includes(stage)) setSignedGrantFile(null)
+  }
+
+  const milestoneRows = [
+    ['Grant Received', grantReceived, instruction?.grantReceivedAt || instruction?.grant_received_at],
+    ['Grant Signed', grantSigned, instruction?.grantSignedAt || instruction?.grant_signed_at],
+    ['Grant Submitted', grantSubmitted, instruction?.grantSubmittedAt || instruction?.grant_submitted_at],
+  ]
+
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Grant Pack</h3>
+          <p className="mt-1 text-sm leading-6 text-textMuted">Upload the bank grant, signed grant, and record the grant milestones for the client.</p>
+        </div>
+        {acceptedQuote ? (
+          <span className="rounded-full border border-success/25 bg-successSoft px-3 py-1 text-xs font-semibold text-success">
+            {getQuoteBankName(acceptedQuote)} quote accepted
+          </span>
+        ) : (
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+            Awaiting accepted quote
+          </span>
+        )}
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        {milestoneRows.map(([label, complete, date]) => (
+          <article key={label} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3">
+            <strong className="block text-sm font-semibold text-textStrong">{label}</strong>
+            <p className="mt-1 text-xs leading-5 text-textMuted">{complete ? formatDate(date, 'Recorded') : 'Pending upload'}</p>
+            <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${getBankSubmissionTone(complete ? 'approved' : 'pending')}`}>
+              {complete ? 'Complete' : 'Waiting'}
+            </span>
+          </article>
+        ))}
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        <label className="flex min-w-0 items-center gap-3 rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-sm font-semibold text-textBody">
+          <Upload size={16} className="shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 truncate">{grantFile?.name || 'Attach grant document from bank'}</span>
+          <input type="file" className="sr-only" onChange={(event) => setGrantFile(event.target.files?.[0] || null)} disabled={grantReceived} />
+        </label>
+        <label className="flex min-w-0 items-center gap-3 rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-sm font-semibold text-textBody">
+          <Upload size={16} className="shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 truncate">{signedGrantFile?.name || 'Attach signed grant document'}</span>
+          <input type="file" className="sr-only" onChange={(event) => setSignedGrantFile(event.target.files?.[0] || null)} disabled={grantSigned} />
+        </label>
+      </div>
+
+      <Field
+        as="textarea"
+        rows={3}
+        className="mt-3"
+        placeholder="Grant notes"
+        value={notes}
+        onChange={(event) => setNotes(event.target.value)}
+      />
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          disabled={Boolean(loadingAction) || grantReceived || (!grantFile && !grantDocumentId)}
+          onClick={() => submitMilestone('grant_received')}
+        >
+          {loadingAction === 'grant_received' ? 'Recording...' : 'Record Grant Received'}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={Boolean(loadingAction) || !grantReceived || grantSigned || (!signedGrantFile && !signedGrantDocumentId)}
+          onClick={() => submitMilestone('grant_signed')}
+        >
+          {loadingAction === 'grant_signed' ? 'Recording...' : 'Record Signed Grant'}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={Boolean(loadingAction) || !grantSigned || grantSubmitted}
+          onClick={() => submitMilestone('grant_submitted')}
+        >
+          {loadingAction === 'grant_submitted' ? 'Submitting...' : 'Mark Grant Submitted'}
+        </Button>
+      </div>
+
+      {(grantDocument || signedGrantDocument) ? (
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-borderSoft pt-4">
+          {grantDocument ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenDocument?.(grantDocument)}>
+              View Grant
+            </Button>
+          ) : null}
+          {signedGrantDocument ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenDocument?.(signedGrantDocument)}>
+              View Signed Grant
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   )
 }
 
@@ -9415,10 +10143,13 @@ function AgentTransactionOverview({
         </div>
 
         <div className="mt-8 overflow-x-auto pb-2">
-          <div className="relative min-w-[820px] px-3">
+          <div className="relative w-full min-w-[820px] px-3">
             <div className="absolute left-10 right-10 top-[22px] h-0.5 bg-slate-200" />
             <div className="absolute left-10 top-[22px] h-0.5 bg-emerald-700 transition-all" style={{ width: `calc((100% - 5rem) * ${progressPercent / 100})` }} />
-            <div className="relative grid grid-cols-6 gap-4">
+            <div
+              className="relative grid gap-4"
+              style={{ gridTemplateColumns: `repeat(${Math.max(1, journeyStages.length)}, minmax(0, 1fr))` }}
+            >
               {journeyStages.map((stage) => {
                 const Icon = stage.Icon || FileText
                 const isComplete = stage.state === 'completed'
@@ -9606,6 +10337,93 @@ function AgentTransactionOverview({
   )
 }
 
+const MATTER_OVERVIEW_HEADER_THEMES = {
+  buyer: {
+    shell: 'border-blue-300/50 bg-[#0b3b72] text-white shadow-[0_24px_52px_rgba(11,59,114,0.22)]',
+    photo: 'opacity-[0.08] mix-blend-screen',
+    wash: 'bg-[radial-gradient(circle_at_16%_8%,rgba(147,197,253,0.42),transparent_34%),linear-gradient(135deg,rgba(7,34,67,0.98)_0%,rgba(13,92,163,0.96)_54%,rgba(8,43,82,0.98)_100%)]',
+    glow: 'bg-[linear-gradient(180deg,rgba(255,255,255,0.18)_0%,rgba(255,255,255,0)_100%)]',
+    eyebrow: 'border-white/25 bg-white/14 text-blue-50 shadow-[0_10px_26px_rgba(2,8,23,0.12)]',
+    title: 'text-white',
+    body: 'text-blue-50',
+    muted: 'text-blue-100/82',
+    icon: 'text-blue-100',
+    card: 'border-white/16 bg-white/13 shadow-[0_16px_32px_rgba(2,8,23,0.14)] backdrop-blur',
+    cardLabel: 'text-blue-100/75',
+    cardValue: 'text-white',
+    panel: 'border-white/18 bg-white/15 shadow-[0_18px_36px_rgba(2,8,23,0.16)] backdrop-blur',
+    panelLabel: 'text-blue-100/76',
+    panelValue: 'text-white',
+    panelMeta: 'text-blue-100/82',
+    healthBadge: 'border-white/20 bg-white/14 text-white',
+  },
+  seller: {
+    shell: 'border-emerald-300/50 bg-[#065f46] text-white shadow-[0_24px_52px_rgba(6,95,70,0.22)]',
+    photo: 'opacity-[0.08] mix-blend-screen',
+    wash: 'bg-[radial-gradient(circle_at_16%_8%,rgba(110,231,183,0.36),transparent_34%),linear-gradient(135deg,rgba(4,53,39,0.98)_0%,rgba(7,120,87,0.96)_54%,rgba(5,66,49,0.98)_100%)]',
+    glow: 'bg-[linear-gradient(180deg,rgba(255,255,255,0.17)_0%,rgba(255,255,255,0)_100%)]',
+    eyebrow: 'border-white/24 bg-white/14 text-emerald-50 shadow-[0_10px_26px_rgba(2,8,23,0.12)]',
+    title: 'text-white',
+    body: 'text-emerald-50',
+    muted: 'text-emerald-100/82',
+    icon: 'text-emerald-100',
+    card: 'border-white/16 bg-white/13 shadow-[0_16px_32px_rgba(2,8,23,0.14)] backdrop-blur',
+    cardLabel: 'text-emerald-100/75',
+    cardValue: 'text-white',
+    panel: 'border-white/18 bg-white/15 shadow-[0_18px_36px_rgba(2,8,23,0.16)] backdrop-blur',
+    panelLabel: 'text-emerald-100/76',
+    panelValue: 'text-white',
+    panelMeta: 'text-emerald-100/82',
+    healthBadge: 'border-white/20 bg-white/14 text-white',
+  },
+  transaction: {
+    shell: 'border-slate-700/25 bg-[#142132] text-white shadow-[0_24px_52px_rgba(15,23,42,0.2)]',
+    photo: 'opacity-[0.07] mix-blend-screen',
+    wash: 'bg-[radial-gradient(circle_at_18%_10%,rgba(125,211,252,0.24),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.98)_0%,rgba(30,58,92,0.96)_55%,rgba(15,23,42,0.98)_100%)]',
+    glow: 'bg-[linear-gradient(180deg,rgba(255,255,255,0.15)_0%,rgba(255,255,255,0)_100%)]',
+    eyebrow: 'border-white/22 bg-white/13 text-slate-50 shadow-[0_10px_26px_rgba(2,8,23,0.12)]',
+    title: 'text-white',
+    body: 'text-slate-100',
+    muted: 'text-slate-200/78',
+    icon: 'text-slate-200',
+    card: 'border-white/14 bg-white/12 shadow-[0_16px_32px_rgba(2,8,23,0.14)] backdrop-blur',
+    cardLabel: 'text-slate-200/72',
+    cardValue: 'text-white',
+    panel: 'border-white/17 bg-white/14 shadow-[0_18px_36px_rgba(2,8,23,0.16)] backdrop-blur',
+    panelLabel: 'text-slate-200/76',
+    panelValue: 'text-white',
+    panelMeta: 'text-slate-200/78',
+    healthBadge: 'border-white/20 bg-white/14 text-white',
+  },
+}
+
+function getMatterOverviewHeaderTheme({
+  title = '',
+  clientTitle = '',
+  buyerName = '',
+  sellerName = '',
+  statusLabel = '',
+  matterHealthLabel = '',
+  actionButtons = [],
+} = {}) {
+  const text = [
+    title,
+    clientTitle,
+    buyerName,
+    sellerName,
+    statusLabel,
+    matterHealthLabel,
+    ...actionButtons.flatMap((action) => [action?.actionKey, action?.label, action?.reason]),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  if (text.includes('buyer')) return MATTER_OVERVIEW_HEADER_THEMES.buyer
+  if (text.includes('seller')) return MATTER_OVERVIEW_HEADER_THEMES.seller
+  return MATTER_OVERVIEW_HEADER_THEMES.transaction
+}
+
 function MatterOverviewHeader({
   title,
   statusLabel,
@@ -9629,11 +10447,20 @@ function MatterOverviewHeader({
   isAgentView = false,
 }) {
   const currentStage = MATTER_STAGE_MILESTONES[Math.min(progressIndex, MATTER_STAGE_MILESTONES.length - 1)] || MATTER_STAGE_MILESTONES[0]
+  const headerTheme = getMatterOverviewHeaderTheme({
+    title,
+    clientTitle,
+    buyerName,
+    sellerName,
+    statusLabel,
+    matterHealthLabel,
+    actionButtons,
+  })
 
   if (isAgentView) {
     const identityCards = [
-      { label: 'Buyer', value: buyerName || 'Buyer pending', Icon: UserRound, tone: 'bg-emerald-50 text-emerald-700' },
-      { label: 'Seller', value: sellerName || 'Seller pending', Icon: UserRound, tone: 'bg-amber-50 text-amber-700' },
+      { label: 'Buyer', value: buyerName || 'Buyer pending', Icon: UserRound, tone: 'bg-blue-100 text-blue-800' },
+      { label: 'Seller', value: sellerName || 'Seller pending', Icon: UserRound, tone: 'bg-emerald-100 text-emerald-800' },
       { label: 'Assigned Agent', value: agentName || 'Not assigned', Icon: Building2, tone: 'bg-blue-50 text-blue-700' },
       ...assignedFirms.map((item) => {
         const label = item?.label || 'Assigned Firm'
@@ -9658,14 +10485,14 @@ function MatterOverviewHeader({
 
     return (
       <div className="space-y-4">
-        <section className="relative overflow-hidden rounded-[26px] border border-[#d8e4ef] bg-[#f8fbfd] px-5 py-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)] sm:px-6 lg:px-7">
-          <div aria-hidden="true" className="absolute inset-0 bg-[url('/brand/future-of-property-preview.jpg')] bg-cover bg-center opacity-[0.07]" />
-          <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(110deg,rgba(255,255,255,0.96)_0%,rgba(255,255,255,0.9)_45%,rgba(240,247,252,0.78)_100%)]" />
-          <div aria-hidden="true" className="absolute inset-x-0 top-0 h-32 bg-[linear-gradient(180deg,rgba(53,84,108,0.09)_0%,rgba(53,84,108,0)_100%)]" />
+        <section className={`relative overflow-hidden rounded-[26px] border px-5 py-5 sm:px-6 lg:px-7 ${headerTheme.shell}`}>
+          <div aria-hidden="true" className={`absolute inset-0 bg-[url('/brand/future-of-property-preview.jpg')] bg-cover bg-center ${headerTheme.photo}`} />
+          <div aria-hidden="true" className={`absolute inset-0 ${headerTheme.wash}`} />
+          <div aria-hidden="true" className={`absolute inset-x-0 top-0 h-32 ${headerTheme.glow}`} />
           <div className="relative grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] xl:items-start">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2.5">
-                <span className="inline-flex items-center rounded-full border border-[#d9e4ef] bg-white/88 px-3 py-1 text-[0.68rem] font-semibold uppercase text-[#60758d] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase ${headerTheme.eyebrow}`}>
                   Transaction Command Center
                 </span>
                 <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusClassName}`}>
@@ -9674,20 +10501,20 @@ function MatterOverviewHeader({
               </div>
 
               <div className="mt-4 flex flex-wrap items-end gap-3">
-                <h1 className="min-w-0 text-[2rem] font-semibold leading-none text-[#142132] md:text-[2.4rem]">
+                <h1 className={`min-w-0 text-[2rem] font-semibold leading-none md:text-[2.4rem] ${headerTheme.title}`}>
                   {clientTitle || buyerName || 'Buyer details pending'}
                 </h1>
-                <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${headerTheme.healthBadge}`}>
                   {matterHealthLabel}
                 </span>
               </div>
 
-              <p className="mt-3 flex max-w-4xl items-start gap-2 text-[1.02rem] font-medium leading-7 text-[#294158]">
-                <MapPin size={17} className="mt-1 shrink-0 text-[#6c8198]" />
+              <p className={`mt-3 flex max-w-4xl items-start gap-2 text-[1.02rem] font-medium leading-7 ${headerTheme.body}`}>
+                <MapPin size={17} className={`mt-1 shrink-0 ${headerTheme.icon}`} />
                 {propertyLabel || subtitle || 'Property details pending'}
               </p>
               {daysActiveLabel || updatedLabel ? (
-                <p className="mt-3 flex items-center gap-2 text-sm text-[#6b7d93]">
+                <p className={`mt-3 flex items-center gap-2 text-sm ${headerTheme.muted}`}>
                   <Clock3 size={15} />
                   {[daysActiveLabel || '', updatedLabel ? `Updated ${updatedLabel}` : ''].filter(Boolean).join(' • ')}
                 </p>
@@ -9697,13 +10524,13 @@ function MatterOverviewHeader({
                 {identityCards.map((item) => {
                   const Icon = item.Icon
                   return (
-                    <article key={item.label} className="flex min-w-0 items-start gap-2.5 rounded-[14px] border border-[#edf2f7] bg-white/82 px-3 py-2.5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                    <article key={item.label} className={`flex min-w-0 items-start gap-2.5 rounded-[14px] border px-3 py-2.5 ${headerTheme.card}`}>
                       <span className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] ${item.tone}`}>
                         <Icon size={15} />
                       </span>
                       <span className="min-w-0">
-                        <span className="block text-[0.68rem] font-semibold uppercase text-[#8496ab]">{item.label}</span>
-                        <strong className="mt-0.5 block truncate text-sm font-semibold text-[#1d3144]">{item.value}</strong>
+                        <span className={`block text-[0.68rem] font-semibold uppercase ${headerTheme.cardLabel}`}>{item.label}</span>
+                        <strong className={`mt-0.5 block truncate text-sm font-semibold ${headerTheme.cardValue}`}>{item.value}</strong>
                       </span>
                     </article>
                   )
@@ -9711,16 +10538,16 @@ function MatterOverviewHeader({
               </div>
             </div>
 
-            <aside className="rounded-[20px] border border-[#dfe8f2] bg-white/84 p-4 shadow-[0_14px_30px_rgba(15,23,42,0.055)] backdrop-blur">
+            <aside className={`rounded-[20px] border p-4 ${headerTheme.panel}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <span className="text-[0.68rem] font-semibold uppercase text-[#7c8ea4]">Matter Health</span>
-                  <strong className="mt-1.5 block text-[1.35rem] font-semibold text-[#142132]">{matterHealthLabel}</strong>
-                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                  <span className={`text-[0.68rem] font-semibold uppercase ${headerTheme.panelLabel}`}>Matter Health</span>
+                  <strong className={`mt-1.5 block text-[1.35rem] font-semibold ${headerTheme.panelValue}`}>{matterHealthLabel}</strong>
+                  <p className={`mt-1 text-xs leading-5 ${headerTheme.panelMeta}`}>
                     {[daysActiveLabel || '', updatedLabel ? `Updated ${updatedLabel}` : ''].filter(Boolean).join(' • ') || transactionStageLabel || currentStage.label}
                   </p>
                 </div>
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] border ${headerTheme.healthBadge}`}>
                   <CheckCircle2 size={18} />
                 </span>
               </div>
@@ -9772,11 +10599,13 @@ function MatterOverviewHeader({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[24px] border border-borderDefault bg-white px-5 py-6 shadow-[0_14px_34px_rgba(15,23,42,0.06)] md:px-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+      <section className={`relative overflow-hidden rounded-[24px] border px-5 py-6 md:px-6 ${headerTheme.shell}`}>
+        <div aria-hidden="true" className={`absolute inset-0 ${headerTheme.wash}`} />
+        <div aria-hidden="true" className={`absolute inset-x-0 top-0 h-32 ${headerTheme.glow}`} />
+        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="inline-flex items-center rounded-full border border-borderDefault bg-surfaceAlt px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">
+              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.1em] ${headerTheme.eyebrow}`}>
                 Transaction Command Center
               </span>
               <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusClassName}`}>
@@ -9784,15 +10613,15 @@ function MatterOverviewHeader({
               </span>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <h1 className="truncate text-2xl font-bold tracking-[-0.03em] text-textStrong md:text-3xl">{title}</h1>
-              <span className="inline-flex items-center rounded-full border border-success/30 bg-successSoft px-3 py-1 text-xs font-semibold text-success">
+              <h1 className={`truncate text-2xl font-bold tracking-[-0.03em] md:text-3xl ${headerTheme.title}`}>{title}</h1>
+              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${headerTheme.healthBadge}`}>
                 {matterHealthLabel}
               </span>
             </div>
-            <p className="mt-3 max-w-4xl text-sm font-medium leading-6 text-textBody">
+            <p className={`mt-3 max-w-4xl text-sm font-medium leading-6 ${headerTheme.body}`}>
               {propertyLabel}
             </p>
-            {subtitle ? <p className="mt-1 text-sm text-textMuted">{subtitle}</p> : null}
+            {subtitle ? <p className={`mt-1 text-sm ${headerTheme.muted}`}>{subtitle}</p> : null}
 
             <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               {[
@@ -9801,18 +10630,18 @@ function MatterOverviewHeader({
                 ['Assigned Agent', agentName || 'Not assigned'],
                 ...assignedFirms.map((item) => [item.label, item.value]),
               ].map(([label, value]) => (
-                <article key={label} className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
-                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
-                  <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{value || 'Not assigned'}</strong>
+                <article key={label} className={`min-w-0 rounded-[14px] border px-3 py-3 ${headerTheme.card}`}>
+                  <span className={`block text-[0.68rem] font-semibold uppercase tracking-[0.08em] ${headerTheme.cardLabel}`}>{label}</span>
+                  <strong className={`mt-1 block truncate text-sm font-semibold ${headerTheme.cardValue}`}>{value || 'Not assigned'}</strong>
                 </article>
               ))}
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
-            <div className="min-w-[170px] rounded-[16px] border border-borderSoft bg-surfaceAlt px-4 py-3">
-              <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Health Summary</span>
-              <strong className="mt-1 block text-sm text-textStrong">{matterHealthLabel}</strong>
-              <span className="mt-1 block text-xs text-textMuted">{daysActiveLabel}{updatedLabel ? ` • Updated ${updatedLabel}` : ''}</span>
+            <div className={`min-w-[170px] rounded-[16px] border px-4 py-3 ${headerTheme.panel}`}>
+              <span className={`block text-[0.68rem] font-semibold uppercase tracking-[0.08em] ${headerTheme.panelLabel}`}>Health Summary</span>
+              <strong className={`mt-1 block text-sm ${headerTheme.panelValue}`}>{matterHealthLabel}</strong>
+              <span className={`mt-1 block text-xs ${headerTheme.panelMeta}`}>{daysActiveLabel}{updatedLabel ? ` • Updated ${updatedLabel}` : ''}</span>
             </div>
           </div>
         </div>
@@ -9930,6 +10759,143 @@ function LegalWorkflowHubCard({ workflow, onOpen, onExecuteAction = null }) {
         </div>
       </div>
     </article>
+  )
+}
+
+function getConveyancingLaneIcon(laneKey = 'transfer') {
+  if (laneKey === 'bond') return Landmark
+  if (laneKey === 'cancellation') return FileText
+  return Workflow
+}
+
+function AgentConveyancingLaneCard({ lane, onOpenActivity }) {
+  const accent = LANE_ACCENTS[lane?.key] || LANE_ACCENTS.transfer
+  const statusMeta = WORKFLOW_STATUS_META[lane?.statusKey] || WORKFLOW_STATUS_META.not_started
+  const Icon = getConveyancingLaneIcon(lane?.key)
+  const latestUpdate = lane?.latestUpdate || {}
+  const updateBody = latestUpdate.body || latestUpdate.title || 'No update captured yet.'
+  const progress = Math.max(0, Math.min(100, lane?.progressPercent || 0))
+  const freshnessMeta = latestUpdate.freshnessKey === 'stale'
+    ? WORKFLOW_STATUS_META.waiting
+    : latestUpdate.freshnessKey === 'empty'
+      ? WORKFLOW_STATUS_META.not_started
+      : WORKFLOW_STATUS_META.completed
+
+  return (
+    <article className={`flex h-full min-w-0 flex-col rounded-[18px] border border-borderDefault border-l-4 bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5 ${accent.ring}`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-[12px] ring-1 ${accent.icon}`}>
+            {createElement(Icon, { size: 18 })}
+          </span>
+          <div className="min-w-0">
+            <h3 className="break-words text-base font-semibold text-textStrong">{lane.label}</h3>
+            <p className="mt-1 break-words text-xs font-medium text-textMuted">{lane.roleLabel}</p>
+          </div>
+        </div>
+        <span className={`inline-flex w-fit shrink-0 items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
+          <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
+          {lane.statusLabel || statusMeta.label}
+        </span>
+      </div>
+
+      <div className="mt-5">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Progress</span>
+          <strong className="text-sm font-semibold text-textStrong">{progress}%</strong>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-mutedBg">
+          <div className={`h-full rounded-full ${accent.fill}`} style={{ width: `${progress}%` }} />
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <div className="min-h-[5.5rem] min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+          <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Current Step</span>
+          <strong className="mt-1 block break-words text-sm text-textStrong">{lane.currentStep?.label || 'Workflow review'}</strong>
+        </div>
+        <div className="min-h-[5.5rem] min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+          <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Next Step</span>
+          <strong className="mt-1 block break-words text-sm text-textStrong">{lane.nextStep?.label || 'Workflow review'}</strong>
+        </div>
+        <div className="min-h-[5.5rem] min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+          <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Assigned</span>
+          <strong className="mt-1 block break-words text-sm text-textStrong">{lane.assignedDisplay || lane.assignedOrganisation || 'Not assigned'}</strong>
+        </div>
+      </div>
+
+      <div className={`mt-5 rounded-[14px] border px-4 py-3 ${latestUpdate.empty ? 'border-borderSoft bg-surfaceAlt' : `${accent.badge}`}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.08em]">
+            <MessageCircle size={13} />
+            Latest update from {lane.roleLabel}
+          </span>
+          <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${freshnessMeta.border} ${freshnessMeta.bg} ${freshnessMeta.text}`}>
+            {latestUpdate.freshnessLabel || 'No update yet'}
+          </span>
+        </div>
+        <p className="mt-2 line-clamp-3 text-sm leading-6">{updateBody}</p>
+        {latestUpdate.authorName && !latestUpdate.empty ? (
+          <p className="mt-2 text-xs font-semibold">
+            {latestUpdate.authorName}{latestUpdate.createdAt ? ` - ${formatDateTime(latestUpdate.createdAt, '')}` : ''}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-4">
+        <span className="text-xs font-medium text-textMuted">
+          {lane.activityCount || 0} update{lane.activityCount === 1 ? '' : 's'}
+        </span>
+        <Button type="button" size="sm" variant="secondary" onClick={() => onOpenActivity?.(lane.key)}>
+          <MessageCircle size={14} />
+          View Updates
+        </Button>
+      </div>
+    </article>
+  )
+}
+
+function AgentConveyancingWorkspace({ model, onOpenActivity }) {
+  const lanes = Array.isArray(model?.applicableLanes) ? model.applicableLanes : []
+  const summary = model?.summary || {}
+  const summaryMeta = summary.blocked
+    ? WORKFLOW_STATUS_META.blocked
+    : summary.waiting
+      ? WORKFLOW_STATUS_META.waiting
+      : WORKFLOW_STATUS_META.in_progress
+
+  return (
+    <section className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        {[
+          ['Active Containers', summary.applicableCount || lanes.length || 0, ListChecks, WORKFLOW_STATUS_META.in_progress],
+          ['Average Progress', `${summary.averageProgress || 0}%`, CheckCircle2, WORKFLOW_STATUS_META.completed],
+          ['Overall Status', summary.statusLabel || 'On Track', Clock3, summaryMeta],
+        ].map(([label, value, Icon, meta]) => (
+          <article key={label} className="flex min-h-[96px] min-w-0 items-center gap-3 rounded-[16px] border border-borderDefault bg-white px-4 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-[12px] ${meta.bg} ${meta.text}`}>
+              {createElement(Icon, { size: 18 })}
+            </span>
+            <div className="min-w-0">
+              <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+              <strong className="mt-1 block break-words text-sm text-textStrong">{value}</strong>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="grid items-stretch gap-4 xl:grid-cols-2">
+        {lanes.map((lane) => (
+          <AgentConveyancingLaneCard key={lane.key} lane={lane} onOpenActivity={onOpenActivity} />
+        ))}
+      </div>
+
+      {!lanes.length ? (
+        <section className="rounded-[18px] border border-dashed border-borderDefault bg-white px-5 py-8 text-sm text-textMuted">
+          No conveyancing containers are active for this transaction yet.
+        </section>
+      ) : null}
+    </section>
   )
 }
 
@@ -10652,6 +11618,9 @@ function WorkflowDetailsDrawer({
                 <Button type="button" size="sm" variant="secondary" onClick={() => onNoteDraftChange?.({ laneKey: lane.laneKey, message: '', visibility: 'internal' })}>
                   Add Note
                 </Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => onNoteDraftChange?.({ laneKey: lane.laneKey, message: '', visibility: 'professional_shared', purpose: 'status_update' })}>
+                  Post Update
+                </Button>
                 <Button type="button" size="sm" variant="secondary" onClick={() => onDocumentDraftChange?.({ laneKey: lane.laneKey, title: '', description: '', requestedFrom: 'client', priority: 'required', visibility: 'client_visible', dueDate: '' })}>
                   Request Document
                 </Button>
@@ -10671,14 +11640,14 @@ function WorkflowDetailsDrawer({
               <form onSubmit={onSubmitNote} className="mt-4 rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
                 <WorkflowWorkPacketSummary packet={noteDraft.workPacket} />
                 <label className="grid gap-1.5 text-sm font-medium text-textStrong">
-                  Note audience
+                  {noteDraft.purpose === 'status_update' ? 'Update audience' : 'Note audience'}
                   <Field as="select" value={noteDraft.visibility} onChange={(event) => onNoteDraftChange?.({ ...noteDraft, visibility: event.target.value })}>
                     <option value="internal">Internal</option>
                     <option value="professional_shared">Professional / roleplayers only</option>
                   </Field>
                 </label>
                 <label className="mt-3 grid gap-1.5 text-sm font-medium text-textStrong">
-                  Note
+                  {noteDraft.purpose === 'status_update' ? 'Update' : 'Note'}
                   <Field as="textarea" rows={4} value={noteDraft.message} onChange={(event) => onNoteDraftChange?.({ ...noteDraft, message: event.target.value })} />
                 </label>
                 <div className="mt-3 flex justify-end gap-2">
@@ -10686,7 +11655,7 @@ function WorkflowDetailsDrawer({
                     Cancel
                   </Button>
                   <Button type="submit" size="sm" disabled={saving || !noteDraft.message.trim()}>
-                    {saving ? 'Saving…' : 'Save Note'}
+                    {saving ? 'Saving…' : noteDraft.purpose === 'status_update' ? 'Post Update' : 'Save Note'}
                   </Button>
                 </div>
               </form>
@@ -10882,6 +11851,7 @@ function AttorneyTransactionDetail() {
     notes: '',
     priority: 'normal',
     dueDate: '',
+    category: '',
   })
   const [documentUploadForm, setDocumentUploadForm] = useState({
     file: null,
@@ -11358,12 +12328,6 @@ function AttorneyTransactionDetail() {
     [documentRequests],
   )
   const transactionFinanceWorkflow = data?.transactionFinanceWorkflow || null
-  const bondOriginatorAgentProgressView =
-    data?.bondOriginatorAgentProgressView ||
-    data?.bond_originator_agent_progress_view ||
-    transaction?.bondOriginatorAgentProgressView ||
-    transaction?.bond_originator_agent_progress_view ||
-    null
   const bondOriginatorAttorneyHandoffView =
     data?.bondOriginatorAttorneyHandoffView ||
     data?.bond_originator_attorney_handoff_view ||
@@ -11399,7 +12363,8 @@ function AttorneyTransactionDetail() {
   const canViewPartnerInvitations = canManageTransactionRoleplayers || canCreateLegalPartnerInvites
   const requestedWorkspaceMenu = useMemo(() => {
     if (activeLegalWorkflowDetailKey) return 'transfer'
-    if (workspaceRole === 'bond_originator' && ['finance', 'bond', 'banks_quotes', 'tasks', 'stakeholders'].includes(workspaceMenu)) return 'workflow'
+    if (workspaceRole === 'bond_originator' && ['finance', 'bond', 'banks_quotes'].includes(workspaceMenu)) return 'workflow'
+    if (workspaceRole === 'bond_originator' && ['tasks', 'stakeholders'].includes(workspaceMenu)) return 'overview'
     if (workspaceMenu === 'financials' || workspaceMenu === 'bond') return 'finance'
     if (workspaceMenu === 'cancellation') return 'transfer'
     if (isAgentTransactionView && (workspaceMenu === 'parties' || workspaceMenu === 'tasks' || workspaceMenu === 'buyer' || workspaceMenu === 'seller')) {
@@ -11803,6 +12768,10 @@ function AttorneyTransactionDetail() {
       }),
     [data?.onboardingFormData, documents, requiredDocumentChecklist, transaction, workspaceReference],
   )
+  const bondBankStatementMonths = useMemo(
+    () => getBondBankStatementMonths({ transaction, onboardingFormData: data?.onboardingFormData || {} }),
+    [data?.onboardingFormData, transaction],
+  )
   const workspaceMenuTabs = availableWorkspaceTabs.map((tab) => {
     if (tab.id === 'parties') {
       return { ...tab, meta: `${transactionParticipants.length} parties` }
@@ -11814,7 +12783,9 @@ function AttorneyTransactionDetail() {
       return { ...tab, meta: onboardingCompleted ? 'Onboarding complete' : 'Review' }
     }
     if (tab.id === 'workflow') {
-      return { ...tab, meta: `${transactionFinanceWorkflow?.applications?.length || 0} banks` }
+      const quoteCount = transactionFinanceWorkflow?.quotes?.length || transactionFinanceWorkflow?.offers?.length || 0
+      const grantRecorded = transactionFinanceWorkflow?.instruction?.grantReceived || transactionFinanceWorkflow?.instruction?.grant_received
+      return { ...tab, meta: `${quoteCount} quote${quoteCount === 1 ? '' : 's'}${grantRecorded ? ' / grant' : ''}` }
     }
     if (tab.id === 'finance') {
       return { ...tab, meta: financeTypeLabel }
@@ -12095,6 +13066,25 @@ function AttorneyTransactionDetail() {
       transactionEvents,
       transactionFinanceWorkflow,
       transferStageKey,
+    ],
+  )
+  const agentFinanceWorkspaceModel = useMemo(
+    () =>
+      buildAgentFinanceWorkspaceModel({
+        transaction,
+        onboardingFormData: data?.onboardingFormData || {},
+        progressState: lifecycleProgressState,
+        requiredDocumentChecklist,
+        documents,
+        transactionFinanceWorkflow,
+      }),
+    [
+      data?.onboardingFormData,
+      documents,
+      lifecycleProgressState,
+      requiredDocumentChecklist,
+      transaction,
+      transactionFinanceWorkflow,
     ],
   )
   const overviewPrimaryNextAction = useMemo(
@@ -12678,6 +13668,18 @@ function AttorneyTransactionDetail() {
     }
   }
 
+  const handleBondProgressStepNavigate = useCallback((target = '') => {
+    if (target === 'documents') {
+      openWorkspaceMenu('documents')
+      return
+    }
+    if (target === 'quotes_grant') {
+      openWorkspaceMenu('workflow')
+      return
+    }
+    openWorkspaceMenu('overview')
+  }, [openWorkspaceMenu])
+
   async function handleAddBondHybridApplication(payload) {
     if (!transaction?.id) {
       setError('Transaction data is not available for bond applications.')
@@ -12720,7 +13722,10 @@ function AttorneyTransactionDetail() {
     try {
       setBondHybridFinanceActionLoading('add_quote')
       setError('')
-      const result = await addBondQuote(transaction.id, payload, { actorRole: workspaceRole })
+      const result = await captureBondOffer(transaction.id, {
+        ...payload,
+        quoteDocumentFile: payload.quoteDocumentFile || payload.quoteFile || payload.file || null,
+      }, { actorRole: workspaceRole })
       await refreshBondHybridFinanceWorkflow(result)
       await loadData({ background: true })
     } catch (workflowActionError) {
@@ -12972,10 +13977,34 @@ function AttorneyTransactionDetail() {
     }
   }
 
-  const handleQuickRequestDocuments = useCallback(() => {
+  const handleQuickRequestDocuments = useCallback((prefill = {}) => {
+    const title = prefill?.title || prefill?.displayName || prefill?.label || prefill?.documentType || ''
+    const notes = prefill?.notes || prefill?.detail || ''
     setWorkspaceMenu('documents')
+    setDocumentRequestForm({
+      title,
+      requestedFrom: prefill?.requestedFrom || 'buyer',
+      visibility: prefill?.visibility || 'client_visible',
+      notes,
+      priority: prefill?.priority || 'normal',
+      dueDate: prefill?.dueDate || '',
+      category: prefill?.category || prefill?.categoryLabel || (workspaceRole === 'bond_originator' ? 'Financial documents' : ''),
+    })
     setRequestDocumentModalOpen(true)
-  }, [])
+  }, [workspaceRole])
+
+  const handleRequestBankStatements = useCallback(() => {
+    handleQuickRequestDocuments({
+      title: `Latest ${bondBankStatementMonths} months bank statements`,
+      notes: bondBankStatementMonths === 6
+        ? 'Please upload the latest 6 months of bank statements for the business and personal accounts used in this bond application.'
+        : 'Please upload the latest 3 months of bank statements for the accounts used in this bond application.',
+      category: 'Financial documents',
+      requestedFrom: 'buyer',
+      visibility: 'client_visible',
+      priority: 'urgent',
+    })
+  }, [bondBankStatementMonths, handleQuickRequestDocuments])
 
   async function handleCreateDocumentRequest(event) {
     event.preventDefault()
@@ -13000,7 +14029,7 @@ function AttorneyTransactionDetail() {
           {
             title,
             notes: String(documentRequestForm.notes || '').trim(),
-            category: 'Additional Requests',
+            category: documentRequestForm.category || (workspaceRole === 'bond_originator' ? 'Financial documents' : 'Additional Requests'),
             requestedFrom: documentRequestForm.requestedFrom || 'buyer',
             visibility: documentRequestForm.visibility || 'client_visible',
             priority: documentRequestForm.priority || 'normal',
@@ -13016,6 +14045,7 @@ function AttorneyTransactionDetail() {
         notes: '',
         priority: 'normal',
         dueDate: '',
+        category: '',
       })
       setRequestDocumentModalOpen(false)
       window.dispatchEvent(new Event('itg:transaction-updated'))
@@ -13889,9 +14919,17 @@ function AttorneyTransactionDetail() {
     visibleWorkflowLaneKeys,
     workflowOperations?.matterScope?.scoped,
   ])
+  const conveyancingLaneModel = useMemo(
+    () => buildConveyancingLaneModel({
+      workflows: legalWorkflowModels,
+      activityFeed,
+      audience: isAgentTransactionView ? 'agent' : 'internal',
+    }),
+    [activityFeed, isAgentTransactionView, legalWorkflowModels],
+  )
   const transferHubWorkflows = useMemo(
-    () => legalWorkflowModels.filter((item) => item.required),
-    [legalWorkflowModels],
+    () => conveyancingLaneModel.applicableLanes.map((item) => item.sourceWorkflow).filter(Boolean),
+    [conveyancingLaneModel],
   )
   const attorneyCommunicationControl = useMemo(
     () =>
@@ -14337,6 +15375,11 @@ function AttorneyTransactionDetail() {
     [activityFeed, activityFilter],
   )
   const groupedActivityFeed = useMemo(() => groupActivityByDate(filteredActivityFeed), [filteredActivityFeed])
+  const handleOpenAgentConveyancingActivity = useCallback((laneKey = 'all') => {
+    const filterKey = ['transfer', 'bond', 'cancellation'].includes(laneKey) ? laneKey : 'all'
+    setActivityFilter(filterKey)
+    openWorkspaceMenu('activity')
+  }, [openWorkspaceMenu])
   const onboardingRecipients = useMemo(() => {
     const buyerParticipant = activeStakeholders.find((participant) => participant?.roleType === 'buyer')
     const sellerParticipant = isPrivateMatter
@@ -15338,7 +16381,7 @@ function AttorneyTransactionDetail() {
     void refreshRegistrationValidation()
   }, [refreshRegistrationValidation, registrationModalOpen])
 
-  function openDocumentUploadModal({ requirement = null, category = '' } = {}) {
+  function openDocumentUploadModal({ requirement = null, category = '', documentType = '' } = {}) {
     const canonicalRequirementInstanceId = requirement ? getRequirementCanonicalId(requirement) || requirement.canonicalRequirementInstanceId || '' : ''
     const requiredDocumentKey = requirement?.key || requirement?.documentKey || requirement?.document_key || ''
     const contextCategory = category || activeDocumentLibraryCategory
@@ -15366,7 +16409,7 @@ function AttorneyTransactionDetail() {
       file: null,
       fileName: '',
       category: selectedCategory,
-      documentType: requiredDocumentKey || previous.documentType || '',
+      documentType: requiredDocumentKey || documentType || previous.documentType || '',
       visibility: previous.visibility || 'client_visible',
       uploadedByParty: previous.uploadedByParty || 'client',
       relatedWorkflow: requirementWorkflow || requirement?.visibleSection || attorneyLane?.laneKey || '',
@@ -15405,6 +16448,7 @@ function AttorneyTransactionDetail() {
       notes: source.notes || `Please provide ${source.displayName || source.label || 'the requested document'} for this transfer matter.`,
       priority: source.blocksStage ? 'urgent' : 'normal',
       dueDate: '',
+      category: source.category || 'Additional Requests',
     })
     setRequestDocumentModalOpen(true)
   }
@@ -15813,27 +16857,13 @@ function AttorneyTransactionDetail() {
               viewerRole={workspaceRole}
               loadingStage={bondHybridFinanceActionLoading}
               onStageChange={(stageKey) => void handleBondHybridFinanceStage(stageKey)}
+              onStepNavigate={handleBondProgressStepNavigate}
             />
 
             <FinanceReadinessDashboard
               readiness={financeReadinessDashboard}
               onViewIssues={() => openWorkspaceMenu('documents')}
               onViewActionPlan={() => openWorkspaceMenu('tasks')}
-            />
-
-            <AppointmentDashboardSection
-              module="transaction"
-              organisationId={String(transaction?.organisation_id || currentMembership?.organisation_id || '').trim()}
-              userId={String(profile?.id || profile?.userId || '').trim()}
-              userEmail={String(profile?.email || '').trim()}
-              transactionId={String(transactionId || '').trim()}
-              canManage
-              onViewCalendar={() => navigate('/bond/calendar')}
-              onOpenCalendar={() => navigate('/bond/calendar')}
-              onManageAppointment={() => void handleQuickScheduleSigning()}
-              onOpenAppointment={() => void handleQuickScheduleSigning()}
-              onScheduleAppointment={() => void handleQuickScheduleSigning()}
-              refreshKey={`${transactionId}:${String(transaction?.organisation_id || currentMembership?.organisation_id || '').trim()}`}
             />
 
             <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
@@ -16024,7 +17054,9 @@ function AttorneyTransactionDetail() {
               open={requestDocumentModalOpen}
               onClose={documentRequestSaving ? undefined : () => setRequestDocumentModalOpen(false)}
               title="Request Document"
-              subtitle="Ask a buyer, seller, or roleplayer for an additional document."
+              subtitle={workspaceRole === 'bond_originator'
+                ? 'Name the finance document request. It is saved on this transaction and sent to the buyer portal.'
+                : 'Ask a buyer, seller, or roleplayer for an additional document.'}
               className="max-w-2xl"
               footer={(
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -16251,7 +17283,12 @@ function AttorneyTransactionDetail() {
                   )
                 ) : null}
                 {activeWorkspaceMenu !== 'overview' ? (
-                  activeLegalWorkflowDetailKey ? (
+                  isAgentTransactionView ? (
+                    <AgentConveyancingWorkspace
+                      model={conveyancingLaneModel}
+                      onOpenActivity={handleOpenAgentConveyancingActivity}
+                    />
+                  ) : activeLegalWorkflowDetailKey ? (
                     (() => {
                       const workflow = activeLegalWorkflowModel
                       const statusMeta = WORKFLOW_STATUS_META[workflow?.statusKey] || WORKFLOW_STATUS_META.not_started
@@ -16542,6 +17579,7 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'documents' && workspaceRole !== 'attorney' && !isAgentTransactionView ? (
           <section className="space-y-5">
+            {workspaceRole !== 'bond_originator' ? (
             <header className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -16561,6 +17599,26 @@ function AttorneyTransactionDetail() {
                 </span>
               </div>
             </header>
+            ) : null}
+
+            {workspaceRole === 'bond_originator' ? (
+              <BondOriginatorDocumentCentre
+                documentHealthSummary={documentHealthSummary}
+                documentReadiness={documentReadiness}
+                documentLibraryRows={documentLibraryRows}
+                bankStatementMonths={bondBankStatementMonths}
+                documentLibrarySearch={documentLibrarySearch}
+                onSearchChange={setDocumentLibrarySearch}
+                onRequestDocument={handleQuickRequestDocuments}
+                onRequestBankStatements={handleRequestBankStatements}
+                onUploadGeneral={() => openDocumentUploadModal()}
+                onUploadRequirement={(requirement) => openDocumentUploadModal({ requirement })}
+                onUploadRequest={openDocumentRequestUploadModal}
+                onViewDocument={handleOpenFinanceDocument}
+                onReplaceDocument={handleReplaceDocument}
+                saving={saving}
+              />
+            ) : null}
 
             {!isAgentTransactionView && workspaceRole !== 'bond_originator' ? (
               <AttorneyDocumentControl
@@ -16590,7 +17648,7 @@ function AttorneyTransactionDetail() {
               />
             ) : null}
 
-            {showDetailedDocumentRegister || isAgentTransactionView || workspaceRole === 'bond_originator' ? (
+            {showDetailedDocumentRegister || isAgentTransactionView ? (
               <>
             <section className="rounded-[18px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_34px_rgba(15,23,42,0.055)]">
               <div className="grid gap-6 xl:grid-cols-[220px_minmax(0,1fr)_minmax(360px,0.9fr)] xl:items-center">
@@ -17096,7 +18154,7 @@ function AttorneyTransactionDetail() {
                   />
                 </label>
                 <p className="rounded-[12px] border border-[#dbe8f7] bg-[#f7fbff] px-3 py-2 text-xs leading-5 text-[#60758d]">
-                  Buyer-visible requests are shown in the client portal, logged as a system update, and emailed to the buyer or seller when contact details are available.
+                  Buyer-visible requests are shown in the client portal, logged as a system update, and sent as email and in-app notifications when contact details are available.
                 </p>
               </form>
             </Modal>
@@ -17623,6 +18681,28 @@ function AttorneyTransactionDetail() {
 
         {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'workflow' ? (
           <section className="space-y-7">
+            <header className="rounded-[24px] border border-borderDefault bg-white p-6 shadow-[0_16px_34px_rgba(15,23,42,0.055)]">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-textMuted">Quotes & Grant</p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-textStrong">Client finance offer pack</h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">
+                    Upload every bank quote, compare the offers, record the buyer decision, and keep the bond grant pack attached to this transaction.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="secondary" onClick={() => openWorkspaceMenu('overview')}>
+                    <Workflow size={14} />
+                    Overview Workflow
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => openWorkspaceMenu('documents')}>
+                    <FileText size={14} />
+                    Documents
+                  </Button>
+                </div>
+              </div>
+            </header>
+
             <BondBankSubmissionCommandCenter
               rows={bondBankCommandRows}
               loadingAction={bondHybridFinanceActionLoading}
@@ -17636,22 +18716,33 @@ function AttorneyTransactionDetail() {
                 quotes={sortedBondQuoteRows}
                 recommendedQuote={recommendedBondQuote}
                 loadingAction={bondHybridFinanceActionLoading}
+                onCaptureQuote={(payload) => handleAddBondHybridQuote(payload)}
                 onAcceptQuote={(quote) => quote?.id ? void handleApproveBondHybridQuote(quote.id) : null}
                 onRequestRevision={handleRequestBondQuoteRevision}
                 onDeclineAll={() => void handleDeclineAllBondHybridQuotes()}
                 onViewAll={() => openWorkspaceMenu('banks_quotes')}
               />
-              <BuyerDecisionPanel
-                acceptedQuote={acceptedBondQuote}
-                quotes={sortedBondQuoteRows}
-                onRecordDecision={(quote) => quote?.id ? void handleApproveBondHybridQuote(quote.id) : null}
-                onAddNote={() => {
-                  setDiscussionType('internal_note')
-                  setDiscussionActionKey('quick_professional_update')
-                  setDiscussionVisibility('shared')
-                  setDiscussionBody('Buyer decision note: ')
-                }}
-              />
+              <div className="grid gap-6">
+                <BuyerDecisionPanel
+                  acceptedQuote={acceptedBondQuote}
+                  quotes={sortedBondQuoteRows}
+                  onRecordDecision={(quote) => quote?.id ? void handleApproveBondHybridQuote(quote.id) : null}
+                  onAddNote={() => {
+                    setDiscussionType('internal_note')
+                    setDiscussionActionKey('quick_professional_update')
+                    setDiscussionVisibility('shared')
+                    setDiscussionBody('Buyer decision note: ')
+                  }}
+                />
+                <BondGrantPackPanel
+                  instruction={transactionFinanceWorkflow?.instruction || {}}
+                  acceptedQuote={acceptedBondQuote}
+                  documents={documents}
+                  loadingAction={bondHybridFinanceActionLoading}
+                  onMarkGrantMilestone={(payload) => handleMarkBondHybridGrantMilestone(payload)}
+                  onOpenDocument={handleOpenFinanceDocument}
+                />
+              </div>
             </section>
 
             <BondMatterConversationPanel
@@ -17682,63 +18773,21 @@ function AttorneyTransactionDetail() {
         {activeWorkspaceMenu === 'finance' && workspaceRole !== 'attorney' ? (
           <section className="space-y-5">
             {isAgentTransactionView ? (
-              <BondOriginatorAgentProgressView
-                progressView={bondOriginatorAgentProgressView}
-                financeWorkflow={transactionFinanceWorkflow}
-                transaction={transaction}
+              <AgentFinanceWorkspace
+                model={agentFinanceWorkspaceModel}
+                onUploadProofOfFunds={() => openDocumentUploadModal({
+                  requirement: agentFinanceWorkspaceModel.proofOfFunds.requirement,
+                  category: 'finance',
+                  documentType: 'proof_of_funds',
+                })}
+                onUploadBondGrant={() => openDocumentUploadModal({
+                  requirement: agentFinanceWorkspaceModel.bondGrant.requirement,
+                  category: 'finance',
+                  documentType: 'bond_grant',
+                })}
                 onOpenDocuments={() => openWorkspaceMenu('documents')}
-                onOpenActivity={() => openWorkspaceMenu('activity')}
               />
             ) : financeCommandCenterPanel}
-          </section>
-        ) : null}
-
-        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'workflow' ? (
-          <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Next Actions</h3>
-                  <p className="mt-1 text-secondary text-textMuted">Bond application tasks, bank follow-ups, document requests, and consultant ownership.</p>
-                </div>
-                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-                  {overviewNextActions.length} actions
-                </span>
-              </div>
-              <div className="mt-5 divide-y divide-borderSoft overflow-hidden rounded-[16px] border border-borderDefault bg-white">
-                {overviewNextActions.map((item) => (
-                  <article key={`${item.title}-${item.workflow}`} className="px-4 py-4 transition hover:bg-primarySoft/40">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="min-w-0">
-                        <strong className="text-sm font-semibold text-textStrong">{item.title}</strong>
-                        <p className="mt-1 max-w-3xl text-sm leading-6 text-textMuted">{item.description}</p>
-                      </div>
-                      <Button type="button" size="sm" variant="secondary" className="shrink-0 justify-center" onClick={() => handleOverviewActionTarget(item.actionTarget)}>
-                        {item.action}
-                      </Button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-            <aside className="space-y-4 xl:sticky xl:top-4">
-              <OverviewSidePanel title="Quick Actions">
-                <div className="grid gap-2">
-                  {[
-                    ['Request Documents', FileText, handleQuickRequestDocuments],
-                    ['Submit to Banks', Landmark, () => setWorkspaceMenu('banks_quotes')],
-                    ['Compare Quotes', CircleDollarSign, () => setWorkspaceMenu('banks_quotes')],
-                    ['View Application', UsersRound, () => setWorkspaceMenu('application')],
-                    ['Add Note', MessageSquarePlus, () => setWorkspaceMenu('activity')],
-                  ].map(([label, Icon, action]) => (
-                    <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
-                      {createElement(Icon, { size: 14 })}
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-              </OverviewSidePanel>
-            </aside>
           </section>
         ) : null}
 

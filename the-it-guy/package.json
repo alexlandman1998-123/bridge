@@ -529,6 +529,7 @@
     "test:attorney-matter-guidance-phase2": "node scripts/attorney-matter-guidance-phase2.test.mjs && node scripts/verify-attorney-workflow-phase2.mjs",
     "test:attorney-document-control-phase3": "node scripts/attorney-document-control-phase3.test.mjs",
     "test:attorney-communication-control-phase4": "node scripts/attorney-communication-control-phase4.test.mjs",
+    "test:conveyancing-lane-model": "node src/services/__tests__/conveyancingLaneModel.test.js",
     "test:document-request-scenario-matrix": "node scripts/document-request-scenario-matrix.test.mjs",
     "test:onboarding-branding-resolver": "node scripts/onboarding-branding-resolver.test.mjs",
     "test:onboarding-branding-phase5": "node scripts/onboarding-branding-phase5.test.mjs",

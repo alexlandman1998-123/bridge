@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import React from 'react'
@@ -17,11 +18,12 @@ try {
   const workflow = await server.ssrLoadModule('/src/core/transactions/bondHybridFinanceWorkflow.js')
   const financeService = await server.ssrLoadModule('/src/services/transactionFinanceService.js')
   const financeCommandModule = await server.ssrLoadModule('/src/components/transaction/TransactionFinanceCommandCenter.jsx')
+  const transactionDetailSource = await readFile(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
 
   assert.equal(workflow.getBondHybridFinanceProgressPercent('intake'), 0)
-  assert.equal(workflow.getBondHybridFinanceProgressPercent('documents'), 14)
-  assert.equal(workflow.getBondHybridFinanceProgressPercent('submitted_to_banks'), 29)
-  assert.equal(workflow.getBondHybridFinanceProgressPercent('instruction_sent'), 86)
+  assert.equal(workflow.getBondHybridFinanceProgressPercent('documents'), 9)
+  assert.equal(workflow.getBondHybridFinanceProgressPercent('submitted_to_banks'), 18)
+  assert.equal(workflow.getBondHybridFinanceProgressPercent('instruction_sent'), 91)
   assert.equal(workflow.getBondHybridFinanceProgressPercent('complete'), 100)
   assert.equal(workflow.getBondHybridFinanceProgressPercent('intake', 'completed'), 100)
 
@@ -76,6 +78,19 @@ try {
   assert.deepEqual(cashWorkspace.railGroups.map((group) => group.label), ['Cash Finance'])
   assert.equal(cashWorkspace.summaryBlocks.find((item) => item.key === 'finance_owner')?.value, 'Buyer / Attorney')
 
+  assert.ok(transactionDetailSource.includes('function AgentFinanceWorkspace'), 'agent finance workspace should exist on transaction detail')
+  assert.ok(transactionDetailSource.includes('buildAgentFinanceWorkspaceModel'), 'agent finance workspace model should be derived locally')
+  assert.ok(transactionDetailSource.includes('isFinanceAssistanceDeclined(transaction || {})'), 'agent finance model should respect declined bond assistance persisted on the transaction')
+  assert.equal(transactionDetailSource.includes('BondOriginatorAgentProgressView'), false, 'agent finance tab should not render the bond-originator-only progress view')
+
+  const financeBranchStart = transactionDetailSource.indexOf("activeWorkspaceMenu === 'finance' && workspaceRole !== 'attorney'")
+  const financeBranchEnd = transactionDetailSource.indexOf("{workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'workflow'", financeBranchStart)
+  const agentFinanceBranch = transactionDetailSource.slice(financeBranchStart, financeBranchEnd)
+  assert.ok(agentFinanceBranch.includes('<AgentFinanceWorkspace'), 'agent finance branch should render the finance-type-aware workspace')
+  for (const expectedText of ['Proof Of Funds', 'Bond Grant', 'Documents Submitted', 'Outstanding', 'Banks Waiting']) {
+    assert.ok(transactionDetailSource.includes(expectedText), `agent finance workspace should include "${expectedText}"`)
+  }
+
   const FinanceCommandCenter = financeCommandModule.default
   const hybridMarkup = ReactDOMServer.renderToStaticMarkup(
     React.createElement(FinanceCommandCenter, {
@@ -121,17 +136,18 @@ try {
   )
 
   for (const expectedText of [
-    'Bond Application Progress',
-    'Cash Portion Status',
-    'Buyer Finance Readiness Snapshot',
-    'Bond Application Owner',
-    'Buyer Finance Documents',
-    'Cash Portion Evidence',
+    'Finance Workspace',
+    'Bond Workflow',
+    'Bond Workflow Stage',
+    'Checklist',
+    'Documents',
     'Bank Applications',
     'Offers / Buyer Decision',
+    'Grant Milestones',
     'Instruction to Attorney',
+    'Bond Originator',
     'Agent proxy',
-    '0% Complete',
+    'Mark Complete',
   ]) {
     assert.ok(hybridMarkup.includes(expectedText), `expected rendered finance command center to include "${expectedText}"`)
   }
