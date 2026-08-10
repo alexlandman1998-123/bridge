@@ -85,6 +85,48 @@ assert.equal(
 )
 assert.equal(bondManagedByOriginator.summary.attentionCount, 1)
 
+const buyerRequestedAgencyOriginatorSelection = buildBuyerOnboardingCompletionHook({
+  transaction: {
+    id: 'tx-bond-assistance',
+    finance_type: 'bond',
+    finance_managed_by: 'bond_originator',
+  },
+  onboarding: {
+    id: 'onboarding-bond-assistance',
+  },
+  buyerBondOriginatorRequest: {
+    status: 'not_requested',
+  },
+  bondAssistanceRouting: {
+    status: 'agency_originator_selection_required',
+    assignmentRequired: true,
+    nextAction: 'Select agency preferred originator.',
+  },
+  submit: true,
+})
+
+assert.equal(
+  buyerRequestedAgencyOriginatorSelection.steps.find((step) => step.key === 'bond_originator_request')?.status,
+  'attention',
+)
+assert.match(
+  buyerRequestedAgencyOriginatorSelection.steps.find((step) => step.key === 'bond_originator_request')?.detail || '',
+  /buyer requested bond assistance/i,
+)
+assert.equal(buyerRequestedAgencyOriginatorSelection.event.data.bondOriginatorAssignmentRequired, true)
+assert.equal(
+  buyerRequestedAgencyOriginatorSelection.event.data.bondAssistanceRoutingStatus,
+  'agency_originator_selection_required',
+)
+assert.equal(
+  buyerRequestedAgencyOriginatorSelection.nextOperationalActions.includes('Select agency preferred originator.'),
+  true,
+)
+assert.equal(
+  buyerRequestedAgencyOriginatorSelection.bondAssistanceRouting.status,
+  'agency_originator_selection_required',
+)
+
 const draft = buildBuyerOnboardingCompletionHook({
   transaction: {
     id: 'tx-4',

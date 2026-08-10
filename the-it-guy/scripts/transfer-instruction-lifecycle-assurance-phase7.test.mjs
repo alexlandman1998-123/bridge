@@ -105,6 +105,65 @@ const allocation = {
   assert.ok(lifecycle.issues.includes('staff_assigned_state_missing_primary_attorney'))
 }
 
+{
+  const lifecycle = buildTransferInstructionLifecycle({
+    transaction: baseTransaction,
+    allocations: [allocation],
+    assignments: [{
+      id: 'assignment-overdue-firm',
+      attorney_role: 'transfer_attorney',
+      instruction_status: 'ready_for_acceptance',
+      assignment_status: 'pending',
+      allocation_state: 'awaiting_firm_acceptance',
+      firm_acceptance_status: 'awaiting_firm_acceptance',
+      staff_assignment_status: 'awaiting_staff_assignment',
+    }],
+    lifecycleAssuranceRows: [{
+      transaction_id: 'tx-1',
+      assignment_id: 'assignment-overdue-firm',
+      lifecycle_health: 'attention',
+      lifecycle_issue: 'firm_acceptance_sla_overdue',
+      lifecycle_stage: 'awaiting_firm_acceptance',
+      required_action: 'accept_or_decline_firm_nomination',
+      hours_in_allocation_state: 49,
+      open_assignment_count: 1,
+      active_roleplayer_count: 1,
+      lifecycle_updated_at: '2026-08-10T08:00:00.000Z',
+    }],
+  })
+  assert.equal(lifecycle.health, 'attention')
+  assert.equal(lifecycle.requiredAction, 'accept_or_decline_firm_nomination')
+  assert.equal(lifecycle.lifecycleAssurance.source, 'transfer_firm_allocation_lifecycle_v2')
+  assert.equal(lifecycle.lifecycleAssurance.hoursInAllocationState, 49)
+  assert.ok(lifecycle.issues.includes('firm_acceptance_sla_overdue'))
+}
+
+{
+  const lifecycle = buildTransferInstructionLifecycle({
+    transaction: baseTransaction,
+    allocations: [{ ...allocation, allocation_status: 'withdrawn' }],
+    assignments: [{
+      id: 'assignment-declined-view',
+      attorney_role: 'transfer_attorney',
+      instruction_status: 'declined',
+      assignment_status: 'removed',
+      allocation_state: 'declined',
+    }],
+    lifecycleAssurance: {
+      transaction_id: 'tx-1',
+      assignment_id: 'assignment-declined-view',
+      lifecycle_health: 'blocked',
+      lifecycle_issue: 'declined_firm_still_has_active_roleplayer',
+      lifecycle_stage: 'declined',
+      required_action: 'nominate_replacement_firm',
+      active_roleplayer_count: 1,
+    },
+  })
+  assert.equal(lifecycle.health, 'blocked')
+  assert.equal(lifecycle.requiredAction, 'nominate_replacement_firm')
+  assert.ok(lifecycle.issues.includes('declined_firm_still_has_active_roleplayer'))
+}
+
 const root = process.cwd()
 const [transactionPage, migrationSource] = await Promise.all([
   readFile(resolve(root, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8'),
@@ -112,6 +171,7 @@ const [transactionPage, migrationSource] = await Promise.all([
 ])
 assert.match(transactionPage, /Transfer instruction lifecycle/)
 assert.match(transactionPage, /Reconciliation:/)
+assert.match(transactionPage, /Required action:/)
 assert.match(migrationSource, /transfer_firm_allocation_lifecycle_v2/)
 assert.match(migrationSource, /multiple_open_transfer_firm_allocations/)
 assert.match(migrationSource, /missing_instruction_assignment/)

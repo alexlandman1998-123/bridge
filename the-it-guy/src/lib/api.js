@@ -80,7 +80,9 @@ import {
 } from '../core/transactions/financeType'
 import { buildBuyerOnboardingCompletionHook } from '../core/transactions/buyerOnboardingCompletionHook.js'
 import { buildBondFallbackQueueCandidate } from '../core/transactions/bondFallbackQueue.js'
+import { buildBondAssistanceRoutingDecision } from '../core/transactions/bondAssistanceRouting.js'
 import { buildAttorneyHandoffRepairQueueCandidate } from '../core/transactions/attorneyHandoffRepairQueue.js'
+import { buildSignedOtpHandoffReleaseDecision } from '../core/transactions/signedOtpHandoffRelease.js'
 import {
   INFORMATION_SHEET_DOCUMENT_KEY,
   buildOnboardingInformationSheetCapture,
@@ -25493,11 +25495,12 @@ export async function reassignDeclinedTransferAttorneyInstruction({
   replacement = {},
   reason = '',
   actorRole = null,
+  client: providedClient = null,
 } = {}) {
   const normalizedTransactionId = normalizeNullableUuid(transactionId)
   if (!normalizedTransactionId) throw new Error('Transaction is required.')
 
-  const client = requireClient()
+  const client = providedClient || requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
   const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'agent')
   if (!['agent', 'agency_admin', 'developer', 'internal_admin', 'admin'].includes(normalizedActorRole)) {
@@ -25715,6 +25718,9 @@ export async function reassignDeclinedTransferAttorneyInstruction({
     console.warn('Replacement transfer instruction notification skipped', notificationError)
   }
 
+  if (providedClient) {
+    return fetchTransactionRowById(client, normalizedTransactionId)
+  }
   return fetchTransactionById(normalizedTransactionId)
 }
 
@@ -38599,8 +38605,7 @@ export async function acceptAttorneyIncomingMatterInstruction({
   })
   if (result?.transactionId && !result?.alreadyAccepted) {
     try {
-      await notifyRolesForTransaction(client, {
-        transactionId: result.transactionId,
+      const transferInstructionAcceptedFallback = {
         roleTypes: ['agent', 'developer', 'seller'],
         title: 'Transfer instruction accepted',
         message: 'The transferring attorney accepted the instruction and the active transfer matter has started.',
@@ -38612,6 +38617,16 @@ export async function acceptAttorneyIncomingMatterInstruction({
           assignmentId: result.assignment?.id || assignmentId || null,
         },
         dedupePrefix: 'transfer-instruction-accepted',
+      }
+      await notifyRolesForTransaction(client, {
+        transactionId: result.transactionId,
+        roleTypes: result.responseNotification?.roleTypes || transferInstructionAcceptedFallback.roleTypes,
+        title: result.responseNotification?.title || transferInstructionAcceptedFallback.title,
+        message: result.responseNotification?.message || transferInstructionAcceptedFallback.message,
+        notificationType: result.responseNotification?.notificationType || transferInstructionAcceptedFallback.notificationType,
+        eventType: result.responseNotification?.eventType || transferInstructionAcceptedFallback.eventType,
+        eventData: result.responseNotification?.eventData || transferInstructionAcceptedFallback.eventData,
+        dedupePrefix: result.responseNotification?.dedupePrefix || transferInstructionAcceptedFallback.dedupePrefix,
         excludeUserId: actorUserId || null,
       })
     } catch (notificationError) {
@@ -38637,8 +38652,7 @@ export async function declineAttorneyIncomingMatterInstruction({
   })
   if (result?.transactionId && !result?.alreadyDeclined) {
     try {
-      await notifyRolesForTransaction(client, {
-        transactionId: result.transactionId,
+      const transferAttorneyReassignmentFallback = {
         roleTypes: ['agent', 'developer'],
         title: 'Transfer attorney reassignment required',
         message: reason
@@ -38653,6 +38667,16 @@ export async function declineAttorneyIncomingMatterInstruction({
           assignmentId: result.assignment?.id || assignmentId || null,
         },
         dedupePrefix: 'transfer-instruction-declined',
+      }
+      await notifyRolesForTransaction(client, {
+        transactionId: result.transactionId,
+        roleTypes: result.responseNotification?.roleTypes || transferAttorneyReassignmentFallback.roleTypes,
+        title: result.responseNotification?.title || transferAttorneyReassignmentFallback.title,
+        message: result.responseNotification?.message || transferAttorneyReassignmentFallback.message,
+        notificationType: result.responseNotification?.notificationType || transferAttorneyReassignmentFallback.notificationType,
+        eventType: result.responseNotification?.eventType || transferAttorneyReassignmentFallback.eventType,
+        eventData: result.responseNotification?.eventData || transferAttorneyReassignmentFallback.eventData,
+        dedupePrefix: result.responseNotification?.dedupePrefix || transferAttorneyReassignmentFallback.dedupePrefix,
         excludeUserId: actorUserId || null,
       })
     } catch (notificationError) {
@@ -39523,6 +39547,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
 
   let buyerOnboardingCompletionHook = null
   let bondFallbackQueueCandidate = null
+  let bondAssistanceRoutingDecision = null
   let attorneyHandoffRepairQueueCandidate = null
   let informationSheetCapture = null
 
@@ -39649,20 +39674,6 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       completedAt: now,
     })
 
-    buyerOnboardingCompletionHook = buildBuyerOnboardingCompletionHook({
-      transaction,
-      onboarding: updatedOnboarding,
-      previousTransaction: transaction,
-      previousOnboarding: onboarding,
-      formData: formDataForPersistence,
-      financeSnapshot,
-      rolePlayerPolicy,
-      buyerBondOriginatorRequest,
-      completedAt: otpPendingState?.completedAt || now,
-      nextAction: otpPendingState?.nextAction || onboardingNextAction,
-      submit: true,
-    })
-
     let completionRolePlayers = []
     try {
       completionRolePlayers = await fetchTransactionRolePlayersIfPossible(client, transaction.id)
@@ -39673,6 +39684,30 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       console.warn('Bond fallback queue roleplayer lookup skipped', rolePlayerLookupError)
     }
 
+    bondAssistanceRoutingDecision = buildBondAssistanceRoutingDecision({
+      transaction,
+      onboarding: updatedOnboarding,
+      formData: formDataForPersistence,
+      financeSnapshot,
+      rolePlayers: completionRolePlayers,
+      buyerBondOriginatorRequest,
+      completedAt: otpPendingState?.completedAt || now,
+      source: 'buyer_onboarding_completed',
+    })
+    buyerOnboardingCompletionHook = buildBuyerOnboardingCompletionHook({
+      transaction,
+      onboarding: updatedOnboarding,
+      previousTransaction: transaction,
+      previousOnboarding: onboarding,
+      formData: formDataForPersistence,
+      financeSnapshot,
+      rolePlayerPolicy,
+      buyerBondOriginatorRequest,
+      bondAssistanceRouting: bondAssistanceRoutingDecision,
+      completedAt: otpPendingState?.completedAt || now,
+      nextAction: otpPendingState?.nextAction || onboardingNextAction,
+      submit: true,
+    })
     bondFallbackQueueCandidate = buildBondFallbackQueueCandidate({
       transaction,
       onboarding: updatedOnboarding,
@@ -39680,6 +39715,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       financeSnapshot,
       rolePlayers: completionRolePlayers,
       buyerBondOriginatorRequest,
+      bondAssistanceRouting: bondAssistanceRoutingDecision,
       completionHook: buyerOnboardingCompletionHook,
       completedAt: otpPendingState?.completedAt || now,
       source: 'buyer_onboarding_completed',
@@ -39713,6 +39749,34 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
         throw completionHookEventError
       }
       console.warn('Buyer onboarding completion hook event skipped', completionHookEventError)
+    }
+
+    if (bondAssistanceRoutingDecision?.event) {
+      try {
+        await logTransactionEventIfPossible(client, {
+          transactionId: transaction.id,
+          eventType: bondAssistanceRoutingDecision.event.type,
+          createdByRole: 'client',
+          eventData: {
+            ...bondAssistanceRoutingDecision.event.data,
+            onboardingId: bondAssistanceRoutingDecision.onboardingId,
+            completedAt: bondAssistanceRoutingDecision.completedAt,
+            assigned: bondAssistanceRoutingDecision.assigned,
+            agentSelectionPoint: bondAssistanceRoutingDecision.agentSelectionPoint,
+          },
+        })
+        if (bondAssistanceRoutingDecision.notification) {
+          await notifyRolesForTransaction(client, {
+            transactionId: transaction.id,
+            ...bondAssistanceRoutingDecision.notification,
+          })
+        }
+      } catch (bondAssistanceRoutingError) {
+        if (!isPermissionDeniedError(bondAssistanceRoutingError) && !isMissingSchemaError(bondAssistanceRoutingError)) {
+          throw bondAssistanceRoutingError
+        }
+        console.warn('Bond assistance routing projection skipped', bondAssistanceRoutingError)
+      }
     }
 
     if (bondFallbackQueueCandidate?.required && bondFallbackQueueCandidate.event) {
@@ -39879,6 +39943,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     clientPortalPath,
     clientPortalLink,
     completionHook: buyerOnboardingCompletionHook,
+    bondAssistanceRouting: bondAssistanceRoutingDecision,
     bondFallbackQueue: bondFallbackQueueCandidate,
     attorneyHandoffRepairQueue: attorneyHandoffRepairQueueCandidate,
     documentCapture: {
@@ -44580,6 +44645,7 @@ async function triggerPostSigningWorkflowIfNeeded(
   let activation = null
   let attorneyActivation = []
   let mandateAllocationPromotion = null
+  let signedOtpHandoffRelease = null
   try {
     attorneyActivation = await activateSelectedAttorneyRoleplayersForOnboarding(client, {
       transaction,
@@ -44653,25 +44719,6 @@ async function triggerPostSigningWorkflowIfNeeded(
       )
     }
 
-    await notifyRolesForTransaction(client, {
-      transactionId: normalizedTransactionId,
-      roleTypes: originatorManagedFinance
-        ? ['bond_originator', 'developer', 'agent', 'attorney']
-        : ['attorney', 'developer', 'agent'],
-      title: originatorManagedFinance ? 'Finance handoff ready' : 'Transfer handoff ready',
-      message: workflowMessage,
-      notificationType: 'lane_handoff',
-      eventType: 'TransactionUpdated',
-      eventData: {
-        source: 'signed_otp_received',
-        workflow: originatorManagedFinance ? 'finance' : 'attorney',
-        financeManagedBy,
-        nextAction,
-      },
-      dedupePrefix: `signed-otp-handoff:${originatorManagedFinance ? 'finance' : 'attorney'}`,
-      excludeUserId: actorUserId || null,
-    })
-
     await sendRoleplayerHandoffEmailForOnboarding(client, {
       transactionId: normalizedTransactionId,
     })
@@ -44711,6 +44758,38 @@ async function triggerPostSigningWorkflowIfNeeded(
     })
   }
 
+  signedOtpHandoffRelease = buildSignedOtpHandoffReleaseDecision({
+    transaction,
+    financeType: normalizedFinanceType,
+    financeManagedBy,
+    originatorManagedFinance,
+    bondOriginatorActivation: activation,
+    attorneyActivation,
+    mandateAllocationPromotion,
+    stageResult,
+    nextAction,
+    releasedAt: new Date().toISOString(),
+    source: 'signed_otp_received',
+  })
+  try {
+    await logTransactionEventIfPossible(client, {
+      transactionId: normalizedTransactionId,
+      eventType: signedOtpHandoffRelease.event.type,
+      createdByRole: actorRole,
+      eventData: signedOtpHandoffRelease.event.data,
+    })
+    await notifyRolesForTransaction(client, {
+      transactionId: normalizedTransactionId,
+      ...signedOtpHandoffRelease.notification,
+      excludeUserId: actorUserId || null,
+    })
+  } catch (handoffReleaseProjectionError) {
+    if (!isPermissionDeniedError(handoffReleaseProjectionError) && !isMissingSchemaError(handoffReleaseProjectionError)) {
+      throw handoffReleaseProjectionError
+    }
+    console.warn('Signed OTP handoff release projection skipped', handoffReleaseProjectionError)
+  }
+
   if (stageResult?.advanced) {
     await addTransactionDiscussionComment({
       transactionId: normalizedTransactionId,
@@ -44729,6 +44808,7 @@ async function triggerPostSigningWorkflowIfNeeded(
     activation,
     attorneyActivation,
     mandateAllocationPromotion,
+    signedOtpHandoffRelease,
     stageResult,
   }
 }

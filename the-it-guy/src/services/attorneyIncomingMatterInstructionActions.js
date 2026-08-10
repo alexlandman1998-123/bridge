@@ -35,13 +35,49 @@ const ASSIGNMENT_SELECT_COLUMNS = [
   'preferred_attorney_user_id',
 ]
 
-const ASSIGNMENT_RESULT_SELECT = 'id, transaction_id, instruction_status'
+const ASSIGNMENT_RESULT_SELECT =
+  'id, transaction_id, assignment_type, matter_type, attorney_role, instruction_status, assignment_status, status'
 
 const TRANSACTION_RESULT_SELECT = 'id'
+
+const FIRM_ACCEPT_RPC_ACTION = Object.freeze({ p_action: 'accept' })
+const FIRM_DECLINE_RPC_ACTION = Object.freeze({ p_action: 'decline' })
 
 export const ATTORNEY_INCOMING_INSTRUCTION_EVENT_TYPES = Object.freeze({
   accepted: 'AttorneyIncomingInstructionAccepted',
   declined: 'AttorneyIncomingInstructionDeclined',
+})
+
+export const ATTORNEY_INCOMING_INSTRUCTION_RESPONSE_VERSION = 'arch9_attorney_instruction_response_v1'
+
+const ATTORNEY_RESPONSE_LABELS = Object.freeze({
+  transfer_attorney: Object.freeze({
+    acceptedTitle: 'Transfer instruction accepted',
+    acceptedMessage: 'The transferring attorney accepted the instruction and the active transfer matter has started.',
+    declinedTitle: 'Transfer attorney reassignment required',
+    declinedMessage: 'The transferring attorney declined the instruction. Select a replacement attorney.',
+    acceptedRoleTypes: ['agent', 'developer', 'seller'],
+    declinedRoleTypes: ['agent', 'developer'],
+    dedupeKey: 'transfer-instruction',
+  }),
+  bond_attorney: Object.freeze({
+    acceptedTitle: 'Bond attorney instruction accepted',
+    acceptedMessage: 'The bond attorney accepted the instruction and the bond registration matter has started.',
+    declinedTitle: 'Bond attorney reassignment required',
+    declinedMessage: 'The bond attorney declined the instruction. Select a replacement bond attorney.',
+    acceptedRoleTypes: ['agent', 'developer', 'bond_originator'],
+    declinedRoleTypes: ['agent', 'developer', 'bond_originator'],
+    dedupeKey: 'bond-attorney-instruction',
+  }),
+  cancellation_attorney: Object.freeze({
+    acceptedTitle: 'Cancellation attorney instruction accepted',
+    acceptedMessage: 'The cancellation attorney accepted the instruction and the cancellation matter has started.',
+    declinedTitle: 'Cancellation attorney reassignment required',
+    declinedMessage: 'The cancellation attorney declined the instruction. Select a replacement cancellation attorney.',
+    acceptedRoleTypes: ['agent', 'developer', 'seller'],
+    declinedRoleTypes: ['agent', 'developer'],
+    dedupeKey: 'cancellation-attorney-instruction',
+  }),
 })
 
 function errorMentionsColumn(error, column = '') {
@@ -359,6 +395,54 @@ export function buildAttorneyIncomingInstructionDecisionEventPayload({
   }
 }
 
+export function buildAttorneyIncomingInstructionResponseNotification({
+  transactionId = '',
+  assignmentId = '',
+  attorneyRole = 'transfer_attorney',
+  decision = '',
+  note = '',
+  reason = '',
+  source = 'attorney_incoming_queue',
+} = {}) {
+  const normalizedAttorneyRole = getAttorneyInstructionRole({ attorney_role: attorneyRole }) || 'transfer_attorney'
+  const normalizedDecision = normalizeText(decision).toLowerCase()
+  const accepted = normalizedDecision === ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted
+  const labels = ATTORNEY_RESPONSE_LABELS[normalizedAttorneyRole] || ATTORNEY_RESPONSE_LABELS.transfer_attorney
+  const decisionNote = normalizeNullableText(reason) || normalizeNullableText(note)
+  const title = accepted ? labels.acceptedTitle : labels.declinedTitle
+  const message = accepted
+    ? labels.acceptedMessage
+    : decisionNote
+      ? `${labels.declinedMessage} Reason: ${decisionNote}`
+      : labels.declinedMessage
+
+  return {
+    version: ATTORNEY_INCOMING_INSTRUCTION_RESPONSE_VERSION,
+    transactionId: normalizeText(transactionId) || null,
+    assignmentId: normalizeText(assignmentId) || null,
+    attorneyRole: normalizedAttorneyRole,
+    decision: accepted
+      ? ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted
+      : ATTORNEY_INCOMING_INSTRUCTION_STATUSES.declined,
+    roleTypes: accepted ? labels.acceptedRoleTypes : labels.declinedRoleTypes,
+    title,
+    message,
+    notificationType: 'lane_handoff',
+    eventType: 'TransactionUpdated',
+    eventData: {
+      source: normalizeText(source) || 'attorney_incoming_queue',
+      decision: accepted
+        ? ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted
+        : ATTORNEY_INCOMING_INSTRUCTION_STATUSES.declined,
+      attorneyRole: normalizedAttorneyRole,
+      assignmentId: normalizeText(assignmentId) || null,
+      reason: accepted ? null : decisionNote,
+      version: ATTORNEY_INCOMING_INSTRUCTION_RESPONSE_VERSION,
+    },
+    dedupePrefix: `${labels.dedupeKey}-${accepted ? 'accepted' : 'declined'}`,
+  }
+}
+
 export async function recordAttorneyIncomingInstructionDecisionEvent(client, payload = {}) {
   const eventPayload = buildAttorneyIncomingInstructionDecisionEventPayload(payload)
   return insertTransactionEventWithFallback(client, eventPayload)
@@ -600,7 +684,7 @@ export async function acceptAttorneyIncomingInstruction(client, {
   ) {
     const firmDecision = await manageAttorneyFirmAllocation(client, {
       assignment,
-      action: 'accept',
+      action: FIRM_ACCEPT_RPC_ACTION.p_action,
       attorneyUserId: normalizeText(assignment.preferred_attorney_user_id || assignment.preferredAttorneyUserId) || null,
     })
     return {
@@ -671,6 +755,14 @@ export async function acceptAttorneyIncomingInstruction(client, {
         source,
       })
     : null
+  const responseNotification = buildAttorneyIncomingInstructionResponseNotification({
+    transactionId: resolvedTransactionId,
+    assignmentId: assignment.id,
+    attorneyRole,
+    decision: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted,
+    note,
+    source,
+  })
 
   return {
     assignment: updatedAssignments?.[0] || {
@@ -683,6 +775,7 @@ export async function acceptAttorneyIncomingInstruction(client, {
     acceptedAt: occurredAt,
     lifecycleSync,
     auditEvent,
+    responseNotification,
     actionHref: resolvedTransactionId ? `/transactions/${resolvedTransactionId}` : '',
   }
 }
@@ -718,7 +811,7 @@ export async function declineAttorneyIncomingInstruction(client, {
   ) {
     const firmDecision = await manageAttorneyFirmAllocation(client, {
       assignment,
-      action: 'decline',
+      action: FIRM_DECLINE_RPC_ACTION.p_action,
       reason: normalizeText(reason),
     })
     return {
@@ -790,6 +883,14 @@ export async function declineAttorneyIncomingInstruction(client, {
         source,
       })
     : null
+  const responseNotification = buildAttorneyIncomingInstructionResponseNotification({
+    transactionId: resolvedTransactionId,
+    assignmentId: assignment.id,
+    attorneyRole,
+    decision: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.declined,
+    reason,
+    source,
+  })
 
   return {
     assignment: updatedAssignments?.[0] || {
@@ -802,6 +903,7 @@ export async function declineAttorneyIncomingInstruction(client, {
     declinedAt: occurredAt,
     lifecycleSync,
     auditEvent,
+    responseNotification,
     actionHref: resolvedTransactionId ? `/transactions/${resolvedTransactionId}` : '',
   }
 }
@@ -814,6 +916,7 @@ export const __attorneyIncomingMatterInstructionActionsTestUtils = Object.freeze
   buildAcceptedIncomingTransferTransactionPayload,
   buildAcceptAttorneyIncomingInstructionPayload,
   buildAttorneyIncomingInstructionDecisionEventPayload,
+  buildAttorneyIncomingInstructionResponseNotification,
   buildDeclinedIncomingAttorneyTransactionPayload,
   buildDeclinedIncomingTransferTransactionPayload,
   buildDeclineAttorneyIncomingInstructionPayload,

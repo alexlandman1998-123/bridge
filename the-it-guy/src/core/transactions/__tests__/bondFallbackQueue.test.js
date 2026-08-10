@@ -54,6 +54,36 @@ assert.equal(buyerRequested.required, true)
 assert.equal(buyerRequested.priority, 'high')
 assert.equal(buyerRequested.reasons.some((item) => item.key === 'buyer_requested_originator_pending'), true)
 
+const agencySelectionPending = buildBondFallbackQueueCandidate({
+  transaction: {
+    id: 'tx-agency-selection-pending',
+    finance_type: 'bond',
+    finance_managed_by: 'bond_originator',
+  },
+  bondAssistanceRouting: {
+    version: 'arch9_bond_assistance_routing_v1',
+    status: 'agency_originator_selection_required',
+    assignmentRequired: true,
+    nextAction: 'Select agency preferred originator.',
+  },
+  completionHook: {
+    version: 'arch9_buyer_onboarding_completion_hook_v1',
+    onboardingStatus: 'awaiting_signed_otp',
+  },
+})
+
+assert.equal(agencySelectionPending.required, true)
+assert.equal(agencySelectionPending.priority, 'high')
+assert.equal(
+  agencySelectionPending.reasons.some((item) => item.key === 'bond_assistance_originator_selection_pending'),
+  true,
+)
+assert.equal(agencySelectionPending.event.data.bondAssistanceAssignmentRequired, true)
+assert.equal(
+  agencySelectionPending.metadata.bondAssistanceRoutingStatus,
+  'agency_originator_selection_required',
+)
+
 const assigned = buildBondFallbackQueueCandidate({
   transaction: {
     id: 'tx-assigned',

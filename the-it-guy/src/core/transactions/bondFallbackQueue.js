@@ -141,6 +141,7 @@ export function buildBondFallbackQueueCandidate({
   financeSnapshot = {},
   rolePlayers = [],
   buyerBondOriginatorRequest = {},
+  bondAssistanceRouting = null,
   completionHook = {},
   completedAt = '',
   source = 'buyer_onboarding_completed',
@@ -152,6 +153,7 @@ export function buildBondFallbackQueueCandidate({
   const assigned = hasBondAssignment({ transaction, rolePlayers })
   const requestedStatus = lower(buyerBondOriginatorRequest.status)
   const buyerRequestedOriginator = requestedStatus === 'requested'
+  const bondAssistanceAssignmentRequired = Boolean(bondAssistanceRouting?.assignmentRequired)
   const awaitingSignedOtp = isAwaitingSignedOtp(transaction, completionHook)
   const reasons = []
 
@@ -203,6 +205,15 @@ export function buildBondFallbackQueueCandidate({
     ))
   }
 
+  if (bondAssistanceAssignmentRequired && !assigned) {
+    reasons.push(reason(
+      'bond_assistance_originator_selection_pending',
+      'Bond assistance originator selection pending',
+      'The buyer requested help with the bond, but the bond originator lane has not been assigned.',
+      bondAssistanceRouting?.nextAction || 'Select or confirm the bond originator.',
+    ))
+  }
+
   if (awaitingSignedOtp) {
     reasons.push(reason(
       'awaiting_signed_otp',
@@ -214,7 +225,7 @@ export function buildBondFallbackQueueCandidate({
 
   const required = reasons.some((item) => item.key !== 'awaiting_signed_otp')
   const status = required ? 'queued' : assigned ? 'covered' : 'monitor'
-  const priority = buyerRequestedOriginator || !assigned ? 'high' : awaitingSignedOtp ? 'normal' : 'low'
+  const priority = buyerRequestedOriginator || bondAssistanceAssignmentRequired || !assigned ? 'high' : awaitingSignedOtp ? 'normal' : 'low'
   const nextAction = reasons.find((item) => item.key !== 'awaiting_signed_otp')?.action ||
     reasons[0]?.action ||
     ''
@@ -247,12 +258,18 @@ export function buildBondFallbackQueueCandidate({
             financeType: financeType || 'unknown',
             financeManagedBy: financeManagedBy || null,
             buyerRequestedOriginator,
+            bondAssistanceRoutingStatus: bondAssistanceRouting?.status || null,
+            bondAssistanceAssignmentRequired,
             awaitingSignedOtp,
             reasonKeys: reasons.map((item) => item.key),
             nextAction,
           },
         }
       : null,
-    metadata: isPlainObject(completionHook) ? { completionHookVersion: completionHook.version || null } : {},
+    metadata: {
+      ...(isPlainObject(completionHook) ? { completionHookVersion: completionHook.version || null } : {}),
+      bondAssistanceRoutingVersion: bondAssistanceRouting?.version || null,
+      bondAssistanceRoutingStatus: bondAssistanceRouting?.status || null,
+    },
   }
 }

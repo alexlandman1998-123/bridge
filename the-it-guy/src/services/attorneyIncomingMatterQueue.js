@@ -696,7 +696,9 @@ function buildIncomingMatterRow({ assignment, transaction, onboarding, documentR
     otpStatus: getOtpStatus({ transaction, status: contract.status }),
     documents: documentSummary,
     nextAction: normalizedAssignment.allocationState === 'awaiting_staff_assignment'
-      ? `Firm accepted. Assign an internal primary ${getLaneLabel(laneKey)}.`
+      ? laneKey === 'transfer'
+        ? 'Firm accepted. Assign an internal primary transfer attorney.'
+        : `Firm accepted. Assign an internal primary ${getLaneLabel(laneKey)}.`
       : normalizedAssignment.allocationState === 'staff_assigned'
         ? `Primary attorney assigned. Activate the ${getLaneLabel(laneKey)} matter.`
         : getNextAction({ transaction, contract, documents: documentSummary, laneKey }),

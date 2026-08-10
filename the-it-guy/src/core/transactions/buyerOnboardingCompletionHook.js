@@ -93,6 +93,7 @@ export function buildBuyerOnboardingCompletionHook({
   financeSnapshot = {},
   rolePlayerPolicy = {},
   buyerBondOriginatorRequest = {},
+  bondAssistanceRouting = null,
   completedAt = '',
   nextAction = '',
   submit = true,
@@ -123,6 +124,8 @@ export function buildBuyerOnboardingCompletionHook({
   const financeManagedBy = resolveFinanceManagedBy({ formData, transaction })
   const requiresBondLane = isBondFinanceType(financeType)
   const buyerRequestedBondOriginator = lower(buyerBondOriginatorRequest.status) === 'requested'
+  const bondAssistanceRoutingStatus = lower(bondAssistanceRouting?.status)
+  const bondOriginatorAssignmentRequired = Boolean(bondAssistanceRouting?.assignmentRequired)
   const resolvedNextAction = firstText(nextAction) || defaultSignedOtpAction(formData)
   const status = !submit ? 'draft' : previouslyCompleted ? 'already_completed' : 'completed'
 
@@ -181,14 +184,22 @@ export function buildBuyerOnboardingCompletionHook({
     steps.push(
       hookStep(
         'bond_originator_request',
-        buyerRequestedBondOriginator ? 'complete' : financeManagedBy === 'bond_originator' ? 'attention' : 'not_applicable',
+        buyerRequestedBondOriginator
+          ? 'complete'
+          : bondOriginatorAssignmentRequired || financeManagedBy === 'bond_originator'
+            ? 'attention'
+            : 'not_applicable',
         buyerRequestedBondOriginator
           ? 'Buyer-appointed bond originator request is captured for processing.'
+          : bondOriginatorAssignmentRequired
+            ? 'Buyer requested bond assistance; agent or developer must select or confirm the bond originator.'
           : financeManagedBy === 'bond_originator'
             ? 'Bond finance is routed through a bond originator; confirm assignment before signed OTP.'
             : 'Bond originator request is not required for this finance route.',
         buyerRequestedBondOriginator
           ? 'Process buyer-appointed bond originator consent and assignment.'
+          : bondOriginatorAssignmentRequired
+            ? bondAssistanceRouting.nextAction || 'Select or confirm the bond originator.'
           : 'Confirm the assigned bond originator lane before releasing post-OTP handoff.',
       ),
     )
@@ -216,6 +227,7 @@ export function buildBuyerOnboardingCompletionHook({
       requiresBondLane && financeManagedBy === 'bond_originator'
         ? 'Keep bond originator intake warm; release formal handoff after signed OTP.'
         : '',
+      bondOriginatorAssignmentRequired ? bondAssistanceRouting.nextAction : '',
       'Keep transfer attorney instruction visible as awaiting signed OTP.',
     ]),
     event: {
@@ -228,6 +240,8 @@ export function buildBuyerOnboardingCompletionHook({
         financeManagedBy: financeManagedBy || null,
         requiresBondLane,
         buyerRequestedBondOriginator,
+        bondAssistanceRoutingStatus: bondAssistanceRoutingStatus || null,
+        bondOriginatorAssignmentRequired,
         blockedStepCount: blocked.length,
         attentionStepCount: attention.length,
         pendingStepCount: pending.length,
@@ -241,5 +255,6 @@ export function buildBuyerOnboardingCompletionHook({
       pendingCount: pending.length,
     },
     rolePlayerPolicy: rolePlayerPolicy && typeof rolePlayerPolicy === 'object' ? rolePlayerPolicy : {},
+    bondAssistanceRouting: bondAssistanceRouting && typeof bondAssistanceRouting === 'object' ? bondAssistanceRouting : null,
   }
 }

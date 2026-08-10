@@ -14,6 +14,8 @@ const COMPLETE_ONBOARDING_STATUSES = new Set([
   'otp_uploaded',
 ])
 
+export const TRANSFER_INSTRUCTION_LIFECYCLE_ASSURANCE_VIEW = 'transfer_firm_allocation_lifecycle_v2'
+
 function normalize(value = '') {
   return String(value || '').trim().toLowerCase().replace(/[\s/-]+/g, '_')
 }
@@ -51,6 +53,35 @@ function getAllocationState(assignment = {}) {
   return 'awaiting_firm_acceptance'
 }
 
+function pickLifecycleAssuranceRow(rows = [], transactionId = '') {
+  const normalizedTransactionId = String(transactionId || '').trim()
+  const normalizedRows = Array.isArray(rows) ? rows : rows ? [rows] : []
+  return normalizedRows.find((row) => String(row?.transaction_id || row?.transactionId || '').trim() === normalizedTransactionId) ||
+    normalizedRows[0] ||
+    null
+}
+
+function normalizeLifecycleAssurance(row = null) {
+  if (!row) return null
+  const issue = normalize(row.lifecycle_issue || row.lifecycleIssue)
+  return {
+    source: TRANSFER_INSTRUCTION_LIFECYCLE_ASSURANCE_VIEW,
+    transactionId: row.transaction_id || row.transactionId || '',
+    assignmentId: row.assignment_id || row.assignmentId || '',
+    health: normalize(row.lifecycle_health || row.lifecycleHealth),
+    issue,
+    lifecycleStage: normalize(row.lifecycle_stage || row.lifecycleStage),
+    requiredAction: normalize(row.required_action || row.requiredAction),
+    hoursInAllocationState: Number(row.hours_in_allocation_state ?? row.hoursInAllocationState ?? 0) || 0,
+    openAssignmentCount: Number(row.open_assignment_count ?? row.openAssignmentCount ?? 0) || 0,
+    declinedAssignmentCount: Number(row.declined_assignment_count ?? row.declinedAssignmentCount ?? 0) || 0,
+    activeRoleplayerCount: Number(row.active_roleplayer_count ?? row.activeRoleplayerCount ?? 0) || 0,
+    replacesAssignmentId: row.replaces_assignment_id || row.replacesAssignmentId || null,
+    replacementSequence: Number(row.replacement_sequence ?? row.replacementSequence ?? 0) || 0,
+    updatedAt: row.lifecycle_updated_at || row.lifecycleUpdatedAt || null,
+  }
+}
+
 export function buildTransferInstructionLifecycle({
   transaction = {},
   allocations = [],
@@ -58,6 +89,8 @@ export function buildTransferInstructionLifecycle({
   assignments = [],
   documents = [],
   documentLibraryRows = [],
+  lifecycleAssurance = null,
+  lifecycleAssuranceRows = [],
   allowKingstonsManualSignedOtp = false,
   kingstonsBuyerOtpReadiness = null,
 } = {}) {
@@ -135,12 +168,16 @@ export function buildTransferInstructionLifecycle({
   ) {
     issues.push('allocation_missing_transaction_link')
   }
+  const assurance = normalizeLifecycleAssurance(
+    lifecycleAssurance || pickLifecycleAssuranceRow(lifecycleAssuranceRows, transaction.id || transaction.transaction_id),
+  )
+  if (assurance?.issue) issues.push(assurance.issue)
 
   const decisionState = currentAssignment
-    ? allocationState
+    ? assurance?.lifecycleStage || allocationState
     : transferAssignments.length
       ? 'instruction_preparing'
-      : 'not_issued'
+      : assurance?.lifecycleStage || 'not_issued'
   const steps = [
     {
       key: 'mandate_firm',
@@ -212,12 +249,25 @@ export function buildTransferInstructionLifecycle({
 
   const blockedIssues = new Set([
     'declined_attorney_still_active',
+    'declined_firm_still_has_active_roleplayer',
+    'multiple_open_transfer_firm_allocations',
     'multiple_active_transfer_assignments',
     'staff_assignment_open_before_firm_acceptance',
     'person_linked_before_internal_assignment',
     'staff_assigned_state_missing_primary_attorney',
     'active_matter_missing_firm_or_person_gate',
   ])
+  const localHealth = issues.length
+    ? (issues.some((issue) => blockedIssues.has(issue)) ? 'blocked' : 'attention')
+    : allocationState === 'declined'
+      ? 'blocked'
+      : 'on_track'
+  const assuranceHealth = assurance?.health
+  const health = assuranceHealth === 'blocked'
+    ? 'blocked'
+    : assuranceHealth === 'attention' && localHealth !== 'blocked'
+      ? 'attention'
+      : localHealth
 
   return {
     transactionId: transaction.id || transaction.transaction_id || '',
@@ -226,8 +276,10 @@ export function buildTransferInstructionLifecycle({
     signedOtp,
     signedOtpSource: statusSignedOtp ? 'transaction_status' : kingstonsManualSignedOtp ? 'kingstons_manual_upload' : '',
     decisionState,
-    health: issues.length ? (issues.some((issue) => blockedIssues.has(issue)) ? 'blocked' : 'attention') : allocationState === 'declined' ? 'blocked' : 'on_track',
+    health,
     issues: compact(issues),
+    requiredAction: assurance?.requiredAction || '',
+    lifecycleAssurance: assurance,
     steps,
     allocation: latestAllocation || null,
     assignment: currentAssignment,
@@ -254,7 +306,7 @@ export async function getTransferInstructionLifecycle(transactionId) {
   const transaction = transactionResult.data
   if (!transaction) return null
 
-  const [allocations, roleplayers, assignments, documents] = await Promise.all([
+  const [allocations, roleplayers, assignments, documents, lifecycleAssuranceRows] = await Promise.all([
     transaction.listing_id
       ? fetchRows('private_listing_role_players', (query) =>
           query.eq('private_listing_id', transaction.listing_id).eq('role_type', 'transfer_attorney').order('selected_at', { ascending: false }))
@@ -265,6 +317,8 @@ export async function getTransferInstructionLifecycle(transactionId) {
       query.eq('transaction_id', normalizedTransactionId).order('updated_at', { ascending: false })),
     fetchRows('documents', (query) =>
       query.eq('transaction_id', normalizedTransactionId).order('created_at', { ascending: false })),
+    fetchRows(TRANSFER_INSTRUCTION_LIFECYCLE_ASSURANCE_VIEW, (query) =>
+      query.eq('transaction_id', normalizedTransactionId).limit(1)),
   ])
 
   const sellerProcessProfileResolution = resolveSellerProcessProfileForOrganisation({
@@ -279,6 +333,7 @@ export async function getTransferInstructionLifecycle(transactionId) {
     roleplayers,
     assignments,
     documents,
+    lifecycleAssuranceRows,
     allowKingstonsManualSignedOtp: sellerProcessProfileResolution.isKingstons,
   })
 }

@@ -303,6 +303,9 @@ try {
     assert.equal(client.tables.transactions[0].current_main_stage, undefined)
     assert.equal(client.tables.transactions[0].next_action, 'Bond attorney instruction accepted. Begin legal preparation.')
     assert.equal(client.tables.transaction_events[0].event_data.attorneyRole, 'bond_attorney')
+    assert.equal(result.responseNotification.title, 'Bond attorney instruction accepted')
+    assert.deepEqual(result.responseNotification.roleTypes, ['agent', 'developer', 'bond_originator'])
+    assert.equal(result.responseNotification.dedupePrefix, 'bond-attorney-instruction-accepted')
   }
 
   {
@@ -373,6 +376,8 @@ try {
     assert.equal(client.tables.private_listing_role_players[0].allocation_status, 'withdrawn')
     assert.equal(client.tables.private_listing_role_players[0].instruction_declined_by, 'attorney-user-2')
     assert.equal(result.lifecycleSync.roleplayersUpdated, 1)
+    assert.equal(result.responseNotification.title, 'Transfer attorney reassignment required')
+    assert.match(result.responseNotification.message, /Conflict check failed/)
     assert.equal(client.tables.transaction_events.length, 1)
     assert.equal(client.tables.transaction_events[0].event_type, 'AttorneyIncomingInstructionDeclined')
     assert.equal(client.tables.transaction_events[0].event_data.assignmentId, 'assign-decline')
@@ -496,6 +501,20 @@ try {
     assert.equal(result.auditEvent.event_type, 'TransactionUpdated')
     assert.equal(client.tables.transaction_events[0].event_data.originalEventType, 'AttorneyIncomingInstructionAccepted')
     assert.equal(client.tables.transaction_events[0].event_data.assignmentId, 'assign-legacy-event-check')
+  }
+
+  {
+    const notification = __attorneyIncomingMatterInstructionActionsTestUtils.buildAttorneyIncomingInstructionResponseNotification({
+      transactionId: 'tx-cancel',
+      assignmentId: 'assign-cancel',
+      attorneyRole: 'cancellation_attorney',
+      decision: 'declined',
+      reason: 'Capacity issue.',
+    })
+    assert.equal(notification.title, 'Cancellation attorney reassignment required')
+    assert.deepEqual(notification.roleTypes, ['agent', 'developer'])
+    assert.equal(notification.eventData.attorneyRole, 'cancellation_attorney')
+    assert.equal(notification.eventData.reason, 'Capacity issue.')
   }
 
   {

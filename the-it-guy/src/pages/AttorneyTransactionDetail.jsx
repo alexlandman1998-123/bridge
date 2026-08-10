@@ -18106,6 +18106,11 @@ function AttorneyTransactionDetail() {
                       Reconciliation: {transferInstructionLifecycle.issues.map((issue) => issue.replaceAll('_', ' ')).join(', ')}
                     </p>
                   ) : null}
+                  {transferInstructionLifecycle.requiredAction ? (
+                    <p className="mt-2 rounded-[10px] border border-borderSoft bg-white px-3 py-2 text-xs font-semibold text-textMuted">
+                      Required action: {transferInstructionLifecycle.requiredAction.replaceAll('_', ' ')}
+                    </p>
+                  ) : null}
                 </section>
               ) : null}
 

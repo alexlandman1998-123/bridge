@@ -202,6 +202,34 @@ function jsonObject(value) {
   return {}
 }
 
+function shouldMergePrefillValue(value, prefilledValue) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string' && value.trim() === '' && prefilledValue !== undefined) return false
+  if (Array.isArray(value) && value.length === 0 && prefilledValue !== undefined) return false
+  return true
+}
+
+function mergeExistingOnboardingValues(prefill = {}, existing = {}) {
+  const merged = { ...prefill }
+  Object.entries(existing).forEach(([key, value]) => {
+    if (key === 'finance') return
+    if (shouldMergePrefillValue(value, prefill[key])) {
+      merged[key] = value
+    }
+  })
+  const prefilledFinance = jsonObject(prefill.finance)
+  const existingFinance = jsonObject(existing.finance)
+  const mergedFinance = { ...prefilledFinance }
+  Object.entries(existingFinance).forEach(([key, value]) => {
+    if (shouldMergePrefillValue(value, prefilledFinance[key])) {
+      mergedFinance[key] = value
+    }
+  })
+  if (Object.keys(mergedFinance).length) merged.finance = mergedFinance
+  else delete merged.finance
+  return merged
+}
+
 function normalizeDate(value) {
   const normalized = normalizeText(value)
   return normalized || null
@@ -305,31 +333,153 @@ function normalizePurchaserType(value = '') {
   return 'individual'
 }
 
-function buildAcceptedOfferOnboardingPrefill(offer = {}, payload = {}) {
+function firstFilledValue(...values) {
+  return values.find((value) => normalizeText(value).length > 0) ?? ''
+}
+
+function normalizeYesNoChoice(value = '') {
+  if (value === true) return 'yes'
+  if (value === false) return 'no'
+  const key = normalizeLower(value).replace(/[\s-]+/g, '_')
+  if (['yes', 'y', 'true', '1'].includes(key)) return 'yes'
+  if (['no', 'n', 'false', '0'].includes(key)) return 'no'
+  return ''
+}
+
+function normalizePurchaserEntityType(value = '', fallback = '') {
+  const normalized = normalizePurchaserType(firstFilledValue(value, fallback))
+  if (['company', 'trust', 'foreign_purchaser'].includes(normalized)) return normalized
+  return 'individual'
+}
+
+function normalizeNaturalPersonPurchaseMode(value = '') {
+  const key = normalizeLower(value).replace(/[\s-]+/g, '_')
+  if (['co_purchasing', 'co_purchaser', 'joint', 'joint_purchase', 'joint_purchaser', 'multiple'].includes(key)) {
+    return 'co_purchasing'
+  }
+  return key ? 'individual' : ''
+}
+
+function normalizeBondAssistancePreference(value = '', helpRequested = '') {
+  const key = normalizeLower(value).replace(/[\s-]+/g, '_')
+  if (['self_managed', 'self', 'own', 'client', 'buyer_managed', 'sort_it_myself', 'sort_it_out_myself'].includes(key)) {
+    return 'self_managed'
+  }
+  if (['originator_assisted', 'originator', 'bond_originator', 'assisted', 'agency_assisted', 'help'].includes(key)) {
+    return 'originator_assisted'
+  }
+  const yesNo = normalizeYesNoChoice(helpRequested)
+  if (yesNo === 'yes') return 'originator_assisted'
+  if (yesNo === 'no') return 'self_managed'
+  return ''
+}
+
+function normalizeBondAssistanceSelection(value = '') {
+  const key = normalizeLower(value).replace(/[\s-]+/g, '_')
+  if (['agency_partner', 'agency', 'preferred', 'preferred_originator', 'agency_preferred'].includes(key)) return 'agency_partner'
+  if (['buyer_nominated', 'buyer', 'nominated', 'own_originator', 'my_originator'].includes(key)) return 'buyer_nominated'
+  if (['third_party', 'external', 'other'].includes(key)) return 'third_party'
+  return ''
+}
+
+function buildAcceptedOfferContinuityFacts(offer = {}, payload = {}) {
   const conditions = jsonObject(offer?.conditions)
   const residentialOfferTerms = jsonObject(conditions.residentialOfferTerms)
+  const residentialBuyer = jsonObject(residentialOfferTerms.buyer)
+  const residentialCapacity = jsonObject(residentialOfferTerms.capacity)
   const residentialFinance = jsonObject(residentialOfferTerms.finance)
   const fullName = normalizeText(
     payload?.buyerName ||
       conditions.buyerName ||
+      residentialBuyer.fullName ||
       conditions.fullName ||
       [conditions.firstName, conditions.lastName].filter(Boolean).join(' '),
   )
   const split = splitFullName(fullName)
-  const purchaserType = normalizePurchaserType(conditions.buyerType || conditions.purchaserType || payload?.purchaserType)
+  const purchaserTypeSource = firstFilledValue(
+    payload?.purchaserType,
+    payload?.purchaser_type,
+    conditions.purchaserType,
+    conditions.purchaser_type,
+    conditions.buyerType,
+    conditions.buyer_type,
+    residentialCapacity.purchaserType,
+    residentialCapacity.purchaser_type,
+    residentialCapacity.buyerType,
+    residentialCapacity.buyer_type,
+    conditions.purchaserEntityType,
+    conditions.purchaser_entity_type,
+    residentialCapacity.purchaserEntityType,
+    residentialCapacity.purchaser_entity_type,
+  )
+  const purchaserType = normalizePurchaserType(purchaserTypeSource)
+  const purchaserEntityType = normalizePurchaserEntityType(
+    firstFilledValue(
+      payload?.purchaserEntityType,
+      payload?.purchaser_entity_type,
+      payload?.buyerEntityType,
+      payload?.buyer_entity_type,
+      conditions.purchaserEntityType,
+      conditions.purchaser_entity_type,
+      conditions.buyerEntityType,
+      conditions.buyer_entity_type,
+      residentialCapacity.purchaserEntityType,
+      residentialCapacity.purchaser_entity_type,
+    ),
+    purchaserType,
+  )
   const financeType = normalizeText(offer?.financeType || conditions.financeType || payload?.financeType || 'cash').toLowerCase()
-  const bondAssistancePreference = normalizeText(
-    conditions.bondAssistancePreference ||
-      conditions.bond_assistance_preference ||
-      residentialFinance.bondAssistancePreference ||
+  const rawBondHelpRequested = firstFilledValue(
+    conditions.bond_help_requested,
+    conditions.bondHelpRequested,
+    residentialFinance.bond_help_requested,
+    residentialFinance.bondHelpRequested,
+    conditions.ooba_assist_requested,
+    conditions.oobaAssistRequested,
+    residentialFinance.ooba_assist_requested,
+    residentialFinance.oobaAssistRequested,
+  )
+  const bondHelpRequested = normalizeYesNoChoice(rawBondHelpRequested)
+  const bondAssistancePreference = normalizeBondAssistancePreference(
+    firstFilledValue(
+      conditions.bondAssistancePreference,
+      conditions.bond_assistance_preference,
+      residentialFinance.bondAssistancePreference,
       residentialFinance.bond_assistance_preference,
+    ),
+    bondHelpRequested,
   )
-  const bondHelpRequested = normalizeText(
-    conditions.bond_help_requested ||
-      conditions.bondHelpRequested ||
-      residentialFinance.bond_help_requested ||
-      residentialFinance.bondHelpRequested,
+  const originatorName = normalizeText(firstFilledValue(
+    conditions.bond_originator_name,
+    conditions.bondOriginatorName,
+    residentialFinance.bond_originator_name,
+    residentialFinance.bondOriginatorName,
+  ))
+  const originatorContact = normalizeText(firstFilledValue(
+    conditions.bond_originator_contact,
+    conditions.bondOriginatorContact,
+    residentialFinance.bond_originator_contact,
+    residentialFinance.bondOriginatorContact,
+  ))
+  const hasOriginatorDetails = Boolean(originatorName || originatorContact)
+  const explicitBondAssistanceSelection = normalizeBondAssistanceSelection(
+    firstFilledValue(
+      conditions.bond_assistance_selection,
+      conditions.bondAssistanceSelection,
+      residentialFinance.bond_assistance_selection,
+      residentialFinance.bondAssistanceSelection,
+    ),
   )
+  let bondAssistanceSelection = explicitBondAssistanceSelection
+  if (!bondAssistanceSelection && bondHelpRequested === 'yes') {
+    bondAssistanceSelection = hasOriginatorDetails ? 'buyer_nominated' : 'agency_partner'
+  }
+  const bondAssistanceContactConsent = normalizeYesNoChoice(firstFilledValue(
+    conditions.bond_assistance_contact_consent,
+    conditions.bondAssistanceContactConsent,
+    residentialFinance.bond_assistance_contact_consent,
+    residentialFinance.bondAssistanceContactConsent,
+  ))
   const financeManagedBy = bondHelpRequested
     ? deriveFinanceManagedBy({
         financeType,
@@ -340,27 +490,110 @@ function buildAcceptedOfferOnboardingPrefill(offer = {}, payload = {}) {
           },
         },
       })
-    : normalizeText(conditions.finance_managed_by || conditions.financeManagedBy)
+    : normalizeText(firstFilledValue(
+        conditions.finance_managed_by,
+        conditions.financeManagedBy,
+        residentialFinance.finance_managed_by,
+        residentialFinance.financeManagedBy,
+      ))
   const intake = buildClientIntakePreferenceFacts(
     payload?.clientIntakePreference ||
       payload?.deliveryMode ||
       conditions.clientIntakePreference ||
       conditions.deliveryMode,
   )
+  const purchaserEntityName = normalizeText(firstFilledValue(
+    conditions.purchaserEntityName,
+    conditions.purchaser_entity_name,
+    residentialCapacity.purchaserEntityName,
+    residentialCapacity.purchaser_entity_name,
+  ))
+  const naturalPersonPurchaseMode = normalizeNaturalPersonPurchaseMode(firstFilledValue(
+    conditions.natural_person_purchase_mode,
+    conditions.naturalPersonPurchaseMode,
+    residentialCapacity.natural_person_purchase_mode,
+    residentialCapacity.naturalPersonPurchaseMode,
+  ))
+
+  return {
+    conditions,
+    residentialBuyer,
+    split,
+    purchaserType,
+    purchaserEntityType,
+    purchaserEntityName,
+    naturalPersonPurchaseMode,
+    financeType,
+    bondAssistancePreference,
+    bondHelpRequested,
+    bondAssistanceSelection,
+    bondAssistanceContactConsent,
+    bondOriginatorName: bondAssistanceSelection === 'agency_partner' ? '' : originatorName,
+    bondOriginatorContact: bondAssistanceSelection === 'agency_partner' ? '' : originatorContact,
+    financeManagedBy,
+    intake,
+  }
+}
+
+export function buildAcceptedOfferOnboardingPrefill(offer = {}, payload = {}) {
+  const {
+    conditions,
+    residentialBuyer,
+    split,
+    purchaserType,
+    purchaserEntityType,
+    purchaserEntityName,
+    naturalPersonPurchaseMode,
+    financeType,
+    bondAssistancePreference,
+    bondHelpRequested,
+    bondAssistanceSelection,
+    bondAssistanceContactConsent,
+    bondOriginatorName,
+    bondOriginatorContact,
+    financeManagedBy,
+    intake,
+  } = buildAcceptedOfferContinuityFacts(offer, payload)
+  const finance = Object.fromEntries(Object.entries({
+    purchase_finance_type: financeType || 'cash',
+    purchase_price: offer?.offerAmount ? String(offer.offerAmount) : '',
+    cash_amount: offer?.cashComponent ? String(offer.cashComponent) : '',
+    bond_amount: offer?.bondComponent ? String(offer.bondComponent) : '',
+    deposit_amount: offer?.depositAmount ? String(offer.depositAmount) : '',
+    source_of_funds: normalizeText(conditions.sourceOfFunds),
+    bond_help_requested: bondHelpRequested,
+    ooba_assist_requested: bondHelpRequested,
+    bond_assistance_selection: bondAssistanceSelection,
+    bond_assistance_contact_consent: bondAssistanceContactConsent,
+    bond_assistance_consent_version: bondAssistanceSelection ? 'bond-assistance-v1' : '',
+    bond_originator_name: bondOriginatorName,
+    bond_originator_contact: bondOriginatorContact,
+    finance_managed_by: financeManagedBy,
+    financeManagedBy: financeManagedBy,
+  }).filter(([, value]) => value !== null && value !== undefined && value !== ''))
 
   return Object.fromEntries(Object.entries({
     purchaser_type: purchaserType,
+    purchaser_entity_type: purchaserEntityType,
+    purchaserEntityType: purchaserEntityType,
+    natural_person_purchase_mode: naturalPersonPurchaseMode,
     first_name: normalizeText(conditions.firstName) || split.firstName,
     last_name: normalizeText(conditions.lastName) || split.lastName,
-    email: normalizeText(payload?.buyerEmail || conditions.buyerEmail || conditions.email).toLowerCase(),
-    phone: normalizeText(payload?.buyerPhone || conditions.buyerPhone || conditions.phone),
-    identity_number: normalizeText(conditions.buyerIdNumber || conditions.identityNumber || conditions.idNumber),
+    email: normalizeText(payload?.buyerEmail || conditions.buyerEmail || residentialBuyer.email || conditions.email).toLowerCase(),
+    phone: normalizeText(payload?.buyerPhone || conditions.buyerPhone || residentialBuyer.phone || conditions.phone),
+    identity_number: normalizeText(conditions.buyerIdNumber || residentialBuyer.idNumber || conditions.identityNumber || conditions.idNumber),
     purchase_finance_type: financeType || 'cash',
     bond_assistance_preference: bondAssistancePreference,
     bond_help_requested: bondHelpRequested,
     ooba_assist_requested: bondHelpRequested,
+    bond_assistance_selection: bondAssistanceSelection,
+    bond_assistance_contact_consent: bondAssistanceContactConsent,
+    bond_assistance_consent_version: bondAssistanceSelection ? 'bond-assistance-v1' : '',
+    bond_originator_name: bondOriginatorName,
+    bond_originator_contact: bondOriginatorContact,
     finance_managed_by: financeManagedBy,
     financeManagedBy: financeManagedBy,
+    finance,
     purchase_price: offer?.offerAmount ? String(offer.offerAmount) : '',
     cash_amount: offer?.cashComponent ? String(offer.cashComponent) : '',
     bond_amount: offer?.bondComponent ? String(offer.bondComponent) : '',
@@ -380,7 +613,9 @@ function buildAcceptedOfferOnboardingPrefill(offer = {}, payload = {}) {
     subject_sale_timeline: normalizeText(conditions.subjectSaleTimeline),
     included_fixtures: normalizeText(conditions.includedFixtures),
     excluded_fixtures: normalizeText(conditions.excludedFixtures),
-    purchaser_entity_name: normalizeText(conditions.purchaserEntityName),
+    purchaser_entity_name: purchaserEntityName,
+    company_name: purchaserEntityType === 'company' ? purchaserEntityName : '',
+    trust_name: purchaserEntityType === 'trust' ? purchaserEntityName : '',
     bridge_offer_expiry_time: normalizeText(conditions.expiryTime),
     bridge_client_intake_preference: intake.preference,
     bridge_client_intake_label: intake.label,
@@ -1379,6 +1614,7 @@ export async function createCanonicalOffer(payload = {}, { actor = null, waitFor
 export function buildAcceptedOfferConversionCandidate(offer = {}, { now = new Date().toISOString() } = {}) {
   const conditions = jsonObject(offer.conditions || offer.conditions_json)
   const candidate = jsonObject(conditions.conversionCandidate)
+  const continuityFacts = buildAcceptedOfferContinuityFacts({ ...offer, conditions })
   const organisationId = normalizeText(offer.organisationId || offer.organisation_id)
   const offerId = normalizeText(offer.offerId || offer.id)
   const listingId = normalizeText(offer.listingId || offer.listing_id)
@@ -1394,7 +1630,7 @@ export function buildAcceptedOfferConversionCandidate(offer = {}, { now = new Da
   if (!Number.isFinite(offerAmount) || offerAmount <= 0) blockers.push('offer_amount_missing')
   const converted = normalizeOfferStatus(offer.status) === OFFER_STATUS.CONVERTED_TO_TRANSACTION && Boolean(transactionId)
   return {
-    contract: 'arch9-accepted-offer-conversion-candidate-v1',
+    contract: 'arch9-accepted-offer-conversion-candidate-v2',
     candidateKey: organisationId && offerId ? `${organisationId}:${offerId}` : '',
     acceptedOfferId: offerId || null,
     organisationId: organisationId || null,
@@ -1402,7 +1638,16 @@ export function buildAcceptedOfferConversionCandidate(offer = {}, { now = new Da
     buyerLeadId: buyerLeadId || null,
     buyerContactId: buyerContactId || null,
     offerAmount: Number.isFinite(offerAmount) && offerAmount > 0 ? offerAmount : null,
-    financeType: normalizeText(offer.financeType || offer.finance_type || conditions.financeType) || null,
+    financeType: continuityFacts.financeType || null,
+    purchaserType: continuityFacts.purchaserType || null,
+    purchaserEntityType: continuityFacts.purchaserEntityType || null,
+    purchaserEntityName: continuityFacts.purchaserEntityName || null,
+    bondAssistancePreference: continuityFacts.bondAssistancePreference || null,
+    bondHelpRequested: continuityFacts.bondHelpRequested || null,
+    bondAssistanceSelection: continuityFacts.bondAssistanceSelection || null,
+    bondOriginatorName: continuityFacts.bondOriginatorName || null,
+    bondOriginatorContact: continuityFacts.bondOriginatorContact || null,
+    financeManagedBy: continuityFacts.financeManagedBy || null,
     clientIntakePreference: normalizeClientIntakePreference(conditions.clientIntakePreference || conditions.deliveryMode),
     status: converted ? 'converted' : blockers.length ? 'needs_attention' : 'ready',
     blockers,
@@ -1442,6 +1687,15 @@ export async function ensureAcceptedOfferConversionCandidate({ organisationId = 
     currentCandidate.status === conversionCandidate.status &&
     JSON.stringify(currentCandidate.blockers || []) === JSON.stringify(conversionCandidate.blockers || []) &&
     Number(currentCandidate.offerAmount || 0) === Number(conversionCandidate.offerAmount || 0) &&
+    normalizeText(currentCandidate.purchaserType) === normalizeText(conversionCandidate.purchaserType) &&
+    normalizeText(currentCandidate.purchaserEntityType) === normalizeText(conversionCandidate.purchaserEntityType) &&
+    normalizeText(currentCandidate.purchaserEntityName) === normalizeText(conversionCandidate.purchaserEntityName) &&
+    normalizeText(currentCandidate.bondAssistancePreference) === normalizeText(conversionCandidate.bondAssistancePreference) &&
+    normalizeText(currentCandidate.bondHelpRequested) === normalizeText(conversionCandidate.bondHelpRequested) &&
+    normalizeText(currentCandidate.bondAssistanceSelection) === normalizeText(conversionCandidate.bondAssistanceSelection) &&
+    normalizeText(currentCandidate.bondOriginatorName) === normalizeText(conversionCandidate.bondOriginatorName) &&
+    normalizeText(currentCandidate.bondOriginatorContact) === normalizeText(conversionCandidate.bondOriginatorContact) &&
+    normalizeText(currentCandidate.financeManagedBy) === normalizeText(conversionCandidate.financeManagedBy) &&
     normalizeText(currentCandidate.transactionId) === normalizeText(conversionCandidate.transactionId)
   if (unchanged) return { offer: canonicalOffer, candidate: currentCandidate, persisted: true }
 
@@ -2634,6 +2888,7 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     budget: canonicalOffer.offerAmount,
   }
 
+  const continuityFacts = buildAcceptedOfferContinuityFacts(canonicalOffer, payload)
   const conversionPayload = {
     ...payload,
     organisationId: scopedOrganisationId,
@@ -2647,9 +2902,28 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     depositAmount: canonicalOffer.depositAmount || payload?.depositAmount,
     cashAmount: canonicalOffer.cashComponent || payload?.cashAmount,
     bondAmount: canonicalOffer.bondComponent || payload?.bondAmount,
-    financeType: canonicalOffer.financeType || payload?.financeType,
-    purchaserType: canonicalOffer.conditions?.buyerType || canonicalOffer.conditions?.purchaserType || payload?.purchaserType || 'individual',
-    buyerEntityType: canonicalOffer.conditions?.buyerType || canonicalOffer.conditions?.purchaserType || payload?.buyerEntityType || payload?.purchaserType || 'individual',
+    financeType: continuityFacts.financeType || payload?.financeType,
+    purchaserType: continuityFacts.purchaserType || 'individual',
+    purchaser_type: continuityFacts.purchaserType || 'individual',
+    purchaserEntityType: continuityFacts.purchaserEntityType || continuityFacts.purchaserType || 'individual',
+    purchaser_entity_type: continuityFacts.purchaserEntityType || continuityFacts.purchaserType || 'individual',
+    buyerEntityType: continuityFacts.purchaserEntityType || continuityFacts.purchaserType || 'individual',
+    buyer_entity_type: continuityFacts.purchaserEntityType || continuityFacts.purchaserType || 'individual',
+    purchaserEntityName: continuityFacts.purchaserEntityName || payload?.purchaserEntityName,
+    purchaser_entity_name: continuityFacts.purchaserEntityName || payload?.purchaser_entity_name,
+    bondAssistancePreference: continuityFacts.bondAssistancePreference || payload?.bondAssistancePreference,
+    bond_assistance_preference: continuityFacts.bondAssistancePreference || payload?.bond_assistance_preference,
+    bondHelpRequested: continuityFacts.bondHelpRequested || payload?.bondHelpRequested,
+    bond_help_requested: continuityFacts.bondHelpRequested || payload?.bond_help_requested,
+    ooba_assist_requested: continuityFacts.bondHelpRequested || payload?.ooba_assist_requested,
+    bondAssistanceSelection: continuityFacts.bondAssistanceSelection || payload?.bondAssistanceSelection,
+    bond_assistance_selection: continuityFacts.bondAssistanceSelection || payload?.bond_assistance_selection,
+    bondOriginatorName: continuityFacts.bondOriginatorName || payload?.bondOriginatorName,
+    bond_originator_name: continuityFacts.bondOriginatorName || payload?.bond_originator_name,
+    bondOriginatorContact: continuityFacts.bondOriginatorContact || payload?.bondOriginatorContact,
+    bond_originator_contact: continuityFacts.bondOriginatorContact || payload?.bond_originator_contact,
+    financeManagedBy: continuityFacts.financeManagedBy || payload?.financeManagedBy,
+    finance_managed_by: continuityFacts.financeManagedBy || payload?.finance_managed_by,
     sellerEntityType: canonicalListing?.sellerType || canonicalListing?.seller_type || canonicalListing?.seller?.sellerType || canonicalListing?.seller?.type || payload?.sellerEntityType || payload?.sellerType,
     sellerHasExistingBond: canonicalListing?.sellerHasExistingBond ?? canonicalListing?.seller_has_existing_bond ?? canonicalListing?.existing_bond ?? canonicalListing?.seller?.hasExistingBond ?? payload?.sellerHasExistingBond,
     cancellationRequired: canonicalListing?.cancellationRequired ?? canonicalListing?.cancellation_required ?? payload?.cancellationRequired,
@@ -2726,10 +3000,7 @@ export async function upsertAcceptedOfferOnboardingPrefill({ transactionId = '',
   }
 
   const existingFormData = jsonObject(existingQuery.data?.form_data)
-  const mergedFormData = {
-    ...prefill,
-    ...existingFormData,
-  }
+  const mergedFormData = mergeExistingOnboardingValues(prefill, existingFormData)
   const purchaserType = normalizePurchaserType(existingFormData.purchaser_type || prefill.purchaser_type)
 
   const { data, error } = await supabase
