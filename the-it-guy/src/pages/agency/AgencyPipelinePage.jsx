@@ -16735,6 +16735,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       attachCalendarInvite: appointmentForm.attachCalendarInvite !== false,
       notifyCreatorOnRsvp: appointmentForm.notifyCreatorOnRsvp !== false,
     })
+    const appointmentThemeTypeKey = normalizeKey(appointmentPayload.appointmentType)
+    const appointmentHasKingstonsValuationTheme =
+      linkedLead &&
+      resolveLeadCategoryView(linkedLead) === 'seller' &&
+      (selectedLeadHasKingstonsPipelineSignal || hasKingstonsPipelineSignal({
+        organisationId,
+        selectedLead: linkedLead,
+        lead: linkedLead,
+        listing: selectedLeadLinkedListing,
+        selectedLeadAssignedAgentLabel,
+        currentAgent,
+        currentMembership,
+        currentWorkspace,
+        profile,
+        workspace,
+      })) &&
+      (appointmentThemeTypeKey === 'seller_valuation' || appointmentThemeTypeKey === 'valuation_presentation')
+    if (appointmentHasKingstonsValuationTheme) {
+      appointmentPayload.emailTheme = 'kingstons_valuation'
+      appointmentPayload.emailTemplateKey = appointmentThemeTypeKey === 'valuation_presentation'
+        ? 'kingstons_valuation_presentation'
+        : 'kingstons_valuation_appointment'
+      appointmentPayload.organisationName = normalizeText(appointmentPayload.organisationName) || 'Kingstons Real Estate'
+    }
     setAppointmentSchedulingSubmitting(true)
     try {
       if (linkedLead && resolveLeadCategoryView(linkedLead) !== 'seller') {

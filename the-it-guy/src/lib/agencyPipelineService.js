@@ -2447,6 +2447,8 @@ async function runAppointmentCreateNotificationSideEffects(notificationSource = 
         supportPhone: normalizeText(payload?.supportPhone || ''),
         fromName: normalizeText(payload?.fromName || ''),
         fromEmail: normalizeText(payload?.fromEmail || ''),
+        emailTheme: normalizeText(payload?.emailTheme || payload?.email_theme || ''),
+        emailTemplateKey: normalizeText(payload?.emailTemplateKey || payload?.email_template_key || payload?.templateKey || payload?.template_key || ''),
         agentName: normalizeText(notificationSource?.assignedAgentName || payload?.assignedAgent?.name || payload?.agent?.name || actor?.name || ''),
         agentEmail: normalizeText(notificationSource?.assignedAgentEmail || payload?.assignedAgent?.email || payload?.agent?.email || actor?.email || '').toLowerCase(),
         agentRole: 'Agent',

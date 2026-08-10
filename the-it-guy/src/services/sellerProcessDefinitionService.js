@@ -48,7 +48,7 @@ const KINGSTONS_PROCESS_STAGES = Object.freeze([
   }),
   Object.freeze({
     key: 'formal_valuation_completed',
-    label: 'Formal Valuation Completed',
+    label: 'Formal Valuation',
     defaultStageKey: 'contacted',
     requiredEvidenceKeys: Object.freeze(['valuation_document_uploaded']),
   }),

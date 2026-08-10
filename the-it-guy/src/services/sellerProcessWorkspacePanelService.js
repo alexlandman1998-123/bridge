@@ -117,6 +117,7 @@ function buildActionCards(payload = {}) {
   const listingWorkspace = payload.listingWorkspace || {}
   const currentStageKey = normalizeText(sellerLeadWorkspace.currentProcessStageKey).toLowerCase()
   const missingEvidenceKeys = asArray(sellerLeadWorkspace.missingEvidenceKeys)
+  const processNeedsEvidence = (key = '') => missingEvidenceKeys.includes(key)
   const needsFirstContact = currentStageKey === 'first_contact' || missingEvidenceKeys.includes('seller_contacted')
   return [
     ...(needsFirstContact ? [
@@ -133,7 +134,7 @@ function buildActionCards(payload = {}) {
       key: 'schedule_valuation_appointment',
       label: 'Schedule Valuation Appointment',
       surface: 'appointments',
-      pending: asArray(appointments.missingAppointmentEvidenceKeys).includes('valuation_appointment_scheduled'),
+      pending: processNeedsEvidence('valuation_appointment_scheduled'),
       disabled: false,
       readOnly: false,
     },
@@ -141,7 +142,7 @@ function buildActionCards(payload = {}) {
       key: 'upload_valuation_document',
       label: 'Upload Formal Valuation',
       surface: 'sellerDocumentCenter',
-      pending: asArray(documentCenter.missingDocumentEvidenceKeys).includes('valuation_document_uploaded'),
+      pending: processNeedsEvidence('valuation_document_uploaded'),
       disabled: false,
       readOnly: false,
     },
@@ -149,7 +150,7 @@ function buildActionCards(payload = {}) {
       key: 'schedule_valuation_presentation',
       label: 'Schedule Valuation Presentation',
       surface: 'appointments',
-      pending: asArray(appointments.missingAppointmentEvidenceKeys).includes('valuation_presentation_scheduled'),
+      pending: processNeedsEvidence('valuation_presentation_scheduled'),
       disabled: false,
       readOnly: false,
     },

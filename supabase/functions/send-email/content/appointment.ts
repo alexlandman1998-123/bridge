@@ -50,6 +50,11 @@ function isKingstonsOrganisation(organisationName?: string) {
   return pickText(organisationName, "").toLowerCase().includes("kingstons");
 }
 
+function isKingstonsValuationThemeKey(value?: string) {
+  const normalized = normalizeAppointmentTypeKey(value);
+  return normalized.includes("kingstons") && normalized.includes("valuation");
+}
+
 function normalizeAppointmentTypeKey(value?: string) {
   return pickText(value, "")
     .toLowerCase()
@@ -83,22 +88,34 @@ function isValuationPresentation(
 function isKingstonsValuationTheme({
   eventType,
   appointmentType,
+  appointmentTitle,
   participantRole,
   organisationName,
+  emailTheme,
+  emailTemplateKey,
 }: {
   eventType: string;
   appointmentType?: string;
+  appointmentTitle?: string;
   participantRole?: string;
   organisationName?: string;
+  emailTheme?: string;
+  emailTemplateKey?: string;
 }) {
-  return isKingstonsOrganisation(organisationName) &&
-    isSellerParticipant(participantRole) &&
-    isValuationAppointment(appointmentType) &&
-    [
+  const eventSupported = [
       "appointment_scheduled",
       "appointment_confirmed",
       "appointment_confirmation_required",
     ].includes(eventType);
+  const explicitKingstonsTheme =
+    isKingstonsValuationThemeKey(emailTheme) ||
+    isKingstonsValuationThemeKey(emailTemplateKey);
+  const kingstonsSellerTheme =
+    isKingstonsOrganisation(organisationName) &&
+    (!participantRole || isSellerParticipant(participantRole));
+  return eventSupported &&
+    isValuationAppointment(appointmentType, appointmentTitle) &&
+    (explicitKingstonsTheme || kingstonsSellerTheme);
 }
 
 function buildKingstonsValuationInviteCopy({
@@ -679,6 +696,8 @@ export function buildAppointmentEmailHtml({
   supportPhone,
   attachCalendarInvite,
   branding,
+  emailTheme,
+  emailTemplateKey,
 }: {
   eventType: string;
   recipientName?: string;
@@ -704,6 +723,8 @@ export function buildAppointmentEmailHtml({
   supportPhone?: string;
   attachCalendarInvite?: boolean;
   branding?: BridgeEmailLayoutBranding;
+  emailTheme?: string;
+  emailTemplateKey?: string;
 }) {
   const typeLabel = pickText(
     appointmentTitle,
@@ -727,8 +748,11 @@ export function buildAppointmentEmailHtml({
   const isKingstonsValuationInvite = isKingstonsValuationTheme({
     eventType,
     appointmentType,
+    appointmentTitle,
     participantRole,
     organisationName: resolvedOrganisationName,
+    emailTheme,
+    emailTemplateKey,
   });
   const safeAcceptLink = escapeHtml(acceptLink || "");
   const safeDeclineLink = escapeHtml(declineLink || "");
@@ -927,6 +951,8 @@ export function buildAppointmentEmailText({
   supportEmail,
   supportPhone,
   attachCalendarInvite,
+  emailTheme,
+  emailTemplateKey,
 }: {
   eventType: string;
   recipientName?: string;
@@ -951,6 +977,8 @@ export function buildAppointmentEmailText({
   supportEmail?: string;
   supportPhone?: string;
   attachCalendarInvite?: boolean;
+  emailTheme?: string;
+  emailTemplateKey?: string;
 }) {
   const typeLabel = pickText(
     appointmentTitle,
@@ -968,8 +996,11 @@ export function buildAppointmentEmailText({
   const isKingstonsValuationInvite = isKingstonsValuationTheme({
     eventType,
     appointmentType,
+    appointmentTitle,
     participantRole,
     organisationName: resolvedOrganisationName,
+    emailTheme,
+    emailTemplateKey,
   });
 
   if (isKingstonsValuationInvite) {

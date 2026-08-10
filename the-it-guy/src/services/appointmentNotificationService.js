@@ -405,6 +405,8 @@ async function sendAppointmentEmailToRecipient({ recipientEmail, eventType, appo
     supportPhone: normalizeText(metadata?.supportPhone || ''),
     fromName: normalizeText(metadata?.fromName || ''),
     fromEmail: normalizeLower(metadata?.fromEmail || ''),
+    emailTheme: normalizeText(metadata?.emailTheme || metadata?.email_theme || appointment?.emailTheme || appointment?.email_theme || ''),
+    emailTemplateKey: normalizeText(metadata?.emailTemplateKey || metadata?.email_template_key || metadata?.templateKey || metadata?.template_key || appointment?.emailTemplateKey || appointment?.email_template_key || appointment?.templateKey || appointment?.template_key || ''),
     appointmentId: normalizeText(appointment?.appointment_id || appointment?.appointmentId || ''),
     participantId: normalizeText(participant?.participantId || ''),
     rsvpToken: normalizeText(participant?.rsvpToken || ''),

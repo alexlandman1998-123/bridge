@@ -213,6 +213,13 @@ export async function handleAppointmentEmail(
     supportPhone: branding.supportPhone,
     attachCalendarInvite: payload.attachCalendarInvite !== false,
     branding,
+    emailTheme: normalizeText(
+      rawPayload.emailTheme || rawPayload.email_theme,
+    ),
+    emailTemplateKey: normalizeText(
+      rawPayload.emailTemplateKey || rawPayload.email_template_key ||
+        rawPayload.templateKey || rawPayload.template_key,
+    ),
   });
   const text = buildAppointmentEmailText({
     eventType,
@@ -238,6 +245,13 @@ export async function handleAppointmentEmail(
     supportEmail: branding.supportEmail,
     supportPhone: branding.supportPhone,
     attachCalendarInvite: payload.attachCalendarInvite !== false,
+    emailTheme: normalizeText(
+      rawPayload.emailTheme || rawPayload.email_theme,
+    ),
+    emailTemplateKey: normalizeText(
+      rawPayload.emailTemplateKey || rawPayload.email_template_key ||
+        rawPayload.templateKey || rawPayload.template_key,
+    ),
   });
 
   const icsAttachment = buildIcsAttachment(payload);
