@@ -557,6 +557,7 @@ const KINGSTONS_FORMAL_VALUATION_DOCUMENT = Object.freeze({
 
 const DOCUMENT_UPLOAD_OVERLAY_ID = 'arch9-document-upload-overlay'
 const DOCUMENT_UPLOAD_OVERLAY_STYLE_ID = 'arch9-document-upload-overlay-style'
+const LEAD_WORKSPACE_SESSION_SNAPSHOT_PREFIX = 'arch9:lead-workspace-snapshot'
 
 function escapeHtmlForUploadOverlay(value = '') {
   return String(value)
@@ -619,6 +620,40 @@ function showDocumentUploadOverlay({ documentLabel = 'Document', fileName = '' }
 function hideDocumentUploadOverlay() {
   if (typeof document === 'undefined') return
   document.getElementById(DOCUMENT_UPLOAD_OVERLAY_ID)?.remove()
+}
+
+function getLeadWorkspaceSessionSnapshotKey(organisationId = '', leadId = '') {
+  const orgKey = normalizeText(organisationId)
+  const leadKey = normalizeLeadIdentityKey(leadId)
+  return orgKey && leadKey ? `${LEAD_WORKSPACE_SESSION_SNAPSHOT_PREFIX}:${orgKey}:${leadKey}` : ''
+}
+
+function readLeadWorkspaceSessionSnapshot(organisationId = '', leadId = '') {
+  if (typeof window === 'undefined') return null
+  const key = getLeadWorkspaceSessionSnapshotKey(organisationId, leadId)
+  if (!key) return null
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(key) || 'null')
+    return parsed && Array.isArray(parsed.leads) && parsed.leads.length ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function writeLeadWorkspaceSessionSnapshot(organisationId = '', leadId = '', snapshot = {}) {
+  if (typeof window === 'undefined') return
+  const key = getLeadWorkspaceSessionSnapshotKey(organisationId, leadId)
+  const leads = Array.isArray(snapshot?.leads) ? snapshot.leads.filter(Boolean) : []
+  if (!key || !leads.length) return
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify({
+      ...snapshot,
+      leads,
+      savedAt: new Date().toISOString(),
+    }))
+  } catch {
+    // Session storage is only a resilience cache; ignore browser storage failures.
+  }
 }
 
 const KINGSTONS_SELLER_PACK_DOCUMENTS = Object.freeze([
@@ -10261,6 +10296,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         tasks: Array.isArray(snapshot.tasks) ? snapshot.tasks : [],
         linkedListings,
       }
+      writeLeadWorkspaceSessionSnapshot(organisationId, routeLeadId, routeLeadWorkspaceSnapshotRef.current)
+      if (resolvedRouteLeadId && normalizeLeadIdentityKey(resolvedRouteLeadId) !== normalizeLeadIdentityKey(routeLeadId)) {
+        writeLeadWorkspaceSessionSnapshot(organisationId, resolvedRouteLeadId, routeLeadWorkspaceSnapshotRef.current)
+      }
       if (resolvedRouteLeadId) {
         setSelectedLeadId(resolvedRouteLeadId)
       }
@@ -10653,10 +10692,39 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [canvassingStore.prospects])
 
   const selectedLeadKey = normalizeLeadIdentityKey(selectedLeadId)
+  const routeLeadSnapshotLead = (() => {
+    if (!isLeadWorkspaceRoute) return null
+    const pinnedSnapshot = routeLeadWorkspaceSnapshotRef.current ||
+      readLeadWorkspaceSessionSnapshot(organisationId, selectedLeadId) ||
+      readLeadWorkspaceSessionSnapshot(organisationId, routeLeadId)
+    const snapshotLeads = Array.isArray(pinnedSnapshot?.leads) ? pinnedSnapshot.leads : []
+    if (!snapshotLeads.length) return null
+    const candidateKeys = [
+      selectedLeadId,
+      selectedLeadKey,
+      routeLeadId,
+      pinnedSnapshot?.resolvedLeadId,
+      pinnedSnapshot?.requestedLeadId,
+    ]
+      .map((value) => normalizeLeadIdentityKey(value))
+      .filter(Boolean)
+    return snapshotLeads.find((lead) => candidateKeys.includes(normalizeLeadIdentityKey(lead?.leadId))) || snapshotLeads[0] || null
+  })()
   const selectedLead = selectedLeadId
-    ? (allLeadById.get(selectedLeadId) || leadById.get(selectedLeadId) || allLeadById.get(selectedLeadKey) || leadById.get(selectedLeadKey) || null)
-    : null
+    ? (allLeadById.get(selectedLeadId) || leadById.get(selectedLeadId) || allLeadById.get(selectedLeadKey) || leadById.get(selectedLeadKey) || routeLeadSnapshotLead || null)
+    : routeLeadSnapshotLead
   const selectedLeadWorkspaceRouteHydrating = Boolean(isLeadWorkspaceRoute && routeLeadId && routeLeadHydrationStatus === 'loading')
+
+  useEffect(() => {
+    if (!isLeadWorkspaceRoute || !organisationId || !selectedLead) return
+    const leadId = selectedLead.leadId || selectedLead.lead_id || routeLeadId || selectedLeadId
+    writeLeadWorkspaceSessionSnapshot(organisationId, leadId, {
+      organisationId: normalizeText(organisationId),
+      requestedLeadId: normalizeText(routeLeadId || leadId),
+      resolvedLeadId: normalizeText(leadId),
+      leads: [selectedLead],
+    })
+  }, [isLeadWorkspaceRoute, organisationId, routeLeadId, selectedLead, selectedLeadId])
 
   const selectedLeadContact = useMemo(() => {
     if (!selectedLead) return null
@@ -30589,6 +30657,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                                    onChange={(event) => {
 	                                                      const selectedFile = event.target.files?.[0]
 	                                                      if (!selectedFile) return
+	                                                      if (selectedLead) {
+	                                                        writeLeadWorkspaceSessionSnapshot(organisationId, selectedLead.leadId || selectedLead.lead_id || routeLeadId, {
+	                                                          organisationId: normalizeText(organisationId),
+	                                                          requestedLeadId: normalizeText(routeLeadId || selectedLead.leadId || selectedLead.lead_id),
+	                                                          resolvedLeadId: normalizeText(selectedLead.leadId || selectedLead.lead_id),
+	                                                          leads: [selectedLead],
+	                                                        })
+	                                                      }
 	                                                      showDocumentUploadOverlay({
 	                                                        documentLabel: documentRow.label || documentRow.title || 'Document',
 	                                                        fileName: selectedFile.name,
