@@ -1573,6 +1573,7 @@ const PRIVATE_LISTING_REQUIREMENT_MUTATION_GROUP_ALIASES = {
   occupancy: 'property',
   power_of_attorney: 'seller_identity',
   property_compliance: 'compliance',
+  authority_documents: 'seller_identity',
   seller_authority: 'seller_identity',
 }
 const PRIVATE_LISTING_REQUIREMENT_MUTATION_VARIANTS = [
@@ -6248,7 +6249,7 @@ export async function ensurePrivateListingDocumentRequirements(listingId, requir
   if (!sourceRows.length) return getPrivateListingDocumentRequirements(normalizedListingId)
 
   const existingRequirements = await getPrivateListingDocumentRequirements(normalizedListingId).catch(() => [])
-  const missingRows = sourceRows
+  const ensuredRows = sourceRows
     .map((row) => {
       const requirementKey = normalizeCompatibilityKey(row?.requirementKey || row?.requirement_key || row?.key)
       if (!requirementKey) return null
@@ -6256,29 +6257,33 @@ export async function ensurePrivateListingDocumentRequirements(listingId, requir
         const rowKey = normalizeCompatibilityKey(requirement?.requirement_key || requirement?.key)
         return privateListingDocumentKeysOverlap(requirementKey, rowKey)
       })
-      if (existing) return null
+      const generatedFrom = {
+        ...(existing?.generated_from && typeof existing.generated_from === 'object' ? existing.generated_from : {}),
+        ...(row?.generatedFrom && typeof row.generatedFrom === 'object' ? row.generatedFrom : {}),
+        ...(row?.generated_from && typeof row.generated_from === 'object' ? row.generated_from : {}),
+      }
       return {
+        ...(existing?.id ? { id: existing.id } : {}),
         private_listing_id: normalizedListingId,
         requirement_key: requirementKey,
         requirement_name: normalizeText(row?.requirementName || row?.requirement_name || row?.label || row?.name) || requirementKey,
         requirement_description: normalizeText(row?.requirementDescription || row?.requirement_description || row?.description),
         requirement_group: normalizeText(row?.requirementGroup || row?.requirement_group || row?.group || 'compliance'),
         document_visibility: normalizeText(row?.documentVisibility || row?.document_visibility || row?.visibility || 'seller_visible'),
-        status: normalizeText(row?.status || 'required'),
-        is_required: row?.isRequired !== false && row?.is_required !== false,
+        status: existing?.status || normalizeText(row?.status || 'required'),
+        is_required: existing ? existing.is_required !== false : row?.isRequired !== false && row?.is_required !== false,
         generated_from: {
-          ...(row?.generatedFrom && typeof row.generatedFrom === 'object' ? row.generatedFrom : {}),
-          ...(row?.generated_from && typeof row.generated_from === 'object' ? row.generated_from : {}),
-          source: 'manual_seller_pack',
+          source: generatedFrom.source || 'manual_seller_pack',
+          ...generatedFrom,
           reason,
         },
       }
     })
     .filter(Boolean)
 
-  if (!missingRows.length) return existingRequirements
+  if (!ensuredRows.length) return existingRequirements
 
-  const upsert = await upsertPrivateListingRequirementRows(client, missingRows)
+  const upsert = await upsertPrivateListingRequirementRows(client, ensuredRows)
   if (upsert.error && !upsert.missingTable && !upsert.schemaIncompatible) throw upsert.error
   if (upsert.missingTable || upsert.schemaIncompatible) return existingRequirements
   return getPrivateListingDocumentRequirements(normalizedListingId)

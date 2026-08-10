@@ -1,5 +1,6 @@
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
+import { resolveSellerProcessProfileForOrganisation } from './sellerProcessProfileService.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -227,6 +228,81 @@ const STALE_PRE_ONBOARDING_REQUIREMENT_KEYS = new Set([
   'seller_onboarding_submission',
 ])
 
+const KINGSTONS_BASELINE_SELLER_DOCUMENT_REQUIREMENTS = Object.freeze([
+  Object.freeze({
+    key: 'valuation_document',
+    requirement_key: 'valuation_document',
+    name: 'Formal Valuation Document',
+    requirement_name: 'Formal Valuation Document',
+    description: 'The completed formal valuation document prepared after the valuation appointment.',
+    group: 'property',
+    category: 'property',
+    visibility: 'internal',
+    status: 'required',
+    is_required: true,
+    requirementLane: 'baseline',
+    requirement_lane: 'baseline',
+    documentRequirementSection: 'property_documents',
+    document_requirement_section: 'property_documents',
+  }),
+  Object.freeze({
+    key: 'signed_mandate',
+    requirement_key: 'signed_mandate',
+    name: 'Signed Mandate',
+    requirement_name: 'Signed Mandate',
+    description: 'The signed seller mandate.',
+    group: 'legal',
+    category: 'legal',
+    visibility: 'seller_visible',
+    status: 'required',
+    is_required: true,
+    requirementLane: 'baseline',
+    requirement_lane: 'baseline',
+    documentRequirementSection: 'legal_documents',
+    document_requirement_section: 'legal_documents',
+  }),
+  Object.freeze({
+    key: 'signed_defect_form',
+    requirement_key: 'signed_defect_form',
+    name: 'Signed Defect Form',
+    requirement_name: 'Signed Defect Form',
+    description: 'The signed seller defects disclosure form.',
+    group: 'legal',
+    category: 'legal',
+    visibility: 'seller_visible',
+    status: 'required',
+    is_required: true,
+    requirementLane: 'baseline',
+    requirement_lane: 'baseline',
+    documentRequirementSection: 'legal_documents',
+    document_requirement_section: 'legal_documents',
+  }),
+  Object.freeze({
+    key: 'signed_fica_form',
+    requirement_key: 'signed_fica_form',
+    name: 'Signed FICA Form',
+    requirement_name: 'Signed FICA Form',
+    description: 'The signed FICA form for the confirmed seller type.',
+    group: 'legal',
+    category: 'legal',
+    visibility: 'seller_visible',
+    status: 'required',
+    is_required: true,
+    requirementLane: 'baseline',
+    requirement_lane: 'baseline',
+    documentRequirementSection: 'legal_documents',
+    document_requirement_section: 'legal_documents',
+  }),
+])
+
+const KINGSTONS_BASELINE_SELLER_DOCUMENT_KEYS = new Set(
+  KINGSTONS_BASELINE_SELLER_DOCUMENT_REQUIREMENTS.map((requirement) => requirementIdentity(requirement)),
+)
+
+const KINGSTONS_SELLER_OWNERSHIP_CAPTURE_VERSION = 'kingstons_seller_ownership_capture_phase3_v1'
+const KINGSTONS_SELLER_DOCUMENT_REQUIREMENTS_PHASE4_VERSION = 'kingstons_seller_documents_phase4_dynamic_fica_v1'
+const KINGSTONS_SELLER_DOCUMENT_REQUIREMENTS_PHASE6_VERSION = 'kingstons_seller_documents_phase6_authority_documents_v1'
+
 const STALE_GENERATED_SELLER_REQUIREMENT_KEYS = new Set([
   'alteration_approvals',
   'approved_building_plans',
@@ -305,11 +381,692 @@ function filterStaleGeneratedRequirementsAgainstDerived(persisted = [], derived 
   })
 }
 
+function isKingstonsSellerDocumentContext(listing = {}) {
+  try {
+    return resolveSellerProcessProfileForOrganisation(listing).isKingstons === true
+  } catch {
+    return false
+  }
+}
+
+function filterKingstonsPersistedBaselineRequirements(requirements = []) {
+  return (Array.isArray(requirements) ? requirements : []).filter((requirement) => {
+    const key = requirementIdentity(requirement)
+    return KINGSTONS_BASELINE_SELLER_DOCUMENT_KEYS.has(key)
+  })
+}
+
+function getKingstonsBaselineSellerDocumentRequirements(persisted = []) {
+  return mergeSellerRequiredDocuments(
+    filterKingstonsPersistedBaselineRequirements(persisted),
+    KINGSTONS_BASELINE_SELLER_DOCUMENT_REQUIREMENTS,
+  )
+}
+
+function coercePlainObject(value = null) {
+  if (isPlainObject(value)) return value
+  if (typeof value !== 'string') return {}
+  const trimmed = value.trim()
+  if (!trimmed) return {}
+  try {
+    const parsed = JSON.parse(trimmed)
+    return isPlainObject(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function getKingstonsSellerPackRecord(listing = {}) {
+  const rawPayload = {
+    ...coercePlainObject(listing?.rawPayload),
+    ...coercePlainObject(listing?.raw_payload),
+    ...coercePlainObject(listing?.rawEnquiryPayload),
+    ...coercePlainObject(listing?.raw_enquiry_payload),
+  }
+  return [
+    listing?.kingstonsSellerPack,
+    listing?.kingstons_seller_pack,
+    listing?.sellerPack,
+    listing?.seller_pack,
+    listing?.sellerPackHandoff,
+    listing?.seller_pack_handoff,
+    listing?.sellerPackProfile,
+    listing?.seller_pack_profile,
+    listing?.legalPath,
+    listing?.legal_path,
+    rawPayload.kingstonsSellerPack,
+    rawPayload.kingstons_seller_pack,
+    rawPayload.sellerPack,
+    rawPayload.seller_pack,
+  ].find((candidate) => isPlainObject(candidate)) || {}
+}
+
+function buildKingstonsSellerPackUploadedDocuments(pack = {}) {
+  const documents = coercePlainObject(pack?.documents || pack?.sellerPackDocuments || pack?.seller_pack_documents)
+  return Object.entries(documents)
+    .map(([documentKey, documentRecord]) => {
+      if (!isPlainObject(documentRecord)) return null
+      const key = normalizeKey(documentRecord.key || documentRecord.requirementKey || documentRecord.requirement_key || documentKey)
+      if (!key) return null
+      return {
+        ...documentRecord,
+        key,
+        requirementKey: key,
+        requirement_key: key,
+        document_type: key,
+        documentType: key,
+        document_name: firstPresent(documentRecord.document_name, documentRecord.name, documentRecord.label, key),
+        category: firstPresent(documentRecord.category, documentRecord.document_category, documentRecord.documentCategory, 'seller'),
+        document_category: firstPresent(documentRecord.document_category, documentRecord.documentCategory, documentRecord.category, 'seller'),
+        requirementLane: documentRecord.requirementLane || documentRecord.requirement_lane,
+        requirement_lane: documentRecord.requirement_lane || documentRecord.requirementLane,
+        documentRequirementSection: documentRecord.documentRequirementSection || documentRecord.document_requirement_section,
+        document_requirement_section: documentRecord.document_requirement_section || documentRecord.documentRequirementSection,
+      }
+    })
+    .filter(Boolean)
+}
+
+function getKingstonsSellerPackLegalPath(pack = {}) {
+  return [
+    pack?.legalPath,
+    pack?.legal_path,
+    pack?.sellerPackProfile,
+    pack?.seller_pack_profile,
+    pack?.sellerProfile,
+    pack?.seller_profile,
+    pack,
+  ].find((candidate) => isPlainObject(candidate)) || {}
+}
+
+function splitKingstonsPersonText(value = '') {
+  return normalizeText(value)
+    .split(/\r?\n|,/)
+    .map((item) => normalizeText(item))
+    .filter(Boolean)
+}
+
+function normalizeKingstonsSellerEntityType(value = '') {
+  const normalized = normalizeKey(value)
+  if (['cc', 'close_corporation', 'close_corporation_member', 'close_corporation_members'].includes(normalized)) return 'close_corporation'
+  if (['pty', 'pty_ltd', 'private_company'].includes(normalized)) return 'company'
+  return normalized
+}
+
+function normalizeKingstonsPersonRecord(value = {}, index = 0, role = 'person') {
+  if (typeof value === 'string') {
+    const name = normalizeText(value)
+    return name
+      ? {
+          id: `${normalizeKey(role) || 'person'}-${index + 1}`,
+          role,
+          name,
+          idNumber: '',
+          id_number: '',
+          email: '',
+          phone: '',
+        }
+      : null
+  }
+  if (!isPlainObject(value)) return null
+  const name = normalizeText(firstPresent(
+    value.name,
+    value.fullName,
+    value.full_name,
+    value.displayName,
+    value.display_name,
+    value.label,
+  ))
+  const idNumber = normalizeText(firstPresent(
+    value.idNumber,
+    value.id_number,
+    value.identityNumber,
+    value.identity_number,
+    value.nationalId,
+    value.national_id,
+  ))
+  const email = normalizeText(value.email).toLowerCase()
+  const phone = normalizeText(firstPresent(value.phone, value.mobile, value.mobileNumber, value.mobile_number))
+  if (!name && !idNumber && !email && !phone) return null
+  return {
+    id: normalizeText(firstPresent(value.id, value.personId, value.person_id, `${normalizeKey(role) || 'person'}-${index + 1}`)),
+    role,
+    name,
+    idNumber,
+    id_number: idNumber,
+    email,
+    phone,
+  }
+}
+
+function normalizeKingstonsPersonRecords(value = [], role = 'person') {
+  const sources = []
+  const collect = (candidate) => {
+    if (Array.isArray(candidate)) {
+      candidate.forEach(collect)
+      return
+    }
+    if (typeof candidate === 'string') {
+      splitKingstonsPersonText(candidate).forEach((name) => sources.push(name))
+      return
+    }
+    if (isPlainObject(candidate)) sources.push(candidate)
+  }
+  collect(value)
+  return sources
+    .map((candidate, index) => normalizeKingstonsPersonRecord(candidate, index, role))
+    .filter(Boolean)
+}
+
+function mergeKingstonsPersonRecords(...recordSets) {
+  const merged = []
+  const seen = new Set()
+  recordSets.flat().forEach((record) => {
+    const normalized = normalizeKingstonsPersonRecord(record, merged.length, record?.role || 'person')
+    if (!normalized) return
+    const identity = normalizeKey(normalized.idNumber || normalized.email || normalized.name || normalized.id)
+    if (identity && seen.has(identity)) return
+    if (identity) seen.add(identity)
+    merged.push({
+      ...normalized,
+      id: normalized.id || `${normalizeKey(normalized.role) || 'person'}-${merged.length + 1}`,
+    })
+  })
+  return merged
+}
+
+function buildKingstonsRequirementKey(prefix = 'seller_fica', person = {}, index = 0) {
+  const identity = normalizeKey(firstPresent(person.idNumber, person.email, person.name, person.id))
+  return `${normalizeKey(prefix) || 'seller_fica'}_${identity || index + 1}`
+}
+
+function buildKingstonsPersonFicaRequirement({
+  keyPrefix,
+  titlePrefix,
+  description,
+  person = {},
+  index = 0,
+  section = 'seller_identity_fica',
+}) {
+  const key = buildKingstonsRequirementKey(keyPrefix, person, index)
+  const partyName = normalizeText(person.name) || `${titlePrefix} ${index + 1}`
+  const name = `${titlePrefix}: ${partyName}`
+  return {
+    key,
+    requirement_key: key,
+    name,
+    requirement_name: name,
+    description,
+    group: 'seller_identity_fica',
+    category: 'seller',
+    visibility: 'seller_visible',
+    status: 'required',
+    is_required: true,
+    requirementLane: 'ownership_driven',
+    requirement_lane: 'ownership_driven',
+    documentRequirementSection: section,
+    document_requirement_section: section,
+    generatedBy: KINGSTONS_SELLER_DOCUMENT_REQUIREMENTS_PHASE4_VERSION,
+    generated_by: KINGSTONS_SELLER_DOCUMENT_REQUIREMENTS_PHASE4_VERSION,
+    partyRole: normalizeKey(person.role),
+    party_role: normalizeKey(person.role),
+    partyName,
+    party_name: partyName,
+    partyIdNumber: normalizeText(person.idNumber || person.id_number),
+    party_id_number: normalizeText(person.idNumber || person.id_number),
+    partyEmail: normalizeText(person.email).toLowerCase(),
+    party_email: normalizeText(person.email).toLowerCase(),
+  }
+}
+
+function buildKingstonsAuthorityDocumentRequirement({
+  key,
+  name,
+  description,
+  partyRole = '',
+  partyName = '',
+  entityType = '',
+} = {}) {
+  const normalizedKey = normalizeKey(key)
+  const normalizedEntityType = normalizeKingstonsSellerEntityType(entityType)
+  return {
+    key: normalizedKey,
+    requirement_key: normalizedKey,
+    name,
+    requirement_name: name,
+    description,
+    group: 'authority_documents',
+    category: 'legal',
+    visibility: 'seller_visible',
+    status: 'required',
+    is_required: true,
+    requirementLane: 'ownership_driven',
+    requirement_lane: 'ownership_driven',
+    documentRequirementSection: 'authority_documents',
+    document_requirement_section: 'authority_documents',
+    generatedBy: KINGSTONS_SELLER_DOCUMENT_REQUIREMENTS_PHASE6_VERSION,
+    generated_by: KINGSTONS_SELLER_DOCUMENT_REQUIREMENTS_PHASE6_VERSION,
+    partyRole: normalizeKey(partyRole),
+    party_role: normalizeKey(partyRole),
+    partyName: normalizeText(partyName),
+    party_name: normalizeText(partyName),
+    entityType: normalizedEntityType,
+    entity_type: normalizedEntityType,
+  }
+}
+
+export function buildKingstonsAuthorityDocumentRequirements(ownershipProfile = {}) {
+  if (ownershipProfile?.captured !== true) return []
+  const requirements = []
+  const sellerType = normalizeKey(ownershipProfile.sellerType)
+  const naturalSetup = normalizeKey(ownershipProfile.natural?.maritalSetup || ownershipProfile.naturalSetup)
+  const juristicEntityType = normalizeKingstonsSellerEntityType(ownershipProfile.juristicEntityType || ownershipProfile.juristic?.entityType)
+
+  if (sellerType === 'natural') {
+    const owners = Array.isArray(ownershipProfile.natural?.owners) && ownershipProfile.natural.owners.length
+      ? ownershipProfile.natural.owners
+      : ownershipProfile.owners || []
+    if (owners.length > 1) {
+      requirements.push(buildKingstonsAuthorityDocumentRequirement({
+        key: 'all_owner_authority_consent',
+        name: 'All Owner Authority Consent',
+        description: 'Written authority confirming every registered natural-person owner consents to the mandate and sale process.',
+        partyRole: 'owner',
+        partyName: `${owners.length} owners`,
+        entityType: 'natural',
+      }))
+    }
+    if (naturalSetup === 'in_community') {
+      requirements.push(buildKingstonsAuthorityDocumentRequirement({
+        key: 'spouse_consent',
+        name: 'Spouse Consent',
+        description: 'Spouse consent required where the seller is married in community of property.',
+        partyRole: 'spouse',
+        partyName: ownershipProfile.natural?.spouse?.name,
+        entityType: 'natural',
+      }))
+    }
+  }
+
+  if (sellerType === 'juristic' && juristicEntityType === 'company') {
+    requirements.push(buildKingstonsAuthorityDocumentRequirement({
+      key: 'company_resolution_to_sell',
+      name: 'Company Resolution To Sell',
+      description: 'Directors resolution authorising the sale/listing and confirming the authorised signatory.',
+      partyRole: 'director',
+      partyName: ownershipProfile.juristic?.company?.name,
+      entityType: 'company',
+    }))
+  }
+
+  if (sellerType === 'juristic' && juristicEntityType === 'trust') {
+    requirements.push(buildKingstonsAuthorityDocumentRequirement({
+      key: 'seller_trust_deed',
+      name: 'Trust Deed',
+      description: 'Trust deed confirming the trust structure and trustee powers.',
+      partyRole: 'trustee',
+      partyName: ownershipProfile.juristic?.trust?.name,
+      entityType: 'trust',
+    }))
+    requirements.push(buildKingstonsAuthorityDocumentRequirement({
+      key: 'seller_letters_of_authority',
+      name: 'Letters Of Authority',
+      description: 'Letters of authority issued by the Master confirming the current trustees.',
+      partyRole: 'trustee',
+      partyName: ownershipProfile.juristic?.trust?.name,
+      entityType: 'trust',
+    }))
+    requirements.push(buildKingstonsAuthorityDocumentRequirement({
+      key: 'trust_resolution_to_sell',
+      name: 'Trust Resolution To Sell',
+      description: 'Trustee resolution authorising the sale/listing and confirming the authorised signatory.',
+      partyRole: 'trustee',
+      partyName: ownershipProfile.juristic?.trust?.name,
+      entityType: 'trust',
+    }))
+  }
+
+  if (sellerType === 'juristic' && juristicEntityType === 'close_corporation') {
+    requirements.push(buildKingstonsAuthorityDocumentRequirement({
+      key: 'close_corporation_resolution_to_sell',
+      name: 'Close Corporation Resolution To Sell',
+      description: 'Members resolution authorising the sale/listing and confirming the authorised signatory.',
+      partyRole: 'member',
+      partyName: ownershipProfile.juristic?.closeCorporation?.name,
+      entityType: 'close_corporation',
+    }))
+  }
+
+  return mergeSellerRequiredDocuments(requirements)
+}
+
+export function buildKingstonsOwnershipDrivenDocumentRequirements(ownershipProfile = {}) {
+  if (ownershipProfile?.captured !== true) return []
+  const requirements = buildKingstonsAuthorityDocumentRequirements(ownershipProfile)
+  const sellerType = normalizeKey(ownershipProfile.sellerType)
+  const juristicEntityType = normalizeKingstonsSellerEntityType(ownershipProfile.juristicEntityType || ownershipProfile.juristic?.entityType)
+
+  if (sellerType === 'natural') {
+    const owners = Array.isArray(ownershipProfile.natural?.owners) && ownershipProfile.natural.owners.length
+      ? ownershipProfile.natural.owners
+      : ownershipProfile.owners || []
+    owners.forEach((owner, index) => {
+      requirements.push(buildKingstonsPersonFicaRequirement({
+        keyPrefix: 'owner_fica',
+        titlePrefix: 'Owner FICA',
+        description: 'FICA supporting documents for this registered natural-person owner.',
+        person: { ...owner, role: 'owner' },
+        index,
+      }))
+    })
+    if (ownershipProfile.natural?.requiresSpouseDetails && normalizeText(ownershipProfile.natural?.spouse?.name)) {
+      requirements.push(buildKingstonsPersonFicaRequirement({
+        keyPrefix: 'spouse_fica',
+        titlePrefix: 'Spouse FICA',
+        description: 'FICA supporting documents for the spouse required on this signing path.',
+        person: { ...ownershipProfile.natural.spouse, role: 'spouse' },
+        index: 0,
+      }))
+    }
+  }
+
+  if (sellerType === 'juristic' && juristicEntityType === 'company') {
+    const directors = Array.isArray(ownershipProfile.juristic?.company?.directors)
+      ? ownershipProfile.juristic.company.directors
+      : []
+    directors.forEach((director, index) => {
+      requirements.push(buildKingstonsPersonFicaRequirement({
+        keyPrefix: 'director_fica',
+        titlePrefix: 'Director FICA',
+        description: 'FICA supporting documents for this company director.',
+        person: { ...director, role: 'director' },
+        index,
+      }))
+    })
+  }
+
+  if (sellerType === 'juristic' && juristicEntityType === 'trust') {
+    const trustees = Array.isArray(ownershipProfile.juristic?.trust?.trustees)
+      ? ownershipProfile.juristic.trust.trustees
+      : []
+    trustees.forEach((trustee, index) => {
+      requirements.push(buildKingstonsPersonFicaRequirement({
+        keyPrefix: 'trustee_fica',
+        titlePrefix: 'Trustee FICA',
+        description: 'FICA supporting documents for this trust trustee.',
+        person: { ...trustee, role: 'trustee' },
+        index,
+      }))
+    })
+  }
+
+  if (sellerType === 'juristic' && juristicEntityType === 'close_corporation') {
+    const members = Array.isArray(ownershipProfile.juristic?.closeCorporation?.members)
+      ? ownershipProfile.juristic.closeCorporation.members
+      : []
+    members.forEach((member, index) => {
+      requirements.push(buildKingstonsPersonFicaRequirement({
+        keyPrefix: 'member_fica',
+        titlePrefix: 'Member FICA',
+        description: 'FICA supporting documents for this close corporation member.',
+        person: { ...member, role: 'member' },
+        index,
+      }))
+    })
+  }
+
+  return mergeSellerRequiredDocuments(requirements)
+}
+
+export function resolveKingstonsSellerOwnershipProfile(listing = {}) {
+  const pack = getKingstonsSellerPackRecord(listing)
+  const legalPath = getKingstonsSellerPackLegalPath(pack)
+  const natural = isPlainObject(legalPath?.natural) ? legalPath.natural : {}
+  const juristic = isPlainObject(legalPath?.juristic) ? legalPath.juristic : {}
+  const company = isPlainObject(juristic?.company) ? juristic.company : {}
+  const trust = isPlainObject(juristic?.trust) ? juristic.trust : {}
+  const closeCorporation = isPlainObject(juristic?.closeCorporation)
+    ? juristic.closeCorporation
+    : isPlainObject(juristic?.close_corporation)
+      ? juristic.close_corporation
+      : {}
+  const sellerType = normalizeKey(firstPresent(
+    pack?.sellerType,
+    pack?.seller_type,
+    legalPath?.sellerType,
+    legalPath?.seller_type,
+    legalPath?.legalPathType,
+    legalPath?.legal_path_type,
+  ))
+  const naturalSetup = normalizeKey(firstPresent(
+    pack?.naturalSetup,
+    pack?.natural_setup,
+    pack?.maritalSetup,
+    pack?.marital_setup,
+    pack?.maritalRegime,
+    pack?.marital_regime,
+    legalPath?.naturalSetup,
+    legalPath?.natural_setup,
+    natural?.maritalSetup,
+    natural?.marital_setup,
+    natural?.maritalRegime,
+    natural?.marital_regime,
+  ))
+  const juristicEntityType = normalizeKingstonsSellerEntityType(firstPresent(
+    pack?.juristicEntityType,
+    pack?.juristic_entity_type,
+    pack?.entityType,
+    pack?.entity_type,
+    legalPath?.juristicEntityType,
+    legalPath?.juristic_entity_type,
+    juristic?.entityType,
+    juristic?.entity_type,
+  ))
+  const spouse = [
+    legalPath?.spouse,
+    pack?.spouse,
+    natural?.spouse,
+    {
+      name: firstPresent(pack?.spouseName, pack?.spouse_name),
+      idNumber: firstPresent(pack?.spouseIdNumber, pack?.spouse_id_number),
+      email: firstPresent(pack?.spouseEmail, pack?.spouse_email),
+      phone: firstPresent(pack?.spousePhone, pack?.spouse_phone),
+    },
+  ].map((candidate, index) => normalizeKingstonsPersonRecord(candidate, index, 'spouse')).find(Boolean) || null
+  const owners = mergeKingstonsPersonRecords(
+    normalizeKingstonsPersonRecords(legalPath?.owners, 'owner'),
+    normalizeKingstonsPersonRecords(natural?.owners, 'owner'),
+    normalizeKingstonsPersonRecords(pack?.owners, 'owner'),
+  )
+  const directors = mergeKingstonsPersonRecords(
+    normalizeKingstonsPersonRecords(company?.directors, 'director'),
+    normalizeKingstonsPersonRecords(pack?.companyDirectors, 'director'),
+    normalizeKingstonsPersonRecords(pack?.company_directors, 'director'),
+  )
+  const trustees = mergeKingstonsPersonRecords(
+    normalizeKingstonsPersonRecords(trust?.trustees, 'trustee'),
+    normalizeKingstonsPersonRecords(pack?.trustees, 'trustee'),
+    normalizeKingstonsPersonRecords(pack?.trustees_list, 'trustee'),
+  )
+  const members = mergeKingstonsPersonRecords(
+    normalizeKingstonsPersonRecords(closeCorporation?.members, 'member'),
+    normalizeKingstonsPersonRecords(pack?.closeCorporationMembers, 'member'),
+    normalizeKingstonsPersonRecords(pack?.close_corporation_members, 'member'),
+  )
+  const capturedAt = normalizeText(firstPresent(
+    pack?.sellerPackDetailsCapturedAt,
+    pack?.seller_pack_details_captured_at,
+    pack?.detailsCapturedAt,
+    pack?.details_captured_at,
+    legalPath?.capturedAt,
+    legalPath?.captured_at,
+  ))
+  const captured = Boolean(
+    capturedAt ||
+      sellerType ||
+      naturalSetup ||
+      juristicEntityType ||
+      owners.length ||
+      directors.length ||
+      trustees.length ||
+      members.length ||
+      spouse,
+  )
+
+  return {
+    version: KINGSTONS_SELLER_OWNERSHIP_CAPTURE_VERSION,
+    captured,
+    capturedAt,
+    sellerType,
+    legalPathType: sellerType,
+    naturalSetup,
+    juristicEntityType,
+    pathKey: sellerType === 'juristic' && juristicEntityType ? `juristic_${juristicEntityType}` : sellerType,
+    owners,
+    natural: {
+      maritalSetup: naturalSetup,
+      maritalRegime: naturalSetup,
+      owners,
+      spouse: spouse || {
+        id: 'spouse-1',
+        role: 'spouse',
+        name: '',
+        idNumber: '',
+        id_number: '',
+        email: '',
+        phone: '',
+      },
+      requiresSpouseDetails: naturalSetup === 'in_community',
+    },
+    juristic: {
+      entityType: juristicEntityType,
+      company: {
+        name: normalizeText(firstPresent(company?.name, pack?.companyName, pack?.company_name)),
+        registrationNumber: normalizeText(firstPresent(
+          company?.registrationNumber,
+          company?.registration_number,
+          pack?.companyRegistrationNumber,
+          pack?.company_registration_number,
+        )),
+        directors,
+      },
+      trust: {
+        name: normalizeText(firstPresent(trust?.name, pack?.trustName, pack?.trust_name)),
+        registrationNumber: normalizeText(firstPresent(
+          trust?.registrationNumber,
+          trust?.registration_number,
+          pack?.trustRegistrationNumber,
+          pack?.trust_registration_number,
+        )),
+        trustees,
+      },
+      closeCorporation: {
+        name: normalizeText(firstPresent(
+          closeCorporation?.name,
+          pack?.closeCorporationName,
+          pack?.close_corporation_name,
+          juristicEntityType === 'close_corporation' ? company?.name : '',
+          juristicEntityType === 'close_corporation' ? pack?.companyName : '',
+        )),
+        registrationNumber: normalizeText(firstPresent(
+          closeCorporation?.registrationNumber,
+          closeCorporation?.registration_number,
+          pack?.closeCorporationRegistrationNumber,
+          pack?.close_corporation_registration_number,
+          juristicEntityType === 'close_corporation' ? company?.registrationNumber : '',
+          juristicEntityType === 'close_corporation' ? pack?.companyRegistrationNumber : '',
+        )),
+        members,
+      },
+    },
+    counts: {
+      owners: owners.length,
+      directors: directors.length,
+      trustees: trustees.length,
+      members: members.length,
+    },
+    ownerCount: owners.length,
+    directorCount: directors.length,
+    trusteeCount: trustees.length,
+    memberCount: members.length,
+  }
+}
+
+function resolveKingstonsOwnershipCapture(listing = {}) {
+  const profile = resolveKingstonsSellerOwnershipProfile(listing)
+  return {
+    captured: profile.captured,
+    capturedAt: profile.capturedAt,
+    sellerType: profile.sellerType,
+    naturalSetup: profile.naturalSetup,
+    juristicEntityType: profile.juristicEntityType,
+    ownerCount: profile.ownerCount,
+    directorCount: profile.directorCount,
+    trusteeCount: profile.trusteeCount,
+    memberCount: profile.memberCount,
+    pathKey: profile.pathKey,
+  }
+}
+
+function isKingstonsOwnershipDrivenRequirement(requirement = {}) {
+  const key = requirementIdentity(requirement)
+  if (!key || KINGSTONS_BASELINE_SELLER_DOCUMENT_KEYS.has(key) || STALE_PRE_ONBOARDING_REQUIREMENT_KEYS.has(key)) return false
+  const lane = normalizeKey(firstPresent(
+    requirement?.requirementLane,
+    requirement?.requirement_lane,
+    requirement?.documentRequirementLane,
+    requirement?.document_requirement_lane,
+    requirement?.lane,
+  ))
+  const section = normalizeKey(firstPresent(
+    requirement?.documentRequirementSection,
+    requirement?.document_requirement_section,
+    requirement?.section,
+  ))
+  return lane === 'ownership_driven' ||
+    section === 'seller_identity_fica' ||
+    section === 'authority_documents'
+}
+
+function filterKingstonsPersistedOwnershipDrivenRequirements(requirements = [], ownershipCapture = {}) {
+  if (ownershipCapture?.captured !== true) return []
+  return (Array.isArray(requirements) ? requirements : []).filter(isKingstonsOwnershipDrivenRequirement)
+}
+
+export function buildKingstonsSellerDocumentRequirementPack(listing = {}, formData = {}) {
+  const resolvedFormData = isPlainObject(formData) && Object.keys(formData).length
+    ? formData
+    : getSellerOnboardingFormData(listing)
+  const persisted = filterStalePersistedRequirements(listing?.documentRequirements, listing, resolvedFormData)
+  const ownershipProfile = resolveKingstonsSellerOwnershipProfile(listing)
+  const ownershipCapture = resolveKingstonsOwnershipCapture(listing)
+  const baselineDocuments = getKingstonsBaselineSellerDocumentRequirements(persisted)
+  const generatedOwnershipDrivenDocuments = buildKingstonsOwnershipDrivenDocumentRequirements(ownershipProfile)
+  const ownershipDrivenDocuments = mergeSellerRequiredDocuments(
+    filterKingstonsPersistedOwnershipDrivenRequirements(persisted, ownershipCapture),
+    generatedOwnershipDrivenDocuments,
+  )
+
+  return {
+    version: KINGSTONS_SELLER_DOCUMENT_REQUIREMENTS_PHASE6_VERSION,
+    baselineDocuments,
+    generatedOwnershipDrivenDocuments,
+    ownershipDrivenDocuments,
+    requiredDocuments: mergeSellerRequiredDocuments(baselineDocuments, ownershipDrivenDocuments),
+    ownershipCapture,
+    ownershipProfile,
+    ownershipDrivenState: ownershipCapture.captured ? 'ready_for_generation' : 'pending_capture',
+  }
+}
+
 export function getSellerRequiredDocuments(listing = {}, formData = {}) {
   const resolvedFormData = isPlainObject(formData) && Object.keys(formData).length
     ? formData
     : getSellerOnboardingFormData(listing)
   const persisted = filterStalePersistedRequirements(listing?.documentRequirements, listing, resolvedFormData)
+  if (isKingstonsSellerDocumentContext(listing)) {
+    return buildKingstonsSellerDocumentRequirementPack(listing, resolvedFormData).requiredDocuments
+  }
   const hasOnboardingFacts = resolvedFormData && typeof resolvedFormData === 'object' && Object.keys(resolvedFormData).length > 0
   try {
     const requirementListing = coerceSellerDocumentLifecycle(listing, resolvedFormData)
@@ -343,6 +1100,9 @@ export function getExpectedSellerDocumentRequirements(listing = {}, formData = {
   const resolvedFormData = isPlainObject(formData) && Object.keys(formData).length
     ? formData
     : getSellerOnboardingFormData(listing)
+  if (isKingstonsSellerDocumentContext(listing)) {
+    return buildKingstonsSellerDocumentRequirementPack(listing, resolvedFormData).requiredDocuments
+  }
   const requirementListing = coerceSellerDocumentLifecycle(listing, resolvedFormData)
   try {
     return mergeSellerRequiredDocuments(generateSellerDocumentRequirements({
@@ -747,6 +1507,9 @@ const SELLER_DOCUMENT_MATCH_ALIASES = {
   title_deed_reference: ['title_deed_reference', 'title_deed_copy', 'title_deed', 'deed'],
   title_deed_copy: ['title_deed_reference', 'title_deed_copy', 'title_deed', 'deed'],
   rates_account: ['rates_account', 'rates'],
+  valuation_document: ['valuation_document', 'formal_valuation', 'formal_valuation_document', 'valuation'],
+  signed_defect_form: ['signed_defect_form', 'defects_disclosure', 'defects_disclosure_form', 'defect_form', 'property_condition_disclosure', 'condition_disclosure', 'disclosure', 'defects'],
+  signed_fica_form: ['signed_fica_form', 'seller_fica_pack', 'fica_form', 'fica_pack', 'fica'],
   property_condition_disclosure: ['property_condition_disclosure', 'condition_disclosure', 'disclosure', 'defects'],
   gas_compliance_certificate: ['gas_compliance_certificate', 'gas_compliance', 'gas_certificate', 'gas_coc', 'gas'],
   solar_compliance_documents: ['solar_compliance_documents', 'solar_compliance', 'solar'],
@@ -874,9 +1637,13 @@ function normalizeRequirementWhyNeeded(requirement = {}, document = {}) {
 
 function getSellerDocumentCategoryKey({ requirement = {}, document = {} } = {}) {
   const group = normalizeKey(requirement?.requirement_group || requirement?.group)
+  const lane = normalizeKey(requirement?.requirementLane || requirement?.requirement_lane || document?.requirementLane || document?.requirement_lane)
+  const section = normalizeKey(requirement?.documentRequirementSection || requirement?.document_requirement_section || document?.documentRequirementSection || document?.document_requirement_section)
   const category = normalizeKey(document?.category || document?.document_category || requirement?.category)
   const signal = normalizeKey([
     group,
+    lane,
+    section,
     category,
     requirement?.key,
     requirement?.requirement_key,
@@ -888,17 +1655,33 @@ function getSellerDocumentCategoryKey({ requirement = {}, document = {} } = {}) 
 
   if (group === 'additional' || category === 'additional_requests' || signal.includes('additional_request')) return 'additional'
   if (
+    group === 'legal' ||
+    category === 'legal' ||
+    group === 'authority_documents' ||
+    section === 'authority_documents' ||
     group === 'mandate' ||
     category === 'mandate' ||
     category === 'mandate_signature' ||
-    ['signed_mandate', 'property_condition_disclosure'].some((key) => sellerDocumentKeysOverlap(signal, key)) ||
+    ['signed_mandate', 'signed_defect_form', 'signed_fica_form', 'property_condition_disclosure'].some((key) => sellerDocumentKeysOverlap(signal, key)) ||
     signal.includes('offer_to_purchase') ||
     signal.includes('sale_agreement') ||
     signal.includes('seller_instruction')
   ) {
     return 'sales'
   }
-  if (['seller_identity', 'marital', 'company', 'trust', 'deceased_estate', 'power_of_attorney', 'fica'].includes(group)) return 'fica'
+  if (
+    lane === 'ownership_driven' ||
+    section === 'seller_identity_fica' ||
+    ['seller_identity', 'seller_identity_fica', 'marital', 'company', 'trust', 'deceased_estate', 'power_of_attorney', 'fica'].includes(group) ||
+    category === 'seller' ||
+    signal.includes('owner_fica') ||
+    signal.includes('director_fica') ||
+    signal.includes('trustee_fica') ||
+    signal.includes('member_fica') ||
+    signal.includes('spouse_fica')
+  ) {
+    return 'fica'
+  }
   return 'property'
 }
 
@@ -958,6 +1741,18 @@ function buildRequirementRow(requirement = {}, document = null, index = 0) {
   const title = normalizeRequirementTitle(requirement, document || {})
   const status = resolveRequirementStatus(requirement, document)
   const url = resolveDocumentUrl(document || {})
+  const requirementLane = normalizeKey(firstPresent(
+    requirement?.requirementLane,
+    requirement?.requirement_lane,
+    requirement?.documentRequirementLane,
+    requirement?.document_requirement_lane,
+    requirement?.lane,
+  ))
+  const documentRequirementSection = normalizeKey(firstPresent(
+    requirement?.documentRequirementSection,
+    requirement?.document_requirement_section,
+    requirement?.section,
+  ))
   return {
     id: normalizeText(firstPresent(requirement?.id, requirement?.requirementId, requirement?.requirement_id, document?.id)) || `seller-requirement-${index}`,
     requirementId: normalizeText(firstPresent(requirement?.id, requirement?.requirementId, requirement?.requirement_id, '')),
@@ -979,6 +1774,10 @@ function buildRequirementRow(requirement = {}, document = null, index = 0) {
     rejectionReason: normalizeText(document?.rejectionReason || document?.rejected_reason || document?.reason),
     requestedBy: normalizeRequestedBy(requirement, document || {}),
     uploadedBy: normalizeUploadedBy(document || {}),
+    requirementLane,
+    requirement_lane: requirementLane,
+    documentRequirementSection,
+    document_requirement_section: documentRequirementSection,
     original: {
       requirement,
       document: document || null,
@@ -1320,6 +2119,10 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
     packetVersionId: normalizeText(document?.packetVersionId || document?.packet_version_id || document?.versionId || document?.version_id),
     requestedBy: row?.requestedBy || normalizeRequestedBy(requirement || {}, document || {}),
     uploadedBy: row?.uploadedBy || normalizeUploadedBy(document || {}),
+    requirementLane: row?.requirementLane || row?.requirement_lane || '',
+    requirement_lane: row?.requirement_lane || row?.requirementLane || '',
+    documentRequirementSection: row?.documentRequirementSection || row?.document_requirement_section || '',
+    document_requirement_section: row?.document_requirement_section || row?.documentRequirementSection || '',
     uploadedAt: row?.uploadedAt || normalizeDateValue(document?.uploadedAt, document?.uploaded_at, document?.createdAt, document?.created_at),
     reviewedAt: row?.reviewedAt || normalizeDateValue(document?.reviewedAt, document?.reviewed_at, document?.updatedAt, document?.updated_at),
     rejectionReason: row?.rejectionReason || normalizeText(document?.rejectionReason || document?.rejected_reason || document?.reason),
@@ -1387,12 +2190,16 @@ export function buildSellerDocumentSourceOfTruth({
     : Array.isArray(listing?.documents)
       ? listing.documents
       : []
+  const kingstonsSellerPackDocuments = isKingstonsSellerDocumentContext(listing)
+    ? buildKingstonsSellerPackUploadedDocuments(getKingstonsSellerPackRecord(listing))
+    : []
   const signedMandateDocument = buildSellerSignedMandateDocumentFromPacket(
     mandatePacket || listing?.mandatePacket || listing?.mandate_packet || null,
   )
   const propertyDisclosureDocument = buildSellerPropertyDisclosureDocumentFromFormData(resolvedFormData, listing)
   const mergedDocuments = dedupeSellerDocuments([
     ...baseDocuments,
+    ...kingstonsSellerPackDocuments,
     ...(signedMandateDocument ? [signedMandateDocument] : []),
     ...(propertyDisclosureDocument ? [propertyDisclosureDocument] : []),
   ])
@@ -1400,6 +2207,9 @@ export function buildSellerDocumentSourceOfTruth({
     ...listing,
     documents: mergedDocuments,
   }
+  const kingstonsRequirementPack = isKingstonsSellerDocumentContext(sourceListing)
+    ? buildKingstonsSellerDocumentRequirementPack(sourceListing, resolvedFormData)
+    : null
   const rows = buildSellerDocumentRequirementRows({
     listing: sourceListing,
     documents: [],
@@ -1417,5 +2227,6 @@ export function buildSellerDocumentSourceOfTruth({
     },
     rows,
     summary: buildSellerDocumentSourceSummary(rows),
+    requirementPack: kingstonsRequirementPack,
   }
 }

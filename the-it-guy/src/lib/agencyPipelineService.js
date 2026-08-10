@@ -34,6 +34,11 @@ import {
 } from './buyerLifecycleService'
 import { inferLeadCategoryFromRecord, normalizeLeadCategory } from './leadCategory'
 import { resolveLeadLifecyclePresentation } from '../services/leadLifecyclePresentationService'
+import {
+  getBuyerProcessDefinition,
+  normalizeBuyerProcessStageKey,
+} from '../services/buyerProcessDefinitionService'
+import { migrateBuyerProcessLeadRecord } from '../services/buyerProcessMigrationService'
 
 const STORAGE_PREFIX = 'itg:agency-crm:v1'
 const CRM_UPDATED_EVENT = 'itg:agency-crm-updated'
@@ -45,7 +50,11 @@ const APPOINTMENTS_DEMO_FALLBACK_REASON = {
 
 export const LEAD_DIRECTIONS = ['Inbound', 'Outbound']
 export const LEAD_CATEGORIES = ['buyer', 'seller', 'other']
+const BUYER_PROCESS_DEFINITION = getBuyerProcessDefinition()
+const BUYER_PROCESS_LEAD_STAGES = BUYER_PROCESS_DEFINITION.stages.map((stage) => stage.label)
+const ACTIVE_BUYER_PROCESS_STAGE_KEYS = new Set(BUYER_PROCESS_DEFINITION.activeStageKeys)
 export const LEAD_STAGES = [
+  ...BUYER_PROCESS_LEAD_STAGES,
   ...BUYER_LEAD_STAGES,
   'Lead',
   'Contacted',
@@ -228,6 +237,11 @@ function normalizeText(value) {
 
 function normalizeLowerText(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function normalizeKnownBuyerProcessStageKey(value = '') {
+  if (!normalizeText(value)) return ''
+  return normalizeBuyerProcessStageKey(value, '')
 }
 
 function isUuidLike(value) {
@@ -1057,7 +1071,7 @@ function normalizeLeadRecord(lead = {}, organisationId) {
               : {},
         }
       : null
-  return {
+  const normalizedLead = {
     leadId: normalizeText(lead.leadId),
     organisationId: normalizeText(lead.organisationId || organisationId) || null,
     branchId: normalizeText(lead.branchId || lead.branch_id),
@@ -1111,6 +1125,7 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     convertedDealId: normalizeText(lead.convertedDealId) || null,
     convertedTransactionId: normalizeText(lead.convertedTransactionId) || normalizeText(lead.convertedDealId) || null,
   }
+  return migrateBuyerProcessLeadRecord(normalizedLead)
 }
 
 export function getAgencyPipelineSnapshot(organisationId) {
@@ -3713,9 +3728,11 @@ export function buildPipelineMetrics({
     return Number.isFinite(value) && value >= startOfWeek.getTime() && value < endOfWeek.getTime()
   }).length
 
-  const activeOpportunities = leads.filter((lead) =>
-    !['Lost', 'Deal Created', 'Converted to Transaction', 'Nurture / Follow-up Later'].includes(normalizeLabel(lead?.stage)),
-  ).length
+  const activeOpportunities = leads.filter((lead) => {
+    const buyerStageKey = normalizeKnownBuyerProcessStageKey(lead?.stage || lead?.status)
+    if (buyerStageKey) return ACTIVE_BUYER_PROCESS_STAGE_KEYS.has(buyerStageKey)
+    return !['Lost', 'Deal Created', 'Converted to Transaction', 'Nurture / Follow-up Later'].includes(normalizeLabel(lead?.stage))
+  }).length
 
   const dealsCreated = deals.length
   const pipelineValue = leads.reduce((sum, lead) => sum + (Number(lead?.estimatedValue || lead?.budget || 0) || 0), 0)
@@ -3739,6 +3756,16 @@ export function buildPrincipalReporting({
 } = {}) {
   const leadSource = new Map()
   const activityByAgent = new Map()
+  const buyerStages = new Map(
+    BUYER_PROCESS_DEFINITION.stages.map((stage) => [
+      stage.key,
+      {
+        key: stage.key,
+        label: stage.label,
+        count: 0,
+      },
+    ]),
+  )
   const conversion = {
     totalLeads: leads.length,
     contacted: 0,
@@ -3752,6 +3779,9 @@ export function buildPrincipalReporting({
     leadSource.set(source, (leadSource.get(source) || 0) + 1)
 
     const lifecycle = resolveLeadLifecyclePresentation(lead)
+    if (inferLeadCategoryFromRecord(lead, 'buyer') === 'buyer' && buyerStages.has(lifecycle.key)) {
+      buyerStages.get(lifecycle.key).count += 1
+    }
     if (lifecycle.reporting.contacted) {
       conversion.contacted += 1
     }
@@ -3813,6 +3843,7 @@ export function buildPrincipalReporting({
       })
       .sort((a, b) => b.activitiesLogged - a.activitiesLogged),
     conversion,
+    buyerStageRows: Array.from(buyerStages.values()),
     appointmentStatusRows: APPOINTMENT_STATUSES.map((status) => ({
       status,
       count: appointments.filter((row) => normalizeLabel(row?.status) === status).length,

@@ -4,6 +4,11 @@ import {
   getResidentialOfferStage,
   normalizeResidentialOfferStageKey,
 } from '../core/offers/residentialOfferLifecycle.js'
+import {
+  BUYER_PROCESS_STAGE_KEYS,
+  getBuyerProcessStage,
+  normalizeBuyerProcessStageKey,
+} from './buyerProcessDefinitionService.js'
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -87,11 +92,18 @@ function resolveLeadCategory(lead = {}) {
   return inferLeadCategoryFromRecord(lead, 'buyer')
 }
 
+function normalizeKnownBuyerProcessStageKey(value = '') {
+  if (!normalizeText(value)) return ''
+  return normalizeBuyerProcessStageKey(value, '')
+}
+
 function resolveFunnelStage(lead = {}) {
   if (resolveLeadCategory(lead) === 'seller') {
     const sellerStageKey = resolveSellerLifecycleStageKey(lead, lead?.stage || lead?.status)
     if (sellerStageKey) return SELLER_LIFECYCLE_STAGES[sellerStageKey] || 'New Lead'
   }
+  const buyerStageKey = normalizeKnownBuyerProcessStageKey(lead?.stage || lead?.status)
+  if (buyerStageKey) return getBuyerProcessStage(buyerStageKey).label
   const normalizedStage = normalizeLeadLifecycleStageKey(lead?.stage || lead?.status)
   if (normalizedStage === RESIDENTIAL_OFFER_STAGE_KEYS.lead) return 'Lead'
   if (normalizedStage === RESIDENTIAL_OFFER_STAGE_KEYS.offerOnboardingLinkSent) return 'Offer Link Sent'
@@ -119,6 +131,22 @@ function resolveFunnelStage(lead = {}) {
 
 function resolveColumnId(lead = {}, { linkedDeal = null } = {}) {
   const isSellerLead = resolveLeadCategory(lead) === 'seller'
+  if (!isSellerLead) {
+    const buyerStageKey = normalizeKnownBuyerProcessStageKey(lead?.stage || lead?.status)
+    if (buyerStageKey) {
+      if (
+        linkedDeal &&
+        ![
+          BUYER_PROCESS_STAGE_KEYS.lost,
+          BUYER_PROCESS_STAGE_KEYS.closedWon,
+          BUYER_PROCESS_STAGE_KEYS.closedLost,
+        ].includes(buyerStageKey)
+      ) {
+        return BUYER_PROCESS_STAGE_KEYS.transaction
+      }
+      return buyerStageKey
+    }
+  }
   const sellerStageKey = isSellerLead ? resolveSellerLifecycleStageKey(lead, lead?.stage || lead?.status) : ''
   const stage = sellerStageKey || normalizeLeadLifecycleStageKey(lead?.stage || lead?.status)
   const status = normalizeLeadLifecycleStageKey(lead?.status)
@@ -208,7 +236,49 @@ function resolveStatusMeta(lead = {}, funnelStage = '') {
   return { label: 'Cold', score: 2, className: 'border-[#d4e5fb] bg-[#f1f7ff] text-[#2d659a]', dotClassName: 'bg-[#4f82b8]' }
 }
 
-function resolveReportingFlags(label = '') {
+function resolveReportingFlags(label = '', { category = 'buyer' } = {}) {
+  const buyerStageKey = category !== 'seller' ? normalizeKnownBuyerProcessStageKey(label) : ''
+  if (buyerStageKey) {
+    const contactedStages = new Set([
+      BUYER_PROCESS_STAGE_KEYS.qualification,
+      BUYER_PROCESS_STAGE_KEYS.viewing,
+      BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
+      BUYER_PROCESS_STAGE_KEYS.offerReceived,
+      BUYER_PROCESS_STAGE_KEYS.transaction,
+      BUYER_PROCESS_STAGE_KEYS.onHold,
+      BUYER_PROCESS_STAGE_KEYS.closedWon,
+      BUYER_PROCESS_STAGE_KEYS.closedLost,
+    ])
+    const qualifiedStages = new Set([
+      BUYER_PROCESS_STAGE_KEYS.qualification,
+      BUYER_PROCESS_STAGE_KEYS.viewing,
+      BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
+      BUYER_PROCESS_STAGE_KEYS.offerReceived,
+      BUYER_PROCESS_STAGE_KEYS.transaction,
+      BUYER_PROCESS_STAGE_KEYS.closedWon,
+      BUYER_PROCESS_STAGE_KEYS.closedLost,
+    ])
+    const appointmentStages = new Set([
+      BUYER_PROCESS_STAGE_KEYS.viewing,
+      BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
+      BUYER_PROCESS_STAGE_KEYS.offerReceived,
+      BUYER_PROCESS_STAGE_KEYS.transaction,
+      BUYER_PROCESS_STAGE_KEYS.closedWon,
+      BUYER_PROCESS_STAGE_KEYS.closedLost,
+    ])
+    const dealStages = new Set([
+      BUYER_PROCESS_STAGE_KEYS.transaction,
+      BUYER_PROCESS_STAGE_KEYS.closedWon,
+      BUYER_PROCESS_STAGE_KEYS.closedLost,
+    ])
+    return {
+      contacted: contactedStages.has(buyerStageKey),
+      qualified: qualifiedStages.has(buyerStageKey),
+      appointmentScheduled: appointmentStages.has(buyerStageKey),
+      dealCreated: dealStages.has(buyerStageKey),
+    }
+  }
+
   const stage = normalizeLeadLifecycleStageKey(label)
   const contactedStages = new Set([
     'contacted',
@@ -266,11 +336,13 @@ export function resolveLeadLifecyclePresentation(lead = {}, options = {}) {
   const rawStage = normalizeText(options?.stage || lead?.stage || lead?.status)
   const category = resolveLeadCategory(lead)
   const sellerStageKey = category === 'seller' ? resolveSellerLifecycleStageKey(lead, rawStage) : ''
-  const stageKey = sellerStageKey || normalizeLeadLifecycleStageKey(rawStage)
+  const buyerStageKey = category === 'seller' ? '' : normalizeKnownBuyerProcessStageKey(rawStage)
+  const stageKey = sellerStageKey || buyerStageKey || normalizeLeadLifecycleStageKey(rawStage)
   const funnelStage = resolveFunnelStage({ ...lead, stage: rawStage || lead?.stage, status: lead?.status })
-  const residentialStage = sellerStageKey ? null : getResidentialOfferStage(stageKey)
+  const buyerStage = buyerStageKey ? getBuyerProcessStage(buyerStageKey) : null
+  const residentialStage = sellerStageKey || buyerStage ? null : getResidentialOfferStage(stageKey)
   const sellerLabel = sellerStageKey ? SELLER_LIFECYCLE_STAGES[sellerStageKey] : ''
-  const label = sellerLabel || (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.lead
+  const label = sellerLabel || buyerStage?.label || (stageKey === RESIDENTIAL_OFFER_STAGE_KEYS.lead
     ? 'Lead'
     : normalizeText(options?.label || residentialStage?.label || rawStage || funnelStage || 'Lead') || titleCase(stageKey))
   const tone = resolveStageTone(label)
@@ -282,7 +354,7 @@ export function resolveLeadLifecyclePresentation(lead = {}, options = {}) {
     category,
     stageTone: tone,
     statusMeta: resolveStatusMeta(lead, funnelStage),
-    reporting: resolveReportingFlags(stageKey),
+    reporting: resolveReportingFlags(stageKey, { category }),
   }
 }
 

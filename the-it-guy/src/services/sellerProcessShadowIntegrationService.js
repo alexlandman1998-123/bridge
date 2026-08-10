@@ -69,7 +69,7 @@ function buildSellerLeadWorkspacePayload(bundle = {}) {
 
 function buildMandateFlowPayload(bundle = {}) {
   const surface = bundle.surface || {}
-  const packEvidenceKeys = ['mandate_signed', 'defects_form_signed', 'fica_pack_signed']
+  const packEvidenceKeys = ['mandate_signed', 'defects_form_signed', 'fica_pack_signed', 'seller_pack_readiness_complete']
   const missingEvidenceKeys = asArray(surface.missingEvidenceKeys).filter((key) => packEvidenceKeys.includes(key))
   return {
     ...baseEnvelope(bundle),

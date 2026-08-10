@@ -14,9 +14,9 @@ const buyerViewing = resolveLeadLifecyclePresentation({
   leadCategory: 'buyer',
   stage: 'Appointment Scheduled',
 })
-assert.equal(buyerViewing.label, 'Viewing Scheduled')
-assert.equal(buyerViewing.funnelStage, 'Viewing Scheduled')
-assert.equal(buyerViewing.columnId, 'viewing_contacted')
+assert.equal(buyerViewing.label, 'Viewing')
+assert.equal(buyerViewing.funnelStage, 'Viewing')
+assert.equal(buyerViewing.columnId, 'viewing')
 assert.equal(buyerViewing.stageTone.iconKey, 'calendar')
 assert.equal(buyerViewing.reporting.appointmentScheduled, true)
 
@@ -24,16 +24,16 @@ const offerLinkSent = resolveLeadLifecyclePresentation({
   leadCategory: 'buyer',
   stage: 'Offer Link Sent',
 })
-assert.equal(offerLinkSent.label, 'Offer + Onboarding Link Sent')
-assert.equal(offerLinkSent.funnelStage, 'Offer Link Sent')
-assert.equal(offerLinkSent.columnId, 'offer')
+assert.equal(offerLinkSent.label, 'Buyer onboarding sent')
+assert.equal(offerLinkSent.funnelStage, 'Buyer onboarding sent')
+assert.equal(offerLinkSent.columnId, 'buyer_onboarding_sent')
 
 const otpReady = resolveLeadLifecyclePresentation({
   leadCategory: 'buyer',
   stage: 'Ready to Generate OTP',
 })
-assert.equal(otpReady.columnId, 'offer')
-assert.equal(otpReady.funnelStage, 'OTP Ready')
+assert.equal(otpReady.columnId, 'offer_received')
+assert.equal(otpReady.funnelStage, 'Offer received')
 
 const sellerMandate = resolveLeadLifecyclePresentation({
   leadCategory: 'seller',
@@ -66,7 +66,7 @@ const converted = resolveLeadLifecyclePresentation({
   leadCategory: 'buyer',
   stage: 'Converted to Transaction',
 })
-assert.equal(converted.columnId, 'deal_otp')
+assert.equal(converted.columnId, 'transaction')
 assert.equal(converted.reporting.dealCreated, true)
 
 const agencyPipelineSource = await fs.readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')

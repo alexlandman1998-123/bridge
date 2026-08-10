@@ -13,6 +13,7 @@ import { isUnsafeFallbackAllowed } from './envValidation'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from './supabaseClient'
 import { assertResolvedWorkspaceContext } from '../services/workspaceResolutionService'
 import { inferLeadCategoryFromRecord, normalizeLeadCategory } from './leadCategory'
+import { migrateBuyerProcessLeadRecord } from '../services/buyerProcessMigrationService'
 
 const LEGACY_LEAD_SELECT_FIELDS =
   'lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at'
@@ -167,7 +168,7 @@ function mapSupabaseContact(row = {}) {
 }
 
 function mapSupabaseLead(row = {}) {
-  return {
+  const lead = {
     leadId: normalizeText(row?.lead_id),
     organisationId: normalizeText(row?.organisation_id),
     branchId: normalizeText(row?.branch_id),
@@ -221,6 +222,7 @@ function mapSupabaseLead(row = {}) {
     convertedDealId: normalizeText(row?.converted_transaction_id) || null,
     convertedTransactionId: normalizeText(row?.converted_transaction_id) || null,
   }
+  return migrateBuyerProcessLeadRecord(lead)
 }
 
 function mapSupabaseLeadActivity(row = {}) {

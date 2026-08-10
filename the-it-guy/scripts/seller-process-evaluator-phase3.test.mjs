@@ -147,6 +147,10 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
     lead: {
       stage: 'Contacted',
       rawEnquiryPayload: {
+        kingstonsSellerPack: {
+          sellerType: 'natural',
+          legalPath: { sellerType: 'natural' },
+        },
         kingstonsListingTerms: {
           commissionConfirmed: true,
           transferAttorneyNominated: true,
@@ -161,8 +165,9 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
     ],
     documents: [
       { documentType: 'valuation_document', status: 'uploaded', fileUrl: 'https://example.test/valuation.pdf' },
-      { documentType: 'defects_disclosure_form', status: 'signed', file_path: 'seller/defects.pdf' },
-      { documentType: 'seller_fica_pack', status: 'uploaded', file_path: 'seller/fica.pdf' },
+      { key: 'signed_mandate', documentType: 'signed_mandate', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'seller/mandate.pdf', sellerType: 'natural' },
+      { key: 'signed_defect_form', documentType: 'defects_disclosure_form', source: 'kingstons_seller_pack', status: 'signed', file_path: 'seller/defects.pdf', sellerType: 'natural' },
+      { key: 'signed_fica_form', documentType: 'seller_fica_pack', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'seller/fica.pdf', sellerType: 'natural' },
     ],
     mandatePacketStatus: {
       packet: { id: 'packet-kingstons', status: 'completed' },
@@ -194,6 +199,14 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
 {
   const evaluation = evaluateSellerProcess({
     sellerProcessProfile: 'kingstons',
+    lead: {
+      rawEnquiryPayload: {
+        kingstonsSellerPack: {
+          sellerType: 'natural',
+          legalPath: { sellerType: 'natural' },
+        },
+      },
+    },
     activities: [{ type: 'email', status: 'completed' }],
     appointments: [
       { type: 'seller_valuation', status: 'completed' },
@@ -201,9 +214,9 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
     ],
     documents: [
       { type: 'valuation_document', status: 'completed' },
-      { type: 'manual_mandate_evidence', status: 'uploaded', storage_path: 'manual/mandate.pdf' },
-      { type: 'defects_form', status: 'uploaded', storage_path: 'manual/defects.pdf' },
-      { type: 'fica_pack', status: 'uploaded', storage_path: 'manual/fica.pdf' },
+      { key: 'signed_mandate', type: 'manual_mandate_evidence', source: 'kingstons_seller_pack', status: 'uploaded', storage_path: 'manual/mandate.pdf', sellerType: 'natural' },
+      { key: 'signed_defect_form', type: 'defects_form', source: 'kingstons_seller_pack', status: 'uploaded', storage_path: 'manual/defects.pdf', sellerType: 'natural' },
+      { key: 'signed_fica_form', type: 'fica_pack', source: 'kingstons_seller_pack', status: 'uploaded', storage_path: 'manual/fica.pdf', sellerType: 'natural' },
     ],
     listing: {
       listingId: 'listing-manual-evidence',

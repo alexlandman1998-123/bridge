@@ -32,6 +32,10 @@ function toArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : []
 }
 
+function toRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
 function requirementKey(requirement = {}) {
   return normalizeKey(
     requirement.requirement_key ||
@@ -103,6 +107,19 @@ function resolveRequestPriority(requirement = {}) {
   }
   if (requirementKey(requirement) === 'signed_mandate') return 'blocker'
   return 'required'
+}
+
+function resolveRequirementPortalRequest(requirement = {}) {
+  const generatedFrom = toRecord(requirement.generated_from || requirement.generatedFrom)
+  const requestMetadata = toRecord(requirement.request_metadata || requirement.requestMetadata)
+  return toRecord(
+    requirement.portalRequest ||
+      requirement.portal_request ||
+      generatedFrom.portalRequest ||
+      generatedFrom.portal_request ||
+      requestMetadata.portalRequest ||
+      requestMetadata.portal_request,
+  )
 }
 
 export function addSellerRequestBusinessDays(dateInput, businessDays = 5) {
@@ -177,27 +194,36 @@ export function buildSellerDocumentRequestPlan({
       continue
     }
 
+    const portalRequest = resolveRequirementPortalRequest(requirement)
+    const portalDeliveryChannels = toArray(
+      portalRequest.requestDeliveryChannels ||
+        portalRequest.request_delivery_channels ||
+        portalRequest.deliveryChannels ||
+        portalRequest.delivery_channels,
+    ).map(normalizeKey).filter(Boolean)
     const dedupeKey = buildSellerDocumentRequestDedupeKey(listingId, key, requestRevision)
     const existingDedupeKey = normalizeText(requirement.request_dedupe_key || requirement.requestDedupeKey)
+    const requestDedupeKey = normalizeText(portalRequest.requestDedupeKey || portalRequest.request_dedupe_key) || dedupeKey
     const request = {
       requirementId: requirementId(requirement),
       requirementKey: key,
       requirementName: normalizeText(requirement.requirement_name || requirement.name || requirement.label || key),
-      requestedFromRole: 'seller',
-      requestStage: resolveRequestStage(requirement),
-      requestPriority: isReupload ? 'blocker' : resolveRequestPriority(requirement),
+      requestedFromRole: normalizeText(portalRequest.requestedFromRole || portalRequest.requested_from_role) || 'seller',
+      requestStage: normalizeText(portalRequest.requestStage || portalRequest.request_stage) || resolveRequestStage(requirement),
+      requestPriority: isReupload ? 'blocker' : normalizeText(portalRequest.requestPriority || portalRequest.request_priority) || resolveRequestPriority(requirement),
       requestDueDate: normalizeText(requirement.request_due_date || requirement.requestDueDate) || dueDate,
-      requestDeliveryChannels: ['in_app', ...(sellerEmail ? ['email'] : [])],
-      requestDedupeKey: dedupeKey,
-      requestSource: 'seller_document_request_orchestrator',
+      requestDeliveryChannels: portalDeliveryChannels.length ? portalDeliveryChannels : ['in_app', ...(sellerEmail ? ['email'] : [])],
+      requestDedupeKey,
+      requestSource: normalizeText(portalRequest.requestSource || portalRequest.request_source) || 'seller_document_request_orchestrator',
       requestedAt: normalizeText(requirement.requested_at || requirement.requestedAt) || requestedAt,
       requestRevision,
       reason: isReupload ? 'rejected_document_reupload_required' : reason,
       sellerEmail: sellerEmail || null,
       isReupload,
+      portalRequest,
     }
 
-    if ((status === 'requested' || status === 'rejected') && existingDedupeKey === dedupeKey) {
+    if ((status === 'requested' || status === 'rejected') && existingDedupeKey === requestDedupeKey) {
       existing.push({ requirement, ...request })
     } else {
       issued.push({ requirement, ...request })
@@ -235,6 +261,7 @@ function requestUpdatePayload(item = {}) {
       seller_email: item.sellerEmail,
       orchestration_version: 'seller_document_request_orchestration_v1',
       issued_automatically: true,
+      ...(Object.keys(toRecord(item.portalRequest)).length ? { portalRequest: item.portalRequest } : {}),
     },
   }
 }
@@ -277,6 +304,7 @@ export async function issueSellerDocumentRequests({
               channels: item.requestDeliveryChannels,
               requestedAt: item.requestedAt,
               reason: item.reason,
+              ...(Object.keys(toRecord(item.portalRequest)).length ? { portalRequest: item.portalRequest } : {}),
             },
           },
         })

@@ -2,11 +2,12 @@ import { createAgencyCrmLeadActivity, createAgencyCrmLeadTask, updateAgencyCrmLe
 import { refreshBridgeIntelligenceForLifecycleEvent } from './bridgeIntelligenceEngine'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import {
-  RESIDENTIAL_OFFER_STAGE_TRANSITIONS,
-  RESIDENTIAL_OFFER_STAGES,
-  getResidentialOfferStage,
-  normalizeResidentialOfferStageKey,
-} from '../core/offers/residentialOfferLifecycle'
+  BUYER_PROCESS_STAGE_KEYS,
+  getBuyerProcessAllowedNextStageKeys,
+  getBuyerProcessDefinition,
+  getBuyerProcessStage,
+  normalizeBuyerProcessStageKey,
+} from '../services/buyerProcessDefinitionService'
 import { canAdvanceWorkflowStage } from '../services/documents/canonicalWorkflowGateService'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -14,8 +15,10 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 export const WORKFLOW_EVENTS = {
   VIEWING_CREATED: 'viewing_created',
   VIEWING_COMPLETED: 'viewing_completed',
+  BUYER_ONBOARDING_LINK_SENT: 'buyer_onboarding_link_sent',
   OFFER_ONBOARDING_LINK_SENT: 'offer_onboarding_link_sent',
   OFFER_CREATED: 'offer_created',
+  OFFER_DOCUMENT_UPLOADED: 'offer_document_uploaded',
   OFFER_SUBMITTED: 'offer_submitted',
   AGENT_CONDITION_REVIEW_REQUIRED: 'agent_condition_review_required',
   OTP_READY_TO_GENERATE: 'otp_ready_to_generate',
@@ -28,51 +31,30 @@ export const WORKFLOW_EVENTS = {
   MANUAL_STAGE_TRANSITION: 'manual_stage_transition',
 }
 
-export const BUYER_WORKFLOW_STAGES = [
-  ...RESIDENTIAL_OFFER_STAGES.map((stage) => stage.label),
-  'Finance',
-  'Transfer',
-  'Registered',
-]
+const BUYER_PROCESS_DEFINITION = getBuyerProcessDefinition({})
+const BUYER_STAGE_LABEL_BY_KEY = Object.freeze(Object.fromEntries(
+  BUYER_PROCESS_DEFINITION.stages.map((stage) => [stage.key, stage.label]),
+))
 
-const BUYER_STAGE_TRANSITIONS = {
-  ...Object.fromEntries(
-    Object.entries(RESIDENTIAL_OFFER_STAGE_TRANSITIONS).map(([fromKey, toKeys]) => [
-      getResidentialOfferStage(fromKey).label,
-      toKeys.map((toKey) => getResidentialOfferStage(toKey).label),
-    ]),
-  ),
-  'Transaction Live': ['Finance'],
-  Finance: ['Transfer', 'Lost'],
-  Transfer: ['Registered', 'Lost'],
-  Registered: [],
-  Lost: [],
+function getBuyerStageLabel(stageKey = BUYER_PROCESS_STAGE_KEYS.captured) {
+  return BUYER_STAGE_LABEL_BY_KEY[stageKey] || BUYER_STAGE_LABEL_BY_KEY[BUYER_PROCESS_STAGE_KEYS.captured]
 }
 
+export const BUYER_WORKFLOW_STAGES = BUYER_PROCESS_DEFINITION.stages.map((stage) => stage.label)
+
 const STAGE_REQUIREMENTS = {
-  'Viewing Completed': [
-    { type: 'appointment', key: 'completed_viewing', message: 'A completed viewing is required before moving to Viewing Completed.' },
+  [getBuyerStageLabel(BUYER_PROCESS_STAGE_KEYS.offerReceived)]: [
+    {
+      type: 'document',
+      key: 'offer_document_uploaded',
+      message: 'Upload the buyer offer document before moving to Offer received.',
+      documentTypes: ['buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer'],
+      acceptedStatuses: ['uploaded', 'under_review', 'approved', 'accepted', 'completed'],
+      legacyOfferStatuses: ['submitted', 'agent_review', 'changes_requested', 'sent_to_seller', 'seller_viewed', 'countered', 'accepted', 'converted_to_transaction'],
+    },
   ],
-  'Offer Submitted': [
-    { type: 'offer', key: 'submitted_offer', message: 'A submitted offer is required before moving to Offer Submitted.' },
-  ],
-  'Agent Review Required': [
-    { type: 'offer', key: 'submitted_offer', message: 'A submitted offer is required before agent condition review.' },
-  ],
-  'Ready to Generate OTP': [
-    { type: 'offer', key: 'submitted_offer', message: 'A submitted offer is required before OTP generation readiness.' },
-  ],
-  'Signed by All Parties': [
-    { type: 'offer', key: 'accepted_offer', message: 'A seller-accepted, all-party signed OTP is required before the lead becomes a transaction.' },
-  ],
-  'Transaction Live': [
-    { type: 'transaction', key: 'transaction_created', message: 'A transaction created from the signed OTP is required before Transaction Live.' },
-  ],
-  Finance: [
-    { type: 'transaction', key: 'transaction_created', message: 'A transaction created from an accepted offer is required before Finance.' },
-  ],
-  Registered: [
-    { type: 'transfer', key: 'transfer_registered', message: 'The transfer lane must be registered before closing the buyer workflow.' },
+  [getBuyerStageLabel(BUYER_PROCESS_STAGE_KEYS.transaction)]: [
+    { type: 'transaction', key: 'transaction_created', message: 'Create the transaction from the received offer before moving to Transaction.' },
   ],
 }
 
@@ -85,30 +67,46 @@ const AUTOMATION_TASKS = {
       priority: 'High',
     },
     {
-      title: 'Send Offer + Onboarding link',
-      description: 'If the buyer is interested, send one secure link for buyer profile, finance readiness, and residential offer terms.',
+      title: 'Send buyer onboarding link',
+      description: 'If the buyer is interested, send buyer onboarding and capture the next step.',
+      dueDays: 1,
+      priority: 'Medium',
+    },
+  ],
+  [WORKFLOW_EVENTS.BUYER_ONBOARDING_LINK_SENT]: [
+    {
+      title: 'Monitor buyer onboarding link',
+      description: 'Confirm the buyer completes onboarding or needs assisted capture.',
       dueDays: 1,
       priority: 'Medium',
     },
   ],
   [WORKFLOW_EVENTS.OFFER_ONBOARDING_LINK_SENT]: [
     {
-      title: 'Monitor Offer + Onboarding link',
-      description: 'Confirm the buyer completes profile, finance readiness, and offer terms from the secure link.',
+      title: 'Monitor buyer onboarding link',
+      description: 'Confirm the buyer completes onboarding or needs assisted capture.',
       dueDays: 1,
       priority: 'Medium',
     },
   ],
+  [WORKFLOW_EVENTS.OFFER_DOCUMENT_UPLOADED]: [
+    {
+      title: 'Review uploaded offer',
+      description: 'Check the uploaded buyer offer document and confirm whether it is ready for transaction conversion.',
+      dueDays: 1,
+      priority: 'High',
+    },
+  ],
   [WORKFLOW_EVENTS.OFFER_SUBMITTED]: [
     {
-      title: 'Review buyer conditions',
-      description: 'Check only buyer-supplied suspensive/special conditions, fixtures requests, occupation requests, and other free-text terms before OTP generation.',
+      title: 'Review uploaded offer',
+      description: 'Check the buyer offer document and confirm whether it is ready for transaction conversion.',
       dueDays: 1,
       priority: 'High',
     },
     {
-      title: 'Prepare OTP generation readiness',
-      description: 'Confirm buyer profile, finance route, offer terms, seller/property facts, and approved condition wording are ready for OTP generation.',
+      title: 'Prepare transaction conversion',
+      description: 'Confirm buyer onboarding, offer document, seller/property facts, and transaction handoff details.',
       dueDays: 1,
       priority: 'High',
     },
@@ -157,7 +155,16 @@ const AUTOMATION_ALERTS = {
       alertType: 'offer_review_due',
       severity: 'warning',
       title: 'Offer review required',
-      message: 'A buyer offer has been submitted and needs agent review before seller routing.',
+      message: 'A buyer offer document has been received and needs review before transaction conversion.',
+      dueHours: 24,
+    },
+  ],
+  [WORKFLOW_EVENTS.OFFER_DOCUMENT_UPLOADED]: [
+    {
+      alertType: 'offer_review_due',
+      severity: 'warning',
+      title: 'Offer review required',
+      message: 'A buyer offer document has been uploaded and needs review before transaction conversion.',
       dueHours: 24,
     },
   ],
@@ -212,19 +219,14 @@ function isMissingColumnError(error) {
 }
 
 export function normalizeBuyerWorkflowStage(stage, fallback = 'New Lead') {
-  const normalized = normalizeText(stage)
-  if (!normalized || normalizeLower(normalized) === 'lead') return normalizeText(fallback) === 'New Lead' ? 'Lead' : fallback
-  const residentialKey = normalizeResidentialOfferStageKey(normalized, '')
-  if (residentialKey) return getResidentialOfferStage(residentialKey).label
-  return BUYER_WORKFLOW_STAGES.find((candidate) => normalizeLower(candidate) === normalizeLower(normalized)) || fallback
+  const fallbackKey = normalizeBuyerProcessStageKey(fallback, BUYER_PROCESS_STAGE_KEYS.captured)
+  const stageKey = normalizeBuyerProcessStageKey(stage, fallbackKey)
+  return getBuyerProcessStage(stageKey).label
 }
 
 export function isBuyerWorkflowStage(stage) {
   const normalized = normalizeText(stage)
-  return Boolean(normalized) && (
-    normalizeResidentialOfferStageKey(normalized, '') ||
-    BUYER_WORKFLOW_STAGES.some((candidate) => normalizeLower(candidate) === normalizeLower(normalized))
-  )
+  return Boolean(normalized) && Boolean(normalizeBuyerProcessStageKey(normalized, ''))
 }
 
 function resolveActorRole(actor = {}) {
@@ -259,7 +261,7 @@ async function evaluateRequirement({ organisationId = '', leadId = '', transacti
   const scopedTransactionId = toNullableUuid(transactionId)
 
   if (!scopedOrganisationId) {
-    return { ok: true, skipped: true, reason: 'workflow_requires_database_organisation' }
+    return { ok: true, skipped: true, reason: 'workflow_requires_database_organisation', requirement, stage }
   }
 
   if (requirement.type === 'appointment' && requirement.key === 'completed_viewing') {
@@ -293,6 +295,57 @@ async function evaluateRequirement({ organisationId = '', leadId = '', transacti
         .in('status', expectedStatuses)
     )
     return { ...result, requirement, stage }
+  }
+
+  if (requirement.type === 'document' && requirement.key === 'offer_document_uploaded') {
+    const documentTypes = Array.isArray(requirement.documentTypes) && requirement.documentTypes.length
+      ? requirement.documentTypes
+      : ['buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer']
+    const acceptedStatuses = Array.isArray(requirement.acceptedStatuses) && requirement.acceptedStatuses.length
+      ? requirement.acceptedStatuses
+      : ['uploaded', 'under_review', 'approved', 'accepted', 'completed']
+
+    const documentResults = []
+    if (scopedTransactionId) {
+      const documentResult = await queryExists('documents', (query) =>
+        query
+          .eq('organisation_id', scopedOrganisationId)
+          .eq('transaction_id', scopedTransactionId)
+          .in('document_type', documentTypes)
+          .in('status', acceptedStatuses)
+      )
+      documentResults.push({ ...documentResult, source: 'documents' })
+      if (documentResult.ok) return { ...documentResult, requirement, stage }
+    }
+
+    const legacyOfferStatuses = Array.isArray(requirement.legacyOfferStatuses) && requirement.legacyOfferStatuses.length
+      ? requirement.legacyOfferStatuses
+      : ['submitted', 'agent_review', 'changes_requested', 'sent_to_seller', 'seller_viewed', 'countered', 'accepted', 'converted_to_transaction']
+    const legacyOfferResult = await queryExists('offers', (query) =>
+      query
+        .eq('organisation_id', scopedOrganisationId)
+        .eq('buyer_lead_id', scopedLeadId)
+        .in('status', legacyOfferStatuses)
+    )
+    documentResults.push({ ...legacyOfferResult, source: 'offers_legacy_compatibility' })
+    if (legacyOfferResult.ok) {
+      return {
+        ...legacyOfferResult,
+        requirement,
+        stage,
+        compatibilityMode: 'legacy_offer_record',
+      }
+    }
+
+    const skipped = documentResults.length > 0 && documentResults.every((result) => result.skipped)
+    return {
+      ok: false,
+      skipped,
+      reason: skipped ? 'offer_document_evidence_unavailable' : 'offer_document_missing',
+      requirement,
+      stage,
+      evidenceResults: documentResults,
+    }
   }
 
   if (requirement.type === 'transaction' && requirement.key === 'transaction_created') {
@@ -391,6 +444,8 @@ export async function validateBuyerStageTransition({
   const scopedLeadId = normalizeText(leadId || lead?.leadId || lead?.lead_id)
   const currentStage = normalizeBuyerWorkflowStage(fromStage || lead?.stage || lead?.status)
   const nextStage = normalizeBuyerWorkflowStage(toStage)
+  const currentStageKey = normalizeBuyerProcessStageKey(currentStage)
+  const nextStageKey = normalizeBuyerProcessStageKey(nextStage)
   const overrideAllowed = canOverrideWorkflow(actor, options)
   const actorRole = resolveActorRole(actor)
 
@@ -400,8 +455,13 @@ export async function validateBuyerStageTransition({
     return { allowed: false, reason: 'This role cannot move buyer workflow stages.' }
   }
 
-  const allowedTargets = BUYER_STAGE_TRANSITIONS[currentStage] || []
-  if (!allowedTargets.includes(nextStage) && !overrideAllowed) {
+  const allowedTargetKeys = getBuyerProcessAllowedNextStageKeys(currentStageKey, {
+    organisationId,
+    lead,
+    organisationSettings: options.organisationSettings,
+  })
+  const allowedTargets = allowedTargetKeys.map((stageKey) => getBuyerProcessStage(stageKey).label)
+  if (!allowedTargetKeys.includes(nextStageKey) && !overrideAllowed) {
     await recordWorkflowAudit({
       organisationId,
       leadId: scopedLeadId,
@@ -410,12 +470,13 @@ export async function validateBuyerStageTransition({
       eventType: WORKFLOW_EVENTS.MANUAL_STAGE_TRANSITION,
       actor,
       allowed: false,
-      metadata: { reason: 'illegal_stage_transition', allowedTargets },
+      metadata: { reason: 'illegal_stage_transition', allowedTargets, allowedTargetKeys, fromStageKey: currentStageKey, toStageKey: nextStageKey },
     }).catch(() => null)
     return {
       allowed: false,
       reason: `${currentStage} cannot move directly to ${nextStage}. Complete the required workflow step first.`,
       allowedTargets,
+      allowedTargetKeys,
     }
   }
 
@@ -439,7 +500,7 @@ export async function validateBuyerStageTransition({
         eventType: WORKFLOW_EVENTS.MANUAL_STAGE_TRANSITION,
         actor,
         allowed: false,
-        metadata: { reason: 'blocking_requirement_failed', requirement },
+        metadata: { reason: 'blocking_requirement_failed', requirement, fromStageKey: currentStageKey, toStageKey: nextStageKey },
       }).catch(() => null)
       return { allowed: false, reason: requirement.message, requirements: requirementResults }
     }
@@ -494,6 +555,8 @@ export async function validateBuyerStageTransition({
     reason: null,
     fromStage: currentStage,
     toStage: nextStage,
+    fromStageKey: currentStageKey,
+    toStageKey: nextStageKey,
     override: overrideAllowed,
     requirements: requirementResults,
     canonicalGate,
@@ -795,12 +858,15 @@ export async function transitionBuyerLeadStage({
     metadata: {
       override: validation.override,
       requirements: validation.requirements || [],
+      fromStageKey: validation.fromStageKey,
+      toStageKey: validation.toStageKey,
     },
   }).catch(() => null)
 
   return {
     leadId: scopedLeadId,
     stage: nextStage,
+    stageKey: validation.toStageKey,
     validation,
   }
 }

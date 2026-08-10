@@ -46,9 +46,10 @@ const kingstonsStageKeys = [
 
 const kingstonsDocumentKeys = [
   'valuation_document',
-  'seller_mandate',
-  'defects_disclosure_form',
-  'seller_fica_pack',
+  'signed_mandate',
+  'signed_defect_form',
+  'signed_fica_form',
+  'seller_pack_readiness_complete',
 ]
 
 const kingstonsEvidenceKeys = [
@@ -59,6 +60,7 @@ const kingstonsEvidenceKeys = [
   'mandate_signed',
   'defects_form_signed',
   'fica_pack_signed',
+  'seller_pack_readiness_complete',
   'commission_terms_confirmed',
   'transfer_attorney_nominated',
   'listing_ready',
@@ -139,9 +141,9 @@ function assertSourceDoesNotConsumeDefinition(source, label) {
 
 {
   const definition = getSellerProcessDefinitionByProfile(KINGSTONS_SELLER_PROCESS_PROFILE)
-  const mandate = definition.documentRequirements.find((requirement) => requirement.key === 'seller_mandate')
-  const defects = definition.documentRequirements.find((requirement) => requirement.key === 'defects_disclosure_form')
-  const fica = definition.documentRequirements.find((requirement) => requirement.key === 'seller_fica_pack')
+  const mandate = definition.documentRequirements.find((requirement) => requirement.key === 'signed_mandate')
+  const defects = definition.documentRequirements.find((requirement) => requirement.key === 'signed_defect_form')
+  const fica = definition.documentRequirements.find((requirement) => requirement.key === 'signed_fica_form')
   assert.deepEqual(mandate.acceptedEvidenceModes, ['digital_signature', 'manual_upload'])
   assert.deepEqual(defects.acceptedEvidenceModes, ['digital_signature', 'manual_upload'])
   assert.deepEqual(fica.acceptedEvidenceModes, ['digital_signature', 'manual_upload'])

@@ -3,6 +3,8 @@ import { getSellerProcessDefinition } from './sellerProcessDefinitionService.js'
 
 const DOCUMENT_COMPLETE_STATUSES = new Set(['uploaded', 'under_review', 'approved', 'verified', 'accepted', 'complete', 'completed', 'signed'])
 const BLOCKED_APPOINTMENT_STATUSES = new Set(['cancelled', 'canceled', 'declined', 'draft', 'internal_draft'])
+const KINGSTONS_BASELINE_SELLER_PACK_KEYS = new Set(['signed_mandate', 'signed_defect_form', 'signed_fica_form'])
+const KINGSTONS_SELLER_PACK_GENERATED_SECTION_KEYS = new Set(['seller_identity_fica', 'authority_documents'])
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -36,6 +38,10 @@ function parseJsonRecord(value) {
   }
 }
 
+function isValidKingstonsSellerType(value = '') {
+  return ['natural', 'juristic'].includes(normalizeKey(value))
+}
+
 function hasFileEvidence(row = {}) {
   return Boolean(firstPresent(
     row?.url,
@@ -53,6 +59,48 @@ function hasFileEvidence(row = {}) {
   ))
 }
 
+function sellerPackSourcesFromContext(context = {}) {
+  const lead = asRecord(context.lead)
+  const listing = asRecord(context.listing)
+  const leadPayload = parseJsonRecord(lead.rawEnquiryPayload || lead.raw_enquiry_payload)
+  const listingFacts = parseJsonRecord(listing.sellerCanonicalFacts || listing.seller_canonical_facts_json)
+  return [
+    lead.kingstonsSellerPack,
+    lead.kingstons_seller_pack,
+    lead.sellerPack,
+    lead.seller_pack,
+    leadPayload.kingstonsSellerPack,
+    leadPayload.kingstons_seller_pack,
+    leadPayload.sellerPack,
+    leadPayload.seller_pack,
+    listing.kingstonsSellerPack,
+    listing.kingstons_seller_pack,
+    listing.sellerPack,
+    listing.seller_pack,
+    listingFacts.kingstonsSellerPack,
+    listingFacts.kingstons_seller_pack,
+    listingFacts.sellerPack,
+    listingFacts.seller_pack,
+  ].map(asRecord).filter((source) => Object.keys(source).length > 0)
+}
+
+function hasKingstonsSellerPackLegalPathCapture(context = {}) {
+  const sources = sellerPackSourcesFromContext(context)
+  return sources.some((pack) => {
+    const legalPath = asRecord(pack.legalPath || pack.legal_path)
+    return isValidKingstonsSellerType(
+      pack.sellerType ||
+        pack.seller_type ||
+        pack.ficaSellerType ||
+        pack.fica_seller_type ||
+        legalPath.sellerType ||
+        legalPath.seller_type ||
+        legalPath.legalPathType ||
+        legalPath.legal_path_type,
+    )
+  })
+}
+
 function rowKeys(row = {}) {
   return [
     row?.key,
@@ -67,6 +115,29 @@ function rowKeys(row = {}) {
     row?.title,
     row?.name,
   ].map(normalizeKey).filter(Boolean)
+}
+
+function isKingstonsSellerPackReadinessDocument(row = {}) {
+  const keys = rowKeys(row)
+  const source = normalizeKey(row?.source || row?.sourceSystem || row?.source_system)
+  const lane = normalizeKey(row?.requirementLane || row?.requirement_lane || row?.documentRequirementLane || row?.document_requirement_lane)
+  const section = normalizeKey(row?.documentRequirementSection || row?.document_requirement_section || row?.section)
+  if (source.includes('kingstons_seller_pack')) return true
+  if (lane === 'ownership_driven') return true
+  if (KINGSTONS_SELLER_PACK_GENERATED_SECTION_KEYS.has(section)) return true
+  return keys.some((key) =>
+    KINGSTONS_BASELINE_SELLER_PACK_KEYS.has(key) ||
+      key.includes('owner_fica') ||
+      key.includes('director_fica') ||
+      key.includes('trustee_fica') ||
+      key.includes('member_fica') ||
+      key.includes('spouse_fica') ||
+      key.includes('resolution_to_sell') ||
+      key.includes('letters_of_authority') ||
+      key.includes('trust_deed') ||
+      key.includes('spouse_consent') ||
+      key.includes('owner_authority_consent')
+  )
 }
 
 function typeMatches(row = {}, expectedTypes = []) {
@@ -87,6 +158,39 @@ function documentSatisfiesGate(document = {}, gate = {}) {
   if (!typeMatches(document, gate.documentTypes || [])) return false
   const status = normalizeKey(document?.status || document?.documentStatus || document?.document_status || document?.reviewStatus || document?.review_status)
   return Boolean(statusAccepted(status, gate.acceptedStatuses || []) || DOCUMENT_COMPLETE_STATUSES.has(status) || hasFileEvidence(document))
+}
+
+function documentSatisfiesSellerPackReadiness(document = {}) {
+  if (document?.required === false || document?.applicable === false) return true
+  const status = normalizeKey(document?.status || document?.documentStatus || document?.document_status || document?.reviewStatus || document?.review_status)
+  if (status === 'not_applicable') return true
+  return Boolean(DOCUMENT_COMPLETE_STATUSES.has(status) || hasFileEvidence(document))
+}
+
+function evaluateSellerPackReadinessGate(context = {}, gate = {}) {
+  const readinessRows = asArray(context.documents)
+    .filter(isKingstonsSellerPackReadinessDocument)
+    .filter((document) => document?.required !== false && document?.applicable !== false)
+  const completedRows = readinessRows.filter(documentSatisfiesSellerPackReadiness)
+  const presentKeys = new Set(readinessRows.flatMap(rowKeys))
+  const baselinePresent = [...KINGSTONS_BASELINE_SELLER_PACK_KEYS].every((key) => presentKeys.has(key))
+  const sellerTypeCaptured = hasKingstonsSellerPackLegalPathCapture(context) ||
+    readinessRows.some((document) => isValidKingstonsSellerType(document?.sellerType || document?.seller_type || document?.ficaSellerType || document?.fica_seller_type))
+  const complete = Boolean(
+    sellerTypeCaptured &&
+      baselinePresent &&
+      readinessRows.length >= KINGSTONS_BASELINE_SELLER_PACK_KEYS.size &&
+      completedRows.length === readinessRows.length,
+  )
+
+  return {
+    key: gate.key,
+    source: gate.source,
+    satisfied: complete,
+    evidenceCount: completedRows.length,
+    requiredCount: readinessRows.length,
+    missingCount: Math.max(readinessRows.length - completedRows.length, 0) + (sellerTypeCaptured ? 0 : 1),
+  }
 }
 
 function appointmentTypeMatches(appointment = {}, appointmentType = '', appointmentTypeAliases = []) {
@@ -276,6 +380,9 @@ function evaluateGate(gate = {}, context = {}) {
   }
 
   if (gate.source === 'document') {
+    if (gate.requiresAllSellerPackDocuments === true) {
+      return evaluateSellerPackReadinessGate(context, gate)
+    }
     const documentMatches = asArray(context.documents).filter((document) => documentSatisfiesGate(document, gate))
     const packetMatch = gate.key === 'mandate_signed' && mandatePacketSatisfiesSignedEvidence(context)
     return {

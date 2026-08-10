@@ -16,6 +16,7 @@ const EVIDENCE_LABELS = Object.freeze({
   mandate_signed: 'Mandate signed',
   defects_form_signed: 'Defects form signed',
   fica_pack_signed: 'FICA pack signed',
+  seller_pack_readiness_complete: 'Seller Pack complete',
   commission_terms_confirmed: 'Commission terms confirmed',
   transfer_attorney_nominated: 'Transfer attorney nominated',
   listing_ready: 'Listing ready',
