@@ -200,13 +200,22 @@ function requirementIdentity(requirement = {}) {
   )
 }
 
+const SELLER_VISIBLE_OPTIONAL_REQUIREMENT_KEYS = new Set([
+  'seller_bank_account_confirmation',
+  'seller_tax_number',
+  'property_acquisition_record',
+  'capital_improvement_records',
+])
+
 function requirementIsActive(requirement = {}) {
   const status = normalizeSellerDocumentRequirementStatus(
     requirement?.status || requirement?.requiredDocumentStatus || requirement?.required_document_status,
   )
-  return requirement?.isRequired !== false &&
-    requirement?.is_required !== false &&
-    !['not_required', 'waived', 'cancelled', 'archived', 'not_applicable'].includes(status)
+  if (['not_required', 'waived', 'cancelled', 'archived', 'not_applicable'].includes(status)) return false
+  if (requirement?.isRequired !== false && requirement?.is_required !== false) return true
+  const visibility = normalizeKey(requirement?.visibility || requirement?.document_visibility || requirement?.visibility_scope)
+  return SELLER_VISIBLE_OPTIONAL_REQUIREMENT_KEYS.has(requirementIdentity(requirement)) &&
+    visibility !== 'internal'
 }
 
 export function mergeSellerRequiredDocuments(...requirementLists) {

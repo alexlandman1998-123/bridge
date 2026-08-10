@@ -68,6 +68,10 @@ assert.deepEqual(keys, [
   'property_condition_disclosure',
   'id_document',
   'proof_of_address',
+  'seller_bank_account_confirmation',
+  'seller_tax_number',
+  'property_acquisition_record',
+  'capital_improvement_records',
   'gas_compliance_certificate',
   'solar_compliance_documents',
 ])
@@ -118,6 +122,18 @@ assert.equal(propertyDisclosure.upload.generatedFileName, 'property-condition-di
 
 const titleDeed = source.rows.find((row) => row.key === 'title_deed_copy')
 assert.equal(titleDeed.category, 'property')
+
+const bankConfirmation = source.rows.find((row) => row.key === 'seller_bank_account_confirmation')
+assert.equal(bankConfirmation.title, 'Seller Bank Account Confirmation')
+assert.equal(bankConfirmation.category, 'property')
+assert.equal(bankConfirmation.required, false)
+assert.equal(bankConfirmation.status, 'required')
+
+const acquisitionRecord = source.rows.find((row) => row.key === 'property_acquisition_record')
+assert.equal(acquisitionRecord.title, 'Original Property Acquisition Record')
+assert.equal(acquisitionRecord.category, 'property')
+assert.equal(acquisitionRecord.required, false)
+assert.equal(acquisitionRecord.status, 'required')
 assert.equal(titleDeed.blocking, true)
 
 const gasCertificate = source.rows.find((row) => row.key === 'gas_compliance_certificate')
@@ -130,19 +146,19 @@ assert.equal(solarDocuments.category, 'property')
 assert.equal(solarDocuments.blocking, true)
 
 assert.deepEqual(source.summary, {
-  total: 8,
+  total: 12,
   totalRequired: 8,
   complete: 2,
   completeRequired: 2,
   blocking: 6,
   uploaded: 2,
-  outstanding: 6,
+  outstanding: 10,
   underReview: 0,
   approved: 2,
   rejected: 0,
   byCategory: {
     sales: 2,
-    property: 4,
+    property: 8,
     fica: 2,
   },
 })

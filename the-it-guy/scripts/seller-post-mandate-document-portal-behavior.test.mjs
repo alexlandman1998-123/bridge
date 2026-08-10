@@ -117,6 +117,8 @@ assert.ok(packKeys.includes('director_member_ids'), 'company director/member FIC
 assert.ok(packKeys.includes('cipc_documents'), 'raw company pack should still derive CIPC document evidence')
 assert.ok(packKeys.includes('authorised_signatory_id'), 'raw company pack should still derive authorised signatory ID evidence')
 assert.ok(packKeys.includes('company_address_proof'), 'raw company pack should still derive registered-address evidence')
+assert.ok(packKeys.includes('seller_bank_account_confirmation'), 'seller transfer-readiness bank confirmation should remain in the portal pack')
+assert.ok(packKeys.includes('property_acquisition_record'), 'seller transfer-readiness acquisition record should remain in the portal pack')
 assert.equal(packKeys.includes('id_document'), false, 'stale individual-only requirements must not be shown to company sellers')
 assert.equal(packKeys.includes('signed_mandate'), false, 'signed mandate must not be requested as a seller upload after completion')
 
@@ -135,6 +137,8 @@ assert.equal(itemKeys.includes('signed_mandate'), false)
 assert.ok(requiredKeys.includes('company_registration'), 'document centre should keep the canonical company registration row')
 assert.ok(requiredKeys.includes('company_resolution_to_sell'), 'document centre should keep the company resolution upload row')
 assert.ok(requiredKeys.includes('director_member_ids'), 'document centre should keep director/member FICA upload row')
+assert.ok(requiredKeys.includes('seller_bank_account_confirmation'), 'document centre should keep seller bank account confirmation aligned with the agent workspace')
+assert.ok(requiredKeys.includes('property_acquisition_record'), 'document centre should keep original property acquisition record aligned with the agent workspace')
 for (const duplicateCompanyKey of ['cipc_documents', 'authorised_signatory_id', 'company_address_proof']) {
   assert.equal(
     requiredKeys.includes(duplicateCompanyKey),

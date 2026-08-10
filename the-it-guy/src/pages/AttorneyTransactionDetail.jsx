@@ -12723,6 +12723,15 @@ function AttorneyTransactionDetail() {
   const transactionWorkspaceBasePath = location.pathname.startsWith('/bond/files/')
     ? `/bond/files/${transactionId}`
     : `/transactions/${transactionId}`
+  const openWorkspaceMenu = useCallback((nextMenu) => {
+    setWorkspaceMenu(nextMenu)
+    if (localLegalWorkflowDetailKey && nextMenu !== 'transfer') {
+      setLocalLegalWorkflowDetailKey('')
+    }
+    if (routeLegalWorkflowDetailKey && nextMenu !== 'transfer') {
+      navigate(transactionWorkspaceBasePath)
+    }
+  }, [localLegalWorkflowDetailKey, navigate, routeLegalWorkflowDetailKey, transactionWorkspaceBasePath])
   const transferStageKey = getAttorneyTransferStage({ transaction, stage: transaction?.stage, unit, development })
   const transferStageLabel = stageLabelFromAttorneyKey(transferStageKey)
   const lifecycleState = normalizeLifecycleState(
@@ -14227,16 +14236,6 @@ function AttorneyTransactionDetail() {
     params.set('returnTo', `${location.pathname}${location.search || ''}`)
     navigate(`/transactions/${transaction.id}/legal/otp?${params.toString()}`)
   }, [location.pathname, location.search, navigate, transaction?.id])
-
-  const openWorkspaceMenu = useCallback((nextMenu) => {
-    setWorkspaceMenu(nextMenu)
-    if (localLegalWorkflowDetailKey && nextMenu !== 'transfer') {
-      setLocalLegalWorkflowDetailKey('')
-    }
-    if (routeLegalWorkflowDetailKey && nextMenu !== 'transfer') {
-      navigate(transactionWorkspaceBasePath)
-    }
-  }, [localLegalWorkflowDetailKey, navigate, routeLegalWorkflowDetailKey, transactionWorkspaceBasePath])
 
   const openLegalWorkflowDetail = useCallback((detailKey) => {
     const normalized = normalizeLegalWorkflowDetailKey(detailKey)
