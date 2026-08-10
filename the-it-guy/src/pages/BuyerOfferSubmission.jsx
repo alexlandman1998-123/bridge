@@ -50,6 +50,10 @@ const BUYER_OFFER_PROGRESS = [
   { key: 'onboarding', label: 'Buyer Verification' },
   { key: 'review', label: 'Review & Sign' },
 ]
+const BOND_ASSISTANCE_OPTIONS = Object.freeze({
+  SELF_MANAGED: 'self_managed',
+  ORIGINATOR_ASSISTED: 'originator_assisted',
+})
 
 function formatCurrency(value) {
   const amount = Number(value || 0)
@@ -149,6 +153,35 @@ async function fetchBuyerOfferBrandingSnapshot(token = '') {
 function normalizeStage(value = '', fallback = 'landing') {
   const stage = normalizeText(value).toLowerCase()
   return BUYER_OFFER_STAGES.includes(stage) ? stage : fallback
+}
+
+function isBondFinanceType(value = '') {
+  return ['bond', 'hybrid', 'combination'].includes(normalizeText(value).toLowerCase())
+}
+
+function normalizeBondAssistancePreference(value = '', fallback = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (['self_managed', 'self-managed', 'self', 'own', 'buyer_managed', 'client', 'no'].includes(normalized)) {
+    return BOND_ASSISTANCE_OPTIONS.SELF_MANAGED
+  }
+  if (['originator_assisted', 'originator-assisted', 'assisted', 'help', 'bond_originator', 'yes'].includes(normalized)) {
+    return BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED
+  }
+  return fallback
+}
+
+function getBondAssistanceLabel(value = '') {
+  const preference = normalizeBondAssistancePreference(value)
+  if (preference === BOND_ASSISTANCE_OPTIONS.SELF_MANAGED) return 'Buyer will manage bond'
+  if (preference === BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED) return 'Bond originator help requested'
+  return 'Not selected'
+}
+
+function getBondHelpRequestedValue(value = '') {
+  const preference = normalizeBondAssistancePreference(value)
+  if (preference === BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED) return 'yes'
+  if (preference === BOND_ASSISTANCE_OPTIONS.SELF_MANAGED) return 'no'
+  return ''
 }
 
 function getMediaUrl(item) {
@@ -354,7 +387,9 @@ function BuyerOfferSubmission() {
     otpDocumentVariant: '',
     bondAmount: '',
     cashContribution: '',
+    bondAssistancePreference: '',
     needsBondAssistance: false,
+    bond_help_requested: '',
     proofOfFundsUrl: '',
     depositDueDate: '',
     bondApprovalDeadline: '',
@@ -462,6 +497,11 @@ function BuyerOfferSubmission() {
   })
   const isDevelopmentOffer = otpDocumentVariant === 'new_development'
   const financeType = String(form.financeType || '').toLowerCase()
+  const bondFinanceSelected = isBondFinanceType(financeType)
+  const bondAssistancePreference = bondFinanceSelected
+    ? normalizeBondAssistancePreference(form.bondAssistancePreference, form.needsBondAssistance ? BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED : '')
+    : ''
+  const bondAssistanceLabel = bondFinanceSelected ? getBondAssistanceLabel(bondAssistancePreference) : 'Not applicable'
   const askingPrice = getListingPrice(listing)
   const offerAmount = moneyNumber(form.offerAmount)
   const depositAmount = moneyNumber(form.depositAmount)
@@ -584,19 +624,41 @@ function BuyerOfferSubmission() {
 
   function updateFinanceType(value) {
     const normalizedValue = value === 'combination' ? 'hybrid' : value
+    const nextBondFinanceSelected = isBondFinanceType(normalizedValue)
+    setForm((previous) => {
+      const nextPreference = nextBondFinanceSelected
+        ? normalizeBondAssistancePreference(previous.bondAssistancePreference, previous.needsBondAssistance ? BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED : '')
+        : ''
+      return {
+        ...previous,
+        financeType: normalizedValue,
+        bondAmount: nextBondFinanceSelected ? previous.bondAmount : '',
+        cashContribution: normalizedValue === 'hybrid' ? previous.cashContribution : '',
+        bondAssistancePreference: nextPreference,
+        needsBondAssistance: nextPreference === BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED,
+        bond_help_requested: getBondHelpRequestedValue(nextPreference),
+        conditionBondApproval: nextBondFinanceSelected ? true : previous.conditionBondApproval,
+      }
+    })
+  }
+
+  function updateBondAssistancePreference(value) {
+    const preference = normalizeBondAssistancePreference(value)
     setForm((previous) => ({
       ...previous,
-      financeType: normalizedValue,
-      bondAmount: ['bond', 'hybrid'].includes(normalizedValue) ? previous.bondAmount : '',
-      cashContribution: normalizedValue === 'hybrid' ? previous.cashContribution : '',
-      needsBondAssistance: ['bond', 'hybrid'].includes(normalizedValue) ? previous.needsBondAssistance : false,
-      conditionBondApproval: ['bond', 'hybrid'].includes(normalizedValue) ? true : previous.conditionBondApproval,
+      bondAssistancePreference: preference,
+      needsBondAssistance: preference === BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED,
+      bond_help_requested: getBondHelpRequestedValue(preference),
     }))
   }
 
   function validateStageTransition(nextStage) {
     if (['onboarding', 'review'].includes(nextStage) && !offerAmount) {
       setErrorMessage('Enter your offer amount before continuing.')
+      return false
+    }
+    if (['onboarding', 'review'].includes(nextStage) && bondFinanceSelected && !bondAssistancePreference) {
+      setErrorMessage('Choose whether you will manage your bond yourself or need help with your bond.')
       return false
     }
     if (nextStage === 'review' && (!form.fullName || !form.email || !form.phone || !form.idNumber)) {
@@ -639,16 +701,23 @@ function BuyerOfferSubmission() {
       if (!offerAmount) {
         throw new Error('Enter your offer amount before submitting.')
       }
+      if (bondFinanceSelected && !bondAssistancePreference) {
+        throw new Error('Choose whether you will manage your bond yourself or need help with your bond.')
+      }
       if (!form.fullName || !form.email || !form.phone || !form.idNumber) {
         throw new Error('Complete your buyer details before submitting.')
       }
       if (!confirmedAccuracy) {
         throw new Error('Please confirm the information is accurate before submitting.')
       }
-      const derivedBondAmount = ['bond', 'hybrid', 'combination'].includes(financeType) ? loanAmount : 0
+      const derivedBondAmount = bondFinanceSelected ? loanAmount : 0
       const submission = {
         ...form,
         bondAmount: derivedBondAmount ? String(derivedBondAmount) : '',
+        bondAssistancePreference,
+        needsBondAssistance: bondAssistancePreference === BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED,
+        bond_help_requested: getBondHelpRequestedValue(bondAssistancePreference),
+        ooba_assist_requested: getBondHelpRequestedValue(bondAssistancePreference),
         otpDocumentVariant,
       }
       setSubmitting(true)
@@ -862,6 +931,23 @@ function BuyerOfferSubmission() {
             <p className="text-xs font-semibold text-[#6B7280]">Bond Required</p>
             <p className="mt-1 text-lg font-bold text-[#111827]">{formatCurrency(loanAmount)}</p>
           </div>
+          {bondFinanceSelected ? (
+            <div className="grid gap-2">
+              <span className="text-[0.78rem] font-semibold text-[#4B5563]">Bond Support</span>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <ChoicePill
+                  label="I'll sort out my bond myself"
+                  selected={bondAssistancePreference === BOND_ASSISTANCE_OPTIONS.SELF_MANAGED}
+                  onClick={() => updateBondAssistancePreference(BOND_ASSISTANCE_OPTIONS.SELF_MANAGED)}
+                />
+                <ChoicePill
+                  label="I need help with my bond"
+                  selected={bondAssistancePreference === BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED}
+                  onClick={() => updateBondAssistancePreference(BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED)}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -961,6 +1047,7 @@ function BuyerOfferSubmission() {
           ['Deposit', formatCurrency(depositAmount)],
           ['Finance', financeLabel],
           ['Bond Required', formatCurrency(loanAmount)],
+          ...(bondFinanceSelected ? [['Bond Support', bondAssistanceLabel]] : []),
           ['OTP Route', isDevelopmentOffer ? 'New Development' : 'Normal Sale'],
           ['Bond Deadline', form.bondApprovalDeadline ? formatDate(form.bondApprovalDeadline) : 'Not set'],
           ['Guarantee Deadline', form.guaranteeDeliveryDeadline ? formatDate(form.guaranteeDeliveryDeadline) : 'Not set'],

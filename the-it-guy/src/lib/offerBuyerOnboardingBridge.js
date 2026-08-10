@@ -1,4 +1,4 @@
-import { normalizeFinanceType } from '../core/transactions/financeType.js'
+import { deriveFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType.js'
 import { resolveBuyerOnboardingFlow } from './buyerOnboardingFlow.js'
 import {
   getOnboardingStepDefinitions,
@@ -30,6 +30,33 @@ function isFilledValue(value) {
   if (Array.isArray(value)) return value.some((item) => isFilledValue(item))
   if (value && typeof value === 'object') return Object.values(value).some((item) => isFilledValue(item))
   return normalizeText(value).length > 0
+}
+
+function isBondFinanceType(value = '') {
+  return ['bond', 'combination', 'hybrid'].includes(normalizeText(value).toLowerCase())
+}
+
+function normalizeBondAssistancePreference(form = {}) {
+  const direct = normalizeText(
+    form.bondAssistancePreference ||
+      form.bond_assistance_preference ||
+      form.bondHelpPreference ||
+      form.bond_help_preference,
+  ).toLowerCase()
+  if (['self_managed', 'self-managed', 'self', 'own', 'buyer_managed', 'client', 'no'].includes(direct)) return 'self_managed'
+  if (['originator_assisted', 'originator-assisted', 'assisted', 'help', 'bond_originator', 'yes'].includes(direct)) return 'originator_assisted'
+
+  const requested = normalizeText(form.bond_help_requested || form.bondHelpRequested || form.ooba_assist_requested || form.oobaAssistRequested).toLowerCase()
+  if (['yes', 'true', 'y', '1', 'on'].includes(requested)) return 'originator_assisted'
+  if (['no', 'false', 'n', '0', 'off'].includes(requested)) return 'self_managed'
+  if (form.needsBondAssistance === true) return 'originator_assisted'
+  return ''
+}
+
+function bondHelpRequestedValue(preference = '') {
+  if (preference === 'originator_assisted') return 'yes'
+  if (preference === 'self_managed') return 'no'
+  return ''
 }
 
 function fieldValue(formData = {}, fieldKey = '') {
@@ -100,6 +127,8 @@ function sectionMatches(section = {}, patterns = []) {
 
 export function mapOfferFormToBuyerOnboardingForm(form = {}, options = {}) {
   const financeType = normalizeFinanceType(form.financeType || options.financeType || 'bond')
+  const bondAssistancePreference = isBondFinanceType(financeType) ? normalizeBondAssistancePreference(form) : ''
+  const bondHelpRequested = bondHelpRequestedValue(bondAssistancePreference)
   const offerAmount = moneyNumber(options.offerAmount ?? form.offerAmount)
   const depositAmount = moneyNumber(options.depositAmount ?? form.depositAmount)
   const bondAmount = financeType === 'cash' ? 0 : moneyNumber(options.loanAmount ?? form.bondAmount) || Math.max(0, offerAmount - depositAmount)
@@ -118,8 +147,16 @@ export function mapOfferFormToBuyerOnboardingForm(form = {}, options = {}) {
     bond_amount: bondAmount ? String(bondAmount) : '',
     cash_contribution_available: depositAmount ? String(depositAmount) : '',
     proof_of_funds_available: normalizeText(form.proofOfFundsUrl) ? 'yes' : '',
-    bond_help_requested: form.needsBondAssistance ? 'yes' : '',
+    bond_assistance_preference: bondAssistancePreference,
+    bond_help_requested: bondHelpRequested,
   }
+  finance.finance_managed_by = deriveFinanceManagedBy({
+    financeType,
+    formData: {
+      ...finance,
+      finance,
+    },
+  })
 
   return {
     purchaser_type: 'individual',
@@ -135,7 +172,12 @@ export function mapOfferFormToBuyerOnboardingForm(form = {}, options = {}) {
     bond_amount: finance.bond_amount,
     cash_contribution_available: finance.cash_contribution_available,
     proof_of_funds_available: finance.proof_of_funds_available,
+    bond_assistance_preference: finance.bond_assistance_preference,
+    bondAssistancePreference: finance.bond_assistance_preference,
     bond_help_requested: finance.bond_help_requested,
+    ooba_assist_requested: finance.bond_help_requested,
+    finance_managed_by: finance.finance_managed_by,
+    financeManagedBy: finance.finance_managed_by,
     purchasers: [purchaser],
     finance,
   }

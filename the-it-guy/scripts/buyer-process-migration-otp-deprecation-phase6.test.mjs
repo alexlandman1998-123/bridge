@@ -93,6 +93,7 @@ assert.doesNotMatch(agencyPipelinePageSource, /label: 'Generate OTP'/)
 assert.doesNotMatch(agencyPipelinePageSource, /Generate & Send OTP/)
 assert.doesNotMatch(agencyPipelinePageSource, /Preparing OTP pack/)
 assert.doesNotMatch(agencyPipelinePageSource, /successPrefix: 'OTP '/)
-assert.doesNotMatch(agencyPipelinePageSource, /setOtpQuickStartOpen\(true\)/)
+assert.match(agencyPipelinePageSource, /Preparing offer upload link/)
+assert.match(agencyPipelinePageSource, /successPrefix: 'Offer upload '/)
 
 console.log('Buyer process Phase 6 migration + OTP deprecation contract passed.')

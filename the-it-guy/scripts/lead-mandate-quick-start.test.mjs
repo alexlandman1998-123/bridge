@@ -641,7 +641,7 @@ assert.ok(
 const otpActionBlock = getFunctionBlock('handleSelectedLeadOtpPrimaryAction')
 assert.ok(
   otpActionBlock.includes('setOtpQuickStartOpen(true)'),
-  'Generate OTP actions should open the confirmation modal.',
+  'Offer upload actions should open the confirmation modal.',
 )
 
 const otpQuickStartBlock = getFunctionBlock('handleOtpQuickStartGenerateAndSend')
@@ -649,10 +649,10 @@ for (const reference of [
   'selectedLeadOtpQuickStartBlockers.length',
   'selectedLeadOtpTemplateBlocking',
   'createAndSendOfferLinkForLead',
-  "successPrefix: 'OTP '",
+  "successPrefix: 'Offer upload '",
   'setOtpQuickStartOpen(false)',
 ]) {
-  assert.ok(otpQuickStartBlock.includes(reference), `OTP quick start flow should keep ${reference}.`)
+  assert.ok(otpQuickStartBlock.includes(reference), `Offer upload quick start flow should keep ${reference}.`)
 }
 
 const workspaceBlock = getFunctionBlock('openSelectedLeadMandateWorkspace')

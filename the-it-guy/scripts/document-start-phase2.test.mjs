@@ -72,7 +72,6 @@ for (const reference of [
   'title="Confirm OTP details"',
   'title={resolveMandateQuickStartTitle(mandateQuickStartStep)}',
   'Edit Offer / Terms',
-  'Edit Wording / Terms',
   'onGenerate={handleGenerateMandateFromSellerLead}',
   'onSend={handleSendMandateToSeller}',
   'autoGenerateEnabled={legalWorkspaceOpen}',
@@ -94,7 +93,8 @@ assert.ok(
 const quickStartBlock = getFunctionBlock(agencyPipeline, 'handleMandateQuickStartGenerateAndSend')
 for (const reference of [
   'handleGenerateMandateFromSellerLead',
-  'handleSendMandateToSeller({ packetId: mandatePacketId })',
+  'handleSendMandateToSeller({',
+  'packetId: mandatePacketId',
   'setMandateQuickStartOpen(false)',
 ]) {
   assertIncludes(quickStartBlock, reference, `Quick start flow should keep ${reference}.`)
@@ -104,16 +104,16 @@ const otpPrimaryActionBlock = getFunctionBlock(agencyPipeline, 'handleSelectedLe
 assertIncludes(
   otpPrimaryActionBlock,
   'setOtpQuickStartOpen(true)',
-  'Lead OTP generation should open the confirm modal first.',
+  'Lead offer upload should open the confirm modal first.',
 )
 
 const otpQuickStartBlock = getFunctionBlock(agencyPipeline, 'handleOtpQuickStartGenerateAndSend')
 for (const reference of [
   'createAndSendOfferLinkForLead',
-  "successPrefix: 'OTP '",
+  "successPrefix: 'Offer upload '",
   'setOtpQuickStartOpen(false)',
 ]) {
-  assertIncludes(otpQuickStartBlock, reference, `OTP quick start flow should keep ${reference}.`)
+  assertIncludes(otpQuickStartBlock, reference, `Offer upload quick start flow should keep ${reference}.`)
 }
 
 for (const reference of [

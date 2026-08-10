@@ -43,7 +43,7 @@ assert.equal(
 
 assert.equal(
   resolveLeadNextStep({ stage: 'Offer Submitted', phone: '+27820000000' }, [], [], { now }),
-  'Review buyer conditions before OTP generation',
+  'Review buyer conditions before manual signed OTP upload',
 )
 
 assert.equal(
@@ -53,7 +53,7 @@ assert.equal(
 
 assert.equal(
   resolveLeadNextStep({ stage: 'Ready to Generate OTP', phone: '+27820000000' }, [], [], { now }),
-  'Generate OTP',
+  'Upload signed OTP',
 )
 
 assert.equal(

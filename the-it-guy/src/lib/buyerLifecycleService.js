@@ -7,6 +7,7 @@ import { updatePrivateListing } from '../services/privateListingService.js'
 import { assertMvpAcceptedOfferConversionReceipt } from '../core/transactions/mvpAcceptedOfferConversionReceipt.js'
 import { mergeResidentialOfferTermsIntoConditions } from '../core/offers/residentialOfferTerms.js'
 import { buildResidentialOfferConditionReviewPatch } from '../core/offers/residentialOfferConditionReview.js'
+import { deriveFinanceManagedBy } from '../core/transactions/financeType.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -306,6 +307,8 @@ function normalizePurchaserType(value = '') {
 
 function buildAcceptedOfferOnboardingPrefill(offer = {}, payload = {}) {
   const conditions = jsonObject(offer?.conditions)
+  const residentialOfferTerms = jsonObject(conditions.residentialOfferTerms)
+  const residentialFinance = jsonObject(residentialOfferTerms.finance)
   const fullName = normalizeText(
     payload?.buyerName ||
       conditions.buyerName ||
@@ -315,6 +318,29 @@ function buildAcceptedOfferOnboardingPrefill(offer = {}, payload = {}) {
   const split = splitFullName(fullName)
   const purchaserType = normalizePurchaserType(conditions.buyerType || conditions.purchaserType || payload?.purchaserType)
   const financeType = normalizeText(offer?.financeType || conditions.financeType || payload?.financeType || 'cash').toLowerCase()
+  const bondAssistancePreference = normalizeText(
+    conditions.bondAssistancePreference ||
+      conditions.bond_assistance_preference ||
+      residentialFinance.bondAssistancePreference ||
+      residentialFinance.bond_assistance_preference,
+  )
+  const bondHelpRequested = normalizeText(
+    conditions.bond_help_requested ||
+      conditions.bondHelpRequested ||
+      residentialFinance.bond_help_requested ||
+      residentialFinance.bondHelpRequested,
+  )
+  const financeManagedBy = bondHelpRequested
+    ? deriveFinanceManagedBy({
+        financeType,
+        formData: {
+          bond_help_requested: bondHelpRequested,
+          finance: {
+            bond_help_requested: bondHelpRequested,
+          },
+        },
+      })
+    : normalizeText(conditions.finance_managed_by || conditions.financeManagedBy)
   const intake = buildClientIntakePreferenceFacts(
     payload?.clientIntakePreference ||
       payload?.deliveryMode ||
@@ -330,6 +356,11 @@ function buildAcceptedOfferOnboardingPrefill(offer = {}, payload = {}) {
     phone: normalizeText(payload?.buyerPhone || conditions.buyerPhone || conditions.phone),
     identity_number: normalizeText(conditions.buyerIdNumber || conditions.identityNumber || conditions.idNumber),
     purchase_finance_type: financeType || 'cash',
+    bond_assistance_preference: bondAssistancePreference,
+    bond_help_requested: bondHelpRequested,
+    ooba_assist_requested: bondHelpRequested,
+    finance_managed_by: financeManagedBy,
+    financeManagedBy: financeManagedBy,
     purchase_price: offer?.offerAmount ? String(offer.offerAmount) : '',
     cash_amount: offer?.cashComponent ? String(offer.cashComponent) : '',
     bond_amount: offer?.bondComponent ? String(offer.bondComponent) : '',

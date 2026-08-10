@@ -35,6 +35,30 @@ function bool(value) {
   return ['true', 'yes', 'y', '1', 'on'].includes(lower(value))
 }
 
+function normalizeBondAssistancePreference(input = {}) {
+  const direct = lower(
+    input.bondAssistancePreference ||
+      input.bond_assistance_preference ||
+      input.bondHelpPreference ||
+      input.bond_help_preference,
+  )
+  if (['self_managed', 'self-managed', 'self', 'own', 'buyer_managed', 'client', 'no'].includes(direct)) return 'self_managed'
+  if (['originator_assisted', 'originator-assisted', 'assisted', 'help', 'bond_originator', 'yes'].includes(direct)) return 'originator_assisted'
+
+  const requested = input.bond_help_requested ?? input.bondHelpRequested ?? input.ooba_assist_requested ?? input.oobaAssistRequested
+  const requestedText = lower(requested)
+  if (['yes', 'true', 'y', '1', 'on'].includes(requestedText)) return 'originator_assisted'
+  if (['no', 'false', 'n', '0', 'off'].includes(requestedText)) return 'self_managed'
+  if (input.needsBondAssistance === true) return 'originator_assisted'
+  return ''
+}
+
+function bondHelpRequestedValue(preference = '') {
+  if (preference === 'originator_assisted') return 'yes'
+  if (preference === 'self_managed') return 'no'
+  return ''
+}
+
 function money(value) {
   const parsed = Number(value || 0)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
@@ -78,6 +102,9 @@ export function buildResidentialOfferTermsSnapshot(input = {}, options = {}) {
     development: input.development || sourceContext.development || {},
   })
   const financeType = normaliseFinanceType(input.financeType || input.finance_type)
+  const bondAssistancePreference = ['bond', 'combination'].includes(financeType)
+    ? normalizeBondAssistancePreference(input)
+    : ''
   const offerAmount = money(input.offerAmount ?? input.offer_amount)
   const depositAmount = money(input.depositAmount ?? input.deposit_amount)
   const bondAmount = money(input.bondAmount ?? input.bond_component ?? input.bondComponent)
@@ -119,7 +146,10 @@ export function buildResidentialOfferTermsSnapshot(input = {}, options = {}) {
     financeType,
     bondAmount,
     cashContribution,
-    needsBondAssistance: bool(input.needsBondAssistance),
+    bondAssistancePreference,
+    bond_help_requested: bondHelpRequestedValue(bondAssistancePreference),
+    bondHelpRequested: bondHelpRequestedValue(bondAssistancePreference),
+    needsBondAssistance: bondAssistancePreference === 'originator_assisted' || (!bondAssistancePreference && bool(input.needsBondAssistance)),
     proofOfFundsUrl: text(input.proofOfFundsUrl),
     proofOfFundsReference: text(input.proofOfFundsReference),
     preApprovalReference: text(input.preApprovalReference),
@@ -289,6 +319,9 @@ export function flattenResidentialOfferTerms(snapshot = {}) {
     purchaserType: capacity.purchaserType || '',
     purchaserEntityName: capacity.purchaserEntityName || '',
     financeType: finance.financeType || '',
+    bondAssistancePreference: finance.bondAssistancePreference || '',
+    bond_help_requested: finance.bond_help_requested || finance.bondHelpRequested || '',
+    bondHelpRequested: finance.bondHelpRequested || finance.bond_help_requested || '',
     proofOfFundsUrl: finance.proofOfFundsUrl || '',
     proofOfFundsReference: finance.proofOfFundsReference || '',
     preApprovalReference: finance.preApprovalReference || '',

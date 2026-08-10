@@ -31,6 +31,8 @@ const buyerSubmission = {
   financeType: 'hybrid',
   bondAmount: '2250000',
   cashContribution: '250000',
+  bondAssistancePreference: 'originator_assisted',
+  bond_help_requested: 'yes',
   proofOfFundsReference: 'Bank pre-approval',
   subjectToSale: true,
   subjectSaleProperty: '12 Old Street',
@@ -56,6 +58,9 @@ assert.deepEqual(snapshot.dataBuckets, RESIDENTIAL_OFFER_TERMS_BUCKETS)
 assert.equal(snapshot.buyer.email, 'buyer@example.test')
 assert.equal(snapshot.finance.financeType, 'combination')
 assert.equal(snapshot.finance.offerAmount, 2500000)
+assert.equal(snapshot.finance.bondAssistancePreference, 'originator_assisted')
+assert.equal(snapshot.finance.bond_help_requested, 'yes')
+assert.equal(snapshot.finance.needsBondAssistance, true)
 assert.equal(snapshot.terms.subjectToSale, true)
 assert.equal(snapshot.conditionRequests.reviewRequired, true)
 assert.ok(snapshot.conditionRequests.reviewFields.includes('specialConditions'))
@@ -73,7 +78,25 @@ assert.equal(merged.specialConditions, buyerSubmission.specialConditions)
 assert.equal(merged.occupationalRentPayable, true)
 assert.equal(merged.residentialOfferTermsVersion, RESIDENTIAL_OFFER_TERMS_VERSION)
 assert.equal(merged.residentialOfferTerms.finance.financeType, 'combination')
+assert.equal(merged.bondAssistancePreference, 'originator_assisted')
+assert.equal(merged.bond_help_requested, 'yes')
+assert.equal(merged.needsBondAssistance, true)
 assert.equal(merged.otpPreGenerationReview.status, 'agent_review_required')
+
+const selfManagedBond = mergeResidentialOfferTermsIntoConditions({}, {
+  fullName: 'Self Managed Buyer',
+  email: 'self@example.test',
+  phone: '0820000003',
+  offerAmount: '2100000',
+  depositAmount: '100000',
+  financeType: 'bond',
+  bondAmount: '2000000',
+  bondAssistancePreference: 'self_managed',
+  bond_help_requested: 'no',
+})
+assert.equal(selfManagedBond.bondAssistancePreference, 'self_managed')
+assert.equal(selfManagedBond.bond_help_requested, 'no')
+assert.equal(selfManagedBond.needsBondAssistance, false)
 
 const cleanSubmission = {
   fullName: 'Clean Buyer',

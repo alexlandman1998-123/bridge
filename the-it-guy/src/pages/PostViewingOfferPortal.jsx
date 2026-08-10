@@ -364,7 +364,7 @@ function PostViewingOfferPortal() {
       await sendAgentOfferSubmittedNotification(result?.offer).catch((notificationError) => {
         console.warn('[OFFER PORTAL] agent offer submission notification failed', notificationError)
       })
-      setSuccessMessage('Offer + onboarding submitted successfully. The agent will review any conditions before OTP generation.')
+      setSuccessMessage('Offer + onboarding submitted successfully. The agent will review any conditions before manual signed OTP upload.')
       setRefreshKey((value) => value + 1)
     } catch (error) {
       setErrorMessage(error?.message || 'Unable to submit offer right now.')
@@ -776,7 +776,7 @@ function PostViewingOfferPortal() {
             </label>
 
             <p className="rounded-2xl border border-[#e1e9f3] bg-[#f9fbfd] px-4 py-3 text-sm leading-6 text-[#44566c]">
-              Your agent will review only the condition and special-request wording before OTP generation. Formal seller routing happens after the OTP is generated and signed by the buyer.
+              Your agent will review only the condition and special-request wording before the signed OTP is manually uploaded. Formal seller routing happens after the signed OTP is captured.
             </p>
 
             <Button type="submit" className="w-full justify-center" disabled={submitting || !selectedListingId || !properties.length || !canSubmitSelectedPropertyOffer}>

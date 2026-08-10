@@ -6536,7 +6536,7 @@ function resolveOtpQuickStartPrimaryLabel() {
 }
 
 function resolveOtpQuickStartIntro() {
-  return BUYER_OTP_DEPRECATION_NOTICE
+  return `OTP generator deprecated. ${BUYER_OTP_DEPRECATION_NOTICE}`
 }
 
 function dedupeByKey(rows = [], resolveKey) {
@@ -21491,10 +21491,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setOtpQuickStartBusy(true)
       setOtpQuickStartError('')
-      setOtpQuickStartProgress('Preparing OTP link...')
+      setOtpQuickStartProgress('Preparing offer upload link...')
       const result = await createAndSendOfferLinkForLead({
         directOfferCentreSubmission: true,
-        successPrefix: 'OTP ',
+        successPrefix: 'Offer upload ',
       })
       if (result?.successMessage) setMessage(result.successMessage)
       if (result?.errorMessage) setOtpQuickStartError(result.errorMessage)
@@ -21504,7 +21504,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       await reloadRecords(organisationId)
     } catch (otpError) {
-      setOtpQuickStartError(otpError?.message || 'Unable to prepare the OTP link.')
+      setOtpQuickStartError(otpError?.message || 'Unable to prepare the offer upload link.')
     } finally {
       setOtpQuickStartBusy(false)
       setOtpQuickStartProgress('')

@@ -44,13 +44,13 @@ assert.match(
 
 assert.match(
   buyerLifecycleSource,
-  /sellerHasExistingBond: listing\?\.sellerHasExistingBond/,
+  /sellerHasExistingBond: canonicalListing\?\.sellerHasExistingBond[\s\S]*payload\?\.sellerHasExistingBond/,
   'Accepted offer conversion should propagate seller existing bond signals from the listing.',
 )
 
 assert.match(
   buyerLifecycleSource,
-  /propertyTenure: listing\?\.propertyTenure/,
+  /propertyTenure: canonicalListing\?\.propertyTenure[\s\S]*payload\?\.propertyTenure/,
   'Accepted offer conversion should propagate property tenure signals from the listing.',
 )
 

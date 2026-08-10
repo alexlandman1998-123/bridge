@@ -426,6 +426,8 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
       bondAmount: money(submission?.bondAmount),
       cashContribution: money(submission?.cashContribution),
       otpDocumentVariant: residentialOfferTerms.otpDocumentVariant,
+      bondAssistancePreference: String(submission?.bondAssistancePreference || submission?.bond_assistance_preference || '').trim(),
+      bond_help_requested: String(submission?.bond_help_requested || submission?.bondHelpRequested || '').trim(),
       needsBondAssistance: Boolean(submission?.needsBondAssistance),
       proofOfFundsUrl: String(submission?.proofOfFundsUrl || '').trim(),
       depositDueDate: String(submission?.depositDueDate || '').trim(),
