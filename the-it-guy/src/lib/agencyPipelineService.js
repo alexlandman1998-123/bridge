@@ -3043,9 +3043,14 @@ export async function updateAppointmentParticipantRsvpAsync(
   const appointment = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, scopedAppointmentId)
   if (!appointment) return null
   const participants = Array.isArray(appointment.participants) ? appointment.participants : []
-  const hasDeclined = participants.some((participant) => participant.rsvpStatus === 'Declined')
-  const hasProposed = participants.some((participant) => participant.rsvpStatus === 'Proposed New Time')
-  const allAccepted = participants.length > 0 && participants.every((participant) => participant.rsvpStatus === 'Accepted')
+  const requiredParticipants = participants.filter((participant) => {
+    if (participant?.isRequired === false || participant?.is_required === false) return false
+    const role = normalizeLowerText(participant?.participantRole || participant?.participant_role)
+    return !['agent', 'co-agent', 'principal'].includes(role)
+  })
+  const hasDeclined = requiredParticipants.some((participant) => participant.rsvpStatus === 'Declined')
+  const hasProposed = requiredParticipants.some((participant) => participant.rsvpStatus === 'Proposed New Time')
+  const allAccepted = requiredParticipants.length > 0 && requiredParticipants.every((participant) => participant.rsvpStatus === 'Accepted')
   const nextStatus = hasDeclined
     ? 'declined'
     : hasProposed
@@ -3055,6 +3060,10 @@ export async function updateAppointmentParticipantRsvpAsync(
         : 'requested'
 
   const normalizedRsvp = normalizeLowerText(participantUpdate?.rsvp_status)
+  const respondingParticipant = participants.find((participant) => normalizeText(participant?.participantId || participant?.participant_id) === scopedParticipantId)
+  const isSellerAcceptedHandoff = normalizedRsvp === 'accepted' &&
+    nextStatus === 'requested' &&
+    normalizeLowerText(respondingParticipant?.participantRole || respondingParticipant?.participant_role).includes('seller')
   await runAppointmentNotificationTask('participant_rsvp_updated', async () => {
     if (normalizedRsvp === 'declined') {
       await notifyAppointmentParticipants(scopedAppointmentId, 'appointment_declined', {
@@ -3074,6 +3083,27 @@ export async function updateAppointmentParticipantRsvpAsync(
           rsvpStatus: 'proposed_new_time',
         },
       })
+      return
+    }
+    if (isSellerAcceptedHandoff) {
+      const pendingBuyerEmails = requiredParticipants
+        .filter((participant) =>
+          normalizeLowerText(participant?.participantRole || participant?.participant_role).includes('buyer') &&
+          normalizeText(participant?.rsvpStatus || participant?.rsvp_status) === 'Pending' &&
+          normalizeText(participant?.email),
+        )
+        .map((participant) => normalizeText(participant?.email).toLowerCase())
+      if (pendingBuyerEmails.length) {
+        await notifyAppointmentParticipants(scopedAppointmentId, 'appointment_confirmation_required', {
+          visibility: appointment.visibility,
+          recipientEmails: pendingBuyerEmails,
+          metadata: {
+            source: 'seller_rsvp_handoff_to_buyer',
+            sellerParticipantId: scopedParticipantId,
+            attachCalendarInvite: true,
+          },
+        })
+      }
     }
   })
 
@@ -3081,7 +3111,7 @@ export async function updateAppointmentParticipantRsvpAsync(
     scopedOrganisationId,
     scopedAppointmentId,
     { status: nextStatus },
-    { actor },
+    { actor, suppressNotifications: isSellerAcceptedHandoff },
   )
 }
 

@@ -7,6 +7,10 @@ import {
   getAppointmentRsvpStatusCopy,
   isCompletedAppointmentRsvp,
 } from '../core/appointments/appointmentRsvpContract'
+import {
+  sendBuyerRsvpHandoffAfterSellerAccept,
+  sendViewingConfirmationAfterBuyerAccept,
+} from '../services/appointmentRsvpHandoffService'
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -115,6 +119,20 @@ export default function AppointmentRsvpPage() {
       const recordedStatus = normalizeText(response.rsvp_status) || selectedStatus
       setResultStatus(recordedStatus)
       setParticipant((previous) => previous ? { ...previous, rsvp_status: recordedStatus } : previous)
+      void sendBuyerRsvpHandoffAfterSellerAccept({
+        token,
+        participant,
+        rsvpStatus: recordedStatus,
+      }).catch((handoffError) => {
+        console.warn('[appointment-rsvp] seller-to-buyer handoff failed', handoffError)
+      })
+      void sendViewingConfirmationAfterBuyerAccept({
+        token,
+        participant,
+        rsvpStatus: recordedStatus,
+      }).catch((completionError) => {
+        console.warn('[appointment-rsvp] buyer RSVP completion failed', completionError)
+      })
     } catch (submitError) {
       setError(submitError?.message || 'Unable to record your RSVP right now.')
     } finally {

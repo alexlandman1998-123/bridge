@@ -45,7 +45,6 @@ import { createElement, useCallback, useEffect, useMemo, useRef, useState } from
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import LoadingSkeleton from '../components/LoadingSkeleton'
-import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
 import AttorneyMatterAccountsPanel from '../components/AttorneyMatterAccountsPanel'
@@ -4743,37 +4742,32 @@ function hasDocumentWithKeywords(documents = [], keywords = [], statuses = PRESE
 function resolveProgressBlockerReason({
   currentStage = 'confirmed',
   financeType = 'unknown',
-  buyerOnboardingComplete = false,
-  sellerOnboardingComplete = false,
-  isPrivateMatter = false,
-  otpSigned = false,
+  otpUploaded = false,
   proofOfFundsVerified = false,
-  bondOfferAccepted = false,
+  bondGrantUploaded = false,
   transferAttorneyAssigned = false,
   transferReady = false,
   registrationComplete = false,
 } = {}) {
   if (currentStage === 'confirmed') {
-    if (!buyerOnboardingComplete) return 'Buyer onboarding still needs to be completed.'
-    if (isPrivateMatter && !sellerOnboardingComplete) return 'Seller onboarding is still outstanding.'
-    return 'Accepted offer or reservation confirmation is still outstanding.'
+    return 'Seller accepted offer confirmation is still outstanding.'
   }
   if (currentStage === 'otp') {
-    return otpSigned ? '' : 'OTP must be signed before the matter can move into finance.'
+    return otpUploaded ? '' : 'Offer to Purchase must be uploaded before the matter can move into finance.'
   }
   if (currentStage === 'finance') {
     if (financeType === 'cash') {
-      return proofOfFundsVerified ? '' : 'Proof of funds still needs to be verified.'
+      return proofOfFundsVerified ? '' : 'Proof of funds still needs to be uploaded.'
     }
     if (financeType === 'bond') {
-      return bondOfferAccepted ? '' : 'Bond offer acceptance is still outstanding.'
+      return bondGrantUploaded ? '' : 'Bond grant still needs to be uploaded.'
     }
     if (financeType === 'combination') {
-      if (!bondOfferAccepted && !proofOfFundsVerified) return 'Bond approval and proof of funds verification are both still outstanding.'
-      if (!bondOfferAccepted) return 'Bond offer acceptance is still outstanding.'
-      return 'Proof of funds verification is still outstanding.'
+      if (!bondGrantUploaded && !proofOfFundsVerified) return 'Bond grant and proof of funds uploads are both still outstanding.'
+      if (!bondGrantUploaded) return 'Bond grant still needs to be uploaded.'
+      return 'Proof of funds still needs to be uploaded.'
     }
-    return 'Finance readiness still needs confirmation.'
+    return 'Finance evidence still needs to be uploaded.'
   }
   if (currentStage === 'transfer') {
     if (!transferAttorneyAssigned) return 'Transfer attorney still needs to be assigned.'
@@ -4794,7 +4788,6 @@ function resolveTransactionProgress({
   transactionEvents = [],
   transferStageKey = '',
   onboardingCompleted = false,
-  isPrivateMatter = false,
 } = {}) {
   const financeType = normalizeFinanceType(transaction?.finance_type, { allowUnknown: true })
   const mainStage = String(transaction?.current_main_stage || '').trim().toUpperCase()
@@ -4818,36 +4811,42 @@ function resolveTransactionProgress({
     Boolean(transaction?.id) &&
     (Boolean(transaction?.offer_accepted_at || transaction?.confirmed_at || transaction?.sale_date) ||
       ['reserved', 'paid', 'verified', 'accepted', 'completed'].includes(reservationStatus) ||
-      !['', 'AVAIL', 'NEW'].includes(mainStage) ||
-      matchesSignalText(stageSignal, ['confirmed', 'reserved', 'otp', 'finance', 'transfer', 'registration']))
-  const otpSigned =
-    hasTransactionEvent(transactionEvents, ['otp_signed', 'sale agreement signed', 'offer to purchase signed']) ||
-    hasRequirementStatus(requiredDocumentChecklist, ['signed_otp', 'otp_signed', 'sale_agreement_signed']) ||
-    hasDocumentWithKeywords(documents, ['signed_otp', 'signed otp', 'signed sale agreement', 'signed offer to purchase']) ||
+      matchesSignalText(stageSignal, ['offer accepted', 'accepted offer', 'confirmed', 'reserved', 'otp', 'finance', 'transfer', 'registration']))
+  const otpUploaded =
+    hasTransactionEvent(transactionEvents, ['otp_uploaded', 'otp signed', 'sale agreement uploaded', 'offer to purchase uploaded', 'offer to purchase signed']) ||
+    hasRequirementStatus(requiredDocumentChecklist, ['signed_otp', 'otp_signed', 'sale_agreement_signed', 'offer_to_purchase', 'sale_agreement'], PRESENT_WORKFLOW_DOCUMENT_STATUSES) ||
+    hasDocumentWithKeywords(documents, ['signed_otp', 'signed otp', 'otp', 'sale agreement', 'offer to purchase'], PRESENT_WORKFLOW_DOCUMENT_STATUSES) ||
     ['FIN', 'ATTY', 'XFER', 'REG', 'TRANSFER', 'REGISTRATION', 'COMPLETE'].includes(mainStage)
   const proofOfFundsVerified =
-    hasRequirementStatus(requiredDocumentChecklist, ['proof_of_funds', 'proof_of_funds_cash_component'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||
-    hasDocumentWithKeywords(documents, ['proof_of_funds', 'cash proof'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||
-    hasTransactionEvent(transactionEvents, ['proof_of_funds_received', 'proof of funds verified', 'proof of funds approved', 'document_approved proof_of_funds'])
-  const bondOfferAccepted =
-    Boolean(transactionFinanceWorkflow?.summary?.approvedQuote || transactionFinanceWorkflow?.summary?.instructionSent) ||
-    (Array.isArray(transactionFinanceWorkflow?.quotes) &&
-      transactionFinanceWorkflow.quotes.some((quote) => normalizeDetailKey(quote?.quote_status) === 'approved_by_buyer')) ||
-    (Array.isArray(transactionFinanceWorkflow?.applications) &&
-      transactionFinanceWorkflow.applications.some((application) =>
-        ['approved', 'buyer_approved'].includes(normalizeDetailKey(application?.status)),
-      )) ||
-    hasDocumentWithKeywords(documents, ['bond offer', 'bond grant', 'grant letter'], APPROVED_WORKFLOW_DOCUMENT_STATUSES) ||
-    hasTransactionEvent(transactionEvents, ['finance_approved', 'quote_approved', 'bond offer accepted', 'bond grant accepted']) ||
-    matchesSignalText(stageSignal, ['bond approved', 'finance approved', 'grant accepted'])
+    hasRequirementStatus(requiredDocumentChecklist, ['proof_of_funds', 'proof_of_funds_cash_component'], PRESENT_WORKFLOW_DOCUMENT_STATUSES) ||
+    hasDocumentWithKeywords(documents, ['proof_of_funds', 'cash proof', 'proof of funds'], PRESENT_WORKFLOW_DOCUMENT_STATUSES) ||
+    hasTransactionEvent(transactionEvents, ['proof_of_funds_received', 'proof of funds uploaded', 'proof of funds verified', 'proof of funds approved', 'document_approved proof_of_funds'])
+  const bondGrantUploaded =
+    Boolean(
+      transactionFinanceWorkflow?.instruction?.grantReceivedAt ||
+      transactionFinanceWorkflow?.instruction?.grant_received_at ||
+      transactionFinanceWorkflow?.instruction?.grantSignedAt ||
+      transactionFinanceWorkflow?.instruction?.grant_signed_at ||
+      transactionFinanceWorkflow?.instruction?.grantSubmittedAt ||
+      transactionFinanceWorkflow?.instruction?.grant_submitted_at,
+    ) ||
+    hasRequirementStatus(requiredDocumentChecklist, ['bond_grant', 'grant_letter', 'bond_approval', 'bond_approved'], PRESENT_WORKFLOW_DOCUMENT_STATUSES) ||
+    hasDocumentWithKeywords(documents, ['bond grant', 'grant letter', 'bond approval', 'bond approved'], PRESENT_WORKFLOW_DOCUMENT_STATUSES) ||
+    hasTransactionEvent(transactionEvents, ['bond_grant_uploaded', 'grant letter uploaded', 'bond grant accepted', 'bond approval uploaded']) ||
+    matchesSignalText(stageSignal, ['bond grant uploaded', 'grant letter uploaded'])
+  const bondOriginatorAssigned = Boolean(
+    transaction?.bond_originator ||
+    transaction?.assigned_bond_originator_email ||
+    transaction?.assigned_bond_originator_name,
+  )
   const financeComplete =
     financeType === 'cash'
       ? proofOfFundsVerified
       : financeType === 'bond'
-        ? bondOfferAccepted
+        ? bondGrantUploaded
         : financeType === 'combination'
-          ? proofOfFundsVerified && bondOfferAccepted
-          : proofOfFundsVerified || bondOfferAccepted
+          ? proofOfFundsVerified && bondGrantUploaded
+          : proofOfFundsVerified || bondGrantUploaded
   const transferAttorneyAssigned = Boolean(transaction?.assigned_attorney_email || transaction?.attorney)
   const transferReady =
     ['ready_for_lodgement', 'lodged_at_deeds_office', 'registered'].includes(transferStageKey) ||
@@ -4866,7 +4865,7 @@ function resolveTransactionProgress({
     completedStages.push('confirmed')
     currentStage = 'otp'
   }
-  if (completedStages.length === 1 && otpSigned) {
+  if (completedStages.length === 1 && otpUploaded) {
     completedStages.push('otp')
     currentStage = 'finance'
   }
@@ -4894,12 +4893,9 @@ function resolveTransactionProgress({
   const blockerReason = resolveProgressBlockerReason({
     currentStage,
     financeType,
-    buyerOnboardingComplete: onboardingCompleted,
-    sellerOnboardingComplete: isPrivateMatter ? sellerOnboardingComplete : true,
-    isPrivateMatter,
-    otpSigned,
+    otpUploaded,
     proofOfFundsVerified,
-    bondOfferAccepted,
+    bondGrantUploaded,
     transferAttorneyAssigned,
     transferReady,
     registrationComplete,
@@ -4914,8 +4910,8 @@ function resolveTransactionProgress({
     lastUpdatedAt: transaction?.updated_at || transaction?.created_at || null,
     blockersByStage: {
       confirmed: confirmedComplete ? [] : [blockerReason],
-      otp: otpSigned ? [] : ['OTP signature outstanding'],
-      finance: financeComplete ? [] : [resolveProgressBlockerReason({ currentStage: 'finance', financeType, proofOfFundsVerified, bondOfferAccepted })],
+      otp: otpUploaded ? [] : ['Offer to Purchase upload outstanding'],
+      finance: financeComplete ? [] : [resolveProgressBlockerReason({ currentStage: 'finance', financeType, proofOfFundsVerified, bondGrantUploaded })],
       transfer: transferReady ? [] : [resolveProgressBlockerReason({ currentStage: 'transfer', transferAttorneyAssigned, transferReady })],
       registration: registrationComplete ? [] : ['Registration capture outstanding'],
     },
@@ -4925,9 +4921,12 @@ function resolveTransactionProgress({
       sellerOnboardingSent,
       sellerOnboardingComplete,
       confirmedComplete,
-      otpSigned,
+      otpUploaded,
+      otpSigned: otpUploaded,
       proofOfFundsVerified,
-      bondOfferAccepted,
+      bondGrantUploaded,
+      bondOfferAccepted: bondGrantUploaded,
+      bondOriginatorAssigned,
       financeComplete,
       transferAttorneyAssigned,
       transferReady,
@@ -4985,10 +4984,10 @@ function resolveTransactionNextAction({
     }
   }
 
-  if (!progressState?.flags?.otpSigned) {
+  if (!progressState?.flags?.otpUploaded) {
     return {
-      title: 'OTP signature outstanding',
-      description: 'The Offer to Purchase must be signed before the matter can move into finance.',
+      title: 'OTP upload outstanding',
+      description: 'The Offer to Purchase must be uploaded before the matter can move into finance.',
       status: 'pending',
       priority: 'high',
       dueDate: transaction?.expected_transfer_date || transaction?.target_registration_date || null,
@@ -5004,7 +5003,7 @@ function resolveTransactionNextAction({
     if (cashOrHybridNeedsProof) {
       return {
         title: 'Proof of funds required',
-        description: 'Finance cannot complete until proof of funds has been uploaded and verified.',
+        description: 'Finance cannot complete until proof of funds has been uploaded.',
         status: 'pending',
         priority: 'high',
         dueDate: transaction?.finance_due_at || transaction?.expected_transfer_date || null,
@@ -5016,8 +5015,8 @@ function resolveTransactionNextAction({
     }
 
     return {
-      title: 'Bond offer acceptance pending',
-      description: 'The matter stays in finance until the bond offer has been accepted.',
+      title: 'Bond grant upload pending',
+      description: 'The matter stays in finance until the bond grant has been uploaded.',
       status: 'pending',
       priority: 'high',
       dueDate: transaction?.finance_due_at || transaction?.expected_transfer_date || null,
@@ -9008,9 +9007,8 @@ function AttorneyDocumentControl({
 }
 
 const AGENT_TRANSACTION_JOURNEY_STAGES = [
-  { key: 'offer_accepted', label: 'Offer Accepted', Icon: CheckCircle2 },
-  { key: 'otp_signed', label: 'OTP Signed', Icon: FileCheck2 },
-  { key: 'buyer_onboarding', label: 'Buyer Onboarding', Icon: UsersRound },
+  { key: 'confirmed', label: 'Confirmed', Icon: CheckCircle2 },
+  { key: 'otp', label: 'OTP', Icon: FileCheck2 },
   { key: 'finance', label: 'Finance', Icon: Landmark },
   { key: 'transfer', label: 'Transfer', Icon: Phone },
   { key: 'registration', label: 'Registration', Icon: FileText },
@@ -9047,8 +9045,10 @@ function getAgentOverviewCategory(row = {}) {
 }
 
 function getAgentJourneyStageIndex({ transaction = {}, lifecycleProgress = null, transferStageKey = '', transferStageLabel = '', lifecycleState = '' } = {}) {
+  const lifecycleStageIndex = TRANSACTION_LIFECYCLE_STAGE_ORDER.indexOf(String(lifecycleProgress?.currentStage || '').trim().toLowerCase())
+  if (lifecycleStageIndex >= 0) return lifecycleStageIndex
+
   const source = [
-    lifecycleProgress?.currentStage,
     lifecycleProgress?.nextMilestone,
     lifecycleProgress?.helperText,
     transferStageKey,
@@ -9061,34 +9061,37 @@ function getAgentJourneyStageIndex({ transaction = {}, lifecycleProgress = null,
     transaction?.onboarding_status,
   ].filter(Boolean).join(' ').toLowerCase()
 
-  if (/(registered|registration complete|completed)/.test(source)) return 5
-  if (/(registration|lodgement|lodged|transfer|duty|guarantee|attorney|conveyanc)/.test(source)) return 4
-  if (/(finance|bond|loan|bank|mortgage)/.test(source)) return 3
-  if (/(onboarding|fica|buyer)/.test(source)) return 2
-  if (/(otp|offer to purchase|agreement|signed)/.test(source)) return 1
+  if (/(registered|registration complete|completed)/.test(source)) return 4
+  if (/(registration|lodgement|lodged|transfer|duty|guarantee|attorney|conveyanc)/.test(source)) return 3
+  if (/(finance|bond|loan|bank|mortgage|proof of funds|grant)/.test(source)) return 2
+  if (/(otp|offer to purchase|agreement|signed|uploaded)/.test(source)) return 1
   return 0
 }
 
 function buildAgentJourneyStages({ transaction = {}, lifecycleProgress = null, transferStageKey = '', transferStageLabel = '', lifecycleState = '' } = {}) {
   const currentIndex = getAgentJourneyStageIndex({ transaction, lifecycleProgress, transferStageKey, transferStageLabel, lifecycleState })
+  const completedStageKeys = new Set(Array.isArray(lifecycleProgress?.completedStages) ? lifecycleProgress.completedStages : [])
   const dateByStage = {
-    offer_accepted: transaction?.offer_accepted_at || transaction?.accepted_at || transaction?.agreement_date || transaction?.created_at,
-    otp_signed: transaction?.otp_signed_at || transaction?.signed_otp_at || transaction?.agreement_signed_at,
-    buyer_onboarding: transaction?.onboarding_completed_at || transaction?.buyer_onboarding_sent_at || transaction?.updated_at,
-    finance: transaction?.finance_submitted_at || transaction?.bond_application_submitted_at || transaction?.bond_instruction_date,
+    confirmed: transaction?.offer_accepted_at || transaction?.accepted_at || transaction?.agreement_date || transaction?.confirmed_at || transaction?.created_at,
+    otp: transaction?.otp_uploaded_at || transaction?.otp_signed_at || transaction?.signed_otp_at || transaction?.agreement_signed_at,
+    finance: transaction?.bond_grant_uploaded_at || transaction?.proof_of_funds_uploaded_at || transaction?.finance_submitted_at || transaction?.bond_application_submitted_at || transaction?.bond_instruction_date,
     transfer: transaction?.instruction_date || transaction?.transfer_instruction_sent_at || transaction?.lodgement_date,
     registration: transaction?.registration_date || transaction?.registered_at || transaction?.target_registration_date || transaction?.expected_transfer_date,
   }
 
-  return AGENT_TRANSACTION_JOURNEY_STAGES.map((stage, index) => ({
-    ...stage,
-    state: index < currentIndex ? 'completed' : index === currentIndex ? 'current' : 'pending',
-    detail: index < currentIndex
-      ? formatShortDayMonth(dateByStage[stage.key], 'Completed')
-      : index === currentIndex
-        ? 'In Progress'
-        : 'Pending',
-  }))
+  return AGENT_TRANSACTION_JOURNEY_STAGES.map((stage, index) => {
+    const isCompleted = completedStageKeys.has(stage.key) || index < currentIndex
+    const isCurrent = !isCompleted && index === currentIndex
+    return {
+      ...stage,
+      state: isCompleted ? 'completed' : isCurrent ? 'current' : 'pending',
+      detail: isCompleted
+        ? formatShortDayMonth(dateByStage[stage.key], 'Completed')
+        : isCurrent
+          ? 'In Progress'
+          : 'Pending',
+    }
+  })
 }
 
 function buildAgentJourneyReason({ outstandingItems = [], lifecycleProgress = null, healthLabel = '' } = {}) {
@@ -9360,7 +9363,13 @@ function AgentTransactionOverview({
   onSendSellerReminder,
 }) {
   const completedCount = journeyStages.filter((stage) => stage.state === 'completed').length
-  const currentStageIndex = Math.max(0, journeyStages.findIndex((stage) => stage.state === 'current'))
+  const rawCurrentStageIndex = journeyStages.findIndex((stage) => stage.state === 'current')
+  const currentStageIndex =
+    rawCurrentStageIndex >= 0
+      ? rawCurrentStageIndex
+      : completedCount >= journeyStages.length
+        ? journeyStages.length - 1
+        : Math.max(0, completedCount)
   const progressPercent = journeyStages.length > 1 ? clampPercent((currentStageIndex / (journeyStages.length - 1)) * 100) : 0
   const reasonTone = journeyReason?.tone === 'warning'
     ? 'border-amber-100 bg-amber-50 text-amber-800'
@@ -9618,11 +9627,26 @@ function MatterOverviewHeader({
   updatedLabel = '',
   actionButtons = [],
   isAgentView = false,
-  lifecycleProgress = null,
 }) {
   const currentStage = MATTER_STAGE_MILESTONES[Math.min(progressIndex, MATTER_STAGE_MILESTONES.length - 1)] || MATTER_STAGE_MILESTONES[0]
 
   if (isAgentView) {
+    const identityCards = [
+      { label: 'Buyer', value: buyerName || 'Buyer pending', Icon: UserRound, tone: 'bg-emerald-50 text-emerald-700' },
+      { label: 'Seller', value: sellerName || 'Seller pending', Icon: UserRound, tone: 'bg-amber-50 text-amber-700' },
+      { label: 'Assigned Agent', value: agentName || 'Not assigned', Icon: Building2, tone: 'bg-blue-50 text-blue-700' },
+      ...assignedFirms.map((item) => {
+        const label = item?.label || 'Assigned Firm'
+        const normalizedLabel = String(label).toLowerCase()
+        const Icon = normalizedLabel.includes('bond') ? Landmark : Building2
+        return {
+          label,
+          value: item?.value || 'Not assigned',
+          Icon,
+          tone: normalizedLabel.includes('bond') ? 'bg-violet-50 text-violet-700' : 'bg-slate-100 text-slate-700',
+        }
+      }),
+    ].slice(0, 6)
     const metricGridClass =
       metrics.length >= 5
         ? 'grid gap-3 sm:grid-cols-2 xl:grid-cols-5'
@@ -9634,41 +9658,94 @@ function MatterOverviewHeader({
 
     return (
       <div className="space-y-4">
-        <section className="rounded-[26px] border border-borderDefault bg-white px-6 py-6 shadow-[0_18px_42px_rgba(15,23,42,0.065)] lg:px-7">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+        <section className="relative overflow-hidden rounded-[26px] border border-[#d8e4ef] bg-[#f8fbfd] px-5 py-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)] sm:px-6 lg:px-7">
+          <div aria-hidden="true" className="absolute inset-0 bg-[url('/brand/future-of-property-preview.jpg')] bg-cover bg-center opacity-[0.07]" />
+          <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(110deg,rgba(255,255,255,0.96)_0%,rgba(255,255,255,0.9)_45%,rgba(240,247,252,0.78)_100%)]" />
+          <div aria-hidden="true" className="absolute inset-x-0 top-0 h-32 bg-[linear-gradient(180deg,rgba(53,84,108,0.09)_0%,rgba(53,84,108,0)_100%)]" />
+          <div className="relative grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] xl:items-start">
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-[2rem] font-bold tracking-[-0.04em] text-textStrong md:text-[2.45rem]">
-                {clientTitle || buyerName || 'Buyer details pending'}
-              </h1>
-              <p className="mt-1.5 max-w-4xl text-base leading-7 text-textMuted">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="inline-flex items-center rounded-full border border-[#d9e4ef] bg-white/88 px-3 py-1 text-[0.68rem] font-semibold uppercase text-[#60758d] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                  Transaction Command Center
+                </span>
+                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusClassName}`}>
+                  {statusLabel}
+                </span>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-end gap-3">
+                <h1 className="min-w-0 text-[2rem] font-semibold leading-none text-[#142132] md:text-[2.4rem]">
+                  {clientTitle || buyerName || 'Buyer details pending'}
+                </h1>
+                <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                  {matterHealthLabel}
+                </span>
+              </div>
+
+              <p className="mt-3 flex max-w-4xl items-start gap-2 text-[1.02rem] font-medium leading-7 text-[#294158]">
+                <MapPin size={17} className="mt-1 shrink-0 text-[#6c8198]" />
                 {propertyLabel || subtitle || 'Property details pending'}
               </p>
               {daysActiveLabel || updatedLabel ? (
-                <p className="mt-3 text-sm text-textMuted">
+                <p className="mt-3 flex items-center gap-2 text-sm text-[#6b7d93]">
+                  <Clock3 size={15} />
                   {[daysActiveLabel || '', updatedLabel ? `Updated ${updatedLabel}` : ''].filter(Boolean).join(' • ')}
                 </p>
               ) : null}
-            </div>
-            <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
-              {actionButtons.map((action) => {
-                const button = (
-                  <Button type="button" variant={action.variant || 'secondary'} onClick={action.onClick} disabled={action.disabled}>
-                    {action.icon ? createElement(action.icon, { size: 14 }) : null}
-                    {action.busy ? action.busyLabel || 'Preparing...' : action.label}
-                  </Button>
-                )
 
-                if (!action.reason) {
-                  return <span key={action.actionKey || action.label}>{button}</span>
-                }
-
-                return (
-                  <span key={action.actionKey || action.label} title={action.reason}>
-                    {button}
-                  </span>
-                )
-              })}
+              <div className="mt-5 grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                {identityCards.map((item) => {
+                  const Icon = item.Icon
+                  return (
+                    <article key={item.label} className="flex min-w-0 items-start gap-2.5 rounded-[14px] border border-[#edf2f7] bg-white/82 px-3 py-2.5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                      <span className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] ${item.tone}`}>
+                        <Icon size={15} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[0.68rem] font-semibold uppercase text-[#8496ab]">{item.label}</span>
+                        <strong className="mt-0.5 block truncate text-sm font-semibold text-[#1d3144]">{item.value}</strong>
+                      </span>
+                    </article>
+                  )
+                })}
+              </div>
             </div>
+
+            <aside className="rounded-[20px] border border-[#dfe8f2] bg-white/84 p-4 shadow-[0_14px_30px_rgba(15,23,42,0.055)] backdrop-blur">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="text-[0.68rem] font-semibold uppercase text-[#7c8ea4]">Matter Health</span>
+                  <strong className="mt-1.5 block text-[1.35rem] font-semibold text-[#142132]">{matterHealthLabel}</strong>
+                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                    {[daysActiveLabel || '', updatedLabel ? `Updated ${updatedLabel}` : ''].filter(Boolean).join(' • ') || transactionStageLabel || currentStage.label}
+                  </p>
+                </div>
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] border border-emerald-200 bg-emerald-50 text-emerald-700">
+                  <CheckCircle2 size={18} />
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-2">
+                {actionButtons.map((action) => {
+                  const button = (
+                    <Button type="button" variant={action.variant || 'secondary'} className="w-full justify-center" onClick={action.onClick} disabled={action.disabled}>
+                      {action.icon ? createElement(action.icon, { size: 14 }) : null}
+                      {action.busy ? action.busyLabel || 'Preparing...' : action.label}
+                    </Button>
+                  )
+
+                  if (!action.reason) {
+                    return <span key={action.actionKey || action.label}>{button}</span>
+                  }
+
+                  return (
+                    <span key={action.actionKey || action.label} title={action.reason}>
+                      {button}
+                    </span>
+                  )
+                })}
+              </div>
+            </aside>
           </div>
         </section>
 
@@ -9689,29 +9766,6 @@ function MatterOverviewHeader({
           })}
         </section>
 
-        <section className="rounded-[22px] border border-borderDefault bg-white px-4 py-4 shadow-[0_12px_26px_rgba(15,23,42,0.04)] md:px-5">
-          <ProgressTimeline
-            currentStage={lifecycleProgress?.currentStage || 'confirmed'}
-            stages={TRANSACTION_LIFECYCLE_STAGE_ORDER}
-            stageLabelMap={TRANSACTION_LIFECYCLE_STAGE_LABELS}
-            framed={false}
-            compact
-            premium
-            showCurrentSummary={false}
-            progressPercent={lifecycleProgress?.progressPercent ?? 0}
-            blockersByStage={lifecycleProgress?.blockersByStage || null}
-            helperText={
-              lifecycleProgress?.blockerReason
-                ? lifecycleProgress.blockerReason
-                : `Next milestone: ${lifecycleProgress?.nextMilestone || transactionStageLabel || currentStage.label}`
-            }
-            lastUpdatedLabel={
-              lifecycleProgress?.lastUpdatedAt
-                ? `Updated ${new Date(lifecycleProgress.lastUpdatedAt).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })}`
-                : ''
-            }
-          />
-        </section>
       </div>
     )
   }
@@ -12032,11 +12086,9 @@ function AttorneyTransactionDetail() {
         transactionEvents,
         transferStageKey,
         onboardingCompleted,
-        isPrivateMatter,
       }),
     [
       documents,
-      isPrivateMatter,
       onboardingCompleted,
       requiredDocumentChecklist,
       transaction,
@@ -13468,13 +13520,13 @@ function AttorneyTransactionDetail() {
     if (!lifecycleProgressState?.flags?.registrationComplete) {
       actions.push({ label: 'Schedule Signing', icon: CalendarDays, onClick: handleQuickScheduleSigning })
     }
-    if (!lifecycleProgressState?.flags?.otpSigned) {
+    if (!lifecycleProgressState?.flags?.otpUploaded) {
       actions.push({ label: 'Generate Sales Agreement', icon: FileText, onClick: openAgentSalesAgreementWorkspace })
     }
 
     return actions
   }, [
-    lifecycleProgressState?.flags?.otpSigned,
+    lifecycleProgressState?.flags?.otpUploaded,
     lifecycleProgressState?.flags?.registrationComplete,
     openAgentSalesAgreementWorkspace,
     handleQuickAddWorkflowNote,
@@ -14186,21 +14238,21 @@ function AttorneyTransactionDetail() {
     () =>
       buildAgentJourneyStages({
         transaction,
-        lifecycleProgress: displayedLifecycleProgress,
+        lifecycleProgress: lifecycleProgressState,
         transferStageKey,
         transferStageLabel,
         lifecycleState,
       }),
-    [displayedLifecycleProgress, lifecycleState, transaction, transferStageKey, transferStageLabel],
+    [lifecycleProgressState, lifecycleState, transaction, transferStageKey, transferStageLabel],
   )
   const agentOverviewJourneyReason = useMemo(
     () =>
       buildAgentJourneyReason({
         outstandingItems: agentOverviewOutstandingItems,
-        lifecycleProgress: displayedLifecycleProgress,
+        lifecycleProgress: lifecycleProgressState,
         healthLabel: displayedMatterHealthLabel,
       }),
-    [agentOverviewOutstandingItems, displayedLifecycleProgress, displayedMatterHealthLabel],
+    [agentOverviewOutstandingItems, lifecycleProgressState, displayedMatterHealthLabel],
   )
   const agentOverviewDocumentRows = useMemo(
     () =>
@@ -15733,7 +15785,6 @@ function AttorneyTransactionDetail() {
               matterHealthLabel={displayedMatterHealthLabel}
               daysActiveLabel={daysBetween(transaction?.created_at)}
               updatedLabel={displayedUpdatedLabel}
-              lifecycleProgress={displayedLifecycleProgress}
               actionButtons={headerWorkflowActionButtons}
               isAgentView={isAgentTransactionView}
             />
