@@ -103,7 +103,200 @@ export const isSupabaseConfigured = Boolean(
   String(supabaseUrl).startsWith('https://'),
 )
 
-export const supabase = isSupabaseConfigured ? createClient(supabaseUrl, supabaseKey) : null
+const AUTH_READ_CACHE_TTL_MS = 750
+const AUTH_READ_OBSERVABILITY_EVENT = 'arch9:auth-read-observability'
+const AUTH_READ_SLOW_THRESHOLD_MS = 1000
+const AUTH_MUTATION_METHODS = [
+  'exchangeCodeForSession',
+  'refreshSession',
+  'setSession',
+  'signInAnonymously',
+  'signInWithIdToken',
+  'signInWithOAuth',
+  'signInWithOtp',
+  'signInWithPassword',
+  'signInWithSSO',
+  'signOut',
+  'signUp',
+  'updateUser',
+  'verifyOtp',
+]
+
+function isZeroArgumentAuthRead(args = []) {
+  return !Array.isArray(args) || args.length === 0
+}
+
+function isSuccessfulAuthRead(result) {
+  return result && !result.error
+}
+
+function getAuthReadNow() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+}
+
+function emitAuthReadObservability(detail = {}) {
+  const elapsedMs = Math.max(0, Math.round(Number(detail.elapsedMs || 0)))
+  const payload = {
+    contract: 'arch9-supabase-auth-read-observability-v1',
+    methodName: String(detail.methodName || '').trim(),
+    source: String(detail.source || '').trim(),
+    elapsedMs,
+    cacheable: detail.cacheable === true,
+    success: detail.success !== false,
+    errorMessage: String(detail.errorMessage || '').trim(),
+  }
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+    window.dispatchEvent(new CustomEvent(AUTH_READ_OBSERVABILITY_EVENT, { detail: payload }))
+  }
+  if (!payload.success || elapsedMs >= AUTH_READ_SLOW_THRESHOLD_MS) {
+    console.warn('[AUTH] auth read observability', payload)
+  }
+}
+
+function createSingleFlightAuthRead(auth, methodName, {
+  cacheTtlMs = AUTH_READ_CACHE_TTL_MS,
+  clearers = [],
+} = {}) {
+  const originalMethod = auth?.[methodName]
+  if (typeof originalMethod !== 'function') return null
+
+  let inFlight = null
+  let cachedResult = null
+  let cachedAt = 0
+
+  const clear = () => {
+    inFlight = null
+    cachedResult = null
+    cachedAt = 0
+  }
+  clearers.push(clear)
+
+  const wrappedMethod = async (...args) => {
+    const cacheable = isZeroArgumentAuthRead(args)
+    const now = Date.now()
+
+    if (cacheable && cachedResult && now - cachedAt < cacheTtlMs) {
+      return cachedResult
+    }
+
+    if (cacheable && inFlight) {
+      const joinedAt = getAuthReadNow()
+      inFlight
+        .then(
+          () => {
+            emitAuthReadObservability({
+              methodName,
+              source: 'single_flight_join',
+              elapsedMs: getAuthReadNow() - joinedAt,
+              cacheable: true,
+              success: true,
+            })
+          },
+          (error) => {
+            emitAuthReadObservability({
+              methodName,
+              source: 'single_flight_join',
+              elapsedMs: getAuthReadNow() - joinedAt,
+              cacheable: true,
+              success: false,
+              errorMessage: error?.message || 'Supabase auth read failed.',
+            })
+          },
+        )
+        .catch(() => {})
+      return inFlight
+    }
+
+    const startedAt = getAuthReadNow()
+    const request = Promise.resolve()
+      .then(() => originalMethod.apply(auth, args))
+      .then((result) => {
+        if (cacheable && isSuccessfulAuthRead(result)) {
+          cachedResult = result
+          cachedAt = Date.now()
+        }
+        emitAuthReadObservability({
+          methodName,
+          source: cacheable ? 'network_single_flight_owner' : 'network_direct',
+          elapsedMs: getAuthReadNow() - startedAt,
+          cacheable,
+          success: isSuccessfulAuthRead(result),
+          errorMessage: result?.error?.message || '',
+        })
+        return result
+      })
+      .catch((error) => {
+        emitAuthReadObservability({
+          methodName,
+          source: cacheable ? 'network_single_flight_owner' : 'network_direct',
+          elapsedMs: getAuthReadNow() - startedAt,
+          cacheable,
+          success: false,
+          errorMessage: error?.message || 'Supabase auth read failed.',
+        })
+        throw error
+      })
+
+    if (cacheable) {
+      inFlight = request.finally(() => {
+        inFlight = null
+      })
+      return inFlight
+    }
+
+    return request
+  }
+
+  auth[methodName] = wrappedMethod
+  return clear
+}
+
+function installAuthReadSingleFlight(client) {
+  const auth = client?.auth
+  if (!auth || auth.__arch9AuthReadSingleFlightInstalled) return client
+
+  const clearers = []
+  createSingleFlightAuthRead(auth, 'getSession', { clearers })
+  createSingleFlightAuthRead(auth, 'getUser', { clearers })
+
+  const clearAuthReadCache = () => {
+    clearers.forEach((clear) => clear())
+  }
+
+  if (typeof auth.onAuthStateChange === 'function') {
+    const originalOnAuthStateChange = auth.onAuthStateChange.bind(auth)
+    auth.onAuthStateChange = (callback) =>
+      originalOnAuthStateChange((event, nextSession) => {
+        clearAuthReadCache()
+        return callback?.(event, nextSession)
+      })
+  }
+
+  AUTH_MUTATION_METHODS.forEach((methodName) => {
+    if (typeof auth[methodName] !== 'function') return
+    const originalMethod = auth[methodName].bind(auth)
+    auth[methodName] = async (...args) => {
+      clearAuthReadCache()
+      try {
+        return await originalMethod(...args)
+      } finally {
+        clearAuthReadCache()
+      }
+    }
+  })
+
+  Object.defineProperty(auth, '__arch9AuthReadSingleFlightInstalled', {
+    value: true,
+    configurable: false,
+    enumerable: false,
+  })
+
+  return client
+}
+
+export const supabase = isSupabaseConfigured ? installAuthReadSingleFlight(createClient(supabaseUrl, supabaseKey)) : null
 const scopedClientCache = new Map()
 
 function getSupabaseProjectRef() {

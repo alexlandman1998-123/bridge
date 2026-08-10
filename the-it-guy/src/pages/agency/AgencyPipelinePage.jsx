@@ -187,6 +187,11 @@ import {
   generateFinanceInsights,
   FINANCE_INTELLIGENCE_DISCLAIMER,
 } from '../../services/financeIntelligenceService'
+import {
+  getPipelineTelemetryElapsedMs,
+  getPipelineTelemetryNow,
+  recordPipelineOperationalEvent,
+} from '../../services/pipelineOperationalTelemetryService'
 
 const PIPELINE_CONTEXT_TIMEOUT_MS = 8000
 const PIPELINE_RECORDS_TIMEOUT_MS = 10000
@@ -209,6 +214,8 @@ const LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED =
   LEGAL_DOCUMENT_SERVER_SIGNATURE_JOB_ENABLED &&
   readPipelineBooleanFlag(import.meta.env.VITE_LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED, true)
 const SELLER_ATTORNEY_PICKER_TIMEOUT_MS = 5000
+const KINGSTONS_ATTORNEY_ALLOCATION_TIMEOUT_MS = 5000
+const KINGSTONS_OPTIONAL_WORKFLOW_DELAY_MS = 350
 const SELLER_ONBOARDING_COMPLETION_POLL_MS = 7000
 const LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS = 8000
 const LEAD_WORKSPACE_HYDRATION_RETRY_MS = 1500
@@ -5551,6 +5558,9 @@ function formatViewingRequestUserError(error, fallback = "We couldn't send the a
   const message = normalizeText(error?.message || error)
   const lower = message.toLowerCase()
   if (!message) return fallback
+  if (lower.includes('valid organisation and lead') || lower.includes('invalid_context')) {
+    return `${fallback} Reload the buyer workspace so the lead context can sync, then try again.`
+  }
   if (lower.includes('edge function') || lower.includes('functionsfetcherror') || lower.includes('failed to send a request')) {
     return `${fallback} Please check the buyer's email address and try again.`
   }
@@ -6494,16 +6504,16 @@ function buildViewingPlannerSmartAutomation({
       action: '',
       actionLabel: '',
       title: 'Select viewing properties',
-      detail: 'Choose one or more properties before the automation can send a buyer request.',
+      detail: 'Choose one or more properties before capturing buyer availability.',
     }
   }
   if (!normalizeText(savedPlan.requestedAt) && viewingPlanStatus === 'draft') {
     return {
       ...base,
-      action: 'send_buyer_request',
-      actionLabel: 'Request buyer availability',
-      title: 'Ready to ask the buyer',
-      detail: `${selectedCount} selected propert${selectedCount === 1 ? 'y is' : 'ies are'} ready for the buyer preference link.`,
+      action: '',
+      actionLabel: '',
+      title: 'Ready for buyer availability',
+      detail: `${selectedCount} selected propert${selectedCount === 1 ? 'y is' : 'ies are'} ready. Confirm the selection, then capture preferred times.`,
       tone: 'ready',
     }
   }
@@ -6513,7 +6523,7 @@ function buildViewingPlannerSmartAutomation({
       action: 'viewing_completed_feedback',
       actionLabel: 'Viewing completed feedback',
       title: 'Waiting for buyer times',
-      detail: 'The buyer preference link has been sent. If the viewing already happened, record feedback and carry on.',
+      detail: 'Capture the buyer time windows from the call, WhatsApp, or email reply before coordinating seller access.',
     }
   }
   if (confirmedCount && !normalizeText(savedPlan.sellerRequestedAt)) {
@@ -8285,7 +8295,7 @@ const BUYER_PRE_APPROVAL_OPTIONS = ['', 'Not started', 'Pre-approved', 'Submitte
 const BUYER_PROPERTY_TO_SELL_OPTIONS = ['', 'No', 'Yes', 'Unsure']
 const BUYER_VIEWING_PLAN_STATUS_OPTIONS = [
   { key: 'draft', label: 'Draft', meta: 'Select properties' },
-  { key: 'buyer_availability', label: 'Sent to buyer', meta: 'Awaiting times' },
+  { key: 'buyer_availability', label: 'Buyer availability', meta: 'Capture times' },
   { key: 'buyer_confirmed', label: 'Buyer confirmed', meta: 'Times received' },
   { key: 'seller_coordination', label: 'Seller coordination', meta: 'Confirm access' },
   { key: 'booked', label: 'Booked', meta: 'Appointments set' },
@@ -8585,44 +8595,6 @@ function buildBuyerViewingPlanNotes(plan = {}, existingNotes = '') {
     BUYER_VIEWING_PLAN_NOTE_END,
     buildBuyerViewingPlanBlock(plan),
   )
-}
-
-function buildBuyerViewingAvailabilityEmailBody({
-  buyerName = 'there',
-  agentName = 'your agent',
-  properties = [],
-  origin = '',
-} = {}) {
-  const propertyLines = properties.map((property, index) => {
-    const listingId = normalizeText(property?.id)
-    const listingLink = origin && listingId && !listingId.startsWith('recommended-')
-      ? `\n   Link: ${origin}/listings/${encodeURIComponent(listingId)}`
-      : ''
-    return [
-      `${index + 1}. ${normalizeText(property?.title) || 'Recommended property'}`,
-      normalizeText(property?.price) ? `   Price: ${property.price}` : '',
-      normalizeText(property?.area) ? `   Area: ${property.area}` : '',
-      listingLink,
-    ].filter(Boolean).join('\n')
-  }).join('\n\n')
-
-  return [
-    `Hi ${normalizeText(buyerName) || 'there'},`,
-    '',
-    'Thanks for your interest. I have put together the viewing options below for you.',
-    '',
-    propertyLines || '1. The property you enquired about',
-    '',
-    'Please reply with:',
-    '1. Which of these properties you would like to view.',
-    '2. Two or three time windows that would work for you.',
-    '3. Whether anyone else will be joining the viewing.',
-    '',
-    'Once I have your preferred times, I will coordinate access with the sellers and confirm the appointments.',
-    '',
-    `Regards,`,
-    normalizeText(agentName) || 'Your agent',
-  ].join('\n')
 }
 
 function buildBuyerViewingAvailabilityEmailProperties(properties = [], origin = '') {
@@ -9150,6 +9122,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [organisationId, setOrganisationId] = useState('')
   const [organisationName, setOrganisationName] = useState('')
+  const recordPipelineTelemetry = useCallback((eventName, metadata = {}, severity = 'info') => {
+    void recordPipelineOperationalEvent({
+      eventName,
+      userId: normalizeText(profile?.id),
+      workspaceId: normalizeText(organisationId),
+      route: location.pathname,
+      severity,
+      metadata: {
+        organisationId: normalizeText(organisationId),
+        workspaceType: normalizeText(currentWorkspace?.type || workspace?.type || 'agency'),
+        role: normalizeText(role),
+        ...metadata,
+      },
+    })
+  }, [currentWorkspace?.type, location.pathname, organisationId, profile?.id, role, workspace?.type])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const handleAuthReadObservability = (event) => {
+      const detail = event?.detail || {}
+      const elapsedMs = Number(detail.elapsedMs || 0)
+      const source = normalizeText(detail.source)
+      const success = detail.success !== false
+      if (success && source !== 'single_flight_join' && elapsedMs < 1000) return
+      recordPipelineTelemetry('supabase_auth_read_observed', {
+        methodName: normalizeText(detail.methodName),
+        source,
+        elapsedMs,
+        cacheable: detail.cacheable === true,
+        success,
+        errorMessage: success ? '' : normalizeText(detail.errorMessage || 'Supabase auth read failed.'),
+      }, success ? 'info' : 'warning')
+    }
+    window.addEventListener('arch9:auth-read-observability', handleAuthReadObservability)
+    return () => {
+      window.removeEventListener('arch9:auth-read-observability', handleAuthReadObservability)
+    }
+  }, [recordPipelineTelemetry])
+
   const [users, setUsers] = useState([])
   const [records, setRecords] = useState({
     contacts: [],
@@ -9302,6 +9313,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     loading: false,
     error: '',
   })
+  const kingstonsAttorneyAllocationCacheRef = useRef(new Map())
   const [kingstonsAttorneyPipelineSyncing, setKingstonsAttorneyPipelineSyncing] = useState(false)
   const [kingstonsPrincipalAttorneyAllocationsState, setKingstonsPrincipalAttorneyAllocationsState] = useState({
     key: '',
@@ -9310,6 +9322,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     byListingId: {},
     checkedListingIds: [],
   })
+  const kingstonsPrincipalAttorneyAllocationsCacheRef = useRef(new Map())
   const [canonicalOfferActionId, setCanonicalOfferActionId] = useState('')
   const [canonicalOfferNotesById, setCanonicalOfferNotesById] = useState({})
   const [sellerReviewDeliveryModeByOfferId, setSellerReviewDeliveryModeByOfferId] = useState({})
@@ -10268,8 +10281,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     let attempt = 0
     let retryTimer = null
     let cancelled = false
+    let primaryHydrationReported = false
+    const hydrationStartedAt = getPipelineTelemetryNow()
     routeLeadHydrationRef.current = hydrationKey
     setRouteLeadHydrationStatus('loading')
+    recordPipelineTelemetry('lead_workspace_hydration_started', {
+      leadId: routeLeadId,
+      tab: routeLeadWorkspaceTab,
+      hasRouteLeadRecord: Boolean(routeLeadRecordRef.current),
+    })
+
+    const recordHydrationOutcome = (eventName, metadata = {}, severity = 'info') => {
+      recordPipelineTelemetry(eventName, {
+        leadId: routeLeadId,
+        attempt,
+        elapsedMs: getPipelineTelemetryElapsedMs(hydrationStartedAt),
+        ...metadata,
+      }, severity)
+    }
 
     const mergeRouteLeadSnapshot = (snapshot) => {
       if (!snapshot?.leads?.length) return false
@@ -10365,9 +10394,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
     }
 
+    const getRouteSnapshotListingId = (snapshot) => {
+      const routeLead = Array.isArray(snapshot?.leads) ? snapshot.leads[0] : null
+      return normalizeText(snapshot?.listingId || routeLead?.listingId || routeLead?.listing_id)
+    }
+
+    const markRouteSnapshotReady = (snapshot, { notice = '', source = 'unknown' } = {}) => {
+      if (!mergeRouteLeadSnapshot(snapshot)) return false
+      setRouteLeadHydrationStatus('ready')
+      setRouteLeadHydrationNotice(notice)
+      if (!primaryHydrationReported) {
+        primaryHydrationReported = true
+        recordHydrationOutcome('lead_workspace_hydration_ready', {
+          source,
+          leadCount: Array.isArray(snapshot?.leads) ? snapshot.leads.length : 0,
+          activityCount: Array.isArray(snapshot?.leadActivities) ? snapshot.leadActivities.length : 0,
+          taskCount: Array.isArray(snapshot?.tasks) ? snapshot.tasks.length : 0,
+          linkedListingCount: Array.isArray(snapshot?.linkedListings) ? snapshot.linkedListings.length : 0,
+          leadWorkspaceReason: normalizeText(snapshot?.leadWorkspaceReason),
+        })
+      }
+      return true
+    }
+
     const hydrateRouteLeadSnapshotLinkedListing = async (snapshot) => {
       const routeLead = Array.isArray(snapshot?.leads) ? snapshot.leads[0] : null
-      const listingId = normalizeText(snapshot?.listingId || routeLead?.listingId || routeLead?.listing_id)
+      const listingId = getRouteSnapshotListingId(snapshot)
       if (!listingId) return snapshot
       try {
         const linkedListing = await withPipelineTimeout(
@@ -10395,27 +10447,107 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
     }
 
+    const linkedListingHydrationKeys = new Set()
+    const hydrateAndMergeLinkedListingInBackground = (snapshot, reason = 'route_lead_background_listing') => {
+      const listingId = getRouteSnapshotListingId(snapshot)
+      if (!listingId) return
+      const listingHydrationKey = `${normalizeLeadIdentityKey(routeLeadId)}:${normalizeText(listingId)}`
+      if (linkedListingHydrationKeys.has(listingHydrationKey)) return
+      linkedListingHydrationKeys.add(listingHydrationKey)
+      void hydrateRouteLeadSnapshotLinkedListing(snapshot)
+        .then((linkedSnapshot) => {
+          if (cancelled || routeLeadHydrationRef.current !== hydrationKey) return
+          if (mergeRouteLeadSnapshot(linkedSnapshot)) {
+            setRouteLeadHydrationStatus('ready')
+            setRouteLeadHydrationNotice('')
+            recordHydrationOutcome('lead_workspace_linked_listing_background_ready', {
+              reason,
+              listingId,
+              linkedListingCount: Array.isArray(linkedSnapshot?.linkedListings) ? linkedSnapshot.linkedListings.length : 0,
+            })
+          }
+        })
+        .catch((linkedListingError) => {
+          console.warn('[PIPELINE] lead workspace linked listing background hydration failed.', {
+            reason,
+            error: linkedListingError,
+          })
+          recordHydrationOutcome('lead_workspace_linked_listing_background_failed', {
+            reason,
+            listingId,
+            errorMessage: linkedListingError?.message || 'Linked listing background hydration failed.',
+          }, 'warning')
+        })
+    }
+
+    const hydrateFullLeadWorkspaceInBackground = (reason = 'route_lead_background_workspace') => {
+      void (async () => {
+        try {
+          const workspaceSnapshot = await withPipelineTimeout(
+            fetchAgencyCrmLeadWorkspace(organisationId, routeLeadId),
+            'Lead workspace data is taking too long to load.',
+            LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS,
+          )
+          if (cancelled || routeLeadHydrationRef.current !== hydrationKey) return
+          if (mergeRouteLeadSnapshot(workspaceSnapshot)) {
+            setRouteLeadHydrationStatus('ready')
+            setRouteLeadHydrationNotice('')
+            recordHydrationOutcome('lead_workspace_background_hydration_ready', {
+              reason,
+              leadCount: Array.isArray(workspaceSnapshot?.leads) ? workspaceSnapshot.leads.length : 0,
+              activityCount: Array.isArray(workspaceSnapshot?.leadActivities) ? workspaceSnapshot.leadActivities.length : 0,
+              taskCount: Array.isArray(workspaceSnapshot?.tasks) ? workspaceSnapshot.tasks.length : 0,
+            })
+            hydrateAndMergeLinkedListingInBackground(workspaceSnapshot, reason)
+            return
+          }
+          if (!routeLeadWorkspaceSnapshotRef.current?.leads?.length && workspaceSnapshot?.leadWorkspaceStatus === 'not_found') {
+            routeLeadWorkspaceSnapshotRef.current = null
+            setRouteLeadHydrationStatus('not_found')
+            setRouteLeadHydrationNotice(LEAD_WORKSPACE_STALE_LINK_COPY)
+            recordHydrationOutcome('lead_workspace_background_hydration_not_found', { reason }, 'warning')
+            return
+          }
+          if (!routeLeadWorkspaceSnapshotRef.current?.leads?.length && workspaceSnapshot?.leadWorkspaceStatus === 'unavailable') {
+            routeLeadWorkspaceSnapshotRef.current = null
+            setRouteLeadHydrationStatus('unavailable')
+            setRouteLeadHydrationNotice(LEAD_WORKSPACE_UNAVAILABLE_COPY)
+            recordHydrationOutcome('lead_workspace_background_hydration_unavailable', { reason }, 'warning')
+          }
+        } catch (workspaceError) {
+          if (cancelled || routeLeadHydrationRef.current !== hydrationKey) return
+          console.warn('[PIPELINE] lead workspace background hydration failed; keeping the fast route snapshot active.', {
+            reason,
+            error: workspaceError,
+          })
+          recordHydrationOutcome('lead_workspace_background_hydration_failed', {
+            reason,
+            errorMessage: workspaceError?.message || 'Lead workspace background hydration failed.',
+          }, 'warning')
+        }
+      })()
+    }
+
     const hydrateLeadWorkspace = async () => {
       if (cancelled || attempt >= LEAD_WORKSPACE_HYDRATION_MAX_RETRIES) return
       attempt += 1
       try {
         const currentRouteLeadRecord = routeLeadRecordRef.current
-        if (currentRouteLeadRecord?.listingId || currentRouteLeadRecord?.listing_id) {
-          const routeRecordSnapshot = await hydrateRouteLeadSnapshotLinkedListing({
+        if (currentRouteLeadRecord) {
+          const routeRecordSnapshot = {
             contacts: [],
             leads: [currentRouteLeadRecord],
             leadActivities: [],
             tasks: [],
             listingId: normalizeText(currentRouteLeadRecord.listingId || currentRouteLeadRecord.listing_id),
             leadWorkspaceStatus: 'ready',
-            leadWorkspaceReason: 'route_record_linked_listing',
+            leadWorkspaceReason: 'route_record_seed',
             requestedLeadId: routeLeadId,
             resolvedLeadId: normalizeText(currentRouteLeadRecord.leadId || currentRouteLeadRecord.lead_id || routeLeadId),
-          })
-          if (cancelled) return
-          if (routeRecordSnapshot?.linkedListings?.length && mergeRouteLeadSnapshot(routeRecordSnapshot)) {
-            setRouteLeadHydrationStatus('ready')
-            setRouteLeadHydrationNotice('')
+          }
+          if (markRouteSnapshotReady(routeRecordSnapshot, { source: 'route_record_seed' })) {
+            hydrateAndMergeLinkedListingInBackground(routeRecordSnapshot, 'route_record_linked_listing')
+            hydrateFullLeadWorkspaceInBackground('route_record_followup')
             return
           }
         }
@@ -10425,11 +10557,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             'Lead workspace data is taking too long to load.',
             LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS,
           )
-          const routeSeedSnapshot = await hydrateRouteLeadSnapshotLinkedListing(seedSnapshot)
           if (cancelled) return
-          if (routeSeedSnapshot?.linkedListings?.length && mergeRouteLeadSnapshot(routeSeedSnapshot)) {
-            setRouteLeadHydrationStatus('ready')
-            setRouteLeadHydrationNotice('')
+          if (markRouteSnapshotReady(seedSnapshot, { source: 'route_hydration_seed' })) {
+            hydrateAndMergeLinkedListingInBackground(seedSnapshot, 'route_seed_linked_listing')
+            hydrateFullLeadWorkspaceInBackground('route_seed_followup')
             return
           }
         }
@@ -10438,33 +10569,44 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           'Lead workspace data is taking too long to load.',
           LEAD_WORKSPACE_HYDRATION_TIMEOUT_MS,
         )
-        const snapshot = await hydrateRouteLeadSnapshotLinkedListing(workspaceSnapshot)
         if (cancelled) return
-        if (mergeRouteLeadSnapshot(snapshot)) {
-          setRouteLeadHydrationStatus('ready')
-          setRouteLeadHydrationNotice('')
+        if (markRouteSnapshotReady(workspaceSnapshot, { source: 'full_workspace' })) {
+          hydrateAndMergeLinkedListingInBackground(workspaceSnapshot, 'workspace_snapshot_linked_listing')
           return
         }
-        if (snapshot?.leadWorkspaceStatus === 'not_found') {
+        if (workspaceSnapshot?.leadWorkspaceStatus === 'not_found') {
           routeLeadWorkspaceSnapshotRef.current = null
           setRouteLeadHydrationStatus('not_found')
           setRouteLeadHydrationNotice(LEAD_WORKSPACE_STALE_LINK_COPY)
+          recordHydrationOutcome('lead_workspace_hydration_not_found', {
+            leadWorkspaceReason: normalizeText(workspaceSnapshot?.leadWorkspaceReason),
+          }, 'warning')
           return
         }
-        if (snapshot?.leadWorkspaceStatus === 'unavailable') {
+        if (workspaceSnapshot?.leadWorkspaceStatus === 'unavailable') {
           routeLeadWorkspaceSnapshotRef.current = null
           setRouteLeadHydrationStatus('unavailable')
           setRouteLeadHydrationNotice(LEAD_WORKSPACE_UNAVAILABLE_COPY)
+          recordHydrationOutcome('lead_workspace_hydration_unavailable', {
+            leadWorkspaceReason: normalizeText(workspaceSnapshot?.leadWorkspaceReason),
+          }, 'warning')
           return
         }
       } catch (leadWorkspaceError) {
         console.warn('[PIPELINE] lead workspace hydration failed; full workspace refresh will continue in the background.', leadWorkspaceError)
+        recordHydrationOutcome('lead_workspace_hydration_attempt_failed', {
+          errorMessage: leadWorkspaceError?.message || 'Lead workspace hydration failed.',
+          willRetry: attempt < LEAD_WORKSPACE_HYDRATION_MAX_RETRIES,
+        }, 'warning')
       }
       if (!cancelled && attempt < LEAD_WORKSPACE_HYDRATION_MAX_RETRIES && typeof window !== 'undefined') {
         retryTimer = window.setTimeout(hydrateLeadWorkspace, LEAD_WORKSPACE_HYDRATION_RETRY_MS)
       } else if (!cancelled && attempt >= LEAD_WORKSPACE_HYDRATION_MAX_RETRIES) {
         setRouteLeadHydrationStatus('slow')
         setRouteLeadHydrationNotice('This lead is taking longer than expected to open. We are still refreshing pipeline records in the background.')
+        recordHydrationOutcome('lead_workspace_hydration_slow', {
+          maxRetries: LEAD_WORKSPACE_HYDRATION_MAX_RETRIES,
+        }, 'warning')
       }
     }
 
@@ -10478,8 +10620,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [
     isLeadWorkspaceRoute,
     organisationId,
+    recordPipelineTelemetry,
     reloadRecords,
     routeLeadId,
+    routeLeadWorkspaceTab,
   ])
 
   useEffect(() => {
@@ -11045,15 +11189,44 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     let cancelled = false
+    let startTimer = null
     const key = kingstonsPrincipalLinkedListingIdsKey
+    const cached = kingstonsPrincipalAttorneyAllocationsCacheRef.current.get(key)
+    if (cached) {
+      recordPipelineTelemetry('kingstons_principal_attorney_allocations_cache_hit', {
+        listingCount: kingstonsPrincipalLinkedListingIds.length,
+        allocatedCount: Object.keys(cached.byListingId || {}).length,
+      })
+      setKingstonsPrincipalAttorneyAllocationsState({
+        key,
+        loading: false,
+        error: '',
+        byListingId: cached.byListingId,
+        checkedListingIds: cached.checkedListingIds,
+      })
+      return
+    }
     setKingstonsPrincipalAttorneyAllocationsState((previous) => ({
       ...previous,
       key,
-      loading: true,
+      loading: false,
       error: '',
     }))
 
-    listPrivateListingTransferAttorneyAllocations(kingstonsPrincipalLinkedListingIds)
+    startTimer = window.setTimeout(() => {
+      if (cancelled) return
+      const allocationStartedAt = getPipelineTelemetryNow()
+      setKingstonsPrincipalAttorneyAllocationsState((previous) => ({
+        ...previous,
+        key,
+        loading: true,
+        error: '',
+      }))
+      withPipelineTimeout(
+        listPrivateListingTransferAttorneyAllocations(kingstonsPrincipalLinkedListingIds),
+        'Kingstons attorney allocation verification is taking too long.',
+        KINGSTONS_ATTORNEY_ALLOCATION_TIMEOUT_MS,
+      )
       .then((allocations) => {
         if (cancelled) return
         const byListingId = {}
@@ -11061,6 +11234,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           const listingId = normalizeText(allocation?.privateListingId)
           if (listingId) byListingId[listingId] = allocation
         }
+        kingstonsPrincipalAttorneyAllocationsCacheRef.current.set(key, {
+          byListingId,
+          checkedListingIds: kingstonsPrincipalLinkedListingIds,
+        })
+        recordPipelineTelemetry('kingstons_principal_attorney_allocations_loaded', {
+          listingCount: kingstonsPrincipalLinkedListingIds.length,
+          allocatedCount: Object.keys(byListingId).length,
+          elapsedMs: getPipelineTelemetryElapsedMs(allocationStartedAt),
+        })
         setKingstonsPrincipalAttorneyAllocationsState({
           key,
           loading: false,
@@ -11071,6 +11253,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
       .catch((allocationError) => {
         if (cancelled) return
+        recordPipelineTelemetry('kingstons_principal_attorney_allocations_failed', {
+          listingCount: kingstonsPrincipalLinkedListingIds.length,
+          elapsedMs: getPipelineTelemetryElapsedMs(allocationStartedAt),
+          errorMessage: allocationError?.message || 'Unable to verify Kingstons attorney pipeline allocations.',
+        }, 'warning')
         setKingstonsPrincipalAttorneyAllocationsState({
           key,
           loading: false,
@@ -11079,11 +11266,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           checkedListingIds: [],
         })
       })
+    }, KINGSTONS_OPTIONAL_WORKFLOW_DELAY_MS)
 
     return () => {
       cancelled = true
+      if (startTimer) window.clearTimeout(startTimer)
     }
-  }, [isPrincipal, kingstonsPrincipalLinkedListingIds, kingstonsPrincipalLinkedListingIdsKey])
+  }, [isPrincipal, kingstonsPrincipalLinkedListingIds, kingstonsPrincipalLinkedListingIdsKey, recordPipelineTelemetry])
 
   const selectedLeadLinkedTransaction = useMemo(() => {
     if (!selectedLead) return null
@@ -11139,16 +11328,51 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     let cancelled = false
+    let startTimer = null
+    const cacheKey = selectedKingstonsLinkedListingId
+    if (kingstonsAttorneyAllocationCacheRef.current.has(cacheKey)) {
+      recordPipelineTelemetry('kingstons_attorney_allocation_cache_hit', {
+        listingId: selectedKingstonsLinkedListingId,
+        hasAllocation: Boolean(kingstonsAttorneyAllocationCacheRef.current.get(cacheKey)),
+      })
+      setKingstonsAttorneyPipelineAllocationState({
+        listingId: selectedKingstonsLinkedListingId,
+        allocation: kingstonsAttorneyAllocationCacheRef.current.get(cacheKey),
+        loading: false,
+        error: '',
+      })
+      return undefined
+    }
     setKingstonsAttorneyPipelineAllocationState((previous) => ({
       ...previous,
       listingId: selectedKingstonsLinkedListingId,
-      loading: true,
+      loading: false,
       error: '',
     }))
 
-    getPrivateListingTransferAttorneyAllocation(selectedKingstonsLinkedListingId)
+    startTimer = window.setTimeout(() => {
+      if (cancelled) return
+      const allocationStartedAt = getPipelineTelemetryNow()
+      setKingstonsAttorneyPipelineAllocationState((previous) => ({
+        ...previous,
+        listingId: selectedKingstonsLinkedListingId,
+        loading: true,
+        error: '',
+      }))
+      withPipelineTimeout(
+        getPrivateListingTransferAttorneyAllocation(selectedKingstonsLinkedListingId),
+        'Kingstons attorney allocation verification is taking too long.',
+        KINGSTONS_ATTORNEY_ALLOCATION_TIMEOUT_MS,
+      )
       .then((allocation) => {
         if (cancelled) return
+        kingstonsAttorneyAllocationCacheRef.current.set(cacheKey, allocation)
+        recordPipelineTelemetry('kingstons_attorney_allocation_loaded', {
+          listingId: selectedKingstonsLinkedListingId,
+          hasAllocation: Boolean(allocation),
+          allocationStatus: normalizeText(allocation?.status),
+          elapsedMs: getPipelineTelemetryElapsedMs(allocationStartedAt),
+        })
         setKingstonsAttorneyPipelineAllocationState({
           listingId: selectedKingstonsLinkedListingId,
           allocation,
@@ -11158,6 +11382,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
       .catch((allocationError) => {
         if (cancelled) return
+        recordPipelineTelemetry('kingstons_attorney_allocation_failed', {
+          listingId: selectedKingstonsLinkedListingId,
+          elapsedMs: getPipelineTelemetryElapsedMs(allocationStartedAt),
+          errorMessage: allocationError?.message || 'Unable to verify the attorney pipeline allocation.',
+        }, 'warning')
         setKingstonsAttorneyPipelineAllocationState({
           listingId: selectedKingstonsLinkedListingId,
           allocation: null,
@@ -11165,9 +11394,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           error: allocationError?.message || 'Unable to verify the attorney pipeline allocation.',
         })
       })
+    }, KINGSTONS_OPTIONAL_WORKFLOW_DELAY_MS)
 
     return () => {
       cancelled = true
+      if (startTimer) window.clearTimeout(startTimer)
     }
   }, [
     selectedKingstonsLinkedListingId,
@@ -11177,6 +11408,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadIsSeller,
     selectedLeadLinkedListing?.updatedAt,
     selectedLeadLinkedListing?.updated_at,
+    recordPipelineTelemetry,
   ])
 
   useEffect(() => {
@@ -11421,7 +11653,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setBuyerQualificationEditing(false)
   }, [selectedLead, selectedLeadContact, selectedLeadLinkedListing])
 
-  const selectedLeadRecordId = normalizeText(selectedLead?.leadId)
+  const selectedLeadRecordId = normalizeText(
+    selectedLead?.leadId ||
+      selectedLead?.lead_id ||
+      (isLeadWorkspaceRoute ? routeLeadId : selectedLeadId),
+  )
   const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id || selectedLead?.mandatePacket?.id)
   const selectedLeadPropertyArea = normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest)
   const selectedLeadPropertyType = normalizeText(selectedLead?.propertyInterest)
@@ -13909,7 +14145,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setViewingPlanBookingPropertyId(savedPlan.confirmedPropertyIds.find((id) => !savedPlan.bookedPropertyIds.includes(id)) || savedPlan.confirmedPropertyIds[0] || savedPlan.selectedPropertyIds[0] || '')
       return
     }
-    const defaultIds = selectedLeadViewingPlanProperties.slice(0, 3).map((property) => normalizeText(property?.id)).filter(Boolean)
+    const originalEnquiryProperty = selectedLeadViewingPlanProperties.find((property) => property?.planLabel === 'Original enquiry')
+    const defaultIds = (originalEnquiryProperty ? [originalEnquiryProperty] : selectedLeadViewingPlanProperties.slice(0, 1))
+      .map((property) => normalizeText(property?.id))
+      .filter(Boolean)
     const sellerAvailabilityNote = buildSellerViewingAvailabilityNoteForProperties(
       selectedLeadViewingPlanProperties.filter((property) => defaultIds.includes(normalizeText(property?.id))),
     )
@@ -15647,7 +15886,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       setViewingPlanSelectedPropertyIds(selectedPropertyIds)
       setViewingPlanStatus(nextStatus)
-      setMessage('Viewing plan saved.')
+      setMessage(nextStatus === 'buyer_confirmed' ? 'Viewing properties confirmed. Add buyer availability to continue.' : 'Viewing plan saved.')
       scheduleRecordsReload(organisationId, 850)
     } catch (saveError) {
       setError(saveError?.message || 'Could not save the viewing plan.')
@@ -15656,7 +15895,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleSendBuyerViewingAvailabilityRequest(selectedProperties = []) {
+  async function _handleSendBuyerViewingAvailabilityRequest(selectedProperties = []) {
     if (!organisationId || !selectedLead || selectedLeadIsSeller) return
     const workspaceId = normalizeWorkspaceUuid(organisationId)
     const selectedLeadUuid = normalizeLeadUuidFromLead(selectedLead)
@@ -16486,9 +16725,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (automationAction === 'viewing_completed_feedback') {
       handleOpenViewingCompletedFeedbackOverride()
       return
-    }
-    if (automationAction === 'send_buyer_request') {
-      await handleSendBuyerViewingAvailabilityRequest(context.selectedProperties || [])
     }
   }
 
@@ -17949,6 +18185,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (applyState) {
       setSellerPreferredAttorneysError('')
     }
+    const loadStartedAt = getPipelineTelemetryNow()
 
     try {
       const accessContext = {
@@ -17997,6 +18234,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         attorneys,
         loadedAt: Date.now(),
       })
+      recordPipelineTelemetry('kingstons_preferred_transfer_attorneys_loaded', {
+        applyState,
+        showLoading,
+        preferredPartnerCount: Array.isArray(partners) ? partners.length : 0,
+        connectedAttorneyCount: Array.isArray(connectedAttorneyOptions) ? connectedAttorneyOptions.length : 0,
+        mergedAttorneyCount: attorneys.length,
+        preferredPartnersStatus: preferredPartnersResult.status,
+        connectedAttorneysStatus: connectedAttorneysResult.status,
+        elapsedMs: getPipelineTelemetryElapsedMs(loadStartedAt),
+      }, preferredPartnersResult.status === 'rejected' || connectedAttorneysResult.status === 'rejected' ? 'warning' : 'info')
       if (applyState && requestId === sellerPreferredAttorneysRequestRef.current) {
         applySellerPreferredAttorneyOptions(attorneys)
         if (!attorneys.length) {
@@ -18005,6 +18252,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       return attorneys
     } catch (loadError) {
+      recordPipelineTelemetry('kingstons_preferred_transfer_attorneys_failed', {
+        applyState,
+        showLoading,
+        elapsedMs: getPipelineTelemetryElapsedMs(loadStartedAt),
+        errorMessage: loadError?.message || 'Preferred transfer attorneys could not be loaded.',
+      }, 'warning')
       if (applyState && requestId === sellerPreferredAttorneysRequestRef.current) {
         setSellerPreferredAttorneys([])
         setSelectedSellerAttorneyId('')
@@ -18025,23 +18278,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     currentWorkspace?.type,
     organisationId,
     profile,
+    recordPipelineTelemetry,
     role,
     sellerPreferredAttorneyCacheKey,
     workspace?.type,
-  ])
-
-  useEffect(() => {
-    if (!organisationId || !selectedLead || !selectedLeadIsSeller) return
-    if (!isValidEmail(normalizeText(selectedLeadContact?.email))) return
-    if (sellerPreferredAttorneysCacheRef.current.has(sellerPreferredAttorneyCacheKey)) return
-    void loadSellerPreferredAttorneyOptions({ applyState: false, showLoading: false })
-  }, [
-    loadSellerPreferredAttorneyOptions,
-    organisationId,
-    selectedLead,
-    selectedLeadContact?.email,
-    selectedLeadIsSeller,
-    sellerPreferredAttorneyCacheKey,
   ])
 
   function updateKingstonsListingTermsDraftField(field, value) {
@@ -19279,6 +19519,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       )
 
       if (result?.allocation) {
+        kingstonsAttorneyAllocationCacheRef.current.set(listingId, result.allocation)
         setKingstonsAttorneyPipelineAllocationState({
           listingId,
           allocation: result.allocation,
@@ -19301,6 +19542,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         loading: false,
         error: reason,
       })
+      kingstonsAttorneyAllocationCacheRef.current.delete(listingId)
       setError(reason)
     } catch (syncError) {
       const message = syncError?.message || 'Transfer attorney pipeline sync failed.'
@@ -19310,6 +19552,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         loading: false,
         error: message,
       })
+      kingstonsAttorneyAllocationCacheRef.current.delete(listingId)
       setError(message)
     } finally {
       setKingstonsAttorneyPipelineSyncing(false)
@@ -19526,6 +19769,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           selectedKingstonsListingTerms,
         )
         if (attorneyPreInstructionResult?.allocation) {
+          kingstonsAttorneyAllocationCacheRef.current.set(createdListingId, attorneyPreInstructionResult.allocation)
           setKingstonsAttorneyPipelineAllocationState({
             listingId: createdListingId,
             allocation: attorneyPreInstructionResult.allocation,
@@ -20946,7 +21190,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   } = {}) {
     const resolvedLeadId = normalizeText(leadId)
     if (!organisationId || !resolvedLeadId) throw new Error('Select a persisted seller lead before updating the seller pack.')
-    const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+    const leadSource = normalizeLeadIdentityKey(selectedLead?.leadId || selectedLead?.lead_id) === normalizeLeadIdentityKey(resolvedLeadId)
+      ? selectedLead
+      : (routeLeadSnapshotLead || selectedLead || {})
+    const rawPayload = parseLeadRawEnquiryPayload(leadSource?.rawEnquiryPayload || leadSource?.raw_enquiry_payload)
     const normalizedSellerPack = {
       ...nextSellerPack,
       documents: asRecord(nextSellerPack.documents),
@@ -20963,11 +21210,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       kingstonsSellerPack: normalizedSellerPack,
       sellerPack: normalizedSellerPack,
     }, resolvedLeadId)
-    await withPipelineTimeout(
-      updateAgencyCrmLeadRecord(organisationId, resolvedLeadId, { rawEnquiryPayload }),
-      'Seller pack upload was stored, but updating the lead record is taking too long. Refresh and check the document row before uploading again.',
-      15000,
-    )
+    let leadRecordSaved = true
+    try {
+      await withPipelineTimeout(
+        updateAgencyCrmLeadRecord(organisationId, resolvedLeadId, { rawEnquiryPayload }),
+        'Seller pack upload was stored, but updating the lead record is taking too long.',
+        15000,
+      )
+    } catch (leadUpdateError) {
+      leadRecordSaved = false
+      console.warn('[AgencyPipelinePage] Seller pack upload stored locally, but lead record sync is still pending.', leadUpdateError)
+      recordPipelineTelemetry('kingstons_seller_pack_lead_record_sync_slow', {
+        leadId: resolvedLeadId,
+        outcome,
+        errorMessage: leadUpdateError?.message || 'Seller pack lead record sync is still pending.',
+      }, 'warning')
+    }
     if (activityNote) {
       void createAgencyCrmLeadActivity(organisationId, resolvedLeadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
@@ -20978,8 +21236,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         console.warn('[AgencyPipelinePage] Seller pack activity could not be recorded.', activityError)
       })
     }
-    if (successMessage) setMessage(successMessage)
-    return normalizedSellerPack
+    if (successMessage) {
+      setMessage(leadRecordSaved ? successMessage : `${successMessage} Lead save is still syncing in the background.`)
+    }
+    return { sellerPack: normalizedSellerPack, leadRecordSaved }
   }
 
   async function handleKingstonsSellerPackUpload(documentKey = '', event = null, documentRow = null) {
@@ -21009,13 +21269,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     const file = event?.target?.files?.[0] || null
     if (event?.target) event.target.value = ''
-    if (!key || !definition || !file || !selectedLead) return
+    const leadIdForUpload = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLeadRecordId || routeLeadId)
+    if (!key || !definition || !file || !leadIdForUpload) return
     const isOwnershipDrivenDocument = normalizeKey(definition.requirementLane || definition.requirement_lane) === 'ownership_driven' ||
       normalizeKey(definition.documentRequirementSection || definition.document_requirement_section) === 'seller_identity_fica'
     if ((key === 'signed_fica_form' || isOwnershipDrivenDocument) && !isValidKingstonsFicaSellerType(selectedKingstonsSellerPack.sellerType)) {
       setError('Capture the seller details before uploading FICA or authority documents.')
       return
     }
+    const uploadStartedAt = getPipelineTelemetryNow()
+    recordPipelineTelemetry('kingstons_seller_pack_document_upload_started', {
+      leadId: leadIdForUpload,
+      documentKey: key,
+      requirementKey: normalizeKey(sourceDocument.requirementKey || sourceDocument.requirement_key || key),
+      fileSize: Number(file.size || 0) || null,
+      fileType: normalizeText(file.type),
+    })
     try {
       setError('')
       setSellerPackUploadingKey(key)
@@ -21023,13 +21292,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         uploadKingstonsSellerPackFile({
           file,
           organisationId,
-          leadId: selectedLead.leadId,
+          leadId: leadIdForUpload,
           documentKey: key,
         }),
         'Document upload is taking too long. Please check your connection and try again.',
         30000,
       )
-      const currentPack = getKingstonsSellerPackState(selectedLead)
+      const currentPack = getKingstonsSellerPackState(selectedLead || routeLeadSnapshotLead || { leadId: leadIdForUpload })
       const requirementMeta = getKingstonsSellerPackListingRequirementMeta(key, {
         ...definition,
         ...sourceDocument,
@@ -21077,10 +21346,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         [key]: uploadedDocument,
         ...(canonicalRequirementKey && canonicalRequirementKey !== key ? { [canonicalRequirementKey]: uploadedDocument } : {}),
       }
-      await persistKingstonsSellerPack({
+      const persistResult = await persistKingstonsSellerPack({
         ...currentPack,
         documents: nextDocuments,
       }, {
+        leadId: leadIdForUpload,
         successMessage: `${definition.label} uploaded to the seller pack.`,
         activityNote: `${definition.label} was uploaded to the Kingstons seller pack.`,
         outcome: definition.label,
@@ -21094,6 +21364,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           selectedLead?.privateListingId ||
           selectedLead?.private_listing_id,
       )
+      let listingDocumentLinked = false
+      let listingDocumentLinkError = ''
       if (linkedListingId) {
         try {
           await withPipelineTimeout(
@@ -21124,7 +21396,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               uploadedAt: uploadedDocument.uploadedAt,
               metadata: {
                 source: 'kingstons_seller_pack_upload_status_sync',
-                leadId: normalizeText(selectedLead.leadId),
+                leadId: leadIdForUpload,
                 sellerPackDocumentKey: key,
                 sellerPackRequirementKey: canonicalRequirementKey,
               },
@@ -21132,11 +21404,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             'Seller pack listing document link is taking too long.',
             10000,
           )
+          listingDocumentLinked = true
         } catch (linkError) {
           console.warn('[AgencyPipelinePage] Seller pack upload saved on lead but could not be linked to listing documents.', linkError)
+          listingDocumentLinkError = linkError?.message || 'Seller pack listing document link is taking too long.'
+          recordPipelineTelemetry('kingstons_seller_pack_listing_document_link_failed', {
+            leadId: leadIdForUpload,
+            listingId: linkedListingId,
+            documentKey: key,
+            requirementKey: canonicalRequirementKey,
+            elapsedMs: getPipelineTelemetryElapsedMs(uploadStartedAt),
+            errorMessage: listingDocumentLinkError,
+          }, 'warning')
         }
       }
+      recordPipelineTelemetry('kingstons_seller_pack_document_upload_succeeded', {
+        leadId: leadIdForUpload,
+        listingId: linkedListingId,
+        documentKey: key,
+        requirementKey: canonicalRequirementKey,
+        leadRecordSaved: persistResult?.leadRecordSaved === true,
+        listingDocumentLinked,
+        listingDocumentLinkError,
+        elapsedMs: getPipelineTelemetryElapsedMs(uploadStartedAt),
+      }, persistResult?.leadRecordSaved === true && (!linkedListingId || listingDocumentLinked) ? 'info' : 'warning')
     } catch (uploadError) {
+      recordPipelineTelemetry('kingstons_seller_pack_document_upload_failed', {
+        leadId: leadIdForUpload,
+        documentKey: key,
+        elapsedMs: getPipelineTelemetryElapsedMs(uploadStartedAt),
+        errorMessage: uploadError?.message || `Unable to upload ${definition.label}.`,
+      }, 'error')
       setError(uploadError?.message || `Unable to upload ${definition.label}.`)
     } finally {
       setSellerPackUploadingKey('')
@@ -21146,19 +21444,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleKingstonsFormalValuationUpload(event = null) {
     const file = event?.target?.files?.[0] || null
     if (event?.target) event.target.value = ''
-    if (!file || !selectedLead) return
+    const leadIdForUpload = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLeadRecordId || routeLeadId)
+    if (!file || !leadIdForUpload) return
+    const uploadStartedAt = getPipelineTelemetryNow()
+    recordPipelineTelemetry('kingstons_formal_valuation_upload_started', {
+      leadId: leadIdForUpload,
+      documentKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+      fileSize: Number(file.size || 0) || null,
+      fileType: normalizeText(file.type),
+    })
     try {
       setError('')
       setFormalValuationUploading(true)
       const uploadedAt = new Date().toISOString()
-      const upload = await uploadKingstonsSellerPackFile({
-        file,
-        organisationId,
-        leadId: selectedLead.leadId,
-        documentKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
-        storageFolder: KINGSTONS_FORMAL_VALUATION_STORAGE_FOLDER,
-      })
-      const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+      const upload = await withPipelineTimeout(
+        uploadKingstonsSellerPackFile({
+          file,
+          organisationId,
+          leadId: leadIdForUpload,
+          documentKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+          storageFolder: KINGSTONS_FORMAL_VALUATION_STORAGE_FOLDER,
+        }),
+        'Formal valuation upload is taking too long. Please check your connection and try again.',
+        30000,
+      )
+      const leadSource = normalizeLeadIdentityKey(selectedLead?.leadId || selectedLead?.lead_id) === normalizeLeadIdentityKey(leadIdForUpload)
+        ? selectedLead
+        : (routeLeadSnapshotLead || selectedLead || {})
+      const rawPayload = parseLeadRawEnquiryPayload(leadSource?.rawEnquiryPayload || leadSource?.raw_enquiry_payload)
       const uploadedDocument = {
         key: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
         requirementKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
@@ -21235,8 +21548,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         status: 'Formal Valuation Uploaded',
       }
 
-      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
-      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      patchSelectedLeadRecord(leadPatch, leadIdForUpload)
+      let leadRecordSaved = true
+      try {
+        await withPipelineTimeout(
+          updateAgencyCrmLeadRecord(organisationId, leadIdForUpload, leadPatch),
+          'Formal valuation was stored, but updating the lead record is taking too long.',
+          15000,
+        )
+      } catch (leadUpdateError) {
+        leadRecordSaved = false
+        console.warn('[AgencyPipelinePage] Formal valuation upload stored locally, but lead record sync is still pending.', leadUpdateError)
+        recordPipelineTelemetry('kingstons_formal_valuation_lead_record_sync_slow', {
+          leadId: leadIdForUpload,
+          elapsedMs: getPipelineTelemetryElapsedMs(uploadStartedAt),
+          errorMessage: leadUpdateError?.message || 'Formal valuation lead record sync is still pending.',
+        }, 'warning')
+      }
       const linkedListingId = normalizeText(
         selectedLeadLinkedListing?.id ||
           selectedLeadLinkedListing?.listingId ||
@@ -21246,39 +21574,58 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           selectedLead?.privateListingId ||
           selectedLead?.private_listing_id,
       )
+      let listingDocumentLinked = false
+      let listingDocumentLinkError = ''
       if (linkedListingId) {
         const requirementMeta = getKingstonsSellerPackListingRequirementMeta(
           KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
           uploadedDocument,
         )
         try {
-          await ensurePrivateListingDocumentRequirements(
-            linkedListingId,
-            buildKingstonsSellerPackListingRequirementRows([uploadedDocument]),
-            { reason: 'kingstons_formal_valuation_upload_status_sync' },
+          await withPipelineTimeout(
+            ensurePrivateListingDocumentRequirements(
+              linkedListingId,
+              buildKingstonsSellerPackListingRequirementRows([uploadedDocument]),
+              { reason: 'kingstons_formal_valuation_upload_status_sync' },
+            ),
+            'Formal valuation listing requirement sync is taking too long.',
+            10000,
           )
-          await linkPrivateListingDocument(linkedListingId, {
-            requirementKey: requirementMeta.requirementKey || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
-            documentType: requirementMeta.documentType || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
-            documentCategory: requirementMeta.documentCategory || KINGSTONS_FORMAL_VALUATION_DOCUMENT.category,
-            documentName: normalizeText(file.name || KINGSTONS_FORMAL_VALUATION_DOCUMENT.fileName || KINGSTONS_FORMAL_VALUATION_DOCUMENT.label),
-            filePath: upload.storagePath,
-            fileUrl: upload.storagePath ? '' : upload.url,
-            visibility: 'internal',
-            status: 'uploaded',
-            uploadedAt,
-            metadata: {
-              source: 'kingstons_formal_valuation_upload_status_sync',
-              leadId: normalizeText(selectedLead.leadId),
-              sellerPackDocumentKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
-              sellerPackRequirementKey: requirementMeta.requirementKey || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
-            },
-          })
+          await withPipelineTimeout(
+            linkPrivateListingDocument(linkedListingId, {
+              requirementKey: requirementMeta.requirementKey || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+              documentType: requirementMeta.documentType || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+              documentCategory: requirementMeta.documentCategory || KINGSTONS_FORMAL_VALUATION_DOCUMENT.category,
+              documentName: normalizeText(file.name || KINGSTONS_FORMAL_VALUATION_DOCUMENT.fileName || KINGSTONS_FORMAL_VALUATION_DOCUMENT.label),
+              filePath: upload.storagePath,
+              fileUrl: upload.storagePath ? '' : upload.url,
+              visibility: 'internal',
+              status: 'uploaded',
+              uploadedAt,
+              metadata: {
+                source: 'kingstons_formal_valuation_upload_status_sync',
+                leadId: leadIdForUpload,
+                sellerPackDocumentKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+                sellerPackRequirementKey: requirementMeta.requirementKey || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+              },
+            }),
+            'Formal valuation listing document link is taking too long.',
+            10000,
+          )
+          listingDocumentLinked = true
         } catch (linkError) {
           console.warn('[AgencyPipelinePage] Formal valuation saved on lead but could not be linked to listing documents.', linkError)
+          listingDocumentLinkError = linkError?.message || 'Formal valuation listing document link is taking too long.'
+          recordPipelineTelemetry('kingstons_formal_valuation_listing_document_link_failed', {
+            leadId: leadIdForUpload,
+            listingId: linkedListingId,
+            documentKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+            elapsedMs: getPipelineTelemetryElapsedMs(uploadStartedAt),
+            errorMessage: listingDocumentLinkError,
+          }, 'warning')
         }
       }
-      void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+      void createAgencyCrmLeadActivity(organisationId, leadIdForUpload, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Formal Valuation Uploaded',
         activityNote: 'Formal valuation document uploaded. Seller process moved to Valuation Presentation.',
@@ -21287,8 +21634,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }, { actor: currentAgent }).catch((activityError) => {
         console.warn('[AgencyPipelinePage] Formal valuation upload activity could not be recorded.', activityError)
       })
-      setMessage('Formal valuation uploaded. Next best action is now Valuation Presentation.')
+      setMessage(leadRecordSaved
+        ? 'Formal valuation uploaded. Next best action is now Valuation Presentation.'
+        : 'Formal valuation uploaded. Lead save is still syncing in the background.')
+      recordPipelineTelemetry('kingstons_formal_valuation_upload_succeeded', {
+        leadId: leadIdForUpload,
+        listingId: linkedListingId,
+        documentKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+        leadRecordSaved,
+        listingDocumentLinked,
+        listingDocumentLinkError,
+        elapsedMs: getPipelineTelemetryElapsedMs(uploadStartedAt),
+      }, leadRecordSaved && (!linkedListingId || listingDocumentLinked) ? 'info' : 'warning')
     } catch (uploadError) {
+      recordPipelineTelemetry('kingstons_formal_valuation_upload_failed', {
+        leadId: leadIdForUpload,
+        documentKey: KINGSTONS_FORMAL_VALUATION_DOCUMENT.key,
+        elapsedMs: getPipelineTelemetryElapsedMs(uploadStartedAt),
+        errorMessage: uploadError?.message || 'Unable to upload the formal valuation document.',
+      }, 'error')
       setError(uploadError?.message || 'Unable to upload the formal valuation document.')
     } finally {
       setFormalValuationUploading(false)
@@ -26473,7 +26837,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           {
                             key: 'request',
                             label: 'Buyer availability',
-                            meta: savedViewingPlan.requestedAt ? 'Resend buyer link' : 'Send buyer request',
+                            meta: 'Capture preferred times',
                           },
                           {
                             key: 'seller',
@@ -26586,12 +26950,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           confirmedProperties: viewingPlanConfirmedProperties,
                           bookingProperty: viewingPlanBookingProperty,
                         }
-                        const viewingPlannerEmailPreview = buildBuyerViewingAvailabilityEmailBody({
-                          buyerName: normalizeText(selectedLeadDisplayName || selectedLeadContact?.firstName || selectedLead?.firstName) || 'there',
-                          agentName: currentAgent.fullName || currentAgent.email,
-                          properties: viewingPlanSelectedProperties,
-                          origin: typeof window !== 'undefined' ? window.location?.origin || '' : '',
-                        })
                         const viewingPlannerSelectedPreviewProperties = viewingPlanSelectedProperties.slice(0, 4)
                         const viewingPlannerSelectedOverflowCount = Math.max(0, viewingPlanSelectedProperties.length - viewingPlannerSelectedPreviewProperties.length)
                         const viewingPlannerBuyerPhone = normalizeText(selectedLeadContact?.phone || selectedLead?.phone)
@@ -26601,21 +26959,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           return normalizeText(appointment?.appointmentType || appointment?.appointmentTypeLabel || appointment?.title).toLowerCase().includes('viewing')
                         })
                         const viewingPlannerNextStageLabel = viewingPlannerActiveStepKey === 'request'
-                          ? (viewingPlannerBuyerHasRequest ? 'Waiting for buyer response' : 'Ready to send buyer link')
+                          ? 'Capture buyer times'
                           : viewingPlannerActiveStepKey === 'seller'
                             ? (viewingPlannerSellerHasRequest ? 'Waiting for seller access' : 'Ready to confirm seller access')
                             : viewingPlannerActiveStepKey === 'book'
                               ? (viewingPlannerBookedAppointments.length ? 'Viewing itinerary active' : 'Ready to schedule viewings')
-                              : 'Choose properties'
+                              : 'Confirm viewing properties'
                         const viewingPlannerActionLabel = viewingPlannerActiveStepKey === 'request'
-                          ? (viewingPlannerBuyerHasRequest ? 'Resend availability request' : 'Send availability request')
+                          ? 'Capture availability'
                           : viewingPlannerActiveStepKey === 'seller'
                             ? (viewingPlannerSellerHasRequest ? 'Resend seller request' : 'Request seller availability')
                             : viewingPlannerActiveStepKey === 'book'
                               ? 'Book viewing appointment'
-                              : 'Continue to buyer availability'
+                              : 'Confirm properties'
                         const viewingPlannerActionDisabled = viewingPlannerActiveStepKey === 'request'
-                          ? (!viewingPlanSelectedProperties.length || !viewingPlanBuyerEmail || isLeadDetailSaving)
+                          ? (!viewingPlanConfirmedPropertyIds.length || !viewingPlannerBuyerAvailability || isLeadDetailSaving)
                           : viewingPlannerActiveStepKey === 'seller'
                             ? (!viewingPlanConfirmedProperties.length || !viewingPlannerBuyerAvailability || !viewingPlanSellerRecipientCount || isLeadDetailSaving)
                             : viewingPlannerActiveStepKey === 'book'
@@ -26636,7 +26994,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         }
                         const handleViewingPlannerPrimaryAction = () => {
                           if (viewingPlannerActiveStepKey === 'request') {
-                            void handleSendBuyerViewingAvailabilityRequest(viewingPlanSelectedProperties)
+                            void handleCaptureBuyerViewingResponse()
                             return
                           }
                           if (viewingPlannerActiveStepKey === 'seller') {
@@ -27042,9 +27400,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     <>
                                       <div className="flex flex-wrap items-end justify-between gap-3">
                                         <div>
-                                          <p className="text-sm font-semibold text-[#60758b]">Step 1 of 4</p>
+                                          <p className="text-sm font-semibold text-[#60758b]">Step 1</p>
                                           <h4 className="mt-1 text-lg font-semibold text-[#102033]">Select properties for viewing</h4>
-                                          <p className="mt-1 text-sm text-[#60758b]">Choose the enquiry property and any suitable alternatives for one buyer request.</p>
+                                          <p className="mt-1 text-sm text-[#60758b]">Start with the enquiry property. Add alternatives only when the buyer asked for them.</p>
                                         </div>
                                         <Button type="button" size="sm" variant="secondary" onClick={() => handleLeadWorkspaceTabSelection('properties')}>
                                           <Plus className="h-4 w-4" />
@@ -27056,7 +27414,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           {selectedLeadViewingPlanProperties.map((property) => {
                                             const propertyId = normalizeText(property?.id)
                                             const isSelected = viewingPlanSelectedPropertyIds.includes(propertyId)
-                                            const propertyPlanLabel = property.planLabel === 'Original enquiry' ? 'Primary match' : property.planLabel
+                                            const propertyPlanLabel = property.planLabel
                                             return (
                                               <button
                                                 key={propertyId}
@@ -27103,10 +27461,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       <div className="rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
                                         <div className="flex flex-wrap items-start justify-between gap-3">
                                           <div>
-                                            <p className="text-sm font-semibold text-[#60758b]">Step 2 of 4</p>
-                                            <h4 className="mt-1 text-lg font-semibold text-[#102033]">{viewingPlannerBuyerHasRequest ? 'Resend buyer availability request' : 'Send buyer availability request'}</h4>
+                                            <p className="text-sm font-semibold text-[#60758b]">Step 2</p>
+                                            <h4 className="mt-1 text-lg font-semibold text-[#102033]">Capture buyer availability</h4>
                                             <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758b]">
-                                              Send one link for the buyer to choose their preferred viewing times.
+                                              Add the buyer's preferred time windows from the call, WhatsApp, or email reply.
                                             </p>
                                           </div>
                                           {viewingPlannerBuyerEmailDeliveryLabel ? (
@@ -27118,13 +27476,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           <div className="rounded-[12px] border border-[#dce7f2] bg-white px-3 py-3">
                                             <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Buyer</p>
                                             <p className="mt-1 truncate text-sm font-semibold text-[#102033]" title={selectedLeadDisplayName}>{selectedLeadDisplayName || 'Buyer'}</p>
-                                            <p className="mt-0.5 truncate text-xs text-[#60758b]" title={viewingPlanBuyerEmail || undefined}>{viewingPlanBuyerEmail || 'Email needed'}</p>
+                                            <p className="mt-0.5 truncate text-xs text-[#60758b]" title={viewingPlanBuyerEmail || undefined}>{viewingPlanBuyerEmail || 'Contact details pending'}</p>
                                             {viewingPlannerBuyerPhone ? <p className="mt-0.5 truncate text-xs text-[#60758b]">{viewingPlannerBuyerPhone}</p> : null}
                                           </div>
                                           <div className="rounded-[12px] border border-[#dce7f2] bg-white px-3 py-3">
                                             <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Properties included</p>
                                             <p className="mt-1 text-sm font-semibold text-[#102033]">{viewingPlannerSelectedCountLabel}</p>
-                                            <p className="mt-0.5 text-xs text-[#60758b]">One availability link</p>
+                                            <p className="mt-0.5 text-xs text-[#60758b]">Manual availability capture</p>
                                             <div className="mt-3 flex items-center gap-1.5">
                                               {viewingPlannerSelectedPreviewProperties.map((property) => (
                                                 <img key={`request-preview-${property.id}`} src={property.image} alt="" className="h-8 w-8 rounded-[7px] object-cover ring-1 ring-white" />
@@ -27135,11 +27493,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             </div>
                                           </div>
                                           <div className="rounded-[12px] border border-[#dce7f2] bg-white px-3 py-3">
-                                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Delivery</p>
-                                            <p className="mt-1 text-sm font-semibold text-[#102033]">{viewingPlannerBuyerHasRequest ? `Last sent ${formatDateShort(savedViewingPlan.requestedAt)}` : 'Email to buyer'}</p>
+                                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Next</p>
+                                            <p className="mt-1 text-sm font-semibold text-[#102033]">Confirm seller access</p>
                                             <div className="mt-2 space-y-1 text-xs leading-5 text-[#60758b]">
-                                              <p className="flex gap-1.5"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#157a4d]" />Buyer chooses preferred times</p>
-                                              <p className="flex gap-1.5"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#157a4d]" />Follow-up task after send</p>
+                                              <p className="flex gap-1.5"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#157a4d]" />Buyer times are saved to the plan</p>
+                                              <p className="flex gap-1.5"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#157a4d]" />Seller coordination unlocks next</p>
                                             </div>
                                           </div>
                                         </div>
@@ -27149,26 +27507,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             {formatViewingRequestUserError(savedViewingPlan.buyerEmailDeliveryFailure)}
                                           </p>
                                         ) : null}
-
-                                        <div className="mt-4 rounded-[14px] border border-[#dce7f2] bg-white p-4">
-                                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Email preview</p>
-                                          <div className="mt-3 rounded-[12px] border border-dashed border-[#cfe0ee] bg-[#fbfdff] p-4">
-                                            <p className="whitespace-pre-wrap text-sm leading-6 text-[#29435d]">{viewingPlannerEmailPreview}</p>
-                                            {viewingPlannerSelectedPreviewProperties.length ? (
-                                              <div className="mt-4 flex flex-wrap gap-2">
-                                                {viewingPlannerSelectedPreviewProperties.map((property) => (
-                                                  <div key={`email-property-${property.id}`} className="grid min-w-[150px] grid-cols-[42px_minmax(0,1fr)] items-center gap-2 rounded-[10px] bg-white p-2 ring-1 ring-[#e4edf6]">
-                                                    <img src={property.image} alt="" className="h-10 w-10 rounded-[8px] object-cover" />
-                                                    <span className="min-w-0">
-                                                      <span className="block truncate text-xs font-semibold text-[#20364c]" title={property.title}>{property.title}</span>
-                                                      <span className="block truncate text-[0.68rem] text-[#7c91a8]">{property.area || property.price}</span>
-                                                    </span>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            ) : null}
-                                          </div>
-                                        </div>
 
                                       {latestBuyerViewingPreferenceLink ? (
                                         <div className={`mt-4 rounded-[14px] border p-4 ${latestBuyerViewingPreferenceApplied ? 'border-[#cbe7d7] bg-[#f4fbf7]' : 'border-[#d8e6f2] bg-white'}`}>
@@ -27222,12 +27560,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           </Button>
                                         </div>
                                       ) : null}
-                                      {!viewingPlanBuyerEmail ? (
-                                        <p className="mt-3 text-sm font-semibold text-[#b45309]">Add a buyer email before sending the request.</p>
-                                      ) : null}
-                                      {viewingPlannerBuyerHasRequest ? (
                                         <div className="mt-5 border-t border-[#e6eef6] pt-4">
-                                          <h5 className="text-sm font-semibold text-[#102033]">Capture buyer response manually</h5>
+                                          <h5 className="text-sm font-semibold text-[#102033]">Buyer availability</h5>
                                           <div className="mt-3 grid gap-2 sm:grid-cols-2">
                                             {viewingPlanSelectedProperties.map((property) => {
                                               const propertyId = normalizeText(property?.id)
@@ -27259,16 +27593,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             </Button>
                                           </div>
                                         </div>
-                                      ) : null}
                                       </div>
 
                                       <aside className="rounded-[16px] border border-[#e3ecf5] bg-white p-4 shadow-[0_10px_26px_rgba(31,54,78,0.045)]">
                                         <p className="text-sm font-semibold text-[#102033]">What happens next?</p>
                                         <div className="mt-4 space-y-4">
                                           {[
-                                            ['Buyer receives email', 'With a link to choose preferred times', Mail],
-                                            ['Buyer selects availability', 'Across the selected properties', CheckSquare],
-                                            ['Sellers confirm access', 'The agent coordinates with all parties', UserRound],
+                                            ['Buyer availability captured', 'Preferred times are saved on the lead', CheckSquare],
+                                            ['Seller access confirmed', 'The agent coordinates with all parties', UserRound],
                                             ['Viewings are scheduled', 'A confirmed itinerary is created', CalendarDays],
                                           ].map(([title, detail, Icon]) => (
                                             <div key={title} className="flex gap-3">
@@ -27492,7 +27824,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         </Button>
                                       ) : null}
                                       <Button type="button" size="sm" disabled={viewingPlannerActionDisabled} onClick={handleViewingPlannerPrimaryAction}>
-                                        {viewingPlannerActiveStepKey === 'request' || viewingPlannerActiveStepKey === 'seller' ? <Send className="h-4 w-4" /> : null}
+                                        {viewingPlannerActiveStepKey === 'request' ? <CheckCircle2 className="h-4 w-4" /> : null}
+                                        {viewingPlannerActiveStepKey === 'seller' ? <Send className="h-4 w-4" /> : null}
                                         {viewingPlannerActiveStepKey === 'book' ? <CalendarDays className="h-4 w-4" /> : null}
                                         {viewingPlannerActionLabel}
                                         {viewingPlannerActiveStepKey === 'select' ? <ChevronRight className="h-4 w-4" /> : null}
@@ -27905,11 +28238,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       <CalendarDays className="h-5 w-5" />
                                     </span>
                                     <div className="min-w-0">
-                                      <p className="text-sm font-semibold text-[#102033]">Buyer availability request</p>
+                                      <p className="text-sm font-semibold text-[#102033]">Buyer availability</p>
                                       <p className="mt-1 text-xs leading-5 text-[#60758b]">
                                         {viewingPlanSelectedProperties.length
-                                          ? `${viewingPlanSelectedProperties.length} propert${viewingPlanSelectedProperties.length === 1 ? 'y' : 'ies'} selected for the first request.`
-                                          : 'Select at least one property to prepare the request.'}
+                                          ? `${viewingPlanSelectedProperties.length} propert${viewingPlanSelectedProperties.length === 1 ? 'y' : 'ies'} selected for the first viewing.`
+                                          : 'Select at least one property before capturing times.'}
                                       </p>
 	                                      {savedViewingPlan.requestedAt ? (
 	                                        <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -27953,11 +28286,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       type="button"
                                       size="sm"
                                       className="w-full"
-                                      disabled={!viewingPlanSelectedProperties.length || !viewingPlanBuyerEmail || isLeadDetailSaving}
-                                      onClick={() => void handleSendBuyerViewingAvailabilityRequest(viewingPlanSelectedProperties)}
+                                      disabled={!viewingPlanConfirmedPropertyIds.length || !normalizeText(viewingPlanResponseForm.availabilityWindows) || isLeadDetailSaving}
+                                      onClick={() => void handleCaptureBuyerViewingResponse()}
                                     >
-                                      <Send className="h-4 w-4" />
-                                      {isLeadDetailSaving ? 'Preparing...' : 'Request buyer availability'}
+                                      <CheckCircle2 className="h-4 w-4" />
+                                      {isLeadDetailSaving ? 'Saving...' : 'Capture buyer availability'}
                                     </Button>
                                     {showViewingCompletedFeedbackOverride ? (
                                       <Button type="button" size="sm" className="w-full" onClick={handleOpenViewingCompletedFeedbackOverride}>
@@ -27980,9 +28313,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       <CalendarDays className="h-4 w-4" />
                                       Schedule manually
                                     </Button>
-                                    {!viewingPlanBuyerEmail ? (
-                                      <p className="text-xs leading-5 text-[#b45309]">Add a buyer email before sending the request.</p>
-                                    ) : null}
                                   </div>
 
                                   <div className="mt-4 border-t border-[#e6eef6] pt-4">
@@ -30429,6 +30759,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                   {leadWorkspaceTab === 'documents' ? (
                   <div className="space-y-4">
+                    {isLeadWorkspaceRoute && routeLeadId && ['loading', 'slow'].includes(routeLeadHydrationStatus) ? (
+                      <div className="rounded-[18px] border border-[#d8e6f6] bg-[#f4f9ff] px-4 py-3 text-sm font-semibold text-[#315b7a]">
+                        Document uploads are available while the rest of this lead workspace keeps syncing in the background.
+                      </div>
+                    ) : null}
                     {selectedLeadIsSeller ? (
                       <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_18px_44px_rgba(31,54,78,0.07)]">
                         <div className="border-b border-[#e6eef7] bg-[#fbfdff] px-5 py-5 sm:px-6">
@@ -30673,12 +31008,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                                    onChange={(event) => {
 	                                                      const selectedFile = event.target.files?.[0]
 	                                                      if (!selectedFile) return
-	                                                      if (selectedLead) {
-	                                                        writeLeadWorkspaceSessionSnapshot(organisationId, selectedLead.leadId || selectedLead.lead_id || routeLeadId, {
+	                                                      const leadSnapshotForUpload = selectedLead || routeLeadSnapshotLead
+	                                                      if (leadSnapshotForUpload) {
+	                                                        const leadSnapshotId = normalizeText(leadSnapshotForUpload.leadId || leadSnapshotForUpload.lead_id || selectedLeadRecordId || routeLeadId)
+	                                                        writeLeadWorkspaceSessionSnapshot(organisationId, leadSnapshotId, {
 	                                                          organisationId: normalizeText(organisationId),
-	                                                          requestedLeadId: normalizeText(routeLeadId || selectedLead.leadId || selectedLead.lead_id),
-	                                                          resolvedLeadId: normalizeText(selectedLead.leadId || selectedLead.lead_id),
-	                                                          leads: [selectedLead],
+	                                                          requestedLeadId: normalizeText(routeLeadId || leadSnapshotId),
+	                                                          resolvedLeadId: leadSnapshotId,
+	                                                          leads: [leadSnapshotForUpload],
 	                                                        })
 	                                                      }
 	                                                      showDocumentUploadOverlay({

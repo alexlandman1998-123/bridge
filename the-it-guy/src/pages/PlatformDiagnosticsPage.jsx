@@ -45,6 +45,7 @@ import {
   runTransactionProgressRolloutAssurance,
   setTransactionProgressRollout,
 } from '../services/transactionSharedProgressService'
+import { getPipelineOperationalDiagnostics } from '../services/pipelineOperationalDiagnosticsService'
 
 function StatCard({ label, value, tone = 'neutral' }) {
   const toneClass =
@@ -259,6 +260,8 @@ export default function PlatformDiagnosticsPage() {
   const [legalGenerationHandoffsLoading, setLegalGenerationHandoffsLoading] = useState(false)
   const [legalGenerationHandoffAction, setLegalGenerationHandoffAction] = useState('')
   const [legalGenerationResolutionByReference, setLegalGenerationResolutionByReference] = useState({})
+  const [pipelineDiagnostics, setPipelineDiagnostics] = useState(null)
+  const [pipelineDiagnosticsLoading, setPipelineDiagnosticsLoading] = useState(false)
 
   const summary = useMemo(() => result?.summary || result || {}, [result])
   const issues = result?.issues || []
@@ -310,6 +313,22 @@ export default function PlatformDiagnosticsPage() {
       setError(operationsError?.message || 'Operations health check failed.')
     } finally {
       setOperationsLoading(false)
+    }
+  }
+
+  async function loadPipelineOperationalDiagnostics() {
+    try {
+      setPipelineDiagnosticsLoading(true)
+      setError('')
+      setPipelineDiagnostics(await getPipelineOperationalDiagnostics({
+        workspaceId: currentWorkspace?.id || '',
+        hours: 24,
+        limit: 750,
+      }))
+    } catch (pipelineError) {
+      setError(pipelineError?.message || 'Agency pipeline operational diagnostics failed.')
+    } finally {
+      setPipelineDiagnosticsLoading(false)
     }
   }
 
@@ -815,6 +834,11 @@ export default function PlatformDiagnosticsPage() {
   const documentConsistencyGate = documentConsistency
     ? documentConsistency.gate || buildCrossModuleDocumentConsistencyGate(documentConsistency)
     : null
+  const pipelineDiagnosticCounts = pipelineDiagnostics?.counts || {}
+  const pipelineDiagnosticLatency = pipelineDiagnostics?.latency || {}
+  const pipelineDiagnosticTopEvents = pipelineDiagnostics?.topEvents || []
+  const pipelineDiagnosticIssues = pipelineDiagnostics?.issueRows || []
+  const pipelineDiagnosticRecentEvents = pipelineDiagnostics?.recentEvents || []
 
   return (
     <section className="page">
@@ -831,6 +855,9 @@ export default function PlatformDiagnosticsPage() {
             </button>
             <button type="button" className="header-secondary-cta ml-2" onClick={loadDemoAndLaunchReadiness} disabled={launchLoading}>
               {launchLoading ? 'Checking launch...' : 'Launch readiness'}
+            </button>
+            <button type="button" className="header-secondary-cta ml-2" onClick={loadPipelineOperationalDiagnostics} disabled={pipelineDiagnosticsLoading}>
+              {pipelineDiagnosticsLoading ? 'Checking pipeline...' : 'Pipeline upload health'}
             </button>
           </div>
         </header>
@@ -895,6 +922,114 @@ export default function PlatformDiagnosticsPage() {
             ) : null}
           </div>
         ) : null}
+
+        <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Agency pipeline operations</h2>
+              <p className="mt-2 max-w-3xl text-sm text-[#60758d]">
+                Read-only health for lead workspace hydration, Kingstons seller-pack uploads, transfer-attorney lookups, and Supabase auth-read pressure from the last 24 hours.
+              </p>
+            </div>
+            <button type="button" className="header-secondary-cta" onClick={loadPipelineOperationalDiagnostics} disabled={pipelineDiagnosticsLoading}>
+              {pipelineDiagnosticsLoading ? 'Checking pipeline...' : 'Refresh pipeline health'}
+            </button>
+          </div>
+
+          {pipelineDiagnostics ? (
+            pipelineDiagnostics.available === false ? (
+              <p className={`rounded-[12px] border px-3 py-2 text-sm ${pipelineDiagnostics.status === 'not_installed' ? 'border-[#f5d3a4] bg-[#fff8ec] text-[#8a4b10]' : 'border-[#dbe4ee] bg-[#f9fbfe] text-[#60758d]'}`}>
+                Pipeline telemetry is not available: {pipelineDiagnostics.reason || pipelineDiagnostics.status || 'unknown'}.
+              </p>
+            ) : (
+              <div className="grid gap-4">
+                <div className="grid gap-3 md:grid-cols-5">
+                  <StatCard label="Status" value={pipelineDiagnostics.status || 'unknown'} tone={getDiagnosticStatusTone(pipelineDiagnostics.status)} />
+                  <StatCard label="Events" value={pipelineDiagnosticCounts.totalEvents || 0} />
+                  <StatCard label="Warnings" value={pipelineDiagnosticCounts.warnings || 0} tone={pipelineDiagnosticCounts.warnings ? 'warning' : 'success'} />
+                  <StatCard label="Errors" value={pipelineDiagnosticCounts.errors || 0} tone={pipelineDiagnosticCounts.errors ? 'critical' : 'success'} />
+                  <StatCard label="Upload success" value={pipelineDiagnostics.uploadSuccessRate == null ? 'n/a' : `${pipelineDiagnostics.uploadSuccessRate}%`} tone={(pipelineDiagnostics.uploadSuccessRate ?? 100) >= 90 ? 'success' : 'warning'} />
+                </div>
+                <div className="grid gap-3 md:grid-cols-5">
+                  <StatCard label="Slow saves" value={pipelineDiagnosticCounts.slowLeadSaves || 0} tone={pipelineDiagnosticCounts.slowLeadSaves ? 'warning' : 'success'} />
+                  <StatCard label="Link failures" value={pipelineDiagnosticCounts.listingLinkFailures || 0} tone={pipelineDiagnosticCounts.listingLinkFailures ? 'warning' : 'success'} />
+                  <StatCard label="Slow hydration" value={pipelineDiagnosticCounts.slowHydration || 0} tone={pipelineDiagnosticCounts.slowHydration ? 'warning' : 'success'} />
+                  <StatCard label="Auth reads" value={pipelineDiagnosticCounts.authReadEvents || 0} />
+                  <StatCard label="P95 latency" value={pipelineDiagnosticLatency.p95Ms == null ? 'n/a' : `${pipelineDiagnosticLatency.p95Ms} ms`} tone={(pipelineDiagnosticLatency.p95Ms || 0) >= 15000 ? 'warning' : 'success'} />
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Top events</h3>
+                    {pipelineDiagnosticTopEvents.length ? (
+                      <ul className="mt-3 divide-y divide-[#edf1f6] text-sm text-[#60758d]">
+                        {pipelineDiagnosticTopEvents.map((event) => (
+                          <li key={event.eventName} className="flex items-center justify-between gap-3 py-2">
+                            <span className="min-w-0 truncate">{event.eventName}</span>
+                            <span className="font-semibold text-[#31485e]">{event.count}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-3 text-sm text-[#60758d]">No pipeline events found for this window.</p>
+                    )}
+                  </div>
+                  <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Current issues</h3>
+                    {pipelineDiagnosticIssues.length ? (
+                      <ul className="mt-3 divide-y divide-[#edf1f6] text-sm text-[#60758d]">
+                        {pipelineDiagnosticIssues.slice(0, 6).map((event) => (
+                          <li key={event.id || `${event.eventName}-${event.createdAt}`} className="grid gap-1 py-2">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <span className="font-semibold text-[#31485e]">{event.eventName}</span>
+                              <span>{event.severity} · {event.elapsedMs == null ? 'n/a' : `${event.elapsedMs} ms`}</span>
+                            </div>
+                            <p>{event.metadata?.errorMessage || event.route || 'No detail captured.'}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-3 text-sm text-[#236340]">No warning or error events in the selected window.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="overflow-hidden rounded-[14px] border border-[#dde4ee] bg-white">
+                  <table className="w-full min-w-[860px] text-left text-sm">
+                    <thead className="bg-[#f7f9fc] text-xs uppercase tracking-[0.08em] text-[#60758d]">
+                      <tr>
+                        <th className="px-4 py-3">Time</th>
+                        <th className="px-4 py-3">Event</th>
+                        <th className="px-4 py-3">Severity</th>
+                        <th className="px-4 py-3">Route</th>
+                        <th className="px-4 py-3">Latency</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#edf1f6]">
+                      {pipelineDiagnosticRecentEvents.length ? pipelineDiagnosticRecentEvents.map((event) => (
+                        <tr key={event.id || `${event.eventName}-${event.createdAt}`}>
+                          <td className="px-4 py-3 text-[#60758d]">{formatDiagnosticDate(event.createdAt)}</td>
+                          <td className="px-4 py-3 font-semibold text-[#31485e]">{event.eventName}</td>
+                          <td className="px-4 py-3 capitalize">{event.severity}</td>
+                          <td className="px-4 py-3 text-[#60758d]">{event.route || '-'}</td>
+                          <td className="px-4 py-3 text-[#60758d]">{event.elapsedMs == null ? '-' : `${event.elapsedMs} ms`}</td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-6 text-center text-[#60758d]">No recent pipeline operational events.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          ) : (
+            <p className="rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#f9fbfe] px-3 py-3 text-sm text-[#60758d]">
+              Run pipeline health to inspect recent upload, hydration, attorney lookup, and auth-read telemetry.
+            </p>
+          )}
+        </div>
 
         <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
