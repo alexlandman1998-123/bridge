@@ -12528,11 +12528,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [selectedLead, selectedLeadHasKingstonsPipelineSignal],
   )
   const selectedKingstonsProcessDocuments = useMemo(
-    () => [
-      ...(selectedLeadLinkedListing?.documents || []),
-      ...(selectedKingstonsFormalValuationRow ? [selectedKingstonsFormalValuationRow] : []),
-      ...selectedKingstonsSellerPackRows,
-    ],
+    () => {
+      const listingDocuments = (selectedLeadLinkedListing?.documents || []).filter((documentRow) => {
+        if (!selectedKingstonsFormalValuationRow) return true
+        const documentKey = normalizeKey(documentRow?.key || documentRow?.requirementKey || documentRow?.requirement_key || documentRow?.documentType || documentRow?.document_type)
+        return documentKey !== KINGSTONS_FORMAL_VALUATION_DOCUMENT.key
+      })
+      return [
+        ...(selectedKingstonsFormalValuationRow ? [selectedKingstonsFormalValuationRow] : []),
+        ...listingDocuments,
+        ...selectedKingstonsSellerPackRows,
+      ]
+    },
     [selectedKingstonsFormalValuationRow, selectedKingstonsSellerPackRows, selectedLeadLinkedListing?.documents],
   )
 
