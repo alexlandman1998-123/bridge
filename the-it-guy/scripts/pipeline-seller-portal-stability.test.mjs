@@ -92,6 +92,16 @@ assert.match(
   /const leadSource = resolveActualLeadSource\([\s\S]*?localRow\.leadSource[\s\S]*?remoteRow\.leadSource[\s\S]*?baseRow\.leadSource/,
   'lead refresh merges should preserve persisted CRM lead sources over listing lifecycle fallback labels',
 )
+assert.match(
+  pipelineSource,
+  /const preserveCrmLifecycle = Boolean\(localRow\?\.leadId\) && isPrivateListingFallbackLead\(remoteRow\)/,
+  'private-listing fallback rows must not overwrite persisted CRM lifecycle stage/status values',
+)
+assert.match(
+  pipelineSource,
+  /first_contacted_at: firstWorkspaceText\(baseRow\.first_contacted_at, baseRow\.firstContactedAt, localRow\.first_contacted_at, localRow\.firstContactedAt\)/,
+  'lead refresh merges should preserve first-contact evidence across camelCase and snake_case fields',
+)
 assert.doesNotMatch(
   pipelineSource,
   /leadSource:\s*['"]Seller Onboarding['"]/,

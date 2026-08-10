@@ -6949,6 +6949,14 @@ function resolveActualLeadSource(...values) {
   return ''
 }
 
+function isPrivateListingFallbackLead(row = {}) {
+  return Boolean(
+    normalizeText(row?.privateListingId || row?.private_listing_id) ||
+      normalizeText(row?.originatingCrmLeadId || row?.originating_crm_lead_id) ||
+      normalizeText(row?.sellerLeadId || row?.seller_lead_id),
+  )
+}
+
 function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
   const mergedById = new Map()
   const remoteLeadRows = Array.isArray(remoteRows) ? remoteRows : []
@@ -6969,6 +6977,7 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
     const baseRow = isRemoteRowAuthoritative
       ? { ...localRow, ...remoteRow }
       : remoteUpdated >= localUpdated ? { ...localRow, ...remoteRow } : { ...remoteRow, ...localRow }
+    const preserveCrmLifecycle = Boolean(localRow?.leadId) && isPrivateListingFallbackLead(remoteRow)
     const mergedSellerOnboarding = mergeSellerOnboardingSnapshot(baseRow, localRow, remoteRow)
     const leadSource = resolveActualLeadSource(
       localRow.leadSource,
@@ -6993,6 +7002,16 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
 
     const mergedRow = {
       ...baseRow,
+      stage: preserveCrmLifecycle
+        ? normalizeText(localRow.stage || localRow.currentStage || baseRow.stage || remoteRow.stage)
+        : baseRow.stage,
+      status: preserveCrmLifecycle
+        ? normalizeText(localRow.status || localRow.currentStatus || baseRow.status || remoteRow.status)
+        : baseRow.status,
+      firstContactedAt: firstWorkspaceText(baseRow.firstContactedAt, baseRow.first_contacted_at, localRow.firstContactedAt, localRow.first_contacted_at),
+      first_contacted_at: firstWorkspaceText(baseRow.first_contacted_at, baseRow.firstContactedAt, localRow.first_contacted_at, localRow.firstContactedAt),
+      ownershipStatus: firstWorkspaceText(baseRow.ownershipStatus, baseRow.ownership_status, localRow.ownershipStatus, localRow.ownership_status),
+      ownership_status: firstWorkspaceText(baseRow.ownership_status, baseRow.ownershipStatus, localRow.ownership_status, localRow.ownershipStatus),
       leadSource,
       contactId: shouldPreservePersistedContactId
         ? localContactId
@@ -20238,13 +20257,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     setSellerContactFeedbackModal((previous) => ({ ...previous, saving: true, error: '' }))
     try {
-      await updateAgencyCrmLeadRecord(organisationId, leadId, {
+      const leadPatch = {
         stage: 'Contacted',
         status: 'Active',
         firstContactedAt: selectedLead?.firstContactedAt || selectedLead?.first_contacted_at || contactedAt,
         ownershipStatus: 'contacted',
-      })
-      await createAgencyCrmLeadActivity(organisationId, leadId, {
+      }
+      const localLeadPatch = {
+        ...leadPatch,
+        first_contacted_at: leadPatch.firstContactedAt,
+        ownership_status: leadPatch.ownershipStatus,
+        updatedAt: contactedAt,
+        updated_at: contactedAt,
+      }
+      await updateAgencyCrmLeadRecord(organisationId, leadId, leadPatch)
+      const savedActivity = await createAgencyCrmLeadActivity(organisationId, leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType,
         activityNote,
@@ -20252,21 +20279,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         activityDate: contactedAt,
       }, { actor: currentAgent })
 
-      setRecords((previous) => ({
-        ...previous,
-        leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) => (
-          normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(leadId)
-            ? {
-                ...lead,
-                stage: 'Contacted',
-                status: 'Active',
-                firstContactedAt: lead?.firstContactedAt || lead?.first_contacted_at || contactedAt,
-                ownershipStatus: 'contacted',
-                updatedAt: contactedAt,
-              }
-            : lead
-        )),
-      }))
+      patchSelectedLeadRecord(localLeadPatch, leadId)
+      if (savedActivity?.activityId) {
+        setRecords((previous) => {
+          const currentActivities = Array.isArray(previous.leadActivities) ? previous.leadActivities : []
+          const hasActivity = currentActivities.some((activity) => normalizeText(activity?.activityId) === normalizeText(savedActivity.activityId))
+          return hasActivity
+            ? previous
+            : { ...previous, leadActivities: [savedActivity, ...currentActivities] }
+        })
+      }
       setSellerContactFeedbackModal(SELLER_CONTACT_FEEDBACK_DEFAULTS)
       setError('')
       setMessage(selectedLeadHasKingstonsPipelineSignal
