@@ -555,6 +555,72 @@ const KINGSTONS_FORMAL_VALUATION_DOCUMENT = Object.freeze({
   fileName: 'Formal Valuation Document',
 })
 
+const DOCUMENT_UPLOAD_OVERLAY_ID = 'arch9-document-upload-overlay'
+const DOCUMENT_UPLOAD_OVERLAY_STYLE_ID = 'arch9-document-upload-overlay-style'
+
+function escapeHtmlForUploadOverlay(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function showDocumentUploadOverlay({ documentLabel = 'Document', fileName = '' } = {}) {
+  if (typeof document === 'undefined') return
+  if (!document.getElementById(DOCUMENT_UPLOAD_OVERLAY_STYLE_ID)) {
+    const style = document.createElement('style')
+    style.id = DOCUMENT_UPLOAD_OVERLAY_STYLE_ID
+    style.textContent = `
+      @keyframes arch9DocumentUploadSpin {
+        to { transform: rotate(360deg); }
+      }
+      @keyframes arch9DocumentUploadPulse {
+        0%, 100% { opacity: 0.42; transform: translateX(-58%); }
+        50% { opacity: 1; transform: translateX(58%); }
+      }
+    `
+    document.head.appendChild(style)
+  }
+  let overlay = document.getElementById(DOCUMENT_UPLOAD_OVERLAY_ID)
+  if (!overlay) {
+    overlay = document.createElement('div')
+    overlay.id = DOCUMENT_UPLOAD_OVERLAY_ID
+    document.body.appendChild(overlay)
+  }
+  overlay.setAttribute('role', 'status')
+  overlay.setAttribute('aria-live', 'polite')
+  overlay.style.cssText = [
+    'position:fixed',
+    'inset:0',
+    'z-index:2147483647',
+    'display:flex',
+    'align-items:center',
+    'justify-content:center',
+    'background:rgba(248,251,255,0.78)',
+    'backdrop-filter:blur(8px)',
+    'pointer-events:none',
+  ].join(';')
+  overlay.innerHTML = `
+    <div style="width:min(360px,calc(100vw - 48px));border:1px solid #dbe7f2;background:#fff;border-radius:24px;box-shadow:0 24px 70px rgba(15,34,54,0.18);padding:24px;text-align:center;font-family:inherit;color:#18324a;">
+      <div style="width:46px;height:46px;margin:0 auto 14px;border-radius:999px;border:4px solid #e7eef6;border-top-color:#13784f;animation:arch9DocumentUploadSpin 0.8s linear infinite;"></div>
+      <div style="font-size:15px;font-weight:800;letter-spacing:-0.01em;">Uploading document</div>
+      <div style="margin-top:6px;font-size:13px;font-weight:700;color:#55708b;">${escapeHtmlForUploadOverlay(documentLabel)}</div>
+      ${fileName ? `<div style="margin-top:3px;font-size:12px;font-weight:600;color:#7890a8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtmlForUploadOverlay(fileName)}</div>` : ''}
+      <div style="position:relative;margin-top:18px;height:6px;overflow:hidden;border-radius:999px;background:#edf3f8;">
+        <div style="position:absolute;inset:0;width:56%;border-radius:999px;background:linear-gradient(90deg,#f5c542,#13784f);animation:arch9DocumentUploadPulse 1.05s ease-in-out infinite;"></div>
+      </div>
+      <div style="margin-top:12px;font-size:12px;font-weight:700;color:#7890a8;">Please keep this tab open.</div>
+    </div>
+  `
+}
+
+function hideDocumentUploadOverlay() {
+  if (typeof document === 'undefined') return
+  document.getElementById(DOCUMENT_UPLOAD_OVERLAY_ID)?.remove()
+}
+
 const KINGSTONS_SELLER_PACK_DOCUMENTS = Object.freeze([
   {
     key: 'signed_mandate',
@@ -30521,11 +30587,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
 	                                                    disabled={isUploadingKingstonsDocument}
 	                                                    onChange={(event) => {
+	                                                      const selectedFile = event.target.files?.[0]
+	                                                      if (!selectedFile) return
+	                                                      showDocumentUploadOverlay({
+	                                                        documentLabel: documentRow.label || documentRow.title || 'Document',
+	                                                        fileName: selectedFile.name,
+	                                                      })
 	                                                      if (isKingstonsFormalValuationDocument) {
-	                                                        void handleKingstonsFormalValuationUpload(event)
+	                                                        void handleKingstonsFormalValuationUpload(event).finally(hideDocumentUploadOverlay)
 	                                                        return
 	                                                      }
-	                                                      void handleKingstonsSellerPackUpload(documentKey, event, documentRow)
+	                                                      void handleKingstonsSellerPackUpload(documentKey, event, documentRow).finally(hideDocumentUploadOverlay)
 	                                                    }}
 	                                                  />
 	                                                </label>
