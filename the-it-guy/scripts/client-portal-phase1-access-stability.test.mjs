@@ -26,6 +26,8 @@ assert.doesNotMatch(payloadFunction, /token_expires_at is null or token_expires_
 assert.doesNotMatch(accessStateFunction, /token_expires_at is null or token_expires_at > now\(\)/, 'seller portal access state must not reuse onboarding invitation expiry')
 assert.match(payloadFunction, /'sessionExpired', v_session_expired/, 'expired seller sessions should return an authentication challenge instead of invalid-link state')
 assert.match(privateListingService, /if \(accessToken\) clearSellerPortalAccessToken\(normalizedToken\)/, 'stale seller sessions should be cleared before password reauthentication')
+assert.match(privateListingService, /const securePortalLookup = requirePortalAccess \|\| Boolean\(accessToken\)[\s\S]*sellerPortalCorePayloadRpcUnavailable && !securePortalLookup/, 'authenticated seller portal loads must not be blocked by the unauthenticated core-payload compatibility cache')
+assert.match(privateListingService, /if \(!securePortalLookup\) sellerPortalCorePayloadRpcUnavailable = true/, 'secure seller portal core payload failures must not poison later authenticated loads in the same tab')
 assert.match(privateListingService, /isSellerPortalSessionExpiredError/, 'seller portal mutations should expose an explicit session-expiry classifier')
 assert.match(clientPortalPage, /Your secure session ended\.[\s\S]*your portal link is still active\./, 'session expiry copy should distinguish reauthentication from link expiry')
 assert.match(clientPortalPage, /isSellerPortalSessionExpiredError\(uploadError\)[\s\S]*setSellerPortalAuth\(\{[\s\S]*sessionExpired: true/, 'an expired upload session should return the seller to password reauthentication')

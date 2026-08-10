@@ -11077,6 +11077,24 @@ function ClientPortal() {
     activeSellingContext?.agencyLogoUrl,
     activeSellingContext?.agency_logo_url,
   )
+  const sellerSidebarLogoUrl = pickFirstText(
+    portal?.listing?.agencyLogoDarkUrl,
+    portal?.listing?.agency_logo_dark_url,
+    portal?.listing?.organisationLogoDarkUrl,
+    portal?.listing?.organisation_logo_dark_url,
+    portal?.listing?.branding?.logoDarkUrl,
+    portal?.listing?.branding?.logoDark,
+    portal?.listing?.branding?.logo_dark_url,
+    activeSellingContext?.agencyLogoDarkUrl,
+    activeSellingContext?.agency_logo_dark_url,
+    activeSellingContext?.branding?.logoDarkUrl,
+    activeSellingContext?.branding?.logoDark,
+    activeSellingContext?.branding?.logo_dark_url,
+    portal?.branding?.logoDarkUrl,
+    portal?.branding?.logoDark,
+    portal?.branding?.logo_dark_url,
+    sellerAgencyLogoUrl,
+  )
   const sellerAgentName = pickFirstText(
     portal?.transaction?.assigned_agent,
     activeSellingContext?.assignedAgentName,
@@ -11928,9 +11946,9 @@ function ClientPortal() {
           <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
             {effectiveWorkspace === 'seller' ? (
               <div className="min-h-[72px]">
-                {sellerAgencyLogoUrl ? (
+                {sellerSidebarLogoUrl ? (
                   <img
-                    src={sellerAgencyLogoUrl}
+                    src={sellerSidebarLogoUrl}
                     alt={`${sellerAgencyName || 'Agency'} logo`}
                     className="max-h-14 max-w-[210px] object-contain object-left"
                   />

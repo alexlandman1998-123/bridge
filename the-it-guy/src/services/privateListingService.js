@@ -3711,9 +3711,11 @@ function mergeSellerPortalOnboardingFormData(context = null, persistedOnboarding
 
 async function fetchSellerClientPortalCorePayloadByToken(client, token, options = {}) {
   const normalizedToken = normalizeText(token)
-  if (!normalizedToken || sellerPortalCorePayloadRpcUnavailable) return null
+  if (!normalizedToken) return null
   const accessToken = normalizeText(options.accessToken)
   const requirePortalAccess = Boolean(options.requirePortalAccess)
+  const securePortalLookup = requirePortalAccess || Boolean(accessToken)
+  if (sellerPortalCorePayloadRpcUnavailable && !securePortalLookup) return null
   const rpcArgs = requirePortalAccess || accessToken
     ? {
         p_token: normalizedToken,
@@ -3729,7 +3731,7 @@ async function fetchSellerClientPortalCorePayloadByToken(client, token, options 
       isMissingRpcError(rpc.error, 'bridge_private_listing_seller_portal_core_payload') ||
       isRecoverableSellerPortalPayloadRpcError(rpc.error)
     ) {
-      sellerPortalCorePayloadRpcUnavailable = true
+      if (!securePortalLookup) sellerPortalCorePayloadRpcUnavailable = true
       return null
     }
     throw rpc.error

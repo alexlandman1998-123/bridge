@@ -15,15 +15,21 @@ const marketingBuilder = source.match(/function buildSellerMarketingChannels[\s\
 const sellerHero = source.match(/function SellerPropertyHero[\s\S]*?\n}\n\nfunction SellerTransactionHealthCard/)?.[0] || ''
 const sellerDashboard = source.match(/function SellerPortalDashboard[\s\S]*?\n}\n\nfunction SellerPortalPasswordGate/)?.[0] || ''
 const sellerLogoResolver = source.match(/const sellerAgencyLogoUrl = pickFirstText\([\s\S]*?\n  \)/)?.[0] || ''
+const sellerSidebarLogoResolver = source.match(/const sellerSidebarLogoUrl = pickFirstText\([\s\S]*?\n  \)/)?.[0] || ''
 
 assert.match(linkNormalizer, /const linksByChannel = new Map\(\)/, 'seller-visible links should be deduplicated before dashboard models are built')
 assert.match(linkNormalizer, /const channelKey = platformKey \|\| urlKey/, 'marketing channels should deduplicate by platform with URL fallback')
 assert.match(marketingBuilder, /const channels = new Map\(\)/, 'marketing cards should retain a defensive channel-level dedupe')
 assert.match(source, /const sellerAgencyLogoUrl = pickFirstText\(/, 'seller portal should resolve the agent entity logo from listing branding')
-assert.match(source, /src=\{sellerAgencyLogoUrl\}/, 'seller sidebar should render the agent entity logo')
+assert.match(source, /const sellerSidebarLogoUrl = pickFirstText\(/, 'seller portal should resolve a logo specifically for the dark sidebar')
+assert.match(source, /src=\{sellerSidebarLogoUrl\}/, 'seller sidebar should render the dark-background logo')
 assert.ok(
   sellerLogoResolver.indexOf('agencyLogoLightUrl') < sellerLogoResolver.indexOf('agencyLogoDarkUrl'),
-  'seller sidebar should prefer light-background logos before white/dark-background logo fallbacks',
+  'seller general logo should prefer the light-background logo for light portal surfaces',
+)
+assert.ok(
+  sellerSidebarLogoResolver.indexOf('agencyLogoDarkUrl') < sellerSidebarLogoResolver.indexOf('sellerAgencyLogoUrl'),
+  'seller sidebar should prefer dark-background logo fields before falling back to the general logo',
 )
 assert.match(sellerLogoResolver, /organisation_logo_light_url/, 'seller logo resolution should support legacy organisation light-logo fields')
 assert.match(source, /mt-5 grid flex-1 content-start grid-cols-2 gap-3/, 'seller mobile document categories should use compact same-row spacing')

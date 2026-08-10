@@ -10,6 +10,7 @@ import {
 const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 const agencyPipelineSource = readFileSync(resolve(appRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
+const agentLeadsSource = readFileSync(resolve(appRoot, 'src/pages/AgentLeadsPage.jsx'), 'utf8')
 
 assert.equal(
   packageJson.scripts?.['test:seller-document-upload-state-persistence'],
@@ -64,5 +65,10 @@ assert.match(agencyPipelineSource, /ensurePrivateListingDocumentRequirements\(/)
 assert.match(agencyPipelineSource, /linkPrivateListingDocument\(linkedListingId/)
 assert.match(agencyPipelineSource, /kingstons_seller_pack_upload_status_sync/)
 assert.match(agencyPipelineSource, /\[canonicalRequirementKey\]: uploadedDocument/)
+assert.match(agentLeadsSource, /sellerDocumentSupportsAgentUpload\(document\)/)
+assert.match(agentLeadsSource, /Agent upload on behalf of seller/)
+assert.match(agentLeadsSource, /uploadPrivateListingDocument\(listingId, file/)
+assert.match(agentLeadsSource, /requirementId,\s*\n\s*requirementKey,/)
+assert.match(agentLeadsSource, /visibility: normalizeText\(document\.visibility\) \|\| 'seller_visible'/)
 
 console.log('Seller document upload-state persistence regression passed.')

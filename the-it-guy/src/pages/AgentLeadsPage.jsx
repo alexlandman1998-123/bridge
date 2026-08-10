@@ -16443,6 +16443,40 @@ function getSellerDocumentCountForTab(documents = [], tabKey = 'all') {
   return rows.filter((document) => normalizeText(document.category).toLowerCase() === tabKey).length
 }
 
+function getSellerRequirementUploadKey(document = {}) {
+  return normalizeText(document.id || document.requirementId || document.key || document.title || document.label) || 'seller-document'
+}
+
+function sellerDocumentSupportsAgentUpload(document = {}) {
+  if (document?.required === false || document?.applicable === false) return false
+  const bucket = getSellerDocumentFilterBucket(document)
+  if (bucket === 'outstanding' || bucket === 'rejected') return true
+  return !normalizeText(document.url || document.documentUrl) && !document.hasUpload
+}
+
+function getSellerDocumentUploadRequirementId(document = {}) {
+  return normalizeText(
+    document.requirementId ||
+      document.requirement_id ||
+      document.original?.requirement?.id ||
+      document.original?.requirement?.requirementId ||
+      document.original?.requirement?.requirement_id,
+  )
+}
+
+function getSellerDocumentUploadRequirementKey(document = {}) {
+  return normalizeText(
+    document.key ||
+      document.requirementKey ||
+      document.requirement_key ||
+      document.original?.requirement?.key ||
+      document.original?.requirement?.requirementKey ||
+      document.original?.requirement?.requirement_key ||
+      document.documentType ||
+      document.document_type,
+  )
+}
+
 function buildSellerDocumentSourceListing(listing = null, row = {}) {
   const listingRecord = listing && typeof listing === 'object' ? listing : {}
   const rowRecord = row && typeof row === 'object' ? row : {}
@@ -21942,6 +21976,10 @@ function SellerDocumentsTab({ journey, listing = null, row = {}, mandatePacketSt
   const [valuationUploadSaving, setValuationUploadSaving] = useState(false)
   const [valuationUploadMessage, setValuationUploadMessage] = useState('')
   const [valuationUploadError, setValuationUploadError] = useState('')
+  const [documentUploadFiles, setDocumentUploadFiles] = useState({})
+  const [documentUploadInputVersions, setDocumentUploadInputVersions] = useState({})
+  const [documentUploadSavingKey, setDocumentUploadSavingKey] = useState('')
+  const [documentUploadFeedback, setDocumentUploadFeedback] = useState(null)
   const listingId = getSellerListingId(row, listing || journey?.listing || null)
   const searchableDocuments = useMemo(
     () => documents.filter((document) => document?.required !== false && document?.applicable !== false),
@@ -22001,6 +22039,49 @@ function SellerDocumentsTab({ journey, listing = null, row = {}, mandatePacketSt
       setValuationUploadSaving(false)
     }
   }, [listingId, onSaved, valuationUploadFile])
+  const setSellerDocumentUploadFile = useCallback((document, file) => {
+    const uploadKey = getSellerRequirementUploadKey(document)
+    setDocumentUploadFiles((previous) => ({ ...previous, [uploadKey]: file || null }))
+    setDocumentUploadFeedback(null)
+  }, [])
+  const uploadSellerRequirementDocument = useCallback(async (event, document) => {
+    event.preventDefault()
+    const uploadKey = getSellerRequirementUploadKey(document)
+    const file = documentUploadFiles[uploadKey] || null
+    if (!listingId) {
+      setDocumentUploadFeedback({ key: uploadKey, tone: 'error', message: 'Link a seller listing before uploading this document.' })
+      return
+    }
+    if (!file) {
+      setDocumentUploadFeedback({ key: uploadKey, tone: 'error', message: 'Select a file before uploading this seller document.' })
+      return
+    }
+
+    const requirementKey = getSellerDocumentUploadRequirementKey(document)
+    const requirementId = getSellerDocumentUploadRequirementId(document)
+
+    try {
+      setDocumentUploadSavingKey(uploadKey)
+      setDocumentUploadFeedback(null)
+      await uploadPrivateListingDocument(listingId, file, {
+        requirementId,
+        requirementKey,
+        documentType: requirementKey || normalizeText(document.key) || 'seller_document',
+        documentCategory: normalizeText(document.group) || getSellerDocumentCategoryLabel(document.category),
+        documentName: file.name || document.title || document.label || 'Seller document',
+        visibility: normalizeText(document.visibility) || 'seller_visible',
+        status: 'uploaded',
+      })
+      setDocumentUploadFiles((previous) => ({ ...previous, [uploadKey]: null }))
+      setDocumentUploadInputVersions((previous) => ({ ...previous, [uploadKey]: Number(previous[uploadKey] || 0) + 1 }))
+      setDocumentUploadFeedback({ key: uploadKey, tone: 'success', message: `${document.title || document.label || 'Seller document'} uploaded on behalf of the seller.` })
+      await onSaved?.()
+    } catch (uploadError) {
+      setDocumentUploadFeedback({ key: uploadKey, tone: 'error', message: uploadError?.message || 'Unable to upload this seller document.' })
+    } finally {
+      setDocumentUploadSavingKey('')
+    }
+  }, [documentUploadFiles, listingId, onSaved])
 
   return (
     <SellerWorkspaceCard title="Document Center" action={<StatusPill tone={completion.percent >= 80 ? 'green' : completion.percent ? 'amber' : 'slate'}>{completion.percent}% complete</StatusPill>}>
@@ -22137,6 +22218,38 @@ function SellerDocumentsTab({ journey, listing = null, row = {}, mandatePacketSt
                       )}
                     </div>
                   </div>
+                  {sellerDocumentSupportsAgentUpload(document) ? (
+                    <form onSubmit={(event) => uploadSellerRequirementDocument(event, document)} className="mt-4 grid gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-3 lg:grid-cols-[minmax(220px,1fr)_auto] lg:items-end">
+                      <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                        Agent upload on behalf of seller
+                        <input
+                          key={`${getSellerRequirementUploadKey(document)}-${documentUploadInputVersions[getSellerRequirementUploadKey(document)] || 0}`}
+                          type="file"
+                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                          onChange={(event) => setSellerDocumentUploadFile(document, event.target.files?.[0] || null)}
+                          disabled={!listingId || documentUploadSavingKey === getSellerRequirementUploadKey(document)}
+                          className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-slate-700 focus:border-blue-300 disabled:cursor-not-allowed disabled:bg-slate-100"
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        disabled={
+                          !listingId ||
+                          documentUploadSavingKey === getSellerRequirementUploadKey(document) ||
+                          !documentUploadFiles[getSellerRequirementUploadKey(document)]
+                        }
+                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                      >
+                        <Upload size={15} />
+                        {documentUploadSavingKey === getSellerRequirementUploadKey(document) ? 'Uploading...' : 'Upload'}
+                      </button>
+                      {documentUploadFeedback?.key === getSellerRequirementUploadKey(document) ? (
+                        <p className={`lg:col-span-2 rounded-xl border px-3 py-2 text-sm font-semibold ${documentUploadFeedback.tone === 'success' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-rose-100 bg-rose-50 text-rose-700'}`}>
+                          {documentUploadFeedback.message}
+                        </p>
+                      ) : null}
+                    </form>
+                  ) : null}
                 </article>
               ))}
             </div>
