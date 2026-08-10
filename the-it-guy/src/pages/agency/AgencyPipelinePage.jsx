@@ -12600,11 +12600,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const usableSourceRows = selectedLeadHasKingstonsPipelineSignal
         ? sourceRows.filter((row) => !isStaleKingstonsBaselineDocumentRow(row))
         : sourceRows
-      return buildSellerLeadDocumentCategories(dedupeSellerLeadDocumentRows([
+      const mergedRows = dedupeSellerLeadDocumentRows([
         ...(selectedKingstonsFormalValuationRow ? [selectedKingstonsFormalValuationRow] : []),
         ...(selectedLeadHasKingstonsPipelineSignal ? selectedKingstonsSellerPackRows : []),
         ...usableSourceRows,
-      ]))
+      ])
+      if (
+        selectedLeadHasKingstonsPipelineSignal &&
+        selectedKingstonsFormalValuationRow &&
+        sellerLeadDocumentHasFileEvidence(selectedKingstonsFormalValuationRow)
+      ) {
+        const valuationKey = getSellerLeadDocumentCanonicalKey(selectedKingstonsFormalValuationRow) || KINGSTONS_FORMAL_VALUATION_DOCUMENT.key
+        return buildSellerLeadDocumentCategories([
+          selectedKingstonsFormalValuationRow,
+          ...mergedRows.filter((row) => getSellerLeadDocumentCanonicalKey(row) !== valuationKey),
+        ])
+      }
+      return buildSellerLeadDocumentCategories(mergedRows)
     },
     [
       mandatePacketStatus,
