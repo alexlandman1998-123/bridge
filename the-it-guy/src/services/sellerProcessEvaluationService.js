@@ -234,6 +234,24 @@ function leadHasValuationAppointmentScheduledEvidence(lead = {}) {
   )
 }
 
+function activitySatisfiesValuationAppointmentScheduled(activity = {}) {
+  const type = normalizeKey(activity?.activityType || activity?.activity_type || activity?.eventType || activity?.event_type || activity?.type || activity?.title)
+  const status = normalizeKey(activity?.status)
+  if (['cancelled', 'canceled', 'deleted'].includes(status)) return false
+  const signal = [
+    type,
+    normalizeKey(activity?.activityNote || activity?.activity_note || activity?.note || activity?.description),
+    normalizeKey(activity?.outcome),
+  ].filter(Boolean).join('_')
+  return Boolean(
+    signal.includes('valuation_appointment_scheduled') ||
+      signal.includes('valuation_appointment_booked') ||
+      signal.includes('valuation_scheduled') ||
+      signal.includes('valuation_meeting_scheduled') ||
+      (signal.includes('valuation') && signal.includes('appointment') && (signal.includes('scheduled') || signal.includes('sent') || signal.includes('booked')))
+  )
+}
+
 function activitySatisfiesValuationPresented(activity = {}) {
   const type = normalizeKey(activity?.activityType || activity?.activity_type || activity?.eventType || activity?.event_type || activity?.type || activity?.title)
   const status = normalizeKey(activity?.status)
@@ -415,11 +433,12 @@ function evaluateGate(gate = {}, context = {}) {
   if (gate.source === 'appointment') {
     const matches = asArray(context.appointments).filter((appointment) => appointmentSatisfiesGate(appointment, gate))
     const leadFallback = gate.key === 'valuation_appointment_scheduled' && leadHasValuationAppointmentScheduledEvidence(context.lead)
+    const activityFallback = gate.key === 'valuation_appointment_scheduled' && asArray(context.activities).some(activitySatisfiesValuationAppointmentScheduled)
     return {
       key: gate.key,
       source: gate.source,
-      satisfied: matches.length > 0 || leadFallback,
-      evidenceCount: matches.length + (leadFallback ? 1 : 0),
+      satisfied: matches.length > 0 || leadFallback || activityFallback,
+      evidenceCount: matches.length + (leadFallback ? 1 : 0) + (activityFallback ? 1 : 0),
     }
   }
 

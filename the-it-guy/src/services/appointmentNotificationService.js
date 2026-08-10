@@ -408,8 +408,14 @@ async function sendAppointmentEmailToRecipient({ recipientEmail, eventType, appo
     appointmentId: normalizeText(appointment?.appointment_id || appointment?.appointmentId || ''),
     participantId: normalizeText(participant?.participantId || ''),
     rsvpToken: normalizeText(participant?.rsvpToken || ''),
-    appointmentType: normalizeText(appointment?.appointment_type || appointment?.title || 'Appointment'),
-    appointmentTitle: normalizeText(appointment?.title || ''),
+    appointmentType: normalizeText(
+      appointment?.appointment_type ||
+      appointment?.appointmentType ||
+      appointment?.type ||
+      appointment?.title ||
+      'Appointment',
+    ),
+    appointmentTitle: normalizeText(appointment?.title || appointment?.appointmentTitle || ''),
     appointmentDate: formatDate(appointment),
     appointmentTime: formatTime(appointment),
     appointmentEndTime: normalizeText(appointment?.end_time || ''),

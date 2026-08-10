@@ -62,9 +62,14 @@ function isValuationAppointment(
   appointmentType?: string,
   appointmentTitle?: string,
 ) {
-  const normalizedType = normalizeAppointmentTypeKey(appointmentType);
-  return normalizedType === "seller_valuation" ||
-    normalizedType === "valuation_presentation";
+  const normalizedValues = [appointmentType, appointmentTitle]
+    .map((value) => normalizeAppointmentTypeKey(value))
+    .filter(Boolean);
+  return normalizedValues.some((value) =>
+    value === "seller_valuation" ||
+    value === "valuation_appointment" ||
+    value === "valuation_presentation"
+  );
 }
 
 function isValuationPresentation(

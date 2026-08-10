@@ -16796,10 +16796,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const isKingstonsValuationPresentation =
           (selectedLeadHasKingstonsPipelineSignal || linkedLeadHasKingstonsPipelineSignal) &&
           normalizeKey(appointmentPayload.appointmentType) === 'valuation_presentation'
+        const sellerAppointmentScheduledAt = new Date().toISOString()
         const sellerAppointmentLeadPatch = isKingstonsValuationAppointment
           ? {
               stage: 'Formal Valuation',
               status: 'Valuation Appointment Scheduled',
+              firstContactedAt: linkedLead?.firstContactedAt || linkedLead?.first_contacted_at || sellerAppointmentScheduledAt,
             }
           : isKingstonsValuationPresentation
             ? {
@@ -16812,15 +16814,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             }
         await updateAgencyCrmLeadRecord(organisationId, linkedLead.leadId, sellerAppointmentLeadPatch)
         patchSelectedLeadRecord(sellerAppointmentLeadPatch, linkedLead.leadId)
-        if (isKingstonsValuationPresentation) {
+        if (isKingstonsValuationAppointment || isKingstonsValuationPresentation) {
+          const activityType = isKingstonsValuationAppointment
+            ? 'Valuation Appointment Scheduled'
+            : 'Valuation Presentation Scheduled'
+          const activityNote = isKingstonsValuationAppointment
+            ? 'Valuation appointment scheduled. Seller process moved to Formal Valuation.'
+            : 'Valuation presentation meeting scheduled. Seller process moved to Seller Pack.'
+          const activityOutcome = isKingstonsValuationAppointment ? 'Formal Valuation' : 'Seller Pack'
           void createAgencyCrmLeadActivity(organisationId, linkedLead.leadId, {
             agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-            activityType: 'Valuation Presentation Scheduled',
-            activityNote: 'Valuation presentation meeting scheduled. Seller process moved to Seller Pack.',
-            outcome: 'Seller Pack',
-            activityDate: new Date().toISOString(),
+            activityType,
+            activityNote,
+            outcome: activityOutcome,
+            activityDate: sellerAppointmentScheduledAt,
           }, { actor: currentAgent }).catch((activityError) => {
-            console.warn('[AgencyPipelinePage] Valuation presentation activity could not be recorded.', activityError)
+            console.warn('[AgencyPipelinePage] Kingstons valuation appointment activity could not be recorded.', activityError)
           })
         }
       }

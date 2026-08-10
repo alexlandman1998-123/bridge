@@ -146,6 +146,30 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
   const evaluation = evaluateSellerProcess({
     ...kingstonsProfile,
     lead: {
+      contactedAt: '2026-08-10T08:00:00.000Z',
+      stage: 'Contacted',
+      status: 'Active',
+    },
+    activities: [
+      { activityType: 'Valuation Appointment Scheduled', activityNote: 'Valuation appointment scheduled. Seller process moved to Formal Valuation.', outcome: 'Formal Valuation' },
+    ],
+    appointments: [],
+  })
+
+  assert.equal(evaluation.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
+  assert.equal(evaluation.evidence.seller_contacted.satisfied, true)
+  assert.equal(evaluation.evidence.valuation_appointment_scheduled.satisfied, true)
+  assert.equal(evaluation.currentStage.key, 'formal_valuation_completed')
+  assert.deepEqual(evaluation.completedStageKeys, [
+    'first_contact',
+    'valuation_appointment_scheduled',
+  ])
+}
+
+{
+  const evaluation = evaluateSellerProcess({
+    ...kingstonsProfile,
+    lead: {
       stage: 'Contacted',
       rawEnquiryPayload: {
         kingstonsSellerPack: {
