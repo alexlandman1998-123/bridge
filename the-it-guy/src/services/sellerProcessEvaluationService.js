@@ -59,6 +59,36 @@ function hasFileEvidence(row = {}) {
   ))
 }
 
+function leadHasValuationDocumentUploadedEvidence(lead = {}) {
+  const payload = parseJsonRecord(lead.rawEnquiryPayload || lead.raw_enquiry_payload)
+  const valuationSources = [
+    lead.kingstonsFormalValuation,
+    lead.kingstons_formal_valuation,
+    lead.formalValuation,
+    lead.formal_valuation,
+    lead.valuationDocument,
+    lead.valuation_document,
+    payload.kingstonsFormalValuation,
+    payload.kingstons_formal_valuation,
+    payload.formalValuation,
+    payload.formal_valuation,
+    payload.valuationDocument,
+    payload.valuation_document,
+    asRecord(payload.kingstonsSellerPack || payload.kingstons_seller_pack || payload.sellerPack || payload.seller_pack).documents?.valuation_document,
+  ].map(asRecord).filter((source) => Object.keys(source).length > 0)
+
+  return valuationSources.some((source) => {
+    const document = asRecord(source.document || source.upload || source.file || source)
+    const status = normalizeKey(document.status || document.statusLabel || document.status_label || source.status || source.statusLabel || source.status_label)
+    return Boolean(
+      hasFileEvidence(document) ||
+        hasFileEvidence(source) ||
+        DOCUMENT_COMPLETE_STATUSES.has(status) ||
+        firstPresent(document.uploadedAt, document.uploaded_at, source.uploadedAt, source.uploaded_at)
+    )
+  })
+}
+
 function sellerPackSourcesFromContext(context = {}) {
   const lead = asRecord(context.lead)
   const listing = asRecord(context.listing)
@@ -228,6 +258,9 @@ function leadHasValuationAppointmentScheduledEvidence(lead = {}) {
   return signals.some((signal) =>
     signal === 'formal_valuation' ||
       signal === 'formal_valuation_completed' ||
+      signal === 'formal_valuation_uploaded' ||
+      signal === 'valuation_presentation' ||
+      signal === 'valuation_presentation_scheduled' ||
       signal === 'valuation_appointment_scheduled' ||
       signal === 'valuation_scheduled' ||
       signal === 'valuation_appointment_booked'
@@ -448,11 +481,12 @@ function evaluateGate(gate = {}, context = {}) {
     }
     const documentMatches = asArray(context.documents).filter((document) => documentSatisfiesGate(document, gate))
     const packetMatch = gate.key === 'mandate_signed' && mandatePacketSatisfiesSignedEvidence(context)
+    const leadDocumentFallback = gate.key === 'valuation_document_uploaded' && leadHasValuationDocumentUploadedEvidence(context.lead)
     return {
       key: gate.key,
       source: gate.source,
-      satisfied: documentMatches.length > 0 || packetMatch,
-      evidenceCount: documentMatches.length + (packetMatch ? 1 : 0),
+      satisfied: documentMatches.length > 0 || packetMatch || leadDocumentFallback,
+      evidenceCount: documentMatches.length + (packetMatch ? 1 : 0) + (leadDocumentFallback ? 1 : 0),
     }
   }
 
