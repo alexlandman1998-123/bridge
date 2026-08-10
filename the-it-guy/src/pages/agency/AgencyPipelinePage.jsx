@@ -3301,6 +3301,10 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
       documentRow?.file_url ||
       documentRow?.downloadUrl ||
       documentRow?.download_url ||
+      documentRow?.storagePath ||
+      documentRow?.storage_path ||
+      documentRow?.filePath ||
+      documentRow?.file_path ||
       documentRow?.generatedHtml ||
       documentRow?.generated_html ||
       documentRow?.uploadedAt ||
@@ -3370,6 +3374,12 @@ function getSellerLeadDocumentCanonicalKey(row = {}) {
   if (source.includes('signed_defect_form') || source.includes('defect_form') || (source.includes('signed') && source.includes('defect'))) return 'signed_defect_form'
   if (source.includes('signed_fica_form') || source.includes('fica_form') || (source.includes('signed') && source.includes('fica'))) return 'signed_fica_form'
   if (
+    source.includes('valuation_document') ||
+    source.includes('formal_valuation') ||
+    (source.includes('valuation') && source.includes('document')) ||
+    (source.includes('valuation') && source.includes('uploaded'))
+  ) return 'valuation_document'
+  if (
     source.includes('property_condition_disclosure') ||
     source.includes('condition_disclosure') ||
     source.includes('seller_declaration') ||
@@ -3388,13 +3398,36 @@ function getSellerLeadDocumentStatusRank(status = '') {
   return normalized ? 2 : 0
 }
 
+function sellerLeadDocumentHasFileEvidence(row = {}) {
+  return Boolean(
+    row?.url ||
+      row?.fileUrl ||
+      row?.file_url ||
+      row?.downloadUrl ||
+      row?.download_url ||
+      row?.storagePath ||
+      row?.storage_path ||
+      row?.filePath ||
+      row?.file_path ||
+      row?.generatedHtml ||
+      row?.generated_html ||
+      row?.uploadedAt ||
+      row?.uploaded_at,
+  )
+}
+
 function mergeSellerLeadDocumentRows(existing = {}, incoming = {}) {
   const existingRequired = existing.required !== false
   const incomingRequired = incoming.required !== false
-  const base = existingRequired || !incomingRequired ? existing : incoming
-  const overlay = base === existing ? incoming : existing
   const existingStatusRank = getSellerLeadDocumentStatusRank(existing.status || existing.statusLabel)
   const incomingStatusRank = getSellerLeadDocumentStatusRank(incoming.status || incoming.statusLabel)
+  const existingHasFile = sellerLeadDocumentHasFileEvidence(existing)
+  const incomingHasFile = sellerLeadDocumentHasFileEvidence(incoming)
+  const incomingIsStronger =
+    incomingStatusRank > existingStatusRank ||
+    (incomingStatusRank === existingStatusRank && incomingHasFile && !existingHasFile)
+  const base = incomingIsStronger ? incoming : existing
+  const overlay = base === existing ? incoming : existing
   const statusSource = incomingStatusRank > existingStatusRank ? incoming : existing
   const url = firstWorkspaceText(
     incoming.url,
@@ -3408,8 +3441,12 @@ function mergeSellerLeadDocumentRows(existing = {}, incoming = {}) {
     existing.downloadUrl,
     existing.download_url,
   )
+  const storagePath = firstWorkspaceText(incoming.storagePath, incoming.storage_path, incoming.filePath, incoming.file_path, existing.storagePath, existing.storage_path, existing.filePath, existing.file_path)
+  const storageBucket = firstWorkspaceText(incoming.storageBucket, incoming.storage_bucket, existing.storageBucket, existing.storage_bucket)
   const generatedHtml = firstWorkspaceText(incoming.generatedHtml, incoming.generated_html, existing.generatedHtml, existing.generated_html)
   const generatedFileName = firstWorkspaceText(incoming.generatedFileName, incoming.generated_file_name, existing.generatedFileName, existing.generated_file_name)
+  const uploadedAt = firstWorkspaceText(incoming.uploadedAt, incoming.uploaded_at, existing.uploadedAt, existing.uploaded_at)
+  const uploadedBy = firstWorkspaceText(incoming.uploadedBy, incoming.uploaded_by, existing.uploadedBy, existing.uploaded_by)
   const packetId = firstWorkspaceText(incoming.packetId, incoming.packet_id, existing.packetId, existing.packet_id)
   const packetVersionId = firstWorkspaceText(incoming.packetVersionId, incoming.packet_version_id, existing.packetVersionId, existing.packet_version_id)
   const canonicalKey = getSellerLeadDocumentCanonicalKey(base) || getSellerLeadDocumentCanonicalKey(overlay)
@@ -3440,11 +3477,20 @@ function mergeSellerLeadDocumentRows(existing = {}, incoming = {}) {
     file_url: url,
     downloadUrl: url,
     download_url: url,
+    storagePath,
+    storage_path: storagePath,
+    storageBucket,
+    storage_bucket: storageBucket,
     generatedHtml,
     generated_html: generatedHtml,
     generatedFileName,
     generated_file_name: generatedFileName,
     uploadedFileName: firstWorkspaceText(incoming.uploadedFileName, existing.uploadedFileName, generatedFileName),
+    uploaded_file_name: firstWorkspaceText(incoming.uploaded_file_name, incoming.uploadedFileName, existing.uploaded_file_name, existing.uploadedFileName, generatedFileName),
+    uploadedAt,
+    uploaded_at: uploadedAt,
+    uploadedBy,
+    uploaded_by: uploadedBy,
     packetId,
     packet_id: packetId,
     packetVersionId,
