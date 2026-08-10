@@ -6673,7 +6673,7 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
       remoteContactId.startsWith('contact_') &&
       normalizeLeadIdentityKey(localRow?.leadId) === normalizeLeadIdentityKey(remoteRow?.leadId)
 
-    mergedById.set(key, {
+    const mergedRow = {
       ...baseRow,
       leadSource,
       contactId: shouldPreservePersistedContactId
@@ -6697,10 +6697,78 @@ function mergeLeadRowsForReload(localRows = [], remoteRows = []) {
         ? normalizeText(remoteRow.listingId)
         : normalizeText(baseRow.listingId || localRow.listingId),
       canvassingProspectId: normalizeText(baseRow.canvassingProspectId || localRow.canvassingProspectId),
-    })
+    }
+    mergedById.set(key, mergeLeadRowsPreservingFormalValuationEvidence(
+      mergeLeadRowsPreservingFormalValuationEvidence(mergedRow, localRow),
+      remoteRow,
+    ))
   }
 
   return [...mergedById.values()]
+}
+
+function leadHasFormalValuationFileEvidence(lead = {}) {
+  return sellerLeadDocumentHasFileEvidence(buildKingstonsFormalValuationDocumentRow(lead))
+}
+
+function mergeLeadRowsPreservingFormalValuationEvidence(primaryRow = {}, fallbackRow = {}) {
+  if (!fallbackRow || typeof fallbackRow !== 'object') return primaryRow
+  if (leadHasFormalValuationFileEvidence(primaryRow) || !leadHasFormalValuationFileEvidence(fallbackRow)) return primaryRow
+
+  const primaryPayload = parseLeadRawEnquiryPayload(primaryRow?.rawEnquiryPayload || primaryRow?.raw_enquiry_payload)
+  const fallbackPayload = parseLeadRawEnquiryPayload(fallbackRow?.rawEnquiryPayload || fallbackRow?.raw_enquiry_payload)
+  const fallbackValuation = getKingstonsFormalValuationState(fallbackRow)
+  const fallbackDocument = asRecord(fallbackValuation.document)
+  const fallbackSellerPack = asRecord(fallbackPayload.kingstonsSellerPack || fallbackPayload.kingstons_seller_pack || fallbackPayload.sellerPack || fallbackPayload.seller_pack)
+  const primarySellerPack = asRecord(primaryPayload.kingstonsSellerPack || primaryPayload.kingstons_seller_pack || primaryPayload.sellerPack || primaryPayload.seller_pack)
+  const fallbackSellerPackDocuments = asRecord(fallbackSellerPack.documents)
+  const primarySellerPackDocuments = asRecord(primarySellerPack.documents)
+  const valuationDocument = asRecord(fallbackSellerPackDocuments[KINGSTONS_FORMAL_VALUATION_DOCUMENT.key] || fallbackDocument)
+  const formalValuation = {
+    ...asRecord(fallbackValuation),
+    document: valuationDocument,
+    uploadedAt: firstWorkspaceText(fallbackValuation.uploadedAt, fallbackValuation.uploaded_at, valuationDocument.uploadedAt, valuationDocument.uploaded_at),
+    uploadedBy: firstWorkspaceText(fallbackValuation.uploadedBy, fallbackValuation.uploaded_by, valuationDocument.uploadedBy, valuationDocument.uploaded_by),
+  }
+  const sellerPack = {
+    ...primarySellerPack,
+    ...fallbackSellerPack,
+    documents: {
+      ...primarySellerPackDocuments,
+      ...fallbackSellerPackDocuments,
+      [KINGSTONS_FORMAL_VALUATION_DOCUMENT.key]: valuationDocument,
+    },
+  }
+  const rawEnquiryPayload = {
+    ...primaryPayload,
+    kingstonsFormalValuation: formalValuation,
+    kingstons_formal_valuation: formalValuation,
+    formalValuation,
+    formal_valuation: formalValuation,
+    valuationDocument: valuationDocument,
+    valuation_document: valuationDocument,
+    kingstonsSellerPack: sellerPack,
+    kingstons_seller_pack: sellerPack,
+    sellerPack,
+    seller_pack: sellerPack,
+  }
+
+  return {
+    ...primaryRow,
+    rawEnquiryPayload,
+    kingstonsFormalValuation: formalValuation,
+    kingstons_formal_valuation: formalValuation,
+    formalValuation,
+    formal_valuation: formalValuation,
+    valuationDocument: valuationDocument,
+    valuation_document: valuationDocument,
+    kingstonsSellerPack: sellerPack,
+    kingstons_seller_pack: sellerPack,
+    sellerPack,
+    seller_pack: sellerPack,
+    valuationDocumentUploadedAt: firstWorkspaceText(primaryRow.valuationDocumentUploadedAt, fallbackRow.valuationDocumentUploadedAt, formalValuation.uploadedAt),
+    valuation_document_uploaded_at: firstWorkspaceText(primaryRow.valuation_document_uploaded_at, fallbackRow.valuation_document_uploaded_at, formalValuation.uploadedAt),
+  }
 }
 
 function mergeSellerOnboardingSnapshot(baseRow = {}, localRow = {}, remoteRow = {}) {
@@ -9101,14 +9169,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const scopedDeals = sourceDeals.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
         const scopedInboundEmails = sourceInboundEmails.filter((row) => scopedLeadIds.has(normalizeLeadIdentityKey(row?.leadId)))
 
-        setRecords({
-          contacts: sourceContacts,
-          leads: scopedLeads,
-          leadActivities: scopedActivities,
-          tasks: scopedTasks,
-          appointments: scopedAppointments,
-          deals: scopedDeals,
-          inboundLeadEmails: scopedInboundEmails,
+        setRecords((previous) => {
+          const previousLeadsById = new Map(
+            (Array.isArray(previous?.leads) ? previous.leads : [])
+              .map((lead) => [normalizeLeadIdentityKey(lead?.leadId), lead])
+              .filter(([key]) => Boolean(key)),
+          )
+          const reconciledLeads = scopedLeads.map((lead) => {
+            const previousLead = previousLeadsById.get(normalizeLeadIdentityKey(lead?.leadId))
+            return previousLead
+              ? mergeLeadRowsPreservingFormalValuationEvidence(lead, previousLead)
+              : lead
+          })
+          return {
+            contacts: sourceContacts,
+            leads: reconciledLeads,
+            leadActivities: scopedActivities,
+            tasks: scopedTasks,
+            appointments: scopedAppointments,
+            deals: scopedDeals,
+            inboundLeadEmails: scopedInboundEmails,
+          }
         })
       }
 
