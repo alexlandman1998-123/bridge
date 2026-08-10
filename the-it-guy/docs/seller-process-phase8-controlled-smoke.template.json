@@ -1,0 +1,59 @@
+{
+  "contract": "seller-process-global-qa-phase8-controlled-smoke-v1",
+  "observedAt": "REPLACE_WITH_ISO_TIMESTAMP",
+  "environment": "staging",
+  "projectRef": "REPLACE_WITH_SAFE_PROJECT_REF",
+  "releaseSource": {
+    "commitSha": "REPLACE_WITH_COMMIT_SHA_OR_SOURCE_REF",
+    "phase5Command": "npm run test:seller-process-global-qa-phase5",
+    "phase5Passed": false,
+    "buildPassed": false
+  },
+  "phase6Evidence": {
+    "contract": "seller-process-global-qa-phase6-staging-evidence-v1",
+    "evidenceRef": "REPLACE_WITH_REDACTED_PHASE6_EVIDENCE_REFERENCE"
+  },
+  "phase7Decision": {
+    "contract": "seller-process-global-qa-phase7-release-readiness-v1",
+    "decisionRef": "REPLACE_WITH_REDACTED_PHASE7_DECISION_REFERENCE"
+  },
+  "operator": {
+    "reference": "REPLACE_WITH_OPAQUE_OPERATOR_REFERENCE",
+    "confirmation": "GLOBAL_SELLER_QA_PHASE8_CONTROLLED_SMOKE_COMPLETE"
+  },
+  "smokeResult": {
+    "status": "pending",
+    "runRef": "REPLACE_WITH_REDACTED_SMOKE_RUN_REFERENCE"
+  },
+  "observations": {
+    "changeWindowApproved": false,
+    "phase7DecisionAccepted": false,
+    "testLeadIsolated": false,
+    "onboardingLinkSentToControlledRecipient": false,
+    "sellerOnboardingSubmitted": false,
+    "sellerOnboardingNotificationObserved": false,
+    "conditionalDocumentsMatchOnboarding": false,
+    "mandateGenerated": false,
+    "mandateSentToControlledSigner": false,
+    "mandateSigned": false,
+    "listingOpenedOrCreated": false,
+    "listingDocumentTabCorrect": false,
+    "sellerPortalDocumentCenterCorrect": false,
+    "agentUploadOnBehalfPersisted": false,
+    "globalOnlyNoKingstonsLeak": false,
+    "rollbackReadyAndUnused": false,
+    "supportMonitoringClear": false
+  },
+  "rollback": {
+    "ownerRef": "REPLACE_WITH_OPAQUE_ROLLBACK_OWNER_REFERENCE",
+    "planRef": "REPLACE_WITH_REDACTED_ROLLBACK_PLAN_REFERENCE",
+    "validatedBeforeSmoke": false,
+    "activated": false
+  },
+  "closeout": {
+    "testLeadArchivedOrMarked": false,
+    "supportHandoffComplete": false,
+    "kingstonsRegressionTicketOpened": false
+  },
+  "notes": "Replace placeholders only with redacted operational references. Do not include emails, names, phone numbers, URLs, property addresses, tokens, signed URLs, document contents, credentials, or raw logs."
+}

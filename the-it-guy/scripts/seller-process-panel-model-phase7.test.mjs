@@ -30,6 +30,7 @@ const internalKingstonsKeys = [
   'valuation_appointment_scheduled',
   'formal_valuation_completed',
   'valuation_presentation_scheduled',
+  'valuation_presented',
   'seller_pack_signed',
   'listing_terms_confirmed',
   'defects_form_signed',
@@ -91,9 +92,9 @@ function assertPartnerReadinessHidesInternalKeys(model) {
   assert.equal(model.readOnly, false)
   assert.equal(model.shadowOnly, false)
   assert.equal(model.title, 'Kingstons Seller Process')
-  assert.equal(model.currentStageLabel, 'Seller Pack')
+  assert.equal(model.currentStageLabel, 'Valuation Presented')
   assert.equal(model.sections.find((section) => section.key === 'progress').items.length, 5)
-  assert.equal(model.sections.find((section) => section.key === 'missing_evidence').items.some((item) => item.key === 'mandate_signed'), true)
+  assert.equal(model.sections.find((section) => section.key === 'missing_evidence').items.some((item) => item.key === 'valuation_presented'), true)
   assert.equal(model.actionCards.every((card) => card.disabled === false && card.readOnly === false), true)
   assert.equal(model.actionCards.some((card) => card.key === 'complete_seller_pack' && card.pending === true), true)
   assert.equal(model.actionCards.some((card) => card.key === 'confirm_listing_terms'), true)
@@ -152,10 +153,8 @@ function assertPartnerReadinessHidesInternalKeys(model) {
       status: 'Active',
     },
   })
-  assert.equal(model.visible, true)
-  assert.equal(model.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
-  assert.equal(model.currentStageLabel, 'Valuation Appointment')
-  assert.equal(model.actionCards.find((card) => card.key === 'schedule_valuation_appointment').pending, true)
+  assert.equal(model.visible, false)
+  assert.equal(model.profile, DEFAULT_SELLER_PROCESS_PROFILE)
 }
 
 {
@@ -182,8 +181,9 @@ function assertPartnerReadinessHidesInternalKeys(model) {
     ],
     documents: [
       { documentType: 'valuation_document', status: 'uploaded', fileUrl: 'valuation.pdf' },
-      { documentType: 'defects_disclosure_form', status: 'signed', file_path: 'defects.pdf' },
-      { documentType: 'seller_fica_pack', status: 'uploaded', file_path: 'fica.pdf' },
+      { key: 'signed_mandate', documentType: 'signed_mandate', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'mandate.pdf', sellerType: 'natural' },
+      { key: 'signed_defect_form', documentType: 'defects_disclosure_form', source: 'kingstons_seller_pack', status: 'signed', file_path: 'defects.pdf', sellerType: 'natural' },
+      { key: 'signed_fica_form', documentType: 'seller_fica_pack', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'fica.pdf', sellerType: 'natural' },
     ],
     mandatePacketStatus: {
       packet: { id: 'packet-kingstons', status: 'completed' },

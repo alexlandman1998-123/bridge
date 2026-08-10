@@ -5,7 +5,6 @@ import {
   renderBridgeCta,
   renderBridgeEmailLayout,
   renderBridgeIntroParagraphs,
-  renderBridgeSteps,
   renderBridgeSummaryCard,
 } from "./bridgeEmailLayout.ts";
 import { normalizeBrandColor } from "../services/emailBranding.ts";
@@ -51,28 +50,50 @@ function isKingstonsOrganisation(organisationName?: string) {
   return pickText(organisationName, "").toLowerCase().includes("kingstons");
 }
 
+function normalizeAppointmentTypeKey(value?: string) {
+  return pickText(value, "")
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^\w\s-]/g, "")
+    .replace(/[\s-]+/g, "_");
+}
+
 function isValuationAppointment(
   appointmentType?: string,
   appointmentTitle?: string,
 ) {
-  const haystack = `${pickText(appointmentType, "")} ${
-    pickText(appointmentTitle, "")
-  }`
-    .toLowerCase();
-  return haystack.includes("valuation") ||
-    haystack.includes("seller_valuation");
+  const normalizedType = normalizeAppointmentTypeKey(appointmentType);
+  return normalizedType === "seller_valuation" ||
+    normalizedType === "valuation_presentation";
 }
 
 function isValuationPresentation(
   appointmentType?: string,
   appointmentTitle?: string,
 ) {
-  const haystack = `${pickText(appointmentType, "")} ${
-    pickText(appointmentTitle, "")
-  }`
-    .toLowerCase();
-  return haystack.includes("valuation_presentation") ||
-    (haystack.includes("valuation") && haystack.includes("presentation"));
+  return normalizeAppointmentTypeKey(appointmentType) ===
+    "valuation_presentation";
+}
+
+function isKingstonsValuationTheme({
+  eventType,
+  appointmentType,
+  participantRole,
+  organisationName,
+}: {
+  eventType: string;
+  appointmentType?: string;
+  participantRole?: string;
+  organisationName?: string;
+}) {
+  return isKingstonsOrganisation(organisationName) &&
+    isSellerParticipant(participantRole) &&
+    isValuationAppointment(appointmentType) &&
+    [
+      "appointment_scheduled",
+      "appointment_confirmed",
+      "appointment_confirmation_required",
+    ].includes(eventType);
 }
 
 function buildKingstonsValuationInviteCopy({
@@ -172,6 +193,337 @@ function buildKingstonsValuationInviteCopy({
     ctaLabel: confirmationRequired ? "RSVP to this time" : "View appointment",
     agentBio,
   };
+}
+
+function formatKingstonsDisplayDate(value?: string) {
+  const text = pickText(value, "");
+  if (!text) return "To be confirmed";
+  const parsed = new Date(`${text.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return text;
+  return parsed.toLocaleDateString("en-ZA", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function formatKingstonsTime(value?: string) {
+  const text = pickText(value, "");
+  if (!text) return "To be confirmed";
+  const match = text.match(/^(\d{1,2}):(\d{2})/);
+  return match ? `${match[1].padStart(2, "0")}:${match[2]}` : text;
+}
+
+function buildKingstonsDisplayTitle({
+  eventType,
+  isPresentation,
+}: {
+  eventType: string;
+  isPresentation?: boolean;
+}) {
+  const label = isPresentation ? "Valuation Presentation" : "Valuation";
+  if (eventType === "appointment_confirmed") {
+    return `Kingstons ${label} Confirmed`;
+  }
+  if (eventType === "appointment_scheduled") {
+    return `Kingstons ${label} Appointment`;
+  }
+  return `Kingstons ${label} Request`;
+}
+
+function getBrandLogoUrl(branding?: BridgeEmailLayoutBranding) {
+  return pickText(
+    branding?.logoDarkUrl ||
+      branding?.logoLightUrl ||
+      branding?.logoUrl ||
+      branding?.logoIconUrl,
+    "",
+  );
+}
+
+function getInitials(value?: string) {
+  return pickText(value, "A")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("") || "A";
+}
+
+function renderKingstonsIcon(label: string, primaryColor: string) {
+  return `<td width="54" valign="top" style="padding: 0 14px 18px 0;">
+    <div style="width: 44px; height: 44px; border-radius: 12px; background: #f7f2ec; border: 1px solid #efe5d8; color: ${primaryColor}; font-size: 12px; line-height: 44px; text-align: center; font-weight: 800; letter-spacing: 0.02em;">${escapeHtml(label)}</div>
+  </td>`;
+}
+
+function renderKingstonsTimelineStep({
+  number,
+  icon,
+  title,
+  body,
+  primaryColor,
+}: {
+  number: string;
+  icon: string;
+  title: string;
+  body: string;
+  primaryColor: string;
+}) {
+  return `<tr>
+    <td width="50" valign="top" style="padding: 0;">
+      <div style="width: 28px; height: 28px; border-radius: 50%; background: #032a28; color: #ffffff; font-size: 13px; line-height: 28px; text-align: center; font-weight: 800;">${escapeHtml(number)}</div>
+    </td>
+    <td width="76" valign="top" style="padding: 0 14px 18px 0;">
+      <div style="width: 56px; height: 56px; border-radius: 50%; background: #f7f2ec; color: ${primaryColor}; font-size: 15px; line-height: 56px; text-align: center; font-weight: 800;">${escapeHtml(icon)}</div>
+    </td>
+    <td valign="top" style="padding: 0 0 18px; border-bottom: 1px solid #e7e7e7;">
+      <p style="margin: 0 0 4px; color: #111827; font-size: 16px; line-height: 1.35; font-weight: 800;">${escapeHtml(title)}</p>
+      <p style="margin: 0; color: #263241; font-size: 14px; line-height: 1.45;">${escapeHtml(body)}</p>
+    </td>
+  </tr>`;
+}
+
+function buildKingstonsNextSteps(isPresentation?: boolean) {
+  return isPresentation
+    ? [
+      {
+        icon: "CAL",
+        title: "Confirm your presentation",
+        body: "Let us know whether the proposed date and time works for you.",
+      },
+      {
+        icon: "VAL",
+        title: "Review the valuation",
+        body: "Your agent will walk you through the formal valuation and market context.",
+      },
+      {
+        icon: "PLAN",
+        title: "Discuss the strategy",
+        body: "We will talk through pricing, positioning, launch timing, and buyer response.",
+      },
+      {
+        icon: "NEXT",
+        title: "Seller pack next steps",
+        body: "Your agent will guide you through the documents and listing readiness items.",
+      },
+    ]
+    : [
+      {
+        icon: "CAL",
+        title: "Confirm your appointment",
+        body: "Let us know whether the proposed date and time works for you.",
+      },
+      {
+        icon: "HOME",
+        title: "Property valuation",
+        body: "Your agent will meet you at the property and assess everything required.",
+      },
+      {
+        icon: "DOC",
+        title: "Valuation prepared",
+        body: "Your agent reviews the property and relevant market information.",
+      },
+      {
+        icon: "NEXT",
+        title: "Review and next steps",
+        body: "Your agent will present the valuation and discuss what happens from here.",
+      },
+    ];
+}
+
+function renderKingstonsAppointmentEmail({
+  eventType,
+  recipientName,
+  typeLabel,
+  appointmentDate,
+  appointmentTime,
+  relatedListing,
+  location,
+  meetingUrl,
+  notes,
+  actionLink,
+  rescheduleLink,
+  agentName,
+  agentRole,
+  agentBio,
+  organisationName,
+  supportEmail,
+  supportPhone,
+  branding,
+  isPresentation,
+}: {
+  eventType: string;
+  recipientName?: string;
+  typeLabel: string;
+  appointmentDate?: string;
+  appointmentTime?: string;
+  relatedListing?: string;
+  location?: string;
+  meetingUrl?: string;
+  notes?: string;
+  actionLink?: string;
+  rescheduleLink?: string;
+  agentName?: string;
+  agentRole?: string;
+  agentBio?: string;
+  organisationName?: string;
+  supportEmail?: string;
+  supportPhone?: string;
+  branding?: BridgeEmailLayoutBranding;
+  isPresentation?: boolean;
+}) {
+  const primaryColor = normalizeBrandColor(branding?.primaryColor, "#052b2b");
+  const goldColor = normalizeBrandColor(branding?.secondaryColor, "#d49a18");
+  const logoUrl = getBrandLogoUrl(branding);
+  const safeLogo = logoUrl ? escapeHtml(logoUrl) : "";
+  const displayTitle = buildKingstonsDisplayTitle({ eventType, isPresentation });
+  const displayDate = formatKingstonsDisplayDate(appointmentDate);
+  const displayTime = formatKingstonsTime(appointmentTime);
+  const displayLocation = pickText(meetingUrl || location || relatedListing, "To be confirmed");
+  const resolvedAgentName = pickText(agentName, "Your property professional");
+  const resolvedAgentRole = pickText(agentRole, "Property Practitioner");
+  const resolvedOrganisationName = pickText(organisationName, "Kingstons");
+  const resolvedAgentBio = pickText(
+    agentBio,
+    isPresentation
+      ? `${resolvedAgentName} will walk you through the valuation and explain the seller pack and listing next steps.`
+      : `${resolvedAgentName} will meet you at the property and guide you through the valuation and the next steps.`,
+  );
+  const confirmLabel = eventType === "appointment_confirmed"
+    ? "View appointment"
+    : isPresentation
+    ? "Confirm presentation"
+    : "Confirm appointment";
+  const intro = isPresentation
+    ? "Your valuation presentation is ready for confirmation."
+    : "Your valuation appointment is ready for confirmation.";
+  const preMeet = isPresentation
+    ? "There is not anything you need to prepare. If you have questions about pricing, timing, or the seller pack, keep them on hand and your agent will guide you through everything."
+    : "There is not anything you need to prepare. If you have any details about recent improvements or renovations, feel free to have them on hand, but your agent will guide you through everything.";
+  const steps = buildKingstonsNextSteps(isPresentation);
+  const notesText = pickText(notes, preMeet);
+  const safeActionLink = escapeHtml(actionLink || "");
+  const safeRescheduleLink = escapeHtml(rescheduleLink || actionLink || "");
+  const hiddenPreheader = `${displayTitle} for ${typeLabel}`;
+  const agentInitials = getInitials(resolvedAgentName);
+
+  return `<div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent;">${escapeHtml(hiddenPreheader)}</div>
+  <div style="margin: 0; padding: 18px 12px 32px; background: #f5f5f3;">
+    <div style="max-width: 640px; margin: 0 auto; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #0f172a;">
+      <div style="border-radius: 10px 10px 0 0; overflow: hidden; background: ${primaryColor};">
+        <div style="min-height: 280px; padding: 24px 36px 42px; background: radial-gradient(circle at 84% 44%, rgba(255,255,255,0.10) 0, rgba(255,255,255,0.04) 22%, rgba(255,255,255,0) 42%), linear-gradient(135deg, #001f20 0%, ${primaryColor} 54%, #031414 100%);">
+          <div style="text-align: center; margin: 0 0 34px;">
+            ${safeLogo ? `<img src="${safeLogo}" alt="${escapeHtml(resolvedOrganisationName)}" style="display: inline-block; max-height: 64px; max-width: 250px; width: auto; height: auto; border: 0;" />` : `<div style="display: inline-block; color: #ffffff; font-size: 22px; line-height: 1.1; font-weight: 900; letter-spacing: 0.12em;">${escapeHtml(resolvedOrganisationName)}</div>`}
+          </div>
+          <div style="max-width: 330px;">
+            <h1 style="margin: 0; color: #ffffff; font-size: 36px; line-height: 1.05; font-weight: 900; letter-spacing: 0;">${escapeHtml(displayTitle)}</h1>
+            <div style="width: 78px; height: 4px; background: ${goldColor}; margin: 24px 0 22px;"></div>
+            <p style="margin: 0 0 10px; color: #ffffff; font-size: 18px; line-height: 1.35; font-weight: 800;">Hi ${escapeHtml(pickText(recipientName, "there"))},</p>
+            <p style="margin: 0; color: #ffffff; font-size: 16px; line-height: 1.55; font-weight: 500;">${escapeHtml(intro)}</p>
+          </div>
+        </div>
+      </div>
+
+      <div style="background: #ffffff; padding: 0 28px 28px;">
+        <div style="margin: -34px 0 22px; padding: 32px 42px 28px; background: #ffffff; border: 1px solid #e9e2d8; border-radius: 14px; box-shadow: 0 18px 38px rgba(15, 23, 42, 0.14);">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+            <tr>
+              ${renderKingstonsIcon("CAL", goldColor)}
+              <td valign="top" style="padding: 0 0 18px; border-bottom: 1px solid #e7e7e7;">
+                <p style="margin: 0 0 8px; color: #53616f; font-size: 13px; line-height: 1.2; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase;">Your appointment</p>
+                <p style="margin: 0; color: #060915; font-size: 28px; line-height: 1.2; font-weight: 900;">${escapeHtml(displayDate)}</p>
+              </td>
+            </tr>
+            <tr>
+              ${renderKingstonsIcon("TIME", goldColor)}
+              <td valign="top" style="padding: 0 0 18px; border-bottom: 1px solid #e7e7e7;">
+                <p style="margin: 0; color: #060915; font-size: 28px; line-height: 44px; font-weight: 900;">${escapeHtml(displayTime)}</p>
+              </td>
+            </tr>
+            <tr>
+              ${renderKingstonsIcon("PIN", goldColor)}
+              <td valign="top" style="padding: 0 0 16px;">
+                <p style="margin: 0 0 14px; color: #060915; font-size: 25px; line-height: 1.18; font-weight: 900;">${escapeHtml(displayLocation)}</p>
+                <span style="display: inline-block; padding: 7px 12px; border-radius: 999px; background: #eef0ee; color: #2f3741; font-size: 12px; line-height: 1.2; font-weight: 700;">${escapeHtml(typeLabel)}</span>
+              </td>
+            </tr>
+          </table>
+          ${actionLink ? `<a href="${safeActionLink}" style="display: block; margin: 22px 0 16px; padding: 18px 24px; border-radius: 8px; background: linear-gradient(135deg, ${goldColor} 0%, #e2a821 50%, #c9840f 100%); color: #ffffff; font-size: 20px; line-height: 1.2; font-weight: 900; text-align: center; text-decoration: none;">${escapeHtml(confirmLabel)}</a>` : ""}
+          ${rescheduleLink || actionLink ? `<p style="margin: 0; text-align: center;"><a href="${safeRescheduleLink}" style="color: #161616; font-size: 15px; line-height: 1.4; font-weight: 800; text-decoration: underline;">Request another time</a></p>` : ""}
+        </div>
+
+        <div style="margin: 0 0 18px; padding: 22px 24px; background: linear-gradient(90deg, #f4f8f5 0%, #eef5f2 100%); border: 1px solid #eef1ec; border-radius: 12px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+            <tr>
+              <td width="110" valign="middle" style="padding: 0 22px 0 0;">
+                <div style="width: 94px; height: 94px; border-radius: 50%; background: ${primaryColor}; color: #ffffff; font-size: 28px; line-height: 94px; text-align: center; font-weight: 900;">${escapeHtml(agentInitials)}</div>
+              </td>
+              <td valign="middle">
+                <p style="margin: 0 0 8px; color: #00614f; font-size: 13px; line-height: 1.2; font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em;">Your property professional</p>
+                <p style="margin: 0 0 4px; color: #050812; font-size: 25px; line-height: 1.15; font-weight: 900;">${escapeHtml(resolvedAgentName)}</p>
+                <p style="margin: 0 0 10px; color: #17202c; font-size: 15px; line-height: 1.35;">${escapeHtml(resolvedAgentRole)} <span style="color: #8b919a; padding: 0 8px;">-</span> ${escapeHtml(resolvedOrganisationName)}</p>
+                <p style="margin: 0; color: #101827; font-size: 15px; line-height: 1.42;">${escapeHtml(resolvedAgentBio)}</p>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="margin: 0 0 18px; padding: 26px 26px 10px; background: #ffffff; border-radius: 12px; border: 1px solid #f0f0ef;">
+          <p style="margin: 0 0 24px; color: #005e4e; font-size: 18px; line-height: 1.2; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase;">What happens next</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+            ${steps.map((step, index) => renderKingstonsTimelineStep({
+              number: String(index + 1).padStart(2, "0"),
+              icon: step.icon,
+              title: step.title,
+              body: step.body,
+              primaryColor: goldColor,
+            })).join("")}
+          </table>
+        </div>
+
+        <div style="margin: 0 0 12px; padding: 22px 24px; background: linear-gradient(90deg, #fff9ef 0%, #fbf0dc 100%); border-radius: 12px; border: 1px solid #f4e4c5;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+            <tr>
+              <td width="72" valign="top"><div style="width: 48px; height: 48px; border-radius: 10px; background: #fff3d6; color: ${goldColor}; font-size: 12px; line-height: 48px; text-align: center; font-weight: 900;">NOTE</div></td>
+              <td valign="top">
+                <p style="margin: 0 0 8px; color: ${goldColor}; font-size: 18px; line-height: 1.2; font-weight: 900; text-transform: uppercase;">Before we meet</p>
+                <p style="margin: 0; color: #141922; font-size: 15px; line-height: 1.5;">${escapeHtml(notesText)}</p>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="margin: 0 0 22px; padding: 18px 22px; background: #eef5f2; border-radius: 12px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+            <tr>
+              <td width="72" valign="middle"><div style="width: 48px; height: 48px; border-radius: 10px; background: #dff0ea; color: #00614f; font-size: 24px; line-height: 48px; text-align: center; font-weight: 900;">?</div></td>
+              <td valign="middle">
+                <p style="margin: 0 0 4px; color: #0a121d; font-size: 18px; line-height: 1.25; font-weight: 900;">Need help?</p>
+                <p style="margin: 0; color: #182333; font-size: 15px; line-height: 1.45;">Simply reply to this email and ${escapeHtml(resolvedAgentName)} will be able to assist.</p>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="border-top: 1px solid #cfd4d9; padding: 18px 0 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+            <tr>
+              <td valign="top" style="padding-right: 18px;">
+                <p style="margin: 0 0 4px; color: #111827; font-size: 13px; line-height: 1.3; font-weight: 900;">Your information is secure</p>
+                <p style="margin: 0; color: #263241; font-size: 12px; line-height: 1.45;">Arch9 securely manages your appointment information on behalf of ${escapeHtml(resolvedOrganisationName)}.</p>
+                ${supportEmail || supportPhone ? `<p style="margin: 10px 0 0; color: #4b5563; font-size: 12px; line-height: 1.45;">${escapeHtml([supportEmail, supportPhone].filter(Boolean).join(" - "))}</p>` : ""}
+              </td>
+              <td width="116" valign="top" align="right">
+                <p style="margin: 0 0 4px; color: #4b5563; font-size: 12px; line-height: 1.2;">Powered by</p>
+                <p style="margin: 0; color: #111827; font-size: 18px; line-height: 1; font-weight: 900; letter-spacing: 0.02em;">ARCH9</p>
+              </td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 function buildHostSentence({
@@ -366,127 +718,38 @@ export function buildAppointmentEmailHtml({
     organisationName: resolvedOrganisationName,
   });
   const sellerRecipient = isSellerParticipant(participantRole);
-  const isKingstonsBrand = isKingstonsOrganisation(resolvedOrganisationName);
-  const isKingstonsValuationPresentation = isValuationPresentation(
+  const isKingstonsValuationPresentation = isValuationPresentation(appointmentType, appointmentTitle);
+  const isKingstonsValuationInvite = isKingstonsValuationTheme({
+    eventType,
     appointmentType,
-    appointmentTitle,
-  );
-  const isKingstonsValuationInvite = isKingstonsBrand && sellerRecipient &&
-    isValuationAppointment(appointmentType, appointmentTitle) && [
-    "appointment_scheduled",
-    "appointment_confirmed",
-    "appointment_confirmation_required",
-  ].includes(eventType);
+    participantRole,
+    organisationName: resolvedOrganisationName,
+  });
   const safeAcceptLink = escapeHtml(acceptLink || "");
   const safeDeclineLink = escapeHtml(declineLink || "");
   const safeRescheduleLink = escapeHtml(rescheduleLink || "");
 
   if (isKingstonsValuationInvite) {
-    const kingstons = buildKingstonsValuationInviteCopy({
+    return renderKingstonsAppointmentEmail({
       eventType,
-      participantRole,
+      recipientName,
+      typeLabel,
+      appointmentDate,
+      appointmentTime,
+      relatedListing,
+      location,
+      meetingUrl,
+      notes,
+      actionLink,
+      rescheduleLink,
       agentName: resolvedAgentName,
       agentRole: resolvedAgentRole,
       agentBio: resolvedAgentBio,
       organisationName: resolvedOrganisationName,
-      isPresentation: isKingstonsValuationPresentation,
-    });
-    const detailFields = [
-      { label: "Appointment", value: typeLabel },
-      { label: "Date", value: pickText(appointmentDate, "TBC") },
-      { label: "Time", value: pickText(appointmentTime, "TBC") },
-      ...(relatedListing ? [{ label: "Property", value: relatedListing }] : []),
-      {
-        label: "Location",
-        value: pickText(meetingUrl || location, "To be confirmed"),
-      },
-      { label: "Status", value: pickText(status, "Pending") },
-      attachCalendarInvite !== false
-        ? { label: "Calendar invite", value: "Attached" }
-        : { label: "Calendar invite", value: "Not attached" },
-    ];
-
-    const contentHtml = [
-      `<div style="margin: 8px 0 18px; padding: 18px 20px; border: 1px solid #e6dcc4; border-left: 4px solid ${primaryColor}; border-radius: 16px; background: linear-gradient(180deg, #fffaf2 0%, #fff4e4 100%);">
-        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #8a6a22; font-weight: 700;">Introduction</p>
-        ${renderBridgeIntroParagraphs(kingstons.intro)}
-      </div>`,
-      renderBridgeSummaryCard(
-        [
-          { label: "Agent", value: pickText(resolvedAgentName, "Your agent") },
-          ...(resolvedAgentRole
-            ? [{ label: "Role", value: resolvedAgentRole }]
-            : []),
-          ...(kingstons.agentBio
-            ? [{ label: "About your agent", value: kingstons.agentBio }]
-            : []),
-        ],
-        kingstons.agentSummaryTitle,
-      ),
-      renderBridgeSummaryCard(
-        [
-          { label: "Agency", value: resolvedOrganisationName },
-          ...(supportEmail ? [{ label: "Email", value: supportEmail }] : []),
-          ...(supportPhone ? [{ label: "Phone", value: supportPhone }] : []),
-        ],
-        kingstons.agencySummaryTitle,
-      ),
-      `<div style="margin: 18px 0; padding: 18px 20px; border: 1px solid #e8dcc7; border-left: 4px solid ${primaryColor}; border-radius: 16px; background: #fffdfa;">
-        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #8a6a22; font-weight: 700;">This is what to expect</p>
-        ${renderBridgeSteps(kingstons.howItWorks)}
-      </div>`,
-      `<div style="margin: 18px 0; padding: 18px 20px; border: 1px solid #dbe6f2; border-left: 4px solid ${primaryColor}; border-radius: 16px; background: linear-gradient(180deg, #f9fcff 0%, #f4f8fc 100%);">
-        <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">Before we arrive</p>
-        ${renderBridgeBullets(kingstons.whatToExpect)}
-      </div>`,
-      notes
-        ? `<div style="margin: 16px 0 8px; padding: 16px 18px; border: 1px solid #e2eaf4; border-radius: 14px; background: #ffffff;">
-            <p style="margin: 0 0 8px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">Notes</p>
-            <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #35506d;">${
-          escapeHtml(notes)
-        }</p>
-          </div>`
-        : "",
-      renderBridgeSummaryCard(detailFields, "Appointment Details"),
-      actionLink
-        ? renderBridgeCta(kingstons.ctaLabel, actionLink, { primaryColor })
-        : "",
-      acceptLink || declineLink || rescheduleLink
-        ? `<div style="margin: 18px 0 16px;">
-            <p style="margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: #5d728a;">Please let us know whether this time works for you.</p>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-              ${
-          acceptLink
-            ? `<a href="${safeAcceptLink}" style="display: inline-block; border-radius: 999px; background: ${primaryColor}; color: #ffffff; font-size: 13px; font-weight: 700; text-decoration: none; padding: 10px 16px;">Accept</a>`
-            : ""
-        }
-              ${
-          declineLink
-            ? `<a href="${safeDeclineLink}" style="display: inline-block; border-radius: 999px; background: #ffffff; border: 1px solid #dce6f1; color: ${primaryColor}; font-size: 13px; font-weight: 700; text-decoration: none; padding: 9px 15px;">Decline</a>`
-            : ""
-        }
-              ${
-          rescheduleLink
-            ? `<a href="${safeRescheduleLink}" style="display: inline-block; border-radius: 999px; background: #f7fafc; border: 1px solid #dce6f1; color: #35506d; font-size: 13px; font-weight: 700; text-decoration: none; padding: 9px 15px;">Request Reschedule</a>`
-            : ""
-        }
-            </div>
-          </div>`
-        : "",
-    ].join("");
-
-    return renderBridgeEmailLayout({
-      preheader: `${kingstons.title} for ${typeLabel}`,
-      title: kingstons.title,
-      greeting: `Hi ${pickText(recipientName, "there")},`,
-      contentHtml,
-      helpBody: `Need help? Reply to this email and your ${
-        organisationName || "Arch9"
-      } team will assist you.`,
-      organisationName: organisationName || "Arch9",
-      supportEmail: supportEmail || "",
-      supportPhone: supportPhone || "",
+      supportEmail,
+      supportPhone,
       branding,
+      isPresentation: isKingstonsValuationPresentation,
     });
   }
 
@@ -696,17 +959,13 @@ export function buildAppointmentEmailText({
     organisationName: resolvedOrganisationName,
   });
   const sellerRecipient = isSellerParticipant(participantRole);
-  const isKingstonsBrand = isKingstonsOrganisation(resolvedOrganisationName);
-  const isKingstonsValuationPresentation = isValuationPresentation(
+  const isKingstonsValuationPresentation = isValuationPresentation(appointmentType, appointmentTitle);
+  const isKingstonsValuationInvite = isKingstonsValuationTheme({
+    eventType,
     appointmentType,
-    appointmentTitle,
-  );
-  const isKingstonsValuationInvite = isKingstonsBrand && sellerRecipient &&
-    isValuationAppointment(appointmentType, appointmentTitle) && [
-    "appointment_scheduled",
-    "appointment_confirmed",
-    "appointment_confirmation_required",
-  ].includes(eventType);
+    participantRole,
+    organisationName: resolvedOrganisationName,
+  });
 
   if (isKingstonsValuationInvite) {
     const kingstons = buildKingstonsValuationInviteCopy({

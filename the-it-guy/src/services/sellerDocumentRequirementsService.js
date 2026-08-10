@@ -306,15 +306,29 @@ const KINGSTONS_SELLER_DOCUMENT_REQUIREMENTS_PHASE6_VERSION = 'kingstons_seller_
 const STALE_GENERATED_SELLER_REQUIREMENT_KEYS = new Set([
   'alteration_approvals',
   'approved_building_plans',
+  'beetle_certificate',
+  'borehole_certificate',
+  'electric_fence_certificate',
+  'gas_compliance_certificate',
   'occupation_certificate',
+  'plumbing_certificate',
   'property_acquisition_record',
   'capital_improvement_records',
+  'solar_compliance_documents',
+  'water_installation_certificate',
 ])
 
 const CONDITIONALLY_TRIGGERED_SELLER_REQUIREMENT_KEYS = new Set([
   'alteration_approvals',
   'approved_building_plans',
+  'beetle_certificate',
+  'borehole_certificate',
+  'electric_fence_certificate',
+  'gas_compliance_certificate',
   'occupation_certificate',
+  'plumbing_certificate',
+  'solar_compliance_documents',
+  'water_installation_certificate',
 ])
 
 function hasSubmittedSellerOnboarding(status = '') {
@@ -1515,6 +1529,26 @@ const SELLER_DOCUMENT_MATCH_ALIASES = {
   solar_compliance_documents: ['solar_compliance_documents', 'solar_compliance', 'solar'],
 }
 
+const PROPERTY_COMPLIANCE_DOCUMENT_KEYS = new Set([
+  'alteration_approvals',
+  'approved_building_plans',
+  'beetle_certificate',
+  'borehole_certificate',
+  'electric_fence_certificate',
+  'gas_compliance_certificate',
+  'occupation_certificate',
+  'plumbing_certificate',
+  'solar_compliance_documents',
+  'water_installation_certificate',
+])
+
+const SALES_DOCUMENT_KEYS = new Set([
+  'property_condition_disclosure',
+  'signed_defect_form',
+  'signed_fica_form',
+  'signed_mandate',
+])
+
 function getSellerDocumentMatchAliases(key = '') {
   const normalized = normalizeDocumentMatchKey(key)
   if (!normalized) return []
@@ -1640,6 +1674,16 @@ function getSellerDocumentCategoryKey({ requirement = {}, document = {} } = {}) 
   const lane = normalizeKey(requirement?.requirementLane || requirement?.requirement_lane || document?.requirementLane || document?.requirement_lane)
   const section = normalizeKey(requirement?.documentRequirementSection || requirement?.document_requirement_section || document?.documentRequirementSection || document?.document_requirement_section)
   const category = normalizeKey(document?.category || document?.document_category || requirement?.category)
+  const requirementKey = requirementIdentity(requirement)
+  const documentKeys = [
+    requirementKey,
+    document?.requirementKey,
+    document?.requirement_key,
+    document?.document_type,
+    document?.documentType,
+    document?.category,
+    document?.document_category,
+  ].map(normalizeDocumentMatchKey).filter(Boolean)
   const signal = normalizeKey([
     group,
     lane,
@@ -1655,6 +1699,12 @@ function getSellerDocumentCategoryKey({ requirement = {}, document = {} } = {}) 
 
   if (group === 'additional' || category === 'additional_requests' || signal.includes('additional_request')) return 'additional'
   if (
+    PROPERTY_COMPLIANCE_DOCUMENT_KEYS.has(requirementKey) ||
+    documentKeys.some((key) => PROPERTY_COMPLIANCE_DOCUMENT_KEYS.has(key))
+  ) {
+    return 'property'
+  }
+  if (
     group === 'legal' ||
     category === 'legal' ||
     group === 'authority_documents' ||
@@ -1662,7 +1712,9 @@ function getSellerDocumentCategoryKey({ requirement = {}, document = {} } = {}) 
     group === 'mandate' ||
     category === 'mandate' ||
     category === 'mandate_signature' ||
-    ['signed_mandate', 'signed_defect_form', 'signed_fica_form', 'property_condition_disclosure'].some((key) => sellerDocumentKeysOverlap(signal, key)) ||
+    documentKeys.some((documentKey) =>
+      [...SALES_DOCUMENT_KEYS].some((salesKey) => documentKey === salesKey || sellerDocumentKeysOverlap(documentKey, salesKey)),
+    ) ||
     signal.includes('offer_to_purchase') ||
     signal.includes('sale_agreement') ||
     signal.includes('seller_instruction')

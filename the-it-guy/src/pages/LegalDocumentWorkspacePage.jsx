@@ -5040,38 +5040,7 @@ export default function LegalDocumentWorkspacePage() {
         LEGAL_WORKSPACE_SIGNING_EMAIL_TIMEOUT_MS,
       )
       assertEdgeFunctionSuccess(emailResponse, `The mandate signing email could not be sent to the ${recipientLabelLower}.`)
-      if (useServerSendReady && (emailResponse?.data?.accepted === true || emailResponse?.data?.background === true)) {
-        window.dispatchEvent(new Event('itg:transaction-updated'))
-        return {
-          queued: true,
-          job: emailResponse?.data?.job || null,
-          recipientRole: signerRole === 'agent' ? 'agent' : 'seller',
-          recipientEmail,
-        }
-      }
-      const serverSendResult = asRecord(asRecord(emailResponse?.data?.job).result || emailResponse?.data)
-      const emailDeliveryId = normalizeText(serverSendResult?.emailId || emailResponse?.data?.emailId)
-      const emailConfirmed = serverSendResult?.emailConfirmed === true || emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
-      if (!emailConfirmed) {
-        const error = new Error(`The mandate signing email to the ${recipientLabelLower} was prepared, but provider delivery was not confirmed.`)
-        error.code = 'SIGNING_EMAIL_UNCONFIRMED'
-        throw error
-      }
-      emailDelivery = {
-        emailDeliveryId,
-        emailConfirmed,
-        recipientRole: signerRole === 'agent' ? 'agent' : 'seller',
-        recipientEmail,
-        delivery: emailResponse?.data?.delivery || null,
-      }
       const nextMandateStatus = normalizeText(signingStatus) || (signerRole === 'agent' ? 'sent_to_agent' : signerRole === 'seller' ? 'sent_to_seller' : 'sent_for_signature')
-      void syncLeadMandateState({
-        stage: 'Mandate Sent',
-        status: 'Sent',
-        mandateStatus: nextMandateStatus,
-        mandateSentAt: new Date().toISOString(),
-        mandateSigningLink: signingLink,
-      }, { reason: 'persist the mandate send state' })
       const linkedListingId = normalizeText(
         leadContext?.lead?.listingId ||
         leadContext?.lead?.listing_id ||
@@ -5116,6 +5085,37 @@ export default function LegalDocumentWorkspacePage() {
           }
         })()
       }
+      if (useServerSendReady && (emailResponse?.data?.accepted === true || emailResponse?.data?.background === true)) {
+        window.dispatchEvent(new Event('itg:transaction-updated'))
+        return {
+          queued: true,
+          job: emailResponse?.data?.job || null,
+          recipientRole: signerRole === 'agent' ? 'agent' : 'seller',
+          recipientEmail,
+        }
+      }
+      const serverSendResult = asRecord(asRecord(emailResponse?.data?.job).result || emailResponse?.data)
+      const emailDeliveryId = normalizeText(serverSendResult?.emailId || emailResponse?.data?.emailId)
+      const emailConfirmed = serverSendResult?.emailConfirmed === true || emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
+      if (!emailConfirmed) {
+        const error = new Error(`The mandate signing email to the ${recipientLabelLower} was prepared, but provider delivery was not confirmed.`)
+        error.code = 'SIGNING_EMAIL_UNCONFIRMED'
+        throw error
+      }
+      emailDelivery = {
+        emailDeliveryId,
+        emailConfirmed,
+        recipientRole: signerRole === 'agent' ? 'agent' : 'seller',
+        recipientEmail,
+        delivery: emailResponse?.data?.delivery || null,
+      }
+      void syncLeadMandateState({
+        stage: 'Mandate Sent',
+        status: 'Sent',
+        mandateStatus: nextMandateStatus,
+        mandateSentAt: new Date().toISOString(),
+        mandateSigningLink: signingLink,
+      }, { reason: 'persist the mandate send state' })
       void recordLeadMandateActivity({
         agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
         activityType: 'Mandate Sent',

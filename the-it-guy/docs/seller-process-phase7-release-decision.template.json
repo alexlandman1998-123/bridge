@@ -1,0 +1,49 @@
+{
+  "contract": "seller-process-global-qa-phase7-release-readiness-v1",
+  "decidedAt": "REPLACE_WITH_ISO_TIMESTAMP",
+  "environment": "staging",
+  "projectRef": "REPLACE_WITH_SAFE_PROJECT_REF",
+  "releaseSource": {
+    "commitSha": "REPLACE_WITH_COMMIT_SHA_OR_SOURCE_REF",
+    "phase5Command": "npm run test:seller-process-global-qa-phase5",
+    "phase5Passed": false,
+    "buildPassed": false
+  },
+  "phase6Evidence": {
+    "contract": "seller-process-global-qa-phase6-staging-evidence-v1",
+    "evidenceRef": "REPLACE_WITH_REDACTED_PHASE6_EVIDENCE_REFERENCE",
+    "projectRef": "REPLACE_WITH_SAFE_PROJECT_REF",
+    "collectedAt": "REPLACE_WITH_PHASE6_COLLECTED_AT"
+  },
+  "operator": {
+    "reference": "REPLACE_WITH_OPAQUE_OPERATOR_REFERENCE",
+    "confirmation": "GLOBAL_SELLER_QA_PHASE7_RELEASE_READY"
+  },
+  "releaseDecision": {
+    "status": "pending",
+    "decisionRef": "REPLACE_WITH_REDACTED_DECISION_REFERENCE"
+  },
+  "safeguards": {
+    "phase5ReRunPassed": false,
+    "phase6EvidenceAccepted": false,
+    "globalProcessOnly": false,
+    "kingstonsExcluded": false,
+    "noProfileAutodetection": false,
+    "conditionalDocumentsVerified": false,
+    "noLiveMutationFromGate": false,
+    "evidenceRedacted": false,
+    "supportBriefed": false
+  },
+  "rollback": {
+    "ownerRef": "REPLACE_WITH_OPAQUE_ROLLBACK_OWNER_REFERENCE",
+    "planRef": "REPLACE_WITH_REDACTED_ROLLBACK_PLAN_REFERENCE",
+    "lastKnownGoodSourceRef": "REPLACE_WITH_LAST_KNOWN_GOOD_SOURCE_REFERENCE",
+    "validated": false
+  },
+  "approvals": {
+    "qaOwnerRef": "REPLACE_WITH_OPAQUE_QA_OWNER_REFERENCE",
+    "releaseOwnerRef": "REPLACE_WITH_OPAQUE_RELEASE_OWNER_REFERENCE",
+    "supportOwnerRef": "REPLACE_WITH_OPAQUE_SUPPORT_OWNER_REFERENCE"
+  },
+  "notes": "Replace placeholders only with redacted operational references. Do not include emails, names, phone numbers, URLs, property addresses, tokens, signed URLs, document contents, credentials, or raw logs."
+}

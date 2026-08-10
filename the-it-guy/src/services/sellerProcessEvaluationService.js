@@ -234,6 +234,35 @@ function leadHasValuationAppointmentScheduledEvidence(lead = {}) {
   )
 }
 
+function activitySatisfiesValuationPresented(activity = {}) {
+  const type = normalizeKey(activity?.activityType || activity?.activity_type || activity?.eventType || activity?.event_type || activity?.type || activity?.title)
+  const status = normalizeKey(activity?.status)
+  if (['cancelled', 'canceled', 'deleted'].includes(status)) return false
+  const signal = [
+    type,
+    normalizeKey(activity?.activityNote || activity?.activity_note || activity?.note || activity?.description),
+    normalizeKey(activity?.outcome),
+  ].filter(Boolean).join('_')
+  return Boolean(
+    signal.includes('valuation_presented') ||
+      signal.includes('valuation_presentation_completed') ||
+      signal.includes('presentation_completed') ||
+      (signal.includes('valuation') && signal.includes('presented'))
+  )
+}
+
+function leadHasValuationPresentedEvidence(lead = {}) {
+  const stage = normalizeKey(lead?.stage || lead?.currentStage || lead?.current_stage)
+  const status = normalizeKey(lead?.status || lead?.currentStatus || lead?.current_status)
+  const nextStep = normalizeKey(lead?.nextStep || lead?.next_step || lead?.nextFollowUp || lead?.next_follow_up)
+  const signals = [stage, status, nextStep].filter(Boolean)
+  return signals.some((signal) =>
+    signal === 'valuation_presented' ||
+      signal === 'valuation_presentation_completed' ||
+      signal === 'valuation_presentation_done'
+  )
+}
+
 function activitySatisfiesSellerContact(activity = {}) {
   const type = normalizeKey(activity?.activityType || activity?.activity_type || activity?.eventType || activity?.event_type || activity?.type || activity?.title)
   const status = normalizeKey(activity?.status)
@@ -366,6 +395,21 @@ function evaluateGate(gate = {}, context = {}) {
       asArray(context.activities).some(activitySatisfiesSellerContact) ||
       asArray(context.appointments).some((appointment) => appointmentImpliesSellerContact(appointment, gate))
     return { key: gate.key, source: gate.source, satisfied, evidenceCount: satisfied ? 1 : 0 }
+  }
+
+  if (gate.source === 'activity' && gate.key === 'valuation_presented') {
+    const completedPresentationAppointments = asArray(context.appointments).filter((appointment) =>
+      appointmentSatisfiesGate(appointment, gate)
+    )
+    const activityMatch = asArray(context.activities).some(activitySatisfiesValuationPresented)
+    const leadFallback = leadHasValuationPresentedEvidence(context.lead)
+    const evidenceCount = completedPresentationAppointments.length + (activityMatch ? 1 : 0) + (leadFallback ? 1 : 0)
+    return {
+      key: gate.key,
+      source: gate.source,
+      satisfied: evidenceCount > 0,
+      evidenceCount,
+    }
   }
 
   if (gate.source === 'appointment') {

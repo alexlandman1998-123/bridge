@@ -192,13 +192,11 @@ Deno.test("appointment template renders the Kingstons valuation invite experienc
   });
 
   assertIncludes(html, "Kingstons Valuation Request");
-  assertIncludes(html, "Introduction");
-  assertIncludes(html, "We are so excited to valuate your property");
-  assertIncludes(html, "This is your agent");
-  assertIncludes(html, "This is our agency");
-  assertIncludes(html, "This is what to expect");
-  assertIncludes(html, "Before we arrive");
-  assertIncludes(html, "RSVP to this time");
+  assertIncludes(html, "Your valuation appointment is ready for confirmation.");
+  assertIncludes(html, "Confirm appointment");
+  assertIncludes(html, "Property valuation");
+  assertIncludes(html, "Valuation prepared");
+  assertIncludes(html, "Before we meet");
   assertIncludes(
     html,
     "Specialist in residential sales across the local market.",
@@ -251,10 +249,10 @@ Deno.test("appointment template renders the Kingstons valuation presentation inv
   });
 
   assertIncludes(html, "Kingstons Valuation Presentation Request");
-  assertIncludes(html, "present your formal valuation");
-  assertIncludes(html, "Seller Pack stage");
-  assertIncludes(html, "seller portal");
-  assertIncludes(html, "RSVP to this time");
+  assertIncludes(html, "Your valuation presentation is ready for confirmation.");
+  assertIncludes(html, "Confirm presentation");
+  assertIncludes(html, "Review the valuation");
+  assertIncludes(html, "Seller pack next steps");
   assertIncludes(text, "Kingstons Valuation Presentation Request");
   assertIncludes(text, "Seller Pack stage");
   assertIncludes(

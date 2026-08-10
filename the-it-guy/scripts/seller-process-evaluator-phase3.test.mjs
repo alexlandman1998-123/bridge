@@ -82,7 +82,7 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
   assert.equal(evaluation.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
   assert.equal(evaluation.runtimeEnabled, false)
   assert.equal(evaluation.canApplyToRuntime, false)
-  assert.equal(evaluation.currentStage.key, 'seller_pack_signed')
+  assert.equal(evaluation.currentStage.key, 'valuation_presented')
   assert.deepEqual(evaluation.completedStageKeys, [
     'first_contact',
     'valuation_appointment_scheduled',
@@ -93,8 +93,9 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
   assert.equal(evaluation.evidence.valuation_appointment_scheduled.satisfied, true)
   assert.equal(evaluation.evidence.valuation_document_uploaded.satisfied, true)
   assert.equal(evaluation.evidence.valuation_presentation_scheduled.satisfied, true)
+  assert.equal(evaluation.evidence.valuation_presented.satisfied, false)
   assert.equal(evaluation.evidence.mandate_signed.satisfied, false)
-  assert.equal(evaluation.blockers.some((blocker) => blocker.id === 'missing_mandate_signed'), true)
+  assert.equal(evaluation.blockers.some((blocker) => blocker.id === 'missing_valuation_presented'), true)
   assert.equal(evaluation.partnerReadiness.every((handoff) => handoff.ready === false), true)
 }
 
@@ -186,6 +187,7 @@ function assertLiveSourceDoesNotImportEvaluator(source, label) {
     'valuation_appointment_scheduled',
     'formal_valuation_completed',
     'valuation_presentation_scheduled',
+    'valuation_presented',
     'seller_pack_signed',
     'listing_terms_confirmed',
     'listing_ready',

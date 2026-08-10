@@ -114,6 +114,9 @@ assert.equal(pack.mandateSigned, true)
 assert.ok(pack.documentPackFingerprint, 'portal pack should expose a stable fingerprint for diagnostics')
 assert.ok(packKeys.includes('company_resolution_to_sell'), 'company authority document should remain in the portal upload pack')
 assert.ok(packKeys.includes('director_member_ids'), 'company director/member FICA should be derived for the portal')
+assert.ok(packKeys.includes('cipc_documents'), 'raw company pack should still derive CIPC document evidence')
+assert.ok(packKeys.includes('authorised_signatory_id'), 'raw company pack should still derive authorised signatory ID evidence')
+assert.ok(packKeys.includes('company_address_proof'), 'raw company pack should still derive registered-address evidence')
 assert.equal(packKeys.includes('id_document'), false, 'stale individual-only requirements must not be shown to company sellers')
 assert.equal(packKeys.includes('signed_mandate'), false, 'signed mandate must not be requested as a seller upload after completion')
 
@@ -124,12 +127,21 @@ const resolutionItem = documentCenter.items.find((item) => item.sourceId === 'co
 const disclosureItem = documentCenter.items.find((item) => item.sourceId === 'property_condition_disclosure')
 const signedMandate = documentCenter.uploadedDocuments.find((item) => item.canonicalFinalArtifact)
 
-assert.deepEqual(requiredKeys, packKeys)
 assert.equal(documentCenter.sellerStructure.sellerType, 'company')
 assert.equal(documentCenter.documentPackSource, 'seller_onboarding_structure')
 assert.equal(documentCenter.documentPackFingerprint, pack.documentPackFingerprint)
 assert.equal(itemKeys.includes('id_document'), false)
 assert.equal(itemKeys.includes('signed_mandate'), false)
+assert.ok(requiredKeys.includes('company_registration'), 'document centre should keep the canonical company registration row')
+assert.ok(requiredKeys.includes('company_resolution_to_sell'), 'document centre should keep the company resolution upload row')
+assert.ok(requiredKeys.includes('director_member_ids'), 'document centre should keep director/member FICA upload row')
+for (const duplicateCompanyKey of ['cipc_documents', 'authorised_signatory_id', 'company_address_proof']) {
+  assert.equal(
+    requiredKeys.includes(duplicateCompanyKey),
+    false,
+    `${duplicateCompanyKey} should be represented by the canonical company document rows instead of a duplicate portal card`,
+  )
+}
 assert.equal(resolutionItem.status, 'uploaded')
 assert.equal(resolutionItem.uploadSpec.type, 'requirement')
 assert.equal(disclosureItem.status, 'completed')

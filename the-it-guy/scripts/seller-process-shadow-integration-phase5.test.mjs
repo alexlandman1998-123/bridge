@@ -128,6 +128,7 @@ function assertPartnerPayloadHidesInternalKeys(payload) {
     'mandate_signed',
     'defects_form_signed',
     'fica_pack_signed',
+    'seller_pack_readiness_complete',
   ])
   assert.equal(integration.mandateFlow.canFinalizeListing, false)
   assert.equal(integration.mandateFlow.canMarkMandateSigned, false)
@@ -149,15 +150,30 @@ function assertPartnerPayloadHidesInternalKeys(payload) {
 {
   const integration = buildSellerProcessShadowIntegration({
     ...kingstonsProfile,
-    lead: { status: 'contacted' },
+    lead: {
+      status: 'contacted',
+      rawEnquiryPayload: {
+        kingstonsSellerPack: {
+          sellerType: 'natural',
+          legalPath: { sellerType: 'natural' },
+        },
+        kingstonsListingTerms: {
+          commissionConfirmed: true,
+          transferAttorneyNominated: true,
+          commission: { type: 'percentage', percentage: 5, confirmed: true },
+          transferAttorney: { companyName: 'Kingstons Conveyancers', email: 'transfers@example.test', nominated: true },
+        },
+      },
+    },
     appointments: [
       { appointmentType: 'seller_valuation', status: 'completed' },
       { appointmentType: 'valuation_presentation', status: 'completed' },
     ],
     documents: [
       { documentType: 'valuation_document', status: 'uploaded', fileUrl: 'valuation.pdf' },
-      { documentType: 'defects_disclosure_form', status: 'signed', file_path: 'defects.pdf' },
-      { documentType: 'seller_fica_pack', status: 'uploaded', file_path: 'fica.pdf' },
+      { key: 'signed_mandate', documentType: 'signed_mandate', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'mandate.pdf', sellerType: 'natural' },
+      { key: 'signed_defect_form', documentType: 'defects_disclosure_form', source: 'kingstons_seller_pack', status: 'signed', file_path: 'defects.pdf', sellerType: 'natural' },
+      { key: 'signed_fica_form', documentType: 'seller_fica_pack', source: 'kingstons_seller_pack', status: 'uploaded', file_path: 'fica.pdf', sellerType: 'natural' },
     ],
     mandatePacketStatus: {
       packet: { id: 'packet-kingstons', status: 'completed' },

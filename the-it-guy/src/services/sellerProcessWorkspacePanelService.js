@@ -13,6 +13,7 @@ const EVIDENCE_LABELS = Object.freeze({
   valuation_appointment_scheduled: 'Valuation appointment scheduled',
   valuation_document_uploaded: 'Formal valuation uploaded',
   valuation_presentation_scheduled: 'Valuation presentation scheduled',
+  valuation_presented: 'Valuation presented',
   mandate_signed: 'Mandate signed',
   defects_form_signed: 'Defects form signed',
   fica_pack_signed: 'FICA pack signed',
@@ -27,6 +28,7 @@ const STAGE_LABELS = Object.freeze({
   valuation_appointment_scheduled: 'Valuation Appointment',
   formal_valuation_completed: 'Formal Valuation',
   valuation_presentation_scheduled: 'Valuation Presentation',
+  valuation_presented: 'Valuation Presented',
   seller_pack_signed: 'Seller Pack',
   listing_terms_confirmed: 'Listing Terms',
   listing_ready: 'List Property',
@@ -38,29 +40,6 @@ function asArray(value) {
 
 function normalizeText(value) {
   return String(value ?? '').trim()
-}
-
-function normalizeLower(value) {
-  return normalizeText(value).toLowerCase()
-}
-
-function hasKingstonsWorkspaceIdentitySignal(workspace = {}, row = {}, lead = {}) {
-  const source = [
-    workspace?.assignedAgentEmail,
-    workspace?.assigned_agent_email,
-    workspace?.leadOwnerEmail,
-    workspace?.lead_owner_email,
-    row?.assignedAgentEmail,
-    row?.assigned_agent_email,
-    row?.leadOwnerEmail,
-    row?.lead_owner_email,
-    row?.ownerEmail,
-    row?.owner_email,
-    lead?.assignedAgentEmail,
-    lead?.assigned_agent_email,
-  ].map(normalizeLower).filter(Boolean)
-
-  return source.some((value) => value.includes('kingstons.training@arch9.test') || value.includes('@kingstons.'))
 }
 
 function labelForEvidence(key = '') {
@@ -91,7 +70,7 @@ function buildShadowIntegrationFallback(workspace = {}) {
     lead,
   })
 
-  if (resolution.isKingstons !== true && !hasKingstonsWorkspaceIdentitySignal(workspace, row, lead)) return null
+  if (resolution.isKingstons !== true) return null
 
   return buildSellerLeadWorkspaceShadowIntegration({
     row,
@@ -102,7 +81,7 @@ function buildShadowIntegrationFallback(workspace = {}) {
     documentPackets: workspace?.documentPackets || row?.documentPackets || [],
     leadActivities: workspace?.leadActivities || workspace?.timeline || row?.leadActivities || [],
     organisationSettings: workspace?.organisationSettings || workspace?.organizationSettings || null,
-    sellerProcessProfile: resolution.isKingstons === true ? resolution.profile : KINGSTONS_SELLER_PROCESS_PROFILE,
+    sellerProcessProfile: resolution.profile,
   })
 }
 

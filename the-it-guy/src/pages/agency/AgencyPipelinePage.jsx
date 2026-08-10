@@ -905,6 +905,7 @@ const KINGSTONS_PIPELINE_STAGE_LABELS = Object.freeze({
   valuation_appointment_scheduled: 'Schedule Valuation Appointment',
   formal_valuation_completed: 'Formal Valuation',
   valuation_presentation_scheduled: 'Valuation Presentation',
+  valuation_presented: 'Valuation Presented',
   seller_pack_signed: 'Seller Pack',
   listing_terms_confirmed: 'Listing Terms',
   listing_ready: 'List Property',
@@ -930,30 +931,7 @@ function hasKingstonsPipelineSignal(source = {}) {
   const listingFacts = asRecord(listing.sellerCanonicalFacts || listing.seller_canonical_facts_json)
   const listingPackFacts = asRecord(listingFacts.kingstonsSellerPack || listingFacts.sellerPackHandoff || listing.kingstonsSellerPack || listing.sellerPackHandoff)
   if (normalizeText(listingPackFacts.source).toLowerCase().includes('kingstons_seller_pack')) return true
-
-  const signals = [
-    source.selectedLeadAssignedAgentLabel,
-    source.currentAgent?.email,
-    source.profile?.email,
-    source.currentMembership?.email,
-    source.currentMembership?.userEmail,
-    source.currentMembership?.user_email,
-    source.currentMembership?.user?.email,
-    listing.assignedAgentEmail,
-    listing.assigned_agent_email,
-    listing.assignedAgentName,
-    listing.assigned_agent_name,
-    listing.agencyName,
-    listing.agency_name,
-    listing.organisationName,
-    listing.organisation_name,
-    lead.assignedAgentEmail,
-    lead.assigned_agent_email,
-    lead.assignedAgentName,
-    lead.assigned_agent_name,
-  ].map((value) => normalizeText(value).toLowerCase()).filter(Boolean)
-
-  return signals.some((value) => value.includes('kingstons.training@arch9.test') || value.includes('@kingstons.'))
+  return false
 }
 
 function getKingstonsPipelineActionMeta(model = {}) {
@@ -8750,7 +8728,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   })
   const [isOfferLinkSending, setIsOfferLinkSending] = useState(false)
   const [otpQuickStartOpen, setOtpQuickStartOpen] = useState(false)
-  const [otpQuickStartBusy] = useState(false)
+  const [otpQuickStartBusy, setOtpQuickStartBusy] = useState(false)
   const [otpQuickStartProgress, setOtpQuickStartProgress] = useState('')
   const [otpQuickStartError, setOtpQuickStartError] = useState('')
   const [selectedLeadOtpTemplateReadiness, setSelectedLeadOtpTemplateReadiness] = useState(null)
@@ -12669,41 +12647,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedLeadHasKingstonsSellerProcess = selectedSellerProcessPanelModel?.visible === true
   const selectedKingstonsProcessAction = useMemo(() => {
     const action = getKingstonsPipelineActionMeta(selectedSellerProcessPanelModel || {})
-    if (!selectedLeadHasKingstonsPipelineSignal) return action
     if (['complete_seller_pack', 'seller_pack_signed'].includes(action.actionId)) {
-      if (!selectedKingstonsSellerPackSummary.complete) {
-        const missingLabels = selectedKingstonsSellerPackSummary.missingLabels?.length
-          ? selectedKingstonsSellerPackSummary.missingLabels.join(', ')
-          : 'Seller Pack documents'
-        return {
-          title: 'Complete Seller Pack',
-          copy: `Finish the full Seller Pack readiness checklist before listing. Still needed: ${missingLabels}.`,
-          actionId: selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'open_documents' : 'complete_seller_pack',
-          label: selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'Open Documents' : 'Capture Details',
-          disabled: false,
-        }
-      }
-      return {
-        title: 'Seller Pack Complete',
-        copy: 'All required Seller Pack documents are ready. Confirm listing terms before creating the listing.',
-        actionId: selectedKingstonsListingTermsSummary.complete ? 'prepare_listing' : 'confirm_listing_terms',
-        label: selectedKingstonsListingTermsSummary.complete ? 'Create Listing' : 'Confirm Listing Terms',
-        disabled: false,
-      }
+      return action
     }
     return action
   }, [
-    selectedLeadHasKingstonsPipelineSignal,
-    selectedKingstonsListingTermsSummary.complete,
-    selectedKingstonsSellerPackSummary.complete,
-    selectedKingstonsSellerPackSummary.missingLabels,
-    selectedKingstonsSellerPackSummary.sellerTypeCaptured,
     selectedSellerProcessPanelModel,
   ])
   const selectedKingstonsRailSteps = useMemo(
     () => buildKingstonsPipelineRailSteps(selectedSellerProcessPanelModel || {}),
     [selectedSellerProcessPanelModel],
   )
+  const selectedSellerJourneyRailSteps = selectedLeadHasKingstonsSellerProcess ? selectedKingstonsRailSteps : selectedSellerJourney.steps
+  const defaultSellerJourneyRailStyle = {
+    gridTemplateColumns: `repeat(${Math.max(selectedSellerJourney.steps.length, 1)}, minmax(140px, 1fr))`,
+  }
+  const kingstonsSellerJourneyRailStyle = {
+    gridTemplateColumns: `repeat(${Math.max(selectedKingstonsRailSteps.length, 1)}, minmax(140px, 1fr))`,
+  }
+  const selectedSellerJourneyRailStyle = selectedLeadHasKingstonsSellerProcess
+    ? kingstonsSellerJourneyRailStyle
+    : defaultSellerJourneyRailStyle
   const selectedLeadDisplayLifecycleStage = useMemo(() => {
     if (!selectedLeadHasKingstonsSellerProcess) return selectedLeadEffectiveLifecycleStage
     return normalizeText(selectedSellerProcessPanelModel?.currentStageLabel) || selectedLeadEffectiveLifecycleStage
@@ -13458,6 +13422,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => selectedLeadOtpReadiness.warnings,
     [selectedLeadOtpReadiness],
   )
+  const selectedLeadOtpTemplateBlocking =
+    isSupabaseConfigured &&
+    otpQuickStartOpen &&
+    selectedLeadOtpTemplateReadiness?.ready !== true &&
+    normalizeKey(selectedLeadOtpTemplateReadiness?.status) !== 'checking'
   useEffect(() => {
     if (
       !otpQuickStartOpen ||
@@ -18235,28 +18204,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           job: generatedVersionResult?.job || null,
         }
       }
-      const nextLeadMandateStatus = backgroundGenerationQueued
-        ? 'Mandate Generating'
-        : draftReadyOnly
-          ? 'Mandate Draft Ready'
-          : 'Mandate Generated'
+      const nextLeadMandateStatus = backgroundGenerationQueued ? 'Mandate Generating' : 'Mandate Generated'
+      const nextLeadMandateStageStatus = draftReadyOnly && !backgroundGenerationQueued ? 'Mandate Draft Ready' : nextLeadMandateStatus
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
-        stage: nextLeadMandateStatus,
-        status: nextLeadMandateStatus,
+        stage: nextLeadMandateStageStatus,
+        status: nextLeadMandateStageStatus,
         mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
       })
       patchSelectedLeadRecord({
-        stage: nextLeadMandateStatus,
-        status: nextLeadMandateStatus,
+        stage: nextLeadMandateStageStatus,
+        status: nextLeadMandateStageStatus,
         mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
       }, selectedLead.leadId)
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: backgroundGenerationQueued
-          ? 'Mandate Generation Started'
-          : draftReadyOnly
-            ? 'Mandate Draft Ready'
-            : 'Mandate Generated',
+        activityType: backgroundGenerationQueued ? 'Mandate Generation Started' : 'Mandate Generated',
         activityNote: backgroundGenerationQueued
           ? 'Mandate PDF generation was queued automatically and is running in the background.'
           : draftReadyOnly
@@ -18337,8 +18299,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         packetId: normalizeText(packet?.id),
         leadId: selectedLead.leadId,
         leadPatch: {
-          stage: nextLeadMandateStatus,
-          status: nextLeadMandateStatus,
+          stage: nextLeadMandateStageStatus,
+          status: nextLeadMandateStageStatus,
           mandatePacketId: normalizeText(packet?.id) || fallbackPacketId,
         },
         reason: 'phase5_post_generate_targeted_refresh',
@@ -20310,12 +20272,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         documentKey: key,
       })
       const currentPack = getKingstonsSellerPackState(selectedLead)
+      const requirementMeta = getKingstonsSellerPackListingRequirementMeta(key, {
+        ...definition,
+        ...sourceDocument,
+      })
+      const canonicalRequirementKey = normalizeKey(requirementMeta.requirementKey || sourceDocument.requirementKey || sourceDocument.requirement_key || key)
       const uploadedDocument = {
         key,
-        requirementKey: key,
-        requirement_key: key,
-        documentType: key,
-        document_type: key,
+        requirementKey: canonicalRequirementKey,
+        requirement_key: canonicalRequirementKey,
+        documentType: requirementMeta.documentType || canonicalRequirementKey || key,
+        document_type: requirementMeta.documentType || canonicalRequirementKey || key,
         label: definition.label,
         title: definition.label,
         category: definition.category || 'seller',
@@ -20347,17 +20314,62 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         storagePath: upload.storagePath,
         url: upload.url,
       }
+      const nextDocuments = {
+        ...asRecord(currentPack.documents),
+        [key]: uploadedDocument,
+        ...(canonicalRequirementKey && canonicalRequirementKey !== key ? { [canonicalRequirementKey]: uploadedDocument } : {}),
+      }
       await persistKingstonsSellerPack({
         ...currentPack,
-        documents: {
-          ...asRecord(currentPack.documents),
-          [key]: uploadedDocument,
-        },
+        documents: nextDocuments,
       }, {
         successMessage: `${definition.label} uploaded to the seller pack.`,
         activityNote: `${definition.label} was uploaded to the Kingstons seller pack.`,
         outcome: definition.label,
       })
+      const linkedListingId = normalizeText(
+        selectedLeadLinkedListing?.id ||
+          selectedLeadLinkedListing?.listingId ||
+          selectedLeadLinkedListing?.listing_id ||
+          selectedLead?.listingId ||
+          selectedLead?.listing_id ||
+          selectedLead?.privateListingId ||
+          selectedLead?.private_listing_id,
+      )
+      if (linkedListingId) {
+        try {
+          await ensurePrivateListingDocumentRequirements(
+            linkedListingId,
+            buildKingstonsSellerPackListingRequirementRows([{
+              ...sourceDocument,
+              ...uploadedDocument,
+              key,
+              requirementKey: canonicalRequirementKey,
+              requirement_key: canonicalRequirementKey,
+            }]),
+            { reason: 'kingstons_seller_pack_upload_status_sync' },
+          )
+          await linkPrivateListingDocument(linkedListingId, {
+            requirementKey: canonicalRequirementKey,
+            documentType: uploadedDocument.documentType,
+            documentCategory: requirementMeta.documentCategory || uploadedDocument.document_category || uploadedDocument.category,
+            documentName: normalizeText(file.name || definition.fileName || definition.label || requirementMeta.requirementName),
+            filePath: upload.storagePath,
+            fileUrl: upload.storagePath ? '' : upload.url,
+            visibility: 'internal',
+            status: 'uploaded',
+            uploadedAt: uploadedDocument.uploadedAt,
+            metadata: {
+              source: 'kingstons_seller_pack_upload_status_sync',
+              leadId: normalizeText(selectedLead.leadId),
+              sellerPackDocumentKey: key,
+              sellerPackRequirementKey: canonicalRequirementKey,
+            },
+          })
+        } catch (linkError) {
+          console.warn('[AgencyPipelinePage] Seller pack upload saved on lead but could not be linked to listing documents.', linkError)
+        }
+      }
     } catch (uploadError) {
       setError(uploadError?.message || `Unable to upload ${definition.label}.`)
     } finally {
@@ -21463,17 +21475,40 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedLead || selectedLeadIsSeller) return
     setOtpQuickStartError('')
     setOtpQuickStartProgress('')
-    setOtpQuickStartOpen(false)
-    setLeadWorkspaceTab('offers')
-    setMessage(BUYER_OTP_DEPRECATION_NOTICE)
+    setOtpQuickStartOpen(true)
   }
 
-  function handleOtpQuickStartGenerateAndSend() {
+  async function handleOtpQuickStartGenerateAndSend() {
     if (!selectedLead || selectedLeadIsSeller || !organisationId) return
-    setOtpQuickStartOpen(false)
-    setLeadWorkspaceTab('offers')
-    setOtpQuickStartError(BUYER_OTP_DEPRECATION_NOTICE)
-    setMessage(BUYER_OTP_DEPRECATION_NOTICE)
+    if (selectedLeadOtpTemplateBlocking) {
+      setOtpQuickStartError(selectedLeadOtpTemplateReadiness?.value || 'Checking the published OTP template route. Try again in a moment.')
+      return
+    }
+    if (selectedLeadOtpQuickStartBlockers.length) {
+      setOtpQuickStartError(selectedLeadOtpQuickStartBlockers[0] || 'Complete the required OTP details before sending.')
+      return
+    }
+    try {
+      setOtpQuickStartBusy(true)
+      setOtpQuickStartError('')
+      setOtpQuickStartProgress('Preparing OTP link...')
+      const result = await createAndSendOfferLinkForLead({
+        directOfferCentreSubmission: true,
+        successPrefix: 'OTP ',
+      })
+      if (result?.successMessage) setMessage(result.successMessage)
+      if (result?.errorMessage) setOtpQuickStartError(result.errorMessage)
+      if (!result?.errorMessage) {
+        setOtpQuickStartOpen(false)
+        setLeadWorkspaceTab('offers')
+      }
+      await reloadRecords(organisationId)
+    } catch (otpError) {
+      setOtpQuickStartError(otpError?.message || 'Unable to prepare the OTP link.')
+    } finally {
+      setOtpQuickStartBusy(false)
+      setOtpQuickStartProgress('')
+    }
   }
 
   function buildCanonicalOfferActionPatch(offer, actionLabel, note = '') {
@@ -24838,11 +24873,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
 
                       <div className="overflow-x-auto px-5 py-7 sm:px-8" data-testid="seller-journey-rail">
-                        <ol
-                          className="grid min-w-[980px] gap-0"
-                          style={{ gridTemplateColumns: `repeat(${Math.max((selectedLeadHasKingstonsSellerProcess ? selectedKingstonsRailSteps : selectedSellerJourney.steps).length, 1)}, minmax(140px, 1fr))` }}
-                        >
-                          {(selectedLeadHasKingstonsSellerProcess ? selectedKingstonsRailSteps : selectedSellerJourney.steps).map((step, index, steps) => {
+	                        <ol
+	                          className="grid min-w-[980px] gap-0"
+	                          style={selectedSellerJourneyRailStyle}
+	                        >
+	                          {selectedSellerJourneyRailSteps.map((step, index, steps) => {
                             const isCurrent = step.current === true || step.state === 'current'
                             const isCompleted = step.completed === true || step.state === 'completed'
                             const dotClass = isCurrent
@@ -31134,7 +31169,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           setOtpQuickStartError('')
           setOtpQuickStartProgress('')
         }}
-        title="OTP generator deprecated"
+        title="Confirm OTP details"
         subtitle={resolveOtpQuickStartIntro()}
         className="max-w-2xl"
         footer={(
@@ -31164,7 +31199,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               <Button
                 type="button"
                 onClick={handleOtpQuickStartGenerateAndSend}
-                disabled={otpQuickStartBusy}
+                disabled={otpQuickStartBusy || selectedLeadOtpTemplateBlocking}
               >
                 {otpQuickStartBusy
                   ? (otpQuickStartProgress || 'Working…')

@@ -1,0 +1,76 @@
+{
+  "contract": "seller-process-global-qa-phase6-staging-evidence-v1",
+  "collectedAt": "REPLACE_WITH_ISO_TIMESTAMP",
+  "environment": "staging",
+  "projectRef": "REPLACE_WITH_SAFE_PROJECT_REF",
+  "releaseSource": {
+    "commitSha": "REPLACE_WITH_COMMIT_SHA_OR_SOURCE_REF",
+    "phase5Command": "npm run test:seller-process-global-qa-phase5",
+    "phase5Passed": false,
+    "buildPassed": false
+  },
+  "operator": {
+    "reference": "REPLACE_WITH_OPAQUE_OPERATOR_REFERENCE",
+    "confirmation": "GLOBAL_SELLER_QA_PHASE6_REDACTED_EVIDENCE"
+  },
+  "testLead": {
+    "opaqueLeadRef": "REPLACE_WITH_OPAQUE_LEAD_REFERENCE",
+    "globalProfileConfirmed": false,
+    "kingstonsProfileVisible": false
+  },
+  "checks": {
+    "sendOnboardingLink": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    },
+    "sellerOnboardingSubmitted": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    },
+    "sellerOnboardingNotificationSent": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    },
+    "conditionalDocumentsOff": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    },
+    "conditionalDocumentsOn": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    },
+    "generateMandate": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    },
+    "sendMandate": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    },
+    "signMandate": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    },
+    "listingCreated": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    },
+    "documentTabPopulated": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    },
+    "agentUploadOnBehalf": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    },
+    "sellerPortalDocumentCenter": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    },
+    "noKingstonsLeak": {
+      "passed": false,
+      "evidenceRef": "REPLACE_WITH_REDACTED_EVIDENCE_REFERENCE"
+    }
+  },
+  "notes": "Replace placeholders only with redacted operational references. Do not include emails, names, phone numbers, property addresses, tokens, signed URLs, document contents, or raw logs."
+}
