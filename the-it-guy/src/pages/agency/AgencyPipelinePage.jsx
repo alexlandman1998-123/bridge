@@ -2898,14 +2898,10 @@ async function uploadKingstonsSellerPackFile({
       continue
     }
     const storagePath = data?.path || objectPath
-    const signedUrlResult = await supabase.storage
-      .from(bucketName)
-      .createSignedUrl(storagePath, 60 * 60 * 24 * 7)
-      .catch((signedUrlError) => ({ error: signedUrlError }))
     return {
       storageBucket: bucketName,
       storagePath,
-      url: signedUrlResult?.data?.signedUrl || '',
+      url: '',
     }
   }
   throw lastError || new Error('Unable to upload the seller pack file.')
@@ -20886,19 +20882,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   async function handleDownloadSellerLeadDocumentUrl(documentRow = {}) {
-    const openingKey = normalizeText(documentRow?.id || documentRow?.key || documentRow?.url || documentRow?.downloadUrl)
-    let documentUrl = normalizeText(documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url)
+    const openingKey = normalizeText(documentRow?.id || documentRow?.key || documentRow?.storagePath || documentRow?.storage_path || documentRow?.url || documentRow?.downloadUrl)
+    const storagePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
+    let documentUrl = ''
     try {
       setError('')
       setOpeningSellerLeadDocumentId(openingKey)
-      if (!documentUrl && normalizeText(documentRow.storagePath || documentRow.storage_path)) {
+      if (storagePath) {
         const bucketName = normalizeText(documentRow.storageBucket || documentRow.storage_bucket) || DOCUMENTS_BUCKET_CANDIDATES[0]
-        const storagePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
         const signedUrlResult = await supabase?.storage
           ?.from(bucketName)
           ?.createSignedUrl(storagePath, 60 * 60)
         if (signedUrlResult?.error) throw signedUrlResult.error
         documentUrl = normalizeText(signedUrlResult?.data?.signedUrl)
+      } else {
+        documentUrl = normalizeText(documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url)
       }
       await triggerSellerLeadBrowserDownload(
         documentUrl,
@@ -20912,15 +20910,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   async function resolveSellerLeadDocumentShareUrl(documentRow = {}) {
-    let documentUrl = normalizeText(documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url)
-    if (!documentUrl && normalizeText(documentRow.storagePath || documentRow.storage_path)) {
+    const storagePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
+    let documentUrl = ''
+    if (storagePath) {
       const bucketName = normalizeText(documentRow.storageBucket || documentRow.storage_bucket) || DOCUMENTS_BUCKET_CANDIDATES[0]
-      const storagePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
       const signedUrlResult = await supabase?.storage
         ?.from(bucketName)
         ?.createSignedUrl(storagePath, 60 * 60 * 24 * 7)
       if (signedUrlResult?.error) throw signedUrlResult.error
       documentUrl = normalizeText(signedUrlResult?.data?.signedUrl)
+    } else {
+      documentUrl = normalizeText(documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url)
     }
     return documentUrl
   }
@@ -20963,7 +20963,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       kingstonsSellerPack: normalizedSellerPack,
       sellerPack: normalizedSellerPack,
     }, resolvedLeadId)
-    await updateAgencyCrmLeadRecord(organisationId, resolvedLeadId, { rawEnquiryPayload })
+    await withPipelineTimeout(
+      updateAgencyCrmLeadRecord(organisationId, resolvedLeadId, { rawEnquiryPayload }),
+      'Seller pack upload was stored, but updating the lead record is taking too long. Refresh and check the document row before uploading again.',
+      15000,
+    )
     if (activityNote) {
       void createAgencyCrmLeadActivity(organisationId, resolvedLeadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
@@ -21015,12 +21019,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setError('')
       setSellerPackUploadingKey(key)
-      const upload = await uploadKingstonsSellerPackFile({
-        file,
-        organisationId,
-        leadId: selectedLead.leadId,
-        documentKey: key,
-      })
+      const upload = await withPipelineTimeout(
+        uploadKingstonsSellerPackFile({
+          file,
+          organisationId,
+          leadId: selectedLead.leadId,
+          documentKey: key,
+        }),
+        'Document upload is taking too long. Please check your connection and try again.',
+        30000,
+      )
       const currentPack = getKingstonsSellerPackState(selectedLead)
       const requirementMeta = getKingstonsSellerPackListingRequirementMeta(key, {
         ...definition,
@@ -21088,34 +21096,42 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       )
       if (linkedListingId) {
         try {
-          await ensurePrivateListingDocumentRequirements(
-            linkedListingId,
-            buildKingstonsSellerPackListingRequirementRows([{
-              ...sourceDocument,
-              ...uploadedDocument,
-              key,
-              requirementKey: canonicalRequirementKey,
-              requirement_key: canonicalRequirementKey,
-            }]),
-            { reason: 'kingstons_seller_pack_upload_status_sync' },
+          await withPipelineTimeout(
+            ensurePrivateListingDocumentRequirements(
+              linkedListingId,
+              buildKingstonsSellerPackListingRequirementRows([{
+                ...sourceDocument,
+                ...uploadedDocument,
+                key,
+                requirementKey: canonicalRequirementKey,
+                requirement_key: canonicalRequirementKey,
+              }]),
+              { reason: 'kingstons_seller_pack_upload_status_sync' },
+            ),
+            'Seller pack listing requirement sync is taking too long.',
+            10000,
           )
-          await linkPrivateListingDocument(linkedListingId, {
-            requirementKey: canonicalRequirementKey,
-            documentType: uploadedDocument.documentType,
-            documentCategory: requirementMeta.documentCategory || uploadedDocument.document_category || uploadedDocument.category,
-            documentName: normalizeText(file.name || definition.fileName || definition.label || requirementMeta.requirementName),
-            filePath: upload.storagePath,
-            fileUrl: upload.storagePath ? '' : upload.url,
-            visibility: 'internal',
-            status: 'uploaded',
-            uploadedAt: uploadedDocument.uploadedAt,
-            metadata: {
-              source: 'kingstons_seller_pack_upload_status_sync',
-              leadId: normalizeText(selectedLead.leadId),
-              sellerPackDocumentKey: key,
-              sellerPackRequirementKey: canonicalRequirementKey,
-            },
-          })
+          await withPipelineTimeout(
+            linkPrivateListingDocument(linkedListingId, {
+              requirementKey: canonicalRequirementKey,
+              documentType: uploadedDocument.documentType,
+              documentCategory: requirementMeta.documentCategory || uploadedDocument.document_category || uploadedDocument.category,
+              documentName: normalizeText(file.name || definition.fileName || definition.label || requirementMeta.requirementName),
+              filePath: upload.storagePath,
+              fileUrl: '',
+              visibility: 'internal',
+              status: 'uploaded',
+              uploadedAt: uploadedDocument.uploadedAt,
+              metadata: {
+                source: 'kingstons_seller_pack_upload_status_sync',
+                leadId: normalizeText(selectedLead.leadId),
+                sellerPackDocumentKey: key,
+                sellerPackRequirementKey: canonicalRequirementKey,
+              },
+            }),
+            'Seller pack listing document link is taking too long.',
+            10000,
+          )
         } catch (linkError) {
           console.warn('[AgencyPipelinePage] Seller pack upload saved on lead but could not be linked to listing documents.', linkError)
         }
@@ -30588,7 +30604,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             <div className="flex items-center gap-2">
                                               <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
                                               {documentHasFile ? (
-                                                shouldDownloadDocument || !documentUrl ? (
+                                                shouldDownloadDocument || documentStoragePath || !documentUrl ? (
                                                   <button
                                                     type="button"
                                                     onClick={() => void handleDownloadSellerLeadDocumentUrl(documentRow)}
