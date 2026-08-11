@@ -108,7 +108,8 @@ const liveNonWorkspaceSources = [
 {
   const panelStart = pageSource.indexOf('function SellerProcessShadowPanel')
   assert.notEqual(panelStart, -1, 'SellerProcessShadowPanel should exist')
-  const panelEnd = pageSource.indexOf('function SellerListingFact', panelStart)
+  const panelEnd = pageSource.indexOf('function SellerAcquisitionActionRow', panelStart)
+  assert.notEqual(panelEnd, -1, 'SellerAcquisitionActionRow should follow SellerProcessShadowPanel')
   const panelSource = pageSource.slice(panelStart, panelEnd)
   assert.match(panelSource, /if \(!model\?\.visible\) return null/)
   assert.match(panelSource, /StatusPill tone="green">Active Profile/)

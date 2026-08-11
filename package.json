@@ -56,7 +56,8 @@
     "test:commission-closeout-enforcement": "node scripts/commission-closeout-enforcement.test.mjs",
     "test:commission-reporting": "node scripts/commission-reporting.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
-    "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked"
+    "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked",
+    "reconcile:verify": "node scripts/reconciliation-verify-batch.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"

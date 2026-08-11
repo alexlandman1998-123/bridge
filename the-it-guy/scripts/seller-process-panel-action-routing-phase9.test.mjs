@@ -49,7 +49,7 @@ function sliceFunction(source, functionName, nextFunctionName) {
 }
 
 {
-  const panelSource = sliceFunction(pageSource, 'SellerProcessShadowPanel', 'SellerListingFact')
+  const panelSource = sliceFunction(pageSource, 'SellerProcessShadowPanel', 'SellerAcquisitionActionRow')
   assert.match(panelSource, /onClick=\{\(\) => onAction\?\.\(card\.key\)\}/)
   assert.match(panelSource, /disabled=\{!onAction \|\| card\.disabled === true\}/)
   assert.match(panelSource, /getSellerProcessPanelActionHint\(card\.key\)/)
