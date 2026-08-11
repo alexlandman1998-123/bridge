@@ -210,7 +210,7 @@ Conflict files:
 
 Decision:
 
-Merge only after manual conflict resolution and focused review of `api.js`.
+Merged in Phase 6 after manual conflict resolution and focused review of `api.js`.
 
 Verification:
 
@@ -221,6 +221,18 @@ node scripts/mandate-readiness-canonical-facts.test.mjs
 node scripts/seller-onboarding-progress-serialization.test.mjs
 npm run build
 ```
+
+Result:
+
+Passed via `npm run reconcile:verify -- recover-buyer-onboarding-projection`.
+
+Conflict resolution:
+
+The resolution combined the incoming projection recovery failure-marker behavior with the current richer buyer information-sheet capture, completion hook, bond handoff, attorney handoff, and workflow-evidence flow. The buyer projection recovery contract was updated to assert the current `updateTransactionRequiredDocumentCaptureIfPossible` helper for information-sheet save and replay behavior.
+
+Merge commit:
+
+`f37228dc`
 
 ### `codex/hq-owner-dashboard`
 
@@ -250,7 +262,7 @@ Conflict files:
 
 Decision:
 
-Merge after dashboard conflict resolution if current `main` has not already superseded the dashboard refactor.
+Reconciled in Phase 6. The current integration branch already had a richer HQ management dashboard than the incoming tabbed owner-dashboard refactor, so the merge records the branch while keeping the current dashboard UI and test implementation.
 
 Verification:
 
@@ -259,6 +271,18 @@ cd the-it-guy
 node src/components/bond/__tests__/BondDashboard.test.jsx
 npm run build
 ```
+
+Result:
+
+Passed via `npm run reconcile:verify -- hq-owner-dashboard`.
+
+Conflict resolution:
+
+Kept the current versions of `the-it-guy/src/components/bond/BondHqCommandCentre.jsx` and `the-it-guy/src/components/bond/__tests__/BondDashboard.test.jsx`.
+
+Merge commit:
+
+`06eca9a7`
 
 ## Open PR Inspection Results
 

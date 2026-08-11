@@ -80,7 +80,7 @@ Evidence:
 
 ### 3. `codex/phase0-closeout-evidence`
 
-Status: gated by Phase 0 guard-retirement approval.
+Status: still gated by Phase 0 guard-retirement approval after Phase 5 review.
 
 Why:
 
@@ -101,7 +101,7 @@ npm run build
 
 ### 4. `codex/recover-buyer-onboarding-projection-20260801`
 
-Status: high value, conflict resolution required.
+Status: merged and verified in Phase 6.
 
 Why:
 
@@ -119,9 +119,16 @@ node scripts/seller-onboarding-progress-serialization.test.mjs
 npm run build
 ```
 
+Evidence:
+
+- merge commit: `f37228dc`
+- conflict resolution: combined the incoming replay failure markers with the current richer information-sheet capture and handoff flow
+- batch command: `npm run reconcile:verify -- recover-buyer-onboarding-projection`
+- result: passed
+
 ### 5. `codex/hq-owner-dashboard`
 
-Status: useful, conflict resolution required.
+Status: reconciled and verified in Phase 6.
 
 Why:
 
@@ -136,6 +143,13 @@ cd the-it-guy
 node src/components/bond/__tests__/BondDashboard.test.jsx
 npm run build
 ```
+
+Evidence:
+
+- merge commit: `06eca9a7`
+- conflict resolution: kept the current richer HQ management dashboard and test coverage because it superseded the incoming tabbed dashboard refactor
+- batch command: `npm run reconcile:verify -- hq-owner-dashboard`
+- result: passed
 
 ## Resolved Open PR Work
 

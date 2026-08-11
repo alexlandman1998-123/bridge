@@ -88,6 +88,48 @@ npm run reconcile:verify -- arch9-attorney-access-permission-bootstrap
 
 Result: passed. The workspace resolution service test passed and `npm run build` completed successfully.
 
+## Phase 5 Execution
+
+Phase 5, `Guarded Phase 0 Closeout Review`, remains gated as of `2026-08-11 17:28:25 SAST`.
+
+Reviewed branch:
+
+`origin/codex/phase0-closeout-evidence`
+
+Decision:
+
+Do not merge until explicit guard-retirement approval is recorded. The branch removes the Phase 0 Supabase broad-push guard workflow and scripts, so it remains policy-sensitive even though the technical conflict is limited.
+
+## Phase 6 Execution
+
+Phase 6, `Recent High-Value Recovery Batch`, is complete as of `2026-08-11 17:28:25 SAST`.
+
+Merged branches:
+
+- `origin/codex/recover-buyer-onboarding-projection-20260801`
+- `origin/codex/hq-owner-dashboard`
+
+Merge commits:
+
+- `f37228dc` - buyer onboarding projection recovery
+- `06eca9a7` - HQ owner dashboard
+
+Conflict resolution:
+
+- `the-it-guy/scripts/seller-portal-alignment.test.mjs`: kept the current shared branding resolver assertions and accepted the incoming lightweight-core payload assertion.
+- `the-it-guy/src/lib/api.js`: kept the current richer information-sheet capture/completion-hook/bond/attorney handoff flow, added projection failure markers around replay steps, and aligned the buyer projection contract with the current required-document capture helper.
+- `the-it-guy/src/components/bond/BondHqCommandCentre.jsx`: kept the current richer management dashboard implementation because it superseded the incoming tabbed owner-dashboard refactor.
+- `the-it-guy/src/components/bond/__tests__/BondDashboard.test.jsx`: kept the current dashboard test coverage aligned to the current implementation.
+
+Verification:
+
+```bash
+npm run reconcile:verify -- recover-buyer-onboarding-projection
+npm run reconcile:verify -- hq-owner-dashboard
+```
+
+Result: both passed. Each batch ran its focused test set and `npm run build` completed successfully.
+
 ## Batch Names
 
 Use these batch names during the first reconciliation pass:
@@ -123,6 +165,9 @@ Record each batch result here as reconciliation progresses.
 | 2026-08-11 | `phase-2-current-checks` | working tree | Passed with deployment blocked | GitHub and Vercel checks for PR #13 were green; deploy gate blocked only because PR #13 remains draft |
 | 2026-08-11 | `reminder-health-controls` | `01f71efe` | Passed | `npm run reconcile:verify -- reminder-health-controls` |
 | 2026-08-11 | `arch9-attorney-access-permission-bootstrap` | `13729f02` | Passed | `npm run reconcile:verify -- arch9-attorney-access-permission-bootstrap` |
+| 2026-08-11 | `phase0-closeout-evidence` | not merged | Gated | Explicit guard-retirement approval not recorded |
+| 2026-08-11 | `recover-buyer-onboarding-projection` | `f37228dc` | Passed | `npm run reconcile:verify -- recover-buyer-onboarding-projection` |
+| 2026-08-11 | `hq-owner-dashboard` | `06eca9a7` | Passed | `npm run reconcile:verify -- hq-owner-dashboard` |
 
 ## Batch-Specific Verification
 
