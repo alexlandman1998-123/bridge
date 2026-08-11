@@ -1,5 +1,5 @@
-import { ORG_ROLES, normalizeOrgRole } from './orgRoles'
-import { WORKSPACE_TYPES, normalizeWorkspaceType } from './workspaceTypes'
+import { ORG_ROLES, normalizeOrgRole } from './orgRoles.js'
+import { WORKSPACE_TYPES, normalizeWorkspaceType } from './workspaceTypes.js'
 
 export const BRANCH_SCOPES = Object.freeze({
   own: 'own',

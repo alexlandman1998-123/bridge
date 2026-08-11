@@ -1,7 +1,7 @@
 import {
   getFinanceReadinessAnalytics,
   getFinanceReadinessSummary,
-} from '../core/finance/financeReadinessSelectors'
+} from '../core/finance/financeReadinessSelectors.js'
 import { resolvePortalBuyerName } from './portalCanonicalFieldFallbacks.js'
 
 export const FINANCE_INTELLIGENCE_DISCLAIMER =

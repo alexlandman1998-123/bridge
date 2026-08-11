@@ -1,4 +1,4 @@
-import { getRequiredProductionEnvVars, getUnsafeProductionFlags, isProductionEnvironment, validateProductionConfiguration } from '../config/productionValidation'
+import { getRequiredProductionEnvVars, getUnsafeProductionFlags, isProductionEnvironment, validateProductionConfiguration } from '../config/productionValidation.js'
 import {
   resolveGuidedBondApplicationChangeRequestsFlag,
   resolveBondApplicationBankAdaptersFlag,
@@ -9,7 +9,7 @@ import {
   resolveGuidedBondApplicationParticipantsFlag,
   resolveGuidedBondApplicationSuretiesFlag,
   resolveGuidedBondApplicationV2Flag,
-} from './guidedBondApplicationFeatureFlag'
+} from './guidedBondApplicationFeatureFlag.js'
 
 function normalize(value) {
   return String(value || '').trim()
@@ -19,6 +19,10 @@ function asBoolean(value, fallback = false) {
   const normalized = normalize(value).toLowerCase()
   if (!normalized) return fallback
   return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)
+}
+
+function runtimeEnv() {
+  return import.meta.env || {}
 }
 
 export function getUnsafeEnvironmentFlags() {
@@ -35,16 +39,18 @@ export function getUnsafeEnvironmentFlags() {
 }
 
 function isProductionSupabaseProject() {
-  const currentUrl = normalize(import.meta.env.VITE_SUPABASE_URL)
-  const productionUrl = normalize(import.meta.env.VITE_PRODUCTION_SUPABASE_URL)
+  const env = runtimeEnv()
+  const currentUrl = normalize(env.VITE_SUPABASE_URL)
+  const productionUrl = normalize(env.VITE_PRODUCTION_SUPABASE_URL)
   if (!currentUrl || !productionUrl) return false
   return currentUrl.replace(/\/+$/, '') === productionUrl.replace(/\/+$/, '')
 }
 
 export function isUnsafeFallbackAllowed() {
+  const env = runtimeEnv()
   const unsafeFlags = getUnsafeProductionFlags()
   return Boolean(
-    import.meta.env.DEV &&
+    env.DEV &&
       !isProductionEnvironment() &&
       !isProductionSupabaseProject() &&
       unsafeFlags.VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS,
@@ -52,10 +58,11 @@ export function isUnsafeFallbackAllowed() {
 }
 
 export function getUnsafeFallbackEnvironmentDiagnostics() {
+  const env = runtimeEnv()
   return {
     allowed: isUnsafeFallbackAllowed(),
-    mode: import.meta.env.MODE || '',
-    dev: Boolean(import.meta.env.DEV),
+    mode: env.MODE || '',
+    dev: Boolean(env.DEV),
     productionEnvironment: isProductionEnvironment(),
     productionSupabaseProject: isProductionSupabaseProject(),
     allowUnsafeLocalFallbacks: Boolean(getUnsafeProductionFlags().VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS),
@@ -73,10 +80,11 @@ function buildMissingMessage(vars = []) {
 }
 
 export function getRuntimeEnvValidation() {
+  const env = runtimeEnv()
   const required = isProductionEnvironment() ? getRequiredProductionEnvVars() : ['VITE_SUPABASE_URL']
-  const missing = required.filter((name) => !normalize(import.meta.env[name]))
-  const hasAnonKey = Boolean(normalize(import.meta.env.VITE_SUPABASE_ANON_KEY))
-  const hasLegacyKey = Boolean(normalize(import.meta.env.VITE_SUPABASE_KEY))
+  const missing = required.filter((name) => !normalize(env[name]))
+  const hasAnonKey = Boolean(normalize(env.VITE_SUPABASE_ANON_KEY))
+  const hasLegacyKey = Boolean(normalize(env.VITE_SUPABASE_KEY))
 
   if (!hasAnonKey && !hasLegacyKey) {
     missing.push('VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_KEY')
@@ -90,29 +98,30 @@ export function getRuntimeEnvValidation() {
 }
 
 export function getFeatureFlags() {
+  const env = runtimeEnv()
   const unsafeFlags = getUnsafeEnvironmentFlags()
   return {
-    enableClientPortalAlterations: asBoolean(import.meta.env.VITE_FEATURE_CLIENT_PORTAL_ALTERATIONS, true),
-    enableServiceReviews: asBoolean(import.meta.env.VITE_FEATURE_SERVICE_REVIEWS, true),
-    enableSnapshotLinks: asBoolean(import.meta.env.VITE_FEATURE_SNAPSHOT_LINKS, true),
-    enableAdvancedOrganisationSetup: asBoolean(import.meta.env.VITE_FEATURE_ADVANCED_ORG_SETUP, true),
-    enableReportsExport: asBoolean(import.meta.env.VITE_FEATURE_REPORTS_EXPORT, true),
-    enableWhatsAppAutomation: asBoolean(import.meta.env.VITE_FEATURE_WHATSAPP_AUTOMATION, false),
-    enableInviteOnboarding: asBoolean(import.meta.env.VITE_FEATURE_INVITE_ONBOARDING, true),
-    enableNativeMandateRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_MANDATE_RENDERER, false),
-    enableNativeOtpRenderer: asBoolean(import.meta.env.VITE_FEATURE_NATIVE_OTP_RENDERER, false),
-    guidedBondApplicationV2: resolveGuidedBondApplicationV2Flag({ env: import.meta.env }).enabled,
-    guidedBondApplicationParticipantsV1: resolveGuidedBondApplicationParticipantsFlag({ env: import.meta.env }).enabled,
-    guidedBondApplicationSuretiesV1: resolveGuidedBondApplicationSuretiesFlag({ env: import.meta.env }).enabled,
-    guidedBondApplicationChangeRequestsV1: resolveGuidedBondApplicationChangeRequestsFlag({ env: import.meta.env }).enabled,
-    bondApplicationExportsV1: resolveBondApplicationExportsFlag({ env: import.meta.env }).enabled,
-    bondApplicationOobaAdapterV1: resolveBondApplicationOobaAdapterFlag({ env: import.meta.env }).enabled,
-    bondApplicationBankAdaptersV1: resolveBondApplicationBankAdaptersFlag({ env: import.meta.env }).enabled,
-    bondApplicationLiveDeliveryV1: resolveBondApplicationLiveDeliveryFlag({ env: import.meta.env }).enabled,
-    bondApplicationExternalStatusSyncV1: resolveBondApplicationExternalStatusSyncFlag({ env: import.meta.env }).enabled,
-    enableMobileShell: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_SHELL, false),
-    enableMobileLoginRedirect: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_LOGIN_REDIRECT, false),
-    allowDesktopFallbackOnMobile: asBoolean(import.meta.env.VITE_FEATURE_MOBILE_DESKTOP_FALLBACK, true),
+    enableClientPortalAlterations: asBoolean(env.VITE_FEATURE_CLIENT_PORTAL_ALTERATIONS, true),
+    enableServiceReviews: asBoolean(env.VITE_FEATURE_SERVICE_REVIEWS, true),
+    enableSnapshotLinks: asBoolean(env.VITE_FEATURE_SNAPSHOT_LINKS, true),
+    enableAdvancedOrganisationSetup: asBoolean(env.VITE_FEATURE_ADVANCED_ORG_SETUP, true),
+    enableReportsExport: asBoolean(env.VITE_FEATURE_REPORTS_EXPORT, true),
+    enableWhatsAppAutomation: asBoolean(env.VITE_FEATURE_WHATSAPP_AUTOMATION, false),
+    enableInviteOnboarding: asBoolean(env.VITE_FEATURE_INVITE_ONBOARDING, true),
+    enableNativeMandateRenderer: asBoolean(env.VITE_FEATURE_NATIVE_MANDATE_RENDERER, false),
+    enableNativeOtpRenderer: asBoolean(env.VITE_FEATURE_NATIVE_OTP_RENDERER, false),
+    guidedBondApplicationV2: resolveGuidedBondApplicationV2Flag({ env }).enabled,
+    guidedBondApplicationParticipantsV1: resolveGuidedBondApplicationParticipantsFlag({ env }).enabled,
+    guidedBondApplicationSuretiesV1: resolveGuidedBondApplicationSuretiesFlag({ env }).enabled,
+    guidedBondApplicationChangeRequestsV1: resolveGuidedBondApplicationChangeRequestsFlag({ env }).enabled,
+    bondApplicationExportsV1: resolveBondApplicationExportsFlag({ env }).enabled,
+    bondApplicationOobaAdapterV1: resolveBondApplicationOobaAdapterFlag({ env }).enabled,
+    bondApplicationBankAdaptersV1: resolveBondApplicationBankAdaptersFlag({ env }).enabled,
+    bondApplicationLiveDeliveryV1: resolveBondApplicationLiveDeliveryFlag({ env }).enabled,
+    bondApplicationExternalStatusSyncV1: resolveBondApplicationExternalStatusSyncFlag({ env }).enabled,
+    enableMobileShell: asBoolean(env.VITE_FEATURE_MOBILE_SHELL, false),
+    enableMobileLoginRedirect: asBoolean(env.VITE_FEATURE_MOBILE_LOGIN_REDIRECT, false),
+    allowDesktopFallbackOnMobile: asBoolean(env.VITE_FEATURE_MOBILE_DESKTOP_FALLBACK, true),
     disableRoleRestrictions: unsafeFlags.disableRoleRestrictions,
   }
 }

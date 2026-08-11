@@ -1,5 +1,5 @@
-import { resolvePermissionContext } from '../auth/permissions/permissionResolver'
-import { BOND_SCOPE_LEVELS } from '../constants/workspaceUnits'
+import { resolvePermissionContext } from '../auth/permissions/permissionResolver.js'
+import { BOND_SCOPE_LEVELS } from '../constants/workspaceUnits.js'
 
 export const BOND_ORGANISATION_LEVELS = Object.freeze({
   hq: 'hq',

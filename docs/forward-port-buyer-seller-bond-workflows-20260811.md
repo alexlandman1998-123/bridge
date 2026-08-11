@@ -671,3 +671,61 @@ Verification:
 - `npm run test:buyer-onboarding-flow-contract`
 - `npm run test:buyer-onboarding-sa-scenarios`
 - `npm run test:buyer-onboarding-originator-handoff-phase3`
+
+## Bond Originator Audit Phase 5
+
+Purpose: audit the bond-originator runtime after the buyer workflow repairs and make sure the originator handoff, queue, finance readiness, partner, permission, and bank surfaces still execute under the local Node diagnostics.
+
+Changed:
+
+- `the-it-guy/src/services/bondOperationalQueueService.js`
+- `the-it-guy/src/services/bondFinanceWorkflowOwnershipService.js`
+- `the-it-guy/src/services/bondOrganisationScopeResolver.js`
+- `the-it-guy/src/services/financeIntelligenceService.js`
+- `the-it-guy/src/core/transactions/bondIntakeSelectors.js`
+- `the-it-guy/src/auth/permissions/permissionResolver.js`
+- `the-it-guy/src/auth/permissions/permissionRegistry.js`
+- `the-it-guy/src/services/roleResolutionService.js`
+- `the-it-guy/src/constants/workspaceUnits.js`
+- `the-it-guy/src/lib/featureFlags.js`
+- `the-it-guy/src/lib/envValidation.js`
+- `the-it-guy/src/config/productionValidation.js`
+- `the-it-guy/src/services/__tests__/financeIntelligenceService.test.js`
+
+Repair made:
+
+- added explicit `.js` imports along the bond operational queue / finance readiness / permission resolver path so direct Node diagnostics can load the same modules that Vite already bundles
+- made production/env validation helpers tolerate plain Node execution where `import.meta.env` is not injected by Vite
+- extended the finance-intelligence dashboard SSR skip guard to include Node 24's `module is not defined` React Router incompatibility message
+
+Behavior guarded:
+
+- originator progress and attorney handoff checks still preserve read-only package/feed behavior
+- buyer onboarding originator handoff still blocks premature onboarding and records originator assignment readiness
+- finance readiness still produces originator-safe handoff packets and queue labels without exposing raw internal IDs
+- bond intake notifications, partner portal, partner collaboration, partner profile, routing rules, partner management, bank options, permission scopes, and bank-outcome RLS contracts remain covered
+
+Verification:
+
+- `npm run test:forward-port-bond-originator-phase5`
+- `npm run test:bond-originator-banks`
+- `npm run test:buyer-onboarding-originator-handoff-phase3`
+- `npm run test:finance-readiness`
+- `npm run test:bond-intake-notifications`
+- `npm run test:bond-partner-portal`
+- `npm run test:bond-partner-collaboration`
+- `npm run test:bond-application-classification`
+- `npm run test:bond-routing-rules`
+- `npm run test:bond-partner-management`
+- `npm run test:finance-intelligence`
+- `node scripts/bond-partner-profile.test.mjs`
+- `node src/auth/permissions/__tests__/bondFinanceWorkflowPermissions.test.js`
+- `node src/auth/permissions/__tests__/bondAssignmentPermissions.test.js`
+- `node src/auth/permissions/__tests__/queryScope.test.js`
+- `npm run test:bond-bank-outcome-originator-rls`
+- `npm run build` from `the-it-guy/`
+
+External connectivity caveat:
+
+- `npm run test:bond-application-assignment` was attempted and stopped after Supabase returned Cloudflare 522 timeouts during live audit writes.
+- `npm run test:bond-consultants-management` was attempted and failed on a Supabase Cloudflare 522 timeout. The error is retryable external connectivity, not a local assertion failure.
