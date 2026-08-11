@@ -826,3 +826,68 @@ Verification:
 - `npm run test:seller-journey`
 - `npm run test:seller-readiness`
 - `npm run build` from `the-it-guy/`
+
+## Draft And Stale Branch Cleanup Phase 8
+
+Purpose: clean the reconciliation checkout after the seller sanity pass, preserve unrelated draft work safely, and remove local branch clutter that had already landed on `origin/main`.
+
+Changed:
+
+- `docs/forward-port-buyer-seller-bond-workflows-20260811.md`
+
+Cleanup performed:
+
+- preserved unrelated local draft work in `stash@{0}` / `2701d95e0f84bacfc51c981b218183ee31cf3629`
+- stashed draft files:
+  - `the-it-guy/src/lib/api.js`
+  - `the-it-guy/src/lib/partnersRepository.js`
+  - `the-it-guy/src/pages/DeveloperPartnersPage.jsx`
+  - `the-it-guy/src/pages/PartnersPage.jsx`
+  - `sql/workspace-resolution-auth-boot-indexes.concurrent.sql`
+  - `supabase/migrations/202608110001_workspace_resolution_auth_boot_hot_path.sql`
+- pruned stale local worktree metadata with `git worktree prune`
+- deleted local branches already merged into `origin/main`:
+  - `agent/dashboard-domain-api-phase2`
+  - `codex/agency-public-intake-pr`
+  - `codex/arch9-attorney-access-permission-bootstrap`
+  - `codex/integrate-agency-public-intake-20260801`
+  - `codex/integrate-archline-attorney-workspace-20260801`
+  - `codex/integrate-bond-demo-seed-20260801`
+  - `codex/integrate-connected-attorney-dropdown-20260801`
+  - `codex/integrate-hq-owner-dashboard-20260801`
+  - `codex/integrate-ledger-drift-resolution-20260801`
+  - `codex/integrate-legal-notification-dashboard-20260801`
+  - `codex/integrate-phase0-closeout-20260801`
+  - `codex/integrate-produktive-provisioning-20260801`
+  - `codex/integrate-reminder-health-controls-20260801`
+  - `codex/integrate-seller-mobile-portal-20260801`
+  - `codex/integrate-transaction-progress-scheduler-20260801`
+  - `codex/main-reconciliation-20260728`
+  - `codex/migration-reconciliation-20260730`
+  - `codex/reconcile-unmerged-branches-20260811`
+  - `codex/reconciliation-phase10-closeout-20260811`
+  - `codex/recover-buyer-onboarding-projection-20260801`
+  - `codex/reminder-health-controls`
+  - `codex/seller-portal-activation-prod`
+  - `codex/supabase-preview-ledger-followup-20260811`
+  - `ops/production-evidence-202607310006`
+
+Open PR state:
+
+- PR #16 `Forward-port buyer seller bond workflow reconciliation` remains the active reconciliation PR.
+- PR #11 `Retire Phase 0 broad-push guard` remains open and conflicted/dirty; leave it untouched until the reconciliation PR lands or the Phase 0 retirement is re-reviewed separately.
+
+Remote branch candidates for later approval:
+
+- Do not delete remote branches as part of Phase 8 without explicit approval.
+- Older remote branches that still need owner review include `origin/codex-document-access-permissions-phase7`, `origin/codex/db-phase0-reconciliation`, `origin/codex/fix-seller-portal-token`, `origin/codex/arch9-mvp-release`, `origin/codex/simple-connected-attorney-dropdown`, `origin/codex/archive-phase39-baseline-20260723`, `origin/codex/mvp-pilot-readiness`, `origin/codex/archline-attorney-workspace`, `origin/codex/archive-dashboard-performance-20260723`, `origin/codex/produktive-agent-provisioning`, `origin/codex/wip-shared-worktree-20260723`, `origin/codex/wip-arch9-migration-reconciliation-20260723`, `origin/codex/demo-launch-wip-slice`, `origin/codex/auth-bridge-bootstrap-timeout`, `origin/agent/document-generation-cleanup-final-closure`, `origin/codex/hq-owner-dashboard`, and `origin/codex/bond-demo-applications-seed-20260728`.
+
+Verification:
+
+- `git status --short --branch`
+- `git stash list --format='%gd %H %s'`
+- `git branch --merged origin/main --format='%(refname:short)'`
+- `git branch --no-merged origin/main --format='%(committerdate:short) %(refname:short)' --sort=committerdate`
+- `git worktree list --porcelain`
+- `gh pr list --state open --limit 50 --json number,title,headRefName,baseRefName,isDraft,updatedAt,mergeStateStatus,reviewDecision,url`
+- `gh pr checks 16`
