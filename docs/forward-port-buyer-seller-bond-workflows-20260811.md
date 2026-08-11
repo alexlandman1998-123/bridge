@@ -129,3 +129,23 @@ Use the `database-reconciliation` label for any PR that restores or adds migrati
 Branch created from clean `main` at `3227d045f6900cfe24c844a79585d312b74190fb`.
 
 No runtime changes are included in Phase 0.
+
+## Phase 1 Verification
+
+Forward-ported the Sidebar parent navigation fix from `origin/codex/seller-first-contact-reload`.
+
+Changed:
+
+- `the-it-guy/src/components/Sidebar.jsx`
+- `the-it-guy/scripts/sidebar-parent-navigation.test.mjs`
+
+Inspected but not changed:
+
+- `the-it-guy/src/pages/agency/AgencyPipelinePage.jsx`
+
+Reason: current `main` already keeps the agent Pipeline parent landing on `/pipeline/leads`, while the source branch diff for `AgencyPipelinePage.jsx` mixes shell changes with broad buyer, seller, and OTP workflow rewrites reserved for later phases.
+
+Verification:
+
+- `node the-it-guy/scripts/sidebar-parent-navigation.test.mjs`
+- `npm run build` from `the-it-guy/`

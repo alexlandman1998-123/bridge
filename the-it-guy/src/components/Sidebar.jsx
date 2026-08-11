@@ -402,23 +402,35 @@ function Sidebar() {
 
     return (
       <div key={item.label} className="space-y-1">
-        <button
-          type="button"
-          onClick={() =>
-            setExpandedMenus((previous) => ({
-              ...previous,
-              [item.key]: !(previous[item.key] ?? isParentActive),
-            }))
-          }
-          className={`ui-sidebar-link w-full justify-between ${menuExpanded ? 'ui-sidebar-link-open' : ''}`.trim()}
-          aria-expanded={menuExpanded}
-        >
-          <span className="inline-flex items-center gap-2.5">
+        <div className={`ui-sidebar-link w-full justify-between ${menuExpanded ? 'ui-sidebar-link-open' : ''} ${isParentActive ? 'ui-sidebar-link-active' : ''}`.trim()}>
+          <NavLink
+            to={item.to}
+            className="inline-flex min-w-0 flex-1 items-center gap-2.5 text-inherit no-underline hover:text-inherit"
+            onClick={() =>
+              setExpandedMenus((previous) => ({
+                ...previous,
+                [item.key]: true,
+              }))
+            }
+          >
             <Icon size={15} />
-            <span>{item.label}</span>
-          </span>
-          <ChevronDown size={14} className={`transition ${menuExpanded ? 'rotate-180' : ''}`} />
-        </button>
+            <span className="truncate">{item.label}</span>
+          </NavLink>
+          <button
+            type="button"
+            onClick={() =>
+              setExpandedMenus((previous) => ({
+                ...previous,
+                [item.key]: !(previous[item.key] ?? isParentActive),
+              }))
+            }
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] text-inherit transition hover:bg-white/70"
+            aria-label={`${menuExpanded ? 'Collapse' : 'Expand'} ${item.label} menu`}
+            aria-expanded={menuExpanded}
+          >
+            <ChevronDown size={14} className={`transition ${menuExpanded ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
 
         {menuExpanded ? (
           <div className="space-y-1 pl-3">
