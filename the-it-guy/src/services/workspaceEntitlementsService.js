@@ -186,6 +186,7 @@ export async function resolveWorkspaceEntitlements({
   workspaceId = '',
   workspaceType = '',
   workspaceKind = '',
+  forceLocal = false,
 } = {}) {
   const safeWorkspace = {
     workspaceId: normalizeText(workspaceId),
@@ -193,7 +194,7 @@ export async function resolveWorkspaceEntitlements({
     workspaceKind: normalizeText(workspaceKind),
   }
   const fallback = buildFallbackSubscription(safeWorkspace)
-  const client = requireClient()
+  const client = forceLocal ? null : requireClient()
   if (!client || !safeWorkspace.workspaceId) {
     return {
       subscription: fallback,
@@ -413,8 +414,9 @@ export async function assertWorkspaceEntitlementLimit({
   entitlementKey = '',
   increment = 1,
   usage = null,
+  forceLocal = false,
 } = {}) {
-  const entitlementContext = await resolveWorkspaceEntitlements({ workspaceId, workspaceType, workspaceKind })
+  const entitlementContext = await resolveWorkspaceEntitlements({ workspaceId, workspaceType, workspaceKind, forceLocal })
   const subscription = entitlementContext.subscription || {}
   const nextUsage = {
     ...(entitlementContext.usage || {}),

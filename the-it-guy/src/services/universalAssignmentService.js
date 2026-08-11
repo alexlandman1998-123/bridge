@@ -205,26 +205,28 @@ export function clearUniversalAssignmentEvents({ workspaceId = '', organizationI
   LOCAL_ASSIGNMENT_EVENT_STORE.delete(key)
 }
 
-export async function recordUniversalAssignmentEvent(eventType = '', payload = {}, previousAssignment = null) {
+export async function recordUniversalAssignmentEvent(eventType = '', payload = {}, previousAssignment = null, options = {}) {
   const normalizedType = normalizeEventType(eventType)
   if (!normalizedType) return null
   const event = appendLocalEvent(buildAssignmentEvent(normalizedType, payload, previousAssignment))
   recordAuditEvent(normalizedType, event.payload)
-  try {
-    await recordSecurityAuditEvent({
-      userId: event.payload.actorUserId || event.payload.assignedBy || '',
-      workspaceId: event.workspaceId || '',
-      action: normalizedType,
-      targetType: event.payload.itemType || 'assignment',
-      targetId: event.payload.itemId || '',
-      metadata: {
-        ...event.payload,
-        previousOwnerId: event.payload.previousOwnerId || null,
-        previousQueueId: event.payload.previousQueueId || null,
-      },
-    })
-  } catch (error) {
-    console.warn('[universalAssignmentService] security audit skipped', error)
+  if (options.persistSecurityAudit !== false) {
+    try {
+      await recordSecurityAuditEvent({
+        userId: event.payload.actorUserId || event.payload.assignedBy || '',
+        workspaceId: event.workspaceId || '',
+        action: normalizedType,
+        targetType: event.payload.itemType || 'assignment',
+        targetId: event.payload.itemId || '',
+        metadata: {
+          ...event.payload,
+          previousOwnerId: event.payload.previousOwnerId || null,
+          previousQueueId: event.payload.previousQueueId || null,
+        },
+      })
+    } catch (error) {
+      console.warn('[universalAssignmentService] security audit skipped', error)
+    }
   }
   return event
 }

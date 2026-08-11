@@ -729,3 +729,49 @@ External connectivity caveat:
 
 - `npm run test:bond-application-assignment` was attempted and stopped after Supabase returned Cloudflare 522 timeouts during live audit writes.
 - `npm run test:bond-consultants-management` was attempted and failed on a Supabase Cloudflare 522 timeout. The error is retryable external connectivity, not a local assertion failure.
+
+## Bond Originator Patch Phase 6
+
+Purpose: patch the local bond-originator diagnostics that Phase 5 exposed as brittle so they no longer depend on live Supabase availability when explicitly running in `forceLocal` mode.
+
+Changed:
+
+- `the-it-guy/src/services/universalAssignmentService.js`
+- `the-it-guy/src/services/bondApplicationAssignmentService.js`
+- `the-it-guy/src/services/workspaceEntitlementsService.js`
+- `the-it-guy/src/services/bondOrganisationService.js`
+
+Repair made:
+
+- `recordUniversalAssignmentEvent` now accepts a `persistSecurityAudit` option, keeping the local assignment event and local audit event while allowing callers to suppress the remote security-audit write
+- bond application assign/reassign calls pass `persistSecurityAudit: false` when `forceLocal` is active, so local diagnostics do not hang or fail on Supabase audit writes
+- workspace entitlement resolution now accepts `forceLocal`, returning fallback plan/usage data without querying Supabase
+- bond branch and consultant creation pass `forceLocal` into entitlement checks, so local organisation diagnostics do not hit live subscription tables with fixture workspace ids
+
+Behavior guarded:
+
+- local assignment diagnostics still record assignment history, assignment notifications, and local universal assignment audit entries
+- production/default assignment calls still attempt remote security-audit persistence
+- local consultant/branch diagnostics still enforce entitlement-limit code paths against fallback plan data
+- bond-originator organisation, routing, partner, finance-readiness, finance-intelligence, permission, bank and intake contracts remain green
+
+Verification:
+
+- `npm run test:bond-application-assignment`
+- `npm run test:bond-consultants-management`
+- `npm run test:forward-port-bond-originator-phase5`
+- `npm run test:finance-readiness`
+- `npm run test:bond-intake-notifications`
+- `npm run test:bond-partner-portal`
+- `npm run test:bond-partner-collaboration`
+- `npm run test:bond-partner-management`
+- `npm run test:bond-originator-banks`
+- `npm run test:bond-application-classification`
+- `npm run test:bond-routing-rules`
+- `npm run test:finance-intelligence`
+- `node src/auth/permissions/__tests__/bondFinanceWorkflowPermissions.test.js`
+- `node src/auth/permissions/__tests__/bondAssignmentPermissions.test.js`
+- `node src/auth/permissions/__tests__/queryScope.test.js`
+- `npm run test:bond-bank-outcome-originator-rls`
+- `node scripts/bond-partner-profile.test.mjs`
+- `npm run build` from `the-it-guy/`
