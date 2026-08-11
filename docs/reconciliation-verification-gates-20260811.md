@@ -154,6 +154,36 @@ Deployment decision:
 
 No deployment is authorized from this phase. PR #13 checks must be green, the PR must be ready and merged into `main`, and the fail-closed deploy gate must pass before production deployment.
 
+## Phase 8 Execution
+
+Phase 8, `Deployment Readiness Gate`, is complete as of `2026-08-11 17:35:44 SAST`.
+
+Live PR #13 check state at completion:
+
+- `Supabase Phase 0 Guard`: passed
+- `Supabase Phase 6 Staging Gate`: passed
+- `Supabase Phase 7 Production Gate`: passed
+- `Supabase Phase 8 Closeout Gate`: passed
+- `Supabase Preview`: skipped
+- `Vercel Preview Comments`: passed
+- `Vercel - bridge`: passed
+- `Vercel - bridge-admin`: passed
+
+Deploy gate:
+
+```bash
+npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge
+```
+
+Result: blocked as expected because PR #13 remains draft. No production deployment is authorized from the reconciliation branch.
+
+Required before deployment:
+
+- mark PR #13 ready for review
+- keep all GitHub checks and Vercel statuses green
+- merge PR #13 into `main`
+- rerun the fail-closed deploy gate against the merged deployment candidate
+
 ## Batch Names
 
 Use these batch names during the first reconciliation pass:
@@ -193,6 +223,7 @@ Record each batch result here as reconciliation progresses.
 | 2026-08-11 | `recover-buyer-onboarding-projection` | `f37228dc` | Passed | `npm run reconcile:verify -- recover-buyer-onboarding-projection` |
 | 2026-08-11 | `hq-owner-dashboard` | `06eca9a7` | Passed | `npm run reconcile:verify -- hq-owner-dashboard` |
 | 2026-08-11 | `final-smoke` | `ba683a9a` | Passed | `npm run reconcile:verify -- final-smoke` |
+| 2026-08-11 | `deploy-gate-final` | `cc471c6c` | Blocked as expected | `npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge` found all checks green and PR #13 still draft |
 
 ## Batch-Specific Verification
 
