@@ -1,0 +1,76 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+
+const readSource = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
+
+const agentProgressSource = await readSource('src/components/bond/BondOriginatorAgentProgressView.jsx')
+const attorneyHandoffSource = await readSource('src/components/bond/BondOriginatorAttorneyHandoffView.jsx')
+const profilePageSource = await readSource('src/pages/bond/BondPartnerProfilePage.jsx')
+const notificationSource = await readSource('src/services/bondIntakeNotificationService.js')
+const workflowSource = await readSource('src/services/bondIntakeWorkflowService.js')
+const collaborationSource = await readSource('src/services/bondPartnerCollaborationService.js')
+const portalSource = await readSource('src/services/bondPartnerPortalService.js')
+const profileServiceSource = await readSource('src/services/bondPartnerProfileService.js')
+const bankServiceTestSource = await readSource('src/services/__tests__/bondOriginatorBankService.test.js')
+
+assert.match(agentProgressSource, /Bond Originator Progress/)
+assert.match(agentProgressSource, /Live read-only view of the bond originator package/)
+assert.match(agentProgressSource, /No bank applications have been captured by the bond originator workflow yet\./)
+assert.match(agentProgressSource, /No originator document requests are open\./)
+assert.match(agentProgressSource, /bond_originator_agent_progress_view/)
+assert.match(agentProgressSource, /transaction_bond_originator_bank_offer_captures/)
+assert.match(agentProgressSource, /transaction_bond_originator_grant_captures/)
+
+assert.match(attorneyHandoffSource, /bond_originator_attorney_handoff_view/)
+assert.match(attorneyHandoffSource, /captured grant evidence/)
+assert.match(attorneyHandoffSource, /It does not submit to banks, mutate bank status, alter offers or grants, or make lending decisions\./)
+
+assert.match(profilePageSource, /Originator commission/)
+assert.match(profilePageSource, /Referral terms are proposed by the originator/)
+assert.match(profilePageSource, /Marketing collaboration tools will only appear once campaign permissions have been granted\./)
+assert.match(profilePageSource, /createBondPartnerFinanceCampaign/)
+
+assert.match(notificationSource, /BOND_INTAKE_STARTED: 'BOND_INTAKE_STARTED'/)
+assert.match(notificationSource, /\[BOND_NOTIFICATION_EVENTS\.BOND_INTAKE_STARTED\]: 'bond_intake_started'/)
+assert.match(notificationSource, /BUYER_BOND_ORIGINATOR_INTRO: 'BUYER_BOND_ORIGINATOR_INTRO'/)
+assert.match(notificationSource, /\[BOND_NOTIFICATION_EVENTS\.BUYER_BOND_ORIGINATOR_INTRO\]: 'buyer_bond_intro_email_sent'/)
+assert.match(notificationSource, /export async function resolveBondNotificationRecipients/)
+assert.match(notificationSource, /export async function notifyBondIntakeEvent/)
+assert.match(notificationSource, /originatorManaged: isBondFinanceType\(financeType\) && financeManagedBy === 'bond_originator'/)
+assert.match(notificationSource, /buyer_bond_originator_introduced/)
+assert.match(notificationSource, /bond_originator_buyer_intro/)
+assert.match(notificationSource, /finance_not_originator_managed/)
+
+assert.match(workflowSource, /'Incorrect originator'/)
+assert.match(workflowSource, /export function canAssignBondIntake/)
+assert.match(workflowSource, /export function canDeclineBondIntake/)
+assert.match(workflowSource, /export function canAcceptBondIntake/)
+assert.match(workflowSource, /finance_managed_by: 'bond_originator'/)
+assert.match(workflowSource, /finance_status: 'Accepted by bond originator'/)
+assert.match(workflowSource, /assigned_bond_originator_email/)
+
+assert.match(collaborationSource, /documentReview: 'document_review'/)
+assert.match(collaborationSource, /new: 'new'/)
+assert.match(collaborationSource, /replied: 'PARTNER_REQUEST_REPLIED'/)
+assert.match(collaborationSource, /export function calculatePartnerSLA/)
+assert.match(collaborationSource, /getPartnerOperationsDashboard/)
+assert.match(collaborationSource, /__bondPartnerCollaborationServiceTestUtils/)
+
+assert.match(portalSource, /documentUploaded: 'PARTNER_DOCUMENT_UPLOADED'/)
+assert.match(portalSource, /open: 'open'/)
+assert.match(portalSource, /assignments: 'transaction_partner_assignments'/)
+assert.match(portalSource, /activatePartnerPortalOnboarding/)
+assert.match(portalSource, /getPartnerPortalOperationalRows/)
+assert.match(portalSource, /__bondPartnerPortalServiceTestUtils/)
+
+assert.match(profileServiceSource, /PARTNER_PROFILE_ACCESS_DENIED_MESSAGE = 'Partner relationship not found or access denied\.'/)
+assert.match(profileServiceSource, /PARTNER_PROFILE_NOT_ACCEPTED_MESSAGE = 'This partner relationship is not active yet\.'/)
+assert.match(profileServiceSource, /createBondPartnerFinanceCampaign/)
+assert.match(profileServiceSource, /resolveBondPartnerProfileRelationshipContext/)
+
+assert.match(bankServiceTestSource, /already in the originator bank panel/i)
+assert.match(bankServiceTestSource, /agreementReference/)
+assert.match(bankServiceTestSource, /commissionRate/)
+assert.match(bankServiceTestSource, /getActiveBankOptionsForCurrentUser/)
+
+console.log('forward-port bond originator Phase 5 checks passed')

@@ -285,3 +285,56 @@ Verification:
 - `npm run test:kingstons-seller-pack-phase4-operational-handoff`
 - `npm run test:kingstons-seller-pack-phase5-transaction-readiness`
 - `npm run build` from `the-it-guy/`
+
+## Phase 5 Verification
+
+Forward-port check for bond-originator UI and service surfaces.
+
+Changed:
+
+- `the-it-guy/scripts/forward-port-bond-originator-phase5.test.mjs`
+- `the-it-guy/package.json`
+
+Already current against the checked source branches and not changed:
+
+- `the-it-guy/src/components/bond/BondOriginatorAgentProgressView.jsx`
+- `the-it-guy/src/components/bond/BondOriginatorAttorneyHandoffView.jsx`
+- `the-it-guy/src/pages/bond/BondPartnerProfilePage.jsx`
+- `the-it-guy/src/services/bondIntakeNotificationService.js`
+- `the-it-guy/src/services/bondIntakeWorkflowService.js`
+- `the-it-guy/src/services/bondPartnerCollaborationService.js`
+- `the-it-guy/src/services/bondPartnerPortalService.js`
+- `the-it-guy/src/services/bondPartnerProfileService.js`
+- `the-it-guy/src/services/__tests__/bondOriginatorBankService.test.js`
+
+Inspected source branches:
+
+- `origin/codex/seller-first-contact-reload`
+- `origin/codex/kingston-seller-process-release`
+- `origin/codex/seller-process-next-action-fix`
+- `origin/codex/reconcile-unmerged-branches-20260811`
+- `origin/codex/reconciliation-phase10-closeout-20260811`
+- `origin/agent/legal-document-notification-sequence-phase1`
+- `origin/agent/document-generation-cleanup-final-closure`
+- `origin/codex/bond-demo-applications-seed-20260728`
+- `origin/codex/agency-public-intake-phase8`
+- `origin/codex/agency-public-intake-pr`
+
+Behavior guarded:
+
+- bond-originator agent progress remains a read-only originator package feed
+- attorney handoff remains read-only and uses captured grant evidence without mutating bank decisions
+- bond intake notifications keep the buyer intro and originator-managed finance gates
+- bond intake workflow keeps assign, accept, and decline controls plus assigned originator fields
+- partner portal, collaboration, and partner profile surfaces keep their current portal events, tables, request handling, and finance campaign hooks
+- bond originator bank tests keep active bank options, commission terms, and captured agreement references covered
+
+Verification:
+
+- compared the Phase 5 runtime queue against the inspected source branches listed above
+- `npm run test:forward-port-bond-originator-phase5`
+- `npm run test:bond-originator-banks`
+- `node scripts/bond-partner-profile.test.mjs`
+- `npm run test:bond-intake-notifications`
+- `npm run test:bond-partner-portal`
+- `npm run test:bond-partner-collaboration`
