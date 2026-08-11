@@ -218,6 +218,90 @@ Verification:
 - `node the-it-guy/scripts/sidebar-parent-navigation.test.mjs`
 - `npm run build` from `the-it-guy/`
 
+## Phase 2 Buyer Surface Audit
+
+Recorded at `2026-08-11 19:40 SAST` on branch `codex/forward-port-buyer-seller-bond-workflows-20260811`.
+
+### Buyer Source Branches
+
+Audited candidate branches against the current PR head:
+
+| Source | Buyer runtime signal |
+| --- | --- |
+| `origin/codex/seller-first-contact-reload` | Contains the strongest buyer lead workspace parity source. It modifies `AgentLeadsPage.jsx`, `BuyerOfferSubmission.jsx`, buyer lifecycle/listing-offer bridge services, and buyer-process services. |
+| `origin/codex/recover-buyer-onboarding-projection-20260801` | Contains an older public buyer offer/onboarding projection, including `Submit Revised Offer` for countered offers. |
+| `origin/codex/reconcile-unmerged-branches-20260811` | No buyer runtime file diff against current `main` for the audited buyer files. |
+| `origin/codex/reconciliation-phase10-closeout-20260811` | No buyer runtime file diff against current `main` for the audited buyer files. |
+
+### Agent Leads Buyer Surface Gaps
+
+`AgentLeadsPage.jsx` is the main visible mismatch. Current PR #16 still uses:
+
+- `const BUYER_ONBOARDING_OTP_TAB_KEY = 'onboarding_otp'`
+- `Open Onboarding / OTP`
+- `Onboarding / OTP`
+- buyer tab `{ key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Onboarding / OTP' }`
+- buyer tab `{ key: 'property_match', label: 'Properties' }`
+
+The useful source branches use:
+
+- `Open Offers`
+- action IDs routed to `'offers'`
+- buyer journey mappings `offer_submitted: ['Open Offers', 'offers']`
+- buyer journey mappings `offer_accepted: ['Open Offers', 'offers']`
+- buyer tab `{ key: 'property_match', label: 'Property Match' }`
+- buyer tab `{ key: 'offers', label: 'Offers' }`
+
+Conclusion: Phase 3 should forward-port the `AgentLeadsPage.jsx` buyer lead/workspace surface to `offers` while preserving the existing property-match feature.
+
+### Agency Pipeline Buyer Surface
+
+`AgencyPipelinePage.jsx` is already on the newer model in PR #16:
+
+- `const BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY = 'offers'`
+- `BUYER_OFFER_DOCUMENT_LABEL = 'Signed OTP'`
+- `Open Offers`
+- `Upload Signed OTP`
+- buyer tabs labelled `Offers`
+- buyer workspace heading `Signed OTP`
+
+Conclusion: `AgencyPipelinePage.jsx` should be treated as the canonical target for the visible buyer offer/OTP language.
+
+### Buyer Offer Submission Surface
+
+`BuyerOfferSubmission.jsx` has a separate mismatch:
+
+- current PR #16 uses `submitButtonLabel = 'Submit Buyer Onboarding'`
+- `origin/codex/seller-first-contact-reload` uses `counterPendingBuyer ? 'Submit Updated Verification' : 'Submit Buyer Verification'`
+- `origin/codex/recover-buyer-onboarding-projection-20260801` uses `counterPendingBuyer ? 'Submit Revised Offer' : 'Submit Offer + Onboarding'`
+
+`npm run test:buyer-process-global-diagnostic` currently fails at `test:offer-to-transaction-scenario-matrix` because `BuyerOfferSubmission.jsx` does not include `Submit Revised Offer`.
+
+Conclusion: Phase 3 must make an explicit product decision for the public buyer submit copy. The smallest compatibility fix is to restore `Submit Revised Offer` for countered canonical offers without raw-porting the older page.
+
+### Test Mismatches To Update With The Patch
+
+These tests currently assert old or inconsistent buyer surface copy and should be updated in the same batch as the runtime patch:
+
+- `the-it-guy/scripts/lead-ingestion.test.mjs`
+- `the-it-guy/scripts/agent-leads-workspace.test.mjs`
+- `the-it-guy/scripts/buyer-process-agent-leads-onboarding-otp-phase7.test.mjs`
+- `the-it-guy/scripts/buyer-process-agent-leads-offer-link-retirement-phase8.test.mjs`
+- `the-it-guy/scripts/viewing-workflow-qa.test.mjs`
+- `the-it-guy/scripts/offer-to-transaction-scenario-matrix.test.mjs`, if the product decision changes away from `Submit Revised Offer`
+
+### Audit Verification
+
+Commands run:
+
+- `npm run test:lead-ingestion`
+- `npm run test:buyer-process-global-diagnostic`
+
+Results:
+
+- `test:lead-ingestion` failed on the buyer workspace tab assertion because current `AgentLeadsPage.jsx` does not expose `{ key: 'property_match', label: 'Property Match' }`.
+- `test:buyer-process-global-diagnostic` passed through the buyer definition, workflow, onboarding, originator handoff, offer lifecycle, offer terms, condition review, OTP readiness, and offer-link checks, then failed at `test:offer-to-transaction-scenario-matrix` because `BuyerOfferSubmission.jsx` does not include `Submit Revised Offer`.
+
 ## Phase 2 Verification
 
 Forward-ported the agency pipeline buyer offer workspace changes from `origin/codex/seller-first-contact-reload`.
