@@ -190,3 +190,49 @@ Verification:
 Additional diagnostic:
 
 - `npm run test:buyer-process-global-diagnostic` was attempted after the Phase 2 patch. It passed through the updated agency pipeline buyer checks and failed later in `test:offer-to-transaction-scenario-matrix` because `BuyerOfferSubmission.jsx` does not contain `Submit Revised Offer`. That gap is also absent from `origin/codex/seller-first-contact-reload`, so it is recorded as out-of-scope for this agency-pipeline forward-port batch.
+
+## Phase 3 Verification
+
+Forward-port check for seller first-contact and seller workspace behavior.
+
+Changed:
+
+- `the-it-guy/src/pages/agency/AgencyPipelinePage.jsx`
+- `the-it-guy/scripts/forward-port-seller-workspace-phase3.test.mjs`
+- `the-it-guy/scripts/seller-onboarding-facts.test.mjs`
+- `the-it-guy/package.json`
+
+Already current against the checked source branches and not changed:
+
+- `the-it-guy/src/pages/AgentLeadsPage.jsx`
+- `the-it-guy/src/pages/SellerOnboarding.jsx`
+- `the-it-guy/src/pages/ClientPortal.jsx`
+- `the-it-guy/src/components/client-portal/seller/TransactionStageWorkspace.jsx`
+- `the-it-guy/src/services/privateListingService.js`
+- `the-it-guy/src/services/sellerDocumentRequirementsService.js`
+- `the-it-guy/src/services/documents/sellerOnboardingFactTransformer.js`
+
+Inspected but not raw-replaced:
+
+- broad historical diffs for `the-it-guy/src/pages/agency/AgencyPipelinePage.jsx`
+
+Reason: the source branches still contain broad, stale diffs for the agency pipeline page, while the current integration branch already contains the seller first-contact primary action, seller profile workspace content, seller document workspace, seller-first viewing request telemetry, and first-contact logging workspace. Phase 3 applies only the missing visible agency seller workspace tab for the existing Listing Journey panel and adds a focused regression gate for those surfaces instead of replaying the broad stale page diff.
+
+Behavior restored:
+
+- agency seller leads now expose the existing `Listing Journey` workspace as a visible tab
+- seller onboarding fact tests now use the current final-submit requirements for tax residency, POPI consent, natural-person identity metadata, and Property Disclosure declaration acceptance
+
+Verification:
+
+- compared the seven named Phase 3 files against `origin/codex/seller-first-contact-reload`, `origin/codex/kingston-seller-process-release`, `origin/codex/seller-process-next-action-fix`, `origin/codex/reconcile-unmerged-branches-20260811`, and `origin/codex/reconciliation-phase10-closeout-20260811`
+- `npm run test:forward-port-seller-workspace-phase3`
+- `node scripts/seller-lead-display-fallback.test.mjs`
+- `npm run test:lead-next-action`
+- `node scripts/seller-onboarding-deadlock.test.mjs`
+- `npm run test:seller-onboarding-facts`
+- `npm run build` from `the-it-guy/`
+
+Additional diagnostic:
+
+- `npm run test:lead-ingestion` was attempted during Phase 3 verification and failed on stale buyer workspace copy assertions expecting `Property Match` and `Onboarding / OTP` in `AgentLeadsPage.jsx`. That is a buyer-workspace diagnostic mismatch outside the seller first-contact runtime patch.

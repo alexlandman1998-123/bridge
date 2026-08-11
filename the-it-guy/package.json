@@ -571,6 +571,7 @@
     "test:buyer-process-agent-leads-onboarding-otp-phase7": "node scripts/buyer-process-agent-leads-onboarding-otp-phase7.test.mjs",
     "test:buyer-process-agent-leads-offer-link-retirement-phase8": "node scripts/buyer-process-agent-leads-offer-link-retirement-phase8.test.mjs",
     "test:agency-pipeline-buyer-offer-workspace-phase2": "node scripts/agency-pipeline-buyer-offer-workspace-phase2.test.mjs",
+    "test:forward-port-seller-workspace-phase3": "node scripts/forward-port-seller-workspace-phase3.test.mjs",
     "test:buyer-process-global-diagnostic": "node scripts/buyer-process-global-diagnostic.test.mjs",
     "verify:buyer-process-global-diagnostic": "npm run test:buyer-process-global-diagnostic",
     "test:seller-process-evaluator-phase3": "node scripts/seller-process-evaluator-phase3.test.mjs",

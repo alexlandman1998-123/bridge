@@ -26456,13 +26456,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </section>
 
                       <div className="mt-3 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)]" role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
-                        <div className={`grid min-w-[860px] gap-2 ${selectedLeadHasKingstonsPipelineSignal ? 'grid-cols-6' : 'grid-cols-7'}`}>
+                        <div className={`grid min-w-[980px] gap-2 ${selectedLeadHasKingstonsPipelineSignal ? 'grid-cols-7' : 'grid-cols-8'}`}>
                           {[
                             { key: 'overview', label: 'Overview', meta: '' },
                             { key: 'seller', label: 'Seller Profile', meta: '' },
                             { key: 'property', label: 'Property', meta: '' },
                             ...(selectedLeadHasKingstonsPipelineSignal ? [] : [{ key: 'mandate', label: 'Mandate', meta: '' }]),
                             { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+                            { key: 'listing_journey', label: 'Listing Journey', meta: '' },
                             { key: 'documents', label: 'Documents', meta: '' },
                             { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                           ].map((tab) => {

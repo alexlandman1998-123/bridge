@@ -28,6 +28,25 @@ const listing = {
   askingPrice: 2450000,
 }
 
+const finalSellerComplianceFacts = {
+  taxNumber: 'TAX-123456',
+  saResident: 'Yes',
+  popiConsentAccepted: true,
+  popiConsentAcceptedAt: '2026-06-21T10:00:00.000Z',
+  propertyDisclosure: {
+    decision: 'none',
+    declarationAccepted: true,
+    signature: 'Seller Signature',
+    signedAt: '2026-06-21',
+  },
+}
+
+const naturalPersonFinalFacts = {
+  ...finalSellerComplianceFacts,
+  dateOfBirth: '1988-01-20',
+  nationality: 'British',
+}
+
 test('normalizes legacy booleans and enums safely', () => {
   assert.equal(normalizeBoolean('yes'), true)
   assert.equal(normalizeBoolean('0', true), false)
@@ -104,6 +123,7 @@ test('transforms seller onboarding into canonical resolver facts', () => {
 
 test('captures split owner model, foreign metadata, and owner invite mode', () => {
   const foreignFacts = transformSellerOnboardingToFacts({
+    ...naturalPersonFinalFacts,
     sellerFirstName: 'Morgan',
     sellerSurname: 'Passport',
     email: 'morgan@example.com',
@@ -136,6 +156,7 @@ test('captures split owner model, foreign metadata, and owner invite mode', () =
   assert.equal(validateSellerOnboardingFacts(foreignFacts, { draft: false }).ok, true)
 
   const inviteOwnerFacts = transformSellerOnboardingToFacts({
+    ...finalSellerComplianceFacts,
     sellerFirstName: 'Alex',
     sellerSurname: 'Owner',
     email: 'alex@example.com',
@@ -237,6 +258,7 @@ test('validation distinguishes draft from final requirements', () => {
 
 test('builds canonical payload with readiness and resolver input', () => {
   const payload = buildCanonicalSellerOnboardingPayload({
+    ...finalSellerComplianceFacts,
     sellerFirstName: 'Taylor',
     sellerSurname: 'Trustee',
     email: 'taylor@example.com',
@@ -276,7 +298,7 @@ test('builds canonical payload with readiness and resolver input', () => {
   assert.equal(payload.canonicalSellerFacts.property.property_title_type, 'full_title')
   assert.equal(payload.canonicalSellerFacts.property.title_type_raw, 'full_title')
   assert.equal(payload.canonicalSellerFacts.property.property_type, 'freehold')
-  assert.equal(payload.canonicalSellerFacts.property_disclosure.digitally_complete, true)
+  assert.equal(payload.canonicalSellerFacts.property_disclosure.declarationAccepted, true)
   assert.equal(payload.canonicalSellerFactReadiness.validation.ok, true)
   assert.equal(typeof payload.canonicalSellerFactReadiness.percent, 'number')
 
