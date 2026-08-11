@@ -13665,20 +13665,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }, [selectedSellerDocumentCategories])
 
-  const selectedSellerDocumentOverview = useMemo(() => {
-    const rows = selectedSellerDocumentCategories.flatMap((category) => category.items || [])
-    const uploaded = rows.filter((documentRow) => {
-      const state = getSellerLeadDocumentStatusMeta(documentRow).state
-      return state === 'complete' || state === 'review'
-    }).length
-    const optional = rows.filter((documentRow) => documentRow?.required === false).length
-    return {
-      uploaded,
-      missing: Math.max(rows.length - uploaded, 0),
-      optional,
-    }
-  }, [selectedSellerDocumentCategories])
-
   const selectedSellerDocumentAttentionItems = useMemo(
     () => selectedSellerDocumentCategories
       .flatMap((category) => category.items.map((documentRow) => ({
@@ -14094,67 +14080,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadLinkedListing,
     selectedLeadOnboardingCompleted,
     selectedLeadPropertyWorkspace,
-    selectedSellerJourney.mandateStatus,
-  ])
-
-  const selectedSellerProfileReadiness = useMemo(() => {
-    const portalActive = Boolean(
-      selectedLead?.sellerOnboardingToken ||
-        selectedLead?.seller_onboarding_token ||
-        selectedLeadLinkedListing?.sellerOnboarding?.token,
-    )
-    const items = [
-      {
-        key: 'profile',
-        label: 'Profile Complete',
-        complete: selectedLeadOnboardingCompleted,
-        status: selectedLeadOnboardingCompleted ? '100%' : 'Pending',
-      },
-      {
-        key: 'documents',
-        label: 'Documents',
-        complete: selectedLeadHasKingstonsPipelineSignal
-          ? selectedKingstonsSellerPackSummary.complete
-          : selectedSellerDocumentSummary.total > 0 && selectedSellerDocumentSummary.outstanding === 0,
-        status: selectedLeadHasKingstonsPipelineSignal
-          ? `${selectedKingstonsSellerPackSummary.completed} / ${selectedKingstonsSellerPackSummary.total}`
-          : selectedSellerDocumentSummary.total ? `${selectedSellerDocumentSummary.completed} / ${selectedSellerDocumentSummary.total}` : 'Pending',
-      },
-      {
-        key: 'compliance',
-        label: 'Compliance',
-        complete: selectedLeadOnboardingCompleted,
-        status: selectedLeadOnboardingCompleted ? 'Complete' : 'Pending',
-      },
-      {
-        key: 'mandate',
-        label: 'Mandate',
-        complete: selectedSellerJourney.mandateStatus === 'signed',
-        status: selectedSellerJourney.mandateStatus === 'signed' ? 'Signed' : titleCaseWorkspaceValue(selectedSellerJourney.mandateStatus || 'Pending'),
-      },
-      {
-        key: 'portal',
-        label: 'Portal',
-        complete: portalActive,
-        status: portalActive ? 'Active' : 'Pending',
-      },
-    ]
-    const completeCount = items.filter((item) => item.complete).length
-    return {
-      items,
-      percent: items.length ? Math.round((completeCount / items.length) * 100) : 0,
-    }
-  }, [
-    selectedLead,
-    selectedLeadHasKingstonsPipelineSignal,
-    selectedLeadLinkedListing,
-    selectedLeadOnboardingCompleted,
-    selectedKingstonsSellerPackSummary.complete,
-    selectedKingstonsSellerPackSummary.completed,
-    selectedKingstonsSellerPackSummary.total,
-    selectedSellerDocumentSummary.completed,
-    selectedSellerDocumentSummary.outstanding,
-    selectedSellerDocumentSummary.total,
     selectedSellerJourney.mandateStatus,
   ])
 
@@ -17853,7 +17778,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Seller Profile Updated',
-        activityNote: `Kingstons seller profile ${sellerLeadEditModal.mode || 'details'} updated by ${currentAgent.fullName || 'agent'}.`,
+        activityNote: `Seller profile ${sellerLeadEditModal.mode || 'details'} updated by ${currentAgent.fullName || 'agent'}.`,
         outcome: 'Seller Profile',
         activityDate: savedAt,
       }, { actor: currentAgent }).catch((activityError) => {
@@ -26866,7 +26791,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </section>
               ) : null}
               {selectedLead && !selectedLeadWorkspaceRouteHydrating ? (
-                <div className={`mt-6 grid min-w-0 gap-6 ${!selectedLeadIsSeller && leadWorkspaceTab === 'activity' ? 'xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
+                <div className="mt-6 min-w-0">
                   <div className="min-w-0 space-y-6">
                   {leadWorkspaceTab === 'overview' && selectedLeadIsSeller ? (
                   <div className="space-y-6">
@@ -29640,6 +29565,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       onLogActivity={() => openActivityComposer('activity')}
                       onRowAction={handleLeadActivityRowAction}
                       roleplayers={selectedLeadActivityRoleplayers}
+                      showHeader={false}
+                      showSidebar={false}
                     />
                   ) : null}
                   {showLegacyActivityComposer ? (
@@ -30006,7 +29933,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'appointments' ? (
-                    selectedLeadIsSeller && selectedLeadHasKingstonsPipelineSignal ? (
+                    selectedLeadIsSeller ? (
                       <KingstonsSellerAppointmentsWorkspace
                         appointments={selectedLeadAppointments}
                         currentAgent={currentAgent}
@@ -31072,198 +30999,89 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'seller' && selectedLeadIsSeller ? (
-                  <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
-                    <div className="min-w-0 space-y-5">
-                      <section className="rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#18324b]">Seller Profile</p>
-                            <h3 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#102033]">Submitted seller information</h3>
-                          </div>
-                          <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={handleSellerOnboardingCommand} disabled={isSellerOnboardingSending}>
-                            <Send className="h-4 w-4" />
-                            {selectedLeadSellerOnboardingCommandLabel}
-                          </Button>
+                  <div className="min-w-0 space-y-5">
+                    <section className="rounded-[24px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-6">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#18324b]">Seller Profile</p>
+                          <h3 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#102033]">Submitted seller information</h3>
                         </div>
+                        <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={handleSellerOnboardingCommand} disabled={isSellerOnboardingSending}>
+                          <Send className="h-4 w-4" />
+                          {selectedLeadSellerOnboardingCommandLabel}
+                        </Button>
+                      </div>
 
-                        <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                          {selectedSellerProfileWorkspace.cards.map((card) => (
-                            <section key={card.key} className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
-                              <div className="flex items-center justify-between gap-3">
-                                <h4 className="text-sm font-semibold text-[#102033]">{card.title}</h4>
-                                <button
-                                  type="button"
-                                  className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75] transition hover:border-[#bfd0e2] hover:bg-[#f8fbfe]"
-                                  onClick={() => openSellerLeadEditModal(card.key)}
-                                >
-                                  Edit
-                                </button>
-                              </div>
-                              <dl className="mt-4 space-y-2.5">
-                                {card.rows.map(([label, value]) => {
-                                  const displayValue = value || 'Not captured'
-                                  const isEmpty = displayValue === 'Not captured'
-                                  return (
-                                    <div key={label} className="grid grid-cols-[minmax(96px,0.5fr)_minmax(0,1fr)] gap-3 text-sm">
-                                      <dt className="text-[#60758b]">{label}</dt>
-                                      <dd className={`min-w-0 truncate font-semibold ${isEmpty ? 'text-[#8aa0b7]' : 'text-[#20364c]'}`} title={String(displayValue)}>{displayValue}</dd>
-                                    </div>
-                                  )
-                                })}
-                              </dl>
-                            </section>
-                          ))}
-
-                          <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                        {selectedSellerProfileWorkspace.cards.map((card) => (
+                          <section key={card.key} className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
                             <div className="flex items-center justify-between gap-3">
-                              <h4 className="text-sm font-semibold text-[#102033]">Property Features</h4>
-                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('features')}>Edit</button>
+                              <h4 className="text-sm font-semibold text-[#102033]">{card.title}</h4>
+                              <button
+                                type="button"
+                                className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75] transition hover:border-[#bfd0e2] hover:bg-[#f8fbfe]"
+                                onClick={() => openSellerLeadEditModal(card.key)}
+                              >
+                                Edit
+                              </button>
                             </div>
-                            <div className="mt-4 flex flex-wrap gap-2">
-                              {selectedSellerProfileWorkspace.features.length ? selectedSellerProfileWorkspace.features.map((feature) => (
-                                <span key={feature} className="rounded-full bg-[#dff2e8] px-3 py-1 text-xs font-semibold text-[#17643a]">{feature}</span>
-                              )) : (
-                                <span className="rounded-full bg-[#eef3f7] px-3 py-1 text-xs font-semibold text-[#7890a8]">No property features captured</span>
-                              )}
-                            </div>
-                          </section>
-
-                          <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
-                            <div className="flex items-center justify-between gap-3">
-                              <h4 className="text-sm font-semibold text-[#102033]">Known Defects</h4>
-                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('defects')}>Edit</button>
-                            </div>
-                            <dl className="mt-4 grid gap-x-5 gap-y-2.5 sm:grid-cols-2">
-                              {selectedSellerProfileWorkspace.defects.map(([label, value]) => {
+                            <dl className="mt-4 space-y-2.5">
+                              {card.rows.map(([label, value]) => {
                                 const displayValue = value || 'Not captured'
-                                const isClear = ['No', 'None', 'False'].includes(displayValue)
+                                const isEmpty = displayValue === 'Not captured'
                                 return (
-                                  <div key={label} className="flex items-center justify-between gap-3 text-sm">
+                                  <div key={label} className="grid grid-cols-[minmax(96px,0.5fr)_minmax(0,1fr)] gap-3 text-sm">
                                     <dt className="text-[#60758b]">{label}</dt>
-                                    <dd className={`inline-flex min-w-0 items-center gap-1.5 truncate font-semibold ${isClear ? 'text-[#17643a]' : displayValue === 'Not captured' ? 'text-[#8aa0b7]' : 'text-[#20364c]'}`}>
-                                      {isClear ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : null}
-                                      {displayValue}
-                                    </dd>
+                                    <dd className={`min-w-0 truncate font-semibold ${isEmpty ? 'text-[#8aa0b7]' : 'text-[#20364c]'}`} title={String(displayValue)}>{displayValue}</dd>
                                   </div>
                                 )
                               })}
                             </dl>
-                            <div className="mt-4 rounded-[12px] border border-[#d7eadf] bg-[#f4fbf6] px-3 py-2 text-sm font-semibold text-[#25764a]">
-                              {selectedSellerProfileWorkspace.agentNotes === 'Not captured'
-                                ? 'No agent notes captured for this seller profile.'
-                                : selectedSellerProfileWorkspace.agentNotes}
-                            </div>
                           </section>
-                        </div>
-                      </section>
+                        ))}
 
-                    </div>
-
-                    <aside className="space-y-4">
-                      <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
-                        <h3 className="text-base font-semibold text-[#102033]">Seller Readiness</h3>
-                        <div className="mt-5 flex items-center gap-5">
-                          <div className="grid h-28 w-28 shrink-0 place-items-center rounded-full p-2" style={{ background: `conic-gradient(#0f7b4e ${selectedSellerProfileReadiness.percent * 3.6}deg, #e6edf4 0deg)` }}>
-                            <div className="grid h-full w-full place-items-center rounded-full bg-white shadow-inner">
-                              <span className="text-2xl font-semibold tracking-[-0.04em] text-[#102033]">{selectedSellerProfileReadiness.percent}%</span>
-                            </div>
+                        <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                          <div className="flex items-center justify-between gap-3">
+                            <h4 className="text-sm font-semibold text-[#102033]">Property Features</h4>
+                            <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('features')}>Edit</button>
                           </div>
-                          <p className="text-sm font-semibold text-[#20364c]">
-                            {selectedSellerProfileReadiness.percent >= 100 ? 'Total Complete' : selectedSellerProfileReadiness.percent >= 60 ? 'Almost Complete' : 'Needs Attention'}
-                          </p>
-                        </div>
-                        <div className="mt-5 divide-y divide-[#edf3f8]">
-                          {selectedSellerProfileReadiness.items.map((item) => (
-                            <div key={item.key} className="flex items-center justify-between gap-3 py-3 text-sm first:pt-0 last:pb-0">
-                              <span className="inline-flex min-w-0 items-center gap-2 font-medium text-[#20364c]">
-                                {item.complete ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#0f8f59]" /> : <Clock3 className="h-4 w-4 shrink-0 text-[#f5a400]" />}
-                                <span className="truncate">{item.label}</span>
-                              </span>
-                              <span className={`shrink-0 text-xs font-semibold ${item.complete ? 'text-[#0f7b4e]' : 'text-[#9a6416]'}`}>{item.status}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </section>
-
-                      <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
-                        <h3 className="text-base font-semibold text-[#102033]">Quick Actions</h3>
-                        <div className="mt-4 space-y-2">
-                          {[
-                            ['Download Seller Summary', FileText, () => handleLeadWorkspaceTabSelection('documents')],
-                            ...(selectedLeadHasKingstonsPipelineSignal
-                              ? [['Upload Seller Pack', Upload, () => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')]]
-                              : [['Generate PDF', FileText, () => handleSellerJourneyAction('view_mandate')]]),
-                            ['Email Seller', Mail, () => {
-                              const email = normalizeText(selectedLeadContact?.email || selectedLead?.email)
-                              if (email && typeof window !== 'undefined') window.location.href = `mailto:${email}`
-                            }],
-                            ['Open Portal', ExternalLink, () => handleSellerJourneyAction('open_seller_portal')],
-                            ['Send Seller Portal Link', Send, handleSellerOnboardingCommand],
-                            ['Request Missing Documents', FileText, () => handleLeadWorkspaceTabSelection('documents')],
-                          ].map(([label, Icon, onClick]) => (
-                            <button
-                              key={label}
-                              type="button"
-                              className="flex min-h-10 w-full items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-white px-3 text-left text-sm font-semibold text-[#20364c] transition hover:border-[#b9cade] hover:bg-[#fbfdff]"
-                              onClick={onClick}
-                            >
-                              <span className="min-w-0 flex-1 truncate">{label}</span>
-                              {createElement(Icon, { className: 'h-4 w-4 shrink-0 text-[#315b7a]' })}
-                            </button>
-                          ))}
-                        </div>
-                      </section>
-
-                      <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
-                        <div className="flex items-center justify-between gap-3">
-                          <h3 className="text-base font-semibold text-[#102033]">Documents Overview</h3>
-                          <button type="button" className="text-xs font-semibold text-[#0f7b4e]" onClick={() => handleLeadWorkspaceTabSelection('documents')}>View All</button>
-                        </div>
-                        <div className="mt-5 flex items-center gap-5">
-                          <div className="grid h-24 w-24 shrink-0 place-items-center rounded-full p-3" style={{ background: `conic-gradient(#0f8f59 ${selectedSellerDocumentSummary.progress * 3.6}deg, #edf1f5 0deg)` }}>
-                            <div className="h-full w-full rounded-full bg-white" />
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {selectedSellerProfileWorkspace.features.length ? selectedSellerProfileWorkspace.features.map((feature) => (
+                              <span key={feature} className="rounded-full bg-[#dff2e8] px-3 py-1 text-xs font-semibold text-[#17643a]">{feature}</span>
+                            )) : (
+                              <span className="rounded-full bg-[#eef3f7] px-3 py-1 text-xs font-semibold text-[#7890a8]">No property features captured</span>
+                            )}
                           </div>
-                          <div>
-                            <p className="text-2xl font-semibold tracking-[-0.04em] text-[#102033]">{selectedSellerDocumentSummary.completed} / {selectedSellerDocumentSummary.total || 0}</p>
-                            <p className="text-sm font-medium text-[#60758b]">Documents Uploaded</p>
-                          </div>
-                        </div>
-                        <div className="mt-5 space-y-2 border-t border-[#edf3f8] pt-4">
-                          {[
-                            ['Uploaded', selectedSellerDocumentOverview.uploaded, '#0f8f59'],
-                            ['Missing', selectedSellerDocumentOverview.missing, '#d92d20'],
-                            ['Optional', selectedSellerDocumentOverview.optional, '#94a3b8'],
-                          ].map(([label, value, color]) => (
-                            <div key={label} className="flex items-center justify-between gap-3 text-sm">
-                              <span className="inline-flex items-center gap-2 text-[#60758b]"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />{label}</span>
-                              <span className="font-semibold text-[#20364c]">{value}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </section>
+                        </section>
 
-                      <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
-                        <div className="flex items-center justify-between gap-3">
-                          <h3 className="text-base font-semibold text-[#102033]">Recent Activity</h3>
-                          <button type="button" className="text-xs font-semibold text-[#0f7b4e]" onClick={() => handleLeadWorkspaceTabSelection('activity')}>View All</button>
-                        </div>
-                        <div className="mt-4 space-y-1">
-                          {selectedLeadUnifiedTimeline.slice(0, 5).length ? selectedLeadUnifiedTimeline.slice(0, 5).map((row) => (
-                            <button key={row.id} type="button" className="grid w-full grid-cols-[30px_minmax(0,1fr)] gap-3 rounded-[12px] px-2 py-2.5 text-left transition hover:bg-[#f8fbff]" onClick={() => handleLeadWorkspaceTabSelection('activity')}>
-                              <span className="grid h-7 w-7 place-items-center rounded-full bg-[#eef5fb] text-[#285b7d]">
-                                {row.sourceType === 'appointment' ? <CalendarDays className="h-3.5 w-3.5" /> : row.sourceType === 'call' ? <Phone className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
-                              </span>
-                              <span className="min-w-0">
-                                <span className="block truncate text-sm font-semibold text-[#20364c]">{row.title || row.sourceLabel || 'Lead updated'}</span>
-                                <span className="mt-0.5 block truncate text-xs text-[#60758b]">{formatDate(row.timestamp || row.dueDate)}</span>
-                              </span>
-                            </button>
-                          )) : (
-                            <p className="rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-5 text-center text-sm text-[#6f839c]">No recent activity yet.</p>
-                          )}
-                        </div>
-                      </section>
-                    </aside>
+                        <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                          <div className="flex items-center justify-between gap-3">
+                            <h4 className="text-sm font-semibold text-[#102033]">Known Defects</h4>
+                            <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('defects')}>Edit</button>
+                          </div>
+                          <dl className="mt-4 grid gap-x-5 gap-y-2.5 sm:grid-cols-2">
+                            {selectedSellerProfileWorkspace.defects.map(([label, value]) => {
+                              const displayValue = value || 'Not captured'
+                              const isClear = ['No', 'None', 'False'].includes(displayValue)
+                              return (
+                                <div key={label} className="flex items-center justify-between gap-3 text-sm">
+                                  <dt className="text-[#60758b]">{label}</dt>
+                                  <dd className={`inline-flex min-w-0 items-center gap-1.5 truncate font-semibold ${isClear ? 'text-[#17643a]' : displayValue === 'Not captured' ? 'text-[#8aa0b7]' : 'text-[#20364c]'}`}>
+                                    {isClear ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : null}
+                                    {displayValue}
+                                  </dd>
+                                </div>
+                              )
+                            })}
+                          </dl>
+                          <div className="mt-4 rounded-[12px] border border-[#d7eadf] bg-[#f4fbf6] px-3 py-2 text-sm font-semibold text-[#25764a]">
+                            {selectedSellerProfileWorkspace.agentNotes === 'Not captured'
+                              ? 'No agent notes captured for this seller profile.'
+                              : selectedSellerProfileWorkspace.agentNotes}
+                          </div>
+                        </section>
+                      </div>
+                    </section>
                   </div>
                   ) : null}
 
@@ -31914,188 +31732,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                   </div>
 
-                  {leadWorkspaceTab === 'activity' ? (
-                  <aside className="space-y-5 xl:sticky xl:top-6 xl:self-start">
-                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Relationship Health</p>
-                          <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadActivityInsights.healthLabel}</h3>
-                        </div>
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          selectedLeadActivityInsights.healthLabel === 'Strong Engagement'
-                            ? 'bg-[#e8f7f1] text-[#1d7a52]'
-                            : selectedLeadActivityInsights.healthLabel === 'Warm'
-                              ? 'bg-[#fff4e5] text-[#b76a12]'
-                              : 'bg-[#eef3f7] text-[#687c91]'
-                        }`}>
-                          {selectedLeadActivityInsights.temperature}
-                        </span>
-                      </div>
-                      <div className="mt-5 space-y-4">
-                        {[
-                          ['Last Contacted', selectedLeadActivityInsights.lastContacted ? formatRelativeTime(selectedLeadActivityInsights.lastContacted) : 'No contact yet'],
-                          ['Response Rate', selectedLeadActivityInsights.responseRate],
-                          ['Lead Temperature', selectedLeadActivityInsights.temperature],
-                        ].map(([label, value]) => (
-                          <div key={label} className="flex items-center justify-between gap-4 border-b border-[#eef3f7] pb-3 text-sm last:border-b-0 last:pb-0">
-                            <span className="font-semibold text-[#8aa0b7]">{label}</span>
-                            <span className="font-semibold text-[#20364c]">{value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-
-                    <section className="rounded-[28px] bg-[#102033] p-6 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_18px_44px_rgba(16,32,51,0.18)]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Next Best Action</p>
-	                      <h3 className="mt-3 text-xl font-semibold tracking-[-0.03em]">Upload the OTP once buyer onboarding is ready.</h3>
-                      <p className="mt-3 text-sm leading-6 text-[#c7d5e2]">
-                        {selectedLeadWorkflowHealth.missing?.[0]?.label
-                          ? `${selectedLeadWorkflowHealth.missing[0].label} is still open in this relationship.`
-                          : 'This lead is moving cleanly. Keep the momentum visible in the timeline.'}
-                      </p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="mt-5 bg-white text-[#102033] hover:bg-[#edf4fa]"
-                        onClick={handleSelectedLeadOtpPrimaryAction}
-                        disabled={selectedLeadIsSeller || otpQuickStartBusy || isOfferLinkSending}
-                      >
-	                        {otpQuickStartBusy || isOfferLinkSending ? 'Preparing...' : 'Upload OTP'}
-                      </Button>
-                      {!selectedLeadIsSeller ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="ml-2 mt-5"
-                          disabled={canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`}
-                          onClick={() => void handleSendBuyerOnboardingFromLead()}
-                        >
-                          {selectedLeadBuyerOnboardingActionLabel}
-                        </Button>
-                      ) : null}
-                    </section>
-
-                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Open Actions</p>
-                          <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadOpenActions.pendingTasks.length} pending</h3>
-                        </div>
-                        {selectedLeadOpenActions.overdueCount ? (
-                          <span className="rounded-full bg-[#fff1f0] px-3 py-1 text-xs font-semibold text-[#b42318]">
-                            {selectedLeadOpenActions.overdueCount} overdue
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-[#eef8f2] px-3 py-1 text-xs font-semibold text-[#247345]">On track</span>
-                        )}
-                      </div>
-                      <div className="mt-4 space-y-3">
-                        {selectedLeadOpenActions.pendingTasks.slice(0, 3).length ? (
-                          selectedLeadOpenActions.pendingTasks.slice(0, 3).map((action) => (
-                            <div key={action.id} className="rounded-[18px] bg-[#f8fbfd] px-4 py-3">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-[#20364c]">{action.label}</p>
-                                  <p className={`mt-1 text-xs font-semibold ${action.overdue ? 'text-[#b42318]' : 'text-[#7b8fa5]'}`}>{action.meta}</p>
-                                </div>
-                                <Button type="button" size="sm" variant="ghost" className="h-8 px-2" onClick={() => void handleTaskStatusToggle(action.original)}>
-                                  <CheckSquare className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="rounded-[18px] bg-[#f8fbfd] px-4 py-4 text-sm text-[#6d839b]">
-                            No pending tasks or follow-ups.
-                          </div>
-                        )}
-                        {selectedLeadOpenActions.upcomingAppointment ? (
-                          <button
-                            type="button"
-                            className="w-full rounded-[18px] bg-[#f3f7fb] px-4 py-3 text-left transition hover:bg-[#e7f0f8]"
-                            onClick={() => handleOpenAppointmentModal(selectedLeadOpenActions.upcomingAppointment)}
-                          >
-                            <p className="text-sm font-semibold text-[#20364c]">Upcoming appointment</p>
-                            <p className="mt-1 text-xs font-semibold text-[#7b8fa5]">
-                              {formatDate(selectedLeadOpenActions.upcomingAppointment.dateTime || selectedLeadOpenActions.upcomingAppointment.date)}
-                            </p>
-                          </button>
-                        ) : null}
-                      </div>
-                    </section>
-
-                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Quick Actions</p>
-                      <div className="mt-4 divide-y divide-[#eef3f7]">
-                        {[
-                          {
-                            label: 'Schedule Viewing',
-                            Icon: CalendarDays,
-                            disabled: false,
-                            onClick: () => handleOpenAppointmentModal(),
-                          },
-                          {
-	                            label: 'Upload OTP',
-                            Icon: CheckSquare,
-                            disabled: selectedLeadIsSeller || otpQuickStartBusy || isOfferLinkSending,
-                            onClick: handleSelectedLeadOtpPrimaryAction,
-                          },
-                          {
-                            label: 'Send WhatsApp',
-                            Icon: MessageCircle,
-                            disabled: !normalizeText(selectedLeadContact?.phone || selectedLead?.phone),
-                            onClick: () => {
-                              const phone = normalizeText(selectedLeadContact?.phone || selectedLead?.phone).replace(/[^\d+]/g, '')
-                              if (phone && typeof window !== 'undefined') window.open(`https://wa.me/${phone.replace(/^\+/, '')}`, '_blank', 'noopener,noreferrer')
-                            },
-                          },
-                          {
-                            label: 'Assign Agent',
-                            Icon: UserRound,
-                            disabled: true,
-                            onClick: () => {},
-                          },
-                        ].map(({ label, Icon: icon, disabled, onClick }) => (
-                          <button
-                            key={label}
-                            type="button"
-                            disabled={disabled}
-                            onClick={onClick}
-                            className="flex w-full items-center gap-3 py-3 text-left text-sm font-semibold text-[#29435d] transition hover:text-[#16395a] disabled:cursor-not-allowed disabled:opacity-45"
-                          >
-                            <span className="grid h-9 w-9 place-items-center rounded-full bg-[#f3f7fb] text-[#315b7a]">
-                              {createElement(icon, { className: 'h-4 w-4' })}
-                            </span>
-                            <span className="min-w-0 flex-1">{label}</span>
-                            <ChevronRight className="h-4 w-4 text-[#9aacbf]" />
-                          </button>
-                        ))}
-                      </div>
-                    </section>
-
-                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Communication Snapshot</p>
-                      <div className="mt-5 grid grid-cols-2 gap-3">
-                        {[
-                          ['Calls', selectedLeadActivityInsights.counts.calls, Phone],
-                          ['Meetings', selectedLeadActivityInsights.counts.meetings, CalendarDays],
-                          ['Emails', selectedLeadActivityInsights.counts.emails, Mail],
-                          ['WhatsApps', selectedLeadActivityInsights.counts.whatsapps, MessageCircle],
-                        ].map(([label, value, icon]) => (
-                          <div key={label} className="rounded-[18px] bg-[#f8fbfd] p-4">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{label}</span>
-                              {createElement(icon, { className: 'h-4 w-4 text-[#7f96ad]' })}
-                            </div>
-                            <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-[#102033]">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  </aside>
-                  ) : null}
-
                 </div>
               ) : (
                 routeLeadId && ['not_found', 'unavailable'].includes(routeLeadHydrationStatus) ? (
@@ -32390,7 +32026,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       </Modal>
 
       <Modal
-        open={sellerLeadEditModal.open && selectedLeadIsSeller && selectedLeadHasKingstonsPipelineSignal}
+        open={sellerLeadEditModal.open && selectedLeadIsSeller}
         onClose={closeSellerLeadEditModal}
         title={sellerLeadEditTitle}
         subtitle={sellerLeadEditSubtitle}
@@ -32415,7 +32051,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               <div>
                 <h4 className="text-sm font-semibold text-[#102033]">{sellerLeadEditTitle}</h4>
                 <p className="mt-1 text-xs leading-5 text-[#60758b]">
-                  Changes are saved to this Kingstons seller lead and reused by the seller workspace.
+                  Changes are saved to this seller lead and reused by the seller workspace.
                 </p>
               </div>
             </div>

@@ -175,11 +175,15 @@ try {
         { id: 'proof-funds', key: 'proof_of_funds', label: 'Proof Of Funds', status: 'missing' },
       ],
       documents: [],
-      viewerRole: 'agent',
+      viewerRole: 'buyer',
     }),
   )
 
   assert.ok(cashMarkup.includes('Proof Of Funds'), 'expected cash finance tab to render proof of funds readiness')
+  assert.ok(cashMarkup.includes('Upload proof of funds'), 'expected cash finance tab to expose proof of funds upload')
+  assert.ok(!cashMarkup.includes('Client Requests'), 'expected cash finance tab not to render legacy finance subnavigation or request pages')
+  assert.ok(!cashMarkup.includes('Payments'), 'expected cash finance tab not to render payment workspace')
+  assert.ok(!cashMarkup.includes('Audit Log'), 'expected cash finance tab not to render finance audit workspace')
   assert.ok(!cashMarkup.includes('Bond Originator Progress'), 'expected cash finance tab not to render originator progress')
 
   const buyerManagedBondMarkup = ReactDOMServer.renderToStaticMarkup(
@@ -198,7 +202,9 @@ try {
     }),
   )
 
-  assert.ok(buyerManagedBondMarkup.includes('Bond Grant'), 'expected buyer-managed bond tab to render bond grant request')
+  assert.ok(buyerManagedBondMarkup.includes('Bond Workflow'), 'expected buyer-managed bond tab to render the bond originator workflow surface')
+  assert.ok(buyerManagedBondMarkup.includes('Submitted to Banks'), 'expected buyer-managed bond tab to use originator workflow stages')
+  assert.ok(!buyerManagedBondMarkup.includes('Client Requests'), 'expected buyer-managed bond tab not to render legacy request workspace')
   assert.ok(!buyerManagedBondMarkup.includes('Bond Originator Progress'), 'expected buyer-managed bond tab not to render originator progress')
 
   console.log('finance tab launch-readiness checks passed')

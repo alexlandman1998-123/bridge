@@ -117,6 +117,7 @@ import { resolveBondWorkflowSnapshot } from '../core/transactions/bondWorkflow'
 import { resolveTransferWorkflowSnapshot } from '../core/transactions/transferWorkflow'
 import { buildWorkflowActivityEvent } from '../core/workflows/events'
 import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
+import { CANCELLATION_STAGE_DEFINITIONS } from '../core/workflows/definitions'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
 import {
   applyKingstonsSellerPackReadinessToProgress,
@@ -2567,6 +2568,254 @@ function toDateOnlyValue(value) {
 
 function formatWorkflowStatusValue(value) {
   return WORKFLOW_STATUS_LABELS[normalizeWorkflowStepStatus(value)] || 'Pending'
+}
+
+const CONVEYANCING_WORKFLOW_LANES = [
+  {
+    key: 'transfer',
+    title: 'Transfer Attorney',
+    assignedLabel: 'Transfer Attorney',
+    aliases: ['transfer', 'attorney', 'transfer_attorney', 'property transfer'],
+  },
+  {
+    key: 'bond',
+    title: 'Bond Attorney',
+    assignedLabel: 'Bond Attorney',
+    aliases: ['bond', 'bond_attorney', 'bond registration'],
+  },
+  {
+    key: 'cancellation',
+    title: 'Cancellation Attorney',
+    assignedLabel: 'Cancellation Attorney',
+    aliases: ['cancellation', 'cancellation_attorney', 'bond cancellation'],
+  },
+]
+
+function getWorkflowStatusTone(status = '') {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (['completed', 'complete'].includes(normalized)) return 'border-[#cfe8d8] bg-[#effaf3] text-[#197a45]'
+  if (['current', 'in_progress', 'uploaded', 'submitted'].includes(normalized)) return 'border-[#d5e3f2] bg-[#edf4fb] text-[#35546c]'
+  if (['blocked', 'locked', 'waiting'].includes(normalized)) return 'border-[#f6dec7] bg-[#fff7ed] text-[#9a5b13]'
+  return 'border-[#d9e3ee] bg-[#f7fafc] text-[#60758c]'
+}
+
+function isSharedConveyancingComment(comment = {}) {
+  const visibility = String(comment.visibility || comment.visibilityScope || comment.visibility_scope || 'shared').trim().toLowerCase()
+  const discussionType = String(comment.discussionType || comment.discussion_type || comment.type || '').trim().toLowerCase()
+  return visibility !== 'internal' && discussionType !== 'internal'
+}
+
+function getCommentLaneTokens(comment = {}) {
+  return [
+    comment.laneKey,
+    comment.lane_key,
+    comment.workflowKey,
+    comment.workflow_key,
+    comment.attorneyRole,
+    comment.attorney_role,
+    comment.relatedWorkflow,
+    comment.related_workflow,
+    comment.discussionType,
+    comment.discussion_type,
+    comment.type,
+  ]
+    .filter(Boolean)
+    .map((item) => String(item).trim().toLowerCase())
+}
+
+function getLatestConveyancingComment(comments = [], lane = {}, context = {}) {
+  const aliases = new Set((lane.aliases || [lane.key]).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean))
+  return [...(comments || [])]
+    .filter(isSharedConveyancingComment)
+    .map((comment) => {
+      const body = sanitizeCommentBody(comment.commentBody || comment.commentText, comment, context)
+      return {
+        comment,
+        body,
+        author: resolveCommentAuthorName(comment, context),
+        timestamp: getDiscussionTimestamp(comment),
+        tokens: getCommentLaneTokens(comment),
+      }
+    })
+    .filter((item) => {
+      const haystack = `${item.body} ${item.tokens.join(' ')}`.toLowerCase()
+      return [...aliases].some((alias) => haystack.includes(alias))
+    })
+    .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime())[0] || null
+}
+
+function buildCancellationWorkflowSnapshot(subprocesses = []) {
+  const cancellationProcess = (subprocesses || []).find((item) => item?.process_type === 'cancellation') || null
+  const stepByKey = new Map((cancellationProcess?.steps || []).map((step) => [step.step_key, step]))
+  const rawSteps = CANCELLATION_STAGE_DEFINITIONS.map((definition) => {
+    const source = stepByKey.get(definition.key) || null
+    const rawStatus = normalizeWorkflowStepStatus(source?.status)
+    return {
+      key: definition.key,
+      label: definition.label,
+      description: definition.description,
+      hasSource: Boolean(source),
+      rawStatus,
+      completedAt: source?.completed_at || source?.updated_at || null,
+      blocker: rawStatus === 'blocked' ? String(source?.comment || '').trim() : '',
+    }
+  })
+  const firstPendingIndex = rawSteps.findIndex((step) => step.rawStatus !== 'completed')
+  const steps = rawSteps.map((step, index) => ({
+    ...step,
+    status:
+      step.rawStatus === 'completed'
+        ? 'completed'
+        : step.rawStatus === 'blocked'
+          ? 'blocked'
+          : cancellationProcess && index === firstPendingIndex
+            ? 'current'
+            : 'upcoming',
+  }))
+  const firstPending = steps.find((step) => step.status !== 'completed') || null
+  const complete = Boolean(cancellationProcess && !firstPending)
+
+  return {
+    isActive: Boolean(cancellationProcess),
+    complete,
+    isLocked: !cancellationProcess,
+    steps,
+    currentStepKey: firstPending?.key || null,
+    nextActionLabel: firstPending?.label || null,
+    blockers: cancellationProcess ? [] : ['Cancellation workflow is not active for this transaction.'],
+    responsibleRoleLabel: 'Cancellation attorney',
+  }
+}
+
+function buildConveyancingWorkflowLaneModels({
+  transferWorkflowSnapshot = null,
+  bondWorkflowSnapshot = null,
+  cancellationWorkflowSnapshot = null,
+  transactionDiscussion = [],
+  buyer = null,
+  transactionParticipants = [],
+  transferAttorneyDisplayName = '',
+  bondAttorneyDisplayName = '',
+  cancellationAttorneyDisplayName = '',
+} = {}) {
+  const snapshots = {
+    transfer: transferWorkflowSnapshot,
+    bond: bondWorkflowSnapshot,
+    cancellation: cancellationWorkflowSnapshot,
+  }
+  const assignedByLane = {
+    transfer: transferAttorneyDisplayName,
+    bond: bondAttorneyDisplayName,
+    cancellation: cancellationAttorneyDisplayName,
+  }
+  const context = { buyer, transactionParticipants }
+
+  return CONVEYANCING_WORKFLOW_LANES.map((lane) => {
+    const snapshot = snapshots[lane.key] || {}
+    const active = lane.key === 'transfer' ? Boolean(snapshot) : Boolean(snapshot?.isActive)
+    const steps = snapshot?.steps || []
+    const completedSteps = steps.filter((step) => step.status === 'completed').length
+    const totalSteps = steps.length
+    const progressPercent = totalSteps ? Math.round((completedSteps / totalSteps) * 100) : 0
+    const currentStep = steps.find((step) => step.status === 'current' || step.status === 'blocked') || steps.find((step) => step.status !== 'completed') || steps.at(-1) || null
+    const latestUpdate = getLatestConveyancingComment(transactionDiscussion, lane, context)
+    const completed = Boolean(snapshot?.complete || snapshot?.registrationConfirmed || snapshot?.bondRegistered)
+    const locked = Boolean(snapshot?.isLocked)
+    const statusKey = !active ? 'not_started' : completed ? 'completed' : locked ? 'waiting' : currentStep?.status || 'current'
+    const statusLabel =
+      !active
+        ? 'Not Active'
+        : completed
+          ? 'Complete'
+          : locked
+            ? 'Waiting'
+            : statusKey === 'current'
+              ? 'In Progress'
+              : statusKey === 'upcoming'
+                ? 'Pending'
+                : formatWorkflowStatusValue(statusKey)
+
+    return {
+      ...lane,
+      active,
+      statusKey,
+      statusLabel,
+      statusTone: getWorkflowStatusTone(statusKey),
+      progressPercent,
+      completedSteps,
+      totalSteps,
+      currentStepLabel: currentStep?.label || (active ? snapshot?.nextActionLabel || 'Review workflow' : 'No active workflow'),
+      nextStepLabel: snapshot?.nextActionLabel || currentStep?.actionLabel || currentStep?.label || (active ? 'Review workflow' : 'Not required yet'),
+      assignedDisplay: assignedByLane[lane.key] || 'Not assigned',
+      latestUpdate,
+      blockers: snapshot?.blockers || [],
+    }
+  })
+}
+
+function ConveyancingWorkflowOverview({ lanes = [], onOpenActivity }) {
+  return (
+    <section className="space-y-4">
+      <section className="grid gap-4 lg:grid-cols-3">
+        {lanes.map((lane) => (
+          <article key={lane.key} className="flex min-h-[300px] flex-col rounded-[18px] border border-[#dfe8f2] bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8496ab]">{lane.assignedLabel}</span>
+                <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#142132]">{lane.title}</h3>
+              </div>
+              <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${lane.statusTone}`}>
+                {lane.statusLabel}
+              </span>
+            </div>
+
+            <div className="mt-4">
+              <div className="flex items-center justify-between gap-3 text-xs font-semibold text-[#7b8ca2]">
+                <span>Process</span>
+                <span>{lane.completedSteps}/{lane.totalSteps || 0}</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#edf2f7]">
+                <div className="h-full rounded-full bg-[#274c69]" style={{ width: `${lane.progressPercent}%` }} />
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <div>
+                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">Current Step</span>
+                <strong className="mt-1 block text-sm text-[#142132]">{lane.currentStepLabel}</strong>
+              </div>
+              <div>
+                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">Assigned</span>
+                <strong className="mt-1 block text-sm text-[#142132]">{lane.assignedDisplay}</strong>
+              </div>
+            </div>
+
+            <div className="mt-auto pt-4">
+              <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">Recent Comment</span>
+              {lane.latestUpdate ? (
+                <div className="mt-2 rounded-[14px] border border-[#e6edf5] bg-[#fbfdff] px-3 py-3">
+                  <p className="line-clamp-3 text-sm leading-6 text-[#5f7288]">{lane.latestUpdate.body}</p>
+                  <span className="mt-2 block text-xs font-semibold text-[#7c8ea4]">
+                    {lane.latestUpdate.author} · {formatDateTime(lane.latestUpdate.timestamp)}
+                  </span>
+                </div>
+              ) : (
+                <p className="mt-2 rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-4 text-sm leading-6 text-[#6b7d93]">
+                  No shared attorney update has been posted for this workflow yet.
+                </p>
+              )}
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <div className="flex justify-end">
+        <Button type="button" variant="secondary" size="sm" onClick={onOpenActivity}>
+          View All Updates
+        </Button>
+      </div>
+    </section>
+  )
 }
 
 function formatOwnershipValue(name, email) {
@@ -5880,6 +6129,7 @@ function UnitDetail() {
     : bondWorkflowSnapshot.bondRegistered
       ? 'Bond workflow complete. Bond registration is confirmed.'
       : `Responsible role: ${bondWorkflowSnapshot.responsibleRoleLabel}.`
+  const cancellationWorkflowSnapshot = buildCancellationWorkflowSnapshot(transactionSubprocesses || [])
   const clientInfoFinanceValidation = validateClientInformationFinance(clientInfoForm)
   const systemDiscussionCount = (transactionDiscussion || []).filter(
     (item) => item.discussionType === SYSTEM_DISCUSSION_TYPE,
@@ -6495,6 +6745,12 @@ function UnitDetail() {
   const isUploadingDocumentInModal = Boolean(uploadingDocumentKey)
   const attorneyParticipant = (transactionParticipants || []).find((item) => item.roleType === 'attorney') || null
   const bondOriginatorParticipant = (transactionParticipants || []).find((item) => item.roleType === 'bond_originator') || null
+  const bondRegistrationAttorneyParticipant = (transactionParticipants || []).find(
+    (item) => item.roleType === 'bond_attorney' || item.legalRole === 'bond_attorney',
+  ) || null
+  const cancellationAttorneyParticipant = (transactionParticipants || []).find(
+    (item) => item.roleType === 'cancellation_attorney' || item.legalRole === 'cancellation_attorney',
+  ) || null
   const reservationRequirementStatus = String(reservationRequirement?.status || '').trim().toLowerCase()
   const canAccessReservationProof = Boolean(reservationProofDocument?.url || reservationProofDocument?.file_path)
   const purchaserNameForOtp =
@@ -6664,6 +6920,27 @@ function UnitDetail() {
     'Not assigned'
   const bondOriginatorStatusLabel =
     bondOriginatorParticipant?.stakeholderStatus === 'invited' ? 'Pending Acceptance' : bondOriginatorParticipant?.stakeholderStatus === 'active' ? 'Active' : ''
+  const bondRegistrationAttorneyDisplayName =
+    bondRegistrationAttorneyParticipant?.participantName ||
+    transaction?.bond_attorney ||
+    transaction?.bond_attorney_name ||
+    'Not assigned'
+  const cancellationAttorneyDisplayName =
+    cancellationAttorneyParticipant?.participantName ||
+    transaction?.cancellation_attorney ||
+    transaction?.cancellation_attorney_name ||
+    'Not assigned'
+  const conveyancingWorkflowLanes = buildConveyancingWorkflowLaneModels({
+    transferWorkflowSnapshot,
+    bondWorkflowSnapshot,
+    cancellationWorkflowSnapshot,
+    transactionDiscussion,
+    buyer,
+    transactionParticipants,
+    transferAttorneyDisplayName,
+    bondAttorneyDisplayName: bondRegistrationAttorneyDisplayName,
+    cancellationAttorneyDisplayName,
+  })
   const transactionRoleplayerRows = [
     ...(Array.isArray(rolePlayers) ? rolePlayers : []),
     ...(Array.isArray(transactionRolePlayers) ? transactionRolePlayers : []),
@@ -8805,40 +9082,10 @@ function UnitDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'transfer' ? (
-          <div className="space-y-4">
-            <WorkspacePanel
-              title="Transfer"
-              copy="Transfer workflow status, blockers, and the next operational handoff."
-            >
-              {transferWorkflowSection}
-            </WorkspacePanel>
-            <WorkspacePanel
-              title="Transfer Summary"
-              copy="Compact view of transfer ownership and registration timing."
-            >
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {[
-                  ['Transfer Attorney', transferAttorneyDisplayName],
-                  ['Current Stage', mainStageLabel],
-                  ['Target Registration', targetRegistrationLabel],
-                  ['Matter Health', matterHealthLabel],
-                ].map(([label, value]) => (
-                  <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3">
-                    <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-[#8ca0b6]">{label}</span>
-                    <strong className="mt-1.5 block text-sm font-semibold text-[#1c2e42]">{value}</strong>
-                  </article>
-                ))}
-              </div>
-            </WorkspacePanel>
-            <WorkspacePanel
-              title="Cancellation"
-              copy="Cancellation status is included here when a transaction cancellation workflow is active."
-            >
-              <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
-                No cancellation workflow is active for this transaction.
-              </div>
-            </WorkspacePanel>
-          </div>
+          <ConveyancingWorkflowOverview
+            lanes={conveyancingWorkflowLanes}
+            onOpenActivity={() => setWorkspaceMenu('activity')}
+          />
         ) : null}
 
         {activeWorkspaceMenu === 'cancellation' ? (

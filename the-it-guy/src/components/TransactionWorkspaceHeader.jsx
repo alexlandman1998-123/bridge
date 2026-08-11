@@ -102,26 +102,26 @@ function TransactionWorkspaceHeader({
   const visibleStats = (stats || []).filter((item) => item?.label)
 
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
-      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-28 rounded-t-[28px] bg-[linear-gradient(180deg,rgba(53,84,108,0.08)_0%,rgba(53,84,108,0)_100%)]" />
+    <section className="relative overflow-hidden rounded-[28px] border border-[#0f2d37] bg-[linear-gradient(135deg,#102f3a_0%,#1f4d52_54%,#35546c_100%)] p-6 shadow-[0_22px_44px_rgba(15,47,58,0.22)]">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-28 rounded-t-[28px] bg-[linear-gradient(180deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0)_100%)]" />
 
       <div className="relative flex flex-col gap-4">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
           <div className="min-w-0">
             {contextLabel ? (
-              <span className="inline-flex items-center rounded-full border border-[#d9e4ef] bg-white/90 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#61758d] shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <span className="inline-flex items-center rounded-full border border-white/20 bg-white/12 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#d9f0ec] shadow-[0_10px_24px_rgba(15,23,42,0.1)]">
                 {contextLabel}
               </span>
             ) : null}
 
             <div className={`${contextLabel ? 'mt-4' : ''} flex flex-wrap items-center gap-3`}>
-              <h1 className="text-[2.4rem] font-semibold leading-none tracking-[-0.06em] text-[#142132]">
+              <h1 className="text-[2.4rem] font-semibold leading-none tracking-[-0.06em] text-white">
                 {title || 'Transaction Workspace'}
               </h1>
               {unitLabel ? (
                 <>
-                  <span className="text-[1.8rem] font-medium leading-none text-[#a8b6c6]">|</span>
-                  <span className="inline-flex items-center rounded-full border border-[#d7e2ee] bg-[#f8fbfe] px-4 py-2 text-[1rem] font-semibold text-[#35546c] shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                  <span className="text-[1.8rem] font-medium leading-none text-white/45">|</span>
+                  <span className="inline-flex items-center rounded-full border border-white/20 bg-white/14 px-4 py-2 text-[1rem] font-semibold text-white shadow-[0_10px_24px_rgba(15,23,42,0.1)]">
                     {unitLabel}
                   </span>
                 </>
@@ -129,7 +129,7 @@ function TransactionWorkspaceHeader({
             </div>
 
             {subtitle ? (
-              <p className="mt-2.5 max-w-3xl text-sm leading-6 text-[#6b7d93]">
+              <p className="mt-2.5 max-w-3xl text-sm leading-6 text-[#d8e7ed]">
                 {subtitle}
               </p>
             ) : null}

@@ -38,6 +38,8 @@ for (const removedCopy of [
 assert.ok(workspaceSource.includes('handleOpenAppointmentModal(appointment)'), 'Appointment rows should still open the existing appointment modal.')
 assert.ok(workspaceSource.includes('handleMarkAppointmentComplete(appointment)'), 'Appointment rows should still support marking appointments complete.')
 assert.ok(workspaceSource.includes('handleCancelAppointment(appointment)'), 'Appointment rows should still support cancelling appointments.')
+assert.ok(pipelineSource.includes("leadWorkspaceTab === 'appointments' ? (\n                    selectedLeadIsSeller ? ("), 'All seller leads should render the simplified seller appointments workspace.')
+assert.ok(!pipelineSource.includes('selectedLeadIsSeller && selectedLeadHasKingstonsPipelineSignal ? (\n                      <KingstonsSellerAppointmentsWorkspace'), 'Seller appointments workspace should not be gated by the legacy Kingstons pipeline signal.')
 assert.ok(pipelineSource.includes("handleViewCalendar={() => navigate('/pipeline/calendar')}"), 'Seller lead workspace should wire View Calendar to the pipeline calendar route.')
 
 console.log('Seller lead appointments simplified workspace verified.')

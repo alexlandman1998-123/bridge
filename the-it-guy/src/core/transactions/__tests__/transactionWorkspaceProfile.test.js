@@ -75,6 +75,18 @@ test('agent developer sale menus use reservation finance label and legacy aliase
   assert.ok(menus.some((item) => item.id === 'snags'))
 })
 
+test('workspace menus keep onboarding status off menu buttons', () => {
+  const profile = resolveTransactionWorkspaceProfile({
+    transaction: { transaction_type: 'private_property' },
+  })
+  const menus = buildTransactionWorkspaceMenuItems(profile, {
+    onboardingStatus: 'Waiting for FICA documents',
+  })
+
+  assert.equal(menus.find((item) => item.id === 'onboarding')?.label, 'Client Information')
+  assert.equal(menus.find((item) => item.id === 'onboarding')?.meta, undefined)
+})
+
 test('private property menus do not expose developer-only modules', () => {
   const profile = resolveTransactionWorkspaceProfile({
     transaction: { transaction_type: 'private_property' },

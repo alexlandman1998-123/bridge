@@ -130,7 +130,6 @@ export function resolveTransactionWorkspaceMenuAlias(profile = {}, requestedMenu
 export function buildTransactionWorkspaceMenuItems(profile = {}, options = {}) {
   const {
     isAgentWorkspace = false,
-    onboardingStatus = 'Not Started',
     documentsCount = 0,
     financeMeta = 'Not set',
     mainStageLabel = 'Available',
@@ -152,7 +151,7 @@ export function buildTransactionWorkspaceMenuItems(profile = {}, options = {}) {
   if (isAgentWorkspace) {
     return [
       { id: 'overview', label: 'Overview' },
-      { id: 'onboarding', label: labels.onboardingTab || 'Parties', meta: onboardingStatus },
+      { id: 'onboarding', label: labels.onboardingTab || 'Parties' },
       { id: 'documents', label: 'Documents', meta: `${documentsCount}` },
       { id: 'financials', label: labels.financeTab || 'Finance', meta: financeMeta },
       { id: 'transfer', label: 'Transfer', meta: mainStageLabel },
@@ -176,7 +175,7 @@ export function buildTransactionWorkspaceMenuItems(profile = {}, options = {}) {
         label: 'Workflows',
         meta: mainStageLabel,
       },
-      { id: 'onboarding', label: labels.onboardingTab || 'Buyer / Purchaser', meta: onboardingStatus },
+      { id: 'onboarding', label: labels.onboardingTab || 'Buyer / Purchaser' },
       { id: 'documents', label: 'Documents', meta: `${documentsCount} files` },
       { id: 'handover', label: 'Handover', meta: handoverMeta },
       {
@@ -193,7 +192,7 @@ export function buildTransactionWorkspaceMenuItems(profile = {}, options = {}) {
       label: 'Overview',
       meta: isRegisteredUnit ? 'Unit summary' : labels.overviewMeta || 'Transaction summary',
     },
-    { id: 'onboarding', label: labels.onboardingTab || 'Client Information', meta: onboardingStatus },
+    { id: 'onboarding', label: labels.onboardingTab || 'Client Information' },
     ...(canViewBondWorkspaceTab ? [{ id: 'bond', label: 'Bond', meta: bondApplicationStatus }] : []),
     { id: 'documents', label: 'Documents', meta: `${documentsCount} files` },
     ...(hasDeveloperModules ? [{ id: 'handover', label: 'Handover', meta: handoverMeta }] : []),

@@ -18,6 +18,7 @@ import {
 import Button from '../ui/Button'
 import Field from '../ui/Field'
 import { buildTransactionFinanceWorkspace } from '../../services/transactionFinanceService'
+import { buildBondHybridFinanceStageSteps } from '../../core/transactions/bondHybridFinanceWorkflow'
 import IndicativeFinanceReadinessContainer from '../finance/IndicativeFinanceReadinessContainer'
 
 const currency = new Intl.NumberFormat('en-ZA', {
@@ -999,6 +1000,59 @@ function CashStatusList({ items = [] }) {
   )
 }
 
+function CashProofOfFundsWorkspace({
+  workspace,
+  proofStatusItems = [],
+  uploadingKey = '',
+  handleRequirementUpload,
+  loadingAction = '',
+  onVerifyProofOfFunds,
+  onOpenDocument,
+}) {
+  const proofDocuments = [
+    ...workspace.cash.proofDocuments,
+    ...workspace.cash.depositDocuments,
+    ...workspace.cash.guaranteeDocuments,
+  ]
+
+  return (
+    <section className="rounded-[8px] border border-[#dbe5ef] bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.045)] md:p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#08734f]">Finance</p>
+          <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#101b2d]">Proof Of Funds</h3>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-[#66758b]">
+            Cash transactions only need proof of funds captured here for attorney verification.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {workspace.permissions.canUploadDocuments ? (
+            <UploadAction
+              label={uploadingKey === 'proof_of_funds' ? 'Uploading...' : 'Upload proof of funds'}
+              disabled={uploadingKey === 'proof_of_funds'}
+              onSelect={(file) => handleRequirementUpload({ key: 'proof_of_funds', label: 'Proof Of Funds' }, file, 'cash', 'proof_of_funds', workspace.permissions.role)}
+            />
+          ) : null}
+          {workspace.permissions.canVerifyProofOfFunds ? (
+            <Button type="button" size="sm" variant="secondary" disabled={Boolean(loadingAction)} onClick={() => onVerifyProofOfFunds?.()}>
+              Verify
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,0.46fr)_minmax(0,1fr)]">
+        <CashStatusList items={proofStatusItems} />
+        <FinanceDocumentList
+          rows={proofDocuments}
+          emptyMessage="No proof of funds has been uploaded yet."
+          onOpenDocument={onOpenDocument}
+        />
+      </div>
+    </section>
+  )
+}
+
 function FinanceWorkspaceNav({ activeKey = 'accounts', onChange }) {
   return (
     <section className="border-b border-[#dfe7f1] bg-white">
@@ -1025,6 +1079,45 @@ function FinanceWorkspaceNav({ activeKey = 'accounts', onChange }) {
       </div>
     </section>
   )
+}
+
+const BOND_ORIGINATOR_STAGE_ROLES = {
+  intake: 'Bond Originator',
+  documents: 'Buyer / Bond Originator',
+  submitted_to_banks: 'Bond Originator',
+  bank_review: 'Banks / Originator',
+  quote_received: 'Banks / Originator',
+  quote_accepted: 'Buyer',
+  bond_approved: 'Bond Originator',
+  grant_received: 'Bond Originator',
+  grant_signed: 'Buyer / Bond Originator',
+  grant_submitted: 'Bond Originator',
+  instruction_sent: 'Bond Originator',
+  complete: 'Bond Originator',
+}
+
+function withBondOriginatorWorkflowRail(workspace, workflowData) {
+  if (workspace.railGroups.some((group) => group.key === 'bond')) return workspace
+
+  return {
+    ...workspace,
+    railGroups: [
+      {
+        key: 'bond',
+        label: workspace.financeType === 'combination' ? 'Bond Portion' : 'Bond Finance',
+        steps: buildBondHybridFinanceStageSteps({
+          ...(workflowData || {}),
+          workflow: {
+            ...(workflowData?.workflow || {}),
+            currentStage: workspace.bond.stage,
+          },
+        }).map((step) => ({
+          ...step,
+          responsibleRole: BOND_ORIGINATOR_STAGE_ROLES[step.key] || 'Bond Originator',
+        })),
+      },
+    ],
+  }
 }
 
 function MetricStrip({ items = [] }) {
@@ -1401,15 +1494,12 @@ function BondWorkflowWorkspace({
 }) {
   const bondGroup = workspace.railGroups.find((group) => group.key === 'bond') || workspace.railGroups[0] || { steps: [] }
   const currentStep = bondGroup.steps.find((step) => step.status === 'current') || bondGroup.steps.find((step) => step.status !== 'completed') || bondGroup.steps[0] || null
-  const [selectedStageKey, setSelectedStageKey] = useState(currentStep?.key || '')
+  const [requestedStageKey, setSelectedStageKey] = useState(currentStep?.key || '')
   const [activeTaskTab, setActiveTaskTab] = useState('checklist')
 
-  useEffect(() => {
-    if (!bondGroup.steps.some((step) => step.key === selectedStageKey)) {
-      setSelectedStageKey(currentStep?.key || bondGroup.steps[0]?.key || '')
-    }
-  }, [bondGroup.steps, currentStep?.key, selectedStageKey])
-
+  const selectedStageKey = bondGroup.steps.some((step) => step.key === requestedStageKey)
+    ? requestedStageKey
+    : currentStep?.key || bondGroup.steps[0]?.key || ''
   const selectedStep = bondGroup.steps.find((step) => step.key === selectedStageKey) || currentStep || bondGroup.steps[0] || null
   const requirements = getBondStageRequirements(selectedStep?.key, selectedStep, workspace)
   const attentionItems = requirements.filter((item) => item.status !== 'completed')
@@ -1904,17 +1994,49 @@ function FinanceCommandCenter({
       />
     )
 
+  const simplifiedFinanceWorkspace = hasBondLikeFinance ? (
+    <BondWorkflowWorkspace
+      workspace={withBondOriginatorWorkflowRail(workspace, workflowData)}
+      documents={documents}
+      loadingAction={loadingAction}
+      onStageChange={onStageChange}
+      onSubmitBankApplication={onSubmitBankApplication}
+      onUpdateBankApplication={onUpdateBankApplication}
+      onCaptureBondOffer={onCaptureBondOffer}
+      onAcceptOffer={onAcceptOffer}
+      onDeclineOffer={onDeclineOffer}
+      onMarkGrantMilestone={onMarkGrantMilestone}
+      onMarkInstructionSent={onMarkInstructionSent}
+      onOpenDocument={onOpenDocument}
+    />
+  ) : workspace.financeType === 'cash' || workspace.financeType === 'unknown' ? (
+    <CashProofOfFundsWorkspace
+      workspace={workspace}
+      proofStatusItems={proofStatusItems}
+      uploadingKey={uploadingKey}
+      handleRequirementUpload={handleRequirementUpload}
+      loadingAction={loadingAction}
+      onVerifyProofOfFunds={onVerifyProofOfFunds}
+      onOpenDocument={onOpenDocument}
+    />
+  ) : activeFinanceWorkspace
+
+  const showFinanceSubnav = !hasBondLikeFinance && workspace.financeType !== 'cash' && workspace.financeType !== 'unknown'
+  const showOwnershipStrip = hasBondLikeFinance || showFinanceSubnav
+
   return (
     <div className="space-y-5">
-      <FinanceWorkspaceNav activeKey={activeWorkspaceKey} onChange={handleWorkspaceChange} />
-      <OwnershipBadgeStrip
-        financeType={workspace.financeType}
-        financeOwner={workspace.financeOwner}
-        originatorManagedFinance={workspace.originatorManagedFinance}
-        clientManagedBondFinance={workspace.clientManagedBondFinance}
-        canProxyFinanceWorkflow={workspace.permissions.canProxyFinanceWorkflow}
-      />
-      {activeFinanceWorkspace}
+      {showFinanceSubnav ? <FinanceWorkspaceNav activeKey={activeWorkspaceKey} onChange={handleWorkspaceChange} /> : null}
+      {showOwnershipStrip ? (
+        <OwnershipBadgeStrip
+          financeType={workspace.financeType}
+          financeOwner={workspace.financeOwner}
+          originatorManagedFinance={workspace.originatorManagedFinance}
+          clientManagedBondFinance={workspace.clientManagedBondFinance}
+          canProxyFinanceWorkflow={workspace.permissions.canProxyFinanceWorkflow}
+        />
+      ) : null}
+      {simplifiedFinanceWorkspace}
     </div>
   )
 }
