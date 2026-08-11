@@ -103,10 +103,10 @@ const BUYER_PROCESS_STAGES = Object.freeze([
   }),
   Object.freeze({
     key: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-    label: 'Offer received',
-    phase: 'offer',
-    description: 'A buyer offer document has been uploaded and is ready for review or transaction conversion.',
-    requiredEvidenceKeys: Object.freeze(['offer_document_uploaded']),
+    label: 'OTP Transaction',
+    phase: 'otp_transaction',
+    description: 'Buyer onboarding has been captured and the signed OTP is ready for transaction review or handoff.',
+    requiredEvidenceKeys: Object.freeze(['otp_document_uploaded']),
     allowedActionKeys: Object.freeze([
       BUYER_PROCESS_ACTION_KEYS.uploadOfferDocument,
       BUYER_PROCESS_ACTION_KEYS.createTransaction,
@@ -117,7 +117,7 @@ const BUYER_PROCESS_STAGES = Object.freeze([
     key: BUYER_PROCESS_STAGE_KEYS.transaction,
     label: 'Transaction',
     phase: 'transaction',
-    description: 'An accepted offer has opened a transaction workflow.',
+    description: 'The OTP has opened a transaction workflow.',
     requiredEvidenceKeys: Object.freeze(['transaction_created']),
     allowedActionKeys: Object.freeze([
       BUYER_PROCESS_ACTION_KEYS.closeWon,
@@ -237,10 +237,10 @@ const BUYER_PROCESS_EVIDENCE_GATES = Object.freeze([
     acceptedStatuses: Object.freeze(['prepared', 'queued', 'sent', 'delivered', 'handoff_required']),
   }),
   Object.freeze({
-    key: 'offer_document_uploaded',
+    key: 'otp_document_uploaded',
     source: 'document',
     requiredForStage: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-    documentTypes: Object.freeze(['buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer']),
+    documentTypes: Object.freeze(['uploaded_otp', 'buyer_otp', 'signed_otp', 'otp', 'buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer']),
     acceptedStatuses: Object.freeze(['uploaded', 'under_review', 'approved', 'accepted', 'completed']),
   }),
   Object.freeze({
@@ -295,7 +295,7 @@ const BUYER_PROCESS_ACTIONS = Object.freeze([
   }),
   Object.freeze({
     key: BUYER_PROCESS_ACTION_KEYS.uploadOfferDocument,
-    label: 'Upload offer document',
+    label: 'Upload OTP',
     outcomeStageKey: BUYER_PROCESS_STAGE_KEYS.offerReceived,
   }),
   Object.freeze({
@@ -398,6 +398,10 @@ const BUYER_STAGE_ALIASES = Object.freeze({
   make_an_offer_link_sent: BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
   onboarding: BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
   offer_received: BUYER_PROCESS_STAGE_KEYS.offerReceived,
+  otp_transaction: BUYER_PROCESS_STAGE_KEYS.offerReceived,
+  uploaded_otp: BUYER_PROCESS_STAGE_KEYS.offerReceived,
+  otp_uploaded: BUYER_PROCESS_STAGE_KEYS.offerReceived,
+  signed_otp_uploaded: BUYER_PROCESS_STAGE_KEYS.offerReceived,
   offer_submitted: BUYER_PROCESS_STAGE_KEYS.offerReceived,
   buyer_offer_submitted: BUYER_PROCESS_STAGE_KEYS.offerReceived,
   offer_draft: BUYER_PROCESS_STAGE_KEYS.offerReceived,

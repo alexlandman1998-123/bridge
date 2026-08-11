@@ -19,7 +19,7 @@ const canonicalBuyerStages = [
   'Qualification',
   'Viewing',
   'Buyer onboarding sent',
-  'Offer received',
+  'OTP Transaction',
   'Transaction',
   'On hold',
   'Lost',
@@ -75,7 +75,7 @@ try {
     stage: 'Ready to Generate OTP',
   })
   assert.equal(legacyOtpPresentation.key, 'offer_received')
-  assert.equal(legacyOtpPresentation.label, 'Offer received')
+  assert.equal(legacyOtpPresentation.label, 'OTP Transaction')
   assert.equal(legacyOtpPresentation.columnId, 'offer_received')
 
   const legacyFinancePresentation = lifecycleService.resolveLeadLifecyclePresentation({
@@ -105,7 +105,7 @@ try {
   const metrics = agencyPipelineService.buildPipelineMetrics({
     leads: [
       { leadId: 'lead_1', stage: 'Captured' },
-      { leadId: 'lead_2', stage: 'Offer received' },
+      { leadId: 'lead_2', stage: 'OTP Transaction' },
       { leadId: 'lead_3', stage: 'Lost' },
       { leadId: 'lead_4', stage: 'Closed won' },
       { leadId: 'lead_5', stage: 'Finance' },

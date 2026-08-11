@@ -55,7 +55,7 @@ const evidenceKeys = [
   'buyer_qualified',
   'viewing_recorded',
   'buyer_onboarding_link_sent',
-  'offer_document_uploaded',
+  'otp_document_uploaded',
   'transaction_created',
   'hold_reason_captured',
   'lost_reason_captured',
@@ -174,7 +174,8 @@ const evidenceKeys = [
   assert.equal(normalizeBuyerProcessStageKey('Finance'), BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.equal(normalizeBuyerProcessStageKey('Transfer'), BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.equal(normalizeBuyerProcessStageKey('Lost'), BUYER_PROCESS_STAGE_KEYS.lost)
-  assert.equal(getBuyerProcessStageLabel('offer_submitted'), 'Offer received')
+  assert.equal(getBuyerProcessStageLabel('offer_submitted'), 'OTP Transaction')
+  assert.equal(getBuyerProcessStageLabel('OTP Transaction'), 'OTP Transaction')
 }
 
 {
@@ -184,9 +185,9 @@ const evidenceKeys = [
     BUYER_PROCESS_STAGE_KEYS.lost,
   ])
   assert.equal(canTransitionBuyerProcessStage('Captured', 'Qualification'), true)
-  assert.equal(canTransitionBuyerProcessStage('Captured', 'Offer received'), false)
+  assert.equal(canTransitionBuyerProcessStage('Captured', 'OTP Transaction'), false)
   assert.equal(canTransitionBuyerProcessStage('Viewing', 'Buyer onboarding sent'), true)
-  assert.equal(canTransitionBuyerProcessStage('Offer received', 'Transaction'), true)
+  assert.equal(canTransitionBuyerProcessStage('OTP Transaction', 'Transaction'), true)
   assert.equal(canTransitionBuyerProcessStage('Lost', 'Captured'), false)
 }
 
@@ -209,8 +210,8 @@ const evidenceKeys = [
     'Every active buyer stage must allow on-hold capture.',
   )
 
-  const offerGate = definition.evidenceGates.find((gate) => gate.key === 'offer_document_uploaded')
-  assert.deepEqual(offerGate.documentTypes, ['buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer'])
+  const offerGate = definition.evidenceGates.find((gate) => gate.key === 'otp_document_uploaded')
+  assert.deepEqual(offerGate.documentTypes, ['uploaded_otp', 'buyer_otp', 'signed_otp', 'otp', 'buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer'])
   assert.equal(JSON.stringify(definition).includes('generate_otp'), false)
   assert.equal(JSON.stringify(definition).includes('otp_generated'), false)
 }

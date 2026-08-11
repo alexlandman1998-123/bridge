@@ -46,9 +46,9 @@ const STAGE_REQUIREMENTS = {
   [getBuyerStageLabel(BUYER_PROCESS_STAGE_KEYS.offerReceived)]: [
     {
       type: 'document',
-      key: 'offer_document_uploaded',
-      message: 'Upload the buyer offer document before moving to Offer received.',
-      documentTypes: ['buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer'],
+      key: 'otp_document_uploaded',
+      message: 'Upload the signed OTP before moving to OTP Transaction.',
+      documentTypes: ['uploaded_otp', 'buyer_otp', 'signed_otp', 'otp', 'buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer'],
       acceptedStatuses: ['uploaded', 'under_review', 'approved', 'accepted', 'completed'],
       legacyOfferStatuses: ['submitted', 'agent_review', 'changes_requested', 'sent_to_seller', 'seller_viewed', 'countered', 'accepted', 'converted_to_transaction'],
     },
@@ -91,22 +91,22 @@ const AUTOMATION_TASKS = {
   ],
   [WORKFLOW_EVENTS.OFFER_DOCUMENT_UPLOADED]: [
     {
-      title: 'Review uploaded offer',
-      description: 'Check the uploaded buyer offer document and confirm whether it is ready for transaction conversion.',
+      title: 'Review uploaded OTP',
+      description: 'Check the uploaded OTP and confirm whether it is ready for transaction conversion.',
       dueDays: 1,
       priority: 'High',
     },
   ],
   [WORKFLOW_EVENTS.OFFER_SUBMITTED]: [
     {
-      title: 'Review uploaded offer',
-      description: 'Check the buyer offer document and confirm whether it is ready for transaction conversion.',
+      title: 'Review uploaded OTP',
+      description: 'Check the OTP document and confirm whether it is ready for transaction conversion.',
       dueDays: 1,
       priority: 'High',
     },
     {
       title: 'Prepare transaction conversion',
-      description: 'Confirm buyer onboarding, offer document, seller/property facts, and transaction handoff details.',
+      description: 'Confirm buyer onboarding, OTP document, seller/property facts, and transaction handoff details.',
       dueDays: 1,
       priority: 'High',
     },
@@ -152,19 +152,19 @@ const AUTOMATION_TASKS = {
 const AUTOMATION_ALERTS = {
   [WORKFLOW_EVENTS.OFFER_SUBMITTED]: [
     {
-      alertType: 'offer_review_due',
+      alertType: 'otp_review_due',
       severity: 'warning',
-      title: 'Offer review required',
-      message: 'A buyer offer document has been received and needs review before transaction conversion.',
+      title: 'OTP review required',
+      message: 'A buyer OTP document has been received and needs review before transaction conversion.',
       dueHours: 24,
     },
   ],
   [WORKFLOW_EVENTS.OFFER_DOCUMENT_UPLOADED]: [
     {
-      alertType: 'offer_review_due',
+      alertType: 'otp_review_due',
       severity: 'warning',
-      title: 'Offer review required',
-      message: 'A buyer offer document has been uploaded and needs review before transaction conversion.',
+      title: 'OTP review required',
+      message: 'A buyer OTP document has been uploaded and needs review before transaction conversion.',
       dueHours: 24,
     },
   ],
@@ -297,10 +297,10 @@ async function evaluateRequirement({ organisationId = '', leadId = '', transacti
     return { ...result, requirement, stage }
   }
 
-  if (requirement.type === 'document' && requirement.key === 'offer_document_uploaded') {
+  if (requirement.type === 'document' && ['otp_document_uploaded', 'offer_document_uploaded'].includes(requirement.key)) {
     const documentTypes = Array.isArray(requirement.documentTypes) && requirement.documentTypes.length
       ? requirement.documentTypes
-      : ['buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer']
+      : ['uploaded_otp', 'buyer_otp', 'signed_otp', 'otp', 'buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer']
     const acceptedStatuses = Array.isArray(requirement.acceptedStatuses) && requirement.acceptedStatuses.length
       ? requirement.acceptedStatuses
       : ['uploaded', 'under_review', 'approved', 'accepted', 'completed']

@@ -36,6 +36,36 @@ function isBondFinanceType(value = '') {
   return ['bond', 'combination', 'hybrid'].includes(normalizeText(value).toLowerCase())
 }
 
+function normalizePurchaserEntityType(form = {}, fallback = 'individual') {
+  const normalized = normalizeText(
+    form.purchaser_entity_type ||
+      form.purchaserEntityType ||
+      form.purchaser_type ||
+      form.purchaserType ||
+      fallback,
+  ).toLowerCase()
+  if (['company', 'trust', 'foreign_purchaser'].includes(normalized)) return normalized
+  return 'individual'
+}
+
+function normalizeAssociatedPerson(entry = {}, fallbackRole = 'Director') {
+  return {
+    full_name: normalizeText(entry.full_name || entry.fullName),
+    id_number: normalizeText(entry.id_number || entry.idNumber || entry.identity_number || entry.passport_number),
+    phone: normalizeText(entry.phone),
+    email: normalizeText(entry.email),
+    residential_address: normalizeText(entry.residential_address || entry.residentialAddress),
+    role_title: normalizeText(entry.role_title || entry.roleTitle) || fallbackRole,
+    signing_authority: entry.signing_authority === true || entry.signing_authority === 'yes' ? 'yes' : 'no',
+  }
+}
+
+function normalizeAssociatedPeople(entries = [], fallbackRole = 'Director') {
+  return (Array.isArray(entries) ? entries : [])
+    .map((entry) => normalizeAssociatedPerson(entry, fallbackRole))
+    .filter((entry) => [entry.full_name, entry.id_number, entry.phone, entry.email, entry.residential_address].some(Boolean))
+}
+
 function normalizeBondAssistancePreference(form = {}) {
   const direct = normalizeText(
     form.bondAssistancePreference ||
@@ -126,23 +156,41 @@ function sectionMatches(section = {}, patterns = []) {
 }
 
 export function mapOfferFormToBuyerOnboardingForm(form = {}, options = {}) {
+  const purchaserEntityType = normalizePurchaserEntityType(form)
   const financeType = normalizeFinanceType(form.financeType || options.financeType || 'bond')
   const bondAssistancePreference = isBondFinanceType(financeType) ? normalizeBondAssistancePreference(form) : ''
   const bondHelpRequested = bondHelpRequestedValue(bondAssistancePreference)
-  const offerAmount = moneyNumber(options.offerAmount ?? form.offerAmount)
+  const purchaseAmount = moneyNumber(
+    options.purchasePrice ??
+      options.offerAmount ??
+      form.purchasePrice ??
+      form.purchase_price ??
+      form.listingAskingPrice ??
+      form.askingPrice ??
+      form.offerAmount,
+  )
   const depositAmount = moneyNumber(options.depositAmount ?? form.depositAmount)
-  const bondAmount = financeType === 'cash' ? 0 : moneyNumber(options.loanAmount ?? form.bondAmount) || Math.max(0, offerAmount - depositAmount)
+  const bondAmount = financeType === 'cash' ? 0 : moneyNumber(options.loanAmount ?? form.bondAmount) || Math.max(0, purchaseAmount - depositAmount)
   const cashAmount = financeType === 'bond' ? depositAmount : Math.max(depositAmount, moneyNumber(form.cashContribution))
-  const { firstName, lastName } = splitFullName(form.fullName)
+  const contactName = normalizeText(
+    form.fullName ||
+      form.company_contact_name ||
+      form.authorised_signatory_name ||
+      form.trust_contact_name ||
+      form.authorised_trustee_name ||
+      form.company_name ||
+      form.trust_name,
+  )
+  const { firstName, lastName } = splitFullName(contactName)
   const purchaser = {
     first_name: firstName,
     last_name: lastName,
-    identity_number: normalizeText(form.idNumber),
-    email: normalizeText(form.email),
-    phone: normalizeText(form.phone),
+    identity_number: normalizeText(form.idNumber || form.authorised_signatory_identity_number || form.authorised_trustee_identity_number),
+    email: normalizeText(form.email || form.company_contact_email || form.authorised_signatory_email || form.trust_contact_email || form.authorised_trustee_email),
+    phone: normalizeText(form.phone || form.company_contact_phone || form.authorised_signatory_phone || form.trust_contact_phone || form.authorised_trustee_phone),
   }
   const finance = {
-    purchase_price: offerAmount ? String(offerAmount) : '',
+    purchase_price: purchaseAmount ? String(purchaseAmount) : '',
     cash_amount: cashAmount ? String(cashAmount) : '',
     bond_amount: bondAmount ? String(bondAmount) : '',
     cash_contribution_available: depositAmount ? String(depositAmount) : '',
@@ -158,9 +206,63 @@ export function mapOfferFormToBuyerOnboardingForm(form = {}, options = {}) {
     },
   })
 
+  const directors = normalizeAssociatedPeople(form.directors || form.company?.directors, 'Director')
+  const trustees = normalizeAssociatedPeople(form.trustees || form.trust?.trustees, 'Trustee')
+  const company = {
+    name: normalizeText(form.company_name || form.company?.name),
+    registration_number: normalizeText(form.company_registration_number || form.company?.registration_number),
+    registered_address: normalizeText(form.company_registered_address || form.company?.registered_address),
+    business_address: normalizeText(form.company_business_address || form.company?.business_address),
+    tax_number: normalizeText(form.company_tax_number || form.company?.tax_number),
+    vat_number: normalizeText(form.vat_number || form.company?.vat_number),
+    nature_of_business: normalizeText(form.nature_of_business || form.company?.nature_of_business),
+    contact: {
+      name: normalizeText(form.company_contact_name || form.company?.contact?.name),
+      email: normalizeText(form.company_contact_email || form.company?.contact?.email),
+      phone: normalizeText(form.company_contact_phone || form.company?.contact?.phone),
+    },
+    authorised_signatory: {
+      name: normalizeText(form.authorised_signatory_name || form.company?.authorised_signatory?.name),
+      identity_number_or_passport_number: normalizeText(form.authorised_signatory_identity_number || form.company?.authorised_signatory?.identity_number_or_passport_number),
+      email: normalizeText(form.authorised_signatory_email || form.company?.authorised_signatory?.email),
+      phone: normalizeText(form.authorised_signatory_phone || form.company?.authorised_signatory?.phone),
+      capacity: normalizeText(form.authorised_signatory_capacity || form.company?.authorised_signatory?.capacity),
+    },
+    board_resolution_available: normalizeText(form.board_resolution_available || form.company_resolution_available || form.company?.board_resolution_available),
+    resolution_date: normalizeText(form.resolution_date || form.company?.resolution_date),
+    authority_basis: normalizeText(form.authority_basis || form.company?.authority_basis),
+    directors,
+  }
+  const trust = {
+    name: normalizeText(form.trust_name || form.trust?.name),
+    registration_number: normalizeText(form.trust_registration_number || form.trust?.registration_number),
+    type: normalizeText(form.trust_type || form.trust?.type),
+    masters_office_reference: normalizeText(form.masters_office_reference || form.trust?.masters_office_reference),
+    registered_address: normalizeText(form.trust_registered_address || form.trust?.registered_address),
+    tax_number: normalizeText(form.trust_tax_number || form.trust?.tax_number),
+    contact: {
+      name: normalizeText(form.trust_contact_name || form.trust?.contact?.name),
+      email: normalizeText(form.trust_contact_email || form.trust?.contact?.email),
+      phone: normalizeText(form.trust_contact_phone || form.trust?.contact?.phone),
+    },
+    authorised_trustee: {
+      name: normalizeText(form.authorised_trustee_name || form.trust?.authorised_trustee?.name),
+      identity_number_or_passport_number: normalizeText(form.authorised_trustee_identity_number || form.trust?.authorised_trustee?.identity_number_or_passport_number),
+      email: normalizeText(form.authorised_trustee_email || form.trust?.authorised_trustee?.email),
+      phone: normalizeText(form.authorised_trustee_phone || form.trust?.authorised_trustee?.phone),
+      capacity: normalizeText(form.authorised_trustee_capacity || form.trust?.authorised_trustee?.capacity),
+    },
+    authority_basis: normalizeText(form.authority_basis || form.trust?.authority_basis),
+    trust_deed_available: normalizeText(form.trust_deed_available || form.trust?.trust_deed_available),
+    letters_of_authority_available: normalizeText(form.letters_of_authority_available || form.trust?.letters_of_authority_available),
+    resolution_available: normalizeText(form.trust_resolution_available || form.trust?.resolution_available),
+    all_trustees_signing: normalizeText(form.all_trustees_signing || form.trust?.all_trustees_signing),
+    trustees,
+  }
+
   return {
-    purchaser_type: 'individual',
-    purchaser_entity_type: 'individual',
+    purchaser_type: purchaserEntityType,
+    purchaser_entity_type: purchaserEntityType,
     purchase_finance_type: financeType,
     first_name: purchaser.first_name,
     last_name: purchaser.last_name,
@@ -178,7 +280,53 @@ export function mapOfferFormToBuyerOnboardingForm(form = {}, options = {}) {
     ooba_assist_requested: finance.bond_help_requested,
     finance_managed_by: finance.finance_managed_by,
     financeManagedBy: finance.finance_managed_by,
-    purchasers: [purchaser],
+    purchasers: purchaserEntityType === 'individual' || purchaserEntityType === 'foreign_purchaser' ? [purchaser] : [],
+    ...(purchaserEntityType === 'company' ? {
+      company,
+      directors,
+      company_name: company.name,
+      company_registration_number: company.registration_number,
+      company_registered_address: company.registered_address,
+      company_business_address: company.business_address,
+      company_tax_number: company.tax_number,
+      vat_number: company.vat_number,
+      nature_of_business: company.nature_of_business,
+      company_contact_name: company.contact.name,
+      company_contact_email: company.contact.email,
+      company_contact_phone: company.contact.phone,
+      authorised_signatory_name: company.authorised_signatory.name,
+      authorised_signatory_identity_number: company.authorised_signatory.identity_number_or_passport_number,
+      authorised_signatory_email: company.authorised_signatory.email,
+      authorised_signatory_phone: company.authorised_signatory.phone,
+      authorised_signatory_capacity: company.authorised_signatory.capacity,
+      board_resolution_available: company.board_resolution_available,
+      company_resolution_available: company.board_resolution_available,
+      resolution_date: company.resolution_date,
+      authority_basis: company.authority_basis,
+    } : {}),
+    ...(purchaserEntityType === 'trust' ? {
+      trust,
+      trustees,
+      trust_name: trust.name,
+      trust_registration_number: trust.registration_number,
+      trust_type: trust.type,
+      masters_office_reference: trust.masters_office_reference,
+      trust_registered_address: trust.registered_address,
+      trust_tax_number: trust.tax_number,
+      trust_contact_name: trust.contact.name,
+      trust_contact_email: trust.contact.email,
+      trust_contact_phone: trust.contact.phone,
+      authorised_trustee_name: trust.authorised_trustee.name,
+      authorised_trustee_identity_number: trust.authorised_trustee.identity_number_or_passport_number,
+      authorised_trustee_email: trust.authorised_trustee.email,
+      authorised_trustee_phone: trust.authorised_trustee.phone,
+      authorised_trustee_capacity: trust.authorised_trustee.capacity,
+      trust_deed_available: trust.trust_deed_available,
+      letters_of_authority_available: trust.letters_of_authority_available,
+      trust_resolution_available: trust.resolution_available,
+      all_trustees_signing: trust.all_trustees_signing,
+      authority_basis: trust.authority_basis,
+    } : {}),
     finance,
   }
 }

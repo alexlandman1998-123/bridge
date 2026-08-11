@@ -21,7 +21,7 @@ function extractBlock(source, startMarker, endMarker, label) {
 
 const buyerRequestBlock = extractBlock(
   pageSource,
-  'async function handleSendBuyerViewingAvailabilityRequest',
+  'async function _handleSendBuyerViewingAvailabilityRequest',
   '\n  async function handleCaptureBuyerViewingResponse',
   'buyer availability request flow',
 )
@@ -51,7 +51,7 @@ const appointmentSaveBlock = extractBlock(
 )
 const buyerPreferenceApplyBlock = extractBlock(
   pageSource,
-  'async function handleApplyBuyerViewingPreferenceResponse',
+  'async function _handleApplyBuyerViewingPreferenceResponse',
   '\n  async function handleSendSellerViewingAvailabilityRequest',
   'buyer preference response pull-through flow',
 )
@@ -73,15 +73,17 @@ const viewingCompletionBlock = extractBlock(
   '\n  async function handleCancelLeadViewing',
   'viewing completion flow',
 )
-const offerCentreBlock = extractBlock(
+const onboardingOtpBlock = extractBlock(
   pageSource,
-  "{leadWorkspaceTab === 'offers'",
+  '{resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY',
   '\n                  {leadWorkspaceTab ===',
-  'buyer offer centre workspace',
+  'buyer onboarding / OTP workspace',
 )
 
 for (const contract of [
-  /BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set\(\['overview', 'properties', 'appointments', 'activity', 'offers'\]\)/,
+  /BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY = 'onboarding_otp'/,
+  /BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set\(\['overview', 'properties', 'appointments', 'activity', BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY\]\)/,
+  /normalizeLeadWorkspaceTabKey/,
   /parseBuyerViewingPlanNoteBlock/,
   /buildBuyerViewingPlanNotes/,
   /buyerEmailDeliveryStatus/,
@@ -113,7 +115,7 @@ assert.match(pageSource, /function handleMarkBuyerQualifiedAction\(\)[\s\S]*Capt
 
 for (const contract of [
   /handleLeadCanonicalOfferAccept\(offer\)/,
-  /handleLeadCanonicalOfferStatus\(offer, 'accepted', 'Offer accepted from Offer Centre'\)/,
+  /handleLeadCanonicalOfferStatus\(offer, 'accepted', 'OTP accepted from buyer workspace'\)/,
   /View Offer/,
   /Seller Review/,
   /offerDetailRows/,
@@ -127,7 +129,7 @@ for (const contract of [
   /offerConditionText/,
   /canAcceptOffer/,
 ]) {
-  assert.match(offerCentreBlock, contract, `offer centre card should surface submitted offer evidence ${contract}`)
+  assert.match(onboardingOtpBlock, contract, `onboarding / OTP card should surface submitted offer evidence ${contract}`)
 }
 
 for (const contract of [
@@ -267,7 +269,7 @@ for (const contract of [
   /handleOpenViewingCompletedFeedbackOverride/,
   /Viewing completed feedback/,
   /viewing_completed_feedback/,
-  /record feedback and carry on/,
+  /Use the appointment completion flow/,
 ]) {
   assert.match(pageSource, contract, `buyer availability override should expose completed-viewing feedback ${contract}`)
 }

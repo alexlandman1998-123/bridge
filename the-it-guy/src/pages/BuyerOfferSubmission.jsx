@@ -16,8 +16,10 @@ import {
   Landmark,
   LockKeyhole,
   PenLine,
+  Plus,
   Ruler,
   ShieldCheck,
+  Trash2,
   UserRound,
   Users,
 } from 'lucide-react'
@@ -27,7 +29,7 @@ import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboarding
 import {
   getCanonicalOfferInviteContext,
   getOfferLifecycleSummary,
-  submitCanonicalBuyerOffer,
+  submitCanonicalBuyerOnboarding,
 } from '../lib/buyerLifecycleService'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
 import { buildOfferBuyerVerificationModel } from '../lib/offerBuyerOnboardingBridge'
@@ -36,7 +38,7 @@ import {
   getOfferInviteContext,
   OFFER_WORKFLOW_STATUS,
   normalizeOfferWorkflowStatus,
-  submitBuyerOffer,
+  submitBuyerOnboarding,
 } from '../lib/listingOffersService'
 import { resolveOtpDocumentVariant } from '../core/documents/otpRouteUniverse'
 
@@ -44,11 +46,11 @@ const ARCH_GREEN = '#0F7A5A'
 const WARM_WHITE = '#FAFAF8'
 const PRIMARY_TEXT = '#111827'
 const BUYER_OFFER_DRAFT_VERSION = 1
-const BUYER_OFFER_STAGES = ['landing', 'offer', 'onboarding', 'review', 'complete']
+const BUYER_OFFER_STAGES = ['landing', 'onboarding', 'review', 'complete']
 const BUYER_OFFER_PROGRESS = [
-  { key: 'offer', label: 'Offer' },
-  { key: 'onboarding', label: 'Buyer Verification' },
-  { key: 'review', label: 'Review & Sign' },
+  { key: 'onboarding', label: 'Buyer Details' },
+  { key: 'review', label: 'Review' },
+  { key: 'complete', label: 'OTP Next' },
 ]
 const BOND_ASSISTANCE_OPTIONS = Object.freeze({
   SELF_MANAGED: 'self_managed',
@@ -152,6 +154,7 @@ async function fetchBuyerOfferBrandingSnapshot(token = '') {
 
 function normalizeStage(value = '', fallback = 'landing') {
   const stage = normalizeText(value).toLowerCase()
+  if (stage === 'offer') return 'onboarding'
   return BUYER_OFFER_STAGES.includes(stage) ? stage : fallback
 }
 
@@ -261,21 +264,6 @@ function TextInput({ label, value, onChange, type = 'text', placeholder = '', in
   )
 }
 
-function TextAreaInput({ label, value, onChange, placeholder = '' }) {
-  return (
-    <label className="grid gap-2">
-      <span className="text-[0.78rem] font-semibold text-[#4B5563]">{label}</span>
-      <textarea
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        rows={3}
-        className="min-h-[96px] rounded-[16px] border border-[#E5E7EB] bg-white px-4 py-3 text-base font-semibold text-[#111827] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
-      />
-    </label>
-  )
-}
-
 function PropertyFeature({ icon, label, value }) {
   if (!value) return null
   return (
@@ -292,6 +280,21 @@ function TrustItem({ children }) {
       <CheckCircle2 size={16} color={ARCH_GREEN} />
       <span>{children}</span>
     </div>
+  )
+}
+
+function TextAreaInput({ label, value, onChange, placeholder = '', rows = 3 }) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-[0.78rem] font-semibold text-[#4B5563]">{label}</span>
+      <textarea
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        rows={rows}
+        className="min-h-[96px] rounded-[16px] border border-[#E5E7EB] bg-white px-4 py-3 text-base font-semibold text-[#111827] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
+      />
+    </label>
   )
 }
 
@@ -314,19 +317,23 @@ function ChoicePill({ label, selected, onClick }) {
   )
 }
 
-function ConditionButton({ label, active, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-[16px] border px-4 text-sm font-semibold transition ${
-        active ? 'border-[#0F7A5A] bg-[#F0FAF5] text-[#0F7A5A]' : 'border-[#E5E7EB] bg-white text-[#374151] hover:border-[#B8D8C9]'
-      }`}
-    >
-      <span className="text-xl leading-none">+</span>
-      {label}
-    </button>
-  )
+function yesNoLabel(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized === 'yes') return 'Yes'
+  if (normalized === 'no') return 'No'
+  return 'Not selected'
+}
+
+function createAssociatedPerson(roleTitle = 'Director') {
+  return {
+    full_name: '',
+    id_number: '',
+    phone: '',
+    email: '',
+    residential_address: '',
+    role_title: roleTitle,
+    signing_authority: false,
+  }
 }
 
 function ProgressDots({ stage }) {
@@ -377,6 +384,8 @@ function BuyerOfferSubmission() {
   const [activeBuyerSection, setActiveBuyerSection] = useState('about')
   const [confirmedAccuracy, setConfirmedAccuracy] = useState(false)
   const [form, setForm] = useState({
+    purchaser_entity_type: 'individual',
+    purchaser_type: 'individual',
     fullName: '',
     email: '',
     phone: '',
@@ -419,6 +428,44 @@ function BuyerOfferSubmission() {
     acknowledgeSellerReview: true,
     acknowledgeLegalDisclaimer: true,
     acknowledgeInfoAccuracy: true,
+    company_name: '',
+    company_registration_number: '',
+    vat_number: '',
+    company_registered_address: '',
+    company_business_address: '',
+    nature_of_business: '',
+    company_tax_number: '',
+    company_contact_name: '',
+    company_contact_email: '',
+    company_contact_phone: '',
+    authorised_signatory_name: '',
+    authorised_signatory_identity_number: '',
+    authorised_signatory_email: '',
+    authorised_signatory_phone: '',
+    authorised_signatory_capacity: '',
+    board_resolution_available: '',
+    resolution_date: '',
+    authority_basis: '',
+    directors: [createAssociatedPerson('Director')],
+    trust_name: '',
+    trust_registration_number: '',
+    trust_type: '',
+    masters_office_reference: '',
+    trust_registered_address: '',
+    trust_tax_number: '',
+    trust_contact_name: '',
+    trust_contact_email: '',
+    trust_contact_phone: '',
+    authorised_trustee_name: '',
+    authorised_trustee_identity_number: '',
+    authorised_trustee_email: '',
+    authorised_trustee_phone: '',
+    authorised_trustee_capacity: '',
+    trust_deed_available: '',
+    letters_of_authority_available: '',
+    trust_resolution_available: '',
+    all_trustees_signing: '',
+    trustees: [createAssociatedPerson('Trustee')],
   })
 
   const legacyContext = useMemo(() => {
@@ -497,6 +544,17 @@ function BuyerOfferSubmission() {
   })
   const isDevelopmentOffer = otpDocumentVariant === 'new_development'
   const financeType = String(form.financeType || '').toLowerCase()
+  const purchaserEntityType = normalizeText(form.purchaser_entity_type || form.purchaserType || 'individual').toLowerCase() || 'individual'
+  const isCompanyBuyer = purchaserEntityType === 'company'
+  const isTrustBuyer = purchaserEntityType === 'trust'
+  const entityBuyerSelected = isCompanyBuyer || isTrustBuyer
+  const directors = Array.isArray(form.directors) && form.directors.length ? form.directors : [createAssociatedPerson('Director')]
+  const trustees = Array.isArray(form.trustees) && form.trustees.length ? form.trustees : [createAssociatedPerson('Trustee')]
+  const buyerDisplayName = isCompanyBuyer
+    ? normalizeText(form.company_name) || 'Company buyer'
+    : isTrustBuyer
+      ? normalizeText(form.trust_name) || 'Trust buyer'
+      : normalizeText(form.fullName) || 'Buyer'
   const bondFinanceSelected = isBondFinanceType(financeType)
   const bondAssistancePreference = bondFinanceSelected
     ? normalizeBondAssistancePreference(form.bondAssistancePreference, form.needsBondAssistance ? BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED : '')
@@ -505,16 +563,9 @@ function BuyerOfferSubmission() {
   const askingPrice = getListingPrice(listing)
   const offerAmount = moneyNumber(form.offerAmount)
   const depositAmount = moneyNumber(form.depositAmount)
-  const loanAmount = financeType === 'cash' ? 0 : Math.max(0, offerAmount - depositAmount)
+  const purchasePriceBasis = offerAmount || askingPrice
+  const loanAmount = financeType === 'cash' ? 0 : Math.max(0, purchasePriceBasis - depositAmount)
   const financeLabel = financeType === 'cash' ? 'Cash' : financeType === 'hybrid' || financeType === 'combination' ? 'Combination' : 'Bond'
-  const bondConditionSelected = Boolean(form.conditionBondApproval || form.bondApprovalDeadline || ['bond', 'hybrid', 'combination'].includes(financeType))
-  const otherConditionSelected = Boolean(form.conditionOther || form.suspensiveConditions || form.specialConditions || form.includedFixtures || form.excludedFixtures)
-  const selectedConditionCount = [
-    bondConditionSelected,
-    form.subjectToSale,
-    form.occupationalRent,
-    otherConditionSelected,
-  ].filter(Boolean).length
   const propertyImageUrl = getListingImageUrl(listing)
   const agentName = firstText(context?.canonicalOffer?.conditions?.agentName, invite?.agentName) || 'Assigned agent'
   const agencyName = firstText(context?.canonicalOffer?.conditions?.organisationName, context?.canonicalOffer?.conditions?.agencyName) || 'Arch9 Partner Agency'
@@ -526,42 +577,58 @@ function BuyerOfferSubmission() {
       organisationName: resolved.organisationName || agencyName,
     }
   }, [agencyName, context?.canonicalOffer?.conditions, invite, listing, offerBrandingSnapshot])
-  const submitButtonLabel = counterPendingBuyer ? 'Submit Revised Offer' : 'Submit Offer + Onboarding'
+  const submitButtonLabel = 'Submit Buyer Onboarding'
   const buyerVerificationModel = useMemo(
     () =>
       buildOfferBuyerVerificationModel(form, {
         confirmedAccuracy,
         reviewReady: flowStage === 'review' || flowStage === 'complete',
-        offerAmount,
+        purchasePrice: offerAmount || askingPrice,
         depositAmount,
         loanAmount,
         financeType,
         transaction: canonicalOffer || latestOffer || {},
       }),
-    [canonicalOffer, confirmedAccuracy, depositAmount, financeType, flowStage, form, latestOffer, loanAmount, offerAmount],
+    [askingPrice, canonicalOffer, confirmedAccuracy, depositAmount, financeType, flowStage, form, latestOffer, loanAmount, offerAmount],
   )
-  const buyerSectionCards = buyerVerificationModel.sections
+  const buyerSectionCards = buyerVerificationModel.sections.map((section) => {
+    if (section.key === 'signature') {
+      return {
+        ...section,
+        title: 'OTP Transaction',
+        description: 'Your agent prepares or uploads the OTP after onboarding is submitted.',
+      }
+    }
+    if (section.key === 'finance') {
+      return {
+        ...section,
+        title: 'Finance Route',
+        description: 'Cash, bond, hybrid, and bond-originator preferences.',
+      }
+    }
+    return section
+  })
   const hasDraft = useMemo(() => Boolean(readBuyerOfferDraft(token)), [token, draftLoaded])
   const stageIndex = BUYER_OFFER_STAGES.indexOf(flowStage)
-  const previousStage = stageIndex > 1 ? BUYER_OFFER_STAGES[stageIndex - 1] : 'offer'
-  const offerAmountLabel = offerAmount > 0 ? formatCurrency(offerAmount) : 'Pending'
+  const previousStage = stageIndex > 1 ? BUYER_OFFER_STAGES[stageIndex - 1] : 'onboarding'
+  const indicativePriceLabel = purchasePriceBasis > 0 ? formatCurrency(purchasePriceBasis) : 'Pending'
 
   const canonicalBanner = useMemo(() => {
     if (!canonicalLifecycle) return null
     if (canonicalLifecycle.effectiveStatus === 'countered') {
-      return { tone: 'amber', text: 'Seller sent a counter offer. Update the terms below and submit a revised offer if you still want to proceed.' }
+      return { tone: 'amber', text: 'This buyer link has seller feedback attached. Complete buyer onboarding so the agent can confirm the OTP transaction next.' }
     }
     if (canonicalLifecycle.effectiveStatus === 'changes_requested') {
-      return { tone: 'amber', text: 'The agent asked for changes before the offer goes back to the seller. Update the details and resubmit.' }
+      return { tone: 'amber', text: 'The agent asked for updated buyer details. Review the onboarding information and resubmit.' }
     }
     if (canonicalLifecycle.activeNegotiation) {
-      return { tone: 'amber', text: canonicalLifecycle.blockedReason || 'This offer is already under review. Wait for feedback before sending another version.' }
+      return { tone: 'amber', text: canonicalLifecycle.blockedReason || 'This buyer onboarding is already under review. Wait for feedback before sending another version.' }
     }
     if (canonicalLifecycle.acceptedOrConverted) {
       return { tone: 'green', text: canonicalLifecycle.blockedReason }
     }
     if (canonicalLifecycle.terminal && !canonicalLifecycle.buyerCanResubmit) {
-      return { tone: 'red', text: canonicalLifecycle.blockedReason || 'This offer is closed. Ask the agent for a new secure link if negotiations restart.' }
+      return { tone: 'red', text: canonicalLifecycle.blockedReason || 'This buyer onboarding link is closed. Ask the agent for a new secure link if the transaction restarts.' }
     }
     return null
   }, [canonicalLifecycle])
@@ -622,6 +689,57 @@ function BuyerOfferSubmission() {
     setForm((previous) => ({ ...previous, [key]: value }))
   }
 
+  function updatePurchaserEntityType(value) {
+    const nextType = ['company', 'trust', 'foreign_purchaser'].includes(normalizeText(value).toLowerCase())
+      ? normalizeText(value).toLowerCase()
+      : 'individual'
+    setForm((previous) => ({
+      ...previous,
+      purchaser_entity_type: nextType,
+      purchaser_type: nextType,
+      directors: Array.isArray(previous.directors) && previous.directors.length ? previous.directors : [createAssociatedPerson('Director')],
+      trustees: Array.isArray(previous.trustees) && previous.trustees.length ? previous.trustees : [createAssociatedPerson('Trustee')],
+    }))
+  }
+
+  function updateAssociatedPerson(collectionKey, index, fieldKey, value) {
+    setForm((previous) => {
+      const fallbackRole = collectionKey === 'trustees' ? 'Trustee' : 'Director'
+      const rows = Array.isArray(previous[collectionKey]) && previous[collectionKey].length
+        ? previous[collectionKey]
+        : [createAssociatedPerson(fallbackRole)]
+      return {
+        ...previous,
+        [collectionKey]: rows.map((row, rowIndex) => (
+          rowIndex === index ? { ...row, [fieldKey]: value } : row
+        )),
+      }
+    })
+  }
+
+  function addAssociatedPerson(collectionKey) {
+    setForm((previous) => {
+      const fallbackRole = collectionKey === 'trustees' ? 'Trustee' : 'Director'
+      const rows = Array.isArray(previous[collectionKey]) ? previous[collectionKey] : []
+      return {
+        ...previous,
+        [collectionKey]: [...rows, createAssociatedPerson(fallbackRole)],
+      }
+    })
+  }
+
+  function removeAssociatedPerson(collectionKey, index) {
+    setForm((previous) => {
+      const fallbackRole = collectionKey === 'trustees' ? 'Trustee' : 'Director'
+      const rows = Array.isArray(previous[collectionKey]) ? previous[collectionKey] : []
+      const nextRows = rows.filter((_, rowIndex) => rowIndex !== index)
+      return {
+        ...previous,
+        [collectionKey]: nextRows.length ? nextRows : [createAssociatedPerson(fallbackRole)],
+      }
+    })
+  }
+
   function updateFinanceType(value) {
     const normalizedValue = value === 'combination' ? 'hybrid' : value
     const nextBondFinanceSelected = isBondFinanceType(normalizedValue)
@@ -653,19 +771,66 @@ function BuyerOfferSubmission() {
   }
 
   function validateStageTransition(nextStage) {
-    if (['onboarding', 'review'].includes(nextStage) && !offerAmount) {
-      setErrorMessage('Enter your offer amount before continuing.')
-      return false
-    }
-    if (['onboarding', 'review'].includes(nextStage) && bondFinanceSelected && !bondAssistancePreference) {
+    if (nextStage === 'review' && bondFinanceSelected && !bondAssistancePreference) {
       setErrorMessage('Choose whether you will manage your bond yourself or need help with your bond.')
       return false
     }
-    if (nextStage === 'review' && (!form.fullName || !form.email || !form.phone || !form.idNumber)) {
-      setErrorMessage('Complete your buyer details before review.')
+    if (nextStage === 'review' && !validateBuyerDetailsForReview()) {
       return false
     }
     setErrorMessage('')
+    return true
+  }
+
+  function validateAssociatedPeople(rows = [], label = 'Person') {
+    const populatedRows = rows.filter((row) => [row.full_name, row.id_number, row.phone, row.email, row.residential_address].some((value) => normalizeText(value)))
+    if (!populatedRows.length) {
+      setErrorMessage(`Add at least one ${label.toLowerCase()}.`)
+      return false
+    }
+    const incompleteIndex = populatedRows.findIndex((row) => !row.full_name || !row.id_number || !row.phone || !row.residential_address)
+    if (incompleteIndex >= 0) {
+      setErrorMessage(`Complete ${label.toLowerCase()} ${incompleteIndex + 1} before review.`)
+      return false
+    }
+    return true
+  }
+
+  function validateBuyerDetailsForReview() {
+    if (isCompanyBuyer) {
+      if (!form.company_name || !form.company_registration_number || !form.company_registered_address || !form.nature_of_business) {
+        setErrorMessage('Complete the company details before review.')
+        return false
+      }
+      if (!form.authorised_signatory_name || !form.authorised_signatory_identity_number || !form.authorised_signatory_email || !form.authorised_signatory_phone || !form.authorised_signatory_capacity) {
+        setErrorMessage('Complete the authorised signatory details before review.')
+        return false
+      }
+      if (!form.board_resolution_available) {
+        setErrorMessage('Confirm whether a board resolution is available.')
+        return false
+      }
+      return validateAssociatedPeople(directors, 'Director')
+    }
+    if (isTrustBuyer) {
+      if (!form.trust_name || !form.trust_registration_number || !form.trust_type || !form.masters_office_reference || !form.trust_registered_address) {
+        setErrorMessage('Complete the trust details before review.')
+        return false
+      }
+      if (!form.authorised_trustee_name || !form.authorised_trustee_identity_number || !form.authorised_trustee_email || !form.authorised_trustee_phone || !form.authorised_trustee_capacity) {
+        setErrorMessage('Complete the authorised trustee details before review.')
+        return false
+      }
+      if (!form.trust_deed_available || !form.letters_of_authority_available || !form.trust_resolution_available || !form.all_trustees_signing) {
+        setErrorMessage('Complete the trust authority confirmations before review.')
+        return false
+      }
+      return validateAssociatedPeople(trustees, 'Trustee')
+    }
+    if (!form.fullName || !form.email || !form.phone || !form.idNumber) {
+      setErrorMessage('Complete your buyer details before review.')
+      return false
+    }
     return true
   }
 
@@ -678,10 +843,6 @@ function BuyerOfferSubmission() {
 
   function goNext() {
     if (flowStage === 'landing') {
-      goToStage('offer')
-      return
-    }
-    if (flowStage === 'offer') {
       goToStage('onboarding')
       return
     }
@@ -690,22 +851,19 @@ function BuyerOfferSubmission() {
     }
   }
 
-  async function handleSubmitOffer(event) {
+  async function handleSubmitBuyerOnboarding(event) {
     event.preventDefault()
     setErrorMessage('')
     setSuccessMessage('')
     try {
       if (context?.source === 'canonical' && !canSubmitCanonicalOffer) {
-        throw new Error(canonicalLifecycle?.blockedReason || 'This offer cannot be updated from this link anymore.')
-      }
-      if (!offerAmount) {
-        throw new Error('Enter your offer amount before submitting.')
+        throw new Error(canonicalLifecycle?.blockedReason || 'This buyer onboarding link cannot be updated anymore.')
       }
       if (bondFinanceSelected && !bondAssistancePreference) {
         throw new Error('Choose whether you will manage your bond yourself or need help with your bond.')
       }
-      if (!form.fullName || !form.email || !form.phone || !form.idNumber) {
-        throw new Error('Complete your buyer details before submitting.')
+      if (!validateBuyerDetailsForReview()) {
+        throw new Error(errorMessage || 'Complete your buyer details before submitting.')
       }
       if (!confirmedAccuracy) {
         throw new Error('Please confirm the information is accurate before submitting.')
@@ -713,36 +871,43 @@ function BuyerOfferSubmission() {
       const derivedBondAmount = bondFinanceSelected ? loanAmount : 0
       const submission = {
         ...form,
+        purchaser_entity_type: purchaserEntityType,
+        purchaser_type: purchaserEntityType,
+        purchasePrice: purchasePriceBasis ? String(purchasePriceBasis) : '',
+        listingAskingPrice: askingPrice ? String(askingPrice) : '',
         bondAmount: derivedBondAmount ? String(derivedBondAmount) : '',
         bondAssistancePreference,
         needsBondAssistance: bondAssistancePreference === BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED,
         bond_help_requested: getBondHelpRequestedValue(bondAssistancePreference),
         ooba_assist_requested: getBondHelpRequestedValue(bondAssistancePreference),
+        confirmedAccuracy,
+        acknowledgeInfoAccuracy: confirmedAccuracy,
         otpDocumentVariant,
       }
       setSubmitting(true)
-      let submittedOffer = null
+      let submittedOnboarding = null
       if (context?.source === 'canonical') {
-        submittedOffer = await submitCanonicalBuyerOffer({ token, submission })
+        submittedOnboarding = await submitCanonicalBuyerOnboarding({ token, submission })
       } else {
-        submittedOffer = await submitBuyerOffer({ token, mode: counterPendingBuyer ? 'counter_response' : 'new', submission })
+        submittedOnboarding = await submitBuyerOnboarding({ token, submission })
       }
-      await sendAgentOfferSubmittedNotification(submittedOffer).catch((notificationError) => {
-        console.warn('[BUYER OFFER] agent offer submission notification failed', notificationError)
+      await sendAgentBuyerOnboardingSubmittedNotification(submittedOnboarding).catch((notificationError) => {
+        console.warn('[BUYER ONBOARDING] agent onboarding submission notification failed', notificationError)
       })
       clearBuyerOfferDraft(token)
-      setSuccessMessage('Offer submitted successfully. The agent will review any conditions before OTP generation.')
+      setSuccessMessage('Buyer onboarding submitted successfully. Your agent will prepare the OTP transaction next.')
       setFlowStage('complete')
       setRefreshKey((value) => value + 1)
     } catch (error) {
-      setErrorMessage(error?.message || 'Unable to submit offer right now.')
+      setErrorMessage(error?.message || 'Unable to submit buyer onboarding right now.')
     } finally {
       setSubmitting(false)
     }
   }
 
-  async function sendAgentOfferSubmittedNotification(offer = {}) {
-    const conditions = context?.canonicalOffer?.conditions || offer?.conditions || {}
+  async function sendAgentBuyerOnboardingSubmittedNotification(onboardingRecord = {}) {
+    const conditions = context?.canonicalOffer?.conditions || onboardingRecord?.conditions || {}
+    const buyerOnboarding = onboardingRecord?.buyerOnboarding || conditions?.buyerOnboarding || {}
     const agentEmail = normalizeText(conditions.agentEmail || context?.invite?.agentEmail).toLowerCase()
     if (!agentEmail) return null
 
@@ -750,19 +915,19 @@ function BuyerOfferSubmission() {
       body: {
         type: 'buyer_offer_submitted_agent',
         to: agentEmail,
-        organisationId: normalizeText(offer?.organisationId || context?.canonicalOffer?.organisationId),
-        leadId: normalizeText(offer?.buyerLeadId || context?.canonicalOffer?.buyerLeadId || context?.invite?.buyerLeadId),
-        listingId: normalizeText(offer?.listingId || listing?.id || context?.canonicalOffer?.listingId),
-        appointmentId: normalizeText(offer?.viewingAppointmentId || context?.canonicalOffer?.viewingAppointmentId),
-        offerId: normalizeText(offer?.id),
+        organisationId: normalizeText(onboardingRecord?.organisationId || context?.canonicalOffer?.organisationId),
+        leadId: normalizeText(onboardingRecord?.buyerLeadId || context?.canonicalOffer?.buyerLeadId || context?.invite?.buyerLeadId),
+        listingId: normalizeText(onboardingRecord?.listingId || listing?.id || context?.canonicalOffer?.listingId),
+        appointmentId: normalizeText(onboardingRecord?.viewingAppointmentId || context?.canonicalOffer?.viewingAppointmentId),
+        offerId: normalizeText(onboardingRecord?.id),
         agentName: normalizeText(conditions.agentName || context?.invite?.agentName),
-        buyerName: normalizeText(form.fullName || conditions.buyerName || context?.invite?.buyerLeadName),
+        buyerName: normalizeText(buyerDisplayName || conditions.buyerName || context?.invite?.buyerLeadName),
         propertyTitle: getListingTitle(listing),
-        offerAmount: formatCurrency(offer?.offerAmount || form.offerAmount),
-        financeType: normalizeText(offer?.financeType || form.financeType),
-        offerSubmittedAt: formatDateTime(offer?.buyerSubmittedAt || offer?.submittedAt || new Date().toISOString()),
+        offerAmount: formatCurrency(buyerOnboarding?.finance?.purchasePrice || purchasePriceBasis),
+        financeType: normalizeText(onboardingRecord?.financeType || buyerOnboarding?.finance?.financeType || form.financeType),
+        offerSubmittedAt: formatDateTime(onboardingRecord?.buyerOnboardingSubmittedAt || buyerOnboarding?.submittedAt || new Date().toISOString()),
         agentReviewUrl: normalizeText(conditions.agentReviewUrl),
-        note: normalizeText(form.specialConditions || form.suspensiveConditions),
+        note: 'Buyer onboarding submitted. Prepare or upload the OTP transaction next.',
       },
     })
     if (response?.error || response?.data?.error) throw response.error || new Error(response.data.error)
@@ -816,21 +981,87 @@ function BuyerOfferSubmission() {
   const activeBuyerCard = buyerSectionCards.find((section) => section.key === activeBuyerSection) || buyerSectionCards[0]
   const offerIdentityCount = [form.fullName, form.idNumber, form.email, form.phone].filter(Boolean).length
   const activeBuyerProgressLabel = activeBuyerSection === 'about'
-    ? `${offerIdentityCount} of 4 offer identity fields captured`
+    ? entityBuyerSelected
+      ? `${buyerDisplayName} authority profile`
+      : `${offerIdentityCount} of 4 buyer identity fields captured`
     : activeBuyerSection === 'finance'
-      ? `${financeLabel} route seeded from your offer`
+      ? `${financeLabel} route captured for onboarding`
       : activeBuyerSection === 'documents'
         ? `${buyerVerificationModel.requiredDocuments.length} downstream document requirements`
         : 'Buyer onboarding rule set'
+
+  function yesNoSelector(fieldKey, label) {
+    return (
+      <div className="grid gap-2">
+        <span className="text-[0.78rem] font-semibold text-[#4B5563]">{label}</span>
+        <div className="grid grid-cols-2 gap-3">
+          <ChoicePill label="Yes" selected={form[fieldKey] === 'yes'} onClick={() => updateForm(fieldKey, 'yes')} />
+          <ChoicePill label="No" selected={form[fieldKey] === 'no'} onClick={() => updateForm(fieldKey, 'no')} />
+        </div>
+      </div>
+    )
+  }
+
+  function associatedPeopleEditor(collectionKey, rows, label) {
+    return (
+      <div className="grid gap-3 md:col-span-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-[#111827]">{label}s</p>
+            <p className="text-xs font-semibold text-[#6B7280]">Capture every {label.toLowerCase()} involved and mark signing authority.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => addAssociatedPerson(collectionKey)}
+            className="inline-flex min-h-10 items-center gap-2 rounded-[14px] bg-[#0F7A5A] px-3 text-sm font-bold text-white"
+          >
+            <Plus size={16} />
+            Add {label}
+          </button>
+        </div>
+        {rows.map((row, index) => (
+          <div key={`${collectionKey}-${index}`} className="grid gap-4 rounded-[18px] border border-[#E5E7EB] bg-[#FAFAF8] p-4 md:grid-cols-2">
+            <div className="flex items-start justify-between gap-3 md:col-span-2">
+              <div>
+                <p className="text-sm font-bold text-[#111827]">{label} {index + 1}</p>
+                <p className="text-xs font-semibold text-[#6B7280]">{row.signing_authority ? 'Authorised to sign' : 'Authority not marked'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => removeAssociatedPerson(collectionKey, index)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[#9A3412]"
+                aria-label={`Remove ${label.toLowerCase()} ${index + 1}`}
+                title={`Remove ${label.toLowerCase()} ${index + 1}`}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+            <TextInput label="Full Name" value={row.full_name || ''} onChange={(event) => updateAssociatedPerson(collectionKey, index, 'full_name', event.target.value)} placeholder={`${label} full name`} />
+            <TextInput label="ID / Passport" value={row.id_number || ''} onChange={(event) => updateAssociatedPerson(collectionKey, index, 'id_number', event.target.value)} placeholder="ID or passport number" />
+            <TextInput label="Phone" value={row.phone || ''} onChange={(event) => updateAssociatedPerson(collectionKey, index, 'phone', event.target.value)} placeholder="082..." inputMode="tel" />
+            <TextInput label="Email" type="email" value={row.email || ''} onChange={(event) => updateAssociatedPerson(collectionKey, index, 'email', event.target.value)} placeholder="name@email.com" />
+            <TextInput label="Role / Title" value={row.role_title || ''} onChange={(event) => updateAssociatedPerson(collectionKey, index, 'role_title', event.target.value)} placeholder={label} />
+            <label className="flex min-h-12 items-center gap-3 rounded-[16px] border border-[#E5E7EB] bg-white px-4 text-sm font-bold text-[#374151]">
+              <input type="checkbox" checked={Boolean(row.signing_authority)} onChange={(event) => updateAssociatedPerson(collectionKey, index, 'signing_authority', event.target.checked)} />
+              <span>Authorised to sign</span>
+            </label>
+            <div className="md:col-span-2">
+              <TextAreaInput label="Residential Address" value={row.residential_address || ''} onChange={(event) => updateAssociatedPerson(collectionKey, index, 'residential_address', event.target.value)} placeholder="Residential address" rows={2} />
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   const buyerOnboardingWorkspace = (
     <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 md:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0F7A5A]">Buyer verification</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#111827]">Tell us about yourself.</h2>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#111827]">Complete your buyer onboarding.</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-            This follows the buyer onboarding rules for the selected offer structure. Your progress is saved on this device.
+            Capture the buyer details, finance route, and compliance confirmation needed before the OTP transaction is prepared.
           </p>
         </div>
         <span className="w-fit rounded-full bg-[#EEF6F2] px-3 py-1.5 text-xs font-bold text-[#0F7A5A]">{buyerSectionCards.length} sections</span>
@@ -867,24 +1098,118 @@ function BuyerOfferSubmission() {
         </div>
         {activeBuyerSection === 'about' ? (
           <div className="grid gap-4 md:grid-cols-2">
-            <TextInput label="Full Name" value={form.fullName} onChange={(event) => updateForm('fullName', event.target.value)} placeholder="Full legal name" autoComplete="name" />
-            <TextInput label="ID / Passport" value={form.idNumber} onChange={(event) => updateForm('idNumber', event.target.value)} placeholder="ID or passport number" />
-            <TextInput label="Email" type="email" value={form.email} onChange={(event) => updateForm('email', event.target.value)} placeholder="name@email.com" autoComplete="email" />
-            <TextInput label="Phone" value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} placeholder="082..." inputMode="tel" autoComplete="tel" />
+            <div className="grid gap-2 md:col-span-2">
+              <span className="text-[0.78rem] font-semibold text-[#4B5563]">Purchaser Type</span>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <ChoicePill label="Individual" selected={purchaserEntityType === 'individual'} onClick={() => updatePurchaserEntityType('individual')} />
+                <ChoicePill label="Company" selected={purchaserEntityType === 'company'} onClick={() => updatePurchaserEntityType('company')} />
+                <ChoicePill label="Trust" selected={purchaserEntityType === 'trust'} onClick={() => updatePurchaserEntityType('trust')} />
+              </div>
+            </div>
+
+            {!entityBuyerSelected ? (
+              <>
+                <TextInput label="Full Name" value={form.fullName} onChange={(event) => updateForm('fullName', event.target.value)} placeholder="Full legal name" autoComplete="name" />
+                <TextInput label="ID / Passport" value={form.idNumber} onChange={(event) => updateForm('idNumber', event.target.value)} placeholder="ID or passport number" />
+                <TextInput label="Email" type="email" value={form.email} onChange={(event) => updateForm('email', event.target.value)} placeholder="name@email.com" autoComplete="email" />
+                <TextInput label="Phone" value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} placeholder="082..." inputMode="tel" autoComplete="tel" />
+              </>
+            ) : null}
+
+            {isCompanyBuyer ? (
+              <>
+                <TextInput label="Company Name" value={form.company_name} onChange={(event) => updateForm('company_name', event.target.value)} placeholder="Registered company name" />
+                <TextInput label="Registration Number" value={form.company_registration_number} onChange={(event) => updateForm('company_registration_number', event.target.value)} placeholder="Registration number" />
+                <TextInput label="Nature of Business" value={form.nature_of_business} onChange={(event) => updateForm('nature_of_business', event.target.value)} placeholder="Property investment, trading..." />
+                <TextInput label="VAT Number" value={form.vat_number} onChange={(event) => updateForm('vat_number', event.target.value)} placeholder="Optional" />
+                <div className="md:col-span-2">
+                  <TextAreaInput label="Registered Address" value={form.company_registered_address} onChange={(event) => updateForm('company_registered_address', event.target.value)} placeholder="Registered company address" />
+                </div>
+                <div className="md:col-span-2">
+                  <TextAreaInput label="Business Address" value={form.company_business_address} onChange={(event) => updateForm('company_business_address', event.target.value)} placeholder="Optional if different" />
+                </div>
+                <TextInput label="Primary Contact Name" value={form.company_contact_name} onChange={(event) => updateForm('company_contact_name', event.target.value)} placeholder="Primary contact" />
+                <TextInput label="Primary Contact Email" type="email" value={form.company_contact_email} onChange={(event) => updateForm('company_contact_email', event.target.value)} placeholder="contact@email.com" />
+                <TextInput label="Primary Contact Phone" value={form.company_contact_phone} onChange={(event) => updateForm('company_contact_phone', event.target.value)} placeholder="082..." inputMode="tel" />
+                <TextInput label="Tax Number" value={form.company_tax_number} onChange={(event) => updateForm('company_tax_number', event.target.value)} placeholder="Optional" />
+                <TextInput label="Authorised Signatory Name" value={form.authorised_signatory_name} onChange={(event) => updateForm('authorised_signatory_name', event.target.value)} placeholder="Signatory full name" />
+                <TextInput label="Authorised Signatory ID" value={form.authorised_signatory_identity_number} onChange={(event) => updateForm('authorised_signatory_identity_number', event.target.value)} placeholder="ID or passport number" />
+                <TextInput label="Authorised Signatory Email" type="email" value={form.authorised_signatory_email} onChange={(event) => updateForm('authorised_signatory_email', event.target.value)} placeholder="signatory@email.com" />
+                <TextInput label="Authorised Signatory Phone" value={form.authorised_signatory_phone} onChange={(event) => updateForm('authorised_signatory_phone', event.target.value)} placeholder="082..." inputMode="tel" />
+                <TextInput label="Signatory Capacity" value={form.authorised_signatory_capacity} onChange={(event) => updateForm('authorised_signatory_capacity', event.target.value)} placeholder="Director, authorised representative..." />
+                <TextInput label="Resolution Date" type="date" value={form.resolution_date} onChange={(event) => updateForm('resolution_date', event.target.value)} />
+                <TextInput label="Authority Basis" value={form.authority_basis} onChange={(event) => updateForm('authority_basis', event.target.value)} placeholder="Board resolution, mandate..." />
+                {yesNoSelector('board_resolution_available', 'Board Resolution Available')}
+                {associatedPeopleEditor('directors', directors, 'Director')}
+              </>
+            ) : null}
+
+            {isTrustBuyer ? (
+              <>
+                <TextInput label="Trust Name" value={form.trust_name} onChange={(event) => updateForm('trust_name', event.target.value)} placeholder="Registered trust name" />
+                <TextInput label="Trust Registration Number" value={form.trust_registration_number} onChange={(event) => updateForm('trust_registration_number', event.target.value)} placeholder="Trust number" />
+                <TextInput label="Trust Type" value={form.trust_type} onChange={(event) => updateForm('trust_type', event.target.value)} placeholder="Family trust, inter vivos..." />
+                <TextInput label="Master's Office Reference" value={form.masters_office_reference} onChange={(event) => updateForm('masters_office_reference', event.target.value)} placeholder="Master's reference" />
+                <div className="md:col-span-2">
+                  <TextAreaInput label="Registered Address" value={form.trust_registered_address} onChange={(event) => updateForm('trust_registered_address', event.target.value)} placeholder="Trust registered address" />
+                </div>
+                <TextInput label="Primary Trust Contact" value={form.trust_contact_name} onChange={(event) => updateForm('trust_contact_name', event.target.value)} placeholder="Primary contact" />
+                <TextInput label="Primary Contact Email" type="email" value={form.trust_contact_email} onChange={(event) => updateForm('trust_contact_email', event.target.value)} placeholder="contact@email.com" />
+                <TextInput label="Primary Contact Phone" value={form.trust_contact_phone} onChange={(event) => updateForm('trust_contact_phone', event.target.value)} placeholder="082..." inputMode="tel" />
+                <TextInput label="Trust Tax Number" value={form.trust_tax_number} onChange={(event) => updateForm('trust_tax_number', event.target.value)} placeholder="Optional" />
+                <TextInput label="Authorised Trustee Name" value={form.authorised_trustee_name} onChange={(event) => updateForm('authorised_trustee_name', event.target.value)} placeholder="Trustee full name" />
+                <TextInput label="Authorised Trustee ID" value={form.authorised_trustee_identity_number} onChange={(event) => updateForm('authorised_trustee_identity_number', event.target.value)} placeholder="ID or passport number" />
+                <TextInput label="Authorised Trustee Email" type="email" value={form.authorised_trustee_email} onChange={(event) => updateForm('authorised_trustee_email', event.target.value)} placeholder="trustee@email.com" />
+                <TextInput label="Authorised Trustee Phone" value={form.authorised_trustee_phone} onChange={(event) => updateForm('authorised_trustee_phone', event.target.value)} placeholder="082..." inputMode="tel" />
+                <TextInput label="Trustee Capacity" value={form.authorised_trustee_capacity} onChange={(event) => updateForm('authorised_trustee_capacity', event.target.value)} placeholder="Trustee, authorised trustee..." />
+                <TextInput label="Authority Basis" value={form.authority_basis} onChange={(event) => updateForm('authority_basis', event.target.value)} placeholder="Trust resolution, letters of authority..." />
+                {yesNoSelector('trust_deed_available', 'Trust Deed Available')}
+                {yesNoSelector('letters_of_authority_available', 'Letters of Authority Available')}
+                {yesNoSelector('trust_resolution_available', 'Trust Resolution Available')}
+                {yesNoSelector('all_trustees_signing', 'All Trustees Signing')}
+                {associatedPeopleEditor('trustees', trustees, 'Trustee')}
+              </>
+            ) : null}
           </div>
         ) : null}
         {activeBuyerSection === 'finance' ? (
           <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-2 md:col-span-2">
+              <span className="text-[0.78rem] font-semibold text-[#4B5563]">Finance Type</span>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <ChoicePill label="Cash" selected={financeType === 'cash'} onClick={() => updateFinanceType('cash')} />
+                <ChoicePill label="Bond" selected={financeType === 'bond'} onClick={() => updateFinanceType('bond')} />
+                <ChoicePill label="Combination" selected={financeType === 'hybrid' || financeType === 'combination'} onClick={() => updateFinanceType('hybrid')} />
+              </div>
+            </div>
             <div className="rounded-[18px] bg-[#F7F7F4] p-4">
-              <p className="text-xs font-semibold text-[#6B7280]">Finance Route</p>
+              <p className="text-xs font-semibold text-[#6B7280]">Captured Finance Route</p>
               <p className="mt-1 text-lg font-bold text-[#111827]">{financeLabel}</p>
             </div>
             <div className="rounded-[18px] bg-[#F7F7F4] p-4">
-              <p className="text-xs font-semibold text-[#6B7280]">Bond Required</p>
+              <p className="text-xs font-semibold text-[#6B7280]">Indicative Bond Amount</p>
               <p className="mt-1 text-lg font-bold text-[#111827]">{formatCurrency(loanAmount)}</p>
             </div>
-            {financeType !== 'bond' ? <TextInput label="Cash Contribution" value={form.cashContribution} onChange={(event) => updateForm('cashContribution', event.target.value)} placeholder="250000" inputMode="decimal" /> : null}
+            <TextInput label="Available Deposit / Cash Contribution" value={form.depositAmount} onChange={(event) => updateForm('depositAmount', event.target.value)} placeholder="250000" inputMode="decimal" />
+            {financeType !== 'bond' ? <TextInput label="Additional Cash Contribution" value={form.cashContribution} onChange={(event) => updateForm('cashContribution', event.target.value)} placeholder="Optional" inputMode="decimal" /> : null}
             <TextInput label="Proof of Funds URL" value={form.proofOfFundsUrl} onChange={(event) => updateForm('proofOfFundsUrl', event.target.value)} placeholder="Optional document link" />
+            {bondFinanceSelected ? (
+              <div className="grid gap-2 md:col-span-2">
+                <span className="text-[0.78rem] font-semibold text-[#4B5563]">Bond Support</span>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <ChoicePill
+                    label="I'll manage my bond"
+                    selected={bondAssistancePreference === BOND_ASSISTANCE_OPTIONS.SELF_MANAGED}
+                    onClick={() => updateBondAssistancePreference(BOND_ASSISTANCE_OPTIONS.SELF_MANAGED)}
+                  />
+                  <ChoicePill
+                    label="I need bond help"
+                    selected={bondAssistancePreference === BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED}
+                    onClick={() => updateBondAssistancePreference(BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED)}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
         {activeBuyerSection === 'compliance' ? (
@@ -898,7 +1223,7 @@ function BuyerOfferSubmission() {
             {activeBuyerSection === 'documents'
               ? `${buyerVerificationModel.requiredDocuments.length} supporting document requirement${buyerVerificationModel.requiredDocuments.length === 1 ? '' : 's'} will follow from the buyer onboarding rules.`
               : activeBuyerSection === 'signature'
-                ? 'Your offer can be reviewed and signed after the offer facts and buyer verification details are checked.'
+                ? 'After onboarding is submitted, your agent prepares or uploads the OTP against the transaction.'
                 : 'This section is governed by the buyer onboarding rules and remains part of the full buyer onboarding record.'}
           </div>
         ) : null}
@@ -911,114 +1236,15 @@ function BuyerOfferSubmission() {
     </section>
   )
 
-  const offerDetails = (
-    <div className="space-y-4">
-      <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 shadow-[0_18px_45px_rgba(17,24,39,0.04)] md:p-6">
-        <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Your Offer</h2>
-        <div className="mt-5 grid gap-4">
-          <TextInput label="Offer Amount" value={form.offerAmount} onChange={(event) => updateForm('offerAmount', event.target.value)} placeholder="2500000" inputMode="decimal" />
-          <TextInput label="Deposit Amount (Optional)" value={form.depositAmount} onChange={(event) => updateForm('depositAmount', event.target.value)} placeholder="0" inputMode="decimal" />
-          <div className="grid gap-2">
-            <span className="text-[0.78rem] font-semibold text-[#4B5563]">Finance Type</span>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <ChoicePill label="Cash" selected={financeType === 'cash'} onClick={() => updateFinanceType('cash')} />
-              <ChoicePill label="Bond" selected={financeType === 'bond'} onClick={() => updateFinanceType('bond')} />
-              <ChoicePill label="Combination" selected={financeType === 'hybrid' || financeType === 'combination'} onClick={() => updateFinanceType('hybrid')} />
-            </div>
-          </div>
-          <TextInput label="Offer Expiry Date" type="date" value={form.expiryDate} onChange={(event) => updateForm('expiryDate', event.target.value)} />
-          <div className="rounded-[18px] bg-[#F7F7F4] p-4">
-            <p className="text-xs font-semibold text-[#6B7280]">Bond Required</p>
-            <p className="mt-1 text-lg font-bold text-[#111827]">{formatCurrency(loanAmount)}</p>
-          </div>
-          {bondFinanceSelected ? (
-            <div className="grid gap-2">
-              <span className="text-[0.78rem] font-semibold text-[#4B5563]">Bond Support</span>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <ChoicePill
-                  label="I'll sort out my bond myself"
-                  selected={bondAssistancePreference === BOND_ASSISTANCE_OPTIONS.SELF_MANAGED}
-                  onClick={() => updateBondAssistancePreference(BOND_ASSISTANCE_OPTIONS.SELF_MANAGED)}
-                />
-                <ChoicePill
-                  label="I need help with my bond"
-                  selected={bondAssistancePreference === BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED}
-                  onClick={() => updateBondAssistancePreference(BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED)}
-                />
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 shadow-[0_18px_45px_rgba(17,24,39,0.04)] md:p-6">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Conditions <span className="text-base font-medium text-[#6B7280]">(Optional)</span></h2>
-          {selectedConditionCount ? <span className="rounded-full bg-[#EEF6F2] px-2.5 py-1 text-xs font-bold text-[#0F7A5A]">{selectedConditionCount} selected</span> : null}
-        </div>
-        <p className="mt-2 text-sm leading-6 text-[#6B7280]">Add only the conditions that apply to your offer.</p>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <ConditionButton label="Bond Approval" active={bondConditionSelected} onClick={() => updateForm('conditionBondApproval', !form.conditionBondApproval)} />
-          <ConditionButton label="Sale of Existing Property" active={Boolean(form.subjectToSale)} onClick={() => updateForm('subjectToSale', !form.subjectToSale)} />
-          <ConditionButton label="Occupational Rent" active={Boolean(form.occupationalRent)} onClick={() => updateForm('occupationalRent', !form.occupationalRent)} />
-          <ConditionButton label="Other Condition" active={otherConditionSelected} onClick={() => updateForm('conditionOther', !form.conditionOther)} />
-        </div>
-        {bondConditionSelected ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <TextInput label="Bond Approval Deadline" type="date" value={form.bondApprovalDeadline} onChange={(event) => updateForm('bondApprovalDeadline', event.target.value)} />
-            <TextInput label="Guarantee Delivery Deadline" type="date" value={form.guaranteeDeliveryDeadline} onChange={(event) => updateForm('guaranteeDeliveryDeadline', event.target.value)} />
-          </div>
-        ) : null}
-        {form.subjectToSale ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <TextInput label="Property To Be Sold" value={form.subjectSaleProperty} onChange={(event) => updateForm('subjectSaleProperty', event.target.value)} placeholder="Address or property description" />
-            <TextInput label="Minimum Sale Price" value={form.subjectSaleMinimumPrice} onChange={(event) => updateForm('subjectSaleMinimumPrice', event.target.value)} placeholder="2000000" inputMode="decimal" />
-            <TextInput label="Fulfilment Date" type="date" value={form.subjectSaleFulfilmentDate} onChange={(event) => updateForm('subjectSaleFulfilmentDate', event.target.value)} />
-            <TextInput label="Timeline Note" value={form.subjectSaleTimeline} onChange={(event) => updateForm('subjectSaleTimeline', event.target.value)} placeholder="For example, within 90 days" />
-          </div>
-        ) : null}
-        {form.occupationalRent ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <TextInput label="Occupation Date" type="date" value={form.occupationDate} onChange={(event) => updateForm('occupationDate', event.target.value)} />
-            <TextInput label="Occupational Rent Amount" value={form.occupationalRentAmount} onChange={(event) => updateForm('occupationalRentAmount', event.target.value)} placeholder="18000" inputMode="decimal" />
-          </div>
-        ) : null}
-        {otherConditionSelected ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <TextAreaInput label="Included Fixtures" value={form.includedFixtures} onChange={(event) => updateForm('includedFixtures', event.target.value)} placeholder="Fixtures the buyer wants included" />
-            <TextAreaInput label="Excluded Fixtures" value={form.excludedFixtures} onChange={(event) => updateForm('excludedFixtures', event.target.value)} placeholder="Fixtures the seller may remove" />
-            <TextAreaInput label="Other Suspensive Conditions" value={form.suspensiveConditions} onChange={(event) => updateForm('suspensiveConditions', event.target.value)} placeholder="Deal-specific conditions for agent review" />
-            <TextAreaInput label="Special Conditions" value={form.specialConditions} onChange={(event) => updateForm('specialConditions', event.target.value)} placeholder="Deal-specific special conditions" />
-          </div>
-        ) : null}
-      {isDevelopmentOffer ? (
-        <div className="mt-5 grid gap-3 rounded-[22px] bg-[#F7F7F4] p-5">
-          {[
-            ['acknowledgeDevelopmentRules', 'I acknowledge this is a new-development offer route.'],
-            ['acknowledgeNhbrcWarranty', 'I acknowledge NHBRC/building warranty information may form part of the agreement.'],
-            ['acknowledgeBodyCorporateRules', 'I acknowledge body corporate or scheme rules may apply.'],
-            ['acknowledgeUtilityConnectionCharges', 'I acknowledge levies, rates, deposits or connection charges may apply.'],
-          ].map(([key, label]) => (
-            <label key={key} className="flex items-start gap-3 text-sm font-semibold text-[#374151]">
-              <input type="checkbox" checked={Boolean(form[key])} onChange={(event) => updateForm(key, event.target.checked)} className="mt-1" />
-              <span>{label}</span>
-            </label>
-          ))}
-        </div>
-      ) : null}
-      </section>
-    </div>
-  )
-
   const trustSection = (
     <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 md:p-6">
       <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Why Buyers Trust Arch9</h2>
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <TrustItem>Secure Submission</TrustItem>
         <TrustItem>Time Stamped</TrustItem>
-        <TrustItem>Seller Notified Instantly</TrustItem>
-        <TrustItem>Legally Recorded</TrustItem>
-        <TrustItem>All Offers Tracked</TrustItem>
+        <TrustItem>Agent Notified Instantly</TrustItem>
+        <TrustItem>Buyer Details Recorded</TrustItem>
+        <TrustItem>OTP Transaction Prepared Next</TrustItem>
       </div>
     </section>
   )
@@ -1027,7 +1253,7 @@ function BuyerOfferSubmission() {
     <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 md:p-6">
       <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">What Happens Next?</h2>
       <div className="mt-5 flex gap-3 overflow-x-auto pb-1">
-        {['Submit Offer + Onboarding', 'Agent Reviews Conditions', 'OTP Generated', 'Buyer Signs', 'Seller Accepts'].map((item, index) => (
+        {['Buyer onboarding submitted', 'Agent checks details', 'OTP prepared or uploaded', 'Buyer signs OTP', 'Transaction continues'].map((item, index) => (
           <div key={item} className="min-w-[150px] rounded-[18px] bg-[#F7F7F4] p-4">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F7A5A] text-sm font-bold text-white">{index + 1}</div>
             <p className="mt-3 text-sm font-bold text-[#111827]">{item}</p>
@@ -1039,21 +1265,30 @@ function BuyerOfferSubmission() {
 
   const reviewSection = (
     <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 md:p-6">
-      <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Review & Submit</h2>
+      <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Review Buyer Onboarding</h2>
       <div className="mt-5 grid gap-3">
         {[
           ['Property', getListingTitle(listing)],
-          ['Offer Amount', formatCurrency(offerAmount)],
-          ['Deposit', formatCurrency(depositAmount)],
+          ['Indicative Price', indicativePriceLabel],
+          ['Deposit / Cash Available', formatCurrency(depositAmount)],
           ['Finance', financeLabel],
-          ['Bond Required', formatCurrency(loanAmount)],
+          ['Indicative Bond Amount', formatCurrency(loanAmount)],
           ...(bondFinanceSelected ? [['Bond Support', bondAssistanceLabel]] : []),
           ['OTP Route', isDevelopmentOffer ? 'New Development' : 'Normal Sale'],
-          ['Bond Deadline', form.bondApprovalDeadline ? formatDate(form.bondApprovalDeadline) : 'Not set'],
-          ['Guarantee Deadline', form.guaranteeDeliveryDeadline ? formatDate(form.guaranteeDeliveryDeadline) : 'Not set'],
-          ['Occupation', form.occupationDate ? formatDate(form.occupationDate) : 'Not set'],
-          ['Buyer', form.fullName || 'Not captured'],
-          ['Email', form.email || 'Not captured'],
+          ['Purchaser Type', isCompanyBuyer ? 'Company' : isTrustBuyer ? 'Trust' : 'Individual'],
+          ['Buyer', buyerDisplayName],
+          ['Contact Email', (isCompanyBuyer ? form.company_contact_email : isTrustBuyer ? form.trust_contact_email : form.email) || 'Not captured'],
+          ['Contact Phone', (isCompanyBuyer ? form.company_contact_phone : isTrustBuyer ? form.trust_contact_phone : form.phone) || 'Not captured'],
+          ...(isCompanyBuyer ? [
+            ['Authorised Signatory', form.authorised_signatory_name || 'Not captured'],
+            ['Directors', `${directors.length} captured`],
+            ['Board Resolution', yesNoLabel(form.board_resolution_available)],
+          ] : []),
+          ...(isTrustBuyer ? [
+            ['Authorised Trustee', form.authorised_trustee_name || 'Not captured'],
+            ['Trustees', `${trustees.length} captured`],
+            ['Trust Resolution', yesNoLabel(form.trust_resolution_available)],
+          ] : []),
         ].map(([label, value]) => (
           <div key={label} className="grid min-w-0 gap-1 border-b border-[#F0F1EF] py-3 text-sm sm:grid-cols-[minmax(0,0.38fr)_minmax(0,1fr)] sm:items-center sm:gap-4">
             <span className="min-w-0 font-semibold text-[#6B7280]">{label}</span>
@@ -1075,9 +1310,9 @@ function BuyerOfferSubmission() {
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#DCFCE7] text-[#166534]">
             <BadgeCheck size={24} />
           </div>
-          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.055em] text-[#111827]">Offer submitted.</h2>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.055em] text-[#111827]">Buyer onboarding submitted.</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-            Your offer and buyer onboarding have been securely delivered to {agentName}. The agent will review the conditions before moving the transaction forward.
+            Your buyer details have been securely delivered to {agentName}. The OTP transaction can now be prepared or uploaded.
           </p>
         </div>
         <span className="w-fit rounded-full bg-[#EDF9F0] px-3 py-1.5 text-xs font-bold text-[#17643A]">Securely submitted</span>
@@ -1085,8 +1320,9 @@ function BuyerOfferSubmission() {
       <div className="mt-6 grid gap-3 md:grid-cols-2">
         {[
           ['Property', getListingTitle(listing)],
-          ['Buyer', form.fullName || 'Buyer'],
-          ['Offer Amount', offerAmountLabel],
+          ['Buyer', buyerDisplayName],
+          ['Purchaser Type', isCompanyBuyer ? 'Company' : isTrustBuyer ? 'Trust' : 'Individual'],
+          ['Finance Route', financeLabel],
           ['Agent', agentName],
           ['Agency', offerBrand.organisationName || agencyName],
           ['Submitted', formatDateTime(new Date().toISOString())],
@@ -1098,7 +1334,7 @@ function BuyerOfferSubmission() {
         ))}
       </div>
       <div className="mt-6 grid gap-3 sm:grid-cols-5">
-        {['Offer submitted', 'Agent review', 'Seller feedback', 'OTP prepared', 'Signature'].map((item, index) => (
+        {['Onboarding submitted', 'Agent review', 'OTP transaction', 'Signature', 'Transaction'].map((item, index) => (
           <div key={item} className="rounded-[18px] border border-[#E5E7EB] bg-white p-4">
             <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${index === 0 ? 'bg-[#0F7A5A] text-white' : 'bg-[#F7F7F4] text-[#6B7280]'}`}>{index + 1}</div>
             <p className="mt-3 text-sm font-bold text-[#111827]">{item}</p>
@@ -1108,9 +1344,7 @@ function BuyerOfferSubmission() {
     </section>
   )
 
-  const activeStageContent = flowStage === 'offer' ? (
-    offerDetails
-  ) : flowStage === 'onboarding' ? (
+  const activeStageContent = flowStage === 'onboarding' ? (
     buyerOnboardingWorkspace
   ) : flowStage === 'review' ? (
     <>
@@ -1122,9 +1356,7 @@ function BuyerOfferSubmission() {
     confirmationSection
   ) : null
 
-  const stageCtaLabel = flowStage === 'offer'
-    ? 'Continue to Buyer Verification'
-    : flowStage === 'onboarding'
+  const stageCtaLabel = flowStage === 'onboarding'
       ? 'Continue to Review'
       : flowStage === 'review'
         ? (submitting ? 'Submitting...' : submitButtonLabel)
@@ -1132,28 +1364,28 @@ function BuyerOfferSubmission() {
 
   const stageCtaIcon = flowStage === 'review' ? <ShieldCheck size={16} /> : <ArrowRight size={16} />
   const canShowFooter = flowStage !== 'complete'
-  const canGoBack = ['onboarding', 'review'].includes(flowStage)
-  const showPropertyAside = flowStage === 'offer'
+  const canGoBack = flowStage === 'review'
+  const showPropertyAside = flowStage === 'onboarding'
   const pageTitle = flowStage === 'onboarding'
-    ? 'Almost there!'
+    ? 'Buyer Onboarding'
     : flowStage === 'review'
-      ? 'Review & Sign'
+      ? 'Review Details'
       : flowStage === 'complete'
-        ? 'Offer Submitted'
-        : 'Make an Offer'
+        ? 'Onboarding Submitted'
+        : 'Buyer Onboarding'
   const pageSubtitle = flowStage === 'onboarding'
-    ? 'Now we need a few details from you to complete your buyer profile.'
+    ? 'Confirm your buyer details and finance route so your agent can prepare the OTP transaction.'
     : flowStage === 'review'
-      ? 'Check your offer and buyer details before submitting.'
+      ? 'Check your buyer details before submitting.'
       : flowStage === 'complete'
         ? ''
-        : 'Submit your offer on this property in a few simple steps.'
+        : 'Complete buyer onboarding in a few simple steps.'
 
   if ((canonicalLoading && !context?.ok) || (context?.ok && flowStage === 'landing' && !offerBrandingLoaded)) {
     return (
       <main className="min-h-screen bg-[#FAFAF8] px-4 py-8">
         <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#E5E7EB] bg-white p-6 text-sm font-semibold text-[#6B7280]">
-          Loading secure offer link...
+          Loading secure buyer onboarding link...
         </section>
       </main>
     )
@@ -1166,9 +1398,9 @@ function BuyerOfferSubmission() {
           <div className="flex items-start gap-3 text-[#B42318]">
             <AlertTriangle className="mt-0.5 h-5 w-5" />
             <div>
-              <h1 className="text-xl font-semibold text-[#111827]">Offer link unavailable</h1>
+              <h1 className="text-xl font-semibold text-[#111827]">Buyer onboarding link unavailable</h1>
               <p className="mt-2 text-sm text-[#6B7280]">
-                {context?.reason === 'expired' ? 'This offer link has expired. Ask the agent to send a new secure offer link.' : 'This offer link is invalid or no longer active.'}
+                {context?.reason === 'expired' ? 'This buyer onboarding link has expired. Ask the agent to send a new secure link.' : 'This buyer onboarding link is invalid or no longer active.'}
               </p>
             </div>
           </div>
@@ -1192,23 +1424,23 @@ function BuyerOfferSubmission() {
         primaryColour={offerBrand.primaryColour}
         secondaryColour={offerBrand.secondaryColour}
         accentColour={offerBrand.accentColour}
-        label="MAKE AN OFFER"
-        headlinePrefix="Let's make"
-        headlineAccent="your move."
-        subtext="Submit your residential property offer and complete buyer onboarding in one secure flow."
-        ctaLabel={hasDraft ? 'Resume Offer' : 'Start Offer'}
+        label="BUYER ONBOARDING"
+        headlinePrefix="Let's complete"
+        headlineAccent="your buyer profile."
+        subtext="Confirm your buyer details and finance route before the OTP transaction is prepared."
+        ctaLabel={hasDraft ? 'Resume Onboarding' : 'Start Onboarding'}
         reassuranceRows={[
-          { title: 'Secure offer link', description: 'Private token access', icon: ShieldCheck },
+          { title: 'Secure onboarding link', description: 'Private token access', icon: ShieldCheck },
           { title: 'Save and continue later', description: 'Progress is saved here', icon: Bookmark },
           { title: 'Review before submit', description: 'Nothing is sent early', icon: Clock3 },
         ]}
         contextRows={[
           { icon: UserRound, label: 'Property Professional', value: agentName },
-          { icon: ChevronRight, label: 'Process', value: 'Offer terms, buyer details, review and submit' },
+          { icon: ChevronRight, label: 'Process', value: 'Buyer details, finance route, OTP transaction next' },
         ]}
-        beforeStartTitle="One guided offer flow."
-        beforeStartText="You can save and continue later. Your agent receives the offer only after you review and submit."
-        onStart={() => goToStage('offer')}
+        beforeStartTitle="One guided buyer onboarding flow."
+        beforeStartText="You can save and continue later. Your agent receives the onboarding details only after you review and submit."
+        onStart={() => goToStage('onboarding')}
       />
     )
   }
@@ -1216,7 +1448,7 @@ function BuyerOfferSubmission() {
   return (
     <main style={{ background: WARM_WHITE, color: PRIMARY_TEXT }} className="min-h-screen overflow-x-hidden pb-[calc(8rem+env(safe-area-inset-bottom))] sm:pb-32 md:pb-28">
       <ProgressDots stage={flowStage} />
-      <form onSubmit={handleSubmitOffer}>
+      <form onSubmit={handleSubmitBuyerOnboarding}>
         <div className="mx-auto w-full max-w-[980px] px-4 py-8 md:px-8 md:py-10">
           <header className="mb-7">
             <h1 className="break-words text-4xl font-semibold tracking-[-0.055em] text-[#111827] md:text-5xl">{pageTitle}</h1>
@@ -1227,7 +1459,7 @@ function BuyerOfferSubmission() {
             <div className="mt-4 grid gap-3">
               {counterPendingBuyer ? (
                 <section className="rounded-[20px] border border-[#F5DBB0] bg-[#FFF8EC] px-4 py-3 text-sm font-semibold text-[#8A4B08]">
-                  Seller sent a counter offer. Submit a revised offer to respond.
+                  This link has seller feedback attached. Complete buyer onboarding so the OTP transaction can be confirmed.
                 </section>
               ) : null}
               {canonicalBanner ? (
@@ -1260,9 +1492,9 @@ function BuyerOfferSubmission() {
             </button>
             <div data-testid="buyer-offer-action-summary" className="hidden min-w-0 flex-1 grid-cols-3 gap-3 sm:grid">
               {[
-                ['Offer', offerAmountLabel],
-                ['Deposit', formatCurrency(depositAmount)],
-                ['Bond Required', formatCurrency(loanAmount)],
+                ['Buyer', buyerDisplayName || 'Not captured'],
+                ['Finance', financeLabel],
+                ['Bond Support', bondFinanceSelected ? bondAssistanceLabel : 'Not applicable'],
               ].map(([label, value]) => (
                 <div key={label} className="min-w-0">
                   <p className="truncate text-xs font-semibold text-[#4B5563]">{label}</p>

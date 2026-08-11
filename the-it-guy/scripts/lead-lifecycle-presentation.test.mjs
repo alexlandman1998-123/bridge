@@ -33,7 +33,7 @@ const otpReady = resolveLeadLifecyclePresentation({
   stage: 'Ready to Generate OTP',
 })
 assert.equal(otpReady.columnId, 'offer_received')
-assert.equal(otpReady.funnelStage, 'Offer received')
+assert.equal(otpReady.funnelStage, 'OTP Transaction')
 
 const sellerMandate = resolveLeadLifecyclePresentation({
   leadCategory: 'seller',

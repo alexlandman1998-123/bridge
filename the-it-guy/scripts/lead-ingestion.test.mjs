@@ -76,7 +76,9 @@ for (const copy of ['Create Lead', 'Buyer Lead', 'Seller Lead', 'Other Lead', 'I
 assert.match(pageSource, /buyer-lead-workspace/, 'buyer leads should keep the residential buyer workspace shell')
 assert.match(pageSource, /\{ key: 'requirements', label: 'Requirements' \}/, 'buyer workspace should retain internal requirement state for commands and qualification')
 assert.match(pageSource, /\{ key: 'property_match', label: 'Property Match' \}/, 'buyer workspace should expose Property Match as the residential matching surface')
-assert.match(pageSource, /\{ key: 'offers', label: 'Offers' \}/, 'buyer workspace should expose Offers as the residential deal progression surface')
+assert.match(pageSource, /BUYER_ONBOARDING_OTP_TAB_KEY = 'onboarding_otp'/, 'buyer workspace should define the canonical onboarding / OTP tab key')
+assert.match(pageSource, /\{ key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Onboarding \/ OTP' \}/, 'buyer workspace should expose Onboarding / OTP as the residential deal progression surface')
+assert.match(pageSource, /normalizeBuyerLeadWorkspaceTabKey/, 'buyer workspace should keep old offer tab aliases routed into Onboarding / OTP')
 assert.match(pageSource, /tabs\.filter\(\(tab\) => !\['requirements', 'tasks'\]\.includes\(tab\.key\)\)/, 'visible buyer tabs should use the current simplified residential tab row')
 assert.match(pageSource, /<BuyerLeadOverview/, 'buyer overview should remain the primary buyer workspace entry point')
 assert.match(pageSource, /<BuyerPropertyMatchPanel/, 'buyer workspace should render the property match panel')
@@ -85,7 +87,7 @@ assert.match(pageSource, /<BuyerLeadDocumentsTab/, 'buyer workspace should rende
 for (const copy of ['Listing Journey', 'Readiness', 'Seller Actions', 'Seller leads progress toward a listing']) {
   assert.match(pageSource, new RegExp(copy), `seller leads workspace should render seller-specific workflow copy for ${copy}`)
 }
-for (const copy of ['Send Seller Onboarding', 'Generate Mandate', 'Seller onboarding must be submitted before generating a mandate']) {
+for (const copy of ['Send Seller Onboarding', 'Generate in Seller Profile', 'Seller onboarding must be submitted before generating a mandate']) {
   assert.match(pageSource, new RegExp(copy), `seller leads workspace should restore seller onboarding and mandate action copy for ${copy}`)
 }
 for (const copy of [
@@ -123,7 +125,7 @@ assert.match(pageSource, /\/pipeline\/leads\/\$\{encodeURIComponent\(leadId\)\}\
 assert.match(pageSource, /buildSellerJourney/)
 assert.match(pageSource, /buildSellerReadinessSummary/)
 assert.match(pageSource, /activeTab === 'property_match'/)
-assert.match(pageSource, /activeTab === 'offers'/)
+assert.match(pageSource, /activeTab === BUYER_ONBOARDING_OTP_TAB_KEY/)
 assert.match(pageSource, /normalizeCanonicalLeadCategory\(createCategory, 'other'\)/)
 assert.match(pageSource, /leadCategory: category/)
 assert.match(pageSource, /sellerPropertyAddress: category === 'seller'/)

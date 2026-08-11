@@ -20,9 +20,9 @@ const requiredScripts = Object.freeze({
 
 const diagnosticChecks = Object.freeze([
   ['test:buyer-process-definition-phase1', 'global and Kingstons buyer profiles stay split'],
-  ['test:buyer-process-workflow-engine-phase2', 'buyer workflow maps legacy OTP stages into Offer received'],
+  ['test:buyer-process-workflow-engine-phase2', 'buyer workflow maps legacy OTP stages into OTP Transaction'],
   ['test:buyer-process-viewing-actions-phase3', 'viewing actions feed buyer onboarding'],
-  ['test:buyer-process-onboarding-offer-upload-phase4', 'buyer onboarding and offer evidence upload are wired'],
+  ['test:buyer-process-onboarding-offer-upload-phase4', 'buyer onboarding and OTP upload are wired'],
   ['test:buyer-process-pipeline-reporting-phase5', 'pipeline reporting keeps buyer stage evidence visible'],
   ['test:buyer-process-migration-otp-deprecation-phase6', 'global buyer OTP generation remains deprecated'],
   ['test:buyer-onboarding-flow-contract', 'buyer onboarding flow contract is intact'],
@@ -63,8 +63,8 @@ for (const requiredText of [
   assert.match(runbook.toLowerCase(), new RegExp(requiredText.toLowerCase()), `Buyer diagnostic runbook must mention ${requiredText}`)
 }
 
-assert.match(agencyPipelinePage, /Upload Offer Document/)
-assert.match(agencyPipelinePage, /OTP generator deprecated/)
+assert.match(agencyPipelinePage, /Upload OTP/)
+assert.match(agencyPipelinePage, /OTP workspace ready/)
 assert.doesNotMatch(agencyPipelinePage, /label: 'Generate OTP'/)
 assert.match(buyerOfferPage, /Manual OTP Upload/)
 assert.doesNotMatch(buyerOfferPage, /OTP Generated/)

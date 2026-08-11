@@ -5,6 +5,7 @@ import { createTransactionFromAcceptedOffer } from './transactionLifecycleServic
 import { buildResidentialOfferTermsSnapshot, mergeResidentialOfferTermsIntoConditions } from '../core/offers/residentialOfferTerms.js'
 import { buildResidentialOfferConditionReviewPatch } from '../core/offers/residentialOfferConditionReview.js'
 import { resolveOtpDocumentVariant } from '../core/documents/otpRouteUniverse.js'
+import { mapOfferFormToBuyerOnboardingForm } from './offerBuyerOnboardingBridge.js'
 
 const KEY_OFFER_INVITES = 'itg:listing-offer-invites:v1'
 const KEY_OFFER_RECORDS = 'itg:listing-offer-records:v1'
@@ -360,6 +361,191 @@ export function getOffersForListing(listingId) {
     .filter((row) => String(row?.listingId || '') === String(listingId || ''))
     .sort((left, right) => new Date(right?.submittedAt || 0) - new Date(left?.submittedAt || 0))
   return rows
+}
+
+function buildLocalBuyerOnboardingSnapshot(submission = {}, { invite = {}, listing = {} } = {}, submittedAt = new Date().toISOString()) {
+  const purchaserEntityType = String(submission?.purchaser_entity_type || submission?.purchaserEntityType || submission?.purchaser_type || 'individual').trim().toLowerCase() || 'individual'
+  const entityName = purchaserEntityType === 'company'
+    ? String(submission?.company_name || '').trim()
+    : purchaserEntityType === 'trust'
+      ? String(submission?.trust_name || '').trim()
+      : ''
+  const fullName = String(
+    submission?.fullName ||
+      entityName ||
+      submission?.company_contact_name ||
+      submission?.trust_contact_name ||
+      submission?.authorised_signatory_name ||
+      submission?.authorised_trustee_name ||
+      '',
+  ).trim()
+  const email = String(
+    submission?.email ||
+      submission?.company_contact_email ||
+      submission?.trust_contact_email ||
+      submission?.authorised_signatory_email ||
+      submission?.authorised_trustee_email ||
+      '',
+  ).trim().toLowerCase()
+  const phone = String(
+    submission?.phone ||
+      submission?.company_contact_phone ||
+      submission?.trust_contact_phone ||
+      submission?.authorised_signatory_phone ||
+      submission?.authorised_trustee_phone ||
+      '',
+  ).trim()
+  const idNumber = String(submission?.idNumber || submission?.authorised_signatory_identity_number || submission?.authorised_trustee_identity_number || '').trim()
+  const purchasePrice = money(submission?.purchasePrice || submission?.listingAskingPrice || listing?.askingPrice || listing?.asking_price || listing?.price)
+  const financeType = String(submission?.financeType || '').trim().toLowerCase() === 'hybrid'
+    ? 'combination'
+    : String(submission?.financeType || '').trim().toLowerCase()
+  const formData = mapOfferFormToBuyerOnboardingForm(
+    {
+      ...submission,
+      fullName,
+      email,
+      phone,
+      idNumber,
+      purchasePrice,
+      financeType,
+    },
+    {
+      purchasePrice,
+      depositAmount: submission?.depositAmount,
+      loanAmount: submission?.bondAmount,
+      financeType,
+      transaction: { listingId: invite?.listingId, buyerLeadId: invite?.buyerLeadId },
+    },
+  )
+  return {
+    status: 'submitted',
+    source: 'buyer_onboarding_link',
+    captureMethod: 'buyer_self_service',
+    submittedAt,
+    nextAction: 'prepare_otp_transaction',
+    buyer: { fullName, email, phone, idNumber, purchaserEntityType, entityName },
+    entity: purchaserEntityType === 'company'
+      ? {
+          type: 'company',
+          name: String(submission?.company_name || '').trim(),
+          registrationNumber: String(submission?.company_registration_number || '').trim(),
+          authorisedSignatory: String(submission?.authorised_signatory_name || '').trim(),
+          directors: Array.isArray(submission?.directors) ? submission.directors : [],
+        }
+      : purchaserEntityType === 'trust'
+        ? {
+            type: 'trust',
+            name: String(submission?.trust_name || '').trim(),
+            registrationNumber: String(submission?.trust_registration_number || '').trim(),
+            authorisedTrustee: String(submission?.authorised_trustee_name || '').trim(),
+            trustees: Array.isArray(submission?.trustees) ? submission.trustees : [],
+          }
+        : null,
+    finance: {
+      financeType,
+      purchasePrice,
+      depositAmount: money(submission?.depositAmount),
+      bondAmount: money(submission?.bondAmount),
+      cashContribution: money(submission?.cashContribution),
+      bondAssistancePreference: String(submission?.bondAssistancePreference || submission?.bond_assistance_preference || '').trim(),
+      bondHelpRequested: String(submission?.bond_help_requested || submission?.bondHelpRequested || '').trim(),
+      needsBondAssistance: Boolean(submission?.needsBondAssistance),
+      proofOfFundsUrl: String(submission?.proofOfFundsUrl || '').trim(),
+    },
+    compliance: {
+      confirmedAccuracy: Boolean(submission?.confirmedAccuracy || submission?.acknowledgeInfoAccuracy),
+    },
+    otpDocumentVariant: String(submission?.otpDocumentVariant || invite?.otpDocumentVariant || '').trim(),
+    formData,
+  }
+}
+
+export async function submitBuyerOnboarding({ token, submission } = {}) {
+  const context = getOfferInviteContext(token)
+  if (!context.ok) {
+    throw new Error(context.reason === 'expired' ? 'Buyer onboarding link has expired.' : 'Buyer onboarding link is not valid.')
+  }
+  const { invite, listing } = context
+  if (!listing) {
+    throw new Error('Listing is not available for this buyer onboarding link.')
+  }
+
+  const purchaserEntityType = String(submission?.purchaser_entity_type || submission?.purchaserEntityType || submission?.purchaser_type || 'individual').trim().toLowerCase() || 'individual'
+  const fullName = String(
+    submission?.fullName ||
+      submission?.company_name ||
+      submission?.trust_name ||
+      submission?.company_contact_name ||
+      submission?.trust_contact_name ||
+      submission?.authorised_signatory_name ||
+      submission?.authorised_trustee_name ||
+      '',
+  ).trim()
+  const email = String(submission?.email || submission?.company_contact_email || submission?.trust_contact_email || submission?.authorised_signatory_email || submission?.authorised_trustee_email || '').trim()
+  const phone = String(submission?.phone || submission?.company_contact_phone || submission?.trust_contact_phone || submission?.authorised_signatory_phone || submission?.authorised_trustee_phone || '').trim()
+  const idNumber = String(submission?.idNumber || submission?.authorised_signatory_identity_number || submission?.authorised_trustee_identity_number || '').trim()
+  const hasEntityAuthority = purchaserEntityType === 'company'
+    ? Boolean(submission?.company_name && submission?.company_registration_number && submission?.authorised_signatory_name && (submission?.directors || []).length)
+    : purchaserEntityType === 'trust'
+      ? Boolean(submission?.trust_name && submission?.trust_registration_number && submission?.authorised_trustee_name && (submission?.trustees || []).length)
+      : true
+  if (!fullName || !email || !phone || (!idNumber && purchaserEntityType === 'individual') || !hasEntityAuthority) {
+    throw new Error('Buyer details are required before submitting onboarding.')
+  }
+  if (String(invite?.buyerOnboardingStatus || '').trim().toLowerCase() === 'submitted') {
+    throw new Error('Buyer onboarding has already been submitted. Ask the agent for a new secure link if details need to change.')
+  }
+
+  const submittedAt = new Date().toISOString()
+  const buyerOnboarding = buildLocalBuyerOnboardingSnapshot(submission, { invite, listing }, submittedAt)
+  const nextInvites = getOfferInvites().map((row) =>
+    String(row?.token || '') === String(token || '')
+      ? {
+          ...row,
+          status: normalizeOfferWorkflowStatus(row?.status) === OFFER_WORKFLOW_STATUS.DRAFT
+            ? OFFER_WORKFLOW_STATUS.BUYER_VIEWED
+            : row?.status,
+          consumedAt: row?.consumedAt || submittedAt,
+          buyerOnboarding,
+          buyerOnboardingStatus: 'submitted',
+          buyerOnboardingSubmittedAt: submittedAt,
+          buyerOnboardingNextAction: 'prepare_otp_transaction',
+          buyerOnboardingFormData: buyerOnboarding.formData,
+          buyerName: fullName,
+          buyerEmail: email.toLowerCase(),
+          buyerPhone: phone,
+          updatedAt: submittedAt,
+        }
+      : row,
+  )
+  writeOfferInvites(nextInvites)
+  notifyUpdates()
+
+  return {
+    id: invite.canonicalOfferId || invite.id || token,
+    listingId: invite.listingId,
+    buyerLeadId: invite.buyerLeadId,
+    organisationId: invite.organisationId || listing?.organisationId || listing?.organisation_id || '',
+    viewingAppointmentId: invite.viewingId || '',
+    status: 'buyer_onboarding_submitted',
+    conditions: {
+      agentName: invite.agentName,
+      agentEmail: invite.agentEmail,
+      buyerName: fullName,
+      buyerEmail: email.toLowerCase(),
+      buyerPhone: phone,
+      buyerOnboarding,
+      buyerOnboardingStatus: 'submitted',
+      buyerOnboardingSubmittedAt: submittedAt,
+      buyerOnboardingNextAction: 'prepare_otp_transaction',
+    },
+    buyerOnboarding,
+    buyerOnboardingStatus: 'submitted',
+    buyerOnboardingSubmittedAt: submittedAt,
+    financeType: buyerOnboarding.finance.financeType,
+    submittedAt,
+  }
 }
 
 export async function submitBuyerOffer({ token, submission, mode = 'new' } = {}) {

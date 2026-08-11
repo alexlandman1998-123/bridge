@@ -24,12 +24,12 @@ for (const marker of [
 for (const marker of [
   'Show Day Follow-Up Queue',
   'Open Show Day Queue',
-  'Offer Ready',
+  'Onboarding Ready',
   'Show Day Follow-Up',
   'Log Follow-Up Call',
-  'Open Offer Centre',
+  'Open Onboarding / OTP',
   'This buyer has already viewed the property.',
-  'Post-show-day calls, buyer feedback, and offer intent',
+  'Post-show-day calls, buyer feedback, and onboarding intent',
 ]) {
   assert.ok(pageSource.includes(marker), `Phase 5 UI should include "${marker}".`)
 }

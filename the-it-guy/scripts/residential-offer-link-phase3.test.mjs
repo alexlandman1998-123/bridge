@@ -134,18 +134,43 @@ assert.equal(resolveOtpDocumentVariant({ sourceContext: { listing: { development
 const buyerOfferPage = await readFile(new URL('../src/pages/BuyerOfferSubmission.jsx', import.meta.url), 'utf8')
 for (const token of [
   'otpDocumentVariant',
-  'Guarantee Delivery Deadline',
-  'Bond Approval Deadline',
-  'Cash Proof Deadline',
-  'Subject to sale of another property',
-  'acknowledgeNhbrcWarranty',
+  'BUYER ONBOARDING',
+  'Submit Buyer Onboarding',
+  'Finance Type',
+  'Bond Support',
+  'OTP Transaction',
+  'Buyer onboarding submitted',
+  'Purchaser Type',
+  'Company Name',
+  'Trust Name',
+  'Directors',
+  'Trustees',
+  'submitCanonicalBuyerOnboarding',
+  'submitBuyerOnboarding',
 ]) {
   assert.ok(buyerOfferPage.includes(token), `BuyerOfferSubmission should include ${token}.`)
+}
+for (const token of [
+  'MAKE AN OFFER',
+  'Your Offer',
+  'Offer Amount',
+  'Guarantee Delivery Deadline',
+  'submitCanonicalBuyerOffer',
+  'submitBuyerOffer',
+]) {
+  assert.equal(buyerOfferPage.includes(token), false, `BuyerOfferSubmission should not include legacy offer copy: ${token}.`)
 }
 
 const listingOffersService = await readFile(new URL('../src/lib/listingOffersService.js', import.meta.url), 'utf8')
 assert.match(listingOffersService, /otpDocumentVariant/)
 assert.match(listingOffersService, /sourceContext: \{ invite, listing \}/)
+assert.match(listingOffersService, /submitBuyerOnboarding/)
+assert.match(listingOffersService, /buyerOnboardingNextAction: 'prepare_otp_transaction'/)
+
+const buyerLifecycleService = await readFile(new URL('../src/lib/buyerLifecycleService.js', import.meta.url), 'utf8')
+assert.match(buyerLifecycleService, /submitCanonicalBuyerOnboarding/)
+assert.match(buyerLifecycleService, /BUYER_LIFECYCLE_EVENTS\.ONBOARDING_STARTED/)
+assert.match(buyerLifecycleService, /buyerOnboardingNextAction: 'prepare_otp_transaction'/)
 
 const server = await createServer({ root: process.cwd(), logLevel: 'silent', server: { middlewareMode: true } })
 try {

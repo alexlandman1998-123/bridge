@@ -564,6 +564,7 @@
     "test:buyer-process-onboarding-offer-upload-phase4": "node scripts/buyer-process-onboarding-offer-upload-phase4.test.mjs",
     "test:buyer-process-pipeline-reporting-phase5": "node scripts/buyer-process-pipeline-reporting-phase5.test.mjs",
     "test:buyer-process-migration-otp-deprecation-phase6": "node scripts/buyer-process-migration-otp-deprecation-phase6.test.mjs",
+    "test:buyer-process-agent-leads-onboarding-otp-phase7": "node scripts/buyer-process-agent-leads-onboarding-otp-phase7.test.mjs",
     "test:buyer-process-global-diagnostic": "node scripts/buyer-process-global-diagnostic.test.mjs",
     "verify:buyer-process-global-diagnostic": "npm run test:buyer-process-global-diagnostic",
     "test:seller-process-evaluator-phase3": "node scripts/seller-process-evaluator-phase3.test.mjs",

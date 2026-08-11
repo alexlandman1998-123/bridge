@@ -8,6 +8,7 @@ import { assertMvpAcceptedOfferConversionReceipt } from '../core/transactions/mv
 import { mergeResidentialOfferTermsIntoConditions } from '../core/offers/residentialOfferTerms.js'
 import { buildResidentialOfferConditionReviewPatch } from '../core/offers/residentialOfferConditionReview.js'
 import { deriveFinanceManagedBy } from '../core/transactions/financeType.js'
+import { mapOfferFormToBuyerOnboardingForm } from './offerBuyerOnboardingBridge.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -1013,6 +1014,7 @@ export async function applyBuyerLifecycleEvent({
 
 function mapOfferDbRow(row = {}) {
   if (!row) return null
+  const conditions = row.conditions_json || {}
   return {
     id: row.id,
     offerId: row.id,
@@ -1031,7 +1033,10 @@ function mapOfferDbRow(row = {}) {
     financeType: row.finance_type,
     cashComponent: row.cash_component,
     bondComponent: row.bond_component,
-    conditions: row.conditions_json || {},
+    conditions,
+    buyerOnboarding: conditions.buyerOnboarding || null,
+    buyerOnboardingStatus: conditions.buyerOnboardingStatus || '',
+    buyerOnboardingSubmittedAt: conditions.buyerOnboardingSubmittedAt || '',
     expiryDate: row.expiry_date,
     sentToBuyerAt: row.sent_to_buyer_at,
     buyerViewedAt: row.buyer_viewed_at,
@@ -1453,6 +1458,217 @@ export async function getCanonicalOfferInviteContext(token = '') {
         }]
       : [],
   }
+}
+
+function buildBuyerOnboardingSubmissionSnapshot(submission = {}, context = {}, submittedAt = new Date().toISOString()) {
+  const listing = context?.listing || {}
+  const canonicalOffer = context?.canonicalOffer || {}
+  const purchaserEntityType = normalizeText(submission?.purchaser_entity_type || submission?.purchaserEntityType || submission?.purchaser_type || 'individual').toLowerCase() || 'individual'
+  const entityName = purchaserEntityType === 'company'
+    ? normalizeText(submission?.company_name)
+    : purchaserEntityType === 'trust'
+      ? normalizeText(submission?.trust_name)
+      : ''
+  const fullName = normalizeText(
+    submission?.fullName ||
+      entityName ||
+      submission?.company_contact_name ||
+      submission?.trust_contact_name ||
+      submission?.authorised_signatory_name ||
+      submission?.authorised_trustee_name,
+  )
+  const email = normalizeText(
+    submission?.email ||
+      submission?.company_contact_email ||
+      submission?.trust_contact_email ||
+      submission?.authorised_signatory_email ||
+      submission?.authorised_trustee_email,
+  ).toLowerCase()
+  const phone = normalizeText(
+    submission?.phone ||
+      submission?.company_contact_phone ||
+      submission?.trust_contact_phone ||
+      submission?.authorised_signatory_phone ||
+      submission?.authorised_trustee_phone,
+  )
+  const idNumber = normalizeText(submission?.idNumber || submission?.authorised_signatory_identity_number || submission?.authorised_trustee_identity_number)
+  const purchasePrice = money(
+    submission?.purchasePrice ||
+      submission?.listingAskingPrice ||
+      listing?.askingPrice ||
+      listing?.asking_price ||
+      canonicalOffer?.offerAmount,
+  )
+  const financeType = normalizeText(submission?.financeType).toLowerCase() === 'hybrid'
+    ? 'combination'
+    : normalizeText(submission?.financeType).toLowerCase()
+  const formData = mapOfferFormToBuyerOnboardingForm(
+    {
+      ...submission,
+      fullName,
+      email,
+      phone,
+      idNumber,
+      purchasePrice,
+      financeType,
+    },
+    {
+      purchasePrice,
+      depositAmount: submission?.depositAmount,
+      loanAmount: submission?.bondAmount,
+      financeType,
+      transaction: canonicalOffer,
+    },
+  )
+
+  return {
+    status: 'submitted',
+    source: 'buyer_onboarding_link',
+    captureMethod: 'buyer_self_service',
+    submittedAt,
+    nextAction: 'prepare_otp_transaction',
+    buyer: {
+      fullName,
+      email,
+      phone,
+      idNumber,
+      purchaserEntityType,
+      entityName,
+    },
+    entity: purchaserEntityType === 'company'
+      ? {
+          type: 'company',
+          name: normalizeText(submission?.company_name),
+          registrationNumber: normalizeText(submission?.company_registration_number),
+          authorisedSignatory: normalizeText(submission?.authorised_signatory_name),
+          directors: Array.isArray(submission?.directors) ? submission.directors : [],
+        }
+      : purchaserEntityType === 'trust'
+        ? {
+            type: 'trust',
+            name: normalizeText(submission?.trust_name),
+            registrationNumber: normalizeText(submission?.trust_registration_number),
+            authorisedTrustee: normalizeText(submission?.authorised_trustee_name),
+            trustees: Array.isArray(submission?.trustees) ? submission.trustees : [],
+          }
+        : null,
+    finance: {
+      financeType,
+      purchasePrice,
+      depositAmount: money(submission?.depositAmount),
+      bondAmount: money(submission?.bondAmount),
+      cashContribution: money(submission?.cashContribution),
+      bondAssistancePreference: normalizeText(submission?.bondAssistancePreference || submission?.bond_assistance_preference),
+      bondHelpRequested: normalizeText(submission?.bond_help_requested || submission?.bondHelpRequested),
+      needsBondAssistance: Boolean(submission?.needsBondAssistance),
+      proofOfFundsUrl: normalizeText(submission?.proofOfFundsUrl),
+    },
+    compliance: {
+      confirmedAccuracy: Boolean(
+        submission?.confirmedAccuracy ||
+          submission?.acknowledgeInfoAccuracy ||
+          submission?.buyerAcknowledgements?.infoAccuracy,
+      ),
+    },
+    otpDocumentVariant: normalizeText(
+      submission?.otpDocumentVariant ||
+        canonicalOffer?.conditions?.otpDocumentVariant ||
+        context?.invite?.otpDocumentVariant,
+    ),
+    formData,
+  }
+}
+
+export async function submitCanonicalBuyerOnboarding({ token = '', submission = {} } = {}) {
+  const context = await getCanonicalOfferInviteContext(token)
+  if (!context.ok || !context.canonicalOffer?.id) {
+    throw new Error(context.reason === 'expired' ? 'Buyer onboarding link has expired.' : 'Buyer onboarding link is not valid.')
+  }
+  const lifecycle = getOfferLifecycleSummary(context.canonicalOffer)
+  if (!lifecycle.buyerCanResubmit) {
+    throw new Error(lifecycle.blockedReason || 'This buyer onboarding link can no longer be updated.')
+  }
+  const conditions = context.canonicalOffer.conditions || {}
+  const existingOnboardingSubmitted = normalizeText(conditions.buyerOnboardingStatus).toLowerCase() === 'submitted'
+  const canReplaceOnboarding = [OFFER_STATUS.CHANGES_REQUESTED, OFFER_STATUS.COUNTERED].includes(lifecycle.effectiveStatus)
+  if (existingOnboardingSubmitted && !canReplaceOnboarding) {
+    throw new Error('Buyer onboarding has already been submitted. Ask the agent for a new secure link if details need to change.')
+  }
+
+  const purchaserEntityType = normalizeText(submission?.purchaser_entity_type || submission?.purchaserEntityType || submission?.purchaser_type || 'individual').toLowerCase() || 'individual'
+  const fullName = normalizeText(
+    submission?.fullName ||
+      submission?.company_name ||
+      submission?.trust_name ||
+      submission?.company_contact_name ||
+      submission?.trust_contact_name ||
+      submission?.authorised_signatory_name ||
+      submission?.authorised_trustee_name,
+  )
+  const email = normalizeText(submission?.email || submission?.company_contact_email || submission?.trust_contact_email || submission?.authorised_signatory_email || submission?.authorised_trustee_email)
+  const phone = normalizeText(submission?.phone || submission?.company_contact_phone || submission?.trust_contact_phone || submission?.authorised_signatory_phone || submission?.authorised_trustee_phone)
+  const idNumber = normalizeText(submission?.idNumber || submission?.authorised_signatory_identity_number || submission?.authorised_trustee_identity_number)
+  const hasEntityAuthority = purchaserEntityType === 'company'
+    ? Boolean(submission?.company_name && submission?.company_registration_number && submission?.authorised_signatory_name && (submission?.directors || []).length)
+    : purchaserEntityType === 'trust'
+      ? Boolean(submission?.trust_name && submission?.trust_registration_number && submission?.authorised_trustee_name && (submission?.trustees || []).length)
+      : true
+  if (!fullName || !email || !phone || (!idNumber && purchaserEntityType === 'individual') || !hasEntityAuthority) {
+    throw new Error('Buyer details are required before submitting onboarding.')
+  }
+
+  const submittedAt = new Date().toISOString()
+  const buyerOnboarding = buildBuyerOnboardingSubmissionSnapshot(submission, context, submittedAt)
+  const nextConditions = {
+    ...conditions,
+    buyerName: fullName,
+    buyerEmail: email.toLowerCase(),
+    buyerPhone: phone,
+    buyerOnboarding,
+    buyerOnboardingStatus: 'submitted',
+    buyerOnboardingSubmittedAt: submittedAt,
+    buyerOnboardingNextAction: 'prepare_otp_transaction',
+    buyerOnboardingFormData: buyerOnboarding.formData,
+    verification: submission?.verification || conditions.verification || {},
+  }
+  const patch = {
+    conditions_json: nextConditions,
+    updated_at: submittedAt,
+  }
+
+  let query = supabase
+    .from('offers')
+    .update(patch)
+    .eq('id', context.canonicalOffer.id)
+  if (context.canonicalOffer.organisationId) {
+    query = query.eq('organisation_id', context.canonicalOffer.organisationId)
+  }
+  const { data, error } = await query.select('*').maybeSingle()
+  if (error || !data) {
+    throw new Error(error?.message || 'Unable to save buyer onboarding.')
+  }
+
+  if (context.canonicalOffer.organisationId && context.canonicalOffer.buyerLeadId) {
+    await applyBuyerLifecycleEvent({
+      organisationId: context.canonicalOffer.organisationId,
+      leadId: context.canonicalOffer.buyerLeadId,
+      event: BUYER_LIFECYCLE_EVENTS.ONBOARDING_STARTED,
+      actor: {
+        id: context.canonicalOffer.agentId,
+        name: normalizeText(nextConditions.agentName),
+        email: normalizeText(nextConditions.agentEmail),
+      },
+      offerId: context.canonicalOffer.id,
+      activityNote: 'Buyer onboarding submitted. OTP transaction preparation is next.',
+      extra: {
+        source: 'buyer_onboarding_link',
+        buyerOnboardingSubmittedAt: submittedAt,
+        nextAction: 'prepare_otp_transaction',
+      },
+    }).catch(() => null)
+  }
+
+  return mapOfferDbRow(data)
 }
 
 export async function submitCanonicalBuyerOffer({ token = '', submission = {} } = {}) {
