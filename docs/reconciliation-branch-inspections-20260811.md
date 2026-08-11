@@ -68,7 +68,7 @@ Clean.
 
 Decision:
 
-Merge first.
+Merged in Phase 3.
 
 Verification:
 
@@ -77,6 +77,14 @@ cd the-it-guy
 node scripts/notification-automation-reminder-health-controls.test.mjs
 npm run build
 ```
+
+Result:
+
+Passed via `npm run reconcile:verify -- reminder-health-controls`.
+
+Merge commit:
+
+`01f71efe`
 
 ### `codex/arch9-attorney-access-permission-bootstrap`
 

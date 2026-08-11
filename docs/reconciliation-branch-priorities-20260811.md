@@ -29,7 +29,7 @@ Do not merge a branch wholesale just because it has a useful commit. If a branch
 
 ### 1. `codex/reminder-health-controls`
 
-Status: ready for first merge.
+Status: merged and verified in Phase 3.
 
 Why:
 
@@ -45,6 +45,12 @@ cd the-it-guy
 node scripts/notification-automation-reminder-health-controls.test.mjs
 npm run build
 ```
+
+Evidence:
+
+- merge commit: `01f71efe`
+- batch command: `npm run reconcile:verify -- reminder-health-controls`
+- result: passed
 
 ### 2. `codex/arch9-attorney-access-permission-bootstrap`
 
