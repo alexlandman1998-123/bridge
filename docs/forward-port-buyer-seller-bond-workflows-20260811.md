@@ -891,3 +891,70 @@ Verification:
 - `git worktree list --porcelain`
 - `gh pr list --state open --limit 50 --json number,title,headRefName,baseRefName,isDraft,updatedAt,mergeStateStatus,reviewDecision,url`
 - `gh pr checks 16`
+
+## Verification Batch Phase 9
+
+Purpose: run a clean-branch verification batch across the forward-port closeout, buyer workspace, seller workspace, Kingstons seller process, bond originator, Supabase migration, navigation, lead-ingestion, viewing, show-day, and final build gates.
+
+Changed:
+
+- `docs/forward-port-buyer-seller-bond-workflows-20260811.md`
+
+Result:
+
+- all local Phase 9 verification commands passed
+- the final `npm run build` completed successfully from `the-it-guy/`
+- build emitted the existing large chunk warning for oversized bundles; no new build failure was reported
+- the unrelated Phase 8 draft stash remains preserved at `stash@{0}` / `2701d95e0f84bacfc51c981b218183ee31cf3629`
+
+Verification:
+
+- `npm run test:forward-port-reconciliation-closeout-phase8`
+- `npm run test:forward-port-seller-workspace-phase3`
+- `npm run test:forward-port-kingstons-seller-process-phase4`
+- `npm run test:forward-port-bond-originator-phase5`
+- `npm run test:forward-port-bond-originator-emails-phase6`
+- `npm run test:forward-port-supabase-migrations-phase7`
+- `npm run test:buyer-process-global-diagnostic`
+- `node scripts/sidebar-parent-navigation.test.mjs`
+- `npm run test:agency-pipeline-buyer-offer-workspace-phase2`
+- `npm run test:agent-leads-workspace`
+- `npm run test:lead-ingestion`
+- `npm run test:seller-process-global-smoke-phase1`
+- `npm run test:seller-process-evaluator-phase3`
+- `npm run test:seller-process-projection-phase4`
+- `npm run test:seller-process-shadow-integration-phase5`
+- `npm run test:seller-process-panel-model-phase7`
+- `npm run test:seller-process-workspace-panel-phase8`
+- `npm run test:seller-process-panel-action-routing-phase9`
+- `npm run test:pipeline-seller-portal-stability`
+- `npm run test:seller-portal-alignment`
+- `npm run test:seller-portal-ui-regression`
+- `npm run test:seller-listing-conversion-idempotency`
+- `npm run test:seller-document-source-of-truth`
+- `npm run test:kingstons-seller-pack-phase4-operational-handoff`
+- `npm run test:kingstons-seller-pack-phase5-transaction-readiness`
+- `npm run test:kingstons-seller-pack-phase6-readiness-enforcement`
+- `npm run test:kingstons-digital-signing-decision-phase8`
+- `npm run test:viewing-workflow-qa`
+- `npm run test:show-day-phase5`
+- `npm run test:bond-application-assignment`
+- `npm run test:bond-consultants-management`
+- `npm run test:finance-readiness`
+- `npm run test:bond-intake-notifications`
+- `npm run test:bond-partner-portal`
+- `npm run test:bond-partner-collaboration`
+- `npm run test:bond-partner-management`
+- `npm run test:bond-originator-banks`
+- `npm run test:bond-routing-rules`
+- `npm run test:finance-intelligence`
+- `node scripts/bond-partner-profile.test.mjs`
+- `node src/auth/permissions/__tests__/bondFinanceWorkflowPermissions.test.js`
+- `node src/auth/permissions/__tests__/bondAssignmentPermissions.test.js`
+- `npm run test:bond-bank-outcome-originator-rls`
+- `npm run build` from `the-it-guy/`
+
+Noted:
+
+- `npm run test:sidebar-parent-navigation` was attempted first and is not defined in `package.json`; the same diagnostic passed via `node scripts/sidebar-parent-navigation.test.mjs`.
+- `npm run test:finance-intelligence` still skips its dashboard render check when React Router SSR compatibility is unavailable under the current Node runtime; all non-render finance intelligence assertions passed.
