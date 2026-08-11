@@ -1,27 +1,26 @@
 # Supabase Ledger Drift Resolution
 
-Generated: 2026-07-31T17:27:24.002Z
+Generated: 2026-08-11T15:59:05.701Z
 
 ## Decision
 
 | Field | Value |
 | --- | --- |
-| Status | `LEDGER_DRIFT_RESOLVED` |
-| Resolved | Yes |
-| Pure local-only rows | 0 |
+| Status | `LEDGER_DRIFT_BLOCKED` |
+| Resolved | No |
+| Pure local-only rows | 2 |
 | Pure remote-only rows | 0 |
 | Divergent rows | 0 |
 | Reviewed split rows | 17 |
 | Unresolved split rows | 0 |
-| Blockers | 0 |
-
-The current read-only Phase 0/5 reconciliation is documented in `docs/migration-review/20260731-phase0-phase5-ledger-reconciliation.md`.
+| Blockers | 2 |
 
 ## Pure Local-Only
 
-No rows.
-
-The historical `202607270012` row is intentionally excluded from the unresolved queue because its reviewed corrective migration `202607290005_corrective_canonical_matter_lifecycle_stages.sql` has already passed staging and production verification. The original partial-live migration remains non-runnable; the corrective promotion is the recorded target-state resolution.
+| Version | Stream | Resolution | Blockers | Command |
+| --- | --- | --- | --- | --- |
+| `202607310007` | `unknown` | `unmanaged_pure_local_only` | `missing_production_promotion_plan` |  |
+| `202607310008` | `unknown` | `unmanaged_pure_local_only` | `missing_production_promotion_plan` |  |
 
 ## Pure Remote-Only
 
@@ -43,7 +42,7 @@ No rows.
 | `202606040005` | `workspace_platform` | `confirmed_live_split` | Yes | None |
 | `202606050001` | `bond_finance` | `confirmed_live_manual_sql` | Yes | None |
 | `202606080002` | `commercial` | `confirmed_live_split` | Yes | None |
-| `202606090010` | `other` | `confirmed_superseded_split` | Yes | None |
+| `202606090010` | `other` | `confirmed_live_split` | Yes | None |
 | `202606110004` | `commercial` | `confirmed_live_split` | Yes | None |
 | `202606110005` | `commercial` | `confirmed_live_split` | Yes | None |
 | `202606110006` | `commercial` | `confirmed_live_split` | Yes | None |
@@ -51,4 +50,4 @@ No rows.
 
 ## Closeout Integration
 
-The reviewed split versions in this report are safe for closeout accounting. The current production evidence and corrective-clearance packet account for the historical partial-live row without replaying or repairing the original migration.
+The reviewed split versions in this report are safe for closeout accounting only. Pure local-only rows still need one-version production promotion, and pure remote-only rows still need local history restoration or explicit remote-only acceptance.

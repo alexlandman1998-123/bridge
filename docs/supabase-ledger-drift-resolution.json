@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-07-31T17:27:24.002Z",
-  "status": "LEDGER_DRIFT_RESOLVED",
-  "closeoutSource": "docs/migration-review/20260731-phase0-phase5-ledger-reconciliation.md",
-  "splitInvestigationSource": "docs/supabase-migration-phase-6-split-ledger-investigation-report.md",
-  "closeoutCommandStatus": 0,
+  "generatedAt": "2026-08-11T15:59:05.701Z",
+  "status": "LEDGER_DRIFT_BLOCKED",
+  "closeoutSource": "scripts/supabase-phase8-closeout.mjs",
+  "splitInvestigationSource": "scripts/supabase-phase6-split-ledger-investigation.mjs",
+  "closeoutCommandStatus": 1,
   "splitCommandStatus": 0,
-  "resolved": true,
+  "resolved": false,
   "reviewedSplitVersions": [
     "202606010001",
     "202606030007",
@@ -27,22 +27,43 @@
   ],
   "unresolvedSplitVersions": [],
   "counts": {
-    "pureLocalOnly": 0,
+    "pureLocalOnly": 2,
     "pureRemoteOnly": 0,
     "divergent": 0,
     "splitRows": 17,
     "reviewedSplitRows": 17,
     "unresolvedSplitRows": 0,
-    "blockers": 0
+    "blockers": 2
   },
   "rows": {
-    "pureLocalOnly": [],
+    "pureLocalOnly": [
+      {
+        "version": "202607310007",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "202607310008",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      }
+    ],
     "pureRemoteOnly": [],
     "divergent": [],
     "splitRows": [
       {
         "version": "202606010001",
         "module": "transaction_network",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -50,6 +71,8 @@
       {
         "version": "202606030007",
         "module": "lead_capture_crm",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -57,6 +80,8 @@
       {
         "version": "202606030008",
         "module": "lead_capture_crm",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -64,6 +89,8 @@
       {
         "version": "202606030009",
         "module": "lead_capture_crm",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -71,6 +98,8 @@
       {
         "version": "202606030010",
         "module": "lead_capture_crm",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -78,6 +107,8 @@
       {
         "version": "202606030011",
         "module": "notification_automation",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -85,6 +116,8 @@
       {
         "version": "202606040001",
         "module": "workspace_platform",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -92,6 +125,8 @@
       {
         "version": "202606040002",
         "module": "workspace_platform",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -99,6 +134,8 @@
       {
         "version": "202606040004",
         "module": "workspace_platform",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -106,6 +143,8 @@
       {
         "version": "202606040005",
         "module": "workspace_platform",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -113,6 +152,8 @@
       {
         "version": "202606050001",
         "module": "bond_finance",
+        "objectStatus": "no_static_objects",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_manual_sql",
         "resolved": true,
         "blockers": []
@@ -120,6 +161,8 @@
       {
         "version": "202606080002",
         "module": "commercial",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -127,13 +170,17 @@
       {
         "version": "202606090010",
         "module": "other",
-        "decision": "confirmed_superseded_split",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
+        "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
       },
       {
         "version": "202606110004",
         "module": "commercial",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -141,6 +188,8 @@
       {
         "version": "202606110005",
         "module": "commercial",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -148,6 +197,8 @@
       {
         "version": "202606110006",
         "module": "commercial",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
@@ -155,11 +206,16 @@
       {
         "version": "202606110007",
         "module": "commercial",
+        "objectStatus": "all_live",
+        "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
         "resolved": true,
         "blockers": []
       }
     ]
   },
-  "blockers": []
+  "blockers": [
+    "202607310007:missing_production_promotion_plan",
+    "202607310008:missing_production_promotion_plan"
+  ]
 }
