@@ -71,7 +71,7 @@ import {
   CONVEYANCING_DOCUMENT_SHORTCUTS,
 } from '../core/transactions/attorneyDocumentControl'
 import { buildAttorneyCommunicationControl } from '../core/transactions/attorneyCommunicationControl'
-import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
+import { deriveFinanceManagedBy, isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
 import {
   buildTransactionLifecycleSummaryFromRollup,
   formatTransactionRollupStatusLabel,
@@ -183,7 +183,7 @@ const AGENT_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'documents', label: 'Documents' },
   { id: 'finance', label: 'Finance' },
-  { id: 'transfer', label: 'Transfer' },
+  { id: 'transfer', label: 'Conveyancing' },
   { id: 'activity', label: 'Activity' },
   { id: 'stakeholders', label: 'Roleplayers' },
 ]
@@ -3976,6 +3976,261 @@ function LegalWorkflowProgressBar({
   )
 }
 
+function getAgentConveyancingWorkflowKey(workflow = {}) {
+  const detailKey = String(workflow?.detailKey || workflow?.key || '').toLowerCase()
+  const accentKey = String(workflow?.accentKey || '').toLowerCase()
+  if (detailKey.includes('cancel') || accentKey.includes('cancel')) return 'cancellation'
+  if (detailKey.includes('bond') || accentKey.includes('bond')) return 'bond'
+  return 'transfer'
+}
+
+function isInternalActivityEntry(entry = {}) {
+  const visibility = String(entry?.visibility || entry?.visibilityScope || entry?.visibility_scope || 'shared').trim().toLowerCase()
+  const category = String(entry?.category || '').trim().toLowerCase()
+  const filterKeys = Array.isArray(entry?.filterKeys) ? entry.filterKeys.map((key) => String(key || '').trim().toLowerCase()) : []
+  return Boolean(entry?.internal || category === 'internal' || visibility === 'internal' || filterKeys.includes('internal'))
+}
+
+function isAgentSafeWorkflowUpdate(entry = {}) {
+  const visibility = String(entry?.visibility || entry?.visibilityScope || entry?.visibility_scope || 'shared').trim().toLowerCase()
+  if (isInternalActivityEntry(entry)) return false
+  return ['shared', 'professional_shared', 'client_visible', 'client_safe', 'buyer_visible'].includes(visibility) || !visibility
+}
+
+function normalizeWorkflowUpdateForAgent(entry = {}) {
+  if (!entry) return null
+  if (entry.kind || entry.createdAt || entry.body || entry.authorName) return entry
+  return humanizeLegalTimelineActivity(entry)
+}
+
+function getAgentConveyancingLatestUpdate(workflow = {}, activityFeed = []) {
+  const workflowKey = getAgentConveyancingWorkflowKey(workflow)
+  const aliases = new Set([
+    workflowKey,
+    workflow?.key,
+    workflow?.detailKey,
+    workflow?.accentKey,
+    workflow?.lane?.laneKey,
+    workflow?.lane?.processType,
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean))
+
+  const laneTimelineUpdates = [
+    ...(Array.isArray(workflow?.timeline) ? workflow.timeline : []),
+    ...(Array.isArray(workflow?.updates) ? workflow.updates : []),
+  ]
+    .map(normalizeWorkflowUpdateForAgent)
+    .filter(Boolean)
+    .sort((left, right) => new Date(right.createdAt || right.timestamp || 0).getTime() - new Date(left.createdAt || left.timestamp || 0).getTime())
+
+  const candidateUpdates = [
+    ...laneTimelineUpdates,
+    ...(Array.isArray(activityFeed) ? activityFeed : []),
+  ].sort((left, right) => new Date(right.createdAt || right.timestamp || 0).getTime() - new Date(left.createdAt || left.timestamp || 0).getTime())
+
+  return candidateUpdates.find((entry) => {
+    if (!isAgentSafeWorkflowUpdate(entry)) return false
+    const keys = Array.isArray(entry?.filterKeys) ? entry.filterKeys : []
+    const laneKeys = [
+      entry?.laneKey,
+      entry?.lane_key,
+      entry?.attorneyRole,
+      entry?.attorney_role,
+      ...keys,
+    ]
+    return laneKeys.some((key) => aliases.has(String(key || '').trim().toLowerCase()))
+  }) || null
+}
+
+function AgentConveyancingWorkspace({
+  workflows = [],
+  activeDetailKey = '',
+  routingDiagnostics = null,
+  activityFeed = [],
+  saving = false,
+  onSelectWorkflow,
+  onBackToLanes,
+  onOpenActivity,
+}) {
+  const visibleWorkflows = workflows.filter((workflow) => workflow?.required)
+  const activeWorkflow = activeDetailKey
+    ? visibleWorkflows.find((workflow) => workflow.detailKey === activeDetailKey) || null
+    : null
+
+  if (activeDetailKey && activeWorkflow) {
+    const workflowKey = getAgentConveyancingWorkflowKey(activeWorkflow)
+    const statusMeta = WORKFLOW_STATUS_META[activeWorkflow.statusKey] || WORKFLOW_STATUS_META.not_started
+    const latestUpdate = getAgentConveyancingLatestUpdate(activeWorkflow, activityFeed)
+    const steps = buildLegalWorkflowProgressSteps({
+      workflowKey,
+      lane: activeWorkflow.lane,
+      facts: routingDiagnostics?.facts || {},
+    })
+    const currentStep = steps.find((step) => step.isCurrent) || steps.find((step) => step.displayStatus !== 'completed') || steps.at(-1)
+
+    return (
+      <section className="space-y-5">
+        <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <Button type="button" variant="ghost" size="sm" onClick={onBackToLanes}>
+                Back to Conveyancing
+              </Button>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-textStrong">{activeWorkflow.title}</h2>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">Read only</span>
+              </div>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">
+                This is the same attorney workflow progress used by the legal workspace. Agent access is read-only, so attorney updates sync here without exposing internal task controls.
+              </p>
+            </div>
+            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
+              <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
+              {activeWorkflow.statusLabel}
+            </span>
+          </div>
+
+          <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-3">
+            {[
+              ['Progress', `${activeWorkflow.progressPercent || 0}%`],
+              ['Current Step', currentStep?.label || activeWorkflow.nextStep || 'Pending'],
+              ['Next Step', activeWorkflow.nextStep || currentStep?.label || 'Review workflow'],
+              [activeWorkflow.assignedLabel || 'Assigned Attorney', activeWorkflow.assignedDisplay || 'Not assigned'],
+            ].map(([label, value]) => (
+              <article key={`${activeWorkflow.key}-${label}`} className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                <span className="block break-words text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+                <strong className="mt-1 block break-words text-sm text-textStrong">{value}</strong>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.32fr)]">
+          <LegalWorkflowProgressBar
+            workflow={activeWorkflow}
+            diagnostics={routingDiagnostics}
+            saving={saving}
+          />
+
+          <aside className="space-y-4 2xl:self-start">
+            <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+              <h3 className="text-sm font-semibold text-textStrong">Latest Shared Update</h3>
+              {latestUpdate ? (
+                <article className="mt-3 rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3">
+                  <strong className="block text-sm text-textStrong">{latestUpdate.title || 'Workflow update'}</strong>
+                  <p className="mt-2 text-sm leading-6 text-textMuted">{latestUpdate.body || latestUpdate.message || 'Update recorded.'}</p>
+                  <span className="mt-3 block text-xs font-semibold text-textMuted">
+                    {latestUpdate.authorName || latestUpdate.actor || 'Matter team'} · {formatDateTime(latestUpdate.createdAt || latestUpdate.timestamp, '')}
+                  </span>
+                </article>
+              ) : (
+                <p className="mt-3 rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm leading-6 text-textMuted">
+                  No shared attorney update has been posted for this lane yet.
+                </p>
+              )}
+              <Button type="button" variant="ghost" size="sm" className="mt-3" onClick={onOpenActivity}>
+                View Updates
+              </Button>
+            </section>
+
+            {activeWorkflow.blockers?.length ? (
+              <section className="rounded-[18px] border border-amber-200 bg-amber-50 p-5">
+                <h3 className="text-sm font-semibold text-amber-900">Needs Attention</h3>
+                <div className="mt-3 space-y-2">
+                  {activeWorkflow.blockers.slice(0, 4).map((blocker) => (
+                    <p key={blocker} className="text-sm leading-6 text-amber-800">{blocker}</p>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </aside>
+        </section>
+      </section>
+    )
+  }
+
+  return (
+    <section className="space-y-5">
+      <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+        <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-textStrong">Conveyancing</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">
+          Track the legal lanes for this transaction. These cards mirror the attorney workflow source and only expose agent-safe progress.
+        </p>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+        {visibleWorkflows.map((workflow) => {
+          const workflowKey = getAgentConveyancingWorkflowKey(workflow)
+          const statusMeta = WORKFLOW_STATUS_META[workflow.statusKey] || WORKFLOW_STATUS_META.not_started
+          const latestUpdate = getAgentConveyancingLatestUpdate(workflow, activityFeed)
+          const steps = buildLegalWorkflowProgressSteps({
+            workflowKey,
+            lane: workflow.lane,
+            facts: routingDiagnostics?.facts || {},
+          })
+          const currentStep = steps.find((step) => step.isCurrent) || steps.find((step) => step.displayStatus !== 'completed') || steps.at(-1)
+          return (
+            <button
+              key={workflow.key}
+              type="button"
+              className="flex min-h-[260px] flex-col rounded-[18px] border border-borderDefault bg-white p-5 text-left shadow-[0_10px_22px_rgba(15,23,42,0.04)] transition hover:border-emerald-200 hover:shadow-[0_16px_34px_rgba(15,23,42,0.07)]"
+              onClick={() => onSelectWorkflow?.(workflow.detailKey)}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">{workflow.assignedLabel || 'Legal lane'}</span>
+                  <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-textStrong">{workflow.title}</h3>
+                </div>
+                <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
+                  {workflow.statusLabel}
+                </span>
+              </div>
+
+              <div className="mt-4">
+                <div className="flex items-center justify-between gap-3 text-xs font-semibold text-textMuted">
+                  <span>Progress</span>
+                  <span>{workflow.progressPercent || 0}%</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-emerald-700" style={{ width: `${workflow.progressPercent || 0}%` }} />
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                <div>
+                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Current Step</span>
+                  <strong className="mt-1 block text-sm text-textStrong">{currentStep?.label || workflow.nextStep || 'Pending'}</strong>
+                </div>
+                <div>
+                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Assigned</span>
+                  <strong className="mt-1 block text-sm text-textStrong">{workflow.assignedDisplay || 'Not assigned'}</strong>
+                </div>
+              </div>
+
+              <div className="mt-auto pt-4">
+                {latestUpdate ? (
+                  <p className="line-clamp-2 text-sm leading-6 text-textMuted">{latestUpdate.body || latestUpdate.message || latestUpdate.title}</p>
+                ) : (
+                  <p className="text-sm leading-6 text-textMuted">No shared attorney update yet.</p>
+                )}
+                <span className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-emerald-800">
+                  View Progress
+                  <ChevronRight size={15} />
+                </span>
+              </div>
+            </button>
+          )
+        })}
+      </section>
+
+      {!visibleWorkflows.length ? (
+        <section className="rounded-[18px] border border-dashed border-borderDefault bg-white px-5 py-8 text-sm text-textMuted">
+          No conveyancing lanes are required for this transaction yet.
+        </section>
+      ) : null}
+    </section>
+  )
+}
+
 function LegalWorkflowActionPanel({ workflow = null, compact = false, onExecuteAction = null, onExecuteFollowUp = null }) {
   const actionSummary = workflow?.actionSummary || {}
   const primaryAction = actionSummary.primaryNextAction || null
@@ -4463,6 +4718,7 @@ function humanizeTransactionEvent(event = {}) {
   const eventData = getActivityEventData(event)
   const laneCategory = getLaneCategory(eventData.laneKey || eventData.lane_key || eventData.workflowLane || eventData.attorneyRole)
   const lowerType = eventType.toLowerCase()
+  const eventVisibility = String(event.visibility || event.visibility_scope || eventData.visibility || eventData.visibilityScope || 'shared').trim().toLowerCase()
   const source = String(eventData.source || eventData.trigger || '').trim().toLowerCase()
   const isAdditionalDocumentRequest = source === 'additional_document_requested'
   const stepLabel = eventData.stepLabel || eventData.step_label || toTitle(eventData.stepKey || eventData.step_key || '')
@@ -4561,7 +4817,8 @@ function humanizeTransactionEvent(event = {}) {
     attachmentName: category === 'documents' ? attachmentName : '',
     meta,
     messageType,
-    visibility: category === 'system' ? 'system' : 'shared',
+    visibility: category === 'system' ? 'system' : eventVisibility,
+    internal: category === 'internal' || eventVisibility === 'internal',
   }
 }
 
@@ -4616,9 +4873,10 @@ function humanizeDiscussionActivity(comment = {}) {
 
 function humanizeLegalTimelineActivity(item = {}) {
   const laneCategory = getLaneCategory(item.laneKey || item.lane_key || item.attorneyRole || item.attorney_role)
+  const visibility = String(item.visibility || 'shared').trim().toLowerCase()
   const category = item.category === 'documents'
     ? 'documents'
-    : laneCategory || (item.visibility === 'internal' ? 'internal' : 'notes')
+    : laneCategory || (visibility === 'internal' ? 'internal' : 'notes')
   const meta = getActivityCategoryMeta(category)
   const timestamp = item.timestamp || item.createdAt || item.created_at || item.changedAt || item.changed_at || ''
   return {
@@ -4636,7 +4894,9 @@ function humanizeLegalTimelineActivity(item = {}) {
     attachmentName: item.relatedDocumentId ? item.title || 'Document' : '',
     meta,
     messageType: item.source === 'document_request' ? 'document_request' : item.type || 'workflow_update',
-    visibility: item.visibility || 'shared',
+    visibility,
+    internal: category === 'internal' || visibility === 'internal',
+    laneKey: item.laneKey || item.lane_key || '',
   }
 }
 
@@ -5477,6 +5737,7 @@ const ARCHLINE_TAB_ICONS = {
   finance: CircleDollarSign,
   cancellation: X,
   activity: Activity,
+  stakeholders: UsersRound,
   roleplayers: UsersRound,
   parties: UsersRound,
 }
@@ -5525,6 +5786,10 @@ function ArchlineMatterHeader({
   workflow = null,
   tabs = [],
   activeTab,
+  workspaceLabel = 'Legal Matter Workspace',
+  shareLabel = 'Share Portal',
+  moreActionsLabel = 'More Actions',
+  showWorkflowProgress = true,
   onTabChange,
   onSharePortal,
   onCall,
@@ -5575,12 +5840,12 @@ function ArchlineMatterHeader({
                 <ChevronRight size={15} className="rotate-180" />
                 {backLabel || 'Back to Matters'}
               </Link>
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Legal Matter Workspace</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{workspaceLabel}</span>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
               <button type="button" className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50" onClick={onSharePortal}>
                 <Link2 size={15} />
-                Share Portal
+                {shareLabel}
               </button>
               <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50" onClick={onCall} aria-label="Call primary contact" title="Call primary contact">
                 <Phone size={16} />
@@ -5593,7 +5858,7 @@ function ArchlineMatterHeader({
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ee] bg-white px-4 text-sm font-semibold text-[#142132] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]"
                 onClick={onMoreActions}
               >
-                More Actions
+                {moreActionsLabel}
                 <MoreHorizontal size={16} />
               </button>
             </div>
@@ -5667,6 +5932,7 @@ function ArchlineMatterHeader({
           </div>
         </section>
 
+        {showWorkflowProgress ? (
         <section className="rounded-[20px] border border-slate-200/80 bg-white px-4 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.04)]">
           <div className="overflow-x-auto px-1 pb-2">
             <div className="flex min-w-max items-start">
@@ -5707,6 +5973,7 @@ function ArchlineMatterHeader({
             </div>
           </div>
         </section>
+        ) : null}
 
         <nav className="sticky top-0 z-20 overflow-hidden rounded-[20px] border border-slate-200/75 bg-white px-3 shadow-[0_14px_32px_rgba(15,23,42,0.045)] sm:px-5" aria-label="Matter navigation">
           <div className="flex min-w-0 gap-1 overflow-x-auto">
@@ -6963,7 +7230,7 @@ function ArchlineTransferWorkspace({
                     type="button"
                     variant={action.status === 'completed' ? 'primary' : 'secondary'}
                     size="sm"
-                    disabled={saving || action.disabled}
+                    disabled={saving || !canUpdateSteps || action.disabled}
                     title={action.reason || ''}
                     onClick={() => openStatusDraft(selectedTask, action)}
                   >
@@ -7064,18 +7331,18 @@ function ArchlineTransferWorkspace({
 
 const ATTORNEY_DOCUMENT_DASHBOARD_CATEGORY_DEFINITIONS = {
   buyer: [
-    { key: 'buyer_fica_id', label: 'Buyer FICA & ID Documents', icon: FileCheck2, tokens: ['fica', 'identity', ' id ', '_id', 'passport', 'marriage', 'spouse', 'trust', 'company', 'authority'] },
-    { key: 'buyer_proof_of_residence', label: 'Proof of Residence', icon: Building2, tokens: ['proof of residence', 'proof_of_residence', 'proof of address', 'proof_of_address', 'utility', 'municipal', 'lease'] },
-    { key: 'buyer_employment_income', label: 'Employment & Income', icon: BriefcaseBusiness, tokens: ['employment', 'income', 'payslip', 'salary', 'tax', 'bank statement'] },
-    { key: 'buyer_finance_bond', label: 'Finance & Bond Documents', icon: FileText, tokens: ['finance', 'bond', 'loan', 'guarantee', 'approval', 'pre-approval', 'proof of funds', 'deposit'] },
-    { key: 'buyer_other', label: 'Other Buyer Documents', icon: FileText, tokens: [] },
+    { key: 'buyer_property', label: 'Property Documents', icon: FileCheck2, tokens: ['property', 'title deed', 'building plan', 'sectional', 'body corporate', 'compliance', 'disclosure'] },
+    { key: 'buyer_sales', label: 'Sales Documents', icon: Building2, tokens: ['sale', 'sales', 'otp', 'offer to purchase', 'agreement', 'mandate', 'addenda', 'addendum', 'suspensive'] },
+    { key: 'buyer_fica', label: 'FICA Documents', icon: UserCircle, tokens: ['fica', 'identity', ' id ', '_id', 'passport', 'marriage', 'spouse', 'trust', 'company', 'authority', 'proof of residence', 'proof_of_residence', 'proof of address', 'proof_of_address', 'utility', 'municipal', 'lease'] },
+    { key: 'buyer_finance', label: 'Finance Documents', icon: CircleDollarSign, tokens: ['finance', 'bond', 'loan', 'guarantee', 'approval', 'pre-approval', 'proof of funds', 'deposit', 'employment', 'income', 'payslip', 'salary', 'tax', 'bank statement'] },
+    { key: 'buyer_additional', label: 'Additional Requests', icon: FileText, tokens: [] },
   ],
   seller: [
     { key: 'seller_property', label: 'Property Documents', icon: FileCheck2, tokens: ['property', 'title deed', 'building plan', 'sectional', 'body corporate', 'compliance', 'disclosure'] },
-    { key: 'seller_sale', label: 'Sale Documents', icon: Building2, tokens: ['sale', 'otp', 'offer to purchase', 'agreement', 'mandate', 'addenda', 'addendum', 'suspensive'] },
-    { key: 'seller_fica_id', label: 'FICA & ID Documents', icon: UserCircle, tokens: ['fica', 'identity', ' id ', '_id', 'passport', 'marriage', 'spouse', 'trust', 'company', 'tax'] },
-    { key: 'seller_rates_levies', label: 'Rates & Levies', icon: CircleDollarSign, tokens: ['rates', 'levy', 'levies', 'clearance', 'municipal'] },
-    { key: 'seller_other', label: 'Other Seller Documents', icon: FileText, tokens: [] },
+    { key: 'seller_sales', label: 'Sales Documents', icon: Building2, tokens: ['sale', 'sales', 'otp', 'offer to purchase', 'agreement', 'mandate', 'addenda', 'addendum', 'suspensive'] },
+    { key: 'seller_fica', label: 'FICA Documents', icon: UserCircle, tokens: ['fica', 'identity', ' id ', '_id', 'passport', 'marriage', 'spouse', 'trust', 'company', 'tax', 'proof of residence', 'proof_of_residence', 'proof of address', 'proof_of_address', 'utility', 'municipal', 'lease'] },
+    { key: 'seller_finance', label: 'Finance Documents', icon: CircleDollarSign, tokens: ['finance', 'bond', 'loan', 'guarantee', 'approval', 'pre-approval', 'proof of funds', 'deposit', 'rates', 'levy', 'levies', 'clearance', 'municipal'] },
+    { key: 'seller_additional', label: 'Additional Requests', icon: FileText, tokens: [] },
   ],
 }
 
@@ -7281,35 +7548,6 @@ function buildAttorneyDocumentsDashboardModel({
   return { totalRequired, verified, received, missing, pendingReview, completionPercent, summaryCards, parties, activityRows }
 }
 
-function buildDocumentHealthDonutSegments({ total = 0, verified = 0, pending = 0, missing = 0, outstanding = 0 } = {}) {
-  if (!total) {
-    return {
-      gradient: 'conic-gradient(#e2e8f0 0deg 360deg)',
-      receivedPercent: 0,
-      pendingPercent: 0,
-      missingPercent: 0,
-      outstandingPercent: 0,
-    }
-  }
-  const clampCount = (value) => Math.max(0, Math.min(total, Number(value || 0)))
-  const verifiedCount = clampCount(verified)
-  const pendingCount = clampCount(pending)
-  const missingCount = clampCount(missing)
-  const outstandingCount = clampCount(outstanding)
-  const toDegrees = (value) => (clampCount(value) / total) * 360
-  const verifiedEnd = toDegrees(verifiedCount)
-  const pendingEnd = verifiedEnd + toDegrees(pendingCount)
-  const missingEnd = pendingEnd + toDegrees(missingCount)
-  const outstandingEnd = Math.min(360, missingEnd + toDegrees(outstandingCount))
-  return {
-    gradient: `conic-gradient(#059669 0deg ${verifiedEnd}deg, #2563eb ${verifiedEnd}deg ${pendingEnd}deg, #ea580c ${pendingEnd}deg ${missingEnd}deg, #cbd5e1 ${missingEnd}deg ${outstandingEnd}deg, #e2e8f0 ${outstandingEnd}deg 360deg)`,
-    receivedPercent: Math.round((clampCount(verified + pending) / total) * 100),
-    pendingPercent: Math.round((pendingCount / total) * 100),
-    missingPercent: Math.round((missingCount / total) * 100),
-    outstandingPercent: Math.round((outstandingCount / total) * 100),
-  }
-}
-
 function ArchlineDocumentsWorkspace({
   documentHealthSummary = {},
   ficaSummary = {},
@@ -7327,7 +7565,6 @@ function ArchlineDocumentsWorkspace({
 }) {
   const [activePartyView, setActivePartyView] = useState('all')
   const [activeCategory, setActiveCategory] = useState(null)
-  const [activeActivityFilter, setActiveActivityFilter] = useState('all')
 
   const dashboardModel = useMemo(
     () =>
@@ -7344,21 +7581,6 @@ function ArchlineDocumentsWorkspace({
   const visibleParties = activePartyView === 'all'
     ? dashboardModel.parties
     : dashboardModel.parties.filter((party) => party.key === activePartyView)
-  const visibleActivityRows = dashboardModel.activityRows.filter((row) => activeActivityFilter === 'all' || row.type === activeActivityFilter)
-  const attentionCount = (documentHealthSummary.missingCount || missingRows.length || 0) + (documentHealthSummary.pendingReviewCount || 0)
-  const healthTotal = documentHealthSummary.requiredCount || requiredRows.length || dashboardModel.totalRequired || 0
-  const healthReceived = documentHealthSummary.uploadedCount || dashboardModel.received || 0
-  const healthPending = documentHealthSummary.pendingReviewCount || dashboardModel.pendingReview || 0
-  const healthMissing = documentHealthSummary.missingCount || missingRows.length || dashboardModel.missing || 0
-  const healthVerified = documentHealthSummary.approvedCount || dashboardModel.verified || 0
-  const healthOutstanding = Math.max(healthTotal - healthReceived, 0)
-  const healthSegments = buildDocumentHealthDonutSegments({
-    total: healthTotal,
-    verified: healthVerified,
-    pending: healthPending,
-    missing: healthMissing,
-    outstanding: healthOutstanding,
-  })
   const activeCategoryFiles = activeCategory?.documents || []
   const activeCategoryRequirements = activeCategory?.requirements || []
 
@@ -7407,206 +7629,68 @@ function ArchlineDocumentsWorkspace({
           })}
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.25fr)]">
-        <div className="space-y-4">
-          <ArchlinePanel className="overflow-hidden">
-            <div className="border-b border-slate-200 p-4">
-              <div className="inline-flex w-full rounded-lg border border-slate-200 bg-slate-50 p-1 sm:w-auto">
-                {[
-                  ['all', 'All'],
-                  ['buyer', 'Buyer'],
-                  ['seller', 'Seller'],
-                ].map(([keyValue, label]) => (
-                  <button
-                    key={keyValue}
-                    type="button"
-                    className={`min-w-[96px] flex-1 rounded-md px-3 py-2 text-sm font-semibold transition sm:flex-none ${
-                      activePartyView === keyValue ? 'bg-white text-emerald-800 shadow-sm ring-1 ring-emerald-100' : 'text-slate-600 hover:text-slate-950'
-                    }`}
-                    onClick={() => setActivePartyView(keyValue)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className={`grid gap-4 p-4 ${visibleParties.length > 1 ? 'lg:grid-cols-2' : ''}`}>
-              {visibleParties.map((party) => (
-                <section key={party.key} className="min-w-0">
-                  <div className="mb-3">
-                    <h3 className="text-base font-semibold text-slate-950">{party.label}</h3>
-                    <p className="mt-1 text-sm text-slate-500">{party.description}</p>
-                  </div>
-                  <div className="space-y-2">
-                    {party.categories.map((category) => {
-                      const CategoryIcon = category.icon
-                      const statusTone = getAttorneyDocumentDashboardStatusTone(category.status)
-                      return (
-                        <button
-                          key={category.key}
-                          type="button"
-                          className="flex w-full items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-emerald-200 hover:bg-emerald-50/30"
-                          onClick={() => {
-                            setActiveCategory(category)
-                            onFilterChange?.(party.key)
-                          }}
-                        >
-                          <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg ${statusTone.icon}`}>
-                            <CategoryIcon size={16} />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <strong className="block truncate text-sm font-semibold text-slate-950">{category.label}</strong>
-                            <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                              <span>{category.receivedCount} of {category.requiredCount} received</span>
-                              <span className={`rounded-full px-2 py-0.5 font-semibold ${statusTone.pill}`}>{category.statusLabel}</span>
-                            </span>
-                          </span>
-                          <ChevronRight size={16} className="shrink-0 text-slate-400" />
-                        </button>
-                      )
-                    })}
-                  </div>
-                </section>
-              ))}
-            </div>
-          </ArchlinePanel>
-
-          <ArchlinePanel className="overflow-hidden">
-            <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-sm font-semibold text-slate-950">Document Activity</h3>
-              <div className="flex gap-1 overflow-x-auto">
-                {[
-                  ['all', 'All Activity'],
-                  ['upload', 'Uploads'],
-                  ['request', 'Requests'],
-                  ['status', 'Status Changes'],
-                ].map(([keyValue, label]) => (
-                  <button
-                    key={keyValue}
-                    type="button"
-                    className={`shrink-0 border-b-2 px-3 py-2 text-xs font-semibold ${
-                      activeActivityFilter === keyValue ? 'border-emerald-700 text-emerald-800' : 'border-transparent text-slate-500 hover:text-slate-800'
-                    }`}
-                    onClick={() => setActiveActivityFilter(keyValue)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {visibleActivityRows.slice(0, 6).map((row) => {
-                const ActivityIcon = row.icon
-                return (
-                  <article key={row.id} className="flex items-center gap-3 px-4 py-3">
-                    <span className={`inline-flex size-8 shrink-0 items-center justify-center rounded-lg ${row.iconTone}`}>
-                      <ActivityIcon size={14} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <strong className="block truncate text-sm font-semibold text-slate-950">{row.label}</strong>
-                      <span className="mt-0.5 block truncate text-xs text-slate-500">{row.detail}</span>
-                    </span>
-                    <span className="hidden shrink-0 text-xs text-slate-500 sm:block">{row.timeLabel}</span>
-                    <span className={`shrink-0 rounded-full px-2 py-1 text-[0.68rem] font-semibold ${row.badgeTone}`}>{row.badge}</span>
-                  </article>
-                )
-              })}
-              {!visibleActivityRows.length ? (
-                <p className="px-4 py-8 text-sm text-slate-500">No document activity matches this filter.</p>
-              ) : null}
-            </div>
-            {dashboardModel.activityRows.length ? (
-              <div className="border-t border-slate-100 px-4 py-3">
-                <Button type="button" variant="ghost" size="sm" onClick={() => onFilterChange?.('all')}>
-                  View all activity
-                  <ChevronRight size={14} />
-                </Button>
-              </div>
-            ) : null}
-          </ArchlinePanel>
-        </div>
-
-        <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
-          <ArchlinePanel title="Document Health" className="p-4">
-            <div className="flex flex-col items-center gap-4 sm:flex-row xl:flex-col">
-              <div
-                className="grid size-32 shrink-0 place-items-center rounded-full"
-                style={{ background: healthSegments.gradient }}
-                aria-label={`${healthTotal} total required documents`}
-              >
-                <div className="grid size-24 place-items-center rounded-full bg-white text-center shadow-inner">
-                  <strong className="block text-2xl font-semibold text-slate-950">{healthTotal}</strong>
-                  <span className="block text-[0.68rem] font-semibold text-slate-500">Total Required</span>
-                </div>
-              </div>
-              <div className="grid w-full gap-2">
-                {[
-                  ['Received', healthReceived, healthSegments.receivedPercent, 'bg-emerald-600'],
-                  ['Pending Review', healthPending, healthSegments.pendingPercent, 'bg-blue-600'],
-                  ['Missing', healthMissing, healthSegments.missingPercent, 'bg-orange-600'],
-                  ['Outstanding', healthOutstanding, healthSegments.outstandingPercent, 'bg-slate-300'],
-                ].map(([label, value, percent, dot]) => (
-                  <div key={label} className="flex items-center gap-2 text-xs text-slate-600">
-                    <span className={`size-2 rounded-full ${dot}`} />
-                    <span className="min-w-0 flex-1 truncate">{value} {label}</span>
-                    <span className="font-semibold text-slate-500">{percent}%</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            {attentionCount ? (
-              <div className="mt-4 rounded-lg border border-red-100 bg-red-50 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-start gap-2">
-                    <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-600" />
-                    <div>
-                      <strong className="block text-xs font-semibold text-red-700">{attentionCount} document{attentionCount === 1 ? '' : 's'} need your attention</strong>
-                      <p className="mt-1 text-xs leading-5 text-red-700">Review and request outstanding items.</p>
-                    </div>
-                  </div>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => onFilterChange?.('missing')}>
-                    View
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </ArchlinePanel>
-
-          <ArchlinePanel title="Quick Actions" className="p-4">
-            <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
+        <ArchlinePanel className="overflow-hidden">
+          <div className="border-b border-slate-200 p-4">
+            <div className="inline-flex w-full rounded-lg border border-slate-200 bg-slate-50 p-1 sm:w-auto">
               {[
-                ['Upload Document', 'Upload files to this matter', Upload, onUpload],
-                ['Request Document', 'Request from buyer, seller or bank', FileText, onRequest],
-                ['Bulk Download', 'Review received files', Download, () => onFilterChange?.('verified')],
-                ['Document Checklist', 'View required document list', ListChecks, () => onFilterChange?.('missing')],
-              ].map(([label, helper, Icon, action]) => (
-                <button key={label} type="button" className="flex w-full items-center gap-3 bg-white px-3 py-3 text-left transition hover:bg-slate-50" onClick={action}>
-                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600">
-                    {createElement(Icon, { size: 14 })}
-                  </span>
-                  <span className="min-w-0">
-                    <strong className="block truncate text-sm font-semibold text-slate-950">{label}</strong>
-                    <span className="mt-0.5 block truncate text-xs text-slate-500">{helper}</span>
-                  </span>
+                ['all', 'All'],
+                ['buyer', 'Buyer'],
+                ['seller', 'Seller'],
+              ].map(([keyValue, label]) => (
+                <button
+                  key={keyValue}
+                  type="button"
+                  className={`min-w-[96px] flex-1 rounded-md px-3 py-2 text-sm font-semibold transition sm:flex-none ${
+                    activePartyView === keyValue ? 'bg-white text-emerald-800 shadow-sm ring-1 ring-emerald-100' : 'text-slate-600 hover:text-slate-950'
+                  }`}
+                  onClick={() => setActivePartyView(keyValue)}
+                >
+                  {label}
                 </button>
               ))}
             </div>
-          </ArchlinePanel>
-
-          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-            <div className="flex gap-3">
-              <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-blue-700">
-                <AtSign size={15} />
-              </span>
-              <p className="text-xs leading-5 text-blue-900">
-                <strong className="block text-sm text-blue-950">Tip</strong>
-                Use document categories to keep files organised and ensure nothing is missed.
-              </p>
-            </div>
           </div>
-        </aside>
-      </div>
+
+          <div className={`grid gap-4 p-4 ${visibleParties.length > 1 ? 'lg:grid-cols-2' : ''}`}>
+            {visibleParties.map((party) => (
+              <section key={party.key} className="min-w-0">
+                <div className="mb-3">
+                  <h3 className="text-base font-semibold text-slate-950">{party.label}</h3>
+                  <p className="mt-1 text-sm text-slate-500">{party.description}</p>
+                </div>
+                <div className="space-y-2">
+                  {party.categories.map((category) => {
+                    const CategoryIcon = category.icon
+                    const statusTone = getAttorneyDocumentDashboardStatusTone(category.status)
+                    return (
+                      <button
+                        key={category.key}
+                        type="button"
+                        className="flex w-full items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-emerald-200 hover:bg-emerald-50/30"
+                        onClick={() => {
+                          setActiveCategory(category)
+                          onFilterChange?.(party.key)
+                        }}
+                      >
+                        <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg ${statusTone.icon}`}>
+                          <CategoryIcon size={16} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <strong className="block truncate text-sm font-semibold text-slate-950">{category.label}</strong>
+                          <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            <span>{category.receivedCount} of {category.requiredCount} received</span>
+                            <span className={`rounded-full px-2 py-0.5 font-semibold ${statusTone.pill}`}>{category.statusLabel}</span>
+                          </span>
+                        </span>
+                        <ChevronRight size={16} className="shrink-0 text-slate-400" />
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        </ArchlinePanel>
       </section>
 
       <Modal
@@ -9415,10 +9499,10 @@ function AgentTransactionOverview({
         </div>
 
         <div className="mt-8 overflow-x-auto pb-2">
-          <div className="relative min-w-[820px] px-3">
+          <div className="relative w-full min-w-[820px] px-3">
             <div className="absolute left-10 right-10 top-[22px] h-0.5 bg-slate-200" />
             <div className="absolute left-10 top-[22px] h-0.5 bg-emerald-700 transition-all" style={{ width: `calc((100% - 5rem) * ${progressPercent / 100})` }} />
-            <div className="relative grid grid-cols-6 gap-4">
+            <div className="relative grid gap-4" style={{ gridTemplateColumns: `repeat(${journeyStages.length}, minmax(0, 1fr))` }}>
               {journeyStages.map((stage) => {
                 const Icon = stage.Icon || FileText
                 const isComplete = stage.state === 'completed'
@@ -11746,6 +11830,22 @@ function AttorneyTransactionDetail() {
   const financeTypeLabel = hasCapturedFinanceType ? toTitle(normalizedFinanceType) : 'Not captured'
   const isBondOrHybridFinance = hasCapturedFinanceType && isBondFinanceType(normalizedFinanceType)
   const financeRequiresBondSupport = hasCapturedFinanceType && isBondOrHybridFinance
+  const financeManagedByForTransaction = deriveFinanceManagedBy({
+    financeType: normalizedFinanceType,
+    financeManagedBy:
+      transactionFinanceWorkflow?.workflow?.financeManagedBy ||
+      transactionFinanceWorkflow?.workflow?.finance_managed_by ||
+      transactionFinanceWorkflow?.workflow?.financeOwner ||
+      transactionFinanceWorkflow?.workflow?.finance_owner ||
+      transaction?.financeManagedBy ||
+      transaction?.finance_managed_by ||
+      transaction?.financeOwner ||
+      transaction?.finance_owner ||
+      '',
+    formData: data?.onboardingFormData || transaction?.form_data || transaction?.formData || null,
+  })
+  const agentShouldUseOriginatorFinanceTracker =
+    isAgentTransactionView && isBondOrHybridFinance && financeManagedByForTransaction === 'bond_originator'
   const displayPurchasePriceValue = hasCapturedFinancials ? Number(transaction?.purchase_price || transaction?.sales_price || 0) : 0
   const bondAmountFallback = hasCapturedFinanceType ? (financeRequiresBondSupport ? 'Pending' : 'N/A') : 'Not captured'
   const propertyAddress = buildPropertyAddress(transaction, data?.onboardingFormData)
@@ -12063,17 +12163,19 @@ function AttorneyTransactionDetail() {
   const activityFeed = useMemo(
     () => {
       if (attorneyMatterScope?.scoped && !attorneyMatterScope.canSeeFullMatter) {
-        return (workflowOperations?.legalTimeline || [])
+        const scopedFeed = (workflowOperations?.legalTimeline || [])
           .map((item) => humanizeLegalTimelineActivity(item))
           .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())
+        return isAgentTransactionView ? scopedFeed.filter((entry) => !isInternalActivityEntry(entry)) : scopedFeed
       }
 
-      return [
+      const fullFeed = [
         ...transactionEvents.map((event) => humanizeTransactionEvent(event)),
         ...visibleTransactionDiscussion.map((comment) => humanizeDiscussionActivity(comment)),
       ].sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())
+      return isAgentTransactionView ? fullFeed.filter((entry) => !isInternalActivityEntry(entry)) : fullFeed
     },
-    [attorneyMatterScope, transactionEvents, visibleTransactionDiscussion, workflowOperations?.legalTimeline],
+    [attorneyMatterScope, isAgentTransactionView, transactionEvents, visibleTransactionDiscussion, workflowOperations?.legalTimeline],
   )
   const overviewConversationEntries = useMemo(() => activityFeed.slice(0, 8), [activityFeed])
   const lifecycleProgressState = useMemo(
@@ -15716,7 +15818,7 @@ function AttorneyTransactionDetail() {
       printSubtitle={matterHeadline}
       printGeneratedAt={formatDate(new Date().toISOString())}
       errorMessage={error}
-      headline={workspaceRole === 'attorney' ? (
+      headline={workspaceRole === 'attorney' || isAgentTransactionView ? (
         <div className="space-y-3">
           <ArchlineMatterHeader
             backPath={workspaceBackPath}
@@ -15730,13 +15832,19 @@ function AttorneyTransactionDetail() {
             instructionDate={formatDate(transaction?.instruction_date || transaction?.created_at, 'TBD')}
             matterChips={archlineMatterChips}
             workflow={archlineTransferWorkflow}
-            tabs={archlineWorkspaceTabs}
-            activeTab={archlineActiveWorkspaceTab}
-            onTabChange={handleArchlineTabChange}
+            tabs={isAgentTransactionView
+              ? workspaceMenuTabs.map((tab) => ({ id: tab.id, label: tab.label, count: tab.meta }))
+              : archlineWorkspaceTabs}
+            activeTab={isAgentTransactionView ? activeWorkspaceMenu : archlineActiveWorkspaceTab}
+            workspaceLabel={isAgentTransactionView ? 'Transaction Workspace' : 'Legal Matter Workspace'}
+            shareLabel={isAgentTransactionView ? 'Share Portal' : 'Share Portal'}
+            moreActionsLabel={isAgentTransactionView ? 'Activity' : 'More Actions'}
+            showWorkflowProgress={!isAgentTransactionView}
+            onTabChange={isAgentTransactionView ? openWorkspaceMenu : handleArchlineTabChange}
             onSharePortal={() => handleOverviewActionTarget('buyer_portal')}
             onCall={handleArchlineCallPrimaryContact}
             onEmail={handleArchlineEmailPrimaryContact}
-            onMoreActions={() => openWorkspaceMenu('tasks')}
+            onMoreActions={() => openWorkspaceMenu(isAgentTransactionView ? 'activity' : 'tasks')}
             onViewProperty={() => openWorkspaceMenu('overview')}
           />
           {onboardingActionMessage ? (
@@ -15786,7 +15894,7 @@ function AttorneyTransactionDetail() {
               daysActiveLabel={daysBetween(transaction?.created_at)}
               updatedLabel={displayedUpdatedLabel}
               actionButtons={headerWorkflowActionButtons}
-              isAgentView={isAgentTransactionView}
+              isAgentView={false}
             />
           )}
           <MatterWorkspaceTabs
@@ -15941,6 +16049,19 @@ function AttorneyTransactionDetail() {
             onOpenWorkspace={openWorkspaceMenu}
             onAddNote={handleQuickAddWorkflowNote}
             onRunTask={handleArchlineTaskCommand}
+          />
+        ) : null}
+
+        {isAgentTransactionView && activeWorkspaceMenu === 'transfer' ? (
+          <AgentConveyancingWorkspace
+            workflows={transferHubWorkflows}
+            activeDetailKey={activeLegalWorkflowDetailKey}
+            routingDiagnostics={routingDiagnostics}
+            activityFeed={overviewConversationEntries}
+            saving={workflowSaving}
+            onSelectWorkflow={openLegalWorkflowDetail}
+            onBackToLanes={closeLegalWorkflowDetail}
+            onOpenActivity={() => openWorkspaceMenu('activity')}
           />
         ) : null}
 
@@ -16149,7 +16270,7 @@ function AttorneyTransactionDetail() {
           />
         ) : null}
 
-        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'activity' ? (
+        {(workspaceRole === 'attorney' || isAgentTransactionView) && activeWorkspaceMenu === 'activity' ? (
           <ArchlineActivityWorkspace
             entries={filteredActivityFeed}
             groupedEntries={groupedActivityFeed}
@@ -16186,7 +16307,7 @@ function AttorneyTransactionDetail() {
           />
         ) : null}
 
-        {workspaceRole === 'attorney' && activeWorkspaceMenu === 'stakeholders' ? (
+        {(workspaceRole === 'attorney' || isAgentTransactionView) && activeWorkspaceMenu === 'stakeholders' ? (
           <ArchlineRolePlayersWorkspace
             contacts={transactionContactRows}
             teamCards={transactionTeamCards}
@@ -16204,7 +16325,7 @@ function AttorneyTransactionDetail() {
           />
         ) : null}
 
-        {workspaceRole !== 'attorney' && workspaceRole !== 'bond_originator' && ['overview', 'transfer'].includes(activeWorkspaceMenu) ? (
+        {workspaceRole !== 'attorney' && workspaceRole !== 'bond_originator' && (activeWorkspaceMenu === 'overview' || (!isAgentTransactionView && activeWorkspaceMenu === 'transfer')) ? (
           <>
             <section className="space-y-5">
               <div className="space-y-4">
@@ -17681,7 +17802,7 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'finance' && workspaceRole !== 'attorney' ? (
           <section className="space-y-5">
-            {isAgentTransactionView ? (
+            {agentShouldUseOriginatorFinanceTracker ? (
               <BondOriginatorAgentProgressView
                 progressView={bondOriginatorAgentProgressView}
                 financeWorkflow={transactionFinanceWorkflow}
@@ -17851,7 +17972,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {activeWorkspaceMenu === 'activity' && workspaceRole !== 'attorney' ? (
+        {activeWorkspaceMenu === 'activity' && workspaceRole !== 'attorney' && !isAgentTransactionView ? (
           <section className="space-y-5">
             {workspaceRole === 'attorney' ? (
               <AttorneyCommunicationCentre
@@ -18095,7 +18216,7 @@ function AttorneyTransactionDetail() {
           </section>
         ) : null}
 
-        {activeWorkspaceMenu === 'stakeholders' && workspaceRole !== 'attorney' ? (
+        {activeWorkspaceMenu === 'stakeholders' && workspaceRole !== 'attorney' && !isAgentTransactionView ? (
           <section className="space-y-6">
             <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import React from 'react'
@@ -17,13 +18,24 @@ try {
   const workflow = await server.ssrLoadModule('/src/core/transactions/bondHybridFinanceWorkflow.js')
   const financeService = await server.ssrLoadModule('/src/services/transactionFinanceService.js')
   const financeCommandModule = await server.ssrLoadModule('/src/components/transaction/TransactionFinanceCommandCenter.jsx')
+  const transactionDetailSource = fs.readFileSync(path.join(PROJECT_ROOT, 'src', 'pages', 'AttorneyTransactionDetail.jsx'), 'utf8')
 
   assert.equal(workflow.getBondHybridFinanceProgressPercent('intake'), 0)
-  assert.equal(workflow.getBondHybridFinanceProgressPercent('documents'), 14)
-  assert.equal(workflow.getBondHybridFinanceProgressPercent('submitted_to_banks'), 29)
-  assert.equal(workflow.getBondHybridFinanceProgressPercent('instruction_sent'), 86)
+  assert.equal(workflow.getBondHybridFinanceProgressPercent('documents'), 9)
+  assert.equal(workflow.getBondHybridFinanceProgressPercent('submitted_to_banks'), 18)
+  assert.equal(workflow.getBondHybridFinanceProgressPercent('instruction_sent'), 91)
   assert.equal(workflow.getBondHybridFinanceProgressPercent('complete'), 100)
   assert.equal(workflow.getBondHybridFinanceProgressPercent('intake', 'completed'), 100)
+
+  assert.match(
+    transactionDetailSource,
+    /const agentShouldUseOriginatorFinanceTracker =\s*isAgentTransactionView && isBondOrHybridFinance && financeManagedByForTransaction === 'bond_originator'/,
+  )
+  assert.doesNotMatch(
+    transactionDetailSource,
+    /activeWorkspaceMenu === 'finance'[\s\S]{0,500}\{isAgentTransactionView \? \(/,
+    'agent finance tab must not route all finance types to BondOriginatorAgentProgressView',
+  )
 
   const hybridWorkspace = financeService.buildTransactionFinanceWorkspace({
     transaction: {
@@ -76,6 +88,25 @@ try {
   assert.deepEqual(cashWorkspace.railGroups.map((group) => group.label), ['Cash Finance'])
   assert.equal(cashWorkspace.summaryBlocks.find((item) => item.key === 'finance_owner')?.value, 'Buyer / Attorney')
 
+  const buyerManagedBondWorkspace = financeService.buildTransactionFinanceWorkspace({
+    transaction: {
+      id: 'tx-buyer-managed-bond',
+      finance_type: 'bond',
+      finance_managed_by: 'client',
+    },
+    workflowData: null,
+    requiredDocumentChecklist: [
+      { id: 'bond-grant', key: 'bond_grant', label: 'Bond Grant', status: 'missing' },
+    ],
+    viewerRole: 'agent',
+  })
+
+  assert.equal(buyerManagedBondWorkspace.financeType, 'bond')
+  assert.equal(buyerManagedBondWorkspace.originatorManagedFinance, false)
+  assert.equal(buyerManagedBondWorkspace.clientManagedBondFinance, true)
+  assert.deepEqual(buyerManagedBondWorkspace.railGroups.map((group) => group.label), ['External Finance'])
+  assert.equal(buyerManagedBondWorkspace.summaryBlocks.find((item) => item.key === 'finance_owner')?.value, 'Buyer / Attorney')
+
   const FinanceCommandCenter = financeCommandModule.default
   const hybridMarkup = ReactDOMServer.renderToStaticMarkup(
     React.createElement(FinanceCommandCenter, {
@@ -121,20 +152,54 @@ try {
   )
 
   for (const expectedText of [
-    'Bond Application Progress',
-    'Cash Portion Status',
-    'Buyer Finance Readiness Snapshot',
-    'Bond Application Owner',
-    'Buyer Finance Documents',
-    'Cash Portion Evidence',
+    'Bond Workflow',
+    'Bond Workflow Stage',
+    'Bond Originator',
     'Bank Applications',
     'Offers / Buyer Decision',
+    'Grant Milestones',
     'Instruction to Attorney',
     'Agent proxy',
-    '0% Complete',
   ]) {
     assert.ok(hybridMarkup.includes(expectedText), `expected rendered finance command center to include "${expectedText}"`)
   }
+
+  const cashMarkup = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(FinanceCommandCenter, {
+      transaction: {
+        id: 'tx-cash',
+        finance_type: 'cash',
+      },
+      workflowData: null,
+      requiredDocumentChecklist: [
+        { id: 'proof-funds', key: 'proof_of_funds', label: 'Proof Of Funds', status: 'missing' },
+      ],
+      documents: [],
+      viewerRole: 'agent',
+    }),
+  )
+
+  assert.ok(cashMarkup.includes('Proof Of Funds'), 'expected cash finance tab to render proof of funds readiness')
+  assert.ok(!cashMarkup.includes('Bond Originator Progress'), 'expected cash finance tab not to render originator progress')
+
+  const buyerManagedBondMarkup = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(FinanceCommandCenter, {
+      transaction: {
+        id: 'tx-buyer-managed-bond',
+        finance_type: 'bond',
+        finance_managed_by: 'client',
+      },
+      workflowData: null,
+      requiredDocumentChecklist: [
+        { id: 'bond-grant', key: 'bond_grant', label: 'Bond Grant', status: 'missing' },
+      ],
+      documents: [],
+      viewerRole: 'agent',
+    }),
+  )
+
+  assert.ok(buyerManagedBondMarkup.includes('Bond Grant'), 'expected buyer-managed bond tab to render bond grant request')
+  assert.ok(!buyerManagedBondMarkup.includes('Bond Originator Progress'), 'expected buyer-managed bond tab not to render originator progress')
 
   console.log('finance tab launch-readiness checks passed')
 } finally {

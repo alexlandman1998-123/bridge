@@ -1,24 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, CheckCircle2, CheckSquare, Clock3, MapPin, MoreHorizontal, Plus, UserRound, X } from 'lucide-react'
-import Button from '../ui/Button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
+import { useMemo } from 'react'
+import { ArrowRight, CalendarDays, CheckCircle2, CheckSquare, ChevronDown, Clock3, Eye, X } from 'lucide-react'
 
 const TERMINAL_STATUSES = new Set(['completed', 'cancelled', 'declined', 'no_show'])
 
 function normalizeStatus(value) {
   return String(value || '').trim().toLowerCase()
-}
-
-function getWorkspaceStatusTone(status) {
-  const normalized = normalizeStatus(status)
-  if (normalized === 'completed') return 'border-[#dce9dd] bg-[#f4faf5] text-[#3e6a47]'
-  if (normalized === 'cancelled' || normalized === 'declined' || normalized === 'no_show') {
-    return 'border-[#eadfd9] bg-[#fff8f4] text-[#8a5d47]'
-  }
-  if (normalized === 'accepted' || normalized === 'confirmed') {
-    return 'border-[#d9e9dd] bg-[#f3faf4] text-[#3d6d47]'
-  }
-  return 'border-[#efddba] bg-[#fff8e9] text-[#8d6820]'
 }
 
 function getWorkspaceStatusLabel(status) {
@@ -42,136 +28,104 @@ function getAppointmentIdentity(appointment = {}, fallback = 'appointment') {
   )
 }
 
-function getAppointmentCardAccent(status) {
-  const normalized = normalizeStatus(status)
-  if (normalized === 'completed') return 'from-[#edf8f1] via-white to-white text-[#13784f]'
-  if (normalized === 'cancelled' || normalized === 'declined' || normalized === 'no_show') return 'from-[#fff4ee] via-white to-white text-[#9a5737]'
-  if (normalized === 'accepted' || normalized === 'confirmed') return 'from-[#edf8f1] via-white to-white text-[#13784f]'
-  return 'from-[#fff8e9] via-white to-white text-[#8d6820]'
+function getAppointmentStartDate(appointment = {}) {
+  const dateValue =
+    appointment.dateTime ||
+    appointment.startDateTime ||
+    appointment.start_date_time ||
+    appointment.startsAt ||
+    appointment.starts_at ||
+    appointment.date ||
+    appointment.appointmentDate ||
+    appointment.appointment_date
+
+  if (dateValue && appointment.startTime && !String(dateValue).includes('T')) {
+    const parsed = new Date(`${dateValue}T${appointment.startTime}`)
+    if (!Number.isNaN(parsed.getTime())) return parsed
+  }
+
+  if (!dateValue) return null
+  const parsed = new Date(dateValue)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
-function AppointmentCard({
-  appointment = {},
-  appointmentTitle = 'Appointment',
-  propertyLabel = 'Property to be confirmed',
-  appointmentDateLabel = '—',
-  appointmentTimeLabel = 'Time pending',
-  assignedAgentLabel = '',
-  outcomeLabel = '',
-  menuOpen = false,
-  menuRef = null,
-  onOpen = () => {},
-  onToggleMenu = () => {},
-  onReschedule = () => {},
-  onMarkComplete = null,
-  onCancel = null,
-}) {
-  const accentClass = getAppointmentCardAccent(appointment.status)
+function isSameCalendarDay(left, right) {
+  return left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+}
+
+function getCurrentWeekRange(now = new Date()) {
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() - start.getDay())
+  const end = new Date(start)
+  end.setDate(start.getDate() + 7)
+  return { start, end }
+}
+
+function isPendingAppointmentRequest(appointment = {}) {
+  const status = normalizeStatus(appointment.status)
+  return ['draft', 'requested', 'pending', 'seller_availability_requested', 'awaiting_buyer_confirmation'].includes(status) ||
+    status.includes('request') ||
+    status.includes('pending') ||
+    status.includes('awaiting')
+}
+
+function resolveClientLabel(appointment = {}, currentAgent = {}) {
+  const participants = Array.isArray(appointment.participants) ? appointment.participants : []
+  const client = participants.find((participant) => {
+    const role = normalizeStatus(participant.participantRole || participant.participant_role || participant.role)
+    return role && !role.includes('agent')
+  }) || participants[0] || {}
+
+  return String(
+    appointment.clientName ||
+      appointment.client_name ||
+      appointment.sellerName ||
+      appointment.seller_name ||
+      client.name ||
+      client.fullName ||
+      client.full_name ||
+      client.email ||
+      currentAgent?.clientName ||
+      'Seller',
+  ).trim()
+}
+
+function AppointmentMetricCard({ metric }) {
+  const Icon = metric.icon
   return (
-    <article
-      className={`group relative flex min-h-[230px] flex-col overflow-visible rounded-[22px] border border-[#dfe9f4] bg-gradient-to-br ${accentClass} p-4 text-left shadow-[0_14px_34px_rgba(31,54,78,0.045)] transition hover:-translate-y-0.5 hover:border-[#c8d7e6] hover:shadow-[0_20px_44px_rgba(31,54,78,0.08)]`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="flex min-w-0 flex-1 items-start gap-3 rounded-[16px] text-left outline-none transition focus-visible:ring-2 focus-visible:ring-[#13784f]/30"
-        >
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[15px] bg-white text-current shadow-[0_10px_24px_rgba(31,54,78,0.08)] ring-1 ring-[#e7eff7]">
-            <CalendarDays className="h-5 w-5" />
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-base font-semibold tracking-[-0.02em] text-[#18324b]" title={appointmentTitle}>{appointmentTitle}</span>
-            <span className="mt-1 flex items-start gap-1.5 text-sm leading-5 text-[#607891]">
-              <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#8aa0b7]" />
-              <span className="line-clamp-2">{propertyLabel}</span>
-            </span>
-          </span>
-        </button>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getWorkspaceStatusTone(appointment.status)}`}>
-            {getWorkspaceStatusLabel(appointment.status)}
-          </span>
-          <div ref={menuOpen ? menuRef : null} className="relative">
-            <button
-              type="button"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#d9e4ef] bg-white text-[#5b7289] shadow-[0_8px_18px_rgba(31,54,78,0.06)] transition hover:border-[#c5d4e4] hover:bg-[#f7fbfe]"
-              aria-label={`More actions for ${appointmentTitle}`}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={onToggleMenu}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
-            {menuOpen ? (
-              <div className="absolute right-0 z-30 mt-2 w-48 overflow-hidden rounded-[16px] border border-[#dbe7f2] bg-white py-2 shadow-[0_18px_40px_rgba(18,44,68,0.16)]" role="menu">
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold text-[#29435d] transition hover:bg-[#f5f9fc]"
-                  onClick={onReschedule}
-                  role="menuitem"
-                >
-                  <CalendarDays className="h-4 w-4" />
-                  Reschedule
-                </button>
-                {onMarkComplete ? (
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold text-[#29435d] transition hover:bg-[#f5f9fc]"
-                    onClick={onMarkComplete}
-                    role="menuitem"
-                  >
-                    <CheckSquare className="h-4 w-4" />
-                    Mark Complete
-                  </button>
-                ) : null}
-                {onCancel ? (
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold text-[#b42318] transition hover:bg-[#fff5f3]"
-                    onClick={onCancel}
-                    role="menuitem"
-                  >
-                    <X className="h-4 w-4" />
-                    Cancel
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={onOpen}
-        className="mt-5 grid gap-2 rounded-[18px] border border-[#e5eef7] bg-white/78 p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#13784f]/30"
-      >
-        <span className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">
-          <span>Appointment time</span>
-          <span className="text-[#607891]">{appointmentTimeLabel}</span>
-        </span>
-        <span className="flex items-center gap-2 text-sm font-semibold text-[#20364c]">
-          <Clock3 className="h-4 w-4 text-[#7f94aa]" />
-          {appointmentDateLabel}
-        </span>
-      </button>
-
-      <div className="mt-auto flex flex-wrap items-center gap-2 pt-4 text-xs font-semibold text-[#607891]">
-        {assignedAgentLabel ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e4edf6] bg-white px-2.5 py-1.5">
-            <UserRound className="h-3.5 w-3.5 text-[#7f94aa]" />
-            {assignedAgentLabel}
-          </span>
-        ) : null}
-        {outcomeLabel ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e4edf6] bg-white px-2.5 py-1.5">
-            <CheckCircle2 className="h-3.5 w-3.5 text-[#7f94aa]" />
-            {outcomeLabel}
-          </span>
-        ) : null}
-      </div>
+    <article className="grid min-h-[112px] grid-cols-[44px_minmax(0,1fr)] items-center gap-4 rounded-[18px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_28px_rgba(31,54,78,0.04)]">
+      <span className={`grid h-11 w-11 place-items-center rounded-[16px] ${metric.iconClass}`}>
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-2xl font-semibold tracking-[-0.04em] text-[#13283f]">{metric.value}</span>
+        <span className="mt-1 block text-sm font-semibold text-[#4f6680]">{metric.label}</span>
+        <span className="mt-1 block text-xs font-medium text-[#6d839b]">{metric.meta}</span>
+      </span>
     </article>
+  )
+}
+
+function AppointmentActionButton({ title, children, tone = 'default', onClick }) {
+  const toneClass = tone === 'danger'
+    ? 'text-[#b42318] hover:border-[#f3cfcb] hover:bg-[#fff5f3]'
+    : tone === 'success'
+      ? 'text-[#13784f] hover:border-[#bfe7d0] hover:bg-[#f4faf5]'
+      : 'text-[#516982] hover:border-[#c9d8e8] hover:bg-[#f6f9fc]'
+
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#dbe6f0] bg-white transition ${toneClass}`}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -180,188 +134,270 @@ function KingstonsSellerAppointmentsWorkspace({
   currentAgent = {},
   resolveAppointmentListingLabel = () => '',
   getAppointmentTypeLabel = () => '',
-  formatDateShort = () => '—',
+  formatDateShort = () => '-',
   formatAppointmentTimeRange = () => 'Time pending',
   getAppointmentStatusTone = () => 'border-[#dde7f2] bg-[#f7fbff] text-[#4c6680]',
+  handleViewCalendar = () => {},
   handleOpenAppointmentModal = () => {},
   handleScheduleAppointment = () => {},
   handleCancelAppointment = () => {},
   handleMarkAppointmentComplete = () => {},
-  resolveAgentById = () => null,
 }) {
-  const [activeTab, setActiveTab] = useState('upcoming')
-  const [openMenuAppointmentId, setOpenMenuAppointmentId] = useState('')
-  const menuRef = useRef(null)
+  const now = useMemo(() => new Date(), [])
+  const { start: weekStart, end: weekEnd } = useMemo(() => getCurrentWeekRange(now), [now])
 
-  useEffect(() => {
-    if (!openMenuAppointmentId || typeof document === 'undefined') return undefined
-    const handlePointerDown = (event) => {
-      if (menuRef.current?.contains(event.target)) return
-      setOpenMenuAppointmentId('')
-    }
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') setOpenMenuAppointmentId('')
-    }
-    document.addEventListener('mousedown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [openMenuAppointmentId])
-
-  const upcomingAppointments = useMemo(
+  const activeAppointments = useMemo(
     () =>
       (Array.isArray(appointments) ? appointments : [])
         .filter((appointment) => !TERMINAL_STATUSES.has(normalizeStatus(appointment?.status)))
-        .sort((a, b) => new Date(a.dateTime || a.createdAt || 0) - new Date(b.dateTime || b.createdAt || 0)),
+        .sort((a, b) => (getAppointmentStartDate(a)?.getTime() || 0) - (getAppointmentStartDate(b)?.getTime() || 0)),
     [appointments],
   )
 
-  const pastAppointments = useMemo(
-    () =>
-      (Array.isArray(appointments) ? appointments : [])
-        .filter((appointment) => TERMINAL_STATUSES.has(normalizeStatus(appointment?.status)))
-        .sort((a, b) => new Date(a.dateTime || a.createdAt || 0) - new Date(b.dateTime || b.createdAt || 0)),
-    [appointments],
+  const upcomingAppointments = useMemo(
+    () => activeAppointments.filter((appointment) => {
+      const start = getAppointmentStartDate(appointment)
+      return !start || start.getTime() >= now.getTime()
+    }),
+    [activeAppointments, now],
+  )
+
+  const metrics = useMemo(
+    () => [
+      {
+        key: 'today',
+        label: 'Today',
+        value: upcomingAppointments.filter((appointment) => {
+          const start = getAppointmentStartDate(appointment)
+          return start && isSameCalendarDay(start, now)
+        }).length,
+        meta: 'No appointments',
+        icon: CalendarDays,
+        iconClass: 'bg-[#e8f7ef] text-[#13784f]',
+      },
+      {
+        key: 'week',
+        label: 'This Week',
+        value: upcomingAppointments.filter((appointment) => {
+          const start = getAppointmentStartDate(appointment)
+          return start && start >= weekStart && start < weekEnd
+        }).length,
+        meta: 'No appointments',
+        icon: CalendarDays,
+        iconClass: 'bg-[#f0eafd] text-[#6b49b6]',
+      },
+      {
+        key: 'month',
+        label: 'This Month',
+        value: upcomingAppointments.filter((appointment) => {
+          const start = getAppointmentStartDate(appointment)
+          return start && start.getFullYear() === now.getFullYear() && start.getMonth() === now.getMonth()
+        }).length,
+        meta: 'No appointments',
+        icon: CalendarDays,
+        iconClass: 'bg-[#fff4d7] text-[#be7a13]',
+      },
+      {
+        key: 'requests',
+        label: 'Requests',
+        value: activeAppointments.filter(isPendingAppointmentRequest).length,
+        meta: 'Pending response',
+        icon: Clock3,
+        iconClass: 'bg-[#e6f2ff] text-[#1773c6]',
+      },
+    ],
+    [activeAppointments, now, upcomingAppointments, weekEnd, weekStart],
   )
 
   return (
-    <section className="rounded-[18px] border border-[#dfe9f4] bg-white p-5 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#18324b]">Appointments</h3>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6a8098]">Schedule and manage appointments with your seller.</p>
+    <div className="grid gap-5">
+      <section className="overflow-hidden rounded-[24px] border border-[#dfe9f4] bg-white shadow-[0_18px_44px_rgba(31,54,78,0.08)]">
+        <div className="flex flex-col gap-4 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 gap-4">
+            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-[18px] bg-[#e8f7ef] text-[#13784f]">
+              <CalendarDays className="h-7 w-7" />
+            </span>
+            <div className="min-w-0">
+              <h3 className="text-3xl font-semibold tracking-[-0.04em] text-[#13283f]">Appointments</h3>
+              <p className="mt-1 text-sm leading-6 text-[#5f748d]">Manage upcoming appointments and client meetings across your pipeline.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleViewCalendar}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[14px] border border-[#dfe8f2] bg-white px-4 text-sm font-semibold text-[#13784f] shadow-[0_8px_18px_rgba(31,54,78,0.05)] transition hover:border-[#bddfcb] hover:bg-[#f4faf5]"
+          >
+            <CalendarDays className="h-4 w-4" />
+            View Calendar
+            <ArrowRight className="h-4 w-4" />
+          </button>
         </div>
-        <Button type="button" onClick={() => handleScheduleAppointment()}>
-          <Plus className="h-4 w-4" />
-          Schedule Valuation Appointment
-        </Button>
-      </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-5">
-        <TabsList className="bg-[#f6f9fc]">
-          <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
-          <TabsTrigger value="past">Past</TabsTrigger>
-        </TabsList>
+        <div className="border-t border-[#edf2f7] p-5 sm:p-6">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {metrics.map((metric) => <AppointmentMetricCard key={metric.key} metric={metric} />)}
+          </div>
 
-        <TabsContent value="upcoming">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {upcomingAppointments.length ? (
-              upcomingAppointments.map((appointment, index) => {
-                const appointmentId = getAppointmentIdentity(appointment, `upcoming-${index}`)
+          {!upcomingAppointments.length ? (
+            <div className="mt-5 grid min-h-[190px] place-items-center rounded-[18px] border border-dashed border-[#dce6ef] bg-white px-5 py-8 text-center">
+              <div>
+                <div className="relative mx-auto flex h-20 w-20 items-center justify-center text-[#9aaabb]">
+                  <CalendarDays className="h-16 w-16" strokeWidth={1.7} />
+                  <span className="absolute bottom-1 right-1 grid h-9 w-9 place-items-center rounded-full bg-[#13784f] text-white shadow-[0_8px_18px_rgba(19,120,79,0.24)]">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </span>
+                </div>
+                <h4 className="mt-4 text-xl font-semibold tracking-[-0.03em] text-[#13283f]">No appointments scheduled</h4>
+                <p className="mt-2 text-sm leading-6 text-[#5f748d]">Your upcoming appointments and client meetings will appear here.</p>
+                <button
+                  type="button"
+                  onClick={handleScheduleAppointment}
+                  className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-[12px] bg-[#13784f] px-5 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(19,120,79,0.2)] transition hover:bg-[#0f6843]"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                  Schedule Appointment
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-[24px] border border-[#dfe9f4] bg-white shadow-[0_18px_44px_rgba(31,54,78,0.06)]">
+        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+          <div>
+            <h3 className="text-lg font-semibold tracking-[-0.03em] text-[#13283f]">Upcoming Appointments</h3>
+            <p className="mt-1 text-sm leading-6 text-[#5f748d]">Your next scheduled appointments will appear here.</p>
+          </div>
+          <label className="relative inline-flex min-h-11 min-w-[190px] items-center">
+            <select aria-label="Filter appointments" defaultValue="all" className="min-h-11 w-full appearance-none rounded-[14px] border border-[#dfe8f2] bg-white px-4 pr-10 text-sm font-semibold text-[#29435d] outline-none transition hover:bg-[#f7fbff] focus:border-[#8bc8a5] focus:ring-4 focus:ring-[#e8f7ef]">
+              <option value="all">All Appointments</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 text-[#8aa0b7]" />
+          </label>
+        </div>
+
+        {upcomingAppointments.length ? (
+          <>
+            <div className="hidden md:block">
+              <table className="w-full border-t border-[#edf2f7] text-left">
+                <thead className="bg-[#f8fafc]">
+                  <tr className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#6f839a]">
+                    <th className="px-5 py-3">Date &amp; Time</th>
+                    <th className="px-5 py-3">Type</th>
+                    <th className="px-5 py-3">With</th>
+                    <th className="px-5 py-3">Property</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#edf2f7]">
+                  {upcomingAppointments.map((appointment, index) => {
+                    const appointmentId = getAppointmentIdentity(appointment, `upcoming-${index}`)
+                    const appointmentTitle = getAppointmentTypeLabel(appointment.appointmentType) || appointment.title || 'Appointment'
+                    const propertyLabel =
+                      resolveAppointmentListingLabel(appointment.listingId) ||
+                      String(appointment.location || '').trim() ||
+                      'Property TBC'
+                    const appointmentDate = getAppointmentStartDate(appointment)
+                    const isTerminal = TERMINAL_STATUSES.has(normalizeStatus(appointment.status))
+
+                    return (
+                      <tr key={appointmentId} className="text-sm">
+                        <td className="px-5 py-4">
+                          <p className="font-semibold text-[#13283f]">{appointmentDate ? formatDateShort(appointmentDate) : 'Date TBC'}</p>
+                          <p className="mt-1 text-xs font-medium text-[#6d839b]">{formatAppointmentTimeRange(appointment)}</p>
+                        </td>
+                        <td className="px-5 py-4 font-semibold text-[#29435d]">{appointmentTitle}</td>
+                        <td className="px-5 py-4 text-[#526b84]">{resolveClientLabel(appointment, currentAgent)}</td>
+                        <td className="px-5 py-4">
+                          <p className="max-w-[280px] truncate font-semibold text-[#13283f]" title={propertyLabel}>{propertyLabel}</p>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className={`inline-flex min-h-7 items-center rounded-full border px-3 text-xs font-semibold ${getAppointmentStatusTone(appointment.status)}`}>
+                            {getWorkspaceStatusLabel(appointment.status)}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex justify-end gap-2">
+                            <AppointmentActionButton title="View appointment" onClick={() => handleOpenAppointmentModal(appointment)}>
+                              <Eye className="h-4 w-4" />
+                            </AppointmentActionButton>
+                            {!isTerminal ? (
+                              <AppointmentActionButton title="Mark complete" tone="success" onClick={() => void handleMarkAppointmentComplete(appointment)}>
+                                <CheckSquare className="h-4 w-4" />
+                              </AppointmentActionButton>
+                            ) : null}
+                            {!isTerminal ? (
+                              <AppointmentActionButton title="Cancel appointment" tone="danger" onClick={() => void handleCancelAppointment(appointment)}>
+                                <X className="h-4 w-4" />
+                              </AppointmentActionButton>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="grid gap-3 border-t border-[#edf2f7] p-5 md:hidden">
+              {upcomingAppointments.map((appointment, index) => {
+                const appointmentId = getAppointmentIdentity(appointment, `mobile-${index}`)
                 const appointmentTitle = getAppointmentTypeLabel(appointment.appointmentType) || appointment.title || 'Appointment'
                 const propertyLabel =
                   resolveAppointmentListingLabel(appointment.listingId) ||
                   String(appointment.location || '').trim() ||
-                  'Property to be confirmed'
-                const appointmentDateLabel = formatDateShort(appointment.dateTime || appointment.createdAt)
-                const appointmentTimeLabel = formatAppointmentTimeRange(appointment)
-                const assignedAgentLabel =
-                  resolveAppointmentLabel(resolveAgentById, appointment, currentAgent) || 'Assigned agent pending'
-                const menuOpen = openMenuAppointmentId === appointmentId
+                  'Property TBC'
+                const appointmentDate = getAppointmentStartDate(appointment)
 
                 return (
-                  <AppointmentCard
-                    key={appointmentId}
-                    appointment={appointment}
-                    appointmentTitle={appointmentTitle}
-                    propertyLabel={propertyLabel}
-                    appointmentDateLabel={appointmentDateLabel}
-                    appointmentTimeLabel={appointmentTimeLabel}
-                    assignedAgentLabel={assignedAgentLabel}
-                    menuOpen={menuOpen}
-                    menuRef={menuRef}
-                    onOpen={() => handleOpenAppointmentModal(appointment)}
-                    onToggleMenu={() => setOpenMenuAppointmentId((value) => (value === appointmentId ? '' : appointmentId))}
-                    onReschedule={() => {
-                      setOpenMenuAppointmentId('')
-                      handleOpenAppointmentModal(appointment)
-                    }}
-                    onMarkComplete={() => {
-                      setOpenMenuAppointmentId('')
-                      void handleMarkAppointmentComplete(appointment)
-                    }}
-                    onCancel={() => {
-                      setOpenMenuAppointmentId('')
-                      void handleCancelAppointment(appointment)
-                    }}
-                  />
+                  <article key={appointmentId} className="rounded-[18px] border border-[#dfe8f2] bg-white p-4 shadow-[0_10px_24px_rgba(31,54,78,0.04)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#13784f]">{appointmentDate ? formatDateShort(appointmentDate) : 'Date TBC'} · {formatAppointmentTimeRange(appointment)}</p>
+                        <h4 className="mt-2 text-base font-semibold text-[#13283f]">{appointmentTitle}</h4>
+                        <p className="mt-1 truncate text-sm text-[#526b84]">{resolveClientLabel(appointment, currentAgent)}</p>
+                        <p className="mt-1 truncate text-sm text-[#6d839b]">{propertyLabel}</p>
+                      </div>
+                      <AppointmentActionButton title="View appointment" onClick={() => handleOpenAppointmentModal(appointment)}>
+                        <Eye className="h-4 w-4" />
+                      </AppointmentActionButton>
+                    </div>
+                    <div className="mt-3">
+                      <span className={`inline-flex min-h-7 items-center rounded-full border px-3 text-xs font-semibold ${getAppointmentStatusTone(appointment.status)}`}>
+                        {getWorkspaceStatusLabel(appointment.status)}
+                      </span>
+                    </div>
+                  </article>
                 )
-              })
-            ) : (
-              <div className="col-span-full rounded-[22px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] px-5 py-10 text-center text-sm text-[#6a8098]">
-                <span className="mx-auto grid h-11 w-11 place-items-center rounded-[15px] bg-white text-[#13784f] shadow-[0_10px_24px_rgba(31,54,78,0.06)] ring-1 ring-[#e7eff7]">
-                  <CalendarDays className="h-5 w-5" />
+              })}
+            </div>
+          </>
+        ) : (
+          <div className="border-t border-[#edf2f7] p-5 sm:p-6">
+            <div className="grid min-h-[230px] place-items-center rounded-[18px] border border-dashed border-[#dce6ef] bg-white px-5 py-8 text-center">
+              <div>
+                <span className="mx-auto grid h-14 w-14 place-items-center rounded-[18px] bg-[#f0f4f8] text-[#7e91a6]">
+                  <CalendarDays className="h-6 w-6" />
                 </span>
-                <p className="mt-3 font-semibold text-[#29435d]">No upcoming appointments yet.</p>
-                <p className="mt-1">Schedule the first appointment to get started.</p>
+                <h4 className="mt-4 text-sm font-semibold text-[#13283f]">No upcoming appointments</h4>
+                <p className="mt-2 text-sm leading-6 text-[#5f748d]">Schedule your first appointment to get started.</p>
+                <button
+                  type="button"
+                  onClick={handleScheduleAppointment}
+                  className="mt-5 inline-flex min-h-11 items-center justify-center rounded-[12px] border border-[#bddfcb] bg-white px-5 text-sm font-semibold text-[#13784f] transition hover:bg-[#f4faf5]"
+                >
+                  Schedule Appointment
+                </button>
               </div>
-            )}
+            </div>
           </div>
-        </TabsContent>
-
-        <TabsContent value="past">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {pastAppointments.length ? (
-              pastAppointments.map((appointment, index) => {
-                const appointmentId = getAppointmentIdentity(appointment, `past-${index}`)
-                const appointmentTitle = getAppointmentTypeLabel(appointment.appointmentType) || appointment.title || 'Appointment'
-                const propertyLabel =
-                  resolveAppointmentListingLabel(appointment.listingId) ||
-                  String(appointment.location || '').trim() ||
-                  'Property to be confirmed'
-                const appointmentDateLabel = formatDateShort(appointment.dateTime || appointment.createdAt)
-                const appointmentTimeLabel = formatAppointmentTimeRange(appointment)
-                const outcomeLabel = String(appointment.outcomeSummary || appointment.notes || '').trim() || getWorkspaceStatusLabel(appointment.status)
-
-                return (
-                  <AppointmentCard
-                    key={appointmentId}
-                    appointment={appointment}
-                    appointmentTitle={appointmentTitle}
-                    propertyLabel={propertyLabel}
-                    appointmentDateLabel={appointmentDateLabel}
-                    appointmentTimeLabel={appointmentTimeLabel}
-                    outcomeLabel={outcomeLabel}
-                    menuOpen={openMenuAppointmentId === appointmentId}
-                    menuRef={menuRef}
-                    onOpen={() => handleOpenAppointmentModal(appointment)}
-                    onToggleMenu={() => setOpenMenuAppointmentId((value) => (value === appointmentId ? '' : appointmentId))}
-                    onReschedule={() => {
-                      setOpenMenuAppointmentId('')
-                      handleOpenAppointmentModal(appointment)
-                    }}
-                  />
-                )
-              })
-            ) : (
-              <div className="col-span-full rounded-[22px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] px-5 py-10 text-center text-sm text-[#6a8098]">
-                <span className="mx-auto grid h-11 w-11 place-items-center rounded-[15px] bg-white text-[#13784f] shadow-[0_10px_24px_rgba(31,54,78,0.06)] ring-1 ring-[#e7eff7]">
-                  <CheckCircle2 className="h-5 w-5" />
-                </span>
-                <p className="mt-3 font-semibold text-[#29435d]">No past appointments yet.</p>
-                <p className="mt-1">Completed and cancelled appointments will appear here.</p>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-      </Tabs>
-    </section>
+        )}
+      </section>
+    </div>
   )
-}
-
-function resolveAppointmentLabel(resolveAgentById, appointment, currentAgent) {
-  const agent = resolveAgentById(
-    appointment?.assignedAgentId || appointment?.assignedAgentEmail || currentAgent?.id,
-  )
-  return String(
-    agent?.name ||
-    appointment?.assignedAgentName ||
-    appointment?.assignedAgentEmail ||
-    currentAgent?.fullName ||
-    'Assigned agent pending',
-  ).trim()
 }
 
 export default KingstonsSellerAppointmentsWorkspace

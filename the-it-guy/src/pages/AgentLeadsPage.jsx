@@ -301,7 +301,6 @@ const LEAD_QUICK_FILTERS = [
 ]
 const BUYER_INTERNAL_WORKFLOW_TABS = [
   { key: 'requirements', label: 'Requirements' },
-  { key: 'documents', label: 'Documents' },
 ]
 const BUYER_ONBOARDING_OTP_TAB_KEY = 'onboarding_otp'
 
@@ -310,7 +309,7 @@ function normalizeBuyerLeadWorkspaceTabKey(tabKey = '') {
   if (['offer', 'offers', 'otp', 'onboarding', 'onboarding_otp', 'buyer_onboarding', 'buyer_onboarding_otp'].includes(normalized)) {
     return BUYER_ONBOARDING_OTP_TAB_KEY
   }
-  if (normalized === 'activity') return 'timeline'
+  if (normalized === 'timeline') return 'activity'
   return normalized
 }
 
@@ -2270,7 +2269,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: 'Deal fell through',
         copy: deal.transactionStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'amber',
         blockers: ['Restart or close out'],
@@ -2281,7 +2280,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: 'Buyer onboarding needs attention',
         copy: deal.transactionStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'amber',
         blockers: ['Buyer onboarding'],
@@ -2303,7 +2302,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: deal.transactionStateLabel,
         copy: deal.transactionStateHelper,
-        actionLabel: deal.transactionStateLabel === 'Buyer onboarding pending' ? 'Open Onboarding / OTP' : 'Open Transaction',
+        actionLabel: deal.transactionStateLabel === 'Buyer onboarding pending' ? 'Open Offers' : 'Open Transaction',
         actionId: deal.transactionStateLabel === 'Buyer onboarding pending' ? BUYER_ONBOARDING_OTP_TAB_KEY : 'convert',
         tone: deal.transactionStateTone,
         blockers: deal.transactionStateLabel === 'Buyer onboarding pending' ? ['Buyer onboarding'] : deal.transactionStateLabel === 'Buyer onboarding sent' ? ['Buyer response'] : ['Prepare OTP'],
@@ -2325,7 +2324,7 @@ function getBuyerWorkspaceCommand(row = {}) {
     return {
       title: 'Accepted offer is ready for conversion',
       copy: deal.transactionStateHelper,
-      actionLabel: 'Open Onboarding / OTP',
+      actionLabel: 'Open Offers',
       actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
       tone: 'amber',
       blockers: ['Transaction workspace'],
@@ -2338,7 +2337,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: deal.offerStateLabel,
         copy: deal.offerStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'amber',
         blockers: ['Restart or close out'],
@@ -2349,7 +2348,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: deal.offerStateLabel,
         copy: deal.offerStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'amber',
         blockers: ['Delivery retry'],
@@ -2360,7 +2359,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: 'Buyer offer needs seller routing',
         copy: deal.offerStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'blue',
         blockers: ['Seller review'],
@@ -2371,7 +2370,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: deal.offerStateLabel,
         copy: deal.offerStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: deal.offerStateTone,
         blockers: ['Seller decision'],
@@ -2382,7 +2381,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: 'Counter-offer needs buyer feedback',
         copy: deal.offerStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'amber',
         blockers: ['Buyer response'],
@@ -2395,7 +2394,7 @@ function getBuyerWorkspaceCommand(row = {}) {
     return {
       title: 'Viewing is done, lock the next move',
       copy: 'Capture the actual outcome now: buyer onboarding, OTP upload, another viewing, or a clean close-out.',
-      actionLabel: 'Open Onboarding / OTP',
+      actionLabel: 'Open Offers',
       actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
       tone: 'blue',
       blockers: ['Viewing outcome'],
@@ -2440,8 +2439,8 @@ function getBuyerWorkspaceCommand(row = {}) {
     const actionMap = {
       qualified: ['Qualify Buyer', 'qualification'],
       viewing: ['Schedule Viewing', 'schedule_viewing'],
-      offer_submitted: ['Open Onboarding / OTP', BUYER_ONBOARDING_OTP_TAB_KEY],
-      offer_accepted: ['Open Onboarding / OTP', BUYER_ONBOARDING_OTP_TAB_KEY],
+      offer_submitted: ['Open Offers', BUYER_ONBOARDING_OTP_TAB_KEY],
+      offer_accepted: ['Open Offers', BUYER_ONBOARDING_OTP_TAB_KEY],
       won: ['Open Transaction', 'convert'],
     }
     const [actionLabel, actionId] = actionMap[nextStep.key] || ['Review Timeline', 'timeline']
@@ -2458,7 +2457,7 @@ function getBuyerWorkspaceCommand(row = {}) {
   return {
     title: 'Buyer journey is transaction-ready',
     copy: 'The buyer has enough journey signal to review transaction handoff.',
-    actionLabel: deal.latestTransaction ? 'Open Transaction' : 'Open Onboarding / OTP',
+    actionLabel: deal.latestTransaction ? 'Open Transaction' : 'Open Offers',
     actionId: deal.latestTransaction ? 'convert' : BUYER_ONBOARDING_OTP_TAB_KEY,
     tone: 'green',
     blockers: [],
@@ -2905,9 +2904,9 @@ function BuyerNextActionsCard({ row, onViewTasks, onSendMatches, onScheduleViewi
     },
     {
       icon: FileText,
-      title: 'Onboarding / OTP',
+      title: 'Offers',
       description: 'Capture buyer details first, then manage OTP and transaction handoff.',
-      buttonLabel: 'Open Onboarding / OTP',
+      buttonLabel: 'Open Offers',
       onClick: onCreateOffer,
     },
   ]
@@ -3992,7 +3991,7 @@ function BuyerOutreachProgress({
                 Capture Offer Submitted
               </button>
               <button type="button" onClick={onOpenOffers} className="inline-flex min-h-9 items-center justify-center rounded-xl border border-blue-200 bg-white px-3 text-xs font-semibold text-blue-700 hover:bg-blue-50">
-                Open Onboarding / OTP
+                Open Offers
               </button>
             </div>
           ) : null}
@@ -4002,7 +4001,7 @@ function BuyerOutreachProgress({
                 Review Offer
               </button>
               <p className="text-[11px] font-medium leading-4 text-slate-500">
-                Mark seller acceptance from the Onboarding / OTP workspace.
+                Mark seller acceptance from the Offers workspace.
               </p>
             </div>
           ) : null}
@@ -4966,12 +4965,27 @@ function BuyerLeadOverview({ row, workspace = {}, sourceInfo, leadScore = 0, org
           onNavigate={onNavigate}
         />
       </div>
-      <BuyerRelationshipTimelineCard row={row} workspace={workspace} sourceInfo={sourceInfo} onViewAll={() => onNavigate('activity')} />
-      <div className="grid gap-4 xl:grid-cols-2">
-        <BuyerPropertyMatchCard row={row} workspace={workspace} onNavigate={onNavigate} />
-        <BuyerViewingPipelineCard row={row} onNavigate={onNavigate} />
-      </div>
+      <BuyerPropertyMatchCard row={row} workspace={workspace} onNavigate={onNavigate} />
       <BuyerTransactionSummaryCard row={row} onConvert={onConvert} />
+    </section>
+  )
+}
+
+function BuyerLeadProfileTab({ row, organisationId, actor, qualificationFocusSignal = 0, onSaved, onNavigate, onBondPartnerReferral }) {
+  const requirement = getBuyerPrimaryRequirement(row)
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.2fr)] xl:items-start">
+      <BuyerProfileCard
+        row={row}
+        requirement={requirement}
+        organisationId={organisationId}
+        actor={actor}
+        focusSignal={qualificationFocusSignal}
+        onSaved={onSaved}
+        onRecommendations={() => onNavigate?.('property_match')}
+        onBondPartnerReferral={onBondPartnerReferral}
+      />
+      <BuyerOnboardingFieldsSection lead={row} />
     </section>
   )
 }
@@ -9504,25 +9518,55 @@ function CommunicationTimelineCard({ item }) {
   )
 }
 
+function getTimelineRoleGroup(item = {}) {
+  const raw = item.raw && typeof item.raw === 'object' ? item.raw : {}
+  const role = normalizeText(
+    item.metadata?.recipientRole ||
+      item.metadata?.role ||
+      raw.recipient_role ||
+      raw.recipientRole ||
+      raw.role_type ||
+      raw.roleType ||
+      raw.assigned_to_role ||
+      raw.created_by_role ||
+      raw.uploaded_by_role ||
+      item.direction,
+  ).toLowerCase()
+  const kind = normalizeText(item.kind).toLowerCase()
+  const title = normalizeText(item.title).toLowerCase()
+  if (role.includes('buyer') || role.includes('client')) return { key: 'buyer', label: 'Buyer Activity', tone: 'blue', order: 1 }
+  if (role.includes('seller')) return { key: 'seller', label: 'Seller Activity', tone: 'amber', order: 2 }
+  if (role.includes('agent') || role.includes('agency') || role.includes('internal')) return { key: 'agent', label: 'Agent Activity', tone: 'green', order: 3 }
+  if (role.includes('attorney') || role.includes('conveyancer') || role.includes('bond')) return { key: 'partner', label: 'Partner Activity', tone: 'violet', order: 4 }
+  if (['offer', 'transaction', 'assignment', 'task', 'communication_delivery'].includes(kind) || role === 'system' || title.includes('transaction') || title.includes('offer')) {
+    return { key: 'workflow', label: 'Workflow Activity', tone: 'slate', order: 5 }
+  }
+  return { key: 'agent', label: 'Agent Activity', tone: 'green', order: 3 }
+}
+
+function groupTimelineByRole(items = []) {
+  const groupsByKey = new Map()
+  ;(Array.isArray(items) ? items : []).forEach((item) => {
+    const group = getTimelineRoleGroup(item)
+    const existing = groupsByKey.get(group.key) || { ...group, items: [] }
+    existing.items.push(item)
+    groupsByKey.set(group.key, existing)
+  })
+  return Array.from(groupsByKey.values()).sort((left, right) => left.order - right.order)
+}
+
 function CommunicationTimelinePanel({ organisationId, lead, actor, timeline = [], onSaved }) {
   const [filters, setFilters] = useState({ search: '', type: 'all', direction: 'all', agentId: '', dateFrom: '', dateTo: '' })
   const visibleItems = useMemo(() => filterCommunicationTimeline(timeline, filters), [filters, timeline])
+  const groupedItems = useMemo(() => groupTimelineByRole(visibleItems), [visibleItems])
 
   return (
-    <section className={`${panelClass} p-5`}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Timeline</h2>
-          <p className="mt-1 text-sm text-slate-500">Calls, emails, WhatsApps, notes, tasks, assignment history, enquiries, appointments, offers, and transaction links in date order.</p>
-        </div>
-        <StatusPill>{visibleItems.length} visible</StatusPill>
-      </div>
-
-      <div className="mt-5">
+    <section className="grid gap-5">
+      <div>
         <CommunicationQuickLogForm organisationId={organisationId} lead={lead} actor={actor} onSaved={onSaved} />
       </div>
 
-      <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(220px,1.3fr)_repeat(5,minmax(130px,1fr))]">
+      <div className={`${panelClass} grid gap-3 p-4 lg:grid-cols-[minmax(220px,1.3fr)_repeat(5,minmax(130px,1fr))]`}>
         <label className="relative block">
           <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={filters.search} onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-300" placeholder="Search timeline" />
@@ -9541,8 +9585,18 @@ function CommunicationTimelinePanel({ organisationId, lead, actor, timeline = []
         <input type="date" value={filters.dateTo} onChange={(event) => setFilters((previous) => ({ ...previous, dateTo: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" aria-label="Timeline to" />
       </div>
 
-      <div className="mt-5 space-y-3">
-        {visibleItems.length ? visibleItems.map((item) => <CommunicationTimelineCard key={item.id} item={item} />) : (
+      <div className="space-y-4">
+        {groupedItems.length ? groupedItems.map((group) => (
+          <section key={group.key} className={`${panelClass} p-4`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-semibold tracking-[-0.025em] text-slate-950">{group.label}</h2>
+              <StatusPill tone={group.tone}>{group.items.length} item{group.items.length === 1 ? '' : 's'}</StatusPill>
+            </div>
+            <div className="mt-4 space-y-3">
+              {group.items.map((item) => <CommunicationTimelineCard key={item.id} item={item} />)}
+            </div>
+          </section>
+        )) : (
           <EmptyState title="No timeline events match these filters" copy="Clear the search or log the first call, email, WhatsApp, meeting, or note." />
         )}
       </div>
@@ -10616,9 +10670,13 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, a
   const primaryRequirement = requirements.find((requirement) => requirement.isPrimary || requirement.is_primary) || requirements[0] || getBuyerPrimaryRequirement(row)
   const primaryRequirementId = primaryRequirement?.requirementId || primaryRequirement?.requirement_id || ''
   const [liveListingMatches, setLiveListingMatches] = useState([])
+  const [activeOrganisationListings, setActiveOrganisationListings] = useState([])
   const [liveListingsLoading, setLiveListingsLoading] = useState(false)
   const [liveListingsError, setLiveListingsError] = useState('')
-  const collectionProperties = useMemo(() => buildBuyerCollectionProperties(row, workspace, liveListingMatches), [liveListingMatches, row, workspace])
+  const collectionProperties = useMemo(
+    () => buildBuyerCollectionProperties(row, workspace, [...activeOrganisationListings, ...liveListingMatches]),
+    [activeOrganisationListings, liveListingMatches, row, workspace],
+  )
   const collectionSummary = useMemo(() => buildBuyerCollectionSummary(row, primaryRequirement, collectionProperties), [collectionProperties, primaryRequirement, row])
   const originalProperty = useMemo(() => getBuyerOriginalEnquiryProperty(row, collectionProperties), [collectionProperties, row])
   const recommendationProperties = useMemo(
@@ -10640,13 +10698,20 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, a
       try {
         setLiveListingsLoading(true)
         setLiveListingsError('')
-        const result = primaryRequirementId
-          ? await findListingsForRequirement({ organisationId, requirementId: primaryRequirementId, limit: 60 })
-          : { matches: await listSearchablePrivateListings({ organisationId }) }
-        if (!cancelled) setLiveListingMatches((Array.isArray(result?.matches) ? result.matches : []).slice(0, 60))
+        const [matchResult, activeRows] = await Promise.all([
+          primaryRequirementId
+            ? findListingsForRequirement({ organisationId, requirementId: primaryRequirementId, limit: 60 })
+            : Promise.resolve({ matches: [] }),
+          listSearchablePrivateListings({ organisationId, status: 'active' }),
+        ])
+        if (!cancelled) {
+          setLiveListingMatches((Array.isArray(matchResult?.matches) ? matchResult.matches : []).slice(0, 60))
+          setActiveOrganisationListings((Array.isArray(activeRows) ? activeRows : []).filter((listing) => !isBuyerCollectionListingUnavailable(listing)).slice(0, 120))
+        }
       } catch (loadError) {
         if (!cancelled) {
           setLiveListingMatches([])
+          setActiveOrganisationListings([])
           setLiveListingsError(loadError?.message || 'Unable to load live listing matches.')
         }
       } finally {
@@ -10742,8 +10807,8 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, a
       <section className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_16px_42px_rgba(15,23,42,0.045)] sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-[-0.055em] text-slate-950">Property Match</h1>
-            <p className="mt-1 text-sm text-slate-500">Find and send the right properties to this buyer.</p>
+            <h1 className="text-2xl font-semibold tracking-[-0.055em] text-slate-950">Properties</h1>
+            <p className="mt-1 text-sm text-slate-500">Active organisation listings, ranked against this buyer where criteria is available.</p>
           </div>
           <button type="button" onClick={regenerateMatches} disabled={busyAction === 'regenerate'} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60">
             <RefreshCw size={15} className={busyAction === 'regenerate' ? 'animate-spin' : ''} />
@@ -13703,6 +13768,7 @@ function resolveBuyerOnboardingFormCandidate(candidate = null) {
 
 function getBuyerOnboardingFormData(lead = {}) {
   const transactions = Array.isArray(lead?.transactions) ? lead.transactions : []
+  const rawPayload = getBuyerLeadRawPayload(lead)
   const candidates = [
     ...transactions.flatMap((transaction) => [
       transaction?.onboardingFormData,
@@ -13720,6 +13786,17 @@ function getBuyerOnboardingFormData(lead = {}) {
     lead?.clientOnboarding,
     lead?.client_onboarding,
     lead?.onboarding,
+    lead?.rawEnquiryPayload,
+    lead?.raw_enquiry_payload,
+    rawPayload?.onboardingFormData,
+    rawPayload?.onboarding_form_data,
+    rawPayload?.buyerOnboarding,
+    rawPayload?.buyer_onboarding,
+    rawPayload?.clientOnboarding,
+    rawPayload?.client_onboarding,
+    rawPayload?.onboarding,
+    rawPayload?.formData,
+    rawPayload?.form_data,
   ]
   for (const candidate of candidates) {
     const formData = resolveBuyerOnboardingFormCandidate(candidate)
@@ -14530,7 +14607,7 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
       <section className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_16px_42px_rgba(15,23,42,0.045)] sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-[-0.055em] text-slate-950">Onboarding / OTP</h1>
+            <h1 className="text-2xl font-semibold tracking-[-0.055em] text-slate-950">Offers</h1>
           </div>
           <div className="flex flex-wrap gap-2 lg:justify-end">
             <button type="button" onClick={() => onNavigate?.('overview')} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
@@ -14540,10 +14617,6 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
             <button type="button" onClick={openOtpAmountModal} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800">
               <Upload size={15} />
               Upload OTP
-            </button>
-            <button type="button" disabled={workingAction === 'resend_onboarding'} onClick={resendBuyerOnboardingLink} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
-              <Mail size={15} />
-              {workingAction === 'resend_onboarding' ? 'Sending...' : 'Resend buyer onboarding link'}
             </button>
           </div>
         </div>
@@ -17091,19 +17164,37 @@ function SellerProfileWorkspace({
   const optionalDocuments = (Array.isArray(model.documentRows) ? model.documentRows : []).filter((document) => document?.required === false).length
   const sellerEmail = normalizeText(model.sellerEmail)
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.34fr)]">
-      <div className="min-w-0 space-y-5">
-        <div className="grid gap-5 lg:grid-cols-2">
-          {model.sections.map((section) => (
-            <SellerProfileCard key={section.id} section={section} onEdit={() => onEdit?.(section)} />
-          ))}
+    <div className="grid gap-5">
+      <section className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_18px_45px_rgba(15,23,42,0.045)]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.55fr)] xl:items-center">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusPill tone={model.readinessPercent >= 80 ? 'green' : model.readinessPercent ? 'amber' : 'slate'}>
+                {model.readinessPercent}% ready
+              </StatusPill>
+              <StatusPill tone={documentsComplete === documentsTotal && documentsTotal ? 'green' : documentsComplete ? 'amber' : 'slate'}>
+                {documentsComplete} / {documentsTotal} documents
+              </StatusPill>
+              <StatusPill tone={model.portalStatus === 'Active' ? 'green' : 'slate'}>{model.portalStatus}</StatusPill>
+            </div>
+            <h2 className="mt-4 text-2xl font-semibold tracking-[-0.045em] text-slate-950">{model.sellerName}</h2>
+            <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">
+              {model.propertyAddress || 'No property address captured yet'}
+            </p>
+            <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <SellerInfoRow label="Email" value={model.sellerEmail || 'Not captured'} />
+              <SellerInfoRow label="Phone" value={model.sellerPhone || 'Not captured'} />
+              <SellerInfoRow label="Source" value={model.sourceLabel} />
+              <SellerInfoRow label="Seller Since" value={model.sellerSince} />
+            </dl>
+          </div>
+          <SellerProfileProgressRing percent={model.readinessPercent} label="Seller readiness" />
         </div>
-      </div>
+      </section>
 
-      <aside className="min-w-0 space-y-5 xl:sticky xl:top-24 xl:self-start">
+      <div className="grid gap-5 lg:grid-cols-3">
         <SellerProfileSidebarCard title="Seller Readiness">
-          <SellerProfileProgressRing percent={model.readinessPercent} label="Total Complete" />
-          <div className="mt-5 grid gap-3">
+          <div className="grid gap-3">
             {model.checklist.map((item) => (
               <div key={item.label} className="flex items-center justify-between gap-3 text-sm">
                 <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-slate-700">
@@ -17119,7 +17210,7 @@ function SellerProfileWorkspace({
         </SellerProfileSidebarCard>
 
         <SellerProfileSidebarCard title="Quick Actions">
-          <div className="grid gap-2">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
             <SellerProfileActionButton icon={Download} onClick={onDownloadPack} disabled={downloading}>
               {downloading ? 'Preparing Seller Pack...' : 'Download Seller Summary'}
             </SellerProfileActionButton>
@@ -17162,9 +17253,17 @@ function SellerProfileWorkspace({
             <div className="flex justify-between gap-3"><span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-slate-300" />Optional</span><span>{optionalDocuments}</span></div>
           </div>
         </SellerProfileSidebarCard>
+      </div>
 
+      <div className="grid gap-5 lg:grid-cols-2">
+        {model.sections.map((section) => (
+          <SellerProfileCard key={section.id} section={section} onEdit={() => onEdit?.(section)} />
+        ))}
+      </div>
+
+      <div className="grid gap-5">
         <SellerProfileSidebarCard title="Recent Activity" action={<button type="button" className="text-xs font-semibold text-emerald-700" onClick={(event) => { event.stopPropagation(); onTabChange?.('activity') }}>View All</button>}>
-          <div className="space-y-1">
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {model.activity.length ? model.activity.map((item) => (
               <button key={item.id} type="button" onClick={() => onTabChange?.('activity')} className="flex w-full items-start gap-3 rounded-2xl px-2 py-2.5 text-left transition hover:bg-slate-50">
                 <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-700">
@@ -17180,7 +17279,7 @@ function SellerProfileWorkspace({
             )}
           </div>
         </SellerProfileSidebarCard>
-      </aside>
+      </div>
     </div>
   )
 }
@@ -17912,6 +18011,7 @@ const SELLER_PROFILE_JSON_KEYS = new Set([
   'executors',
   'powerOfAttorneyRepresentatives',
   'multipleOwners',
+  'knownDefects',
 ])
 
 const SELLER_PROFILE_READ_ONLY_KEYS = new Set([
@@ -17966,6 +18066,20 @@ const SELLER_PROFILE_CHECKBOX_KEYS = new Set([
   'electricFenceCertificateAvailable',
   'plumbingCertificateAvailable',
   'solarComplianceAvailable',
+  'saResident',
+  'popiaConsent',
+  'primaryResidence',
+  'aircon',
+  'alarm',
+  'flatlet',
+  'fibre',
+  'cctv',
+  'roof',
+  'plumbing',
+  'electrical',
+  'damp',
+  'cracks',
+  'pestDamage',
 ])
 
 const SELLER_PROFILE_TEXTAREA_KEYS = new Set([
@@ -17991,9 +18105,10 @@ const SELLER_PROFILE_TEXTAREA_KEYS = new Set([
   'alterationDetails',
   'schemeName',
   'additionalConditions',
+  'defectsNotes',
 ])
 
-const SELLER_PROFILE_DATE_KEYS = new Set(['leaseExpiryDate', 'mandateStartDate', 'mandateEndDate', 'mandateExpiryDate'])
+const SELLER_PROFILE_DATE_KEYS = new Set(['dateOfBirth', 'purchaseDate', 'leaseExpiryDate', 'mandateStartDate', 'mandateEndDate', 'mandateExpiryDate'])
 
 const SELLER_PROFILE_FIELD_CONFIGS = {
   mandateType: {
@@ -18292,12 +18407,12 @@ const SELLER_PROFILE_WORKSPACE_EDIT_SECTIONS = {
   personal: {
     title: 'Personal Information',
     description: 'Seller identity and contact details shown in the profile card.',
-    keys: ['fullName', 'idNumber', 'dateOfBirth', 'nationality', 'maritalStatus', 'occupation', 'employer', 'email', 'phone', 'alternativeNumber'],
+    keys: ['fullName', 'sellerFirstName', 'sellerSurname', 'idNumber', 'dateOfBirth', 'nationality', 'maritalStatus', 'maritalRegime', 'occupation', 'employer', 'email', 'phone', 'alternativeNumber'],
   },
   address: {
     title: 'Residential Address',
     description: 'Residential address values shown in the profile card.',
-    keys: ['residentialStreet', 'residentialSuburb', 'residentialCity', 'residentialProvince', 'residentialPostalCode', 'residentialCountry'],
+    keys: ['residentialAddress', 'residentialStreet', 'residentialSuburb', 'residentialCity', 'residentialProvince', 'residentialPostalCode', 'residentialCountry'],
   },
   banking: {
     title: 'Banking Details',
@@ -18307,7 +18422,7 @@ const SELLER_PROFILE_WORKSPACE_EDIT_SECTIONS = {
   compliance: {
     title: 'Tax & Compliance',
     description: 'Tax, FICA, consent, and signature readiness values.',
-    keys: ['saResident', 'incomeTaxNumber', 'vatRegistered', 'ficaStatus', 'popiaConsent', 'electronicSignatureStatus'],
+    keys: ['saResident', 'sellerTaxNumber', 'incomeTaxNumber', 'vatRegistered', 'vatNumber', 'ficaStatus', 'popiaConsent', 'electronicSignatureStatus'],
   },
   ownership: {
     title: 'Property Ownership',
@@ -18317,17 +18432,17 @@ const SELLER_PROFILE_WORKSPACE_EDIT_SECTIONS = {
   property: {
     title: 'Property Information',
     description: 'Property address, attributes, rates, and expected price.',
-    keys: ['propertyAddress', 'bedrooms', 'bathrooms', 'garages', 'parking', 'erfSize', 'floorSize', 'levies', 'ratesTaxes', 'askingPrice'],
+    keys: ['propertyAddressSearch', 'propertyAddressLine1', 'propertyAddressLine2', 'suburb', 'city', 'province', 'postalCode', 'country', 'bedrooms', 'bathrooms', 'garages', 'parkingCovered', 'parkingOpen', 'erfSize', 'floorSize', 'levies', 'ratesTaxes', 'askingPrice'],
   },
   features: {
     title: 'Property Features',
     description: 'Feature list and common property amenity flags.',
-    keys: ['features', 'pool', 'solarInstallation', 'gasInstallation', 'aircon', 'alarm', 'electricFence', 'borehole', 'flatlet', 'fibre', 'cctv'],
+    keys: ['features', 'pool', 'swimmingPool', 'solarInstallation', 'gasInstallation', 'aircon', 'alarm', 'electricFence', 'borehole', 'boreholeInstallation', 'flatlet', 'fibre', 'cctv'],
   },
   defects: {
     title: 'Known Defects',
     description: 'Known defect declarations and supporting notes.',
-    keys: ['knownDefects', 'defectsNotes', 'roof', 'plumbing', 'electrical', 'damp', 'cracks', 'pestDamage'],
+    keys: ['knownDefects', 'defectsNotes', 'roof', 'plumbing', 'electrical', 'damp', 'cracks', 'pestDamage', 'propertyCondition', 'kitchenCondition', 'bathroomCondition'],
   },
 }
 
@@ -18748,6 +18863,7 @@ function buildSellerProfileWorkspaceModel({
     ['Alternative Number', getSellerProfileValue(context, ['alternativeNumber', 'alternatePhone', 'secondaryPhone'])],
   ].map(([label, value]) => ({ label, value })).filter((item) => hasValue(item.value))
   const addressRows = [
+    ['Address', getSellerProfileValue(context, ['residentialAddress', 'sellerResidentialAddress', 'residential_address'])],
     ['Street', getSellerProfileValue(context, ['residentialStreet', 'residentialAddressLine1', 'addressLine1', 'streetAddress'])],
     ['Suburb', getSellerProfileValue(context, ['residentialSuburb', 'suburb'])],
     ['City', getSellerProfileValue(context, ['residentialCity', 'city'])],
@@ -19331,6 +19447,17 @@ function applySellerProfilePersistenceAliases(nextDraft = {}) {
     nextDraft.residentialAddressLine1 = nextDraft.residentialStreet
     nextDraft.addressLine1 = nextDraft.addressLine1 || nextDraft.residentialStreet
   }
+  const residentialAddressParts = [
+    nextDraft.residentialStreet,
+    nextDraft.residentialSuburb,
+    nextDraft.residentialCity,
+    nextDraft.residentialProvince,
+    nextDraft.residentialPostalCode,
+    nextDraft.residentialCountry,
+  ].map((part) => normalizeText(part)).filter(Boolean)
+  if (!hasValue(nextDraft.residentialAddress) && residentialAddressParts.length) {
+    nextDraft.residentialAddress = residentialAddressParts.join(', ')
+  }
   if (hasValue(nextDraft.residentialSuburb)) nextDraft.suburb = nextDraft.suburb || nextDraft.residentialSuburb
   if (hasValue(nextDraft.residentialCity)) nextDraft.city = nextDraft.city || nextDraft.residentialCity
   if (hasValue(nextDraft.residentialProvince)) nextDraft.province = nextDraft.province || nextDraft.residentialProvince
@@ -19424,13 +19551,15 @@ function buildSellerOnboardingSubmissionPatch({
     const complexValue = complexDrafts?.[key]
 
     if (field.type === 'json') {
-      if (typeof complexValue === 'string' && complexValue.trim()) {
-        nextDraft[key] = parseSellerOnboardingJson(complexValue, nextDraft[key] || [])
+      if (typeof complexValue === 'string') {
+        if (complexValue.trim()) {
+          nextDraft[key] = parseSellerOnboardingJson(complexValue, nextDraft[key] || [])
+        } else if (hasValue(sourceData?.[key])) {
+          nextDraft[key] = Array.isArray(sourceData?.[key]) ? [] : {}
+        }
       }
     } else if (field.type === 'list') {
-      if (typeof complexValue === 'string' && complexValue.trim()) {
-        nextDraft[key] = parseSellerOnboardingList(complexValue)
-      }
+      if (typeof complexValue === 'string') nextDraft[key] = parseSellerOnboardingList(complexValue)
     }
   }
 
@@ -19485,7 +19614,6 @@ function buildSellerOnboardingSubmissionPatch({
   const changedFields = []
   for (const key of allKeys) {
     if (!key || key === 'currentStep' || SELLER_PROFILE_READ_ONLY_KEYS.has(key)) continue
-    if (!hasValue(nextDraft?.[key])) continue
     if (normalizeComparableSellerValue(sourceData?.[key]) === normalizeComparableSellerValue(nextDraft?.[key])) continue
     patch[key] = nextDraft[key]
     changedFields.push(key)
@@ -19984,6 +20112,7 @@ function SellerProfileTab({
     executors: formatSellerOnboardingFieldValue(sourceFormData.executors || []),
     powerOfAttorneyRepresentatives: formatSellerOnboardingFieldValue(sourceFormData.powerOfAttorneyRepresentatives || []),
     multipleOwners: formatSellerOnboardingFieldValue(sourceFormData.multipleOwners || []),
+    knownDefects: formatSellerOnboardingFieldValue(sourceFormData.knownDefects || sourceFormData.defects || sourceFormData.defectsDeclaration || {}),
     features: Array.isArray(sourceFormData.features) ? sourceFormData.features.join('\n') : '',
   }))
   const [addedFieldKeys, setAddedFieldKeys] = useState([])
@@ -20004,6 +20133,7 @@ function SellerProfileTab({
     executors: formatSellerOnboardingFieldValue(formData.executors || []),
     powerOfAttorneyRepresentatives: formatSellerOnboardingFieldValue(formData.powerOfAttorneyRepresentatives || []),
     multipleOwners: formatSellerOnboardingFieldValue(formData.multipleOwners || []),
+    knownDefects: formatSellerOnboardingFieldValue(formData.knownDefects || formData.defects || formData.defectsDeclaration || {}),
     features: Array.isArray(formData.features) ? formData.features.join('\n') : '',
   }), [sourceFormData])
 
@@ -23657,17 +23787,19 @@ function AgentLeadWorkspace() {
     ]
     : [
       { key: 'overview', label: 'Overview' },
-      { key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Onboarding / OTP' },
-      { key: 'appointments', label: 'Appointments' },
+      { key: 'buyer_profile', label: 'Buyer Profile' },
       { key: 'property_match', label: 'Properties' },
-      { key: 'timeline', label: 'Activity' },
+      { key: 'appointments', label: 'Appointments' },
+      { key: 'documents', label: 'Documents' },
+      { key: 'activity', label: 'Activity' },
+      { key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Offers' },
     ], [isSellerLeadWorkspace])
   const availableTabs = useMemo(
     () => isSellerLeadWorkspace ? tabs : [...tabs, ...BUYER_INTERNAL_WORKFLOW_TABS, { key: 'activity', label: 'Activity' }],
     [isSellerLeadWorkspace, tabs],
   )
   const visibleBuyerTabs = useMemo(
-    () => tabs.filter((tab) => !['requirements', 'tasks', 'documents'].includes(tab.key)),
+    () => tabs.filter((tab) => !['requirements', 'tasks'].includes(tab.key)),
     [tabs],
   )
 
@@ -24530,7 +24662,7 @@ function AgentLeadWorkspace() {
   }, [handleBuyerWorkspaceTabSelection, navigate, row])
 
   const focusBuyerQualificationSnapshot = useCallback(() => {
-    setActiveTab('overview')
+    setActiveTab('buyer_profile')
     setQualificationFocusSignal((value) => value + 1)
   }, [])
 
@@ -24570,7 +24702,7 @@ function AgentLeadWorkspace() {
       return
     }
     if (actionId === 'timeline' || actionId === 'activity') {
-      handleBuyerWorkspaceTabSelection('timeline')
+      handleBuyerWorkspaceTabSelection('activity')
       return
     }
     if (actionId === 'tasks') {
@@ -24717,13 +24849,25 @@ function AgentLeadWorkspace() {
                 />
               ) : null}
 
-              {activeTab === 'timeline' || activeTab === 'activity' ? (
+              {activeTab === 'activity' ? (
                 <CommunicationTimelinePanel
                   organisationId={organisationId}
                   lead={row}
                   actor={actor}
                   timeline={data?.timeline || row.communicationTimeline || []}
                   onSaved={loadWorkspace}
+                />
+              ) : null}
+
+              {activeTab === 'buyer_profile' ? (
+                <BuyerLeadProfileTab
+                  row={row}
+                  organisationId={organisationId}
+                  actor={actor}
+                  qualificationFocusSignal={qualificationFocusSignal}
+                  onSaved={loadWorkspace}
+                  onNavigate={runBuyerWorkspaceAction}
+                  onBondPartnerReferral={sendBuyerToBondPartner}
                 />
               ) : null}
 
@@ -24734,7 +24878,7 @@ function AgentLeadWorkspace() {
                   actor={actor}
                   timeline={data?.timeline || row.communicationTimeline || []}
                   onSaved={loadWorkspace}
-                  onViewActivity={() => handleBuyerWorkspaceTabSelection('timeline')}
+                  onViewActivity={() => handleBuyerWorkspaceTabSelection('activity')}
                   openComposerSignal={buyerAppointmentComposerSignal}
                 />
               ) : null}

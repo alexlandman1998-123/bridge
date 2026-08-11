@@ -4035,6 +4035,7 @@ export default function LegalDocumentWorkspace({
   packetType = 'mandate',
   packetId = '',
   mode = 'view',
+  initialAction = '',
   initialStatus = null,
   initialMandateData = null,
   organisationId = null,
@@ -4134,6 +4135,12 @@ export default function LegalDocumentWorkspace({
   const recordedGenerationHandoffsRef = useRef(new Set())
   const signerBusyRef = useRef(false)
   const physicalDownloadBusyRef = useRef(false)
+  const initialActionIntentRef = useRef('')
+  const physicalUploadIntentContextRef = useRef({
+    signingMethod: '',
+    canChangeSigningMethod: false,
+    selectSigningMethod: null,
+  })
   const refreshWorkspacePromiseRef = useRef(null)
   const lastWorkspaceRefreshAtRef = useRef(0)
   const scheduledWorkspaceRefreshTimersRef = useRef(new Set())
@@ -8693,6 +8700,36 @@ export default function LegalDocumentWorkspace({
     }
   }, [latestVersion?.id, latestVersion?.transaction_pdf_persisted, statusState?.packet?.id])
 
+  physicalUploadIntentContextRef.current = {
+    signingMethod,
+    canChangeSigningMethod,
+    selectSigningMethod: handleSelectSigningMethod,
+  }
+
+  const handleOpenPhysicalUpload = useCallback(() => {
+    const intentContext = physicalUploadIntentContextRef.current || {}
+    if (intentContext.signingMethod !== 'physical' && intentContext.canChangeSigningMethod) {
+      void intentContext.selectSigningMethod?.('physical')
+    }
+    if (typeof document === 'undefined') return
+    window.requestAnimationFrame(() => {
+      document.getElementById('mandate-workspace-physical-upload')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!open || normalizeKey(initialAction) !== 'upload_signed') return undefined
+    const intentKey = [
+      normalizeKey(initialAction),
+      normalizeText(packetId || statusState?.packet?.id || statusState?.packetId),
+      normalizeKey(mode),
+    ].join(':')
+    if (initialActionIntentRef.current === intentKey) return undefined
+    initialActionIntentRef.current = intentKey
+    const timer = window.setTimeout(() => handleOpenPhysicalUpload(), 180)
+    return () => window.clearTimeout(timer)
+  }, [handleOpenPhysicalUpload, initialAction, mode, open, packetId, statusState?.packet?.id, statusState?.packetId])
+
   if (!open) return null
 
   const documentLabel = resolveDocumentLabel(packetType)
@@ -8773,15 +8810,7 @@ export default function LegalDocumentWorkspace({
     if (typeof document === 'undefined') return
     document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
-  const handleOpenPhysicalUpload = () => {
-    if (signingMethod !== 'physical' && canChangeSigningMethod) {
-      void handleSelectSigningMethod('physical')
-    }
-    if (typeof document === 'undefined') return
-    window.requestAnimationFrame(() => {
-      document.getElementById('mandate-workspace-physical-upload')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
-  }
+
   const mandateQuickActions = [
     {
       key: 'download_mandate',

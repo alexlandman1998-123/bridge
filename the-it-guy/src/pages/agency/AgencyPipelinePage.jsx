@@ -3395,7 +3395,7 @@ function isStaleMandateGenerationRecoveryMessage(value = '') {
 }
 
 const BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY = 'onboarding_otp'
-const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity', 'listing_journey'])
+const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity'])
 const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'properties', 'appointments', 'activity', BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY])
 
 function normalizeLeadWorkspaceTabKey(tabKey = '') {
@@ -3404,6 +3404,7 @@ function normalizeLeadWorkspaceTabKey(tabKey = '') {
     return BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY
   }
   if (normalized === 'activities') return 'activity'
+  if (normalized === 'listing_journey') return 'overview'
   return normalized
 }
 
@@ -9544,6 +9545,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [routeLeadRecord])
   const [legalWorkspaceOpen, setLegalWorkspaceOpen] = useState(false)
   const [legalWorkspaceMode, setLegalWorkspaceMode] = useState('view')
+  const [legalWorkspaceInitialAction, setLegalWorkspaceInitialAction] = useState('')
   const [mandatePacketStatus, setMandatePacketStatus] = useState(() => ({
     packetType: 'mandate',
     state: 'NO_PACKET',
@@ -12019,7 +12021,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('overview')
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
     }
-    if (!selectedLeadIsSeller && ['seller', 'property', 'mandate', 'listing_journey', 'documents', 'insights', 'mapping'].includes(leadWorkspaceTab)) {
+    if (!selectedLeadIsSeller && ['seller', 'property', 'mandate', 'documents', 'insights', 'mapping'].includes(leadWorkspaceTab)) {
       setLeadWorkspaceTab('overview')
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
     }
@@ -21496,10 +21498,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   function openSelectedLeadMandateWorkspace(actionKey = selectedLeadMandateQuickStartActionKey) {
-    const workspaceMode = resolveWorkspaceModeFromAction(actionKey)
+    const normalizedAction = normalizeKey(actionKey)
+    const workspaceMode = normalizedAction === 'upload_signed' ? 'send' : resolveWorkspaceModeFromAction(actionKey)
     setMandateQuickStartOpen(false)
+    setLegalWorkspaceInitialAction(normalizedAction === 'upload_signed' ? 'upload_signed' : '')
     setLegalWorkspaceMode(workspaceMode)
     setLegalWorkspaceOpen(true)
+  }
+
+  function handleSelectedLeadSignedMandateUploadAction() {
+    if (!selectedLead || !selectedLeadIsSeller) return
+    openSelectedLeadMandateWorkspace('upload_signed')
   }
 
   async function handleSelectedLeadMandatePrimaryAction() {
@@ -30006,11 +30015,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         formatDateShort={formatDateShort}
                         formatAppointmentTimeRange={formatAppointmentTimeRange}
                         getAppointmentStatusTone={getAppointmentStatusTone}
+                        handleViewCalendar={() => navigate('/pipeline/calendar')}
                         handleOpenAppointmentModal={handleOpenAppointmentModal}
                         handleScheduleAppointment={handleScheduleSellerAppointment}
                         handleCancelAppointment={handleCancelAppointment}
                         handleMarkAppointmentComplete={handleMarkAppointmentComplete}
-                        resolveAgentById={resolveAgentById}
                       />
                     ) : (
                   <div className="space-y-4">
@@ -31443,66 +31452,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                     </section>
 
-                    <section className="order-5 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:col-span-2">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
-                            <ImageIcon className="h-4 w-4" /> Marketing Information & Media
-                          </p>
-                          <h4 className="mt-3 text-lg font-semibold text-[#102033]">Description, selling points, and media summary</h4>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => handleSellerJourneyAction(selectedLeadPropertyWorkspace.listing.hasListing ? 'open_listing' : 'create_listing')}>
-                            <Pencil className="mr-1.5 h-4 w-4" /> Edit Marketing Information
-                          </Button>
-                          <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => handleSellerJourneyAction(selectedLeadPropertyWorkspace.listing.hasListing ? 'open_listing' : 'create_listing')}>
-                            <Upload className="mr-1.5 h-4 w-4" /> Manage Media
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)_minmax(260px,0.7fr)]">
-                        <div className="space-y-4">
-                          <div>
-                            <p className="text-xs font-semibold text-[#607891]">Published listing description</p>
-                            <p className={`mt-2 text-sm leading-6 ${selectedLeadPropertyWorkspace.marketing.listingDescription ? 'text-[#20364c]' : 'text-[#8aa0b7]'}`}>
-                              {selectedLeadPropertyWorkspace.marketing.listingDescription || 'No listing description has been added.'}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-[#607891]">Seller-provided notes</p>
-                            <p className={`mt-2 text-sm leading-6 ${selectedLeadPropertyWorkspace.marketing.sellerDescription ? 'text-[#20364c]' : 'text-[#8aa0b7]'}`}>
-                              {selectedLeadPropertyWorkspace.marketing.sellerDescription || 'Not captured'}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          {[
-                            ['Photos', selectedLeadPropertyWorkspace.marketing.mediaCounts.photos, ImageIcon],
-                            ['Videos', selectedLeadPropertyWorkspace.marketing.mediaCounts.videos, Eye],
-                            ['Floorplans', selectedLeadPropertyWorkspace.marketing.mediaCounts.floorplans, FileText],
-                            ['Virtual tours', selectedLeadPropertyWorkspace.marketing.mediaCounts.virtualTours, Box],
-                          ].map(([label, value, MediaIcon]) => (
-                            <div key={label} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-4 py-3">
-                              {createElement(MediaIcon, { className: 'h-5 w-5 text-[#315b7a]' })}
-                              <p className="mt-2 text-lg font-semibold text-[#102033]">{value}</p>
-                              <p className="text-xs font-semibold text-[#7890a8]">{label}</p>
-                            </div>
-                          ))}
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-[#607891]">Key selling points</p>
-                          <ul className="mt-3 space-y-2">
-                            {selectedLeadPropertyWorkspace.marketing.keySellingPoints.length ? selectedLeadPropertyWorkspace.marketing.keySellingPoints.map((point) => (
-                              <li key={point} className="flex gap-2 text-sm font-semibold text-[#20364c]">
-                                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#168257]" /> {point}
-                              </li>
-                            )) : (
-                              <li className="text-sm font-semibold text-[#8aa0b7]">No key selling points captured</li>
-                            )}
-                          </ul>
-                        </div>
-                      </div>
-                    </section>
                   </div>
                   ) : null}
 
@@ -31515,9 +31464,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <h4 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102033]">{selectedLeadMandatePrimaryLabel}</h4>
                           <p className="mt-1 text-sm leading-6 text-[#60758b]">{selectedLeadMandateActionTitle || 'Prepare, generate, send, or view the mandate from the current packet state.'}</p>
                         </div>
-                        <Button type="button" size="sm" onClick={() => void handleSelectedLeadMandatePrimaryAction()} disabled={selectedLeadMandateActionDisabled}>
-                          {selectedLeadMandatePrimaryLabel}
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button type="button" size="sm" variant="secondary" onClick={handleSelectedLeadSignedMandateUploadAction}>
+                            <Upload className="h-4 w-4" />
+                            Upload Signed Mandate
+                          </Button>
+                          <Button type="button" size="sm" onClick={() => void handleSelectedLeadMandatePrimaryAction()} disabled={selectedLeadMandateActionDisabled}>
+                            {selectedLeadMandatePrimaryLabel}
+                          </Button>
+                        </div>
                       </div>
                       <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                         {selectedLeadMandateQuickStartRows.map((row) => (
@@ -31954,50 +31909,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
                       </section>
                     )}
-                  </div>
-                  ) : null}
-
-                  {leadWorkspaceTab === 'listing_journey' ? (
-                  <div className="space-y-4">
-                    <section className="rounded-[18px] border border-[#e1eaf4] bg-white p-5 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Seller Flow</p>
-                          <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Listing Journey</h4>
-                          <p className="mt-1 text-sm text-[#6a8098]">{selectedLeadPropertyLabel}</p>
-                        </div>
-                        {selectedSellerJourney.listingCreated ? (
-                          <Button type="button" size="sm" variant="secondary" onClick={() => handleSellerJourneyAction('open_listing')}>
-                            Open Listing
-                          </Button>
-                        ) : null}
-                      </div>
-                      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                        {[
-                          ['Listing Address', selectedSellerJourney.kpis.find((item) => item.key === 'property')?.value || selectedLeadPropertyLabel],
-                          ['Listing Status', selectedSellerJourney.kpis.find((item) => item.key === 'listing')?.value || 'Not created'],
-                          ['Visibility', normalizeText(selectedLeadLinkedListing?.listingVisibility || selectedLeadLinkedListing?.listing_visibility || selectedLeadLinkedListing?.visibility) || 'Internal'],
-                          ['Created Date', formatDate(selectedLeadLinkedListing?.createdAt || selectedLeadLinkedListing?.created_at || selectedLead?.updatedAt || selectedLead?.createdAt)],
-                        ].map(([label, value]) => (
-                          <div key={label} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
-                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#8496aa]">{label}</p>
-                            <p className="mt-1 break-words text-sm font-semibold text-[#203a54]">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-5 rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] p-4">
-                        <div className="grid gap-3 md:grid-cols-5" data-testid="listing-journey-card">
-                          {selectedSellerJourney.listingJourney.map((step) => {
-                            return (
-                              <div key={step.key} className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 ${step.state === 'current' ? 'border-[#87c7a0] bg-[#f0fbf4]' : 'border-[#e0e8f2] bg-white'}`}>
-                                <span className={`h-2.5 w-2.5 rounded-full ${step.state === 'upcoming' ? 'bg-[#cfdbe8]' : 'bg-[#2f9b69]'}`} />
-                                <span className="text-sm font-semibold text-[#203a54]">{step.label}</span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    </section>
                   </div>
                   ) : null}
 
@@ -33708,7 +33619,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       <LegalDocumentWorkspace
         open={legalWorkspaceOpen}
-        onClose={() => setLegalWorkspaceOpen(false)}
+        onClose={() => {
+          setLegalWorkspaceOpen(false)
+          setLegalWorkspaceInitialAction('')
+        }}
         transactionId={selectedLeadLinkedTransactionId}
         transactionReference={
           [
@@ -33723,6 +33637,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             : ''
         }
         mode={legalWorkspaceMode}
+        initialAction={legalWorkspaceInitialAction}
         initialStatus={mandatePacketStatus}
         initialMandateData={selectedLeadMandateReadiness?.mandateData || null}
         organisationId={organisationId}
