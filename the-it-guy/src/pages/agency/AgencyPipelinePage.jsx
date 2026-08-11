@@ -14635,82 +14635,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return reasons.slice(0, 4)
   }, [selectedLead, selectedLeadBuyerBudgetLabel, selectedLeadOfferCentreProperty, selectedLeadPropertyLabel])
 
-  const selectedLeadOfferStageChecklist = useMemo(() => {
-    const onboardingSent = Boolean(selectedLeadActiveOfferPortalStatus || offerLinkForm.lastOfferLink)
-    const onboardingSubmitted = Boolean(selectedLeadBuyerOnboardingSubmitted || selectedLeadActiveOfferPortalStatus?.submittedAt)
-    const signedOtpUploaded = Boolean(selectedLeadBuyerOfferDocumentUploaded || selectedLeadAcceptedOffer)
-    return [
-      {
-        key: 'onboarding',
-        label: 'Buyer onboarding',
-        status: onboardingSubmitted ? 'Submitted' : onboardingSent ? 'Sent' : 'Pending',
-        done: onboardingSubmitted,
-        detail: onboardingSubmitted
-          ? 'Buyer details captured.'
-          : onboardingSent
-            ? 'Waiting for buyer details.'
-            : 'Send onboarding or capture Buyer Info manually.',
-      },
-      {
-        key: 'signed_otp',
-        label: 'Signed OTP',
-        status: signedOtpUploaded ? 'Uploaded' : 'Pending',
-        done: signedOtpUploaded,
-        detail: signedOtpUploaded
-          ? 'Signed OTP evidence is on file.'
-          : 'Upload the signed OTP received outside Arch9.',
-      },
-      {
-        key: 'conversion',
-        label: 'Transaction conversion',
-        status: selectedLeadAcceptedOfferConversionPreflight?.canConvert ? 'Ready' : 'Blocked',
-        done: Boolean(selectedLeadAcceptedOfferConversionPreflight?.canConvert),
-        detail: selectedLeadAcceptedOfferConversionPreflight?.canConvert
-          ? 'Ready once the agent chooses Create Transaction.'
-          : selectedLeadAcceptedOfferConversionPreflight?.nextFix?.label || 'Complete onboarding and signed OTP evidence.',
-      },
-    ]
-  }, [
-    offerLinkForm.lastOfferLink,
-    selectedLeadAcceptedOffer,
-    selectedLeadAcceptedOfferConversionPreflight,
-    selectedLeadActiveOfferPortalStatus,
-    selectedLeadBuyerOfferDocumentUploaded,
-    selectedLeadBuyerOnboardingSubmitted,
-  ])
-
-  const selectedLeadOfferHistoryStages = useMemo(() => {
-    const rows = Array.isArray(selectedLeadOffers) ? selectedLeadOffers : []
-    const latestOffer = rows
-      .slice()
-      .sort((left, right) => new Date(right?.updatedAt || right?.submittedAt || right?.createdAt || 0) - new Date(left?.updatedAt || left?.submittedAt || left?.createdAt || 0))[0] || null
-    const status = normalizeText(latestOffer?.status).toLowerCase()
-    const hasOffer = Boolean(latestOffer || offerLinkForm.lastOfferLink)
-    const buyerViewed = ['buyer_viewed', 'viewed', 'opened', 'submitted', 'agent_review', 'sent_to_seller', 'seller_viewed', 'accepted', 'converted_to_transaction'].some((item) => status.includes(item))
-    const signedOtpUploaded = Boolean(selectedLeadBuyerOfferDocumentUploaded || latestOffer)
-    const accepted = ['accepted', 'converted_to_transaction'].includes(status) || Boolean(selectedLeadAcceptedOffer)
-	    const transactionCreated = Boolean(latestOffer?.transactionId || selectedLeadLinkedTransactionId)
-	    return [
-	      { key: 'sent', label: 'Onboarding Sent', detail: latestOffer?.createdAt || latestOffer?.submittedAt || offerLinkForm.expiryDate, done: hasOffer, icon: Send },
-	      { key: 'opened', label: 'Onboarding Opened', detail: buyerViewed ? (latestOffer?.updatedAt || latestOffer?.submittedAt) : '', done: buyerViewed, icon: Eye },
-	      { key: 'signed_otp', label: 'Signed OTP Uploaded', detail: signedOtpUploaded ? (latestOffer?.updatedAt || latestOffer?.submittedAt || selectedLead?.offerDocumentUploadedAt) : '', done: signedOtpUploaded, icon: FileText },
-	      { key: 'details', label: 'Buyer Details Captured', detail: selectedLeadBuyerOnboardingSubmitted ? (selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at || latestOffer?.updatedAt) : '', done: selectedLeadBuyerOnboardingSubmitted, icon: UserRound },
-      { key: 'accepted', label: 'Conversion Ready', detail: accepted ? (selectedLeadAcceptedOffer?.updatedAt || latestOffer?.updatedAt) : '', done: accepted, icon: CheckCircle2 },
-      { key: 'transaction', label: 'Transaction Created', detail: transactionCreated ? (latestOffer?.updatedAt || selectedLeadLinkedTransaction?.updatedAt || selectedLeadLinkedTransaction?.createdAt) : '', done: transactionCreated, icon: Home },
-    ]
-  }, [
-    offerLinkForm.expiryDate,
-    offerLinkForm.lastOfferLink,
-    selectedLead?.offerDocumentUploadedAt,
-    selectedLeadAcceptedOffer,
-    selectedLeadBuyerOfferDocumentUploaded,
-    selectedLeadBuyerOnboardingSubmitted,
-    selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at,
-    selectedLeadLinkedTransaction,
-    selectedLeadLinkedTransactionId,
-    selectedLeadOffers,
-  ])
-
   const selectedLeadTransactionHandoffHealth = useMemo(() => {
     const diagnosticTransaction = selectedLeadLifecycleDiagnostic?.transaction || {}
     const hasTransactionContext = Boolean(selectedLeadLinkedTransaction || selectedLeadLifecycleDiagnostic?.transaction)
@@ -14854,6 +14778,82 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadOfferCentreProperty?.id,
     selectedLeadOfferPortalSessionByAppointmentId,
     selectedLeadOfferPortalSessionByListingId,
+  ])
+
+  const selectedLeadOfferStageChecklist = useMemo(() => {
+    const onboardingSent = Boolean(selectedLeadActiveOfferPortalStatus || offerLinkForm.lastOfferLink)
+    const onboardingSubmitted = Boolean(selectedLeadBuyerOnboardingSubmitted || selectedLeadActiveOfferPortalStatus?.submittedAt)
+    const signedOtpUploaded = Boolean(selectedLeadBuyerOfferDocumentUploaded || selectedLeadAcceptedOffer)
+    return [
+      {
+        key: 'onboarding',
+        label: 'Buyer onboarding',
+        status: onboardingSubmitted ? 'Submitted' : onboardingSent ? 'Sent' : 'Pending',
+        done: onboardingSubmitted,
+        detail: onboardingSubmitted
+          ? 'Buyer details captured.'
+          : onboardingSent
+            ? 'Waiting for buyer details.'
+            : 'Send onboarding or capture Buyer Info manually.',
+      },
+      {
+        key: 'signed_otp',
+        label: 'Signed OTP',
+        status: signedOtpUploaded ? 'Uploaded' : 'Pending',
+        done: signedOtpUploaded,
+        detail: signedOtpUploaded
+          ? 'Signed OTP evidence is on file.'
+          : 'Upload the signed OTP received outside Arch9.',
+      },
+      {
+        key: 'conversion',
+        label: 'Transaction conversion',
+        status: selectedLeadAcceptedOfferConversionPreflight?.canConvert ? 'Ready' : 'Blocked',
+        done: Boolean(selectedLeadAcceptedOfferConversionPreflight?.canConvert),
+        detail: selectedLeadAcceptedOfferConversionPreflight?.canConvert
+          ? 'Ready once the agent chooses Create Transaction.'
+          : selectedLeadAcceptedOfferConversionPreflight?.nextFix?.label || 'Complete onboarding and signed OTP evidence.',
+      },
+    ]
+  }, [
+    offerLinkForm.lastOfferLink,
+    selectedLeadAcceptedOffer,
+    selectedLeadAcceptedOfferConversionPreflight,
+    selectedLeadActiveOfferPortalStatus,
+    selectedLeadBuyerOfferDocumentUploaded,
+    selectedLeadBuyerOnboardingSubmitted,
+  ])
+
+  const selectedLeadOfferHistoryStages = useMemo(() => {
+    const rows = Array.isArray(selectedLeadOffers) ? selectedLeadOffers : []
+    const latestOffer = rows
+      .slice()
+      .sort((left, right) => new Date(right?.updatedAt || right?.submittedAt || right?.createdAt || 0) - new Date(left?.updatedAt || left?.submittedAt || left?.createdAt || 0))[0] || null
+    const status = normalizeText(latestOffer?.status).toLowerCase()
+    const hasOffer = Boolean(latestOffer || offerLinkForm.lastOfferLink)
+    const buyerViewed = ['buyer_viewed', 'viewed', 'opened', 'submitted', 'agent_review', 'sent_to_seller', 'seller_viewed', 'accepted', 'converted_to_transaction'].some((item) => status.includes(item))
+    const signedOtpUploaded = Boolean(selectedLeadBuyerOfferDocumentUploaded || latestOffer)
+    const accepted = ['accepted', 'converted_to_transaction'].includes(status) || Boolean(selectedLeadAcceptedOffer)
+    const transactionCreated = Boolean(latestOffer?.transactionId || selectedLeadLinkedTransactionId)
+    return [
+      { key: 'sent', label: 'Onboarding Sent', detail: latestOffer?.createdAt || latestOffer?.submittedAt || offerLinkForm.expiryDate, done: hasOffer, icon: Send },
+      { key: 'opened', label: 'Onboarding Opened', detail: buyerViewed ? (latestOffer?.updatedAt || latestOffer?.submittedAt) : '', done: buyerViewed, icon: Eye },
+      { key: 'signed_otp', label: 'Signed OTP Uploaded', detail: signedOtpUploaded ? (latestOffer?.updatedAt || latestOffer?.submittedAt || selectedLead?.offerDocumentUploadedAt) : '', done: signedOtpUploaded, icon: FileText },
+      { key: 'details', label: 'Buyer Details Captured', detail: selectedLeadBuyerOnboardingSubmitted ? (selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at || latestOffer?.updatedAt) : '', done: selectedLeadBuyerOnboardingSubmitted, icon: UserRound },
+      { key: 'accepted', label: 'Conversion Ready', detail: accepted ? (selectedLeadAcceptedOffer?.updatedAt || latestOffer?.updatedAt) : '', done: accepted, icon: CheckCircle2 },
+      { key: 'transaction', label: 'Transaction Created', detail: transactionCreated ? (latestOffer?.updatedAt || selectedLeadLinkedTransaction?.updatedAt || selectedLeadLinkedTransaction?.createdAt) : '', done: transactionCreated, icon: Home },
+    ]
+  }, [
+    offerLinkForm.expiryDate,
+    offerLinkForm.lastOfferLink,
+    selectedLead?.offerDocumentUploadedAt,
+    selectedLeadAcceptedOffer,
+    selectedLeadBuyerOfferDocumentUploaded,
+    selectedLeadBuyerOnboardingSubmitted,
+    selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at,
+    selectedLeadLinkedTransaction,
+    selectedLeadLinkedTransactionId,
+    selectedLeadOffers,
   ])
 
   const leadViewingCompletionBlockers = useMemo(

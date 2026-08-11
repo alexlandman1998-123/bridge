@@ -60,6 +60,7 @@ function resolveLocalGitCommitSha() {
 function releaseIntegrityPlugin() {
   let releaseId = 'local-unknown'
   let supabaseOrigin = null
+  let devManifest = null
 
   return {
     name: 'arch9-release-integrity',
@@ -80,6 +81,23 @@ function releaseIntegrityPlugin() {
       } catch {
         supabaseOrigin = null
       }
+      devManifest = {
+        version: 1,
+        releaseId,
+        supabaseOrigin,
+        generatedAt: new Date().toISOString(),
+        criticalAssets: [],
+        listingDetailAssetDetected: false,
+        dev: true,
+      }
+    },
+    configureServer(server) {
+      server.middlewares.use('/release-manifest.json', (_request, response) => {
+        response.statusCode = 200
+        response.setHeader('Content-Type', 'application/json; charset=utf-8')
+        response.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+        response.end(`${JSON.stringify(devManifest || { version: 1, releaseId, dev: true }, null, 2)}\n`)
+      })
     },
     transformIndexHtml(html) {
       const marker = `<meta name="arch9-release" content="${escapeHtmlAttribute(releaseId)}" />`
