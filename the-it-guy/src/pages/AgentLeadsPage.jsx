@@ -17,6 +17,7 @@ import {
   Download,
   ExternalLink,
   FileText,
+  FolderKanban,
   Home,
   Mail,
   MapPin,
@@ -16162,10 +16163,12 @@ function SellerActionsPanel({
   readiness = null,
   onboardingStatus = '',
   sendingOnboarding = false,
+  uploadingMandate = false,
   sellerActionError = '',
   sellerActionMessage = '',
   onSendSellerOnboarding,
   onGenerateMandate,
+  onUploadMandate,
   onOpenListing,
   onOpenTimeline,
 }) {
@@ -16185,7 +16188,7 @@ function SellerActionsPanel({
       </div>
       {sellerActionError ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{sellerActionError}</p> : null}
       {sellerActionMessage ? <p className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{sellerActionMessage}</p> : null}
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
         <button
           type="button"
           disabled={sendingOnboarding}
@@ -16202,6 +16205,15 @@ function SellerActionsPanel({
         >
           <span className="block text-sm font-semibold">Generate in Seller Profile</span>
           <span className="mt-1 block text-xs font-medium text-blue-700">{mandateReason}</span>
+        </button>
+        <button
+          type="button"
+          disabled={uploadingMandate}
+          onClick={() => onUploadMandate?.()}
+          className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <span className="block text-sm font-semibold">{uploadingMandate ? 'Uploading Mandate...' : 'Upload Mandate'}</span>
+          <span className="mt-1 block text-xs font-medium text-emerald-700">Upload an already-signed mandate and mark it on the seller file.</span>
         </button>
       </div>
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -17115,10 +17127,12 @@ function SellerLeadActions({
   listing = null,
   onboardingStatus = '',
   sendingOnboarding = false,
+  uploadingMandate = false,
   sendingPortalLink = false,
   onSendSellerOnboarding,
   onResendSellerPortalLink,
   onGenerateMandate,
+  onUploadMandate,
   onOpenListing,
   onOpenAppointments,
   onCopySellerOnboardingLink,
@@ -17214,6 +17228,16 @@ function SellerLeadActions({
             <FileText size={15} />
             {mandateMeta.actionLabel}
           </button>
+          <button
+            type="button"
+            onClick={() => closeMenuAndRun(onUploadMandate)}
+            disabled={uploadingMandate || !onUploadMandate}
+            className={menuButtonClass}
+            role="menuitem"
+          >
+            <Upload size={15} />
+            {uploadingMandate ? 'Uploading mandate...' : 'Upload Mandate'}
+          </button>
           <button type="button" onClick={() => closeMenuAndRun(onOpenAppointments)} className={menuButtonClass} role="menuitem">
             <CalendarDays size={15} />
             Schedule Appointment
@@ -17261,10 +17285,12 @@ function SellerLeadHeader({
   listing = null,
   onboardingStatus = '',
   sendingOnboarding = false,
+  uploadingMandate = false,
   sendingPortalLink = false,
   onSendSellerOnboarding,
   onResendSellerPortalLink,
   onGenerateMandate,
+  onUploadMandate,
   onOpenListing,
   onOpenAppointments,
   onCopySellerOnboardingLink,
@@ -17377,10 +17403,12 @@ function SellerLeadHeader({
               listing={listing}
               onboardingStatus={onboardingStatus}
               sendingOnboarding={sendingOnboarding}
+              uploadingMandate={uploadingMandate}
               sendingPortalLink={sendingPortalLink}
               onSendSellerOnboarding={onSendSellerOnboarding}
               onResendSellerPortalLink={onResendSellerPortalLink}
               onGenerateMandate={onGenerateMandate}
+              onUploadMandate={onUploadMandate}
               onOpenListing={onOpenListing}
               onOpenAppointments={onOpenAppointments}
               onCopySellerOnboardingLink={onCopySellerOnboardingLink}
@@ -19723,9 +19751,11 @@ function SellerProfileTab({
   listing = null,
   actor = null,
   sendingOnboarding = false,
+  uploadingMandate = false,
   agentOnboardingSignal = 0,
   mandatePacketStatus = null,
   onGenerateMandate = null,
+  onUploadMandate = null,
   onSaved,
   onSendSellerOnboarding,
   onAgentCompleteSellerOnboarding,
@@ -20508,6 +20538,15 @@ function SellerProfileTab({
             </button>
             <button
               type="button"
+              onClick={() => onUploadMandate?.()}
+              disabled={uploadingMandate || !onUploadMandate}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Upload size={15} />
+              {uploadingMandate ? 'Uploading...' : 'Upload Mandate'}
+            </button>
+            <button
+              type="button"
               onClick={openDocumentsTab}
               className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
             >
@@ -21086,9 +21125,11 @@ function SellerMandateWorkflowGate({
   onboardingStatus = '',
   sendingOnboarding = false,
   actionBusy = false,
+  uploadingMandate = false,
   onManualSellerOnboarding,
   onSendSellerOnboarding,
   onGenerateMandate,
+  onUploadMandate,
 }) {
   const state = getSellerMandateWorkflowState({ row, listing, journey, onboardingStatus })
   const steps = [
@@ -21138,17 +21179,37 @@ function SellerMandateWorkflowGate({
                   <Mail size={16} />
                   {sendingOnboarding ? 'Sending seller onboarding...' : 'Send seller onboarding'}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => onUploadMandate?.()}
+                  disabled={uploadingMandate || !onUploadMandate}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Upload size={16} />
+                  {uploadingMandate ? 'Uploading mandate...' : 'Upload Mandate'}
+                </button>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={() => onGenerateMandate?.()}
-                disabled={actionBusy || !onGenerateMandate}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-              >
-                <FileText size={16} />
-                {primaryActionLabel}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => onGenerateMandate?.()}
+                  disabled={actionBusy || !onGenerateMandate}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  <FileText size={16} />
+                  {primaryActionLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUploadMandate?.()}
+                  disabled={uploadingMandate || !onUploadMandate}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Upload size={16} />
+                  {uploadingMandate ? 'Uploading mandate...' : 'Upload Mandate'}
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -21454,7 +21515,9 @@ function SellerMandatePacketCard({
   journey,
   mandatePacketStatus = null,
   savingCommission = false,
+  uploadingMandate = false,
   onGenerateMandate,
+  onUploadMandate,
 }) {
   const summary = getSellerMandatePacketSummary({ row, listing, journey, mandatePacketStatus })
   const hasPacket = summary.meta.hasRecord || Boolean(summary.packetId)
@@ -21502,6 +21565,15 @@ function SellerMandatePacketCard({
           >
             <FileText size={15} />
             {primaryLabel}
+          </button>
+          <button
+            type="button"
+            onClick={() => onUploadMandate?.()}
+            disabled={uploadingMandate || !onUploadMandate}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Upload size={15} />
+            {uploadingMandate ? 'Uploading...' : 'Upload Mandate'}
           </button>
           {summary.draftUrl ? (
             <button
@@ -21782,12 +21854,14 @@ function SellerMandateTab({
   commissionDraft,
   commissionSummary,
   savingCommission = false,
+  uploadingMandate = false,
   sendingOnboarding = false,
   onCommissionDraftChange,
   onSaveCommission,
   onManualSellerOnboarding,
   onSendSellerOnboarding,
   onGenerateMandate,
+  onUploadMandate,
 }) {
   const [activeScreen, setActiveScreen] = useState('overview')
   const workflowState = getSellerMandateWorkflowState({ row, listing, journey, onboardingStatus })
@@ -21876,7 +21950,9 @@ function SellerMandateTab({
             journey={journey}
             mandatePacketStatus={mandatePacketStatus}
             savingCommission={savingCommission}
+            uploadingMandate={uploadingMandate}
             onGenerateMandate={onGenerateMandate}
+            onUploadMandate={onUploadMandate}
           />
         )
       default:
@@ -21888,9 +21964,11 @@ function SellerMandateTab({
             onboardingStatus={onboardingStatus}
             sendingOnboarding={sendingOnboarding}
             actionBusy={savingCommission}
+            uploadingMandate={uploadingMandate}
             onManualSellerOnboarding={onManualSellerOnboarding}
             onSendSellerOnboarding={onSendSellerOnboarding}
             onGenerateMandate={onGenerateMandate}
+            onUploadMandate={onUploadMandate}
           />
         )
     }
@@ -22566,6 +22644,7 @@ function SellerTabContent({
   commissionDraft,
   commissionSummary,
   savingCommission,
+  uploadingMandate = false,
   sendingSellerOnboarding,
   agentOnboardingSignal = 0,
   onCommissionDraftChange,
@@ -22575,6 +22654,7 @@ function SellerTabContent({
   onSendSellerOnboarding,
   onManualSellerOnboarding,
   onGenerateMandate,
+  onUploadMandate,
   onAgentCompleteSellerOnboarding,
   onResendSellerPortalLink,
   onCopySellerPortalLink,
@@ -22594,9 +22674,11 @@ function SellerTabContent({
         listing={listing}
         actor={actor}
         sendingOnboarding={sendingSellerOnboarding}
+        uploadingMandate={uploadingMandate}
         agentOnboardingSignal={agentOnboardingSignal}
         mandatePacketStatus={mandatePacketStatus}
         onGenerateMandate={onGenerateMandate}
+        onUploadMandate={onUploadMandate}
         onSaved={onSaved}
         onSendSellerOnboarding={onSendSellerOnboarding}
         onAgentCompleteSellerOnboarding={onAgentCompleteSellerOnboarding}
@@ -22780,6 +22862,7 @@ function SellerLeadWorkspaceLayout({
   sellerOnboardingStatus,
   sendingSellerOnboarding,
   sendingSellerPortalLink,
+  uploadingMandate,
   sellerActionError,
   sellerActionMessage,
   organisationId,
@@ -22794,6 +22877,7 @@ function SellerLeadWorkspaceLayout({
   onResendSellerPortalLink,
   onOpenSellerPortalLink,
   onGenerateMandate,
+  onUploadMandate,
   onOpenListing,
   onCopySellerOnboardingLink,
   onCopySellerPortalLink,
@@ -22940,10 +23024,12 @@ function SellerLeadWorkspaceLayout({
         listing={linkedSellerListing}
         onboardingStatus={sellerOnboardingStatus}
         sendingOnboarding={sendingSellerOnboarding}
+        uploadingMandate={uploadingMandate}
         sendingPortalLink={sendingSellerPortalLink}
         onSendSellerOnboarding={onSendSellerOnboarding}
         onResendSellerPortalLink={onResendSellerPortalLink}
         onGenerateMandate={openMandateWithLatestTerms}
+        onUploadMandate={onUploadMandate}
         onOpenListing={onOpenListing}
         onOpenAppointments={openAppointmentComposer}
         onCopySellerOnboardingLink={onCopySellerOnboardingLink}
@@ -22989,6 +23075,7 @@ function SellerLeadWorkspaceLayout({
         commissionDraft={commissionDraft}
         commissionSummary={commissionSummary}
         savingCommission={savingCommission}
+        uploadingMandate={uploadingMandate}
         sendingSellerOnboarding={sendingSellerOnboarding}
         agentOnboardingSignal={agentOnboardingSignal}
         onCommissionDraftChange={updateCommissionDraft}
@@ -22998,6 +23085,7 @@ function SellerLeadWorkspaceLayout({
         onSendSellerOnboarding={onSendSellerOnboarding}
         onManualSellerOnboarding={openManualSellerOnboarding}
         onGenerateMandate={openMandateWithLatestTerms}
+        onUploadMandate={onUploadMandate}
         onAgentCompleteSellerOnboarding={onAgentCompleteSellerOnboarding}
         onResendSellerPortalLink={onResendSellerPortalLink}
         onCopySellerPortalLink={onCopySellerPortalLink}
@@ -23178,7 +23266,9 @@ function AgentLeadWorkspace() {
   const [selectedSellerAttorneyId, setSelectedSellerAttorneyId] = useState('')
   const [sendingSellerPortalLink, setSendingSellerPortalLink] = useState(false)
   const [savingSellerCommission, setSavingSellerCommission] = useState(false)
+  const [uploadingManualMandate, setUploadingManualMandate] = useState(false)
   const [mandateStartOpen, setMandateStartOpen] = useState(false)
+  const manualMandateUploadInputRef = useRef(null)
   const sellerOnboardingInFlightRef = useRef(false)
   const sellerOnboardingFallbackLinkRef = useRef('')
   const sellerMandateAutoGenerationAttemptRef = useRef(new Set())
@@ -24066,6 +24156,133 @@ function AgentLeadWorkspace() {
     }
   }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, savingSellerCommission, sellerJourney])
 
+  const triggerManualMandateUpload = useCallback(() => {
+    setSellerActionError('')
+    setSellerActionMessage('')
+    manualMandateUploadInputRef.current?.click()
+  }, [])
+
+  const uploadManualMandateForLead = useCallback(async (event) => {
+    const file = event?.target?.files?.[0] || null
+    if (event?.target) event.target.value = ''
+    if (!file || !row || !isSellerLeadWorkspace || uploadingManualMandate) return
+    if (!organisationId) {
+      setSellerActionError('Select an agency workspace before uploading a mandate.')
+      return
+    }
+
+    try {
+      setUploadingManualMandate(true)
+      setSellerActionError('')
+      setSellerActionMessage('Uploading signed mandate...')
+
+      let listingId = getSellerListingId(row, linkedSellerListing)
+      if (!listingId) {
+        setSellerActionMessage('Creating seller listing shell...')
+        const created = await createPrivateListing({
+          organisationId,
+          assignedAgentId: normalizeText(row.assignedAgentId || actor.id),
+          sellerLeadId: normalizeText(row.leadId),
+          originatingCrmLeadId: normalizeText(row.leadId),
+          listingStatus: 'seller_lead',
+          sellerOnboardingStatus: getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney) || 'in_progress',
+          mandateStatus: 'not_started',
+          listingVisibility: 'internal',
+          title: normalizeText(row.propertyInterest || row.property_interest || row.sellerPropertyAddress || row.seller_property_address || row.name) || 'Seller mandate',
+          propertyType: normalizeText(row.propertyType || row.property_type) || 'House',
+          listingCategory: 'private_sale',
+          askingPrice: Number(row.estimatedValue || row.estimated_value || row.budget || 0) || 0,
+          estimatedValue: Number(row.estimatedValue || row.estimated_value || row.budget || 0) || 0,
+          addressLine1: normalizeText(row.sellerPropertyAddress || row.seller_property_address || row.areaInterest || row.area_interest),
+          suburb: normalizeText(row.suburb || row.areaInterest || row.area_interest),
+          city: normalizeText(row.city),
+          description: normalizeText(row.notes),
+          source: 'lead_workspace_manual_mandate_upload',
+        }, {
+          includeRequirementsAndDocuments: false,
+          syncRequirements: false,
+        })
+        listingId = normalizeText(created?.listing?.id)
+        if (listingId) {
+          await updateAgencyCrmLeadRecord(organisationId, row.leadId, { listingId }).catch((syncError) => {
+            console.warn('[AgentLeadsPage] Seller listing sync failed before mandate upload.', syncError)
+            return null
+          })
+        }
+      }
+      if (!listingId) throw new Error('Create or link a seller listing before uploading a mandate.')
+
+      setSellerActionMessage('Saving signed mandate...')
+      const uploaded = await uploadPrivateListingDocument(listingId, file, {
+        requirementKey: 'signed_mandate',
+        documentType: 'signed_mandate',
+        documentCategory: 'Mandate',
+        documentName: file.name || `${sanitizeSellerDocumentFilePart(row.name || 'seller', 'seller')}-signed-mandate.pdf`,
+        visibility: 'seller_visible',
+        status: 'uploaded',
+      })
+      const signedAt = uploaded?.uploaded_at || new Date().toISOString()
+      const leadPatch = {
+        listingId,
+        mandateStatus: 'signed_uploaded',
+        mandateSignedAt: signedAt,
+        mandateSignedDocumentPath: uploaded?.storage_path || '',
+        mandateSignedDocumentUrl: uploaded?.url || '',
+      }
+      await updateAgencyCrmLeadRecord(organisationId, row.leadId, leadPatch).catch((syncError) => {
+        console.warn('[AgentLeadsPage] Seller mandate upload lead sync failed.', syncError)
+        return null
+      })
+      await createAgencyCrmLeadActivity(organisationId, row.leadId, {
+        agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
+        activityType: 'Mandate Uploaded',
+        activityNote: `${file.name || 'Signed mandate'} was uploaded manually and marked as signed.`,
+        outcome: 'Signed mandate uploaded',
+        activityDate: signedAt,
+      }, { actor }).catch((activityError) => {
+        console.warn('[AgentLeadsPage] Seller mandate upload activity sync failed.', activityError)
+        return null
+      })
+      setData((previous) => {
+        if (!previous?.row) return previous
+        return {
+          ...previous,
+          row: {
+            ...previous.row,
+            ...leadPatch,
+            documents: [
+              {
+                ...uploaded,
+                id: uploaded?.id || uploaded?.storage_path || `${listingId}-signed-mandate`,
+                key: 'signed_mandate',
+                documentType: uploaded?.document_type || 'signed_mandate',
+                category: uploaded?.category || 'Mandate',
+                status: uploaded?.status || 'uploaded',
+              },
+              ...(Array.isArray(previous.row.documents) ? previous.row.documents : []),
+            ],
+          },
+        }
+      })
+      setSellerActionMessage('Signed mandate uploaded and marked on the seller file.')
+      await loadWorkspace()
+    } catch (uploadError) {
+      setSellerActionMessage('')
+      setSellerActionError(uploadError?.message || 'Unable to upload the signed mandate.')
+    } finally {
+      setUploadingManualMandate(false)
+    }
+  }, [
+    actor,
+    isSellerLeadWorkspace,
+    linkedSellerListing,
+    loadWorkspace,
+    organisationId,
+    row,
+    sellerJourney,
+    uploadingManualMandate,
+  ])
+
   const openMandateWorkspace = useCallback((options = {}) => {
     if (!row) return
     const mandateMeta = getSellerMandateMeta(row, linkedSellerListing, sellerJourney)
@@ -24369,39 +24586,50 @@ function AgentLeadWorkspace() {
       {row ? (
         <>
           {isSellerLeadWorkspace ? (
-            <SellerLeadWorkspaceLayout
-              row={row}
-              sourceInfo={sourceInfo}
-              initialWorkspaceTab={requestedSellerWorkspaceTab}
-              sellerJourney={sellerJourney}
-              sellerReadiness={sellerReadiness}
-              sellerProcessPanelModel={sellerProcessPanelModel}
-              linkedSellerListing={linkedSellerListing}
-              mandatePacketStatus={sellerMandatePacketStatus}
-              sellerOnboardingStatus={sellerOnboardingStatus}
-              sendingSellerOnboarding={sendingSellerOnboarding}
-              sendingSellerPortalLink={sendingSellerPortalLink}
-              sellerActionError={sellerActionError}
-              sellerActionMessage={sellerActionMessage}
-              organisationId={organisationId}
-              actor={actor}
-              timeline={data?.timeline || row.communicationTimeline || []}
-              savingCommission={savingSellerCommission}
-              onSaved={loadWorkspace}
-              onSaveCommission={saveSellerCommissionForLead}
-              onSavePropertyDetails={saveSellerPropertyForLead}
-              onSendSellerOnboarding={requestSellerOnboardingSend}
-              onAgentCompleteSellerOnboarding={completeSellerOnboardingAsAgent}
-              onResendSellerPortalLink={resendSellerPortalLink}
-              onOpenSellerPortalLink={openSellerPortalLink}
-              onGenerateMandate={openMandateWorkspace}
-              onOpenListing={openSellerListing}
-              onCopySellerOnboardingLink={copySellerOnboardingLink}
-              onCopySellerPortalLink={copySellerPortalLink}
-              onCopyListingLink={copyListingLink}
-              onMarkAsLost={markSellerLeadAsLost}
-              onArchiveLead={archiveSellerLead}
-            />
+            <>
+              <input
+                ref={manualMandateUploadInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                className="sr-only"
+                onChange={(event) => void uploadManualMandateForLead(event)}
+              />
+              <SellerLeadWorkspaceLayout
+                row={row}
+                sourceInfo={sourceInfo}
+                initialWorkspaceTab={requestedSellerWorkspaceTab}
+                sellerJourney={sellerJourney}
+                sellerReadiness={sellerReadiness}
+                sellerProcessPanelModel={sellerProcessPanelModel}
+                linkedSellerListing={linkedSellerListing}
+                mandatePacketStatus={sellerMandatePacketStatus}
+                sellerOnboardingStatus={sellerOnboardingStatus}
+                sendingSellerOnboarding={sendingSellerOnboarding}
+                sendingSellerPortalLink={sendingSellerPortalLink}
+                uploadingMandate={uploadingManualMandate}
+                sellerActionError={sellerActionError}
+                sellerActionMessage={sellerActionMessage}
+                organisationId={organisationId}
+                actor={actor}
+                timeline={data?.timeline || row.communicationTimeline || []}
+                savingCommission={savingSellerCommission}
+                onSaved={loadWorkspace}
+                onSaveCommission={saveSellerCommissionForLead}
+                onSavePropertyDetails={saveSellerPropertyForLead}
+                onSendSellerOnboarding={requestSellerOnboardingSend}
+                onAgentCompleteSellerOnboarding={completeSellerOnboardingAsAgent}
+                onResendSellerPortalLink={resendSellerPortalLink}
+                onOpenSellerPortalLink={openSellerPortalLink}
+                onGenerateMandate={openMandateWorkspace}
+                onUploadMandate={triggerManualMandateUpload}
+                onOpenListing={openSellerListing}
+                onCopySellerOnboardingLink={copySellerOnboardingLink}
+                onCopySellerPortalLink={copySellerPortalLink}
+                onCopyListingLink={copyListingLink}
+                onMarkAsLost={markSellerLeadAsLost}
+                onArchiveLead={archiveSellerLead}
+              />
+            </>
           ) : (
             <div className="buyer-lead-workspace space-y-4">
               <BuyerLeadHeader
