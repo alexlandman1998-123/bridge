@@ -16,6 +16,20 @@ This branch exists to forward-port missing buyer, seller, and bond-originator wo
 
 Do not raw-merge the source branches. They are behind current `main` and include broad diffs that can remove or overwrite newer production work.
 
+### Active Freeze Label
+
+As of `2026-08-11 19:30:19 SAST`, PR #16 is the single active reconciliation PR for buyer, seller, and bond-originator workflow catch-up.
+
+New feature work in these workflow areas is paused until the reconciliation PR is green, reviewed, merged, and production has been verified against the buyer, seller, and bond-originator surfaces.
+
+During the freeze:
+
+- route buyer, seller, and bond-originator recovery work through PR #16
+- keep PR #16 in draft while parity patches or verification gaps remain
+- treat older feature branches and draft lineages as inspection sources only
+- avoid merging stale or high-risk branches directly into `main`
+- avoid deployment until merged checks are green and production smoke checks pass
+
 Allowed methods:
 
 - inspect each source branch before applying changes
