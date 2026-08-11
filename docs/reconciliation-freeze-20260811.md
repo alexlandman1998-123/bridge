@@ -4,6 +4,27 @@
 
 Active soft freeze for branch reconciliation.
 
+## Phase 1 Execution
+
+Phase 1, `Hold The Line`, is active as of `2026-08-11 17:05:20 SAST`.
+
+During this phase, keep the repository in reconciliation mode:
+
+- no new feature branches or feature PRs
+- no direct deploys from candidate branches
+- no direct production deploys from the reconciliation branch
+- no wholesale merges without inspection evidence
+- no Phase 0 guard retirement without explicit approval
+
+All accepted work must flow through:
+
+- branch: `codex/reconcile-unmerged-branches-20260811`
+- PR: `https://github.com/alexlandman1998-123/bridge/pull/13`
+
+Emergency production hotfixes are allowed only when they are called out as urgent, inspected independently, verified with targeted checks, and recorded in the reconciliation PR before deployment.
+
+Phase 1 is complete when the freeze is visible in PR #13, the worktree is clean, and the next batch is limited to the first-pass queue.
+
 ## Purpose
 
 Keep `main` stable while unmerged branch work is inspected, merged, skipped, or deferred through one controlled integration branch.
