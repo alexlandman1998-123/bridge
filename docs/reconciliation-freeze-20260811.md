@@ -129,6 +129,14 @@ Production deployment is allowed only after:
 - Vercel production has built the merged `main` commit
 - live release manifests match the merged commit
 
+Before treating the reconciliation PR as deploy-ready, run:
+
+```bash
+npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge
+```
+
+The gate fails closed while the PR is draft, while any GitHub check or Vercel status is pending or failed, or when GitHub returns no check rollup. A blocked gate means no production deployment.
+
 ## Exit Criteria
 
 The freeze can be lifted when:

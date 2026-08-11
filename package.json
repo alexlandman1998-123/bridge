@@ -57,7 +57,8 @@
     "test:commission-reporting": "node scripts/commission-reporting.test.mjs",
     "supabase:guard": "node scripts/supabase-phase0-guard.mjs",
     "supabase:db-push": "node scripts/supabase-phase0-guard.mjs db push --linked",
-    "reconcile:verify": "node scripts/reconciliation-verify-batch.mjs"
+    "reconcile:verify": "node scripts/reconciliation-verify-batch.mjs",
+    "reconcile:deploy-gate": "node scripts/reconciliation-deploy-gate.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0"

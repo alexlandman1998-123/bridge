@@ -45,6 +45,7 @@ Record each batch result here as reconciliation progresses.
 | Date | Batch | Commit | Result | Evidence |
 | --- | --- | --- | --- | --- |
 | 2026-08-11 | `seller-process-next-action-fix` | working tree | Passed | `npm run reconcile:verify -- seller-process-next-action-fix` |
+| 2026-08-11 | `deploy-gate` | working tree | Blocked as expected | `npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge` found PR #13 is still draft |
 
 ## Batch-Specific Verification
 
@@ -167,3 +168,20 @@ The reconciliation PR body must include:
 - verification command
 - pass/fail result
 - any skipped commands and why
+
+## Deployment Gate
+
+Do not deploy from the reconciliation branch. Production deployment may proceed only after the reconciliation PR has green GitHub checks and green Vercel statuses, has merged into `main`, and the production build is tied to that merged commit.
+
+Use the fail-closed deploy gate before marking the reconciliation PR deploy-ready:
+
+```bash
+npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge
+```
+
+The gate blocks deploy readiness when:
+
+- the PR is draft
+- any GitHub check run is pending, cancelled, failed, timed out, or action-required
+- any status context, including Vercel, is pending, failed, or errored
+- GitHub returns no check rollup
