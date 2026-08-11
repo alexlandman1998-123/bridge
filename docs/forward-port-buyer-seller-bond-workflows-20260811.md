@@ -338,3 +338,43 @@ Verification:
 - `npm run test:bond-intake-notifications`
 - `npm run test:bond-partner-portal`
 - `npm run test:bond-partner-collaboration`
+
+## Phase 6 Verification
+
+Forward-port check for bond-originator Edge Function email handlers.
+
+Changed:
+
+- `the-it-guy/scripts/forward-port-bond-originator-emails-phase6.test.mjs`
+- `the-it-guy/package.json`
+
+Already current against the checked source branches and not changed:
+
+- `supabase/functions/send-email/handlers/bondOriginatorBuyerIntro.ts`
+- `supabase/functions/send-email/handlers/bondIntakeNotification.ts`
+- `supabase/functions/send-email/handlers/bondAttorneyLegalNotification.ts`
+
+Inspected but not changed:
+
+- `supabase/functions/send-email/index.ts`
+- `supabase/functions/send-email/types.ts`
+- `supabase/functions/send-email/handlers/emailBrandingHandlers.test.ts`
+- `supabase/functions/send-email/content/brandedTemplates.test.ts`
+
+Reason: the seller source branches match the current handler queue, while the legal-document, bond-demo, and agency-public-intake source branches are behind the current branded email handler implementation. Current already includes the branded buyer-intro and intake handlers, the bond/attorney/legal notification handler, the router entries, and the expanded payload type contracts.
+
+Behavior guarded:
+
+- bond originator buyer intro emails keep shared branding, branded sender formatting, consultant reply-to, and the originator detail summary
+- bond intake notifications keep the email enablement gate, branded layout, intake summary, and application CTA
+- bond attorney/legal notifications keep direct and queued dispatch support, service-role dispatch authorization, notification queue controls, notification event claiming, communication delivery logging, idempotent Resend dispatch, and branded workflow summaries
+- `send-email` router and payload types keep the bond intake, buyer intro, and bond/attorney/legal route contracts
+
+Verification:
+
+- compared the Phase 6 handler queue against the source and comparison branches listed above
+- `npm run test:forward-port-bond-originator-emails-phase6`
+- `deno test --allow-read --no-check supabase/functions/send-email/handlers/emailBrandingHandlers.test.ts`
+- `deno test --no-check supabase/functions/send-email/content/brandedTemplates.test.ts`
+- `npm run test:bond-intake-notifications`
+- `npm run build` from `the-it-guy/`
