@@ -236,3 +236,52 @@ Verification:
 Additional diagnostic:
 
 - `npm run test:lead-ingestion` was attempted during Phase 3 verification and failed on stale buyer workspace copy assertions expecting `Property Match` and `Onboarding / OTP` in `AgentLeadsPage.jsx`. That is a buyer-workspace diagnostic mismatch outside the seller first-contact runtime patch.
+
+## Phase 4 Verification
+
+Forward-ported the missing Kingstons seller process runtime/model pieces.
+
+Changed:
+
+- `the-it-guy/src/services/sellerProcessActionModelService.js`
+- `the-it-guy/src/services/sellerProcessEvidenceMappingService.js`
+- `the-it-guy/src/services/sellerProcessRailModelService.js`
+- `the-it-guy/src/services/sellerProcessDefinitionService.js`
+- `the-it-guy/scripts/forward-port-kingstons-seller-process-phase4.test.mjs`
+- `the-it-guy/scripts/seller-process-evaluator-phase3.test.mjs`
+- `the-it-guy/scripts/seller-process-panel-model-phase7.test.mjs`
+- `the-it-guy/package.json`
+
+Already current against the checked source branches and not changed:
+
+- `the-it-guy/src/components/appointments/KingstonsSellerAppointmentsWorkspace.jsx`
+- `the-it-guy/src/services/sellerProcessEvaluationService.js`
+- `the-it-guy/src/services/sellerProcessProfileService.js`
+- `the-it-guy/src/services/sellerProcessProjectionService.js`
+- `the-it-guy/src/services/sellerProcessShadowIntegrationService.js`
+- `the-it-guy/src/services/sellerProcessWorkspaceIntegrationService.js`
+- `the-it-guy/src/services/sellerProcessWorkspacePanelService.js`
+- `the-it-guy/src/pages/AgentLeadsPage.jsx`
+- focused Kingstons wiring in `the-it-guy/src/pages/agency/AgencyPipelinePage.jsx`
+
+Behavior restored:
+
+- restored the split Kingstons seller process action, rail, and evidence mapping service APIs from `origin/codex/kingston-seller-process-release`
+- restored the explicit `valuation_presented` Kingstons stage and evidence gate so scheduled presentation and completed presentation are separate stops
+- kept the newer consolidated projection/workspace panel runtime intact
+- partner projections still hide internal Kingstons process stage keys
+
+Verification:
+
+- compared the Phase 4 runtime queue against `origin/codex/seller-first-contact-reload`, `origin/codex/kingston-seller-process-release`, `origin/codex/seller-process-next-action-fix`, `origin/codex/reconcile-unmerged-branches-20260811`, and `origin/codex/reconciliation-phase10-closeout-20260811`
+- `npm run test:forward-port-kingstons-seller-process-phase4`
+- `npm run test:seller-process-evaluator-phase3`
+- `npm run test:seller-process-projection-phase4`
+- `npm run test:seller-process-global-smoke-phase1`
+- `npm run test:seller-process-shadow-integration-phase5`
+- `npm run test:seller-process-panel-model-phase7`
+- `npm run test:seller-process-workspace-panel-phase8`
+- `npm run test:seller-process-panel-action-routing-phase9`
+- `npm run test:kingstons-seller-pack-phase4-operational-handoff`
+- `npm run test:kingstons-seller-pack-phase5-transaction-readiness`
+- `npm run build` from `the-it-guy/`
