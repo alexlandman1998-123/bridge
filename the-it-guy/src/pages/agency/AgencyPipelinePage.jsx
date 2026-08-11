@@ -7331,6 +7331,10 @@ function toSellerProfileText(value) {
 function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing = {} } = {}) {
   const listingSource = listing?.sourceListing && isPlainObject(listing.sourceListing) ? listing.sourceListing : (listing || {})
   const onboarding = getWorkspaceSellerOnboarding(lead, listingSource)
+  const company = isPlainObject(onboarding?.company) ? onboarding.company : {}
+  const trust = isPlainObject(onboarding?.trust) ? onboarding.trust : {}
+  const foreign = isPlainObject(onboarding?.foreign) ? onboarding.foreign : {}
+  const profileKind = resolveKingstonsSellerProfileKind(onboarding)
   const propertyDetails = {
     ...(isPlainObject(listingSource?.propertyDetails) ? listingSource.propertyDetails : {}),
     ...(isPlainObject(listingSource?.property_details) ? listingSource.property_details : {}),
@@ -7344,9 +7348,19 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
       lead?.name ||
       contact?.fullName,
   )
+  const resolvedTaxNumber = normalizeText(
+    onboarding?.incomeTaxNumber ||
+      onboarding?.income_tax_number ||
+      onboarding?.sellerTaxNumber ||
+      onboarding?.taxNumber ||
+      onboarding?.tax_number,
+  )
   const nameParts = splitSellerNameParts(resolvedName)
   return {
     ...KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS,
+    ownerEntityType: normalizeText(onboarding?.ownerEntityType || onboarding?.owner_entity_type) || (isCompanyKingstonsSellerProfileKind(profileKind) ? 'Company' : isTrustKingstonsSellerProfileKind(profileKind) ? 'Trust' : 'Individual'),
+    ownerStructureType: normalizeText(onboarding?.ownerStructureType || onboarding?.owner_structure_type) || (isForeignKingstonsSellerProfileKind(profileKind) ? profileKind.replace(/_/g, ' ') : ''),
+    sellerLegalType: normalizeText(onboarding?.sellerLegalType || onboarding?.seller_legal_type || onboarding?.sellerType || onboarding?.ownershipType || onboarding?.ownership_type),
     firstName: normalizeText(contact?.firstName || lead?.sellerName || onboarding?.firstName || onboarding?.sellerFirstName || nameParts.firstName),
     lastName: normalizeText(contact?.lastName || lead?.sellerSurname || onboarding?.lastName || onboarding?.sellerLastName || nameParts.lastName),
     phone: normalizeText(contact?.phone || lead?.sellerPhone || lead?.phone || onboarding?.sellerPhone || onboarding?.phone || onboarding?.mobile),
@@ -7370,12 +7384,37 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
     branchCode: normalizeText(onboarding?.branchCode || onboarding?.branch_code || lead?.branchCode),
     accountType: normalizeText(onboarding?.accountType || onboarding?.account_type || lead?.accountType),
     saResident: toSellerProfileText(onboarding?.saResident || onboarding?.sa_resident || onboarding?.taxResident),
-    incomeTaxNumber: normalizeText(onboarding?.incomeTaxNumber || onboarding?.income_tax_number || onboarding?.taxNumber),
+    incomeTaxNumber: resolvedTaxNumber,
     vatRegistered: toSellerProfileText(onboarding?.vatRegistered || onboarding?.vat_registered),
     ficaStatus: normalizeText(onboarding?.ficaStatus || onboarding?.fica_status),
-    popiConsent: toSellerProfileText(onboarding?.popiConsent || onboarding?.popi_consent),
+    popiConsent: toSellerProfileText(onboarding?.popiConsent || onboarding?.popi_consent || (onboarding?.popiConsentAccepted || onboarding?.popi_consent_accepted ? 'Accepted' : '')),
     electronicSignature: toSellerProfileText(onboarding?.electronicSignature || onboarding?.electronic_signature),
     ownershipType: normalizeText(onboarding?.ownershipType || onboarding?.ownership_type || lead?.ownershipType),
+    companyName: normalizeText(onboarding?.companyName || onboarding?.company_name || company?.name || company?.companyName || company?.company_name),
+    companyRegistrationNumber: normalizeText(onboarding?.companyRegistrationNumber || onboarding?.company_registration_number || company?.registrationNumber || company?.registration_number),
+    companyRegisteredAddress: normalizeText(onboarding?.companyRegisteredAddress || onboarding?.company_registered_address || company?.registeredAddress || company?.registered_address),
+    companyDirectorsText: formatKingstonsSellerProfilePeople(onboarding?.companyDirectors || onboarding?.company_directors || onboarding?.directors || company?.directors),
+    authorisedSignatoryName: normalizeText(onboarding?.authorisedSignatoryName || onboarding?.authorised_signatory_name || company?.authorisedSignatoryName || company?.authorised_signatory_name || company?.authorisedSignatory?.name || company?.authorised_signatory?.name),
+    authorisedSignatoryCapacity: normalizeText(onboarding?.authorisedSignatoryCapacity || onboarding?.authorised_signatory_capacity || company?.authorisedSignatoryCapacity || company?.authorised_signatory_capacity || company?.authorisedSignatory?.capacity || company?.authorised_signatory?.capacity),
+    authorisedSignatoryEmail: normalizeText(onboarding?.authorisedSignatoryEmail || onboarding?.authorised_signatory_email || company?.authorisedSignatoryEmail || company?.authorised_signatory_email || company?.authorisedSignatory?.email || company?.authorised_signatory?.email).toLowerCase(),
+    authorisedSignatoryPhone: normalizeText(onboarding?.authorisedSignatoryPhone || onboarding?.authorised_signatory_phone || company?.authorisedSignatoryPhone || company?.authorised_signatory_phone || company?.authorisedSignatory?.phone || company?.authorised_signatory?.phone),
+    authorisedSignatoryAddress: normalizeText(onboarding?.authorisedSignatoryAddress || onboarding?.authorised_signatory_address || company?.authorisedSignatoryAddress || company?.authorised_signatory_address || company?.authorisedSignatory?.address || company?.authorised_signatory?.address),
+    companyResolutionDate: normalizeText(onboarding?.companyResolutionDate || onboarding?.company_resolution_date || company?.resolutionDate || company?.resolution_date),
+    companyAuthorityBasis: normalizeText(onboarding?.companyAuthorityBasis || onboarding?.company_authority_basis || company?.authorityBasis || company?.authority_basis),
+    trustName: normalizeText(onboarding?.trustName || onboarding?.trust_name || trust?.name || trust?.trustName || trust?.trust_name),
+    trustRegistrationNumber: normalizeText(onboarding?.trustRegistrationNumber || onboarding?.trust_registration_number || trust?.registrationNumber || trust?.registration_number),
+    trustRegisteredAddress: normalizeText(onboarding?.trustRegisteredAddress || onboarding?.trust_registered_address || trust?.registeredAddress || trust?.registered_address),
+    trusteesText: formatKingstonsSellerProfilePeople(onboarding?.trustees || onboarding?.trust_trustees || trust?.trustees),
+    authorisedTrusteeName: normalizeText(onboarding?.authorisedTrusteeName || onboarding?.authorised_trustee_name || trust?.authorisedTrusteeName || trust?.authorised_trustee_name || trust?.authorisedTrustee?.name || trust?.authorised_trustee?.name),
+    authorisedTrusteeCapacity: normalizeText(onboarding?.authorisedTrusteeCapacity || onboarding?.authorised_trustee_capacity || trust?.authorisedTrusteeCapacity || trust?.authorised_trustee_capacity || trust?.authorisedTrustee?.capacity || trust?.authorised_trustee?.capacity),
+    authorisedTrusteeEmail: normalizeText(onboarding?.authorisedTrusteeEmail || onboarding?.authorised_trustee_email || trust?.authorisedTrusteeEmail || trust?.authorised_trustee_email || trust?.authorisedTrustee?.email || trust?.authorised_trustee?.email).toLowerCase(),
+    authorisedTrusteePhone: normalizeText(onboarding?.authorisedTrusteePhone || onboarding?.authorised_trustee_phone || trust?.authorisedTrusteePhone || trust?.authorised_trustee_phone || trust?.authorisedTrustee?.phone || trust?.authorised_trustee?.phone),
+    authorisedTrusteeAddress: normalizeText(onboarding?.authorisedTrusteeAddress || onboarding?.authorised_trustee_address || trust?.authorisedTrusteeAddress || trust?.authorised_trustee_address || trust?.authorisedTrustee?.address || trust?.authorised_trustee?.address),
+    trustAuthorityBasis: normalizeText(onboarding?.trustAuthorityBasis || onboarding?.trust_authority_basis || trust?.authorityBasis || trust?.authority_basis),
+    foreignOwnerCountry: normalizeText(onboarding?.foreignOwnerCountry || onboarding?.foreign_owner_country || foreign?.country || foreign?.jurisdiction),
+    foreignPassportNumber: normalizeText(onboarding?.foreignPassportNumber || onboarding?.foreign_passport_number || foreign?.passportNumber || foreign?.passport_number),
+    foreignRegistrationNumber: normalizeText(onboarding?.foreignRegistrationNumber || onboarding?.foreign_registration_number || foreign?.registrationNumber || foreign?.registration_number),
+    foreignResidencyStatus: normalizeText(onboarding?.foreignResidencyStatus || onboarding?.foreign_residency_status || foreign?.residencyStatus || foreign?.residency_status),
     purchaseDate: normalizeText(onboarding?.purchaseDate || onboarding?.purchase_date),
     purchasePrice: normalizeText(onboarding?.purchasePrice || onboarding?.purchase_price),
     bondExists: toSellerProfileText(onboarding?.bondExists || onboarding?.bond_exists || onboarding?.hasBond),
@@ -7416,12 +7455,130 @@ function splitKingstonsSellerProfileList(value = '') {
     .filter(Boolean)
 }
 
+function formatKingstonsSellerProfilePeople(value = []) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (isPlainObject(entry)) {
+          const firstName = normalizeText(entry.firstName || entry.first_name || entry.name)
+          const surname = normalizeText(entry.surname || entry.lastName || entry.last_name)
+          return normalizeText(
+            entry.fullName ||
+              entry.full_name ||
+              (surname ? [firstName, surname].filter(Boolean).join(' ') : entry.name) ||
+              firstName,
+          )
+        }
+        return normalizeText(entry)
+      })
+      .filter(Boolean)
+      .join('\n')
+  }
+  return normalizeText(value)
+}
+
+function buildKingstonsSellerProfilePeople(value = '') {
+  return splitKingstonsSellerProfileList(value).map((name, index) => {
+    const parts = name.split(/\s+/).filter(Boolean)
+    const firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : name
+    const surname = parts.length > 1 ? parts.slice(-1).join(' ') : ''
+    return {
+      id: `profile-person-${index + 1}`,
+      name: firstName,
+      firstName,
+      surname,
+      fullName: name,
+      full_name: name,
+    }
+  })
+}
+
+function normalizeKingstonsSellerProfileKindKey(value = '') {
+  return normalizeKey(value).replace(/[\s-]+/g, '_')
+}
+
+function resolveKingstonsSellerProfileKind(source = {}) {
+  const entityType = normalizeKingstonsSellerProfileKindKey(source?.ownerEntityType || source?.owner_entity_type || source?.sellerOwnerEntityType || source?.seller_owner_entity_type)
+  const structureType = normalizeKingstonsSellerProfileKindKey(source?.ownerStructureType || source?.owner_structure_type || source?.sellerOwnerStructureType || source?.seller_owner_structure_type)
+  const ownershipType = normalizeKingstonsSellerProfileKindKey(source?.ownershipType || source?.ownership_type || source?.sellerLegalType || source?.seller_legal_type || source?.sellerType)
+  const company = isPlainObject(source?.company) ? source.company : {}
+  const trust = isPlainObject(source?.trust) ? source.trust : {}
+  const hasCompanySignal = Boolean(
+    normalizeText(source?.companyName || source?.company_name || source?.companyRegistrationNumber || source?.company_registration_number || company?.name || company?.companyName || company?.company_name || company?.registrationNumber || company?.registration_number) ||
+      (Array.isArray(source?.companyDirectors) && source.companyDirectors.length) ||
+      (Array.isArray(source?.company_directors) && source.company_directors.length) ||
+      (Array.isArray(source?.directors) && source.directors.length) ||
+      (Array.isArray(company?.directors) && company.directors.length),
+  )
+  const hasTrustSignal = Boolean(
+    normalizeText(source?.trustName || source?.trust_name || source?.trustRegistrationNumber || source?.trust_registration_number || trust?.name || trust?.trustName || trust?.trust_name || trust?.registrationNumber || trust?.registration_number) ||
+      (Array.isArray(source?.trustees) && source.trustees.length) ||
+      (Array.isArray(source?.trust_trustees) && source.trust_trustees.length) ||
+      (Array.isArray(trust?.trustees) && trust.trustees.length),
+  )
+  const foreignFlag = source?.foreignOwner === true || source?.foreign_owner === true || entityType === 'foreign' || entityType.startsWith('foreign_') || structureType.startsWith('foreign_')
+
+  if (structureType === 'foreign_company' || entityType === 'foreign_company' || ownershipType === 'foreign_company' || (foreignFlag && (ownershipType === 'company' || entityType === 'company' || hasCompanySignal))) return 'foreign_company'
+  if (structureType === 'foreign_trust' || entityType === 'foreign_trust' || ownershipType === 'foreign_trust' || (foreignFlag && (ownershipType === 'trust' || entityType === 'trust' || hasTrustSignal))) return 'foreign_trust'
+  if (structureType === 'foreign_individual' || entityType === 'foreign_individual' || ownershipType === 'foreign_individual' || foreignFlag) return 'foreign_individual'
+  if (entityType === 'company' || entityType === 'juristic_person' || structureType === 'company' || ownershipType === 'company' || hasCompanySignal) return 'company'
+  if (entityType === 'trust' || structureType === 'trust' || ownershipType === 'trust' || hasTrustSignal) return 'trust'
+  if (ownershipType === 'deceased_estate') return 'deceased_estate'
+  if (ownershipType === 'power_of_attorney') return 'power_of_attorney'
+  if (ownershipType === 'multiple_owners') return 'multiple_owners'
+  return 'individual'
+}
+
+function isNaturalKingstonsSellerProfileKind(kind = '') {
+  return ['individual', 'foreign_individual', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(normalizeKingstonsSellerProfileKindKey(kind))
+}
+
+function isCompanyKingstonsSellerProfileKind(kind = '') {
+  return ['company', 'foreign_company'].includes(normalizeKingstonsSellerProfileKindKey(kind))
+}
+
+function isTrustKingstonsSellerProfileKind(kind = '') {
+  return ['trust', 'foreign_trust'].includes(normalizeKingstonsSellerProfileKindKey(kind))
+}
+
+function isForeignKingstonsSellerProfileKind(kind = '') {
+  return normalizeKingstonsSellerProfileKindKey(kind).startsWith('foreign_')
+}
+
 function buildKingstonsSellerProfileFormData(form = {}) {
   const firstName = normalizeText(form.firstName)
   const lastName = normalizeText(form.lastName)
   const fullName = joinSellerNameParts(firstName, lastName)
   const features = splitKingstonsSellerProfileList(form.propertyFeaturesText)
+  const taxNumber = normalizeText(form.incomeTaxNumber || form.sellerTaxNumber || form.taxNumber || form.income_tax_number || form.tax_number)
+  const popiConsent = normalizeText(form.popiConsent)
+  const popiConsentAccepted = ['accepted', 'yes', 'true', '1'].includes(normalizeKey(popiConsent))
+  const ownerEntityType = normalizeText(form.ownerEntityType)
+  const ownerStructureType = normalizeText(form.ownerStructureType)
+  const sellerLegalType = normalizeText(form.sellerLegalType || form.ownershipType)
+  const companyDirectors = buildKingstonsSellerProfilePeople(form.companyDirectorsText)
+  const trustees = buildKingstonsSellerProfilePeople(form.trusteesText)
+  const authorisedSignatory = {
+    name: normalizeText(form.authorisedSignatoryName),
+    capacity: normalizeText(form.authorisedSignatoryCapacity),
+    email: normalizeText(form.authorisedSignatoryEmail).toLowerCase(),
+    phone: normalizeText(form.authorisedSignatoryPhone),
+    address: normalizeText(form.authorisedSignatoryAddress),
+  }
+  const authorisedTrustee = {
+    name: normalizeText(form.authorisedTrusteeName),
+    capacity: normalizeText(form.authorisedTrusteeCapacity),
+    email: normalizeText(form.authorisedTrusteeEmail).toLowerCase(),
+    phone: normalizeText(form.authorisedTrusteePhone),
+    address: normalizeText(form.authorisedTrusteeAddress),
+  }
   return {
+    ownerEntityType,
+    owner_entity_type: ownerEntityType,
+    ownerStructureType,
+    owner_structure_type: ownerStructureType,
+    sellerLegalType,
+    seller_legal_type: sellerLegalType,
     fullName,
     sellerFullName: fullName,
     firstName,
@@ -7456,12 +7613,112 @@ function buildKingstonsSellerProfileFormData(form = {}) {
     branchCode: normalizeText(form.branchCode),
     accountType: normalizeText(form.accountType),
     saResident: normalizeText(form.saResident),
-    incomeTaxNumber: normalizeText(form.incomeTaxNumber),
+    incomeTaxNumber: taxNumber,
+    income_tax_number: taxNumber,
+    sellerTaxNumber: taxNumber,
+    taxNumber,
+    tax_number: taxNumber,
     vatRegistered: normalizeText(form.vatRegistered),
     ficaStatus: normalizeText(form.ficaStatus),
-    popiConsent: normalizeText(form.popiConsent),
+    popiConsent,
+    popi_consent: popiConsent,
+    popiConsentAccepted,
+    popi_consent_accepted: popiConsentAccepted,
     electronicSignature: normalizeText(form.electronicSignature),
     ownershipType: normalizeText(form.ownershipType),
+    companyName: normalizeText(form.companyName),
+    company_name: normalizeText(form.companyName),
+    companyRegistrationNumber: normalizeText(form.companyRegistrationNumber),
+    company_registration_number: normalizeText(form.companyRegistrationNumber),
+    companyRegisteredAddress: normalizeText(form.companyRegisteredAddress),
+    company_registered_address: normalizeText(form.companyRegisteredAddress),
+    companyDirectors,
+    company_directors: companyDirectors,
+    directors: companyDirectors,
+    authorisedSignatoryName: authorisedSignatory.name,
+    authorised_signatory_name: authorisedSignatory.name,
+    authorisedSignatoryCapacity: authorisedSignatory.capacity,
+    authorised_signatory_capacity: authorisedSignatory.capacity,
+    authorisedSignatoryEmail: authorisedSignatory.email,
+    authorised_signatory_email: authorisedSignatory.email,
+    authorisedSignatoryPhone: authorisedSignatory.phone,
+    authorised_signatory_phone: authorisedSignatory.phone,
+    authorisedSignatoryAddress: authorisedSignatory.address,
+    authorised_signatory_address: authorisedSignatory.address,
+    companyResolutionDate: normalizeText(form.companyResolutionDate),
+    company_resolution_date: normalizeText(form.companyResolutionDate),
+    companyAuthorityBasis: normalizeText(form.companyAuthorityBasis),
+    company_authority_basis: normalizeText(form.companyAuthorityBasis),
+    company: {
+      name: normalizeText(form.companyName),
+      companyName: normalizeText(form.companyName),
+      company_name: normalizeText(form.companyName),
+      registrationNumber: normalizeText(form.companyRegistrationNumber),
+      registration_number: normalizeText(form.companyRegistrationNumber),
+      registeredAddress: normalizeText(form.companyRegisteredAddress),
+      registered_address: normalizeText(form.companyRegisteredAddress),
+      directors: companyDirectors,
+      authorisedSignatory,
+      authorised_signatory: authorisedSignatory,
+      resolutionDate: normalizeText(form.companyResolutionDate),
+      resolution_date: normalizeText(form.companyResolutionDate),
+      authorityBasis: normalizeText(form.companyAuthorityBasis),
+      authority_basis: normalizeText(form.companyAuthorityBasis),
+    },
+    trustName: normalizeText(form.trustName),
+    trust_name: normalizeText(form.trustName),
+    trustRegistrationNumber: normalizeText(form.trustRegistrationNumber),
+    trust_registration_number: normalizeText(form.trustRegistrationNumber),
+    trustRegisteredAddress: normalizeText(form.trustRegisteredAddress),
+    trust_registered_address: normalizeText(form.trustRegisteredAddress),
+    trustees,
+    trust_trustees: trustees,
+    authorisedTrusteeName: authorisedTrustee.name,
+    authorised_trustee_name: authorisedTrustee.name,
+    authorisedTrusteeCapacity: authorisedTrustee.capacity,
+    authorised_trustee_capacity: authorisedTrustee.capacity,
+    authorisedTrusteeEmail: authorisedTrustee.email,
+    authorised_trustee_email: authorisedTrustee.email,
+    authorisedTrusteePhone: authorisedTrustee.phone,
+    authorised_trustee_phone: authorisedTrustee.phone,
+    authorisedTrusteeAddress: authorisedTrustee.address,
+    authorised_trustee_address: authorisedTrustee.address,
+    trustAuthorityBasis: normalizeText(form.trustAuthorityBasis),
+    trust_authority_basis: normalizeText(form.trustAuthorityBasis),
+    trust: {
+      name: normalizeText(form.trustName),
+      trustName: normalizeText(form.trustName),
+      trust_name: normalizeText(form.trustName),
+      registrationNumber: normalizeText(form.trustRegistrationNumber),
+      registration_number: normalizeText(form.trustRegistrationNumber),
+      registeredAddress: normalizeText(form.trustRegisteredAddress),
+      registered_address: normalizeText(form.trustRegisteredAddress),
+      trustees,
+      authorisedTrustee,
+      authorised_trustee: authorisedTrustee,
+      authorityBasis: normalizeText(form.trustAuthorityBasis),
+      authority_basis: normalizeText(form.trustAuthorityBasis),
+    },
+    foreignOwner: isForeignKingstonsSellerProfileKind(resolveKingstonsSellerProfileKind(form)),
+    foreign_owner: isForeignKingstonsSellerProfileKind(resolveKingstonsSellerProfileKind(form)),
+    foreignOwnerCountry: normalizeText(form.foreignOwnerCountry),
+    foreign_owner_country: normalizeText(form.foreignOwnerCountry),
+    foreignPassportNumber: normalizeText(form.foreignPassportNumber),
+    foreign_passport_number: normalizeText(form.foreignPassportNumber),
+    foreignRegistrationNumber: normalizeText(form.foreignRegistrationNumber),
+    foreign_registration_number: normalizeText(form.foreignRegistrationNumber),
+    foreignResidencyStatus: normalizeText(form.foreignResidencyStatus),
+    foreign_residency_status: normalizeText(form.foreignResidencyStatus),
+    foreign: {
+      country: normalizeText(form.foreignOwnerCountry),
+      jurisdiction: normalizeText(form.foreignOwnerCountry),
+      passportNumber: normalizeText(form.foreignPassportNumber),
+      passport_number: normalizeText(form.foreignPassportNumber),
+      registrationNumber: normalizeText(form.foreignRegistrationNumber),
+      registration_number: normalizeText(form.foreignRegistrationNumber),
+      residencyStatus: normalizeText(form.foreignResidencyStatus),
+      residency_status: normalizeText(form.foreignResidencyStatus),
+    },
     purchaseDate: normalizeText(form.purchaseDate),
     purchasePrice: normalizeText(form.purchasePrice),
     bondExists: normalizeText(form.bondExists),
@@ -8078,6 +8335,9 @@ const LEAD_DETAIL_DEFAULTS = {
 }
 
 const KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS = {
+  ownerEntityType: '',
+  ownerStructureType: '',
+  sellerLegalType: '',
   firstName: '',
   lastName: '',
   phone: '',
@@ -8107,6 +8367,31 @@ const KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS = {
   popiConsent: '',
   electronicSignature: '',
   ownershipType: '',
+  companyName: '',
+  companyRegistrationNumber: '',
+  companyRegisteredAddress: '',
+  companyDirectorsText: '',
+  authorisedSignatoryName: '',
+  authorisedSignatoryCapacity: '',
+  authorisedSignatoryEmail: '',
+  authorisedSignatoryPhone: '',
+  authorisedSignatoryAddress: '',
+  companyResolutionDate: '',
+  companyAuthorityBasis: '',
+  trustName: '',
+  trustRegistrationNumber: '',
+  trustRegisteredAddress: '',
+  trusteesText: '',
+  authorisedTrusteeName: '',
+  authorisedTrusteeCapacity: '',
+  authorisedTrusteeEmail: '',
+  authorisedTrusteePhone: '',
+  authorisedTrusteeAddress: '',
+  trustAuthorityBasis: '',
+  foreignOwnerCountry: '',
+  foreignPassportNumber: '',
+  foreignRegistrationNumber: '',
+  foreignResidencyStatus: '',
   purchaseDate: '',
   purchasePrice: '',
   bondExists: '',
@@ -13634,6 +13919,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ...(isPlainObject(lead?.property_details) ? lead.property_details : {}),
     }
     const field = (...values) => formatCapturedValue(firstWorkspaceValue(...values))
+    const peopleField = (...values) => {
+      const formatted = formatKingstonsSellerProfilePeople(firstWorkspaceValue(...values))
+      return formatted ? formatted.replace(/\n/g, ', ') : 'Not captured'
+    }
     const currencyField = (...values) => {
       const value = firstWorkspaceValue(...values)
       return value ? formatMaybeCurrency(value) : 'Not captured'
@@ -13647,6 +13936,84 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ? `${accountNumber.slice(0, 4)} **** **** ${accountNumber.slice(-3)}`
       : accountNumber
     const sellerFullName = selectedLeadDisplayName || field(onboarding?.fullName, onboarding?.sellerFullName, lead?.name)
+    const company = isPlainObject(onboarding?.company) ? onboarding.company : {}
+    const trust = isPlainObject(onboarding?.trust) ? onboarding.trust : {}
+    const foreign = isPlainObject(onboarding?.foreign) ? onboarding.foreign : {}
+    const profileKind = resolveKingstonsSellerProfileKind(onboarding)
+    const isNaturalSellerProfile = isNaturalKingstonsSellerProfileKind(profileKind)
+    const isCompanySellerProfile = isCompanyKingstonsSellerProfileKind(profileKind)
+    const isTrustSellerProfile = isTrustKingstonsSellerProfileKind(profileKind)
+    const isForeignSellerProfile = isForeignKingstonsSellerProfileKind(profileKind)
+    const personalCard = isNaturalSellerProfile ? {
+      key: 'personal',
+      title: 'Personal Information',
+      rows: [
+        ['Full Name', sellerFullName],
+        ['ID Number', field(onboarding?.idNumber, onboarding?.id_number, onboarding?.sellerIdNumber, lead?.sellerIdNumber, lead?.idNumber)],
+        ['Date of Birth', dateField(onboarding?.dateOfBirth, onboarding?.date_of_birth, onboarding?.birthDate)],
+        ['Nationality', field(onboarding?.nationality, lead?.nationality)],
+        ['Marital Status', field(onboarding?.maritalStatus, onboarding?.marital_status, lead?.maritalStatus)],
+        ['Occupation', field(onboarding?.occupation, lead?.occupation)],
+        ['Employer', field(onboarding?.employer, lead?.employer)],
+        ['Email', field(selectedLeadContact?.email, lead?.sellerEmail, lead?.email)],
+        ['Mobile', field(selectedLeadContact?.phone, lead?.sellerPhone, lead?.phone)],
+        ['Alternative Number', field(onboarding?.alternativeNumber, onboarding?.alternative_number, onboarding?.alternatePhone)],
+      ],
+    } : null
+    const companyCard = isCompanySellerProfile ? {
+      key: 'company',
+      title: isForeignSellerProfile ? 'Foreign Company Information' : 'Company Information',
+      rows: [
+        ['Company Name', field(onboarding?.companyName, onboarding?.company_name, company?.name, company?.companyName, company?.company_name)],
+        ['Registration Number', field(onboarding?.companyRegistrationNumber, onboarding?.company_registration_number, company?.registrationNumber, company?.registration_number)],
+        ['Registered Address', field(onboarding?.companyRegisteredAddress, onboarding?.company_registered_address, company?.registeredAddress, company?.registered_address)],
+        ['Directors', peopleField(onboarding?.companyDirectors, onboarding?.company_directors, onboarding?.directors, company?.directors)],
+        ['Authorised Signatory', field(onboarding?.authorisedSignatoryName, onboarding?.authorised_signatory_name, company?.authorisedSignatoryName, company?.authorised_signatory_name, company?.authorisedSignatory?.name, company?.authorised_signatory?.name)],
+        ['Signatory Capacity', field(onboarding?.authorisedSignatoryCapacity, onboarding?.authorised_signatory_capacity, company?.authorisedSignatoryCapacity, company?.authorised_signatory_capacity, company?.authorisedSignatory?.capacity, company?.authorised_signatory?.capacity)],
+        ['Resolution Date', dateField(onboarding?.companyResolutionDate, onboarding?.company_resolution_date, company?.resolutionDate, company?.resolution_date)],
+        ['Authority Basis', field(onboarding?.companyAuthorityBasis, onboarding?.company_authority_basis, company?.authorityBasis, company?.authority_basis)],
+        ['Signatory Email', field(onboarding?.authorisedSignatoryEmail, onboarding?.authorised_signatory_email, company?.authorisedSignatoryEmail, company?.authorised_signatory_email, company?.authorisedSignatory?.email, company?.authorised_signatory?.email)],
+        ['Signatory Phone', field(onboarding?.authorisedSignatoryPhone, onboarding?.authorised_signatory_phone, company?.authorisedSignatoryPhone, company?.authorised_signatory_phone, company?.authorisedSignatory?.phone, company?.authorised_signatory?.phone)],
+      ],
+    } : null
+    const trustCard = isTrustSellerProfile ? {
+      key: 'trust',
+      title: isForeignSellerProfile ? 'Foreign Trust Information' : 'Trust Information',
+      rows: [
+        ['Trust Name', field(onboarding?.trustName, onboarding?.trust_name, trust?.name, trust?.trustName, trust?.trust_name)],
+        ['Trust Registration Number', field(onboarding?.trustRegistrationNumber, onboarding?.trust_registration_number, trust?.registrationNumber, trust?.registration_number)],
+        ['Registered Address', field(onboarding?.trustRegisteredAddress, onboarding?.trust_registered_address, trust?.registeredAddress, trust?.registered_address)],
+        ['Trustees', peopleField(onboarding?.trustees, onboarding?.trust_trustees, trust?.trustees)],
+        ['Authorised Trustee', field(onboarding?.authorisedTrusteeName, onboarding?.authorised_trustee_name, trust?.authorisedTrusteeName, trust?.authorised_trustee_name, trust?.authorisedTrustee?.name, trust?.authorised_trustee?.name)],
+        ['Trustee Capacity', field(onboarding?.authorisedTrusteeCapacity, onboarding?.authorised_trustee_capacity, trust?.authorisedTrusteeCapacity, trust?.authorised_trustee_capacity, trust?.authorisedTrustee?.capacity, trust?.authorised_trustee?.capacity)],
+        ['Authority Basis', field(onboarding?.trustAuthorityBasis, onboarding?.trust_authority_basis, trust?.authorityBasis, trust?.authority_basis)],
+        ['Trustee Email', field(onboarding?.authorisedTrusteeEmail, onboarding?.authorised_trustee_email, trust?.authorisedTrusteeEmail, trust?.authorised_trustee_email, trust?.authorisedTrustee?.email, trust?.authorised_trustee?.email)],
+        ['Trustee Phone', field(onboarding?.authorisedTrusteePhone, onboarding?.authorised_trustee_phone, trust?.authorisedTrusteePhone, trust?.authorised_trustee_phone, trust?.authorisedTrustee?.phone, trust?.authorised_trustee?.phone)],
+      ],
+    } : null
+    const foreignCard = isForeignSellerProfile ? {
+      key: 'foreign',
+      title: 'Foreign Seller Details',
+      rows: [
+        ['Country / Jurisdiction', field(onboarding?.foreignOwnerCountry, onboarding?.foreign_owner_country, foreign?.country, foreign?.jurisdiction)],
+        ['Passport Number', field(onboarding?.foreignPassportNumber, onboarding?.foreign_passport_number, foreign?.passportNumber, foreign?.passport_number)],
+        ['Foreign Registration Number', field(onboarding?.foreignRegistrationNumber, onboarding?.foreign_registration_number, foreign?.registrationNumber, foreign?.registration_number)],
+        ['Residency / Signing Status', field(onboarding?.foreignResidencyStatus, onboarding?.foreign_residency_status, foreign?.residencyStatus, foreign?.residency_status)],
+      ],
+    } : null
+    const addressCard = isNaturalSellerProfile ? {
+      key: 'address',
+      title: 'Residential Address',
+      rows: [
+        ['Street', field(onboarding?.residentialStreet, onboarding?.streetAddress, lead?.streetAddress, propertyDetails?.streetAddress)],
+        ['Suburb', field(onboarding?.residentialSuburb, onboarding?.suburb, lead?.suburb, propertyDetails?.suburb)],
+        ['City', field(onboarding?.residentialCity, onboarding?.city, lead?.city, propertyDetails?.city)],
+        ['Province', field(onboarding?.residentialProvince, onboarding?.province, lead?.province, propertyDetails?.province)],
+        ['Postal Code', field(onboarding?.residentialPostalCode, onboarding?.postalCode, lead?.postalCode, propertyDetails?.postalCode)],
+        ['Country', field(onboarding?.residentialCountry, onboarding?.country, lead?.country, propertyDetails?.country, 'South Africa')],
+      ],
+    } : null
+    const taxTitle = isCompanySellerProfile ? 'Company Tax & Compliance' : isTrustSellerProfile ? 'Trust Tax & Compliance' : 'Tax & Compliance'
     const propertyRows = [
       ['Address', selectedLeadPropertyWorkspace.profile.address],
       ...selectedLeadPropertyWorkspace.characteristics.metrics.map((metric) => [
@@ -13659,34 +14026,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ]
     return {
       cards: [
-        {
-          key: 'personal',
-          title: 'Personal Information',
-          rows: [
-            ['Full Name', sellerFullName],
-            ['ID Number', field(onboarding?.idNumber, onboarding?.id_number, onboarding?.sellerIdNumber, lead?.sellerIdNumber, lead?.idNumber)],
-            ['Date of Birth', dateField(onboarding?.dateOfBirth, onboarding?.date_of_birth, onboarding?.birthDate)],
-            ['Nationality', field(onboarding?.nationality, lead?.nationality)],
-            ['Marital Status', field(onboarding?.maritalStatus, onboarding?.marital_status, lead?.maritalStatus)],
-            ['Occupation', field(onboarding?.occupation, lead?.occupation)],
-            ['Employer', field(onboarding?.employer, lead?.employer)],
-            ['Email', field(selectedLeadContact?.email, lead?.sellerEmail, lead?.email)],
-            ['Mobile', field(selectedLeadContact?.phone, lead?.sellerPhone, lead?.phone)],
-            ['Alternative Number', field(onboarding?.alternativeNumber, onboarding?.alternative_number, onboarding?.alternatePhone)],
-          ],
-        },
-        {
-          key: 'address',
-          title: 'Residential Address',
-          rows: [
-            ['Street', field(onboarding?.residentialStreet, onboarding?.streetAddress, lead?.streetAddress, propertyDetails?.streetAddress)],
-            ['Suburb', field(onboarding?.residentialSuburb, onboarding?.suburb, lead?.suburb, propertyDetails?.suburb)],
-            ['City', field(onboarding?.residentialCity, onboarding?.city, lead?.city, propertyDetails?.city)],
-            ['Province', field(onboarding?.residentialProvince, onboarding?.province, lead?.province, propertyDetails?.province)],
-            ['Postal Code', field(onboarding?.residentialPostalCode, onboarding?.postalCode, lead?.postalCode, propertyDetails?.postalCode)],
-            ['Country', field(onboarding?.residentialCountry, onboarding?.country, lead?.country, propertyDetails?.country, 'South Africa')],
-          ],
-        },
+        personalCard,
+        companyCard,
+        trustCard,
+        foreignCard,
+        addressCard,
         {
           key: 'banking',
           title: 'Banking Details',
@@ -13700,13 +14044,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
         {
           key: 'tax',
-          title: 'Tax & Compliance',
+          title: taxTitle,
           rows: [
             ['SA Resident', field(onboarding?.saResident, onboarding?.sa_resident, onboarding?.taxResident)],
-            ['Income Tax Number', field(onboarding?.incomeTaxNumber, onboarding?.income_tax_number, onboarding?.taxNumber)],
+            ['Tax Number', field(onboarding?.incomeTaxNumber, onboarding?.income_tax_number, onboarding?.sellerTaxNumber, onboarding?.taxNumber, onboarding?.tax_number)],
             ['VAT Registered', field(onboarding?.vatRegistered, onboarding?.vat_registered)],
             ['FICA Status', field(onboarding?.ficaStatus, onboarding?.fica_status, selectedLeadOnboardingCompleted ? 'Verified' : '')],
-            ['POPI Consent', field(onboarding?.popiConsent, onboarding?.popi_consent, selectedLeadOnboardingCompleted ? 'Accepted' : '')],
+            ['POPI Consent', field(onboarding?.popiConsent, onboarding?.popi_consent, onboarding?.popiConsentAccepted || onboarding?.popi_consent_accepted ? 'Accepted' : '', selectedLeadOnboardingCompleted ? 'Accepted' : '')],
             ['Electronic Signature', field(onboarding?.electronicSignature, onboarding?.electronic_signature, selectedSellerJourney.mandateStatus === 'signed' ? 'Captured' : '')],
           ],
         },
@@ -13728,7 +14072,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           title: 'Property Information',
           rows: propertyRows,
         },
-      ],
+      ].filter(Boolean),
       features: selectedLeadPropertyWorkspace.characteristics.features,
       defects: [
         ['Roof', field(onboarding?.roofDefect, onboarding?.roof_defect, onboarding?.roofCondition)],
@@ -24060,6 +24404,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   const sellerLeadEditMode = normalizeKey(sellerLeadEditModal.mode) || 'personal'
+  const sellerProfileEditKind = resolveKingstonsSellerProfileKind(sellerProfileEditForm)
+  const sellerProfileEditIsNatural = isNaturalKingstonsSellerProfileKind(sellerProfileEditKind)
+  const sellerProfileEditIsCompany = isCompanyKingstonsSellerProfileKind(sellerProfileEditKind)
+  const sellerProfileEditIsTrust = isTrustKingstonsSellerProfileKind(sellerProfileEditKind)
+  const sellerProfileEditIsForeign = isForeignKingstonsSellerProfileKind(sellerProfileEditKind)
   const sellerLeadEditMeta = {
     personal: {
       title: 'Edit Personal Information',
@@ -32162,17 +32511,68 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
             {sellerLeadEditMode === 'personal' || sellerLeadEditMode === 'profile' ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <Field placeholder="First name" value={sellerProfileEditForm.firstName} onChange={(event) => updateSellerProfileEditField('firstName', event.target.value)} />
-                <Field placeholder="Last name" value={sellerProfileEditForm.lastName} onChange={(event) => updateSellerProfileEditField('lastName', event.target.value)} />
-                <Field placeholder="Phone" value={sellerProfileEditForm.phone} onChange={(event) => updateSellerProfileEditField('phone', event.target.value)} />
-                <Field placeholder="Email" value={sellerProfileEditForm.email} onChange={(event) => updateSellerProfileEditField('email', event.target.value)} />
-                <Field placeholder="ID number" value={sellerProfileEditForm.idNumber} onChange={(event) => updateSellerProfileEditField('idNumber', event.target.value)} />
-                <Field type="date" placeholder="Date of birth" value={sellerProfileEditForm.dateOfBirth} onChange={(event) => updateSellerProfileEditField('dateOfBirth', event.target.value)} />
-                <Field placeholder="Nationality" value={sellerProfileEditForm.nationality} onChange={(event) => updateSellerProfileEditField('nationality', event.target.value)} />
-                <Field placeholder="Marital status" value={sellerProfileEditForm.maritalStatus} onChange={(event) => updateSellerProfileEditField('maritalStatus', event.target.value)} />
-                <Field placeholder="Occupation" value={sellerProfileEditForm.occupation} onChange={(event) => updateSellerProfileEditField('occupation', event.target.value)} />
-                <Field placeholder="Employer" value={sellerProfileEditForm.employer} onChange={(event) => updateSellerProfileEditField('employer', event.target.value)} />
-                <Field placeholder="Alternative number" className="sm:col-span-2" value={sellerProfileEditForm.alternativeNumber} onChange={(event) => updateSellerProfileEditField('alternativeNumber', event.target.value)} />
+                <Field placeholder="Owner entity type" value={sellerProfileEditForm.ownerEntityType} onChange={(event) => updateSellerProfileEditField('ownerEntityType', event.target.value)} />
+                <Field placeholder="Owner structure type" value={sellerProfileEditForm.ownerStructureType} onChange={(event) => updateSellerProfileEditField('ownerStructureType', event.target.value)} />
+                <Field placeholder="Seller legal type" className="sm:col-span-2" value={sellerProfileEditForm.sellerLegalType} onChange={(event) => updateSellerProfileEditField('sellerLegalType', event.target.value)} />
+
+                {sellerProfileEditIsNatural ? (
+                  <>
+                    <Field placeholder="First name" value={sellerProfileEditForm.firstName} onChange={(event) => updateSellerProfileEditField('firstName', event.target.value)} />
+                    <Field placeholder="Last name" value={sellerProfileEditForm.lastName} onChange={(event) => updateSellerProfileEditField('lastName', event.target.value)} />
+                    <Field placeholder="Phone" value={sellerProfileEditForm.phone} onChange={(event) => updateSellerProfileEditField('phone', event.target.value)} />
+                    <Field placeholder="Email" value={sellerProfileEditForm.email} onChange={(event) => updateSellerProfileEditField('email', event.target.value)} />
+                    <Field placeholder="ID number" value={sellerProfileEditForm.idNumber} onChange={(event) => updateSellerProfileEditField('idNumber', event.target.value)} />
+                    <Field type="date" placeholder="Date of birth" value={sellerProfileEditForm.dateOfBirth} onChange={(event) => updateSellerProfileEditField('dateOfBirth', event.target.value)} />
+                    <Field placeholder="Nationality" value={sellerProfileEditForm.nationality} onChange={(event) => updateSellerProfileEditField('nationality', event.target.value)} />
+                    <Field placeholder="Marital status" value={sellerProfileEditForm.maritalStatus} onChange={(event) => updateSellerProfileEditField('maritalStatus', event.target.value)} />
+                    <Field placeholder="Occupation" value={sellerProfileEditForm.occupation} onChange={(event) => updateSellerProfileEditField('occupation', event.target.value)} />
+                    <Field placeholder="Employer" value={sellerProfileEditForm.employer} onChange={(event) => updateSellerProfileEditField('employer', event.target.value)} />
+                    <Field placeholder="Alternative number" className="sm:col-span-2" value={sellerProfileEditForm.alternativeNumber} onChange={(event) => updateSellerProfileEditField('alternativeNumber', event.target.value)} />
+                  </>
+                ) : null}
+
+                {sellerProfileEditIsCompany ? (
+                  <>
+                    <Field placeholder="Company name" value={sellerProfileEditForm.companyName} onChange={(event) => updateSellerProfileEditField('companyName', event.target.value)} />
+                    <Field placeholder="Company registration number" value={sellerProfileEditForm.companyRegistrationNumber} onChange={(event) => updateSellerProfileEditField('companyRegistrationNumber', event.target.value)} />
+                    <Field placeholder="Registered address" className="sm:col-span-2" value={sellerProfileEditForm.companyRegisteredAddress} onChange={(event) => updateSellerProfileEditField('companyRegisteredAddress', event.target.value)} />
+                    <Field as="textarea" rows={3} placeholder="Directors" className="sm:col-span-2" value={sellerProfileEditForm.companyDirectorsText} onChange={(event) => updateSellerProfileEditField('companyDirectorsText', event.target.value)} />
+                    <Field placeholder="Authorised signatory" value={sellerProfileEditForm.authorisedSignatoryName} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryName', event.target.value)} />
+                    <Field placeholder="Signatory capacity" value={sellerProfileEditForm.authorisedSignatoryCapacity} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryCapacity', event.target.value)} />
+                    <Field placeholder="Signatory email" value={sellerProfileEditForm.authorisedSignatoryEmail} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryEmail', event.target.value)} />
+                    <Field placeholder="Signatory phone" value={sellerProfileEditForm.authorisedSignatoryPhone} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryPhone', event.target.value)} />
+                    <Field placeholder="Signatory address" className="sm:col-span-2" value={sellerProfileEditForm.authorisedSignatoryAddress} onChange={(event) => updateSellerProfileEditField('authorisedSignatoryAddress', event.target.value)} />
+                    <Field type="date" placeholder="Resolution date" value={sellerProfileEditForm.companyResolutionDate} onChange={(event) => updateSellerProfileEditField('companyResolutionDate', event.target.value)} />
+                    <Field placeholder="Authority basis" value={sellerProfileEditForm.companyAuthorityBasis} onChange={(event) => updateSellerProfileEditField('companyAuthorityBasis', event.target.value)} />
+                  </>
+                ) : null}
+
+                {sellerProfileEditIsTrust ? (
+                  <>
+                    <Field placeholder="Trust name" value={sellerProfileEditForm.trustName} onChange={(event) => updateSellerProfileEditField('trustName', event.target.value)} />
+                    <Field placeholder="Trust registration number" value={sellerProfileEditForm.trustRegistrationNumber} onChange={(event) => updateSellerProfileEditField('trustRegistrationNumber', event.target.value)} />
+                    <Field placeholder="Registered address" className="sm:col-span-2" value={sellerProfileEditForm.trustRegisteredAddress} onChange={(event) => updateSellerProfileEditField('trustRegisteredAddress', event.target.value)} />
+                    <Field as="textarea" rows={3} placeholder="Trustees" className="sm:col-span-2" value={sellerProfileEditForm.trusteesText} onChange={(event) => updateSellerProfileEditField('trusteesText', event.target.value)} />
+                    <Field placeholder="Authorised trustee" value={sellerProfileEditForm.authorisedTrusteeName} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeName', event.target.value)} />
+                    <Field placeholder="Trustee capacity" value={sellerProfileEditForm.authorisedTrusteeCapacity} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeCapacity', event.target.value)} />
+                    <Field placeholder="Trustee email" value={sellerProfileEditForm.authorisedTrusteeEmail} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeEmail', event.target.value)} />
+                    <Field placeholder="Trustee phone" value={sellerProfileEditForm.authorisedTrusteePhone} onChange={(event) => updateSellerProfileEditField('authorisedTrusteePhone', event.target.value)} />
+                    <Field placeholder="Trustee address" className="sm:col-span-2" value={sellerProfileEditForm.authorisedTrusteeAddress} onChange={(event) => updateSellerProfileEditField('authorisedTrusteeAddress', event.target.value)} />
+                    <Field placeholder="Authority basis" className="sm:col-span-2" value={sellerProfileEditForm.trustAuthorityBasis} onChange={(event) => updateSellerProfileEditField('trustAuthorityBasis', event.target.value)} />
+                  </>
+                ) : null}
+
+                {sellerProfileEditIsForeign ? (
+                  <>
+                    <Field placeholder="Foreign country / jurisdiction" value={sellerProfileEditForm.foreignOwnerCountry} onChange={(event) => updateSellerProfileEditField('foreignOwnerCountry', event.target.value)} />
+                    <Field placeholder="Residency / signing status" value={sellerProfileEditForm.foreignResidencyStatus} onChange={(event) => updateSellerProfileEditField('foreignResidencyStatus', event.target.value)} />
+                    {sellerProfileEditIsCompany || sellerProfileEditIsTrust ? (
+                      <Field placeholder="Foreign registration number" className="sm:col-span-2" value={sellerProfileEditForm.foreignRegistrationNumber} onChange={(event) => updateSellerProfileEditField('foreignRegistrationNumber', event.target.value)} />
+                    ) : (
+                      <Field placeholder="Foreign passport number" className="sm:col-span-2" value={sellerProfileEditForm.foreignPassportNumber} onChange={(event) => updateSellerProfileEditField('foreignPassportNumber', event.target.value)} />
+                    )}
+                  </>
+                ) : null}
               </div>
             ) : null}
 

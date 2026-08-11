@@ -11,8 +11,9 @@ assert.match(agentLeadsPageSource, /\{ key: BUYER_ONBOARDING_OTP_TAB_KEY, label:
 assert.match(agentLeadsPageSource, /activeTab === BUYER_ONBOARDING_OTP_TAB_KEY/)
 assert.match(agentLeadsPageSource, /Open Onboarding \/ OTP/)
 assert.match(agentLeadsPageSource, /returnTo: `\/pipeline\/leads\/\$\{encodeURIComponent\(normalizeText\(lead\?\.leadId\)\)\}\?tab=onboarding_otp`/)
-assert.match(agentLeadsPageSource, /source: isManualCapture \? 'manual_offer_capture' : 'lead_workspace_onboarding_otp_tab'/)
-assert.match(agentLeadsPageSource, /source: 'lead_workspace_onboarding_otp_tab'/)
+assert.match(agentLeadsPageSource, /source: 'manual_offer_capture'/)
+assert.match(agentLeadsPageSource, /lead_workspace_manual_offer_capture/)
+assert.doesNotMatch(agentLeadsPageSource, /lead_workspace_onboarding_otp_tab/)
 
 assert.doesNotMatch(agentLeadsPageSource, /\{ key: 'offers', label: 'Offers' \}/)
 assert.doesNotMatch(agentLeadsPageSource, /activeTab === 'offers'/)

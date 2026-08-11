@@ -124,10 +124,10 @@ import { getSellerPortalStageMeta } from '../lib/sellerPortalStageMapper'
 import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
 import {
   formatPlatformFeeAmount,
-  buildPlatformFeeConsentAcceptance,
   getPlatformFeeConsentConfig,
   readPlatformFeeConsentAcceptance,
 } from '../lib/platformFeeConsent'
+import { buildArch9SellerTermsAcceptance, getArch9SellerTermsConfig } from '../lib/arch9TermsAcceptance'
 import { FEATURE_FLAGS } from '../lib/featureFlags'
 
 const ISSUE_CATEGORIES = [
@@ -7849,11 +7849,7 @@ function SellerPortalPasswordGate({
     : 'Create a password before opening your seller portal and document centre.'
   const propertyTitle = String(authState?.propertyTitle || '').trim()
   const sellerEmail = String(authState?.sellerEmail || '').trim()
-  const sellerPlatformFeeConfig = getPlatformFeeConsentConfig('seller')
-  const sellerPlatformFeeAmount = formatPlatformFeeAmount(
-    sellerPlatformFeeConfig.feeAmount,
-    sellerPlatformFeeConfig.currency,
-  )
+  const sellerTermsConfig = getArch9SellerTermsConfig()
 
   return (
     <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
@@ -7912,10 +7908,11 @@ function SellerPortalPasswordGate({
                 className="mt-1 h-4 w-4 rounded border-[#b8c7d8] text-[#2f5478] focus:ring-[#9eb9d4]"
               />
               <span className="text-sm leading-6 text-[#425970]">
-                <strong className="block text-[#142132]">{sellerPlatformFeeConfig.title}</strong>
-                {sellerPlatformFeeConfig.body}
+                <strong className="block text-[#142132]">{sellerTermsConfig.title}</strong>
+                {sellerTermsConfig.body}
+                <span className="mt-2 block">{sellerTermsConfig.popiBody}</span>
                 <span className="mt-2 block text-xs font-semibold text-[#64748b]">
-                  Current disclosure: {sellerPlatformFeeAmount} · Version {sellerPlatformFeeConfig.wordingVersion}
+                  Version {sellerTermsConfig.wordingVersion}
                 </span>
               </span>
             </label>
@@ -8246,7 +8243,7 @@ function ClientPortal() {
     }
 
     if (!passwordSet && !recoveryMode && !sellerPortalPasswordForm.termsAccepted) {
-      setSellerPortalPasswordFeedback('Accept the Seller Portal Terms and platform fee disclosure before activating your portal.')
+      setSellerPortalPasswordFeedback('Accept the Seller Portal Terms before activating your portal.')
       return
     }
 
@@ -8256,11 +8253,12 @@ function ClientPortal() {
       if (!passwordSet && !recoveryMode) {
         await recordSellerPortalActivationTerms({
           token,
-          acceptance: buildPlatformFeeConsentAcceptance('seller', {
+          acceptance: {
+            ...buildArch9SellerTermsAcceptance(),
             accepted: true,
             acceptedAt: new Date().toISOString(),
             acceptedByEmail: String(sellerPortalAuth?.sellerEmail || '').trim(),
-          }),
+          },
         })
       }
       const session = recoveryMode

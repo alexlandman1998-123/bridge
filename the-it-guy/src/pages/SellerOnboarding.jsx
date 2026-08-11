@@ -81,11 +81,11 @@ import {
   normalizePropertyDisclosure,
 } from '../lib/propertyDisclosure'
 import {
-  buildPlatformFeeConsentAcceptance,
-  getPlatformFeeConsentConfig,
-  isPlatformFeeConsentAccepted,
-  readPlatformFeeConsentAcceptance,
-} from '../lib/platformFeeConsent'
+  buildArch9SellerTermsAcceptance,
+  getArch9SellerTermsConfig,
+  isArch9SellerTermsAccepted,
+  readArch9SellerTermsAcceptance,
+} from '../lib/arch9TermsAcceptance'
 
 const STEPS = ['Seller Information', 'Property Details', 'Property Disclosure', 'Transferring Attorney', 'Review & Submit']
 
@@ -504,6 +504,22 @@ function formatDateValue(value, fallback = 'Not selected') {
   return new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
 }
 
+function normalizeYesNoValue(value, fallback = '') {
+  if (typeof value === 'boolean') return value ? 'yes' : 'no'
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (['true', 'yes', 'y', '1', 'on', 'accepted'].includes(normalized)) return 'yes'
+  if (['false', 'no', 'n', '0', 'off', 'declined'].includes(normalized)) return 'no'
+  return fallback
+}
+
+function normalizeAcceptedValue(value, fallback = false) {
+  if (typeof value === 'boolean') return value
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (['true', 'yes', 'y', '1', 'on', 'accepted'].includes(normalized)) return true
+  if (['false', 'no', 'n', '0', 'off', 'declined'].includes(normalized)) return false
+  return fallback
+}
+
 function getMandateTypeLabel(value, fallback = 'Not selected') {
   const normalized = String(value ?? '').trim()
   if (!normalized) return fallback
@@ -871,6 +887,7 @@ function getPropertyDisclosureMissingItems(disclosure = {}) {
   const unanswered = PROPERTY_DISCLOSURE_QUESTIONS.filter((question) => !normalized.responses?.[question.key]?.answer)
   if (unanswered.length) missing.push(`answer all Annexure A questions (${unanswered.length} remaining)`)
   if (!normalized.declarationAccepted) missing.push('accept the seller declaration')
+  if (!isArch9SellerTermsAccepted({ propertyDisclosure: normalized })) missing.push('accept the Arch9 terms and conditions')
   if (!normalized.signature) missing.push('draw a signature')
   if (!normalized.signedAt) missing.push('select a signature date')
   return missing
@@ -1375,6 +1392,178 @@ function createBlankPersonRecord(roleTitle = 'Person', index = 0) {
   }
 }
 
+function normalizeEntityPersonAliases(entry = {}, index = 0, roleTitle = 'Person') {
+  const record = normalizePersonRecordForForm(entry, index, roleTitle)
+  const firstName = String(record.name || '').trim()
+  const surname = String(record.surname || '').trim()
+  const fullName = [firstName, surname].filter(Boolean).join(' ').trim() || String(entry.fullName || entry.full_name || entry.name || '').trim()
+  const capacity = String(entry.capacity || entry.roleCapacity || entry.role_capacity || '').trim()
+  return {
+    ...record,
+    name: fullName || firstName,
+    fullName,
+    full_name: fullName,
+    firstName,
+    first_name: firstName,
+    lastName: surname,
+    last_name: surname,
+    residential_address: record.residentialAddress,
+    capacity,
+    roleCapacity: capacity,
+    role_capacity: capacity,
+    id_number: record.idNumber,
+    ownership_share: record.ownershipShare,
+    consent_to_sell: record.consentToSell,
+    signing_authority: record.signingAuthority,
+    role_title: record.roleTitle,
+  }
+}
+
+function normalizeEntityPersonAliasCollection(entries = [], roleTitle = 'Person') {
+  return (Array.isArray(entries) ? entries : [])
+    .map((entry, index) => normalizeEntityPersonAliases(entry, index, roleTitle))
+    .filter((entry) => Boolean(entry.fullName || entry.firstName || entry.lastName || entry.email || entry.phone || entry.idNumber))
+}
+
+function buildSellerEntityProfileAliases(form = {}) {
+  const ownerEntityType = String(form.ownerEntityType || form.owner_entity_type || '').trim()
+  const ownerStructureType = String(form.ownerStructureType || form.owner_structure_type || form.ownershipType || '').trim()
+  const sellerLegalType = String(form.sellerLegalType || form.seller_legal_type || form.ownershipType || '').trim()
+  const foreignOwner = isForeignOwnerModel(ownerEntityType, ownerStructureType)
+  const companyDirectors = normalizeEntityPersonAliasCollection(form.companyDirectors || form.company_directors || form.directors || [], 'Director')
+  const trustees = normalizeEntityPersonAliasCollection(form.trustees || form.trust_trustees || [], 'Trustee')
+  const authorisedSignatory = normalizeEntityPersonAliases({
+    name: form.authorisedSignatoryName || form.authorised_signatory_name,
+    capacity: form.authorisedSignatoryCapacity || form.authorised_signatory_capacity,
+    email: form.authorisedSignatoryEmail || form.authorised_signatory_email,
+    phone: form.authorisedSignatoryPhone || form.authorised_signatory_phone,
+    residentialAddress: form.authorisedSignatoryAddress || form.authorised_signatory_address,
+    signingAuthority: true,
+  }, 0, 'Authorised Signatory')
+  const authorisedTrustee = normalizeEntityPersonAliases({
+    name: form.authorisedTrusteeName || form.authorised_trustee_name,
+    capacity: form.authorisedTrusteeCapacity || form.authorised_trustee_capacity,
+    email: form.authorisedTrusteeEmail || form.authorised_trustee_email,
+    phone: form.authorisedTrusteePhone || form.authorised_trustee_phone,
+    residentialAddress: form.authorisedTrusteeAddress || form.authorised_trustee_address,
+    signingAuthority: true,
+  }, 0, 'Authorised Trustee')
+  const companyName = String(form.companyName || form.company_name || '').trim()
+  const companyRegistrationNumber = String(form.companyRegistrationNumber || form.company_registration_number || '').trim()
+  const companyRegisteredAddress = String(form.companyRegisteredAddress || form.company_registered_address || '').trim()
+  const trustName = String(form.trustName || form.trust_name || '').trim()
+  const trustRegistrationNumber = String(form.trustRegistrationNumber || form.trust_registration_number || '').trim()
+  const trustRegisteredAddress = String(form.trustRegisteredAddress || form.trust_registered_address || '').trim()
+  const foreignOwnerCountry = String(form.foreignOwnerCountry || form.foreign_owner_country || '').trim()
+  const foreignPassportNumber = String(form.foreignPassportNumber || form.foreign_passport_number || form.passportNumber || '').trim()
+  const foreignRegistrationNumber = String(form.foreignRegistrationNumber || form.foreign_registration_number || '').trim()
+  const foreignResidencyStatus = String(form.foreignResidencyStatus || form.foreign_residency_status || form.residencyStatus || '').trim()
+
+  return {
+    ownerEntityType,
+    owner_entity_type: ownerEntityType,
+    ownerStructureType,
+    owner_structure_type: ownerStructureType,
+    sellerLegalType,
+    seller_legal_type: sellerLegalType,
+    ownershipType: String(form.ownershipType || '').trim(),
+    ownership_type: String(form.ownershipType || '').trim(),
+    foreignOwner,
+    foreign_owner: foreignOwner,
+    foreignOwnerCountry,
+    foreign_owner_country: foreignOwnerCountry,
+    foreignPassportNumber,
+    foreign_passport_number: foreignPassportNumber,
+    foreignRegistrationNumber,
+    foreign_registration_number: foreignRegistrationNumber,
+    foreignResidencyStatus,
+    foreign_residency_status: foreignResidencyStatus,
+    foreign: {
+      country: foreignOwnerCountry,
+      jurisdiction: foreignOwnerCountry,
+      passportNumber: foreignPassportNumber,
+      passport_number: foreignPassportNumber,
+      registrationNumber: foreignRegistrationNumber,
+      registration_number: foreignRegistrationNumber,
+      residencyStatus: foreignResidencyStatus,
+      residency_status: foreignResidencyStatus,
+    },
+    companyName,
+    company_name: companyName,
+    companyRegistrationNumber,
+    company_registration_number: companyRegistrationNumber,
+    companyRegisteredAddress,
+    company_registered_address: companyRegisteredAddress,
+    companyDirectors,
+    company_directors: companyDirectors,
+    directors: companyDirectors,
+    authorisedSignatoryName: authorisedSignatory.fullName,
+    authorised_signatory_name: authorisedSignatory.fullName,
+    authorisedSignatoryCapacity: authorisedSignatory.capacity,
+    authorised_signatory_capacity: authorisedSignatory.capacity,
+    authorisedSignatoryEmail: authorisedSignatory.email,
+    authorised_signatory_email: authorisedSignatory.email,
+    authorisedSignatoryPhone: authorisedSignatory.phone,
+    authorised_signatory_phone: authorisedSignatory.phone,
+    authorisedSignatoryAddress: authorisedSignatory.residentialAddress,
+    authorised_signatory_address: authorisedSignatory.residentialAddress,
+    companyResolutionDate: String(form.companyResolutionDate || form.company_resolution_date || '').trim(),
+    company_resolution_date: String(form.companyResolutionDate || form.company_resolution_date || '').trim(),
+    companyAuthorityBasis: String(form.companyAuthorityBasis || form.company_authority_basis || '').trim(),
+    company_authority_basis: String(form.companyAuthorityBasis || form.company_authority_basis || '').trim(),
+    company: {
+      name: companyName,
+      companyName,
+      company_name: companyName,
+      registrationNumber: companyRegistrationNumber,
+      registration_number: companyRegistrationNumber,
+      registeredAddress: companyRegisteredAddress,
+      registered_address: companyRegisteredAddress,
+      directors: companyDirectors,
+      authorisedSignatory,
+      authorised_signatory: authorisedSignatory,
+      resolutionDate: String(form.companyResolutionDate || form.company_resolution_date || '').trim(),
+      resolution_date: String(form.companyResolutionDate || form.company_resolution_date || '').trim(),
+      authorityBasis: String(form.companyAuthorityBasis || form.company_authority_basis || '').trim(),
+      authority_basis: String(form.companyAuthorityBasis || form.company_authority_basis || '').trim(),
+    },
+    trustName,
+    trust_name: trustName,
+    trustRegistrationNumber,
+    trust_registration_number: trustRegistrationNumber,
+    trustRegisteredAddress,
+    trust_registered_address: trustRegisteredAddress,
+    trustees,
+    trust_trustees: trustees,
+    authorisedTrusteeName: authorisedTrustee.fullName,
+    authorised_trustee_name: authorisedTrustee.fullName,
+    authorisedTrusteeCapacity: authorisedTrustee.capacity,
+    authorised_trustee_capacity: authorisedTrustee.capacity,
+    authorisedTrusteeEmail: authorisedTrustee.email,
+    authorised_trustee_email: authorisedTrustee.email,
+    authorisedTrusteePhone: authorisedTrustee.phone,
+    authorised_trustee_phone: authorisedTrustee.phone,
+    authorisedTrusteeAddress: authorisedTrustee.residentialAddress,
+    authorised_trustee_address: authorisedTrustee.residentialAddress,
+    trustAuthorityBasis: String(form.trustAuthorityBasis || form.trust_authority_basis || '').trim(),
+    trust_authority_basis: String(form.trustAuthorityBasis || form.trust_authority_basis || '').trim(),
+    trust: {
+      name: trustName,
+      trustName,
+      trust_name: trustName,
+      registrationNumber: trustRegistrationNumber,
+      registration_number: trustRegistrationNumber,
+      registeredAddress: trustRegisteredAddress,
+      registered_address: trustRegisteredAddress,
+      trustees,
+      authorisedTrustee,
+      authorised_trustee: authorisedTrustee,
+      authorityBasis: String(form.trustAuthorityBasis || form.trust_authority_basis || '').trim(),
+      authority_basis: String(form.trustAuthorityBasis || form.trust_authority_basis || '').trim(),
+    },
+  }
+}
+
 function getOwnershipFieldLabels(value = '') {
   const branch = getOwnershipBranch(value)
   const isEntityBranch = ['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(branch)
@@ -1426,26 +1615,26 @@ function normalizeFormData(listing) {
   const split = splitName(existing.fullName || seller.name || '')
   const sellerBranch = String(flow?.seller_branch || '').toLowerCase()
   const companyDirectors = normalizePersonCollectionForForm(
-    existing.companyDirectors || canonicalFacts?.seller?.company?.directors || existing.directors || [],
+    existing.companyDirectors || existing.company_directors || canonicalFacts?.seller?.company?.directors || existing.company?.directors || existing.directors || [],
     {
       id: 'director-1',
-      name: existing.companyDirectorName || canonicalFacts?.seller?.company?.director_name || canonicalFacts?.seller?.company?.authorised_signatory?.name || '',
-      email: existing.companyDirectorEmail || canonicalFacts?.seller?.company?.director_email || canonicalFacts?.seller?.company?.authorised_signatory?.email || '',
-      phone: existing.companyDirectorPhone || canonicalFacts?.seller?.company?.director_phone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || '',
-      residentialAddress: existing.companyDirectorAddress || canonicalFacts?.seller?.company?.authorised_signatory?.residential_address || existing.companyRegisteredAddress || existing.residentialAddress || '',
+      name: existing.companyDirectorName || canonicalFacts?.seller?.company?.director_name || canonicalFacts?.seller?.company?.authorised_signatory?.name || existing.company?.authorisedSignatory?.name || existing.company?.authorised_signatory?.name || '',
+      email: existing.companyDirectorEmail || canonicalFacts?.seller?.company?.director_email || canonicalFacts?.seller?.company?.authorised_signatory?.email || existing.company?.authorisedSignatory?.email || existing.company?.authorised_signatory?.email || '',
+      phone: existing.companyDirectorPhone || canonicalFacts?.seller?.company?.director_phone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || existing.company?.authorisedSignatory?.phone || existing.company?.authorised_signatory?.phone || '',
+      residentialAddress: existing.companyDirectorAddress || canonicalFacts?.seller?.company?.authorised_signatory?.residential_address || existing.company?.authorisedSignatory?.residentialAddress || existing.company?.authorisedSignatory?.residential_address || existing.company?.authorisedSignatory?.address || existing.company?.authorised_signatory?.address || existing.companyRegisteredAddress || existing.company_registered_address || existing.company?.registeredAddress || existing.company?.registered_address || existing.residentialAddress || '',
       signingAuthority: Boolean(canonicalFacts?.seller?.company?.authorised_signatory?.name),
       roleTitle: 'Director',
     },
     'Director',
   )
   const trustTrustees = normalizePersonCollectionForForm(
-    existing.trustees || canonicalFacts?.seller?.trust?.trustees || [],
+    existing.trustees || existing.trust_trustees || canonicalFacts?.seller?.trust?.trustees || existing.trust?.trustees || [],
     {
       id: 'trustee-1',
-      name: existing.trusteeName || canonicalFacts?.seller?.trust?.trustee_name || canonicalFacts?.seller?.trust?.authorised_trustee?.name || '',
-      email: existing.trusteeEmail || canonicalFacts?.seller?.trust?.trustee_email || canonicalFacts?.seller?.trust?.authorised_trustee?.email || '',
-      phone: existing.trusteePhone || canonicalFacts?.seller?.trust?.trustee_phone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || '',
-      residentialAddress: existing.trusteeAddress || canonicalFacts?.seller?.trust?.authorised_trustee?.residential_address || existing.trustRegisteredAddress || existing.residentialAddress || '',
+      name: existing.trusteeName || canonicalFacts?.seller?.trust?.trustee_name || canonicalFacts?.seller?.trust?.authorised_trustee?.name || existing.trust?.authorisedTrustee?.name || existing.trust?.authorised_trustee?.name || '',
+      email: existing.trusteeEmail || canonicalFacts?.seller?.trust?.trustee_email || canonicalFacts?.seller?.trust?.authorised_trustee?.email || existing.trust?.authorisedTrustee?.email || existing.trust?.authorised_trustee?.email || '',
+      phone: existing.trusteePhone || canonicalFacts?.seller?.trust?.trustee_phone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || existing.trust?.authorisedTrustee?.phone || existing.trust?.authorised_trustee?.phone || '',
+      residentialAddress: existing.trusteeAddress || canonicalFacts?.seller?.trust?.authorised_trustee?.residential_address || existing.trust?.authorisedTrustee?.residentialAddress || existing.trust?.authorisedTrustee?.residential_address || existing.trust?.authorisedTrustee?.address || existing.trust?.authorised_trustee?.address || existing.trustRegisteredAddress || existing.trust_registered_address || existing.trust?.registeredAddress || existing.trust?.registered_address || existing.residentialAddress || '',
       signingAuthority: Boolean(canonicalFacts?.seller?.trust?.authorised_trustee?.name),
       roleTitle: 'Trustee',
     },
@@ -1639,8 +1828,11 @@ function normalizeFormData(listing) {
     sellerFirstName: existing.sellerFirstName || canonicalFacts?.seller?.first_name || split.firstName,
     sellerSurname: existing.sellerSurname || canonicalFacts?.seller?.surname || split.surname,
     idNumber: resolveIdNumber(),
+    dateOfBirth: existing.dateOfBirth || existing.date_of_birth || existing.birthDate || canonicalFacts?.seller?.date_of_birth || '',
+    nationality: existing.nationality || canonicalFacts?.seller?.nationality || '',
     email: existing.email || canonicalFacts?.seller?.email || seller.email || '',
     phone: existing.phone || canonicalFacts?.seller?.phone || seller.phone || '',
+    alternativeNumber: existing.alternativeNumber || existing.alternative_number || existing.alternatePhone || existing.alternate_phone || canonicalFacts?.seller?.alternative_number || canonicalFacts?.seller?.alternate_phone || '',
     residentialAddress: resolvedResidentialAddress,
     residentialAddressDetails: existing.residentialAddressDetails || existing.sellerResidentialAddressDetails || {},
 
@@ -1649,12 +1841,14 @@ function normalizeFormData(listing) {
     ownerEntityType,
     ownerStructureType,
     foreignOwner,
-    foreignOwnerCountry: existing.foreignOwnerCountry || existing.foreign_owner_country || canonicalFacts?.seller?.foreign_owner_country || canonicalFacts?.seller?.foreign?.country || '',
-    foreignPassportNumber: existing.foreignPassportNumber || existing.passportNumber || canonicalFacts?.seller?.foreign?.passport_number || '',
-    foreignRegistrationNumber: existing.foreignRegistrationNumber || canonicalFacts?.seller?.foreign?.registration_number || '',
-    foreignResidencyStatus: existing.foreignResidencyStatus || existing.residencyStatus || canonicalFacts?.seller?.foreign?.residency_status || '',
+    foreignOwnerCountry: existing.foreignOwnerCountry || existing.foreign_owner_country || existing.foreign?.country || existing.foreign?.jurisdiction || canonicalFacts?.seller?.foreign_owner_country || canonicalFacts?.seller?.foreign?.country || '',
+    foreignPassportNumber: existing.foreignPassportNumber || existing.foreign_passport_number || existing.passportNumber || existing.foreign?.passportNumber || existing.foreign?.passport_number || canonicalFacts?.seller?.foreign?.passport_number || '',
+    foreignRegistrationNumber: existing.foreignRegistrationNumber || existing.foreign_registration_number || existing.foreign?.registrationNumber || existing.foreign?.registration_number || canonicalFacts?.seller?.foreign?.registration_number || '',
+    foreignResidencyStatus: existing.foreignResidencyStatus || existing.foreign_residency_status || existing.residencyStatus || existing.foreign?.residencyStatus || existing.foreign?.residency_status || canonicalFacts?.seller?.foreign?.residency_status || '',
     multipleOwnerCaptureMode,
-    sellerTaxNumber: existing.sellerTaxNumber || canonicalFacts?.seller?.tax_number || existing.taxNumber || '',
+    sellerTaxNumber: existing.sellerTaxNumber || existing.incomeTaxNumber || existing.income_tax_number || canonicalFacts?.seller?.tax_number || existing.taxNumber || existing.tax_number || '',
+    saResident: normalizeYesNoValue(existing.saResident ?? existing.sa_resident ?? existing.taxResident ?? existing.tax_resident ?? canonicalFacts?.seller?.sa_resident ?? canonicalFacts?.seller?.tax_resident),
+    popiConsent: normalizeAcceptedValue(existing.popiConsentAccepted ?? existing.popi_consent_accepted ?? existing.popiConsent ?? existing.popi_consent ?? canonicalFacts?.seller?.popi_consent_accepted ?? canonicalFacts?.seller?.popi_consent),
     vatRegistered: isVatEligibleOwnership ? Boolean(existing.vatRegistered) : false,
     vatNumber: isVatEligibleOwnership ? (existing.vatNumber || '') : '',
     maritalStatus: ownershipBranch === 'married' ? (existing.maritalStatus || canonicalFacts?.seller?.marital_status || 'married') : 'not_married',
@@ -1665,34 +1859,34 @@ function normalizeFormData(listing) {
     spouseEmail: ownershipBranch === 'married' ? (existing.spouseEmail || canonicalFacts?.seller?.spouse?.email || '') : '',
     spousePhone: ownershipBranch === 'married' ? (existing.spousePhone || canonicalFacts?.seller?.spouse?.phone || '') : '',
 
-    companyName: existing.companyName || canonicalFacts?.seller?.company?.name || existing.entityName || '',
-    companyRegistrationNumber: existing.companyRegistrationNumber || canonicalFacts?.seller?.company?.registration_number || existing.entityRegistrationNumber || '',
+    companyName: existing.companyName || existing.company_name || canonicalFacts?.seller?.company?.name || existing.company?.name || existing.company?.companyName || existing.company?.company_name || existing.entityName || '',
+    companyRegistrationNumber: existing.companyRegistrationNumber || existing.company_registration_number || canonicalFacts?.seller?.company?.registration_number || existing.company?.registrationNumber || existing.company?.registration_number || existing.entityRegistrationNumber || '',
     companyDirectors,
     companyDirectorName: existing.companyDirectorName || companyDirectors[0]?.name || canonicalFacts?.seller?.company?.director_name || canonicalFacts?.seller?.company?.authorised_signatory?.name || existing.entityRepresentative || '',
     companyDirectorEmail: existing.companyDirectorEmail || companyDirectors[0]?.email || canonicalFacts?.seller?.company?.director_email || canonicalFacts?.seller?.company?.authorised_signatory?.email || '',
     companyDirectorPhone: existing.companyDirectorPhone || companyDirectors[0]?.phone || canonicalFacts?.seller?.company?.director_phone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || '',
-    companyRegisteredAddress: existing.companyRegisteredAddress || canonicalFacts?.seller?.company?.registered_address || existing.residentialAddress || '',
-    authorisedSignatoryName: existing.authorisedSignatoryName || canonicalFacts?.seller?.company?.authorised_signatory?.name || '',
-    authorisedSignatoryCapacity: existing.authorisedSignatoryCapacity || canonicalFacts?.seller?.company?.authorised_signatory?.capacity || '',
-    authorisedSignatoryEmail: existing.authorisedSignatoryEmail || canonicalFacts?.seller?.company?.authorised_signatory?.email || '',
-    authorisedSignatoryPhone: existing.authorisedSignatoryPhone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || '',
-    authorisedSignatoryAddress: existing.authorisedSignatoryAddress || canonicalFacts?.seller?.company?.authorised_signatory?.residential_address || '',
-    companyResolutionDate: existing.companyResolutionDate || canonicalFacts?.seller?.company?.resolution_date || '',
-    companyAuthorityBasis: existing.companyAuthorityBasis || canonicalFacts?.seller?.company?.authority_basis || '',
+    companyRegisteredAddress: existing.companyRegisteredAddress || existing.company_registered_address || canonicalFacts?.seller?.company?.registered_address || existing.company?.registeredAddress || existing.company?.registered_address || existing.residentialAddress || '',
+    authorisedSignatoryName: existing.authorisedSignatoryName || existing.authorised_signatory_name || canonicalFacts?.seller?.company?.authorised_signatory?.name || existing.company?.authorisedSignatory?.name || existing.company?.authorised_signatory?.name || '',
+    authorisedSignatoryCapacity: existing.authorisedSignatoryCapacity || existing.authorised_signatory_capacity || canonicalFacts?.seller?.company?.authorised_signatory?.capacity || existing.company?.authorisedSignatory?.capacity || existing.company?.authorised_signatory?.capacity || '',
+    authorisedSignatoryEmail: existing.authorisedSignatoryEmail || existing.authorised_signatory_email || canonicalFacts?.seller?.company?.authorised_signatory?.email || existing.company?.authorisedSignatory?.email || existing.company?.authorised_signatory?.email || '',
+    authorisedSignatoryPhone: existing.authorisedSignatoryPhone || existing.authorised_signatory_phone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || existing.company?.authorisedSignatory?.phone || existing.company?.authorised_signatory?.phone || '',
+    authorisedSignatoryAddress: existing.authorisedSignatoryAddress || existing.authorised_signatory_address || canonicalFacts?.seller?.company?.authorised_signatory?.residential_address || existing.company?.authorisedSignatory?.residentialAddress || existing.company?.authorisedSignatory?.residential_address || existing.company?.authorisedSignatory?.address || existing.company?.authorised_signatory?.residentialAddress || existing.company?.authorised_signatory?.residential_address || existing.company?.authorised_signatory?.address || '',
+    companyResolutionDate: existing.companyResolutionDate || existing.company_resolution_date || canonicalFacts?.seller?.company?.resolution_date || existing.company?.resolutionDate || existing.company?.resolution_date || '',
+    companyAuthorityBasis: existing.companyAuthorityBasis || existing.company_authority_basis || canonicalFacts?.seller?.company?.authority_basis || existing.company?.authorityBasis || existing.company?.authority_basis || '',
 
-    trustName: existing.trustName || canonicalFacts?.seller?.trust?.name || existing.entityName || '',
-    trustRegistrationNumber: existing.trustRegistrationNumber || canonicalFacts?.seller?.trust?.registration_number || existing.entityRegistrationNumber || '',
+    trustName: existing.trustName || existing.trust_name || canonicalFacts?.seller?.trust?.name || existing.trust?.name || existing.trust?.trustName || existing.trust?.trust_name || existing.entityName || '',
+    trustRegistrationNumber: existing.trustRegistrationNumber || existing.trust_registration_number || canonicalFacts?.seller?.trust?.registration_number || existing.trust?.registrationNumber || existing.trust?.registration_number || existing.entityRegistrationNumber || '',
     trustees: trustTrustees,
     trusteeName: existing.trusteeName || trustTrustees[0]?.name || canonicalFacts?.seller?.trust?.trustee_name || canonicalFacts?.seller?.trust?.authorised_trustee?.name || existing.entityRepresentative || '',
     trusteeEmail: existing.trusteeEmail || trustTrustees[0]?.email || canonicalFacts?.seller?.trust?.trustee_email || canonicalFacts?.seller?.trust?.authorised_trustee?.email || '',
     trusteePhone: existing.trusteePhone || trustTrustees[0]?.phone || canonicalFacts?.seller?.trust?.trustee_phone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || '',
-    trustRegisteredAddress: existing.trustRegisteredAddress || canonicalFacts?.seller?.trust?.registered_address || existing.residentialAddress || '',
-    authorisedTrusteeName: existing.authorisedTrusteeName || canonicalFacts?.seller?.trust?.authorised_trustee?.name || '',
-    authorisedTrusteeCapacity: existing.authorisedTrusteeCapacity || canonicalFacts?.seller?.trust?.authorised_trustee?.capacity || '',
-    authorisedTrusteeEmail: existing.authorisedTrusteeEmail || canonicalFacts?.seller?.trust?.authorised_trustee?.email || '',
-    authorisedTrusteePhone: existing.authorisedTrusteePhone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || '',
-    authorisedTrusteeAddress: existing.authorisedTrusteeAddress || canonicalFacts?.seller?.trust?.authorised_trustee?.residential_address || '',
-    trustAuthorityBasis: existing.trustAuthorityBasis || canonicalFacts?.seller?.trust?.authority_basis || '',
+    trustRegisteredAddress: existing.trustRegisteredAddress || existing.trust_registered_address || canonicalFacts?.seller?.trust?.registered_address || existing.trust?.registeredAddress || existing.trust?.registered_address || existing.residentialAddress || '',
+    authorisedTrusteeName: existing.authorisedTrusteeName || existing.authorised_trustee_name || canonicalFacts?.seller?.trust?.authorised_trustee?.name || existing.trust?.authorisedTrustee?.name || existing.trust?.authorised_trustee?.name || '',
+    authorisedTrusteeCapacity: existing.authorisedTrusteeCapacity || existing.authorised_trustee_capacity || canonicalFacts?.seller?.trust?.authorised_trustee?.capacity || existing.trust?.authorisedTrustee?.capacity || existing.trust?.authorised_trustee?.capacity || '',
+    authorisedTrusteeEmail: existing.authorisedTrusteeEmail || existing.authorised_trustee_email || canonicalFacts?.seller?.trust?.authorised_trustee?.email || existing.trust?.authorisedTrustee?.email || existing.trust?.authorised_trustee?.email || '',
+    authorisedTrusteePhone: existing.authorisedTrusteePhone || existing.authorised_trustee_phone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || existing.trust?.authorisedTrustee?.phone || existing.trust?.authorised_trustee?.phone || '',
+    authorisedTrusteeAddress: existing.authorisedTrusteeAddress || existing.authorised_trustee_address || canonicalFacts?.seller?.trust?.authorised_trustee?.residential_address || existing.trust?.authorisedTrustee?.residentialAddress || existing.trust?.authorisedTrustee?.residential_address || existing.trust?.authorisedTrustee?.address || existing.trust?.authorised_trustee?.residentialAddress || existing.trust?.authorised_trustee?.residential_address || existing.trust?.authorised_trustee?.address || '',
+    trustAuthorityBasis: existing.trustAuthorityBasis || existing.trust_authority_basis || canonicalFacts?.seller?.trust?.authority_basis || existing.trust?.authorityBasis || existing.trust?.authority_basis || '',
 
     executors: estateExecutors,
     executorName: existing.executorName || estateExecutors[0]?.name || canonicalFacts?.seller?.deceased_estate?.executor_name || '',
@@ -2412,11 +2606,11 @@ function PropertyDisclosureSection({
   onAnswerChange,
   onDownload,
   onDisclosureChange,
-  platformFeeConsentError = '',
+  termsAcceptanceError = '',
 }) {
   const normalized = normalizePropertyDisclosure(disclosure, { kind: disclosureKind })
-  const platformFeeConsent = readPlatformFeeConsentAcceptance({ propertyDisclosure: normalized }, 'seller')
-  const platformFeeConfig = getPlatformFeeConsentConfig('seller')
+  const termsAcceptance = readArch9SellerTermsAcceptance({ propertyDisclosure: normalized })
+  const termsConfig = getArch9SellerTermsConfig()
   const statusLabel = getPropertyDisclosureStatusLabel(getPropertyDisclosureStatus(normalized))
   const answerSummary = getPropertyDisclosureAnswerSummary(normalized)
   const answerOptions = [
@@ -2571,44 +2765,43 @@ function PropertyDisclosureSection({
             <div className="rounded-[18px] border border-[#d8ecdf] bg-[#f5fbf7] p-4 text-sm leading-6 text-[#25603d]">
               I declare that the information provided above is true and complete to the best of my knowledge and that I have disclosed all known material facts relating to the property.
             </div>
-            <section className="mt-4 rounded-[18px] border border-[#dbe6f2] bg-white p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h4 className="text-base font-semibold tracking-normal text-[#172334]">{platformFeeConfig.title}</h4>
-                  <p className="mt-2 text-sm leading-6 text-[#35546c]">{platformFeeConfig.body}</p>
-                </div>
-                <span className="rounded-full border border-[#d8ecdf] bg-[#f5fbf7] px-3 py-1 text-xs font-semibold text-[#25603d]">
-                  R750.00
-                </span>
-              </div>
-              <label className="mt-4 flex min-h-[52px] items-start gap-3 rounded-[12px] border border-[#d9e2ee] bg-[#fbfdff] px-3 py-3 text-sm font-medium text-[#2a4057]">
-                <input
-                  type="checkbox"
-                  checked={platformFeeConsent.accepted}
-                  onChange={(event) => {
-                    onDisclosureChange(
-                      'platformFeeConsent',
-                      event.target.checked
-                        ? buildPlatformFeeConsentAcceptance('seller')
-                        : { ...platformFeeConsent, accepted: false, acceptedAt: '', accepted_at: '' },
-                    )
-                  }}
-                  aria-describedby={platformFeeConsentError ? 'seller-platform-fee-consent-error' : undefined}
-                  className="mt-1 h-4 w-4"
-                />
-                <span>{platformFeeConfig.checkboxLabel}</span>
-              </label>
-              {platformFeeConsentError ? (
-                <p id="seller-platform-fee-consent-error" className="mt-2 text-sm font-semibold text-[#b42318]">
-                  {platformFeeConsentError}
-                </p>
-              ) : null}
-            </section>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057] md:col-span-2">
                 <input type="checkbox" checked={Boolean(normalized.declarationAccepted)} onChange={(event) => onDisclosureChange('declarationAccepted', event.target.checked)} />
                 I accept the seller declaration
               </label>
+              <section className="rounded-[18px] border border-[#dbe6f2] bg-white p-4 md:col-span-2">
+                <h4 className="text-base font-semibold tracking-normal text-[#172334]">{termsConfig.title}</h4>
+                <p className="mt-2 text-sm leading-6 text-[#35546c]">{termsConfig.body}</p>
+                <p className="mt-2 text-sm leading-6 text-[#35546c]">{termsConfig.popiBody}</p>
+                <label className="mt-4 flex min-h-[52px] items-start gap-3 rounded-[12px] border border-[#d9e2ee] bg-[#fbfdff] px-3 py-3 text-sm font-medium text-[#2a4057]">
+                  <input
+                    type="checkbox"
+                    checked={termsAcceptance.accepted}
+                    onChange={(event) => {
+                      const nextAcceptance = event.target.checked
+                        ? buildArch9SellerTermsAcceptance()
+                        : { ...termsAcceptance, accepted: false, acceptedAt: '', accepted_at: '' }
+                      onDisclosureChange({
+                        arch9TermsAcceptance: nextAcceptance,
+                        arch9TermsAccepted: event.target.checked,
+                        arch9TermsAcceptedAt: event.target.checked ? nextAcceptance.acceptedAt : '',
+                        arch9_terms_acceptance: nextAcceptance,
+                        arch9_terms_accepted: event.target.checked,
+                        arch9_terms_accepted_at: event.target.checked ? nextAcceptance.acceptedAt : '',
+                      })
+                    }}
+                    aria-describedby={termsAcceptanceError ? 'seller-arch9-terms-error' : undefined}
+                    className="mt-1 h-4 w-4"
+                  />
+                  <span>{termsConfig.checkboxLabel}</span>
+                </label>
+                {termsAcceptanceError ? (
+                  <p id="seller-arch9-terms-error" className="mt-2 text-sm font-semibold text-[#b42318]">
+                    {termsAcceptanceError}
+                  </p>
+                ) : null}
+              </section>
               <div className="rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7890a8]">Seller name</p>
                 <p className="mt-1 text-sm font-semibold text-[#172334]">{sellerName || 'Not provided'}</p>
@@ -2812,7 +3005,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [platformFeeConsentError, setPlatformFeeConsentError] = useState('')
+  const [termsAcceptanceError, setTermsAcceptanceError] = useState('')
   const [success, setSuccess] = useState('')
   const [showWelcome, setShowWelcome] = useState(true)
   const [draftSyncStatus, setDraftSyncStatus] = useState('idle')
@@ -3133,8 +3326,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   function handleFormUpdate(key, value) {
-    if (key === 'propertyDisclosure' || key === 'platformFeeConsent') {
-      setPlatformFeeConsentError('')
+    if (key === 'propertyDisclosure' || key === 'arch9TermsAcceptance' || key === 'arch9TermsAccepted') {
+      setTermsAcceptanceError('')
     }
     setForm((previous) => {
       const next = { ...(previous || {}), [key]: value }
@@ -3407,7 +3600,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   function patchPropertyDisclosure(patchOrKey = {}, value = undefined) {
-    setPlatformFeeConsentError('')
+    setTermsAcceptanceError('')
     setForm((previous) => {
       const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
         kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
@@ -3638,7 +3831,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         draft: true,
         source: 'seller_onboarding_draft',
       })
-      const draftFormData = { ...formForDraft, currentStep: nextStep, ...canonicalPayload }
+      const draftFormData = {
+        ...formForDraft,
+        ...buildSellerEntityProfileAliases(formForDraft),
+        currentStep: nextStep,
+        ...canonicalPayload,
+      }
       const updated = await persistListingUpdate((row) => ({
         ...row,
         sellerOnboarding: {
@@ -3789,6 +3987,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(form.email))) {
         return 'Please provide a valid email address.'
       }
+      if (!String(form.sellerTaxNumber || '').trim()) {
+        return 'Please provide the seller tax number.'
+      }
+      if (!String(form.saResident || '').trim()) {
+        return 'Please confirm whether the seller is an SA resident.'
+      }
 
       const ownershipType = String(form.ownershipType || '')
       if (!ownershipType) return 'Please select ownership structure.'
@@ -3796,10 +4000,24 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       if (!form.ownerStructureType) return 'Please define the owner structure.'
       const ownershipBranch = getOwnershipBranch(ownershipType)
       const isForeignOwner = isForeignOwnerModel(form.ownerEntityType, form.ownerStructureType)
+      const isNaturalPersonSeller =
+        form.ownerEntityType === 'natural_person' ||
+        form.ownerStructureType === 'foreign_individual' ||
+        ownershipBranch === 'individual' ||
+        ownershipBranch === 'married'
       const multipleOwnerCaptureMode = form.multipleOwnerCaptureMode || 'capture_now'
       const companyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
       const trustTrustees = Array.isArray(form.trustees) ? form.trustees : []
       const multipleOwners = Array.isArray(form.multipleOwners) ? form.multipleOwners : []
+
+      if (isNaturalPersonSeller) {
+        if (!String(form.dateOfBirth || '').trim()) {
+          return 'Please provide the seller date of birth.'
+        }
+        if (!String(form.nationality || '').trim()) {
+          return 'Please provide the seller nationality.'
+        }
+      }
 
       if (isForeignOwner && !form.foreignOwnerCountry) {
         return 'Please provide the foreign country or jurisdiction.'
@@ -3975,6 +4193,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const ownershipType = String(form.ownershipType || '')
       const ownershipBranch = getOwnershipBranch(ownershipType)
       const isForeignOwner = isForeignOwnerModel(form.ownerEntityType, form.ownerStructureType)
+      const isNaturalPersonSeller =
+        form.ownerEntityType === 'natural_person' ||
+        form.ownerStructureType === 'foreign_individual' ||
+        ownershipBranch === 'individual' ||
+        ownershipBranch === 'married'
       const companyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
       const trustTrustees = Array.isArray(form.trustees) ? form.trustees : []
       const multipleOwners = Array.isArray(form.multipleOwners) ? form.multipleOwners : []
@@ -3993,6 +4216,20 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         }
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(form.email))) {
           return 'Please provide a valid email address.'
+        }
+        if (!String(form.sellerTaxNumber || '').trim()) {
+          return 'Please provide the seller tax number before continuing.'
+        }
+        if (!String(form.saResident || '').trim()) {
+          return 'Please confirm whether the seller is an SA resident before continuing.'
+        }
+        if (isNaturalPersonSeller) {
+          if (!String(form.dateOfBirth || '').trim()) {
+            return 'Please provide the seller date of birth before continuing.'
+          }
+          if (!String(form.nationality || '').trim()) {
+            return 'Please provide the seller nationality before continuing.'
+          }
         }
         if ((ownershipBranch === 'individual' || ownershipBranch === 'married') && !form.idNumber) {
           return 'Please provide ID number / passport details.'
@@ -4180,12 +4417,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   async function handleSubmit() {
     if (!form || submitting) return
     setError('')
-    setPlatformFeeConsentError('')
+    setTermsAcceptanceError('')
     setSuccess('')
     const submissionForm = normalizeSellerFormForProgression(form || {}, listing || {})
-    if (!isPlatformFeeConsentAccepted(submissionForm, 'seller')) {
-      const message = getPlatformFeeConsentConfig('seller').validationMessage
-      setPlatformFeeConsentError(message)
+    if (!isArch9SellerTermsAccepted(submissionForm)) {
+      const message = getArch9SellerTermsConfig().validationMessage
+      setTermsAcceptanceError(message)
       setError(message)
       setCurrentStep(2)
       setMobilePaneIndex(getDisclosureQuestionGroups().length + 2)
@@ -4195,15 +4432,37 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     const submissionAddress = getPropertyAddressDetails(listing || {}, submissionForm)
     const submissionPropertyMissing = getPropertyAddressMissingItems(submissionAddress)
     const submissionOwnershipBranch = getOwnershipBranch(submissionForm.ownershipType)
+    const submissionIsForeignOwner = isForeignOwnerModel(submissionForm.ownerEntityType, submissionForm.ownerStructureType)
+    const submissionIsNaturalPersonSeller =
+      submissionForm.ownerEntityType === 'natural_person' ||
+      submissionForm.ownerStructureType === 'foreign_individual' ||
+      submissionOwnershipBranch === 'individual' ||
+      submissionOwnershipBranch === 'married'
+    const submissionCompanyDirectors = Array.isArray(submissionForm.companyDirectors) ? submissionForm.companyDirectors : []
+    const submissionTrustees = Array.isArray(submissionForm.trustees) ? submissionForm.trustees : []
     const submissionAttorneyMissing = getTransferAttorneyMissingItems(submissionForm)
+    const submissionSellerMissing = [
+      !submissionForm.sellerFirstName && 'Seller name',
+      !submissionForm.sellerSurname && 'Seller surname',
+      !submissionForm.email && 'Email',
+      !submissionForm.phone && 'Phone',
+      !String(submissionForm.sellerTaxNumber || submissionForm.incomeTaxNumber || submissionForm.income_tax_number || submissionForm.taxNumber || submissionForm.tax_number || '').trim() && 'Tax number',
+      !String(submissionForm.saResident || submissionForm.sa_resident || submissionForm.taxResident || submissionForm.tax_resident || '').trim() && 'SA resident status',
+      submissionIsNaturalPersonSeller && !String(submissionForm.dateOfBirth || submissionForm.date_of_birth || submissionForm.birthDate || '').trim() && 'Date of birth',
+      submissionIsNaturalPersonSeller && !String(submissionForm.nationality || '').trim() && 'Nationality',
+      (submissionOwnershipBranch === 'individual' || submissionOwnershipBranch === 'married') && !resolveSellerResidentialAddress(submissionForm) && 'Residential address',
+      submissionIsForeignOwner && !String(submissionForm.foreignOwnerCountry || submissionForm.foreign_owner_country || '').trim() && 'Foreign country / jurisdiction',
+      submissionOwnershipBranch === 'company' && (!submissionForm.companyName || !submissionForm.companyRegistrationNumber || !submissionForm.companyRegisteredAddress) && 'Company name, registration number, and registered address',
+      submissionOwnershipBranch === 'company' && (!submissionCompanyDirectors.length || submissionCompanyDirectors.some((director) => !director.name || !director.surname)) && 'At least one company director',
+      submissionOwnershipBranch === 'company' && !submissionForm.authorisedSignatoryName && 'Authorised signatory',
+      submissionOwnershipBranch === 'company' && (!submissionForm.authorisedSignatoryCapacity || !submissionForm.companyResolutionDate || !submissionForm.companyAuthorityBasis) && 'Company signing authority',
+      submissionOwnershipBranch === 'trust' && (!submissionForm.trustName || !submissionForm.trustRegistrationNumber || !submissionForm.trustRegisteredAddress) && 'Trust name, registration number, and registered address',
+      submissionOwnershipBranch === 'trust' && (!submissionTrustees.length || submissionTrustees.some((trustee) => !trustee.name || !trustee.surname)) && 'At least one trustee',
+      submissionOwnershipBranch === 'trust' && !submissionForm.authorisedTrusteeName && 'Authorised trustee',
+      submissionOwnershipBranch === 'trust' && (!submissionForm.authorisedTrusteeCapacity || !submissionForm.trustAuthorityBasis) && 'Trust signing authority',
+    ].filter(Boolean)
     const finalRequiredMissing = [
-      ...[
-        !submissionForm.sellerFirstName && 'Seller name',
-        !submissionForm.sellerSurname && 'Seller surname',
-        !submissionForm.email && 'Email',
-        !submissionForm.phone && 'Phone',
-        (submissionOwnershipBranch === 'individual' || submissionOwnershipBranch === 'married') && !resolveSellerResidentialAddress(submissionForm) && 'Residential address',
-      ].filter(Boolean).map((item) => `Seller: ${item}`),
+      ...submissionSellerMissing.map((item) => `Seller: ${item}`),
       ...submissionPropertyMissing.map((item) => `Property: ${item}`),
       ...getPropertyDisclosureMissingItems(submissionForm.propertyDisclosure || {}).map((item) => `Disclosure: ${item}`),
       ...submissionAttorneyMissing.map((item) => `Attorney: ${item}`),
@@ -4225,9 +4484,63 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         listingId: String(listing?.id || '').trim(),
         transactionId: String(listing?.transactionId || listing?.transaction_id || '').trim(),
       })
+      const normalizedSellerTaxNumber = String(
+        submissionForm.sellerTaxNumber ||
+          submissionForm.incomeTaxNumber ||
+          submissionForm.income_tax_number ||
+          submissionForm.taxNumber ||
+          submissionForm.tax_number ||
+          '',
+      ).trim()
+      const normalizedSaResident = normalizeYesNoValue(submissionForm.saResident ?? submissionForm.sa_resident ?? submissionForm.taxResident ?? submissionForm.tax_resident)
+      const normalizedSaResidentText = normalizedSaResident === 'yes' ? 'Yes' : normalizedSaResident === 'no' ? 'No' : ''
+      const normalizedPopiConsent =
+        normalizeAcceptedValue(submissionForm.popiConsent ?? submissionForm.popiConsentAccepted ?? submissionForm.popi_consent ?? submissionForm.popi_consent_accepted) ||
+        isArch9SellerTermsAccepted(submissionForm)
+      const normalizedPopiConsentAt = normalizedPopiConsent
+        ? String(submissionForm.popiConsentAcceptedAt || submissionForm.popi_consent_accepted_at || '').trim() || new Date().toISOString()
+        : ''
+      const arch9TermsAcceptance = readArch9SellerTermsAcceptance(submissionForm)
+      const arch9TermsAcceptedAt = arch9TermsAcceptance.acceptedAt || arch9TermsAcceptance.accepted_at || new Date().toISOString()
       const finalForm = {
         ...(submissionForm || {}),
-        platformFeeConsent: readPlatformFeeConsentAcceptance(submissionForm, 'seller'),
+        ...buildSellerEntityProfileAliases(submissionForm),
+        dateOfBirth: String(submissionForm.dateOfBirth || submissionForm.date_of_birth || submissionForm.birthDate || '').trim(),
+        date_of_birth: String(submissionForm.dateOfBirth || submissionForm.date_of_birth || submissionForm.birthDate || '').trim(),
+        birthDate: String(submissionForm.dateOfBirth || submissionForm.date_of_birth || submissionForm.birthDate || '').trim(),
+        nationality: String(submissionForm.nationality || '').trim(),
+        alternativeNumber: String(submissionForm.alternativeNumber || submissionForm.alternative_number || submissionForm.alternatePhone || submissionForm.alternate_phone || '').trim(),
+        alternative_number: String(submissionForm.alternativeNumber || submissionForm.alternative_number || submissionForm.alternatePhone || submissionForm.alternate_phone || '').trim(),
+        alternatePhone: String(submissionForm.alternativeNumber || submissionForm.alternative_number || submissionForm.alternatePhone || submissionForm.alternate_phone || '').trim(),
+        incomeTaxNumber: normalizedSellerTaxNumber,
+        income_tax_number: normalizedSellerTaxNumber,
+        sellerTaxNumber: normalizedSellerTaxNumber,
+        taxNumber: normalizedSellerTaxNumber,
+        tax_number: normalizedSellerTaxNumber,
+        saResident: normalizedSaResidentText,
+        sa_resident: normalizedSaResidentText,
+        taxResident: normalizedSaResidentText,
+        tax_resident: normalizedSaResidentText,
+        popiConsent: normalizedPopiConsent ? 'Accepted' : '',
+        popi_consent: normalizedPopiConsent ? 'Accepted' : '',
+        popiConsentAccepted: normalizedPopiConsent,
+        popi_consent_accepted: normalizedPopiConsent,
+        popiConsentAcceptedAt: normalizedPopiConsentAt,
+        popi_consent_accepted_at: normalizedPopiConsentAt,
+        arch9TermsAcceptance: {
+          ...arch9TermsAcceptance,
+          acceptedAt: arch9TermsAcceptedAt,
+          accepted_at: arch9TermsAcceptedAt,
+        },
+        arch9_terms_acceptance: {
+          ...arch9TermsAcceptance,
+          acceptedAt: arch9TermsAcceptedAt,
+          accepted_at: arch9TermsAcceptedAt,
+        },
+        arch9TermsAccepted: arch9TermsAcceptance.accepted,
+        arch9_terms_accepted: arch9TermsAcceptance.accepted,
+        arch9TermsAcceptedAt,
+        arch9_terms_accepted_at: arch9TermsAcceptedAt,
         transferAttorneyChoice: getTransferAttorneyChoice(submissionForm),
         preferredTransferAttorneyAcceptance: getTransferAttorneyChoice(submissionForm) === 'preferred'
           ? buildPreferredTransferAttorneyAcceptance(submissionForm, listing || {})
@@ -4244,7 +4557,20 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           : null,
         propertyDisclosure: {
           ...(submissionForm.propertyDisclosure || {}),
-          platformFeeConsent: readPlatformFeeConsentAcceptance(submissionForm, 'seller'),
+          arch9TermsAcceptance: {
+            ...arch9TermsAcceptance,
+            acceptedAt: arch9TermsAcceptedAt,
+            accepted_at: arch9TermsAcceptedAt,
+          },
+          arch9_terms_acceptance: {
+            ...arch9TermsAcceptance,
+            acceptedAt: arch9TermsAcceptedAt,
+            accepted_at: arch9TermsAcceptedAt,
+          },
+          arch9TermsAccepted: arch9TermsAcceptance.accepted,
+          arch9_terms_accepted: arch9TermsAcceptance.accepted,
+          arch9TermsAcceptedAt,
+          arch9_terms_accepted_at: arch9TermsAcceptedAt,
           generatedDocument: disclosureDocument,
         },
         propertyDisclosureStatus: getPropertyDisclosureStatus(submissionForm.propertyDisclosure || {}),
@@ -4385,6 +4711,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const ownerStructureType = form.ownerStructureType || deriveOwnerStructureType(form.ownershipType, ownerEntityType, form)
   const ownerStructureOptions = OWNER_STRUCTURE_TYPES_BY_ENTITY[ownerEntityType] || OWNER_STRUCTURE_TYPES_BY_ENTITY.natural_person
   const isForeignOwner = isForeignOwnerModel(ownerEntityType, ownerStructureType)
+  const isNaturalPersonSeller =
+    ownerEntityType === 'natural_person' ||
+    ownerStructureType === 'foreign_individual' ||
+    ownershipBranch === 'individual' ||
+    ownershipBranch === 'married'
   const ownershipFieldLabels = getOwnershipFieldLabels(form.ownershipType)
   const sellerResidentialAddress = resolveSellerResidentialAddress(form)
   const canCopySellerResidentialAddressToProperty = Boolean(sellerResidentialAddress)
@@ -4495,6 +4826,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     !form.sellerSurname && 'Seller surname',
     !form.email && 'Email',
     !form.phone && 'Phone',
+    isNaturalPersonSeller && !form.dateOfBirth && 'Date of birth',
+    isNaturalPersonSeller && !form.nationality && 'Nationality',
+    !form.sellerTaxNumber && 'Tax number',
+    !form.saResident && 'SA resident status',
     requiresSellerResidentialAddress && !sellerResidentialAddress && 'Residential address',
   ].filter(Boolean)
   const mandateMissing = [
@@ -4753,6 +5088,22 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     Phone
                     <input className={DETAIL_INPUT_CLASS} type="tel" inputMode="tel" autoComplete="tel" value={form.phone} onChange={(event) => handleFormUpdate('phone', event.target.value)} />
                   </label>
+                  {isNaturalPersonSeller ? (
+                    <>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Date of Birth *
+                        <input className={DETAIL_INPUT_CLASS} type="date" value={form.dateOfBirth || ''} onChange={(event) => handleFormUpdate('dateOfBirth', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Nationality *
+                        <input className={DETAIL_INPUT_CLASS} autoComplete="country-name" value={form.nationality || ''} onChange={(event) => handleFormUpdate('nationality', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Alternative Number
+                        <input className={DETAIL_INPUT_CLASS} type="tel" inputMode="tel" autoComplete="tel" value={form.alternativeNumber || ''} onChange={(event) => handleFormUpdate('alternativeNumber', event.target.value)} />
+                      </label>
+                    </>
+                  ) : null}
 
                   {!['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(ownershipBranch) ? (
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -4774,8 +5125,16 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   ) : null}
 
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                    Tax Number (optional)
+                    Tax Number *
                     <input className={DETAIL_INPUT_CLASS} inputMode="numeric" value={form.sellerTaxNumber} onChange={(event) => handleFormUpdate('sellerTaxNumber', event.target.value)} />
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                    SA Resident *
+                    <select className={DETAIL_INPUT_CLASS} value={form.saResident || ''} onChange={(event) => handleFormUpdate('saResident', event.target.value)}>
+                      <option value="">Select one</option>
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </select>
                   </label>
                   {showVatFields ? (
                     <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
@@ -5949,7 +6308,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               onAnswerChange={handleDisclosureAnswerChange}
               onDownload={handleDownloadDisclosurePdf}
               onDisclosureChange={patchPropertyDisclosure}
-              platformFeeConsentError={platformFeeConsentError}
+              termsAcceptanceError={termsAcceptanceError}
             />
           ) : null}
 
@@ -6153,7 +6512,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   title="Property Disclosure"
                   missing={[
                     ...disclosureMissing,
-                    ...(!isPlatformFeeConsentAccepted(form, 'seller') ? ['accept the ARCH9 Transaction Platform Fee authorisation'] : []),
                   ]}
                   onEdit={() => setCurrentStep(2)}
                   collapsible
@@ -6161,7 +6519,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     { label: 'Disclosure Status', value: getPropertyDisclosureStatusLabel(getPropertyDisclosureStatus(form.propertyDisclosure || {})) },
                     { label: 'Annexure A Answers', value: `${getPropertyDisclosureAnswerSummary(form.propertyDisclosure || {}).answered} / ${getPropertyDisclosureAnswerSummary(form.propertyDisclosure || {}).total} answered` },
                     { label: 'Declaration', value: form.propertyDisclosure?.declarationAccepted ? 'Signed' : 'Not signed' },
-                    { label: 'Platform Fee Consent', value: isPlatformFeeConsentAccepted(form, 'seller') ? 'Accepted - R750.00' : 'Not accepted' },
+                    { label: 'Arch9 Terms', value: isArch9SellerTermsAccepted(form) ? 'Accepted' : 'Not accepted' },
                   ]}
                 />
               </div>

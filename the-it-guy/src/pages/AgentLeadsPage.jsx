@@ -68,13 +68,13 @@ import {
   createAgencyCrmLeadTask,
   deleteAgencyCrmLeadRecord,
   ensureAgencyCrmLeadRecordPersisted,
+  updateAgencyCrmContactRecord,
   updateAgencyCrmLeadRecord,
 } from '../lib/agencyCrmRepository'
 import { buildSellerClientPortalLink, buildSellerOnboardingLink } from '../lib/agentListingStorage'
 import { createAppointmentAsync, updateAppointmentAsync } from '../lib/agencyPipelineService'
 import {
   createCanonicalOffer,
-  createOfferPortalSession,
   createTransactionFromAcceptedCanonicalOffer,
   getOfferLifecycleSummary,
   updateCanonicalOfferStatus,
@@ -148,6 +148,7 @@ import {
 import {
   addMatchesToLead,
   findListingsForRequirement,
+  scoreListingAgainstRequirement,
 } from '../services/leadMatchingService'
 import {
   assignLeadToAgent,
@@ -279,7 +280,8 @@ const VIEWING_OUTCOME_OPTIONS = [
   'Not interested',
 ]
 const VIEWING_NEXT_STEP_OPTIONS = [
-  'Send offer link',
+  'Capture buyer onboarding',
+  'Upload OTP',
   'Schedule second viewing',
   'Follow up with buyer',
   'Close out property',
@@ -1433,6 +1435,29 @@ function readSellerOnboardingFormData(listing = {}, row = {}) {
     }
   }
 
+  if (!hasValue(merged.fullName)) merged.fullName = firstFilledValue(merged.sellerFullName, merged.sellerName, merged.name)
+  if (!hasValue(merged.email)) merged.email = firstFilledValue(merged.sellerEmail, merged.contactEmail)
+  if (!hasValue(merged.phone)) merged.phone = firstFilledValue(merged.sellerPhone, merged.mobile, merged.contactNumber)
+  if (!hasValue(merged.idNumber)) merged.idNumber = firstFilledValue(merged.sellerIdNumber, merged.identityNumber, merged.id_number)
+  if (!hasValue(merged.residentialStreet)) merged.residentialStreet = firstFilledValue(merged.residentialAddressLine1, merged.addressLine1, merged.streetAddress, merged.residentialAddress)
+  if (!hasValue(merged.residentialSuburb)) merged.residentialSuburb = firstFilledValue(merged.suburb)
+  if (!hasValue(merged.residentialCity)) merged.residentialCity = firstFilledValue(merged.city)
+  if (!hasValue(merged.residentialProvince)) merged.residentialProvince = firstFilledValue(merged.province)
+  if (!hasValue(merged.residentialPostalCode)) merged.residentialPostalCode = firstFilledValue(merged.postalCode)
+  if (!hasValue(merged.residentialCountry)) merged.residentialCountry = firstFilledValue(merged.country)
+  if (!hasValue(merged.bank)) merged.bank = firstFilledValue(merged.bankName, merged.sellerBank)
+  if (!hasValue(merged.accountHolder)) merged.accountHolder = firstFilledValue(merged.bankAccountHolder)
+  if (!hasValue(merged.accountNumber)) merged.accountNumber = firstFilledValue(merged.bankAccountNumber)
+  if (!hasValue(merged.branchCode)) merged.branchCode = firstFilledValue(merged.bankBranchCode)
+  if (!hasValue(merged.accountType)) merged.accountType = firstFilledValue(merged.bankAccountType)
+  if (!hasValue(merged.existingBond)) merged.existingBond = firstFilledValue(merged.bondExists, merged.hasBond)
+  if (!hasValue(merged.bondBank)) merged.bondBank = firstFilledValue(merged.mortgageBank, merged.currentBondBank)
+  if (!hasValue(merged.estimatedSettlementAmount)) merged.estimatedSettlementAmount = firstFilledValue(merged.approxBondBalance, merged.bondBalance)
+  if (!hasValue(merged.primaryResidence)) merged.primaryResidence = firstFilledValue(merged.isPrimaryResidence)
+  if (!hasValue(merged.parking)) merged.parking = firstFilledValue(merged.parkingCovered, merged.parkingOpen)
+  if (!hasValue(merged.features)) merged.features = firstFilledValue(merged.selectedFeatures, merged.propertyFeatures)
+  if (!hasValue(merged.knownDefects)) merged.knownDefects = firstFilledValue(merged.defects, merged.defectsDeclaration)
+
   return merged
 }
 
@@ -2320,7 +2345,7 @@ function getBuyerWorkspaceCommand(row = {}) {
         snapshot: deal,
       }
     }
-    if (deal.offerStateLabel === 'Offer link failed' || deal.offerStateLabel === 'Seller review failed') {
+    if (deal.offerStateLabel === 'Seller review failed') {
       return {
         title: deal.offerStateLabel,
         copy: deal.offerStateHelper,
@@ -2339,17 +2364,6 @@ function getBuyerWorkspaceCommand(row = {}) {
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'blue',
         blockers: ['Seller review'],
-        snapshot: deal,
-      }
-    }
-    if (deal.offerStateLabel === 'Offer link sent' || deal.offerStateLabel === 'Buyer reviewing offer') {
-      return {
-        title: deal.offerStateLabel,
-        copy: deal.offerStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
-        actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
-        tone: deal.offerStateTone,
-        blockers: ['Buyer response'],
         snapshot: deal,
       }
     }
@@ -2380,7 +2394,7 @@ function getBuyerWorkspaceCommand(row = {}) {
   if (viewingCompleted) {
     return {
       title: 'Viewing is done, lock the next move',
-      copy: 'Capture the actual outcome now: send the offer link, book the second viewing, or close out the property cleanly.',
+      copy: 'Capture the actual outcome now: buyer onboarding, OTP upload, another viewing, or a clean close-out.',
       actionLabel: 'Open Onboarding / OTP',
       actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
       tone: 'blue',
@@ -3247,7 +3261,7 @@ function getAppointmentOutcomeDraft(item = {}, propertyOptions = []) {
     outcome: normalizeText(item.outcomeSummary || item.outcome_summary) || 'Interested',
     buyerFeedback: normalizeText(item.clientFeedback || item.client_feedback),
     agentNotes: normalizeText(item.agentNotes || item.agent_notes || item.notes),
-    nextStep: normalizeText(item.nextStep || item.next_step) || 'Send offer link',
+    nextStep: normalizeText(item.nextStep || item.next_step) || 'Capture buyer onboarding',
     rescheduleDate: getAppointmentDateInputValue(item),
     rescheduleTime: getAppointmentTimeInputValue(item),
   }
@@ -3497,7 +3511,7 @@ function getLeadOfferEdgeWarnings(lead = {}, selectedOffer = null) {
   if (selectedLifecycle?.effectiveStatus === 'expired') {
     warnings.push({
       tone: 'amber',
-      text: 'This offer has expired. Send a fresh offer link if the buyer still wants to proceed.',
+      text: 'This offer has expired. Restart the buyer onboarding and OTP path if the buyer still wants to proceed.',
     })
   }
   if (selectedLifecycle?.effectiveStatus === 'withdrawn') {
@@ -3552,7 +3566,6 @@ function getBuyerDealSnapshot(row = {}) {
   const latestTransaction = getLatestTransaction(row)
   const handoff = getLeadHandoffState(row)
   const intakePreference = getLeadClientIntakePreference(row)
-  const offerLinkDelivery = getLatestDeliveryByType(row, ['buyer_offer_link'])
   const sellerReviewDelivery = getLatestDeliveryByType(row, ['seller_offer_review'])
   const onboardingDelivery = getLatestDeliveryByType(row, ['client_onboarding'])
   const offerLifecycle = latestOffer ? getOfferLifecycleState(latestOffer) : null
@@ -3572,24 +3585,14 @@ function getBuyerDealSnapshot(row = {}) {
     : 'Complete a viewing and capture the next move before pushing the deal.'
   let offerStateTone = latestOffer ? getOfferStatusTone(offerLifecycle?.effectiveStatus || latestOffer.status) : 'slate'
 
-  if (offerLinkDelivery?.status === 'failed') {
-    offerStateLabel = 'Offer link failed'
-    offerStateHelper = offerLinkDelivery.errorMessage || 'The buyer did not receive the offer link.'
-    offerStateTone = 'red'
-  } else if (!latestOffer && viewingCompleted) {
+  if (!latestOffer && viewingCompleted) {
     offerStateLabel = 'Viewing done, offer next step pending'
-    offerStateHelper = 'Either send the offer link, book another viewing, or close this property out.'
+    offerStateHelper = 'Either capture buyer onboarding, upload OTP evidence, book another viewing, or close this property out.'
     offerStateTone = 'amber'
   } else if (offerStatus === 'sent_to_buyer' || offerStatus === 'draft') {
-    if (offerLinkDelivery?.openedAt || offerLinkDelivery?.opened_at) {
-      offerStateLabel = 'Buyer reviewing offer'
-      offerStateHelper = `Buyer opened the offer link ${formatRelativeTime(offerLinkDelivery.openedAt || offerLinkDelivery.opened_at, 'recently')}.`
-      offerStateTone = 'blue'
-    } else if (offerLinkDelivery?.sentAt || offerLinkDelivery?.sent_at || offerLinkDelivery?.preparedAt || offerLinkDelivery?.prepared_at) {
-      offerStateLabel = 'Offer link sent'
-      offerStateHelper = 'Waiting for the buyer to open or submit the offer.'
-      offerStateTone = 'amber'
-    }
+    offerStateLabel = 'Offer draft exists'
+    offerStateHelper = 'Use the onboarding and OTP path for the active buyer workflow, or capture a manual offer if one was received outside the portal.'
+    offerStateTone = 'blue'
   } else if (offerStatus.includes('submitted') || offerStatus.includes('review')) {
     if (sellerReviewDelivery?.status === 'failed') {
       offerStateLabel = 'Seller review failed'
@@ -3614,11 +3617,11 @@ function getBuyerDealSnapshot(row = {}) {
     offerStateTone = 'amber'
   } else if (offerStatus === 'withdrawn') {
     offerStateLabel = 'Buyer withdrew offer'
-    offerStateHelper = 'Only restart this deal if the buyer clearly re-engages. A fresh offer link is usually cleaner than reusing the old one.'
+    offerStateHelper = 'Only restart this deal if the buyer clearly re-engages. Capture fresh onboarding or OTP evidence instead of reusing old records.'
     offerStateTone = 'red'
   } else if (offerStatus === 'expired') {
     offerStateLabel = 'Offer expired'
-    offerStateHelper = 'The secure offer window has lapsed. Send a new offer link if negotiations are still alive.'
+    offerStateHelper = 'The secure offer window has lapsed. Continue through buyer onboarding and OTP evidence if negotiations are still alive.'
     offerStateTone = 'red'
   } else if (offerStatus === 'rejected') {
     offerStateLabel = 'Offer rejected'
@@ -9809,7 +9812,36 @@ function normalizeCollectionReasons(rawReasons = [], listing = {}, row = {}) {
   return [...new Set([...explicit, ...generated])].slice(0, 6)
 }
 
-function buildBuyerCollectionProperties(row = {}, workspace = {}) {
+function isBuyerCollectionListingUnavailable(listing = {}) {
+  const status = normalizeText(listing.status || listing.listingStatus || listing.listing_status).toLowerCase()
+  return ['sold', 'withdrawn', 'archived', 'removed', 'inactive', 'expired'].some((token) => status.includes(token))
+}
+
+function getBuyerLiveListingMatchMeta(listing = {}, row = {}, requirement = {}) {
+  if (!listing || typeof listing !== 'object') return {}
+  if (listing.matchScore !== undefined || listing.match_score !== undefined || listing.score !== undefined) {
+    return {
+      source: listing.alreadyLinked ? 'Linked live listing' : 'Live listing match',
+      status: listing.status,
+      score: listing.matchScore ?? listing.match_score ?? listing.score,
+      reasons: listing.matchReasons || listing.match_reasons || listing.reasons,
+      requirementId: requirement?.requirementId || requirement?.requirement_id || listing.requirementId || listing.requirement_id || '',
+      updatedAt: listing.updatedAt || listing.updated_at || listing.createdAt || listing.created_at,
+    }
+  }
+  const hasRequirementSignal = Boolean(requirement?.requirementId || requirement?.requirement_id || getBuyerBudgetLabel(row, requirement) !== '—' || getBuyerAreaLabel(row, requirement) !== '—' || getBuyerPropertyTypeLabel(row, requirement) !== '—')
+  const scored = hasRequirementSignal ? scoreListingAgainstRequirement({ listing, requirement }) : null
+  return {
+    source: 'Live listing match',
+    status: listing.status,
+    score: scored?.matchScore,
+    reasons: scored?.matchReasons,
+    requirementId: requirement?.requirementId || requirement?.requirement_id || '',
+    updatedAt: listing.updatedAt || listing.updated_at || listing.createdAt || listing.created_at,
+  }
+}
+
+function buildBuyerCollectionProperties(row = {}, workspace = {}, liveListings = []) {
   const entries = []
   const requirements = workspace.requirements || row.requirements || []
   const primaryRequirement = requirements.find((requirement) => requirement.isPrimary || requirement.is_primary) || requirements[0] || getBuyerPrimaryRequirement(row)
@@ -9909,6 +9941,12 @@ function buildBuyerCollectionProperties(row = {}, workspace = {}) {
       listingId: option.id,
     })
   })
+
+  ;(Array.isArray(liveListings) ? liveListings : [])
+    .filter((listing) => listing && !isBuyerCollectionListingUnavailable(listing))
+    .forEach((listing) => {
+      addEntry(listing, getBuyerLiveListingMatchMeta(listing, row, primaryRequirement))
+    })
 
   return entries
     .sort((left, right) => {
@@ -10576,7 +10614,11 @@ function SendPropertyCollectionModal({
 function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, agency = {}, onSaved, onShare, onNavigate }) {
   const requirements = workspace.requirements || row.requirements || []
   const primaryRequirement = requirements.find((requirement) => requirement.isPrimary || requirement.is_primary) || requirements[0] || getBuyerPrimaryRequirement(row)
-  const collectionProperties = useMemo(() => buildBuyerCollectionProperties(row, workspace), [row, workspace])
+  const primaryRequirementId = primaryRequirement?.requirementId || primaryRequirement?.requirement_id || ''
+  const [liveListingMatches, setLiveListingMatches] = useState([])
+  const [liveListingsLoading, setLiveListingsLoading] = useState(false)
+  const [liveListingsError, setLiveListingsError] = useState('')
+  const collectionProperties = useMemo(() => buildBuyerCollectionProperties(row, workspace, liveListingMatches), [liveListingMatches, row, workspace])
   const collectionSummary = useMemo(() => buildBuyerCollectionSummary(row, primaryRequirement, collectionProperties), [collectionProperties, primaryRequirement, row])
   const originalProperty = useMemo(() => getBuyerOriginalEnquiryProperty(row, collectionProperties), [collectionProperties, row])
   const recommendationProperties = useMemo(
@@ -10590,6 +10632,32 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, a
   const [busyAction, setBusyAction] = useState('')
   const [panelMessage, setPanelMessage] = useState('')
   const [panelError, setPanelError] = useState('')
+
+  useEffect(() => {
+    if (!organisationId) return undefined
+    let cancelled = false
+    async function loadLiveListingMatches() {
+      try {
+        setLiveListingsLoading(true)
+        setLiveListingsError('')
+        const result = primaryRequirementId
+          ? await findListingsForRequirement({ organisationId, requirementId: primaryRequirementId, limit: 60 })
+          : { matches: await listSearchablePrivateListings({ organisationId }) }
+        if (!cancelled) setLiveListingMatches((Array.isArray(result?.matches) ? result.matches : []).slice(0, 60))
+      } catch (loadError) {
+        if (!cancelled) {
+          setLiveListingMatches([])
+          setLiveListingsError(loadError?.message || 'Unable to load live listing matches.')
+        }
+      } finally {
+        if (!cancelled) setLiveListingsLoading(false)
+      }
+    }
+    void loadLiveListingMatches()
+    return () => {
+      cancelled = true
+    }
+  }, [organisationId, primaryRequirementId])
 
   function openListing(property) {
     const listingId = getListingIdentity(property?.listing)
@@ -10613,7 +10681,7 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, a
   }
 
   async function regenerateMatches() {
-    if (!primaryRequirement?.requirementId) {
+    if (!primaryRequirementId) {
       setPanelError('Add match criteria before regenerating matches.')
       return
     }
@@ -10621,8 +10689,9 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, a
       setBusyAction('regenerate')
       setPanelMessage('')
       setPanelError('')
-      const result = await findListingsForRequirement({ organisationId, requirementId: primaryRequirement.requirementId, limit: 12 })
+      const result = await findListingsForRequirement({ organisationId, requirementId: primaryRequirementId, limit: 12 })
       const matches = result.matches || []
+      setLiveListingMatches(matches)
       for (const match of matches) {
         await upsertLeadListingInterest(
           {
@@ -10630,7 +10699,7 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, a
             lead: row,
             contactId: row.contactId || row.contact_id,
             listing: match,
-            requirementId: primaryRequirement.requirementId,
+            requirementId: primaryRequirementId,
             source: 'manual_match',
             status: 'suggested',
             isSystemSuggested: true,
@@ -10686,6 +10755,13 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, a
       </section>
 
       <BuyerMatchCriteriaSection row={row} requirement={primaryRequirement} onEdit={() => onNavigate?.('overview')} />
+
+      {liveListingsLoading ? (
+        <p className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700">Loading current listing matches...</p>
+      ) : null}
+      {liveListingsError ? (
+        <p className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">{liveListingsError}</p>
+      ) : null}
 
       <BuyerEnquiredPropertySection
         property={originalProperty}
@@ -11868,8 +11944,329 @@ function BuyerViewingPlansModal({ open, appointments = [], propertyOptions = [],
   )
 }
 
-function AppointmentList({ items = [], organisationId, lead, actor, onSaved }) {
-  const propertyOptions = useMemo(() => getLeadAppointmentPropertyOptions(lead), [lead])
+function getLeadAppointmentDashboardRows(appointments = []) {
+  const now = Date.now()
+  return (Array.isArray(appointments) ? appointments : [])
+    .filter(Boolean)
+    .filter((appointment) => {
+      const start = getAppointmentStartDate(appointment)
+      if (!start || Number.isNaN(start.getTime())) return false
+      return start.getTime() >= now && !isAppointmentClosed(appointment)
+    })
+    .sort((left, right) => (getAppointmentStartDate(left)?.getTime() || 0) - (getAppointmentStartDate(right)?.getTime() || 0))
+}
+
+function isSameCalendarDay(left, right) {
+  return left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+}
+
+function getCurrentWeekRange(now = new Date()) {
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() - start.getDay())
+  const end = new Date(start)
+  end.setDate(start.getDate() + 7)
+  return { start, end }
+}
+
+function isAppointmentRequestPending(appointment = {}) {
+  const status = normalizeText(appointment.status).toLowerCase()
+  return ['requested', 'seller_availability_requested', 'awaiting_buyer_confirmation', 'pending'].includes(status) ||
+    status.includes('request') ||
+    status.includes('awaiting') ||
+    status.includes('pending')
+}
+
+function getAppointmentOverviewMetrics(appointments = [], upcomingRows = []) {
+  const now = new Date()
+  const { start: weekStart, end: weekEnd } = getCurrentWeekRange(now)
+  const activeAppointments = (Array.isArray(appointments) ? appointments : []).filter(Boolean).filter((appointment) => !isAppointmentClosed(appointment))
+  const requestCount = activeAppointments.filter(isAppointmentRequestPending).length
+  return [
+    {
+      key: 'today',
+      label: 'Today',
+      value: upcomingRows.filter((appointment) => {
+        const start = getAppointmentStartDate(appointment)
+        return start && isSameCalendarDay(start, now)
+      }).length,
+      meta: 'No appointments',
+      icon: CalendarDays,
+      tone: 'emerald',
+    },
+    {
+      key: 'week',
+      label: 'This Week',
+      value: upcomingRows.filter((appointment) => {
+        const start = getAppointmentStartDate(appointment)
+        return start && start >= weekStart && start < weekEnd
+      }).length,
+      meta: 'No appointments',
+      icon: CalendarDays,
+      tone: 'violet',
+    },
+    {
+      key: 'month',
+      label: 'This Month',
+      value: upcomingRows.filter((appointment) => {
+        const start = getAppointmentStartDate(appointment)
+        return start && start.getFullYear() === now.getFullYear() && start.getMonth() === now.getMonth()
+      }).length,
+      meta: 'No appointments',
+      icon: CalendarDays,
+      tone: 'amber',
+    },
+    {
+      key: 'requests',
+      label: 'Requests',
+      value: requestCount,
+      meta: 'Pending response',
+      icon: Clock3,
+      tone: 'blue',
+    },
+  ]
+}
+
+function getLeadAppointmentTypeLabel(appointment = {}) {
+  const type = normalizeText(appointment.appointmentType || appointment.appointment_type || appointment.customTypeLabel || appointment.custom_type_label)
+  if (type === 'viewing') return 'Property Viewing'
+  return LEAD_APPOINTMENT_TYPES.find((option) => option.value === type)?.label || titleCaseLabel(type || 'Appointment')
+}
+
+function getLeadAppointmentFilterOptions(appointments = []) {
+  const types = new Map()
+  ;(Array.isArray(appointments) ? appointments : []).filter(Boolean).forEach((appointment) => {
+    const value = normalizeText(appointment.appointmentType || appointment.appointment_type || appointment.customTypeLabel || appointment.custom_type_label || 'appointment')
+    if (!value) return
+    types.set(value, getLeadAppointmentTypeLabel(appointment))
+  })
+  return [
+    { value: 'all', label: 'All Appointments' },
+    ...Array.from(types.entries()).map(([value, label]) => ({ value, label })).sort((left, right) => left.label.localeCompare(right.label)),
+  ]
+}
+
+function appointmentMatchesTypeFilter(appointment = {}, filter = 'all') {
+  if (filter === 'all') return true
+  const type = normalizeText(appointment.appointmentType || appointment.appointment_type || appointment.customTypeLabel || appointment.custom_type_label || 'appointment')
+  return type === filter
+}
+
+function getAppointmentWithLabel(appointment = {}, lead = {}) {
+  const contact = getLeadContactSnapshot(lead)
+  const participants = Array.isArray(appointment.participants) ? appointment.participants : []
+  const clientParticipant = participants.find((participant) => {
+    const role = normalizeText(participant.participantRole || participant.participant_role || participant.role).toLowerCase()
+    return role && !role.includes('agent')
+  }) || participants[0] || {}
+  return normalizeText(
+    clientParticipant.name ||
+      clientParticipant.fullName ||
+      clientParticipant.email ||
+      contact.name ||
+      lead?.name ||
+      'Client',
+  )
+}
+
+function AppointmentOverviewSummaryCard({ metric }) {
+  const Icon = metric.icon
+  const toneClass = metric.tone === 'emerald'
+    ? 'bg-emerald-50 text-emerald-700'
+    : metric.tone === 'violet'
+      ? 'bg-violet-50 text-violet-700'
+      : metric.tone === 'amber'
+        ? 'bg-amber-50 text-amber-700'
+        : 'bg-blue-50 text-blue-700'
+  return (
+    <article className="grid min-h-[112px] grid-cols-[44px_minmax(0,1fr)] items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+      <span className={`flex h-11 w-11 items-center justify-center rounded-2xl ${toneClass}`}>
+        <Icon size={18} />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-2xl font-semibold tracking-[-0.04em] text-slate-950">{metric.value}</span>
+        <span className="mt-1 block text-sm font-semibold text-slate-600">{metric.label}</span>
+        <span className="mt-1 block text-xs font-medium text-slate-500">{metric.meta}</span>
+      </span>
+    </article>
+  )
+}
+
+function AppointmentOverviewPanel({ appointments = [], upcomingRows = [], onSchedule, onViewCalendar }) {
+  const metrics = useMemo(() => getAppointmentOverviewMetrics(appointments, upcomingRows), [appointments, upcomingRows])
+  return (
+    <section className={`${buyerWorkspaceCardClass} overflow-hidden p-0`}>
+      <div className="flex flex-col gap-4 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 gap-4">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+            <CalendarDays size={25} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-3xl font-semibold tracking-[-0.055em] text-slate-950">Appointments</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Manage upcoming appointments and client meetings across your pipeline.</p>
+          </div>
+        </div>
+        <button type="button" onClick={onViewCalendar} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-emerald-700 shadow-sm hover:bg-emerald-50">
+          <CalendarDays size={16} />
+          View Calendar
+          <ArrowRight size={15} />
+        </button>
+      </div>
+
+      <div className="border-t border-slate-100 p-5 sm:p-6">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {metrics.map((metric) => <AppointmentOverviewSummaryCard key={metric.key} metric={metric} />)}
+        </div>
+
+        {!upcomingRows.length ? (
+          <div className="mt-5 grid min-h-[190px] place-items-center rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-8 text-center">
+            <div>
+              <div className="mx-auto relative flex h-20 w-20 items-center justify-center text-slate-400">
+                <CalendarDays size={54} strokeWidth={1.7} />
+                <span className="absolute bottom-1 right-1 flex h-9 w-9 items-center justify-center rounded-full bg-emerald-700 text-white shadow-sm">
+                  <CheckCircle2 size={19} />
+                </span>
+              </div>
+              <h3 className="mt-4 text-xl font-semibold tracking-[-0.035em] text-slate-950">No appointments scheduled</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-500">Your upcoming appointments and client meetings will appear here.</p>
+              <button type="button" onClick={onSchedule} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(4,120,87,0.18)] hover:bg-emerald-800">
+                <CalendarDays size={16} />
+                Schedule Appointment
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function AppointmentActionsMenu({ appointment, onViewAppointment }) {
+  return (
+    <details className="group relative inline-flex justify-end">
+      <summary className="inline-flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 [&::-webkit-details-marker]:hidden" aria-label="Open appointment actions">
+        <MoreVertical size={16} />
+      </summary>
+      <div className="absolute right-0 top-full z-20 mt-2 w-44 rounded-xl border border-slate-200 bg-white p-1 text-left shadow-[0_16px_36px_rgba(15,23,42,0.14)]">
+        <button type="button" onClick={() => onViewAppointment?.(appointment)} className="block min-h-9 w-full rounded-lg px-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          View details
+        </button>
+        <button type="button" onClick={() => onViewAppointment?.(appointment)} className="block min-h-9 w-full rounded-lg px-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          Update outcome
+        </button>
+      </div>
+    </details>
+  )
+}
+
+function UpcomingAppointmentsPanel({ appointments = [], lead, propertyOptions = [], filter, filterOptions = [], onFilterChange, onSchedule, onViewAppointment }) {
+  const hasUpcomingAppointments = appointments.length > 0
+  return (
+    <section className={`${buyerWorkspaceCardClass} overflow-visible p-0`}>
+      <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Upcoming Appointments</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Your next scheduled appointments will appear here.</p>
+        </div>
+        <label className="relative inline-flex min-h-11 min-w-[190px] items-center">
+          <select value={filter} onChange={(event) => onFilterChange?.(event.target.value)} aria-label="Filter appointments" className="min-h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 pr-10 text-sm font-semibold text-slate-700 outline-none transition hover:bg-slate-50 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-50">
+            {filterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <ChevronDown size={16} className="pointer-events-none absolute right-3 text-slate-400" />
+        </label>
+      </div>
+
+      {hasUpcomingAppointments ? (
+        <>
+          <div className="hidden md:block">
+            <table className="w-full border-t border-slate-100 text-left">
+              <thead className="bg-slate-50/70">
+                <tr className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  <th className="px-5 py-3">Date &amp; Time</th>
+                  <th className="px-5 py-3">Type</th>
+                  <th className="px-5 py-3">With</th>
+                  <th className="px-5 py-3">Property</th>
+                  <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {appointments.map((appointment, index) => {
+                  const start = getAppointmentStartDate(appointment)
+                  const propertyLabel = getAppointmentPropertyLabel(appointment, propertyOptions)
+                  const propertyDescription = getAppointmentPropertyDescription(appointment, propertyOptions)
+                  return (
+                    <tr key={getAppointmentId(appointment) || `${appointment.title || 'appointment'}-${index}`} className="align-middle text-sm">
+                      <td className="px-5 py-4">
+                        <p className="font-semibold text-slate-950">{start ? formatDate(start) : 'Date TBC'}</p>
+                        <p className="mt-1 text-xs font-medium text-slate-500">{getAppointmentTimeLabel(appointment)}</p>
+                      </td>
+                      <td className="px-5 py-4 font-semibold text-slate-700">{getLeadAppointmentTypeLabel(appointment)}</td>
+                      <td className="px-5 py-4 text-slate-600">{getAppointmentWithLabel(appointment, lead)}</td>
+                      <td className="px-5 py-4">
+                        <p className="max-w-[260px] truncate font-semibold text-slate-950">{propertyLabel || 'Property TBC'}</p>
+                        <p className="mt-1 max-w-[260px] truncate text-xs text-slate-500">{propertyDescription || 'Location to be confirmed'}</p>
+                      </td>
+                      <td className="px-5 py-4"><AppointmentStatusBadge status={appointment.status || 'draft'} /></td>
+                      <td className="px-5 py-4 text-right">
+                        <AppointmentActionsMenu appointment={appointment} onViewAppointment={onViewAppointment} />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="grid gap-3 border-t border-slate-100 p-5 md:hidden">
+            {appointments.map((appointment, index) => {
+              const dayParts = getAppointmentDayParts(appointment)
+              const propertyLabel = getAppointmentPropertyLabel(appointment, propertyOptions)
+              const propertyDescription = getAppointmentPropertyDescription(appointment, propertyOptions)
+              return (
+                <article key={getAppointmentId(appointment) || `${appointment.title || 'mobile-appointment'}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-emerald-700">{dayParts.day} {dayParts.month} · {getAppointmentTimeLabel(appointment)}</p>
+                      <h3 className="mt-2 text-base font-semibold text-slate-950">{getLeadAppointmentTypeLabel(appointment)}</h3>
+                      <p className="mt-1 text-sm font-medium text-slate-600">{getAppointmentWithLabel(appointment, lead)}</p>
+                      <p className="mt-1 text-sm text-slate-500">{propertyLabel || propertyDescription || 'Property TBC'}</p>
+                    </div>
+                    <AppointmentActionsMenu appointment={appointment} onViewAppointment={onViewAppointment} />
+                  </div>
+                  <div className="mt-3"><AppointmentStatusBadge status={appointment.status || 'draft'} /></div>
+                </article>
+              )
+            })}
+          </div>
+        </>
+      ) : (
+        <div className="border-t border-slate-100 p-5 sm:p-6">
+          <div className="grid min-h-[230px] place-items-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-center">
+            <div>
+              <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm">
+                <CalendarDays size={25} />
+              </span>
+              <h3 className="mt-4 text-sm font-semibold text-slate-950">No upcoming appointments</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-500">Schedule your first appointment to get started.</p>
+              <button type="button" onClick={onSchedule} className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl border border-emerald-200 bg-white px-5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50">
+                Schedule Appointment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function AppointmentList({ items = [], organisationId, lead, actor, propertyOptions: availablePropertyOptions = [], onSaved }) {
+  const propertyOptions = useMemo(
+    () => mergeAppointmentPropertyOptions(getLeadAppointmentPropertyOptions(lead), availablePropertyOptions),
+    [availablePropertyOptions, lead],
+  )
   const [drafts, setDrafts] = useState({})
   const [workingId, setWorkingId] = useState('')
   const [error, setError] = useState('')
@@ -12501,7 +12898,9 @@ function LeadAppointmentForm({ organisationId, lead, actor, propertyOptions: ava
 }
 
 function ManualBuyerViewingCompletedModal({ open, organisationId, lead, actor, onClose, onSaved }) {
-  const propertyOptions = useMemo(() => getLeadAppointmentPropertyOptions(lead), [lead])
+  const [activeListings, setActiveListings] = useState([])
+  const [listingsLoading, setListingsLoading] = useState(false)
+  const propertyOptions = useMemo(() => buildAppointmentPropertyOptions(lead, activeListings), [activeListings, lead])
   const [draft, setDraft] = useState({
     listingId: '',
     completedDate: getTodayInputValue(),
@@ -12511,6 +12910,26 @@ function ManualBuyerViewingCompletedModal({ open, organisationId, lead, actor, o
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!open || !organisationId) return undefined
+    let cancelled = false
+    async function loadActiveListings() {
+      try {
+        setListingsLoading(true)
+        const result = await listSearchablePrivateListings({ organisationId })
+        if (!cancelled) setActiveListings(Array.isArray(result) ? result.slice(0, 60) : [])
+      } catch {
+        if (!cancelled) setActiveListings([])
+      } finally {
+        if (!cancelled) setListingsLoading(false)
+      }
+    }
+    void loadActiveListings()
+    return () => {
+      cancelled = true
+    }
+  }, [open, organisationId])
 
   useEffect(() => {
     if (!open) return
@@ -12575,7 +12994,7 @@ function ManualBuyerViewingCompletedModal({ open, organisationId, lead, actor, o
           </label>
         ) : (
           <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
-            No property is linked yet. This will still mark the buyer viewing step as completed.
+            {listingsLoading ? 'Loading current listings...' : 'No property is linked yet. This will still mark the buyer viewing step as completed.'}
           </div>
         )}
         <div className="grid gap-4 sm:grid-cols-2">
@@ -12593,7 +13012,7 @@ function ManualBuyerViewingCompletedModal({ open, organisationId, lead, actor, o
         <label className="grid gap-2 text-sm font-semibold text-slate-700">
           Next step
           <select value={draft.nextStep} onChange={(event) => setDraft((previous) => ({ ...previous, nextStep: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300">
-            {['Offer Submitted', 'Send Offer Link', 'Book Another Viewing', 'Follow Up', 'Close Out'].map((option) => <option key={option} value={option}>{option}</option>)}
+            {['Offer Submitted', 'Capture Buyer Onboarding', 'Upload OTP', 'Book Another Viewing', 'Follow Up', 'Close Out'].map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
         </label>
         <label className="grid gap-2 text-sm font-semibold text-slate-700">
@@ -12618,12 +13037,17 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, timeline = [], onS
   const [composerOpen, setComposerOpen] = useState(false)
   const [dismissedOpenComposerSignal, setDismissedOpenComposerSignal] = useState(0)
   const [selectedAppointment, setSelectedAppointment] = useState(null)
-  const [plansOpen, setPlansOpen] = useState(false)
+  const [appointmentFilter, setAppointmentFilter] = useState('all')
   const [activeListings, setActiveListings] = useState([])
   const [listingsLoading, setListingsLoading] = useState(false)
   const appointments = useMemo(() => Array.isArray(lead?.appointments) ? lead.appointments : [], [lead?.appointments])
   const propertyOptions = useMemo(() => buildAppointmentPropertyOptions(lead, activeListings), [activeListings, lead])
-  const upcomingAppointments = useMemo(() => getBuyerUpcomingAppointments({ ...lead, appointments }), [appointments, lead])
+  const upcomingAppointments = useMemo(() => getLeadAppointmentDashboardRows(appointments), [appointments])
+  const appointmentFilterOptions = useMemo(() => getLeadAppointmentFilterOptions(upcomingAppointments), [upcomingAppointments])
+  const filteredUpcomingAppointments = useMemo(
+    () => upcomingAppointments.filter((appointment) => appointmentMatchesTypeFilter(appointment, appointmentFilter)),
+    [appointmentFilter, upcomingAppointments],
+  )
 
   useEffect(() => {
     if (!organisationId) return
@@ -12656,7 +13080,6 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, timeline = [], onS
     setDismissedOpenComposerSignal(openComposerSignal)
   }, [openComposerSignal])
   const closeDetails = useCallback(() => setSelectedAppointment(null), [])
-  const closePlans = useCallback(() => setPlansOpen(false), [])
   const handleComposerSaved = useCallback(async () => {
     setComposerOpen(false)
     setDismissedOpenComposerSignal(openComposerSignal)
@@ -12665,55 +13088,43 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, timeline = [], onS
   const handleDetailsSaved = useCallback(async () => {
     await onSaved?.()
   }, [onSaved])
-  const openViewingPlan = useCallback((appointment = null) => {
-    if (appointment) {
-      setSelectedAppointment(appointment)
-      return
+
+  useEffect(() => {
+    if (appointmentFilter === 'all') return
+    if (!appointmentFilterOptions.some((option) => option.value === appointmentFilter)) {
+      setAppointmentFilter('all')
     }
-    setPlansOpen(true)
-  }, [])
+  }, [appointmentFilter, appointmentFilterOptions])
 
   return (
     <section className="grid gap-5">
-      <ViewingPlannerSummary
+      <AppointmentOverviewPanel
         appointments={appointments}
-        propertyOptions={propertyOptions}
-        onStartViewing={() => setComposerOpen(true)}
-        onViewPlan={openViewingPlan}
+        upcomingRows={upcomingAppointments}
+        onSchedule={() => setComposerOpen(true)}
+        onViewCalendar={() => navigate('/pipeline/calendar')}
       />
-
-      <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
-        <BuyerLeadUpcomingAppointmentsSection
-          appointments={upcomingAppointments}
-          lead={lead}
-          propertyOptions={propertyOptions}
-          onStartViewing={() => setComposerOpen(true)}
-          onViewAppointment={setSelectedAppointment}
-          onViewCalendar={() => navigate('/pipeline/calendar')}
-        />
-        <BuyerLeadRecentViewingActivity
-          lead={lead}
-          timeline={timeline}
-          onViewAll={onViewActivity}
-        />
-      </div>
 
       {listingsLoading && !propertyOptions.length ? (
         <p className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700">Loading active listing options...</p>
       ) : null}
 
-      <BuyerLeadPastViewingsSection
-        appointments={appointments}
-        actor={actor}
+      <UpcomingAppointmentsPanel
+        appointments={filteredUpcomingAppointments}
+        lead={lead}
         propertyOptions={propertyOptions}
+        filter={appointmentFilter}
+        filterOptions={appointmentFilterOptions}
+        onFilterChange={setAppointmentFilter}
+        onSchedule={() => setComposerOpen(true)}
         onViewAppointment={setSelectedAppointment}
       />
 
       <Modal
         open={composerOpen}
         onClose={closeComposer}
-        title="Create Appointment"
-        subtitle="Use advanced options for seller-first availability, multi-property viewings, notes and buyer invites."
+        title="Schedule Appointment"
+        subtitle="Create a meeting or viewing using the existing lead, property, notification and calendar workflow."
         className="max-w-5xl"
       >
         <LeadAppointmentForm
@@ -12725,17 +13136,6 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, timeline = [], onS
           onLeadUpdated={onSaved}
         />
       </Modal>
-
-      <BuyerViewingPlansModal
-        open={plansOpen}
-        appointments={appointments}
-        propertyOptions={propertyOptions}
-        onClose={closePlans}
-        onViewAppointment={(appointment) => {
-          setPlansOpen(false)
-          setSelectedAppointment(appointment)
-        }}
-      />
 
       <Modal
         open={Boolean(selectedAppointment)}
@@ -12750,6 +13150,7 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, timeline = [], onS
             organisationId={organisationId}
             lead={lead}
             actor={actor}
+            propertyOptions={propertyOptions}
             onSaved={handleDetailsSaved}
           />
         ) : null}
@@ -13050,6 +13451,7 @@ function buildAcceptedOfferOtpWorkspacePath({
   offerId = '',
   leadId = '',
   listingId = '',
+  otpAmount = '',
   sourceMode = DOCUMENT_START_SOURCE_MODES.saved,
   legalScenario = null,
   returnTo = '',
@@ -13064,6 +13466,7 @@ function buildAcceptedOfferOtpWorkspacePath({
   if (offerId) params.set('offerId', normalizeText(offerId))
   if (leadId) params.set('leadId', normalizeText(leadId))
   if (listingId) params.set('listingId', normalizeText(listingId))
+  if (otpAmount) params.set('otpAmount', String(otpAmount))
   if (returnTo) params.set('returnTo', returnTo)
   return `/transactions/${encodeURIComponent(resolvedTransactionId)}/legal/otp?${params.toString()}`
 }
@@ -13134,19 +13537,19 @@ function getDealStatusCopy(lead = {}) {
   }
   if (offer) {
     return {
-      title: offerStatus.includes('submitted') || offerStatus.includes('review') ? 'Offer Submitted' : 'Offer Sent',
-      subtitle: offerStatus.includes('submitted') || offerStatus.includes('review') ? 'Ready for agent review' : 'Waiting for buyer submission',
+      title: offerStatus.includes('submitted') || offerStatus.includes('review') ? 'Offer Submitted' : 'Offer Draft',
+      subtitle: offerStatus.includes('submitted') || offerStatus.includes('review') ? 'Ready for agent review' : 'Use onboarding / OTP',
       copy: offerStatus.includes('submitted') || offerStatus.includes('review')
         ? 'The buyer offer has come back here. Review it and send it to the seller manually for now.'
-        : 'The buyer offer link has been sent. The completed offer will appear here when the buyer submits it.',
+        : 'Continue through buyer onboarding and OTP upload, or capture a manual offer if one was received outside the portal.',
       icon: Send,
       tone: 'blue',
     }
   }
   return {
     title: 'No Offer Submitted',
-    subtitle: 'Ready for first offer',
-    copy: 'Create and send the buyer offer link when the buyer is ready to move forward.',
+    subtitle: 'Use onboarding / OTP',
+    copy: 'Capture buyer onboarding first, then upload OTP evidence or record a manual offer only when needed.',
     icon: FileText,
     tone: 'slate',
   }
@@ -13211,9 +13614,24 @@ function DealStatusSection({ lead, property }) {
 
 function DealPropertySection({ property, onViewListing, onReplaceProperty }) {
   return (
-    <MatchSectionShell number="2" title="Property">
+    <MatchSectionShell
+      number="1"
+      title="Property Context"
+      action={(
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={onViewListing} disabled={!property?.id} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+            <ExternalLink size={15} />
+            View Listing
+          </button>
+          <button type="button" onClick={onReplaceProperty} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <RefreshCw size={15} />
+            Replace Property
+          </button>
+        </div>
+      )}
+    >
       {property ? (
-        <article className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)_180px] lg:items-center">
+        <article className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-center">
           {property.imageUrl ? (
             <img src={property.imageUrl} alt={property.title} className="h-44 w-full rounded-2xl object-cover lg:h-40" loading="lazy" />
           ) : (
@@ -13231,16 +13649,6 @@ function DealPropertySection({ property, onViewListing, onReplaceProperty }) {
               {property.garages ? <span>{property.garages} Garage</span> : null}
             </div>
           </div>
-          <div className="grid gap-2">
-            <button type="button" onClick={onViewListing} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              <ExternalLink size={15} />
-              View Listing
-            </button>
-            <button type="button" onClick={onReplaceProperty} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              <RefreshCw size={15} />
-              Replace Property
-            </button>
-          </div>
         </article>
       ) : (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
@@ -13253,16 +13661,148 @@ function DealPropertySection({ property, onViewListing, onReplaceProperty }) {
   )
 }
 
-function DealOfferComposerModal({ open, organisationId, lead, actor, initialMode = 'send_link', onClose, onSaved }) {
+const BUYER_ONBOARDING_META_KEYS = new Set([
+  'id',
+  'leadId',
+  'lead_id',
+  'transactionId',
+  'transaction_id',
+  'status',
+  'token',
+  'accessToken',
+  'access_token',
+  'createdAt',
+  'created_at',
+  'updatedAt',
+  'updated_at',
+  'submittedAt',
+  'submitted_at',
+  'completedAt',
+  'completed_at',
+])
+
+function resolveBuyerOnboardingFormCandidate(candidate = null) {
+  if (!isPlainObject(candidate)) return null
+  const nestedCandidates = [
+    candidate.formData,
+    candidate.form_data,
+    candidate.onboardingFormData?.formData,
+    candidate.onboarding_form_data?.form_data,
+    candidate.buyerOnboarding?.formData,
+    candidate.buyer_onboarding?.form_data,
+    candidate.clientOnboarding?.formData,
+    candidate.client_onboarding?.form_data,
+    candidate.onboarding?.formData,
+    candidate.onboarding?.form_data,
+  ]
+  for (const nested of nestedCandidates) {
+    if (isPlainObject(nested) && Object.keys(nested).length) return nested
+  }
+  return candidate
+}
+
+function getBuyerOnboardingFormData(lead = {}) {
+  const transactions = Array.isArray(lead?.transactions) ? lead.transactions : []
+  const candidates = [
+    ...transactions.flatMap((transaction) => [
+      transaction?.onboardingFormData,
+      transaction?.onboarding_form_data,
+      transaction?.buyerOnboarding,
+      transaction?.buyer_onboarding,
+      transaction?.clientOnboarding,
+      transaction?.client_onboarding,
+      transaction?.onboarding,
+    ]),
+    lead?.onboardingFormData,
+    lead?.onboarding_form_data,
+    lead?.buyerOnboarding,
+    lead?.buyer_onboarding,
+    lead?.clientOnboarding,
+    lead?.client_onboarding,
+    lead?.onboarding,
+  ]
+  for (const candidate of candidates) {
+    const formData = resolveBuyerOnboardingFormCandidate(candidate)
+    if (isPlainObject(formData) && Object.keys(formData).some((key) => !BUYER_ONBOARDING_META_KEYS.has(key) && hasValue(formData[key]))) {
+      return formData
+    }
+  }
+  return {}
+}
+
+function formatBuyerOnboardingValue(value) {
+  if (!hasValue(value)) return '—'
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (Array.isArray(value)) return value.map(formatBuyerOnboardingValue).filter(Boolean).join(', ')
+  if (isPlainObject(value)) {
+    return Object.entries(value)
+      .filter(([key, entryValue]) => !BUYER_ONBOARDING_META_KEYS.has(key) && hasValue(entryValue))
+      .map(([key, entryValue]) => `${humanizeSellerFieldKey(key)}: ${formatBuyerOnboardingValue(entryValue)}`)
+      .join(' | ') || '—'
+  }
+  return formatCleanValue(value, '')
+}
+
+function buildBuyerOnboardingFieldGroups(formData = {}) {
+  const details = []
+  const groups = []
+  Object.entries(isPlainObject(formData) ? formData : {}).forEach(([key, value]) => {
+    if (BUYER_ONBOARDING_META_KEYS.has(key) || !hasValue(value)) return
+    if (isPlainObject(value) && Object.keys(value).some((nestedKey) => !BUYER_ONBOARDING_META_KEYS.has(nestedKey) && hasValue(value[nestedKey]))) {
+      groups.push({
+        key,
+        title: humanizeSellerFieldKey(key),
+        rows: Object.entries(value)
+          .filter(([nestedKey, nestedValue]) => !BUYER_ONBOARDING_META_KEYS.has(nestedKey) && hasValue(nestedValue))
+          .map(([nestedKey, nestedValue]) => ({ key: nestedKey, label: humanizeSellerFieldKey(nestedKey), value: formatBuyerOnboardingValue(nestedValue) })),
+      })
+      return
+    }
+    details.push({ key, label: humanizeSellerFieldKey(key), value: formatBuyerOnboardingValue(value) })
+  })
+  return [
+    ...(details.length ? [{ key: 'details', title: 'Submitted Details', rows: details }] : []),
+    ...groups,
+  ]
+}
+
+function BuyerOnboardingFieldsSection({ lead }) {
+  const formData = getBuyerOnboardingFormData(lead)
+  const groups = buildBuyerOnboardingFieldGroups(formData)
+  return (
+    <MatchSectionShell number="2" title="Buyer Onboarding Fields">
+      {groups.length ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {groups.map((group) => (
+            <section key={group.key} className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="text-sm font-semibold text-slate-950">{group.title}</h3>
+              <dl className="mt-3 divide-y divide-slate-200/70">
+                {group.rows.map((row) => (
+                  <div key={`${group.key}-${row.key}`} className="grid min-w-0 gap-2 py-2 text-sm sm:grid-cols-[minmax(9rem,0.42fr)_minmax(0,1fr)]">
+                    <dt className="font-semibold text-slate-500">{row.label}</dt>
+                    <dd className="min-w-0 break-words font-semibold text-slate-950 sm:text-right">{row.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+          <h3 className="text-lg font-semibold text-slate-950">No buyer onboarding submitted yet</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-500">Submitted buyer details will populate here once the onboarding form is completed.</p>
+        </div>
+      )}
+    </MatchSectionShell>
+  )
+}
+
+function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, onSaved }) {
   const contact = getLeadContactSnapshot(lead)
   const contexts = useMemo(() => getLeadOfferPropertyContexts(lead), [lead])
   const bestContext = contexts[0] || null
   const [draft, setDraft] = useState({
-    mode: initialMode,
     contextKey: bestContext?.key || '',
-    expiryDate: getFutureInputValue(7),
-    note: '',
-    emailBuyer: true,
     manualSource: 'Phone',
     offerAmount: '',
     depositAmount: '',
@@ -13274,67 +13814,30 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, initialMode
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [lastLink, setLastLink] = useState('')
   const selectedContext = contexts.find((context) => context.key === draft.contextKey) || bestContext
 
   useEffect(() => {
     if (!open) return
     setDraft((previous) => ({
       ...previous,
-      mode: initialMode || 'send_link',
       contextKey: contexts.some((context) => context.key === previous.contextKey) ? previous.contextKey : contexts[0]?.key || '',
-      expiryDate: previous.expiryDate || getFutureInputValue(7),
     }))
     setError('')
     setMessage('')
-    setLastLink('')
-  }, [contexts, initialMode, open])
-
-  async function sendBuyerOfferLinkEmail(link = '', context = {}) {
-    const recipientEmail = normalizeText(contact.email || lead.email).toLowerCase()
-    if (!draft.emailBuyer || !recipientEmail || !link) {
-      return {
-        attempted: false,
-        sent: false,
-        reason: !draft.emailBuyer ? 'disabled' : recipientEmail ? 'missing_link' : 'missing_email',
-      }
-    }
-    try {
-      const emailResponse = await invokeEdgeFunction('send-email', {
-        body: {
-          type: 'buyer_offer_link',
-          to: recipientEmail,
-          buyerName: contact.name || lead.name || 'Buyer',
-          propertyTitle: context.label || 'selected property',
-          propertyCount: 1,
-          offerLink: link,
-          expiresAt: draft.expiryDate,
-          agentName: actor?.fullName || actor?.name || actor?.email || '',
-          note: draft.note,
-        },
-      })
-      if (emailResponse?.error || emailResponse?.data?.error) {
-        throw emailResponse.error || new Error(emailResponse.data.error)
-      }
-      return { attempted: true, sent: true }
-    } catch (emailError) {
-      return { attempted: true, sent: false, error: emailError }
-    }
-  }
+  }, [contexts, open])
 
   async function submit(event) {
     event.preventDefault()
     if (!organisationId || !lead?.leadId) {
-      setError('This lead needs to be loaded before an offer can be sent.')
+      setError('This lead needs to be loaded before a manual offer can be captured.')
       return
     }
     if (!selectedContext?.listingId) {
-      setError('Link a property before sending an offer.')
+      setError('Link a property before capturing a manual offer.')
       return
     }
-    const isManualCapture = draft.mode === 'manual_capture'
     const manualOfferAmount = parseCurrencyInput(draft.offerAmount)
-    if (isManualCapture && manualOfferAmount <= 0) {
+    if (manualOfferAmount <= 0) {
       setError('Capture the offer amount before saving a manual offer.')
       return
     }
@@ -13343,7 +13846,6 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, initialMode
       setSending(true)
       setError('')
       setMessage('')
-      setLastLink('')
 
       const currentLeadId = normalizeText(lead.leadId)
       const currentContactId = normalizeText(contact.contactId)
@@ -13356,9 +13858,8 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, initialMode
       const appointmentId = normalizeText(selectedContext.appointmentId)
       const scopedAppointmentId = UUID_PATTERN.test(appointmentId) ? appointmentId : null
       const postSaveTasks = []
-      let offerLink = ''
-      let activityType = isManualCapture ? 'Offer Captured Manually' : 'Offer Link Sent'
-      let createdLabel = isManualCapture ? 'Manual offer captured' : 'Offer link created'
+      const activityType = 'Offer Captured Manually'
+      const createdLabel = 'Manual offer captured'
 
       if (scopedAppointmentId) {
         const viewedListingTask = upsertAppointmentViewedListings({
@@ -13370,36 +13871,34 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, initialMode
             listingId: selectedContext.listingId,
             outcome: selectedContext.completed ? 'Interested' : 'Offer requested',
             buyerFeedback: '',
-            agentNotes: draft.note,
+            agentNotes: draft.specialConditions,
             viewedAt: new Date().toISOString(),
-            metadata: { source: isManualCapture ? 'lead_workspace_manual_offer_capture' : 'lead_workspace_offer_link', readiness: selectedContext.readiness },
+            metadata: { source: 'lead_workspace_manual_offer_capture', readiness: selectedContext.readiness },
           }],
         }).catch(() => [])
-        if (isManualCapture) postSaveTasks.push(viewedListingTask)
-        else await viewedListingTask
+        postSaveTasks.push(viewedListingTask)
       }
       const nowIso = new Date().toISOString()
-      const offer = await createCanonicalOffer({
+      await createCanonicalOffer({
         organisationId,
         buyerLeadId,
         buyerContactId,
         listingId: selectedContext.listingId,
         agentId: actor?.id || actor?.userId,
         viewingAppointmentId: scopedAppointmentId,
-        status: isManualCapture ? 'submitted' : 'sent_to_buyer',
-        offerAmount: isManualCapture ? manualOfferAmount : undefined,
-        depositAmount: isManualCapture ? parseCurrencyInput(draft.depositAmount) : undefined,
-        financeType: isManualCapture ? draft.financeType : undefined,
-        cashComponent: isManualCapture ? parseCurrencyInput(draft.cashComponent) : undefined,
-        bondComponent: isManualCapture ? parseCurrencyInput(draft.bondComponent) : undefined,
-        expiryDate: isManualCapture ? '' : draft.expiryDate,
-        buyerSubmittedAt: isManualCapture ? nowIso : undefined,
-        submittedAt: isManualCapture ? nowIso : undefined,
+        status: 'submitted',
+        offerAmount: manualOfferAmount,
+        depositAmount: parseCurrencyInput(draft.depositAmount),
+        financeType: draft.financeType,
+        cashComponent: parseCurrencyInput(draft.cashComponent),
+        bondComponent: parseCurrencyInput(draft.bondComponent),
+        buyerSubmittedAt: nowIso,
+        submittedAt: nowIso,
         conditionsJson: {
-          source: isManualCapture ? 'manual_offer_capture' : 'lead_workspace_onboarding_otp_tab',
-          captureMethod: isManualCapture ? draft.manualSource : '',
-          capturedByAgent: isManualCapture,
-          capturedAt: isManualCapture ? nowIso : '',
+          source: 'manual_offer_capture',
+          captureMethod: draft.manualSource,
+          capturedByAgent: true,
+          capturedAt: nowIso,
           propertyLabel: selectedContext.label,
           readiness: selectedContext.readiness,
           buyerName: contact.name || lead.name || 'Buyer',
@@ -13408,26 +13907,19 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, initialMode
           agentName: actor?.fullName || actor?.name || actor?.email || '',
           agentEmail: normalizeText(actor?.email || '').toLowerCase(),
           agentReviewUrl: typeof window !== 'undefined' ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(buyerLeadId)}` : '',
-          agentNoteToBuyer: draft.note,
-          manualCaptureNote: isManualCapture ? draft.specialConditions : '',
-          specialConditions: isManualCapture ? draft.specialConditions : '',
+          manualCaptureNote: draft.specialConditions,
+          specialConditions: draft.specialConditions,
           offerWithoutCompletedViewing: !selectedContext.completed,
         },
-      }, { actor, waitForLifecycle: !isManualCapture })
-      const offerToken = normalizeText(offer?.offerToken || offer?.offer_token || offer?.id)
-      offerLink = !isManualCapture && offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
-      if (!isManualCapture) {
-        createdLabel = selectedContext.completed ? 'Offer link created' : 'Offer link created without a completed viewing'
-      }
+      }, { actor, waitForLifecycle: false })
       if (scopedAppointmentId) {
         const appointmentUpdateTask = updateAppointmentAsync(
           organisationId,
           scopedAppointmentId,
-          { nextStep: isManualCapture ? 'Manual offer captured' : 'Offer link sent' },
+          { nextStep: 'Manual offer captured' },
           { actor, suppressNotifications: true },
         ).catch(() => null)
-        if (isManualCapture) postSaveTasks.push(appointmentUpdateTask)
-        else await appointmentUpdateTask
+        postSaveTasks.push(appointmentUpdateTask)
       }
 
       const activityTask = createAgencyCrmLeadActivity(
@@ -13438,65 +13930,34 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, initialMode
           activityNote: [
             `${createdLabel} for ${selectedContext.label || 'selected property'}.`,
             selectedContext.readinessLabel ? `Context: ${selectedContext.readinessLabel}.` : '',
-            isManualCapture && manualOfferAmount ? `Amount: ${formatCurrency(manualOfferAmount)}.` : '',
-            isManualCapture ? `Captured via ${draft.manualSource}.` : '',
-            offerLink ? `Link: ${offerLink}` : '',
-            draft.note ? `Note: ${draft.note}` : '',
-            isManualCapture && draft.specialConditions ? `Terms: ${draft.specialConditions}` : '',
+            manualOfferAmount ? `Amount: ${formatCurrency(manualOfferAmount)}.` : '',
+            `Captured via ${draft.manualSource}.`,
+            draft.specialConditions ? `Terms: ${draft.specialConditions}` : '',
           ].filter(Boolean).join(' '),
-          outcome: isManualCapture ? 'Offer Submitted' : 'Offer Draft',
+          outcome: 'Offer Submitted',
           activityDate: new Date().toISOString(),
         },
         { actor },
       ).catch(() => null)
-      if (isManualCapture) postSaveTasks.push(activityTask)
-      else await activityTask
+      postSaveTasks.push(activityTask)
 
-      if (offerLink && typeof navigator !== 'undefined') void navigator.clipboard?.writeText(offerLink)
-      const emailResult = isManualCapture ? { attempted: false, sent: false, reason: 'manual_capture' } : await sendBuyerOfferLinkEmail(offerLink, selectedContext)
-      setLastLink(offerLink)
-      setMessage(
-        isManualCapture
-          ? `${createdLabel}. It is ready for agent review and manual seller follow-up.`
-          : offerLink
-          ? emailResult.sent
-            ? `${createdLabel} and emailed to the buyer. Link copied as backup.`
-            : emailResult.attempted
-              ? `${createdLabel} and copied, but the buyer email could not be sent.`
-              : `${createdLabel} and copied. Add a buyer email or enable email sending to send it directly.`
-          : `${createdLabel}.`,
-      )
-      if (emailResult.error) setError(emailResult.error?.message || 'Offer link created, but email sending failed.')
-      if (isManualCapture) {
-        void onSaved?.({ silent: true })
-        void Promise.allSettled(postSaveTasks)
-          .then(() => onSaved?.({ silent: true }))
-          .catch(() => null)
-        onClose?.()
-      } else {
-        await onSaved?.()
-      }
+      setMessage(`${createdLabel}. It is ready for agent review and manual seller follow-up.`)
+      void onSaved?.({ silent: true })
+      void Promise.allSettled(postSaveTasks)
+        .then(() => onSaved?.({ silent: true }))
+        .catch(() => null)
+      onClose?.()
     } catch (sendError) {
-      setError(sendError?.message || 'Unable to create this offer.')
+      setError(sendError?.message || 'Unable to capture this manual offer.')
     } finally {
       setSending(false)
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={draft.mode === 'manual_capture' ? 'Capture Manual Offer' : 'Send Offer Link to Buyer'} subtitle={draft.mode === 'manual_capture' ? 'Record an offer received by phone, email, WhatsApp, or in person.' : 'Create and send a buyer offer link for the selected property.'} className="max-w-3xl">
+    <Modal open={open} onClose={onClose} title="Capture Manual Offer" subtitle="Record an offer received by phone, email, WhatsApp, or in person." className="max-w-3xl">
       {contexts.length ? (
         <form onSubmit={submit} className="grid gap-4">
-          <div className="grid grid-cols-2 rounded-2xl border border-slate-200 bg-slate-50 p-1">
-            {[
-              ['send_link', 'Send buyer link'],
-              ['manual_capture', 'Capture manually'],
-            ].map(([mode, label]) => (
-              <button key={mode} type="button" onClick={() => setDraft((previous) => ({ ...previous, mode }))} className={`min-h-10 rounded-xl px-3 text-sm font-semibold ${draft.mode === mode ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
           <label className="grid gap-2 text-sm font-semibold text-slate-700">
             Property
             <select value={draft.contextKey} onChange={(event) => setDraft((previous) => ({ ...previous, contextKey: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300">
@@ -13507,86 +13968,63 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, initialMode
               ))}
             </select>
           </label>
-          {draft.mode === 'manual_capture' ? (
-            <>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <label className="grid gap-2 text-sm font-semibold text-slate-700">
-                  Capture method
-                  <select value={draft.manualSource} onChange={(event) => setDraft((previous) => ({ ...previous, manualSource: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300">
-                    {['Phone', 'Email', 'WhatsApp', 'In person', 'Other'].map((source) => <option key={source} value={source}>{source}</option>)}
-                  </select>
-                </label>
-                <label className="grid gap-2 text-sm font-semibold text-slate-700">
-                  Offer amount
-                  <input value={draft.offerAmount} onChange={(event) => setDraft((previous) => ({ ...previous, offerAmount: event.target.value }))} inputMode="decimal" className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" placeholder="R 0" />
-                </label>
-                <label className="grid gap-2 text-sm font-semibold text-slate-700">
-                  Deposit
-                  <input value={draft.depositAmount} onChange={(event) => setDraft((previous) => ({ ...previous, depositAmount: event.target.value }))} inputMode="decimal" className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" placeholder="Optional" />
-                </label>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <label className="grid gap-2 text-sm font-semibold text-slate-700">
-                  Finance
-                  <select value={draft.financeType} onChange={(event) => setDraft((previous) => ({ ...previous, financeType: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300">
-                    <option value="">Not captured</option>
-                    <option value="cash">Cash</option>
-                    <option value="bond">Bond</option>
-                    <option value="combination">Combination</option>
-                  </select>
-                </label>
-                <label className="grid gap-2 text-sm font-semibold text-slate-700">
-                  Cash component
-                  <input value={draft.cashComponent} onChange={(event) => setDraft((previous) => ({ ...previous, cashComponent: event.target.value }))} inputMode="decimal" className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" placeholder="Optional" />
-                </label>
-                <label className="grid gap-2 text-sm font-semibold text-slate-700">
-                  Bond amount
-                  <input value={draft.bondComponent} onChange={(event) => setDraft((previous) => ({ ...previous, bondComponent: event.target.value }))} inputMode="decimal" className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" placeholder="Optional" />
-                </label>
-              </div>
-              <label className="grid gap-2 text-sm font-semibold text-slate-700">
-                Terms / notes
-                <textarea value={draft.specialConditions} onChange={(event) => setDraft((previous) => ({ ...previous, specialConditions: event.target.value }))} rows={4} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-300" placeholder="Conditions, occupation date, fixtures, or anything the buyer said" />
-              </label>
-            </>
-          ) : (
-            <>
-              <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
-                <label className="grid gap-2 text-sm font-semibold text-slate-700">
-                  Link expiry
-                  <input type="date" value={draft.expiryDate} onChange={(event) => setDraft((previous) => ({ ...previous, expiryDate: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" />
-                </label>
-                <label className="flex min-h-12 items-center gap-3 self-end rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
-                  <input type="checkbox" checked={draft.emailBuyer} onChange={(event) => setDraft((previous) => ({ ...previous, emailBuyer: event.target.checked }))} />
-                  Email buyer
-                </label>
-              </div>
-              <label className="grid gap-2 text-sm font-semibold text-slate-700">
-                Note
-                <textarea value={draft.note} onChange={(event) => setDraft((previous) => ({ ...previous, note: event.target.value }))} rows={4} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-300" placeholder="Optional note for the buyer or timeline" />
-              </label>
-              {!contact.email && draft.emailBuyer ? <p className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700">This buyer has no email, so the link will be created and copied but not emailed.</p> : null}
-            </>
-          )}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              Capture method
+              <select value={draft.manualSource} onChange={(event) => setDraft((previous) => ({ ...previous, manualSource: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300">
+                {['Phone', 'Email', 'WhatsApp', 'In person', 'Other'].map((source) => <option key={source} value={source}>{source}</option>)}
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              Offer amount
+              <input value={draft.offerAmount} onChange={(event) => setDraft((previous) => ({ ...previous, offerAmount: event.target.value }))} inputMode="decimal" className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" placeholder="R 0" />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              Deposit
+              <input value={draft.depositAmount} onChange={(event) => setDraft((previous) => ({ ...previous, depositAmount: event.target.value }))} inputMode="decimal" className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" placeholder="Optional" />
+            </label>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              Finance
+              <select value={draft.financeType} onChange={(event) => setDraft((previous) => ({ ...previous, financeType: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300">
+                <option value="">Not captured</option>
+                <option value="cash">Cash</option>
+                <option value="bond">Bond</option>
+                <option value="combination">Combination</option>
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              Cash component
+              <input value={draft.cashComponent} onChange={(event) => setDraft((previous) => ({ ...previous, cashComponent: event.target.value }))} inputMode="decimal" className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" placeholder="Optional" />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              Bond amount
+              <input value={draft.bondComponent} onChange={(event) => setDraft((previous) => ({ ...previous, bondComponent: event.target.value }))} inputMode="decimal" className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" placeholder="Optional" />
+            </label>
+          </div>
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            Terms / notes
+            <textarea value={draft.specialConditions} onChange={(event) => setDraft((previous) => ({ ...previous, specialConditions: event.target.value }))} rows={4} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-300" placeholder="Conditions, occupation date, fixtures, or anything the buyer said" />
+          </label>
           {error ? <p className="text-sm font-semibold text-red-600">{error}</p> : null}
           {message ? <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
-          {lastLink ? <a href={lastLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700">Open generated offer link <ExternalLink size={13} /></a> : null}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button type="button" onClick={onClose} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Close</button>
             <button type="submit" disabled={sending || !selectedContext?.listingId} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white disabled:bg-slate-300">
               <Send size={15} />
-              {sending ? 'Saving...' : draft.mode === 'manual_capture' ? 'Capture Manual Offer' : 'Send Offer Link to Buyer'}
+              {sending ? 'Saving...' : 'Capture Manual Offer'}
             </button>
           </div>
         </form>
       ) : (
-        <EmptyState title="No property linked" copy="Link a property or schedule a viewing before sending an offer." actionLabel="Close" onAction={onClose} />
+        <EmptyState title="No property linked" copy="Link a property or schedule a viewing before capturing a manual offer." actionLabel="Close" onAction={onClose} />
       )}
     </Modal>
   )
 }
 
-function DealOfferSection({ lead, offer, onSendOffer, onCaptureManualOffer, onViewOffer, onWithdrawOffer, onAcceptAndConvert, withdrawing, acceptingAndConverting }) {
+function DealOfferSection({ lead, offer, onCaptureManualOffer, onViewOffer, onWithdrawOffer, onAcceptAndConvert, withdrawing, acceptingAndConverting }) {
   const status = offer ? getOfferStatus(offer) : ''
   const lifecycle = offer ? getOfferLifecycleState(offer) : null
   const submittedDate = getOfferDateValue(offer, ['submittedAt', 'submitted_at', 'sentAt', 'sent_at', 'createdAt', 'created_at'])
@@ -13633,10 +14071,6 @@ function DealOfferSection({ lead, offer, onSendOffer, onCaptureManualOffer, onVi
               <ExternalLink size={15} />
               View Offer
             </button>
-            <button type="button" onClick={onSendOffer} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
-              <Send size={15} />
-              Send Offer Link to Buyer
-            </button>
             <button type="button" onClick={onCaptureManualOffer} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
               <Phone size={15} />
               Capture Manual Offer
@@ -13655,14 +14089,10 @@ function DealOfferSection({ lead, offer, onSendOffer, onCaptureManualOffer, onVi
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div>
             <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">No offer submitted</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-500">Create and send a buyer offer link to start the offer process.</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">Use buyer onboarding and OTP upload as the main path. Capture a manual offer only when one was received outside the digital flow.</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <button type="button" onClick={onSendOffer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white">
-              <Send size={15} />
-              Send Offer Link to Buyer
-            </button>
-            <button type="button" onClick={onCaptureManualOffer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700">
+            <button type="button" onClick={onCaptureManualOffer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white">
               <Phone size={15} />
               Capture Manual Offer
             </button>
@@ -13721,12 +14151,12 @@ function DealTransactionSection({ lead, createdTransactionId = '', converting, o
         <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)_auto] lg:items-center">
           <div className="rounded-2xl bg-blue-50 p-5">
             <h3 className="text-lg font-semibold text-slate-950">Transaction not created yet</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">When the buyer submits the offer, it appears in the Offer section. Send it to the seller manually, then create the transaction once accepted.</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">When a signed OTP or accepted offer is ready, move the deal into transaction work and prepare the handoff.</p>
           </div>
           <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-5">
             <p className="text-sm font-semibold text-slate-950">What happens next?</p>
             <div className="mt-3 grid gap-2 text-sm text-slate-600">
-              {['Buyer submits the offer link', 'Offer appears here for agent review', 'Agent sends the offer to the seller manually', 'Create the transaction after acceptance'].map((item) => (
+              {['Buyer onboarding is captured', 'OTP evidence is uploaded or accepted offer is captured', 'Agent confirms seller acceptance', 'Create the transaction after acceptance'].map((item) => (
                 <span key={item} className="inline-flex items-center gap-2"><CheckCircle2 size={15} className="text-blue-700" />{item}</span>
               ))}
             </div>
@@ -13755,12 +14185,12 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
   const acceptedOfferId = getOfferId(acceptedOffer)
   const acceptedProperty = getDealPropertySummary(lead, acceptedOffer)
   const [offerModalOpen, setOfferModalOpen] = useState(false)
-  const [offerModalInitialMode, setOfferModalInitialMode] = useState('send_link')
   const [workingAction, setWorkingAction] = useState('')
   const [transactionMessage, setTransactionMessage] = useState('')
   const [transactionError, setTransactionError] = useState('')
   const [createdTransactionId, setCreatedTransactionId] = useState('')
-  const [otpStartOpen, setOtpStartOpen] = useState(false)
+  const [otpAmountModalOpen, setOtpAmountModalOpen] = useState(false)
+  const [otpAmountDraft, setOtpAmountDraft] = useState('')
   const buyerContact = getLeadContactSnapshot(lead)
   const acceptedOtpOffer = acceptedOffer || latestOffer
   const acceptedOtpOfferId = getOfferId(acceptedOtpOffer)
@@ -13799,8 +14229,7 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
       acceptedOtpOffer?.conditions?.financeType || acceptedOtpOffer?.conditionsJson?.financeType,
   }
 
-  function openOfferModal(mode = 'send_link') {
-    setOfferModalInitialMode(mode)
+  function openManualOfferModal() {
     setOfferModalOpen(true)
   }
 
@@ -14014,36 +14443,58 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
     }
   }
 
-  async function handleStartAcceptedOfferOtpDocument(selection = {}) {
-    const sourceMode = normalizeText(selection?.sourceMode || DOCUMENT_START_SOURCE_MODES.saved)
+  async function resendBuyerOnboardingLink() {
     if (!resolvedTransactionId) {
-      setOtpStartOpen(false)
-      setTransactionError('Create the transaction before preparing the OTP.')
+      setTransactionError('Create or link the transaction before resending buyer onboarding.')
       return
     }
-    setTransactionError('')
-    setTransactionMessage('')
-    setOtpStartOpen(false)
-
-    if (sourceMode === DOCUMENT_START_SOURCE_MODES.onboarding) {
-      setWorkingAction('otp_onboarding')
+    try {
+      setWorkingAction('resend_onboarding')
+      setTransactionError('')
+      setTransactionMessage('')
       const onboarding = await sendBuyerOnboarding(resolvedTransactionId)
-      setWorkingAction('')
       if (onboarding.sent) {
-        setTransactionMessage('Buyer onboarding was sent. Prepare the OTP once the details are back, or continue manually if needed.')
+        setTransactionMessage('Buyer onboarding link resent.')
+        await onSaved?.()
       } else {
         setTransactionError(onboarding.error?.message || 'Buyer onboarding could not be sent.')
       }
+    } finally {
+      setWorkingAction('')
+    }
+  }
+
+  function openOtpAmountModal() {
+    setOtpAmountDraft(getOfferAmount(acceptedOtpOffer) ? String(getOfferAmount(acceptedOtpOffer)) : '')
+    setOtpAmountModalOpen(true)
+    setTransactionError('')
+    setTransactionMessage('')
+  }
+
+  function submitOtpAmount(event) {
+    event.preventDefault()
+    const otpAmount = parseCurrencyInput(otpAmountDraft)
+    if (otpAmount <= 0) {
+      setTransactionError('Enter the OTP amount before continuing.')
       return
     }
+    if (!resolvedTransactionId) {
+      setOtpAmountModalOpen(false)
+      setTransactionError('Create the transaction before uploading the OTP.')
+      return
+    }
+    setOtpAmountModalOpen(false)
+    setTransactionError('')
+    setTransactionMessage('')
 
     const path = buildAcceptedOfferOtpWorkspacePath({
       transactionId: resolvedTransactionId,
       offerId: acceptedOtpOfferId,
       leadId: lead?.leadId,
       listingId: acceptedOtpListingId,
-      sourceMode,
-      legalScenario: selection?.legalScenario,
+      otpAmount,
+      sourceMode: DOCUMENT_START_SOURCE_MODES.saved,
+      legalScenario: acceptedOtpLegalScenario,
       returnTo: `/pipeline/leads/${encodeURIComponent(normalizeText(lead?.leadId))}?tab=onboarding_otp`,
     })
     if (!path) {
@@ -14055,346 +14506,72 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
 
   return (
     <div className="space-y-5">
-      <StartDocumentModal
-        open={otpStartOpen}
-        onClose={() => setOtpStartOpen(false)}
-        entryPoint={DOCUMENT_START_ENTRY_POINTS.acceptedOfferOtp}
-        packetType={DOCUMENT_START_PACKET_TYPES.otp}
-        documentKind={DOCUMENT_START_DOCUMENT_KINDS.standard}
-        initialSourceMode={DOCUMENT_START_SOURCE_MODES.saved}
-        hasExistingContext={Boolean(resolvedTransactionId)}
-        hasClientContact={Boolean(buyerContact.email || buyerContact.phone)}
-        hasParentDocument
-        contextSummary={acceptedOtpStartSummary}
-        initialLegalScenario={acceptedOtpLegalScenario}
-        title="Create OTP"
-        subtitle="Start from the accepted offer and review the OTP before sending it for signature."
-        busy={workingAction === 'otp_onboarding'}
-        onContinue={(selection) => void handleStartAcceptedOfferOtpDocument(selection)}
-      />
+      <Modal open={otpAmountModalOpen} onClose={() => setOtpAmountModalOpen(false)} title="Upload OTP" subtitle="Capture the OTP amount only. Buyer details come from buyer onboarding." className="max-w-md">
+        <form onSubmit={submitOtpAmount} className="grid gap-4">
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            OTP amount
+            <input
+              value={otpAmountDraft}
+              onChange={(event) => setOtpAmountDraft(event.target.value)}
+              inputMode="decimal"
+              className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300"
+              placeholder="R 0"
+            />
+          </label>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" onClick={() => setOtpAmountModalOpen(false)} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Cancel</button>
+            <button type="submit" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white">
+              <Upload size={15} />
+              Continue
+            </button>
+          </div>
+        </form>
+      </Modal>
       <section className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_16px_42px_rgba(15,23,42,0.045)] sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-[-0.055em] text-slate-950">Onboarding / OTP</h1>
-            <p className="mt-1 text-sm text-slate-500">Capture buyer onboarding, review OTP evidence, and move the accepted deal into transaction work.</p>
           </div>
-          <button type="button" onClick={onSaved} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
-            <RefreshCw size={15} />
-            Refresh Status
-          </button>
+          <div className="flex flex-wrap gap-2 lg:justify-end">
+            <button type="button" onClick={() => onNavigate?.('overview')} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+              <ArrowLeft size={15} />
+              Back to overview
+            </button>
+            <button type="button" onClick={openOtpAmountModal} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800">
+              <Upload size={15} />
+              Upload OTP
+            </button>
+            <button type="button" disabled={workingAction === 'resend_onboarding'} onClick={resendBuyerOnboardingLink} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60">
+              <Mail size={15} />
+              {workingAction === 'resend_onboarding' ? 'Sending...' : 'Resend buyer onboarding link'}
+            </button>
+          </div>
         </div>
+        {transactionMessage ? <p className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{transactionMessage}</p> : null}
+        {transactionError ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{transactionError}</p> : null}
       </section>
 
-      <DealStatusSection lead={lead} property={property} />
       <DealPropertySection property={property} onViewListing={openListing} onReplaceProperty={() => onNavigate?.('property_match')} />
+      <BuyerOnboardingFieldsSection lead={lead} />
       <DealOfferSection
         lead={lead}
         offer={latestOffer}
-        onSendOffer={() => openOfferModal('send_link')}
-        onCaptureManualOffer={() => openOfferModal('manual_capture')}
+        onCaptureManualOffer={openManualOfferModal}
         onViewOffer={viewOffer}
         onWithdrawOffer={withdrawOffer}
         onAcceptAndConvert={acceptSellerAndMoveToWon}
         withdrawing={workingAction === 'withdrawn'}
         acceptingAndConverting={workingAction === 'accept_convert'}
       />
-      <DealTransactionSection
-        lead={lead}
-        createdTransactionId={createdTransactionId}
-        converting={workingAction === 'convert'}
-        onConvert={convertAcceptedOffer}
-        onPrepareOtp={() => setOtpStartOpen(true)}
-        message={transactionMessage}
-        error={transactionError}
-      />
       <DealOfferComposerModal
         open={offerModalOpen}
         organisationId={organisationId}
         lead={lead}
         actor={actor}
-        initialMode={offerModalInitialMode}
         onClose={() => setOfferModalOpen(false)}
         onSaved={onSaved}
       />
     </div>
-  )
-}
-
-function LeadOfferReadinessPanel({ organisationId, lead, actor, onSaved }) {
-  const contact = getLeadContactSnapshot(lead)
-  const contexts = useMemo(() => getLeadOfferPropertyContexts(lead), [lead])
-  const bestContext = contexts[0] || null
-  const [draft, setDraft] = useState({
-    contextKey: bestContext?.key || '',
-    expiryDate: getFutureInputValue(7),
-    note: '',
-    emailBuyer: true,
-  })
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  const [lastLink, setLastLink] = useState('')
-  const selectedContext = contexts.find((context) => context.key === draft.contextKey) || bestContext
-
-  useEffect(() => {
-    setDraft((previous) => {
-      if (contexts.some((context) => context.key === previous.contextKey)) return previous
-      return { ...previous, contextKey: contexts[0]?.key || '' }
-    })
-  }, [contexts])
-
-  async function sendBuyerOfferLinkEmail(link = '', context = {}) {
-    const recipientEmail = normalizeText(contact.email || lead.email).toLowerCase()
-    if (!draft.emailBuyer || !recipientEmail || !link) {
-      return {
-        attempted: false,
-        sent: false,
-        reason: !draft.emailBuyer ? 'disabled' : recipientEmail ? 'missing_link' : 'missing_email',
-      }
-    }
-
-    try {
-      const emailResponse = await invokeEdgeFunction('send-email', {
-        body: {
-          type: 'buyer_offer_link',
-          to: recipientEmail,
-          buyerName: contact.name || lead.name || 'Buyer',
-          propertyTitle: context.label || 'selected property',
-          propertyCount: 1,
-          offerLink: link,
-          expiresAt: draft.expiryDate,
-          agentName: actor?.fullName || actor?.name || actor?.email || '',
-          note: draft.note,
-        },
-      })
-      if (emailResponse?.error || emailResponse?.data?.error) {
-        throw emailResponse.error || new Error(emailResponse.data.error)
-      }
-      return { attempted: true, sent: true }
-    } catch (emailError) {
-      return { attempted: true, sent: false, error: emailError }
-    }
-  }
-
-  async function submit(event) {
-    event.preventDefault()
-    if (!organisationId || !lead?.leadId) {
-      setError('This lead needs to be loaded before an offer link can be sent.')
-      return
-    }
-    if (!selectedContext?.listingId) {
-      setError('Choose the property this offer link is for.')
-      return
-    }
-
-    try {
-      setSending(true)
-      setError('')
-      setMessage('')
-      setLastLink('')
-
-      const persisted = await ensureAgencyCrmLeadRecordPersisted(
-        organisationId,
-        lead,
-        getLeadContactFallback(lead),
-        { actor },
-      )
-      const buyerLeadId = normalizeText(persisted?.leadId || lead.leadId)
-      const buyerContactId = normalizeText(persisted?.contactId || contact.contactId)
-      const appointmentId = normalizeText(selectedContext.appointmentId)
-      const canUsePostViewingPortal = Boolean(
-        appointmentId &&
-          UUID_PATTERN.test(organisationId) &&
-          UUID_PATTERN.test(buyerLeadId) &&
-          UUID_PATTERN.test(selectedContext.listingId) &&
-          UUID_PATTERN.test(appointmentId),
-      )
-      let offerLink = ''
-      let activityType = 'Offer Link Sent'
-      let createdLabel = 'Offer link created'
-
-      if (canUsePostViewingPortal) {
-        await upsertAppointmentViewedListings({
-          organisationId,
-          appointmentId,
-          leadId: buyerLeadId,
-          agentId: actor?.id || actor?.userId,
-          viewedListings: [
-            {
-              listingId: selectedContext.listingId,
-              outcome: selectedContext.completed ? 'Interested' : 'Offer requested',
-              buyerFeedback: '',
-              agentNotes: draft.note,
-              viewedAt: new Date().toISOString(),
-              metadata: {
-                source: 'lead_workspace_offer_link',
-                readiness: selectedContext.readiness,
-              },
-            },
-          ],
-        }).catch(() => [])
-        const session = await createOfferPortalSession({
-          organisationId,
-          buyerLeadId,
-          buyerContactId,
-          appointmentId,
-          agentId: actor?.id || actor?.userId,
-          expiresAt: draft.expiryDate,
-          metadata: {
-            source: 'lead_workspace_onboarding_otp_tab',
-            selectedListingId: selectedContext.listingId,
-            propertyLabel: selectedContext.label,
-            readiness: selectedContext.readiness,
-            agentNoteToBuyer: draft.note,
-          },
-        }, { actor })
-        offerLink = session?.token && typeof window !== 'undefined'
-          ? `${window.location.origin}/offers/session/${encodeURIComponent(session.token)}`
-          : ''
-        activityType = 'Post-Viewing Offer Portal Sent'
-        createdLabel = 'Post-viewing offer portal created'
-        await updateAppointmentAsync(organisationId, appointmentId, {
-          nextStep: 'Post-viewing offer portal sent',
-        }, { actor, suppressNotifications: true }).catch(() => null)
-      } else {
-        const offer = await createCanonicalOffer({
-          organisationId,
-          buyerLeadId,
-          buyerContactId,
-          listingId: selectedContext.listingId,
-          agentId: actor?.id || actor?.userId,
-          viewingAppointmentId: UUID_PATTERN.test(appointmentId) ? appointmentId : null,
-          status: 'sent_to_buyer',
-          expiryDate: draft.expiryDate,
-          conditionsJson: {
-            source: 'lead_workspace_onboarding_otp_tab',
-            propertyLabel: selectedContext.label,
-            readiness: selectedContext.readiness,
-            buyerName: contact.name || lead.name || 'Buyer',
-            buyerEmail: contact.email || lead.email || '',
-            buyerPhone: contact.phone || lead.phone || '',
-            agentName: actor?.fullName || actor?.name || actor?.email || '',
-            agentEmail: normalizeText(actor?.email || '').toLowerCase(),
-            agentReviewUrl: typeof window !== 'undefined'
-              ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(buyerLeadId)}`
-              : '',
-            agentNoteToBuyer: draft.note,
-            offerWithoutCompletedViewing: !selectedContext.completed,
-          },
-        }, { actor })
-        const offerToken = normalizeText(offer?.offerToken || offer?.offer_token || offer?.id)
-        offerLink = offerToken && typeof window !== 'undefined'
-          ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}`
-          : ''
-        createdLabel = selectedContext.completed ? 'Offer link created' : 'Offer link created without a completed viewing'
-      }
-
-      await createAgencyCrmLeadActivity(
-        organisationId,
-        buyerLeadId,
-        {
-          activityType,
-          activityNote: [
-            `${createdLabel} for ${selectedContext.label || 'selected property'}.`,
-            selectedContext.readinessLabel ? `Context: ${selectedContext.readinessLabel}.` : '',
-            offerLink ? `Link: ${offerLink}` : '',
-            draft.note ? `Note: ${draft.note}` : '',
-          ].filter(Boolean).join(' '),
-          outcome: 'Offer Draft',
-          activityDate: new Date().toISOString(),
-        },
-        { actor },
-      ).catch(() => null)
-
-      if (offerLink && typeof navigator !== 'undefined') {
-        void navigator.clipboard?.writeText(offerLink)
-      }
-      const emailResult = await sendBuyerOfferLinkEmail(offerLink, selectedContext)
-      setLastLink(offerLink)
-      setMessage(
-        offerLink
-          ? emailResult.sent
-            ? `${createdLabel} and emailed to the buyer. Link copied as backup.`
-            : emailResult.attempted
-              ? `${createdLabel} and copied, but the buyer email could not be sent.`
-              : `${createdLabel} and copied. Add a buyer email or enable email sending to send it directly.`
-          : `${createdLabel}.`,
-      )
-      if (emailResult.error) setError(emailResult.error?.message || 'Offer link created, but email sending failed.')
-      await onSaved?.()
-    } catch (sendError) {
-      setError(sendError?.message || 'Unable to create this offer link.')
-    } finally {
-      setSending(false)
-    }
-  }
-
-  if (!contexts.length) {
-    return (
-      <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-950">Offer Readiness</h3>
-            <p className="mt-1 text-sm text-slate-500">Link an enquiry property, shortlist, or viewing before sending an offer link.</p>
-          </div>
-          <StatusPill tone="amber">Property required</StatusPill>
-        </div>
-      </section>
-    )
-  }
-
-  return (
-    <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-950">Offer Readiness</h3>
-          <p className="mt-1 text-sm text-slate-500">Best practice is to send the offer link from a completed property viewing. Use a linked property only when the buyer is ready without another viewing.</p>
-        </div>
-        <StatusPill tone={selectedContext?.completed ? 'green' : selectedContext?.appointmentId ? 'amber' : 'blue'}>
-          {selectedContext?.readinessLabel || 'Property selected'}
-        </StatusPill>
-      </div>
-      <div className="mt-4 grid gap-3 lg:grid-cols-[1.4fr_180px_180px]">
-        <label className="grid gap-1 text-sm font-semibold text-slate-700">
-          Property / viewing context
-          <select value={draft.contextKey} onChange={(event) => setDraft((previous) => ({ ...previous, contextKey: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
-            {contexts.map((context) => (
-              <option key={context.key} value={context.key}>
-                {[context.readinessLabel, context.label, context.price ? formatCurrency(context.price) : ''].filter(Boolean).join(' - ')}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="grid gap-1 text-sm font-semibold text-slate-700">
-          Link expiry
-          <input type="date" value={draft.expiryDate} onChange={(event) => setDraft((previous) => ({ ...previous, expiryDate: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" />
-        </label>
-        <label className="flex min-h-11 items-center gap-3 self-end rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
-          <input type="checkbox" checked={draft.emailBuyer} onChange={(event) => setDraft((previous) => ({ ...previous, emailBuyer: event.target.checked }))} />
-          Email buyer
-        </label>
-      </div>
-      <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_auto]">
-        <input value={draft.note} onChange={(event) => setDraft((previous) => ({ ...previous, note: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Optional note for the buyer or timeline" />
-        <button type="submit" disabled={sending || !selectedContext?.listingId} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
-          <Mail size={15} />
-          {sending ? 'Creating...' : 'Send Offer Link'}
-        </button>
-      </div>
-      {!contact.email && draft.emailBuyer ? (
-        <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700">This buyer has no email, so the link will be created and copied but not emailed.</p>
-      ) : null}
-      {selectedContext && !selectedContext.completed ? (
-        <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">This property has not got a completed viewing outcome yet. You can still proceed when the buyer is ready, but the completed-viewing portal is the preferred path.</p>
-      ) : null}
-      {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
-      {message ? <p className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
-      {lastLink ? (
-        <a href={lastLink} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-blue-700">
-          Open generated offer link <ExternalLink size={13} />
-        </a>
-      ) : null}
-    </form>
   )
 }
 
@@ -14609,7 +14786,7 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-sm font-semibold text-slate-950">Transaction Conversion</h3>
-            <p className="mt-1 text-sm text-slate-500">Send an offer link first. Once the seller accepts an offer, Arch9 can create the transaction from that accepted offer.</p>
+            <p className="mt-1 text-sm text-slate-500">Capture buyer onboarding and OTP evidence first. Once the seller accepts an offer, Arch9 can create the transaction from that accepted offer.</p>
           </div>
           <StatusPill tone="slate">Waiting for offer</StatusPill>
         </div>
@@ -15761,49 +15938,6 @@ function hasSellerPropertyOverrideValues(draft = {}) {
       normalized.parking ||
       normalized.erfSize ||
       normalized.description,
-  )
-}
-
-function getSellerListingImageUrl(listing = null) {
-  const onboarding = isPlainObject(listing?.sellerOnboarding)
-    ? listing.sellerOnboarding
-    : isPlainObject(listing?.seller_onboarding)
-      ? listing.seller_onboarding
-      : {}
-  const onboardingFormData = isPlainObject(onboarding?.formData)
-    ? onboarding.formData
-    : isPlainObject(onboarding?.form_data)
-      ? onboarding.form_data
-      : {}
-  const gallery = [
-    ...(Array.isArray(listing?.galleryImages) ? listing.galleryImages : []),
-    ...(Array.isArray(listing?.gallery_images) ? listing.gallery_images : []),
-    ...(Array.isArray(listing?.images) ? listing.images : []),
-    ...(Array.isArray(listing?.photos) ? listing.photos : []),
-    ...(Array.isArray(listing?.media) ? listing.media : []),
-    ...(Array.isArray(listing?.marketing?.imageGallery) ? listing.marketing.imageGallery : []),
-    ...(Array.isArray(listing?.marketing?.image_gallery) ? listing.marketing.image_gallery : []),
-    ...(Array.isArray(listing?.propertyDetails?.imageGallery) ? listing.propertyDetails.imageGallery : []),
-    ...(Array.isArray(listing?.propertyDetails?.image_gallery) ? listing.propertyDetails.image_gallery : []),
-    ...(Array.isArray(onboardingFormData?.imageGallery) ? onboardingFormData.imageGallery : []),
-    ...(Array.isArray(onboardingFormData?.image_gallery) ? onboardingFormData.image_gallery : []),
-  ]
-  const media = gallery.find((item) => normalizeText(item?.url || item?.imageUrl || item?.src || item))
-  return normalizeText(
-    listing?.coverImage?.url ||
-      listing?.cover_image?.url ||
-      listing?.imageUrl ||
-      listing?.image_url ||
-      listing?.thumbnailUrl ||
-      listing?.thumbnail_url ||
-      listing?.marketing?.mediaUrl ||
-      listing?.marketing?.media_url ||
-      listing?.marketing?.coverImage?.url ||
-      listing?.marketing?.cover_image?.url ||
-      media?.url ||
-      media?.imageUrl ||
-      media?.src ||
-      media,
   )
 }
 
@@ -16961,7 +17095,7 @@ function SellerProfileWorkspace({
       <div className="min-w-0 space-y-5">
         <div className="grid gap-5 lg:grid-cols-2">
           {model.sections.map((section) => (
-            <SellerProfileCard key={section.id} section={section} onEdit={onEdit} />
+            <SellerProfileCard key={section.id} section={section} onEdit={() => onEdit?.(section)} />
           ))}
         </div>
       </div>
@@ -17646,62 +17780,6 @@ function SellerProcessShadowPanel({ model = null, onAction }) {
   )
 }
 
-function SellerListingFact({ icon, label, value }) {
-  return (
-    <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white text-slate-500 shadow-sm">
-        {createElement(icon, { size: 15 })}
-      </span>
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-slate-950">{value || 'Pending'}</span>
-        <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">{label}</span>
-      </span>
-    </div>
-  )
-}
-
-function SellerPropertyPreviewCard({ row, listing }) {
-  const property = getSellerPropertySummary(row, listing)
-  const imageUrl = getSellerListingImageUrl(listing)
-  const priceLabel = property.askingPrice ? formatCurrency(property.askingPrice) : 'Asking price pending'
-  const description = property.description || 'Listing description pending.'
-  return (
-    <section className={`${panelClass} overflow-hidden shadow-[0_18px_45px_rgba(15,23,42,0.06)]`}>
-      <div className="relative flex h-56 items-center justify-center overflow-hidden bg-slate-100 text-slate-400">
-        {imageUrl ? <img src={imageUrl} alt="" className="h-full w-full object-cover" /> : (
-          <div className="flex flex-col items-center gap-3 text-slate-400">
-            <span className="grid h-16 w-16 place-items-center rounded-2xl bg-white shadow-sm">
-              <Home size={30} />
-            </span>
-            <span className="text-xs font-semibold uppercase tracking-[0.14em]">Image pending</span>
-          </div>
-        )}
-        <div className="absolute left-4 top-4 flex flex-wrap gap-2">
-          <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">Draft Listing</span>
-          {property.propertyType && property.propertyType !== 'Property type pending' ? (
-            <span className="rounded-full bg-slate-950/85 px-3 py-1 text-xs font-semibold text-white shadow-sm">{property.propertyType}</span>
-          ) : null}
-        </div>
-      </div>
-      <div className="p-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Property Preview</p>
-        <h2 className="mt-2 line-clamp-2 text-2xl font-semibold tracking-[-0.045em] text-slate-950">{priceLabel}</h2>
-        <div className="mt-2 flex items-start gap-2 text-sm font-semibold leading-6 text-slate-600">
-          <MapPin size={16} className="mt-1 shrink-0 text-slate-400" />
-          <span className="line-clamp-2">{property.address}</span>
-        </div>
-        <div className="mt-5 grid gap-2 sm:grid-cols-2">
-          <SellerListingFact icon={BedDouble} label="Bedrooms" value={property.bedrooms || 'Pending'} />
-          <SellerListingFact icon={Bath} label="Bathrooms" value={property.bathrooms || 'Pending'} />
-          <SellerListingFact icon={Car} label="Parking" value={property.parking || 'Pending'} />
-          <SellerListingFact icon={Ruler} label="Erf Size" value={property.erfSize || 'Pending'} />
-        </div>
-        <p className="mt-5 line-clamp-3 text-sm leading-6 text-slate-500">{description}</p>
-      </div>
-    </section>
-  )
-}
-
 function SellerAcquisitionActionRow({ row, listing, journey, readiness, onboardingStatus, onAction }) {
   return (
     <section className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
@@ -18209,6 +18287,49 @@ const SELLER_PROFILE_SECTION_DEFS = [
     ],
   },
 ]
+
+const SELLER_PROFILE_WORKSPACE_EDIT_SECTIONS = {
+  personal: {
+    title: 'Personal Information',
+    description: 'Seller identity and contact details shown in the profile card.',
+    keys: ['fullName', 'idNumber', 'dateOfBirth', 'nationality', 'maritalStatus', 'occupation', 'employer', 'email', 'phone', 'alternativeNumber'],
+  },
+  address: {
+    title: 'Residential Address',
+    description: 'Residential address values shown in the profile card.',
+    keys: ['residentialStreet', 'residentialSuburb', 'residentialCity', 'residentialProvince', 'residentialPostalCode', 'residentialCountry'],
+  },
+  banking: {
+    title: 'Banking Details',
+    description: 'Bank account details held against the seller profile.',
+    keys: ['bank', 'accountHolder', 'accountNumber', 'branchCode', 'accountType'],
+  },
+  compliance: {
+    title: 'Tax & Compliance',
+    description: 'Tax, FICA, consent, and signature readiness values.',
+    keys: ['saResident', 'incomeTaxNumber', 'vatRegistered', 'ficaStatus', 'popiaConsent', 'electronicSignatureStatus'],
+  },
+  ownership: {
+    title: 'Property Ownership',
+    description: 'Ownership, purchase, bond, and residence facts shown in the profile card.',
+    keys: ['ownershipType', 'purchaseDate', 'purchasePrice', 'existingBond', 'bondBank', 'estimatedSettlementAmount', 'primaryResidence'],
+  },
+  property: {
+    title: 'Property Information',
+    description: 'Property address, attributes, rates, and expected price.',
+    keys: ['propertyAddress', 'bedrooms', 'bathrooms', 'garages', 'parking', 'erfSize', 'floorSize', 'levies', 'ratesTaxes', 'askingPrice'],
+  },
+  features: {
+    title: 'Property Features',
+    description: 'Feature list and common property amenity flags.',
+    keys: ['features', 'pool', 'solarInstallation', 'gasInstallation', 'aircon', 'alarm', 'electricFence', 'borehole', 'flatlet', 'fibre', 'cctv'],
+  },
+  defects: {
+    title: 'Known Defects',
+    description: 'Known defect declarations and supporting notes.',
+    keys: ['knownDefects', 'defectsNotes', 'roof', 'plumbing', 'electrical', 'damp', 'cracks', 'pestDamage'],
+  },
+}
 
 function getSellerProfileFieldConfig(key = '') {
   const normalized = String(key || '')
@@ -18898,6 +19019,40 @@ function getSellerSubmittedSectionModels({
   return models
 }
 
+function getSellerProfileWorkspaceEditSectionModel({
+  sectionId = '',
+  data = {},
+  draft = {},
+  complexDrafts = {},
+} = {}) {
+  const key = normalizeText(sectionId).toLowerCase()
+  const sectionConfig = SELLER_PROFILE_WORKSPACE_EDIT_SECTIONS[key]
+  if (!sectionConfig) return null
+  const fields = sectionConfig.keys
+    .map((fieldKey) => getSellerProfileFieldConfig(fieldKey))
+    .filter((field) => field?.key && !field.readOnly)
+    .map((field) => ({
+      ...field,
+      value: draft?.[field.key],
+      draftValue: draft?.[field.key],
+      complexValue: complexDrafts?.[field.key],
+      populated: hasValue(data?.[field.key]),
+    }))
+  if (!fields.length) return null
+  const capturedCount = fields.filter((field) => hasValue(data?.[field.key])).length
+  return {
+    id: `profile-${key}`,
+    title: sectionConfig.title,
+    description: sectionConfig.description,
+    className: 'lg:col-span-2',
+    fields,
+    missingFields: [],
+    capturedCount,
+    totalCount: fields.length,
+    countLabel: `${capturedCount} of ${fields.length}`,
+  }
+}
+
 function getSellerCapturedFieldSummary({
   sections = [],
   data = {},
@@ -19148,6 +19303,108 @@ function SellerSubmittedSectionCard({
   )
 }
 
+function applySellerProfilePersistenceAliases(nextDraft = {}) {
+  const fullName = normalizeText(firstFilledValue(nextDraft.fullName, nextDraft.sellerName, nextDraft.name))
+  if (fullName) {
+    const nameParts = fullName.split(/\s+/).filter(Boolean)
+    nextDraft.fullName = fullName
+    nextDraft.sellerName = fullName
+    nextDraft.name = fullName
+    nextDraft.sellerFirstName = nextDraft.sellerFirstName || nameParts[0] || ''
+    nextDraft.firstName = nextDraft.firstName || nameParts[0] || ''
+    nextDraft.sellerSurname = nextDraft.sellerSurname || nameParts.slice(1).join(' ')
+    nextDraft.lastName = nextDraft.lastName || nameParts.slice(1).join(' ')
+  }
+  if (hasValue(nextDraft.email)) {
+    nextDraft.email = normalizeText(nextDraft.email).toLowerCase()
+    nextDraft.sellerEmail = nextDraft.email
+    nextDraft.contactEmail = nextDraft.email
+  }
+  if (hasValue(nextDraft.phone)) {
+    nextDraft.phone = normalizeText(nextDraft.phone)
+    nextDraft.sellerPhone = nextDraft.phone
+    nextDraft.mobile = nextDraft.phone
+    nextDraft.contactNumber = nextDraft.phone
+  }
+  if (hasValue(nextDraft.idNumber)) nextDraft.sellerIdNumber = normalizeText(nextDraft.idNumber)
+  if (hasValue(nextDraft.residentialStreet)) {
+    nextDraft.residentialAddressLine1 = nextDraft.residentialStreet
+    nextDraft.addressLine1 = nextDraft.addressLine1 || nextDraft.residentialStreet
+  }
+  if (hasValue(nextDraft.residentialSuburb)) nextDraft.suburb = nextDraft.suburb || nextDraft.residentialSuburb
+  if (hasValue(nextDraft.residentialCity)) nextDraft.city = nextDraft.city || nextDraft.residentialCity
+  if (hasValue(nextDraft.residentialProvince)) nextDraft.province = nextDraft.province || nextDraft.residentialProvince
+  if (hasValue(nextDraft.residentialPostalCode)) nextDraft.postalCode = nextDraft.postalCode || nextDraft.residentialPostalCode
+  if (hasValue(nextDraft.residentialCountry)) nextDraft.country = nextDraft.country || nextDraft.residentialCountry
+  if (hasValue(nextDraft.bank)) nextDraft.bankName = nextDraft.bankName || nextDraft.bank
+  if (hasValue(nextDraft.accountHolder)) nextDraft.bankAccountHolder = nextDraft.accountHolder
+  if (hasValue(nextDraft.accountNumber)) nextDraft.bankAccountNumber = nextDraft.accountNumber
+  if (hasValue(nextDraft.branchCode)) nextDraft.bankBranchCode = nextDraft.branchCode
+  if (hasValue(nextDraft.accountType)) nextDraft.bankAccountType = nextDraft.accountType
+  if (hasValue(nextDraft.existingBond)) nextDraft.bondExists = nextDraft.existingBond
+  if (hasValue(nextDraft.bondBank)) {
+    nextDraft.mortgageBank = nextDraft.bondBank
+    nextDraft.currentBondBank = nextDraft.bondBank
+  }
+  if (hasValue(nextDraft.estimatedSettlementAmount)) {
+    nextDraft.approxBondBalance = nextDraft.estimatedSettlementAmount
+    nextDraft.bondBalance = nextDraft.estimatedSettlementAmount
+  }
+  if (hasValue(nextDraft.primaryResidence)) nextDraft.isPrimaryResidence = nextDraft.primaryResidence
+  if (hasValue(nextDraft.propertyAddress)) {
+    nextDraft.propertyAddressSearch = nextDraft.propertyAddressSearch || nextDraft.propertyAddress
+    nextDraft.propertyAddressLine1 = nextDraft.propertyAddressLine1 || nextDraft.propertyAddress
+  }
+  if (hasValue(nextDraft.askingPrice)) {
+    nextDraft.estimatedValue = nextDraft.estimatedValue || nextDraft.askingPrice
+    nextDraft.price = nextDraft.price || nextDraft.askingPrice
+  }
+  if (hasValue(nextDraft.parking)) {
+    nextDraft.parkingCovered = nextDraft.parkingCovered || nextDraft.parking
+  }
+  if (hasValue(nextDraft.knownDefects)) nextDraft.defects = nextDraft.knownDefects
+  return nextDraft
+}
+
+function buildSellerProfileLeadSyncPatch({ nextDraft = {}, row = {}, listingId = '' } = {}) {
+  const fullName = normalizeText(firstFilledValue(nextDraft.fullName, nextDraft.sellerName, nextDraft.name))
+  const nameParts = fullName.split(/\s+/).filter(Boolean)
+  const email = normalizeText(firstFilledValue(nextDraft.email, nextDraft.sellerEmail)).toLowerCase()
+  const phone = normalizeText(firstFilledValue(nextDraft.phone, nextDraft.sellerPhone, nextDraft.mobile))
+  const propertyAddress = normalizeText(firstFilledValue(nextDraft.propertyAddress, nextDraft.propertyAddressSearch, nextDraft.propertyAddressLine1))
+  const estimatedValue = Number(String(firstFilledValue(nextDraft.askingPrice, nextDraft.estimatedValue, '')).replace(/[^0-9.-]/g, '')) || 0
+  const leadPatch = {}
+  const contactPatch = {}
+
+  if (listingId && !getSellerListingId(row)) leadPatch.listingId = listingId
+  if (propertyAddress) {
+    leadPatch.sellerPropertyAddress = propertyAddress
+    leadPatch.formattedAddress = propertyAddress
+    leadPatch.streetAddress = propertyAddress
+    leadPatch.propertyInterest = propertyAddress
+  }
+  if (hasValue(nextDraft.suburb)) leadPatch.suburb = normalizeText(nextDraft.suburb)
+  if (hasValue(nextDraft.city)) leadPatch.city = normalizeText(nextDraft.city)
+  if (hasValue(nextDraft.province)) leadPatch.province = normalizeText(nextDraft.province)
+  if (hasValue(nextDraft.postalCode)) leadPatch.postalCode = normalizeText(nextDraft.postalCode)
+  if (hasValue(nextDraft.country)) leadPatch.country = normalizeText(nextDraft.country)
+  if (estimatedValue) {
+    leadPatch.estimatedValue = estimatedValue
+    leadPatch.budget = estimatedValue
+  }
+  if (hasValue(nextDraft.propertyNotes)) leadPatch.notes = normalizeText(nextDraft.propertyNotes)
+
+  if (fullName) {
+    contactPatch.firstName = normalizeText(nextDraft.sellerFirstName || nextDraft.firstName || nameParts[0])
+    contactPatch.lastName = normalizeText(nextDraft.sellerSurname || nextDraft.lastName || nameParts.slice(1).join(' '))
+  }
+  if (email) contactPatch.email = email
+  if (phone) contactPatch.phone = phone
+  if (Object.keys(contactPatch).length) contactPatch.contactType = 'Seller'
+
+  return { leadPatch, contactPatch }
+}
+
 function buildSellerOnboardingSubmissionPatch({
   sourceData = {},
   draft = {},
@@ -19222,6 +19479,7 @@ function buildSellerOnboardingSubmissionPatch({
   nextDraft.country = hasAddressInput
     ? normalizedAddress.country || nextDraft.country || sourceData?.country || 'South Africa'
     : nextDraft.country || sourceData?.country || ''
+  applySellerProfilePersistenceAliases(nextDraft)
 
   const patch = {}
   const changedFields = []
@@ -19698,6 +19956,7 @@ function SellerProfileTab({
   onboardingStatus,
   timeline = [],
   listing = null,
+  organisationId = '',
   actor = null,
   sendingOnboarding = false,
   agentOnboardingSignal = 0,
@@ -19710,7 +19969,13 @@ function SellerProfileTab({
   onCopySellerPortalLink,
   onTabChange,
 }) {
-  const sourceFormData = useMemo(() => clonePlainObject(readSellerOnboardingFormData(listing, row)), [listing, row])
+  const baseSourceFormData = useMemo(() => clonePlainObject(readSellerOnboardingFormData(listing, row)), [listing, row])
+  const baseSourceKey = useMemo(() => JSON.stringify(baseSourceFormData), [baseSourceFormData])
+  const [optimisticFormData, setOptimisticFormData] = useState(null)
+  const sourceFormData = useMemo(() => ({
+    ...baseSourceFormData,
+    ...(isPlainObject(optimisticFormData) ? optimisticFormData : {}),
+  }), [baseSourceFormData, optimisticFormData])
   const sourceKey = useMemo(() => JSON.stringify(sourceFormData), [sourceFormData])
   const [draft, setDraft] = useState(() => clonePlainObject(sourceFormData))
   const [complexDrafts, setComplexDrafts] = useState(() => ({
@@ -19723,6 +19988,7 @@ function SellerProfileTab({
   }))
   const [addedFieldKeys, setAddedFieldKeys] = useState([])
   const [isEditingSubmittedDetails, setIsEditingSubmittedDetails] = useState(false)
+  const [profileEditSectionId, setProfileEditSectionId] = useState('')
   const [agentAssistedMode, setAgentAssistedMode] = useState(false)
   const [activeSubmittedDocumentTab, setActiveSubmittedDocumentTab] = useState('seller_onboarding')
   const [downloadingDocument, setDownloadingDocument] = useState('')
@@ -19742,11 +20008,19 @@ function SellerProfileTab({
   }), [sourceFormData])
 
   useEffect(() => {
+    if (!isPlainObject(optimisticFormData)) return
+    const pendingKeys = Object.keys(optimisticFormData)
+      .filter((key) => normalizeComparableSellerValue(baseSourceFormData?.[key]) !== normalizeComparableSellerValue(optimisticFormData?.[key]))
+    if (!pendingKeys.length) setOptimisticFormData(null)
+  }, [baseSourceFormData, baseSourceKey, optimisticFormData])
+
+  useEffect(() => {
     const nextDraft = clonePlainObject(sourceFormData)
     setDraft(nextDraft)
     setComplexDrafts(createComplexDraftState(nextDraft))
     setAddedFieldKeys([])
     setIsEditingSubmittedDetails(false)
+    setProfileEditSectionId('')
     setAgentAssistedMode(false)
     setActiveSubmittedDocumentTab('seller_onboarding')
     setDownloadingDocument('')
@@ -19782,6 +20056,16 @@ function SellerProfileTab({
     }),
     [activeOnboardingSections, addedFieldKeys, agentAssistedMode, complexDrafts, draft, onboardingEditorActive, onboardingSubmitted, sourceFormData],
   )
+  const profileEditSectionModels = useMemo(() => {
+    const section = getSellerProfileWorkspaceEditSectionModel({
+      sectionId: profileEditSectionId,
+      data: sourceFormData,
+      draft,
+      complexDrafts,
+    })
+    return section ? [section] : []
+  }, [complexDrafts, draft, profileEditSectionId, sourceFormData])
+  const editorSectionModels = profileEditSectionModels.length ? profileEditSectionModels : submittedSectionModels
   const submittedDownloadSectionModels = useMemo(
     () => getSellerSubmittedSectionModels({
       sections: submittedSections,
@@ -19855,16 +20139,28 @@ function SellerProfileTab({
     setAddedFieldKeys([])
   }, [createComplexDraftState, sourceFormData])
 
-  const beginEditing = useCallback(() => {
+  const beginEditing = useCallback((section = null) => {
+    const sectionId = normalizeText(section?.id || section).toLowerCase()
+    const editSection = SELLER_PROFILE_WORKSPACE_EDIT_SECTIONS[sectionId]
     setActiveSubmittedDocumentTab('seller_onboarding')
+    setProfileEditSectionId(editSection ? sectionId : '')
     setIsEditingSubmittedDetails(true)
+    if (editSection?.keys?.length) {
+      setAddedFieldKeys((previous) => Array.from(new Set([...(previous || []), ...editSection.keys])))
+    }
     setMessage('')
     setError('')
+    if (typeof window !== 'undefined' && editSection) {
+      window.setTimeout(() => {
+        document.getElementById('seller-onboarding-editor')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+      }, 50)
+    }
   }, [])
 
   const discardChanges = useCallback(() => {
     syncDraftToSource()
     setIsEditingSubmittedDetails(false)
+    setProfileEditSectionId('')
     setAgentAssistedMode(false)
     setMessage('')
     setError('')
@@ -19873,6 +20169,7 @@ function SellerProfileTab({
   const beginAgentAssistedOnboarding = useCallback(() => {
     setAgentAssistedMode(true)
     setIsEditingSubmittedDetails(true)
+    setProfileEditSectionId('')
     setMessage('')
     setError('')
     if (typeof document === 'undefined') return
@@ -19889,6 +20186,7 @@ function SellerProfileTab({
   const viewSubmittedOnboarding = useCallback(() => {
     setActiveSubmittedDocumentTab('seller_onboarding')
     setIsEditingSubmittedDetails(false)
+    setProfileEditSectionId('')
     setMessage('')
     setError('')
     if (typeof document === 'undefined') return
@@ -19976,6 +20274,22 @@ function SellerProfileTab({
         status: onboardingSubmitted ? onboardingStatus : 'in_progress',
       })
 
+      const { leadPatch, contactPatch } = buildSellerProfileLeadSyncPatch({ nextDraft, row, listingId })
+      const leadId = normalizeText(row?.leadId || row?.lead_id || row?.id)
+      if (organisationId && leadId && Object.keys(leadPatch).length) {
+        await updateAgencyCrmLeadRecord(organisationId, leadId, leadPatch).catch((syncError) => {
+          console.warn('[AgentLeadsPage] Seller profile lead sync failed.', syncError)
+          return null
+        })
+      }
+      const contactId = getLeadContactId(row)
+      if (organisationId && contactId && Object.keys(contactPatch).length) {
+        await updateAgencyCrmContactRecord(organisationId, contactId, contactPatch).catch((syncError) => {
+          console.warn('[AgentLeadsPage] Seller profile contact sync failed.', syncError)
+          return null
+        })
+      }
+
       const changedFieldLabels = changedFields.slice(0, 6).map((key) => humanizeSellerFieldKey(key)).join(', ')
       await createPrivateListingActivity({
         privateListingId: listingId,
@@ -19994,10 +20308,12 @@ function SellerProfileTab({
         },
       }).catch(() => {})
 
+      setOptimisticFormData(nextDraft)
       setDraft(nextDraft)
       setComplexDrafts(createComplexDraftState(nextDraft))
       setAddedFieldKeys([])
       setIsEditingSubmittedDetails(false)
+      setProfileEditSectionId('')
       setMessage('Seller onboarding overrides saved.')
       await onSaved?.()
     } catch (saveError) {
@@ -20014,6 +20330,7 @@ function SellerProfileTab({
     draft,
     journey?.listing,
     listing,
+    organisationId,
     onboardingStatus,
     onboardingSubmitted,
     onSaved,
@@ -20599,7 +20916,7 @@ function SellerProfileTab({
               Complete the seller onboarding on behalf of the seller. This uses the same onboarding record and will mark seller onboarding as completed once saved.
             </div>
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
-              {submittedSectionModels.map((section) => (
+              {editorSectionModels.map((section) => (
                 <SellerSubmittedSectionCard
                   key={section.id}
                   section={section}
@@ -20747,9 +21064,9 @@ function SellerProfileTab({
                     Save overrides writes an audit trail against the lead record and keeps the original seller submission as the baseline.
                   </div>
                 ) : null}
-                {submittedSectionModels.length ? (
+                {editorSectionModels.length ? (
                   <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                    {submittedSectionModels.map((section) => (
+                    {editorSectionModels.map((section) => (
                       <SellerSubmittedSectionCard
                         key={section.id}
                         section={section}
@@ -20926,8 +21243,7 @@ function SellerPropertyTab({ row, listing, onSavePropertyDetails }) {
   }, [draft, onSavePropertyDetails])
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-      <SellerPropertyPreviewCard row={row} listing={listing} />
+    <div className="grid gap-6">
       <SellerWorkspaceCard
         title="Property Detail"
         action={editing ? (
@@ -22293,10 +22609,10 @@ function SellerActivityInsightsPanel({
     ['Pending Actions', insights.pendingActions],
   ]
   return (
-    <aside className="grid min-w-0 gap-5 lg:grid-cols-2 xl:grid-cols-1">
-      <section className="rounded-2xl border border-slate-200 bg-white p-4">
+    <aside className="grid min-w-0 gap-4 lg:grid-cols-2 xl:grid-cols-1">
+      <section className="rounded-2xl border border-slate-200 bg-white p-3">
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Activity Insights</p>
-        <dl className="mt-4 space-y-2">
+        <dl className="mt-3 space-y-2">
           {rows.map(([label, value]) => (
             <div key={label} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
               <dt className="text-sm font-semibold text-slate-600">{label}</dt>
@@ -22305,9 +22621,9 @@ function SellerActivityInsightsPanel({
           ))}
         </dl>
       </section>
-      <section className="rounded-2xl border border-slate-200 bg-white p-4">
+      <section className="rounded-2xl border border-slate-200 bg-white p-3">
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Filters</p>
-        <div className="mt-4 grid gap-3">
+        <div className="mt-3 grid gap-3">
           <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
             Date range
             <select value={dateRange} onChange={(event) => onDateRangeChange?.(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700 outline-none focus:border-blue-300">
@@ -22381,9 +22697,9 @@ function SellerActivityTab({ timeline = [], row = {}, listing = null, journey = 
   ]
 
   return (
-    <SellerWorkspaceCard title="Activity Workspace" className="min-h-0">
-      <div className="flex min-w-0 flex-col gap-5">
-        <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 lg:flex-row lg:items-center lg:justify-between">
+    <SellerWorkspaceCard title="Activity Workspace" className="min-h-0 overflow-visible" density="compact">
+      <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex flex-col gap-3 border-b border-slate-100 pb-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-xl font-semibold tracking-[-0.035em] text-slate-950">Activity</h2>
             <p className="mt-1 text-sm font-semibold text-slate-500">{rawEvents.length} events</p>
@@ -22407,13 +22723,13 @@ function SellerActivityTab({ timeline = [], row = {}, listing = null, journey = 
             </div>
           </div>
         </div>
-        <div className="grid min-w-0 gap-5 lg:grid-cols-12">
-          <div className="grid min-w-0 gap-5 lg:col-span-4 xl:col-span-3">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-12">
+          <div className="grid min-w-0 gap-4 lg:col-span-4 xl:col-span-3">
             <SellerTimelineSummaryCard row={row} listing={listing} journey={journey} readiness={readiness} onTabChange={onTabChange} />
             <SellerTimelineMilestonesCard row={row} listing={listing} journey={journey} />
           </div>
           <div className="min-w-0 lg:col-span-8 xl:col-span-6">
-            <div className="flex h-[560px] min-h-[380px] min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex min-h-[340px] min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 lg:h-[clamp(360px,calc(100dvh-19rem),620px)]">
               <div className="shrink-0 border-b border-slate-100 pb-3">
                 <div className="flex flex-wrap gap-2">
                   {categoryOptions.map((option) => (
@@ -22490,6 +22806,7 @@ function SellerTabContent({
         onboardingStatus={onboardingStatus}
         timeline={timeline}
         listing={listing}
+        organisationId={organisationId}
         actor={actor}
         sendingOnboarding={sendingSellerOnboarding}
         agentOnboardingSignal={agentOnboardingSignal}
@@ -23340,18 +23657,17 @@ function AgentLeadWorkspace() {
     ]
     : [
       { key: 'overview', label: 'Overview' },
-      { key: 'property_match', label: 'Property Match' },
-      { key: 'timeline', label: 'Activity' },
-      { key: 'tasks', label: 'Tasks' },
-      { key: 'appointments', label: 'Appointments' },
       { key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Onboarding / OTP' },
+      { key: 'appointments', label: 'Appointments' },
+      { key: 'property_match', label: 'Properties' },
+      { key: 'timeline', label: 'Activity' },
     ], [isSellerLeadWorkspace])
   const availableTabs = useMemo(
     () => isSellerLeadWorkspace ? tabs : [...tabs, ...BUYER_INTERNAL_WORKFLOW_TABS, { key: 'activity', label: 'Activity' }],
     [isSellerLeadWorkspace, tabs],
   )
   const visibleBuyerTabs = useMemo(
-    () => [...tabs.filter((tab) => !['requirements', 'tasks'].includes(tab.key)), { key: 'documents', label: 'Documents' }],
+    () => tabs.filter((tab) => !['requirements', 'tasks', 'documents'].includes(tab.key)),
     [tabs],
   )
 
@@ -24503,7 +24819,6 @@ function AgentLeadWorkspace() {
             organisationId={organisationId}
             lead={row}
             actor={actor}
-            initialMode="manual_capture"
             onClose={() => setBuyerOfferCaptureOpen(false)}
             onSaved={handleBuyerManualOfferSaved}
           />

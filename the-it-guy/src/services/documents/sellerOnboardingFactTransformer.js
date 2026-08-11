@@ -396,6 +396,10 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const multipleOwnerCaptureMode = ['capture_now', 'send_onboarding'].includes(multipleOwnerCaptureModeCandidate)
     ? multipleOwnerCaptureModeCandidate
     : 'capture_now'
+  const popiConsentAccepted =
+    normalizeBoolean(form.popiConsentAccepted ?? form.popi_consent_accepted ?? form.popiConsent ?? form.popi_consent, false) ||
+    normalizeBoolean(form.arch9TermsAccepted ?? form.arch9_terms_accepted, false) ||
+    normalizeKey(form.popiConsent || form.popi_consent) === 'accepted'
 
   return {
     seller_branch: flow.seller_branch,
@@ -429,10 +433,20 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       surname: normalizeText(form.sellerSurname),
       email: normalizeText(form.email),
       phone: normalizeText(form.phone),
+      alternative_number: normalizeText(form.alternativeNumber || form.alternative_number || form.alternatePhone || form.alternate_phone),
       id_number: normalizeText(form.idNumber),
+      date_of_birth: normalizeDate(form.dateOfBirth || form.date_of_birth || form.birthDate),
+      nationality: normalizeText(form.nationality),
       residential_address: resolveSellerResidentialAddress(form),
       authorised_representative: normalizeText(form.authorisedRepresentative || form.companyDirectorName || form.trusteeName),
-      tax_number: normalizeText(form.sellerTaxNumber),
+      tax_number: normalizeText(form.sellerTaxNumber || form.incomeTaxNumber || form.income_tax_number || form.taxNumber || form.tax_number),
+      sa_resident: normalizeText(form.saResident || form.sa_resident || form.taxResident || form.tax_resident),
+      tax_resident: normalizeText(form.taxResident || form.tax_resident || form.saResident || form.sa_resident),
+      popi_consent: popiConsentAccepted ? 'Accepted' : '',
+      popi_consent_accepted: popiConsentAccepted,
+      popi_consent_accepted_at: popiConsentAccepted
+        ? normalizeText(form.popiConsentAcceptedAt || form.popi_consent_accepted_at)
+        : '',
       residency_status: normalizeText(form.foreignResidencyStatus || form.residencyStatus),
       vat_registered: vatEligibleSeller ? normalizeBoolean(form.vatRegistered, false) : false,
       vat_number: vatEligibleSeller ? normalizeText(form.vatNumber) : '',
@@ -767,10 +781,15 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   push(missingIf(!facts.seller?.surname, 'seller_surname_missing', 'Seller surname is required.'))
   push(missingIf(!facts.seller?.email, 'seller_email_missing', 'Seller email is required.'))
   push(missingIf(!facts.seller?.phone, 'seller_phone_missing', 'Seller phone is required.'))
+  push(missingIf(!facts.seller?.tax_number, 'seller_tax_number_missing', 'Seller tax number is required.'))
+  push(missingIf(!hasValue(facts.seller?.sa_resident || facts.seller?.tax_resident), 'seller_tax_residency_missing', 'Seller SA residency status is required.'))
+  push(missingIf(!facts.seller?.popi_consent_accepted, 'seller_popi_consent_missing', 'POPI consent is required.'))
   push(missingIf(!hasValue(facts.seller?.owner_entity_type), 'owner_entity_type_missing', 'Owner entity type is required.'))
   push(missingIf(!hasValue(facts.seller?.owner_structure_type), 'owner_structure_type_missing', 'Owner structure type is required.'))
   push(missingIf(facts.seller?.foreign_owner && !hasValue(facts.seller?.foreign_owner_country || facts.seller?.foreign?.country), 'foreign_owner_country_missing', 'Foreign owner country or jurisdiction is required.'))
   push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.id_number, 'seller_id_number_missing', 'ID number is required for individual and married sellers.'))
+  push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.date_of_birth, 'seller_date_of_birth_missing', 'Date of birth is required for individual and married sellers.'))
+  push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.nationality, 'seller_nationality_missing', 'Nationality is required for individual and married sellers.'))
   push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.residential_address, 'seller_residential_address_missing', 'Residential address is required for individual and married sellers.'))
   push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.marital_status, 'marital_status_missing', 'Marital status is required for individual and married sellers.'))
   push(missingIf(sellerBranch === 'married' && !facts.seller?.marital_regime, 'marital_regime_missing', 'Marital regime is required for married sellers.'))
@@ -880,7 +899,12 @@ export function calculateSellerFactReadiness(facts = {}) {
       facts.seller?.surname,
       facts.seller?.email,
       facts.seller?.phone,
+      facts.seller?.tax_number,
+      facts.seller?.sa_resident || facts.seller?.tax_resident,
+      facts.seller?.popi_consent_accepted,
       sellerBranch === 'individual' || sellerBranch === 'married' ? facts.seller?.id_number : true,
+      sellerBranch === 'individual' || sellerBranch === 'married' ? facts.seller?.date_of_birth : true,
+      sellerBranch === 'individual' || sellerBranch === 'married' ? facts.seller?.nationality : true,
       sellerBranch === 'individual' || sellerBranch === 'married' ? facts.seller?.residential_address : true,
       sellerBranch === 'company' ? facts.seller?.company?.name : true,
       sellerBranch === 'company' ? facts.seller?.company?.registration_number : true,

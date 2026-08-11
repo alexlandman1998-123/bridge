@@ -4,16 +4,6 @@ export const PLATFORM_FEE_CURRENCY = 'ZAR'
 export const PLATFORM_FEE_CHECKBOX_LABEL = 'I have read, understood and agree to the above authorisation.'
 
 export const PLATFORM_FEE_CONSENT = Object.freeze({
-  seller: Object.freeze({
-    partyType: 'seller',
-    title: 'ARCH9 Transaction Platform Fee',
-    body:
-      'I acknowledge that this transaction is being facilitated through the ARCH9 platform. I authorise the transferring attorney to deduct the once-off ARCH9 Transaction Platform Fee of R750.00 from my proceeds on registration and to remit that amount to ARCH9.',
-    checkboxLabel: PLATFORM_FEE_CHECKBOX_LABEL,
-    wordingVersion: 'seller-platform-fee-v1',
-    source: 'seller_defects_declaration',
-    validationMessage: 'Please acknowledge the ARCH9 Transaction Platform Fee authorisation before signing the declaration.',
-  }),
   buyer: Object.freeze({
     partyType: 'buyer',
     title: 'ARCH9 Transaction Platform Fee',
@@ -34,7 +24,11 @@ export function formatPlatformFeeAmount(amount = PLATFORM_FEE_AMOUNT, currency =
 }
 
 export function getPlatformFeeConsentConfig(partyType = '') {
-  return PLATFORM_FEE_CONSENT[String(partyType || '').trim().toLowerCase()] || PLATFORM_FEE_CONSENT.buyer
+  const normalizedPartyType = String(partyType || '').trim().toLowerCase()
+  if (normalizedPartyType === 'seller') {
+    throw new Error('Seller platform fee consent is no longer supported.')
+  }
+  return PLATFORM_FEE_CONSENT[normalizedPartyType] || PLATFORM_FEE_CONSENT.buyer
 }
 
 export function normalizePlatformFeeConsentAcceptance(value = {}, partyType = '') {

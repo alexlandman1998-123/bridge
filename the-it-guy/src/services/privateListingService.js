@@ -2,11 +2,6 @@ import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { buildSellerClientPortalLink, buildSellerOnboardingLink, generateSellerOnboardingToken } from '../lib/agentListingStorage'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
 import {
-  getPlatformFeeConsentConfig,
-  isPlatformFeeConsentAccepted,
-  readPlatformFeeConsentAcceptance,
-} from '../lib/platformFeeConsent'
-import {
   canTransitionPrivateListing,
   evaluatePrivateListingTransitionGuards,
   getAllowedPrivateListingTransitions,
@@ -7547,81 +7542,6 @@ async function maybeResolveCanonicalSellerRequirements({ listing, formData, clie
   return resolution
 }
 
-async function acceptSellerPlatformFeeConsent(client, {
-  token = '',
-  formData = {},
-  listing = null,
-  onboarding = null,
-} = {}) {
-  if (!isPlatformFeeConsentAccepted(formData, 'seller')) {
-    throw new Error(getPlatformFeeConsentConfig('seller').validationMessage)
-  }
-
-  const consent = readPlatformFeeConsentAcceptance(formData, 'seller')
-  const sellerName = normalizeText(
-    [formData.sellerFirstName, formData.sellerSurname].filter(Boolean).join(' ') ||
-      formData.fullName ||
-      listing?.seller?.name ||
-      listing?.sellerName ||
-      '',
-  )
-  const relatedDocumentId = normalizeUuid(
-    formData.propertyDisclosure?.generatedDocument?.id ||
-      formData.propertyDisclosure?.generated_document?.id ||
-      formData.platformFeeConsent?.relatedDocumentId ||
-      formData.platformFeeConsent?.related_document_id ||
-      '',
-  ) || ''
-
-  const { data, error } = await client.rpc('bridge_accept_seller_platform_fee_consent', {
-    p_token: normalizeText(token || onboarding?.token || listing?.sellerOnboarding?.token),
-    p_acceptance: {
-      ...consent,
-      acceptedAt: consent.acceptedAt || consent.accepted_at || new Date().toISOString(),
-      acceptedByName: sellerName,
-      acceptedByEmail: normalizeText(formData.email || listing?.seller?.email || listing?.sellerEmail || ''),
-      acceptedByPhone: normalizeText(formData.phone || listing?.seller?.phone || listing?.sellerPhone || ''),
-      transactionReference: normalizeText(listing?.transactionReference || listing?.transaction_reference || ''),
-      relatedDocumentId,
-      source: 'seller_defects_declaration',
-    },
-  })
-
-  if (error) {
-    if (isMissingRpcError(error, 'bridge_accept_seller_platform_fee_consent') || isMissingSchemaError(error)) {
-      throw new Error('Platform fee consent capture is not ready yet. Apply the platform fee consent migration.')
-    }
-    if (isDeferredSellerPlatformFeeConsentError(error) || isStatementTimeoutError(error)) {
-      console.warn('[Private Listings] seller platform fee consent transaction projection deferred', {
-        reason: buildSupabaseErrorSummary(error),
-      })
-      return {
-        deferred: true,
-        reason: isStatementTimeoutError(error) ? 'projection_timeout' : 'transaction_not_linked',
-        message: normalizeText(error.message || 'Seller platform fee consent projection was deferred.'),
-      }
-    }
-    throw error
-  }
-
-  return data
-}
-
-function isDeferredSellerPlatformFeeConsentError(error) {
-  if (!error) return false
-  const code = String(error.code || '').toLowerCase()
-  const text = [
-    error.message,
-    error.details,
-    error.hint,
-  ].map((value) => String(value || '').toLowerCase()).join(' ')
-  return (
-    code === '22023' &&
-    text.includes('seller platform fee consent') &&
-    text.includes('linked transaction')
-  )
-}
-
 function readAcceptedPreferredTransferAttorney(formData = {}) {
   const source = formData && typeof formData === 'object' ? formData : {}
   const choice = normalizeText(source.transferAttorneyChoice || source.transfer_attorney_choice || 'preferred').toLowerCase()
@@ -7853,12 +7773,6 @@ export async function submitSellerOnboarding(token, payload = {}) {
         updated_at: new Date().toISOString(),
       },
     }))
-    await acceptSellerPlatformFeeConsent(client, {
-      token: normalizedToken,
-      formData: payload.formData,
-      listing: rpcContext.listing,
-      onboarding: rpcContext.onboarding,
-    })
     deferSellerOnboardingFollowUp('transfer attorney allocation after onboarding submit', () => ensureAcceptedPreferredTransferAttorneyAllocation(client, {
       listing: rpcContext.listing,
       onboarding: rpcContext.onboarding,
@@ -8018,12 +7932,6 @@ export async function submitSellerOnboarding(token, payload = {}) {
     console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding fallback submit', canonicalError)
   })
 
-  await acceptSellerPlatformFeeConsent(client, {
-    token: normalizedToken,
-    formData: nextFormData,
-    listing: listingForContext,
-    onboarding: updateOnboarding.data,
-  })
   await ensureAcceptedPreferredTransferAttorneyAllocation(client, {
     listing: listingForContext,
     onboarding: updateOnboarding.data,
@@ -8628,7 +8536,6 @@ export async function uploadSellerClientPortalDocument({
 }
 
 export const __privateListingServiceTestUtils = Object.freeze({
-  acceptSellerPlatformFeeConsent,
   notifyAgentWhenSellerDocumentsComplete,
   getSellerCompletionDocuments,
   getSellerCompletionRequirements,
