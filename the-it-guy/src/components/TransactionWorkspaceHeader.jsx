@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  ArrowLeft,
   Building2,
   CircleDollarSign,
   Clock3,
@@ -10,6 +11,9 @@ import {
   Printer,
   RefreshCw,
   Archive,
+  HeartPulse,
+  Landmark,
+  Scale,
   Trash2,
   UserRound,
 } from 'lucide-react'
@@ -26,9 +30,13 @@ const PILL_TONE_CLASS = {
 }
 
 const ICON_BY_KEY = {
+  arrow_left: ArrowLeft,
   user: UserRound,
   stage: Building2,
   status: Building2,
+  health: HeartPulse,
+  attorney: Scale,
+  bond: Landmark,
   onboarding: Link2,
   finance: CircleDollarSign,
   time: Clock3,

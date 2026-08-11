@@ -1,7 +1,6 @@
 import { Component, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  ArrowLeft,
   BadgeDollarSign,
   Building2,
   CalendarClock,
@@ -6999,7 +6998,6 @@ function UnitDetail() {
       : matterHealthLabel === 'Waiting'
         ? 'border-[#d9e3ee] bg-[#f7fafc] text-[#60758c]'
         : 'border-[#cfe8d8] bg-[#effaf3] text-[#197a45]'
-  const latestUpdatedLabel = formatDateTime(transaction?.updated_at || transaction?.created_at)
   const developerReadinessAction = developerReadinessProfile?.nextAction || null
   const nextActionTitle = developerReadinessAction?.title || activeNextActionRecommendation || transaction?.next_action || 'Review transaction progress'
   const nextActionDescription =
@@ -7022,14 +7020,6 @@ function UnitDetail() {
   const displayedMatterHealthTone = usingTransactionRollupOverview
     ? getRollupMatterHealthTone(transactionRollup?.parentStatus)
     : matterHealthTone
-  const displayedLatestUpdatedLabel = usingTransactionRollupOverview
-    ? formatDateTime(
-        transactionRollup?.derivedAt ||
-          transactionRollup?.lastWorkflowUpdatedAt ||
-          transaction?.updated_at ||
-          transaction?.created_at,
-      )
-    : latestUpdatedLabel
   const displayedNextActionTitle = usingTransactionRollupOverview
     ? rollupOverviewAction?.title || nextActionTitle
     : nextActionTitle
@@ -7517,6 +7507,43 @@ function UnitDetail() {
     timeInStageMeta: `Updated ${formatDate(transaction?.updated_at || transaction?.created_at)}`,
     unitStatusLabel: unit?.status ? toTitleLabel(unit.status) : 'Unit active',
   })
+  const agentWorkspaceHeaderStats = agentMetricCards.map((card) => ({
+    label: card.label,
+    value: card.value,
+    helperText: card.subtext,
+    icon:
+      card.icon === Landmark
+        ? 'bond'
+        : card.icon === BadgeDollarSign || card.icon === CircleDollarSign
+          ? 'price'
+          : card.icon === UserRound
+            ? 'user'
+            : card.icon === UploadCloud
+              ? 'report'
+              : card.icon === Scale
+                ? 'attorney'
+                : card.icon === CalendarClock
+                  ? 'time'
+                  : card.icon === CheckCircle2
+                    ? 'status'
+                    : 'stage',
+  }))
+  const canonicalWorkspaceHeaderConfig = isAgentWorkspace
+    ? {
+        ...workspaceHeaderConfig,
+        contextLabel: 'Transaction Command Center',
+        title: transactionReference,
+        unitLabel: `Unit ${unit.unit_number}`,
+        subtitle: propertyIdentityTitle,
+        pills: [
+          { label: buyer?.name || `${workspaceLabels.buyer} pending`, icon: 'user', tone: buyer?.name ? 'blue' : 'amber' },
+          { label: sellerDisplayName, icon: 'user', tone: sellerDisplayName === 'Not assigned' ? 'amber' : 'slate' },
+          { label: assignedAgentDisplayName, icon: 'stage', tone: assignedAgentDisplayName === 'Not assigned' ? 'amber' : 'blue' },
+          { label: displayedMatterHealthLabel, icon: 'health', tone: displayedMatterHealthLabel === 'Attention' ? 'amber' : 'green' },
+        ],
+        stats: agentWorkspaceHeaderStats,
+      }
+    : workspaceHeaderConfig
   const workspaceTransactionLifecycleState = String(transaction?.lifecycle_state || '').toLowerCase()
   const canArchiveTransaction = ['registered', 'completed'].includes(workspaceTransactionLifecycleState)
   const onboardingDeliveryMode = onboardingIntakePreference
@@ -7648,6 +7675,20 @@ function UnitDetail() {
     : workspaceHeaderActionItems
 
   const workspaceHeaderActions = [
+    ...(isAgentWorkspace
+      ? [{
+          id: 'back-to-transactions',
+          label: 'Back to Transactions',
+          icon: 'arrow_left',
+          variant: 'secondary',
+          onClick: () => navigate('/transactions'),
+        }]
+      : []),
+    ...workflowHeaderActions.map((action) => ({
+      ...action,
+      label: action.busy ? action.busyLabel || 'Processing...' : action.label,
+      icon: 'status',
+    })),
     ...(onboardingComplete
       ? [{
           id: 'onboarding-complete',
@@ -7666,172 +7707,6 @@ function UnitDetail() {
       items: filteredWorkspaceHeaderActionItems.filter((item) => item && !item.hidden),
     },
   ]
-  const visibleWorkspaceHeaderActions = workspaceHeaderActions.filter((action) => action && !action.hidden)
-  const agentBackLink = isAgentWorkspace ? (
-    <Link
-      to="/transactions"
-      className="no-print inline-flex w-fit items-center gap-2 rounded-[12px] border border-[#d9e3ee] bg-white px-3.5 py-2 text-sm font-semibold text-[#4f647a] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd] hover:text-[#142132]"
-    >
-      <ArrowLeft size={16} />
-      Back to Transactions
-    </Link>
-  ) : null
-  const agentHeroHeader = isAgentWorkspace ? (
-    <section className="rounded-[26px] border border-[#dbe5ef] bg-white p-5 shadow-[0_18px_38px_rgba(15,23,42,0.06)] md:p-6">
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="inline-flex items-center rounded-full border border-[#d9e3ee] bg-[#f8fbfd] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#65798f]">
-              Transaction Command Center
-            </span>
-            <span className="inline-flex items-center rounded-full border border-[#cfe1d8] bg-[#effaf3] px-3 py-1 text-xs font-semibold text-[#197a45]">
-              {usingTransactionRollupOverview ? formatTransactionRollupStatusLabel(transactionRollup?.parentStatus) : (mainStageLabel || 'Active')}
-            </span>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-end gap-3">
-            <h1 className="text-[2rem] font-semibold leading-none tracking-[-0.05em] text-[#142132] md:text-[2.35rem]">
-              {transactionReference}
-            </h1>
-            <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${displayedMatterHealthTone}`}>
-              <HeartPulse size={13} />
-              {displayedMatterHealthLabel}
-            </span>
-          </div>
-
-          <p className="mt-3 max-w-4xl text-[1.02rem] font-medium leading-7 text-[#294158]">
-            {propertyIdentityTitle}
-          </p>
-
-          <div className="mt-5 grid gap-3 text-sm md:grid-cols-2 2xl:grid-cols-3">
-            {[
-              { label: workspaceLabels.buyer, value: buyer?.name || `${workspaceLabels.buyer} pending`, icon: UserRound },
-              { label: workspaceLabels.seller, value: sellerDisplayName, icon: UserRound },
-              { label: workspaceLabels.agent, value: assignedAgentDisplayName, icon: Building2 },
-              { label: 'Transfer Attorney', value: transferAttorneyDisplayName, subtext: transferAttorneyStatusLabel, icon: Scale },
-              { label: 'Bond Originator', value: bondAttorneyDisplayName, subtext: bondOriginatorStatusLabel, icon: Landmark },
-              { label: 'Last Updated', value: displayedLatestUpdatedLabel, icon: Clock3 },
-            ].map((item) => {
-              const Icon = item.icon
-              return (
-                <div key={item.label} className="flex min-w-0 items-start gap-2.5 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5">
-                  <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] bg-[#edf4fb] text-[#35546c]">
-                    <Icon size={14} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">{item.label}</span>
-                    <strong className="mt-0.5 block truncate text-sm font-semibold text-[#1d3144]">{item.value}</strong>
-                    {item.subtext ? <span className="mt-1 block text-xs font-semibold text-[#60758d]">{item.subtext}</span> : null}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        <aside className="rounded-[20px] border border-[#dfe8f2] bg-[#f8fbfd] p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7c8ea4]">Matter Health</span>
-              <strong className="mt-1.5 block text-[1.35rem] font-semibold tracking-[-0.035em] text-[#142132]">{displayedMatterHealthLabel}</strong>
-              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                {formatTransactionAge(transaction?.created_at || transaction?.updated_at)} • Updated {formatDate(transactionRollup?.derivedAt || transaction?.updated_at || transaction?.created_at)}
-              </p>
-            </div>
-            <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] border ${displayedMatterHealthTone}`}>
-              <HeartPulse size={18} />
-            </span>
-          </div>
-
-          {workflowHeaderActions.length ? (
-            <div className="mt-4 grid gap-2">
-              {workflowHeaderActions.map((action) => {
-                const button = (
-                  <Button
-                    type="button"
-                    variant={action.variant || 'secondary'}
-                    size="sm"
-                    className="w-full rounded-[12px]"
-                    onClick={action.onClick}
-                    disabled={Boolean(action.disabled)}
-                  >
-                    {action.busy ? action.busyLabel || 'Processing...' : action.label}
-                  </Button>
-                )
-
-                return action.reason ? (
-                  <span key={action.id || action.label} title={action.reason}>
-                    {button}
-                  </span>
-                ) : (
-                  <span key={action.id || action.label}>{button}</span>
-                )
-              })}
-            </div>
-          ) : null}
-
-          {visibleWorkspaceHeaderActions.length ? (
-            <div className="mt-4 grid gap-2">
-              {visibleWorkspaceHeaderActions.map((action) => {
-                if (action.as === 'badge') {
-                  return (
-                    <span
-                      key={action.id || action.label}
-                      className="inline-flex min-h-[38px] items-center justify-center rounded-[12px] border border-[#cfe8d8] bg-[#effaf3] px-3 py-2 text-sm font-semibold text-[#197a45]"
-                    >
-                      {action.label}
-                    </span>
-                  )
-                }
-
-                const button = (
-                  <Button
-                    type="button"
-                    variant={action.variant || 'secondary'}
-                    size="sm"
-                    className="w-full rounded-[12px]"
-                    onClick={action.onClick}
-                    disabled={Boolean(action.disabled)}
-                  >
-                    {action.label}
-                  </Button>
-                )
-
-                return action.reason ? (
-                  <span key={action.id || action.label} title={action.reason}>
-                    {button}
-                  </span>
-                ) : (
-                  <span key={action.id || action.label}>{button}</span>
-                )
-              })}
-            </div>
-          ) : null}
-        </aside>
-      </div>
-    </section>
-  ) : null
-  const agentMetricSection = isAgentWorkspace ? (
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-      {agentMetricCards.map((card) => {
-        const Icon = card.icon
-        return (
-          <article key={card.label} className="rounded-[18px] border border-[#dfe8f2] bg-white px-4 py-3.5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8496ab]">{card.label}</span>
-                <strong className="mt-1.5 block truncate text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">{card.value}</strong>
-                <span className="mt-1 block truncate text-xs text-[#7a8fa6]">{card.subtext}</span>
-              </div>
-              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] bg-[#edf4fb] text-[#35546c]">
-                <Icon size={15} />
-              </span>
-            </div>
-          </article>
-        )
-      })}
-    </section>
-  ) : null
   const workspaceNavigationSection = (
     <div ref={workspaceMenuRef}>
       <TransactionWorkspaceMenu
@@ -8536,15 +8411,15 @@ function UnitDetail() {
       printSubtitle={`${unit.development?.name || '-'} • Unit ${unit.unit_number}`}
       printGeneratedAt={reportGeneratedAt}
       errorMessage={error}
-      toolbar={isAgentWorkspace ? agentBackLink : workspaceNavigationSection}
-      headline={isAgentWorkspace ? agentHeroHeader : (
+      toolbar={workspaceNavigationSection}
+      headline={(
         <TransactionWorkspaceHeader
-          contextLabel={workspaceHeaderConfig.contextLabel}
-          title={workspaceHeaderConfig.title}
-          unitLabel={workspaceHeaderConfig.unitLabel}
-          subtitle={workspaceHeaderConfig.subtitle}
-          pills={workspaceHeaderConfig.pills}
-          stats={workspaceHeaderConfig.stats}
+          contextLabel={canonicalWorkspaceHeaderConfig.contextLabel}
+          title={canonicalWorkspaceHeaderConfig.title}
+          unitLabel={canonicalWorkspaceHeaderConfig.unitLabel}
+          subtitle={canonicalWorkspaceHeaderConfig.subtitle}
+          pills={canonicalWorkspaceHeaderConfig.pills}
+          stats={canonicalWorkspaceHeaderConfig.stats}
           actions={workspaceHeaderActions}
         />
       )}
@@ -8560,8 +8435,6 @@ function UnitDetail() {
 
         {isAgentWorkspace ? (
           <>
-            {agentMetricSection}
-            {workspaceNavigationSection}
             <TransactionLifecycleProgress
               summary={usingTransactionRollupOverview ? rollupLifecycleSummary : null}
               transaction={transaction}

@@ -79,7 +79,9 @@ for (const retiredLabel of [
 
 assert.match(source, /workspaceRole === 'attorney' && \['today', 'overview'\]\.includes\(activeWorkspaceMenu\)/, 'attorney overview should keep its own workspace route')
 assert.match(source, /headline=\{workspaceRole === 'attorney' \|\| isAgentTransactionView \? \(/, 'agent transactions should use the restored Archline shell header')
-assert.match(source, /tabs=\{isAgentTransactionView[\s\S]*workspaceMenuTabs\.map\(\(tab\) => \(\{ id: tab\.id, label: tab\.label, count: tab\.meta \}\)\)[\s\S]*: archlineWorkspaceTabs\}/, 'agent shell should reuse the live agent transaction tab list')
+assert.match(source, /tabs=\{isAgentTransactionView[\s\S]*workspaceMenuTabs\.map\(\(tab\) => \(\{ id: tab\.id, label: tab\.label \}\)\)[\s\S]*: archlineWorkspaceTabs\}/, 'agent shell should reuse the live agent transaction tab list without status chips')
+assert.doesNotMatch(source, /workspaceMenuTabs\.map\(\(tab\) => \(\{ id: tab\.id, label: tab\.label, count: tab\.meta \}\)\)/, 'agent shell tabs should not render workflow status metadata as menu chips')
+assert.match(source, /bg-\[linear-gradient\(135deg,#102f3a_0%,#1f4d52_54%,#35546c_100%\)\]/, 'agent shell header should use the contrasting transaction workspace header background')
 assert.match(source, /activeTab=\{isAgentTransactionView \? activeWorkspaceMenu : archlineActiveWorkspaceTab\}/, 'agent shell tabs should track the active agent workspace menu')
 assert.match(source, /workspaceLabel=\{isAgentTransactionView \? 'Transaction Workspace' : 'Legal Matter Workspace'\}/, 'agent shell should label the workspace as a transaction workspace')
 assert.match(source, /showWorkflowProgress=\{!isAgentTransactionView\}/, 'agent shell should not duplicate the restored transaction journey with a header workflow rail')

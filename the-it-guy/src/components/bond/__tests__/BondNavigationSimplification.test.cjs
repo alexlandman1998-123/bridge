@@ -48,29 +48,30 @@ async function main() {
     })
     assert.deepEqual(
       defaultBondNav.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Partners', 'Clients', 'Developments', 'Tasks', 'My Commissions'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'My Commissions'],
     )
     assert.deepEqual(
       hqBondNav.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Partners', 'Clients', 'Developments', 'Tasks', 'Commissions & Reconciliation', 'Team', 'Banks', 'Settings'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Commissions & Reconciliation', 'Team', 'Banks', 'Settings'],
     )
     assert.equal(consultantNav.some((item) => item.key === 'settings'), false)
     assert.deepEqual(
       hqBondNav.filter((item) => item.navSection !== 'secondary').map((item) => item.label),
-      ['Dashboard', 'Applications', 'Partners', 'Clients', 'Developments', 'Tasks', 'Commissions & Reconciliation', 'Team', 'Banks'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Commissions & Reconciliation', 'Team', 'Banks'],
     )
     assert.deepEqual(
       hqBondNav.filter((item) => item.navSection === 'secondary').map((item) => item.label),
       ['Settings'],
     )
     const applicationsNav = hqBondNav.find((item) => item.key === 'bond_applications')
-    assert.equal(applicationsNav?.to, '/bond/applications?view=incoming')
-    assert.equal(Array.isArray(applicationsNav?.children), false)
+    assert.equal(applicationsNav?.to, '/bond/applications?view=active')
+    assert.deepEqual(applicationsNav?.children.map((item) => item.label), ['Active Applications', 'Incoming Applications', 'Completed'])
+    assert.equal(applicationsNav?.children.find((item) => item.key === 'bond_applications_active')?.to, '/bond/applications?view=active')
+    assert.equal(applicationsNav?.children.find((item) => item.key === 'bond_applications_incoming')?.to, '/bond/applications?view=incoming')
+    assert.equal(applicationsNav?.children.find((item) => item.key === 'bond_applications_completed')?.to, '/bond/applications?view=registered')
     const developmentsNav = hqBondNav.find((item) => item.key === 'bond_developments')
     assert.equal(developmentsNav?.to, '/bond/developments?view=current')
-    assert.deepEqual(developmentsNav?.children.map((item) => item.label), ['Current Developments', 'Developers'])
-    assert.equal(developmentsNav?.children.find((item) => item.key === 'bond_developments_current')?.to, '/bond/developments?view=current')
-    assert.equal(developmentsNav?.children.find((item) => item.key === 'bond_developments_developers')?.to, '/bond/developments?view=developers')
+    assert.equal(Array.isArray(developmentsNav?.children), false)
     const teamNav = hqBondNav.find((item) => item.key === 'bond_organisation')
     assert.equal(teamNav?.label, 'Team')
     assert.equal(teamNav?.to, '/bond/organisation?view=consultants')
@@ -78,7 +79,7 @@ async function main() {
     const settingsNav = hqBondNav.find((item) => item.key === 'settings')
     assert.equal(settingsNav?.to, '/settings')
     assert.equal(Array.isArray(settingsNav?.children), false)
-    assert.equal(hqBondNav.some((item) => item.key === 'tasks'), true)
+    assert.equal(hqBondNav.some((item) => item.key === 'tasks'), false)
     assert.equal(hqBondNav.some((item) => item.key === 'bank_relationships'), true)
     assert.equal(hqBondNav.some((item) => item.key === 'bond_reports' || item.key === 'consultant_performance'), false)
     assert.equal(defaultBondNav.some((item) => item.key === 'bond_organisation' || item.key === 'bank_relationships'), false)
@@ -93,7 +94,7 @@ async function main() {
     assert.match(sidebarSource, /'partners'/)
     assert.match(sidebarSource, /'clients'/)
     assert.match(sidebarSource, /bond_developments/)
-    assert.match(sidebarSource, /'tasks'/)
+    assert.doesNotMatch(sidebarSource, /'tasks'.*itemKeys/)
     assert.match(sidebarSource, /revenue_commissions/)
     assert.match(sidebarSource, /bank_relationships/)
 

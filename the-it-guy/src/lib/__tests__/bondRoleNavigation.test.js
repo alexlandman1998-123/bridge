@@ -18,39 +18,38 @@ try {
 
     assert.deepEqual(
       hqItems.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Developments', 'Organisation', 'Partners', 'Bank Relationships', 'Revenue & Commissions', 'Reports', 'Settings'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Commissions & Reconciliation', 'Team', 'Banks', 'Settings'],
     )
-    assert.deepEqual(hqItems.find((item) => item.key === 'bond_applications')?.children.map((item) => item.label), ['Pipeline', 'Applications'])
-    assert.deepEqual(hqItems.find((item) => item.key === 'bond_developments')?.children.map((item) => item.label), ['Current Developments', 'Developers'])
-    assert.deepEqual(hqItems.find((item) => item.key === 'bond_organisation')?.children.map((item) => item.label), ['Overview', 'Branches / Regions', 'Consultants'])
-    assert.deepEqual(hqItems.find((item) => item.key === 'bond_reports')?.children.map((item) => item.label), ['Analytics', 'Predictive Intelligence'])
+    assert.deepEqual(hqItems.find((item) => item.key === 'bond_applications')?.children.map((item) => item.label), ['Active Applications', 'Incoming Applications', 'Completed'])
+    assert.equal(Array.isArray(hqItems.find((item) => item.key === 'bond_developments')?.children), false)
+    assert.equal(Array.isArray(hqItems.find((item) => item.key === 'bond_organisation')?.children), false)
     assert.equal(hqItems.find((item) => item.key === 'settings')?.to, '/settings')
     assert.equal(Array.isArray(hqItems.find((item) => item.key === 'settings')?.children), false)
 
     const regionalItems = roles.getRoleNavItems('bond_originator', { membershipRole: 'bond_regional_manager' })
     assert.deepEqual(
       regionalItems.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Developments', 'Organisation', 'Partners', 'Bank Relationships', 'Revenue & Commissions', 'Reports', 'Settings'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Commissions & Reconciliation', 'Team', 'Banks', 'Settings'],
     )
-    assert.deepEqual(regionalItems.find((item) => item.key === 'bond_organisation')?.children.map((item) => item.label), ['Overview', 'Branches / Regions', 'Consultants'])
+    assert.equal(Array.isArray(regionalItems.find((item) => item.key === 'bond_organisation')?.children), false)
 
     const branchItems = roles.getRoleNavItems('bond_originator', { membershipRole: 'bond_branch_manager' })
     assert.deepEqual(
       branchItems.map((item) => item.label),
-      ['Dashboard', 'Applications', 'Developments', 'Organisation', 'Partners', 'Bank Relationships', 'Revenue & Commissions', 'Reports', 'Settings'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'Commissions & Reconciliation', 'Team', 'Banks', 'Settings'],
     )
-    assert.deepEqual(branchItems.find((item) => item.key === 'bond_organisation')?.children.map((item) => item.label), ['Branches / Regions', 'Consultants'])
+    assert.equal(Array.isArray(branchItems.find((item) => item.key === 'bond_organisation')?.children), false)
 
     const consultantItems = roles.getRoleNavItems('bond_originator', { membershipRole: 'bond_consultant' })
     assert.deepEqual(
       consultantItems.map((item) => item.label),
-      ['Dashboard', 'My Applications', 'Developments', 'Consultant Performance', 'My Commissions', 'Clients', 'Tasks'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'My Commissions'],
     )
 
     const independentItems = roles.getRoleNavItems('bond_originator', { membershipRole: 'bond_independent_consultant' })
     assert.deepEqual(
       independentItems.map((item) => item.label),
-      ['Dashboard', 'My Applications', 'Developments', 'Consultant Performance', 'My Commissions', 'Clients', 'Tasks', 'Settings'],
+      ['Dashboard', 'Applications', 'Developments', 'Partners', 'Clients', 'My Commissions', 'Settings'],
     )
     assert.equal(independentItems.some((item) => item.key === 'bond_regions'), false)
     assert.equal(independentItems.some((item) => item.key === 'bond_branches'), false)

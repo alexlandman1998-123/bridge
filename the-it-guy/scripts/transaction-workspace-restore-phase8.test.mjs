@@ -30,6 +30,9 @@ assert.match(agentTabs, /\{ id: 'transfer', label: 'Conveyancing' \}/, 'agent tr
 assert.doesNotMatch(agentTabs, /\{ id: 'transfer', label: 'Transfer' \}/, 'agent tabs should not expose the old Transfer label')
 assert.match(source, /workspaceLabel=\{isAgentTransactionView \? 'Transaction Workspace' : 'Legal Matter Workspace'\}/, 'agent shell should use the restored transaction workspace label')
 assert.match(source, /showWorkflowProgress=\{!isAgentTransactionView\}/, 'agent shell should suppress the duplicate header workflow rail')
+assert.match(source, /tabs=\{isAgentTransactionView[\s\S]*workspaceMenuTabs\.map\(\(tab\) => \(\{ id: tab\.id, label: tab\.label \}\)\)[\s\S]*: archlineWorkspaceTabs\}/, 'agent shell tabs should not render workflow status metadata chips')
+assert.doesNotMatch(source, /workspaceMenuTabs\.map\(\(tab\) => \(\{ id: tab\.id, label: tab\.label, count: tab\.meta \}\)\)/, 'agent shell should not pass FICA or onboarding metadata into the tab count slot')
+assert.match(source, /bg-\[linear-gradient\(135deg,#102f3a_0%,#1f4d52_54%,#35546c_100%\)\]/, 'agent shell header should use the contrasting transaction workspace header background')
 
 const documentDefinitions = sliceBetween(
   'const ATTORNEY_DOCUMENT_DASHBOARD_CATEGORY_DEFINITIONS = {',

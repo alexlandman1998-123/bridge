@@ -5830,32 +5830,32 @@ function ArchlineMatterHeader({
   return (
     <header className="no-print -mx-3 border-b border-slate-200/70 bg-white px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
       <div className="mx-auto max-w-[1680px] space-y-5">
-        <section className="rounded-[24px] border border-slate-200/80 bg-white px-4 py-4 shadow-[0_16px_36px_rgba(15,23,42,0.045)] md:px-6 md:py-5">
+        <section className="rounded-[24px] border border-[#0f2d37] bg-[linear-gradient(135deg,#102f3a_0%,#1f4d52_54%,#35546c_100%)] px-4 py-4 text-white shadow-[0_22px_44px_rgba(15,47,58,0.22)] md:px-6 md:py-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 flex-wrap items-center gap-3">
               <Link
                 to={backPath}
-                className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#d9e3ee] bg-white px-3.5 text-sm font-semibold text-[#243b5a] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]"
+                className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-white/20 bg-white/12 px-3.5 text-sm font-semibold text-white transition hover:bg-white/18"
               >
                 <ChevronRight size={15} className="rotate-180" />
                 {backLabel || 'Back to Matters'}
               </Link>
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{workspaceLabel}</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#d9f0ec]">{workspaceLabel}</span>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <button type="button" className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50" onClick={onSharePortal}>
+              <button type="button" className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-white/20 bg-white/12 px-3.5 text-sm font-semibold text-white transition hover:bg-white/18" onClick={onSharePortal}>
                 <Link2 size={15} />
                 {shareLabel}
               </button>
-              <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50" onClick={onCall} aria-label="Call primary contact" title="Call primary contact">
+              <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-white/20 bg-white/12 text-white transition hover:bg-white/18" onClick={onCall} aria-label="Call primary contact" title="Call primary contact">
                 <Phone size={16} />
               </button>
-              <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50" onClick={onEmail} aria-label="Email primary contact" title="Email primary contact">
+              <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-white/20 bg-white/12 text-white transition hover:bg-white/18" onClick={onEmail} aria-label="Email primary contact" title="Email primary contact">
                 <Mail size={16} />
               </button>
               <button
                 type="button"
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ee] bg-white px-4 text-sm font-semibold text-[#142132] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-white/20 bg-white/12 px-4 text-sm font-semibold text-white transition hover:bg-white/18"
                 onClick={onMoreActions}
               >
                 {moreActionsLabel}
@@ -5867,7 +5867,7 @@ function ArchlineMatterHeader({
           <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,0.72fr)_minmax(540px,0.52fr)] xl:items-start">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-3">
-                <h1 className="break-words text-[2.35rem] font-semibold leading-none tracking-[-0.04em] text-[#142132] md:text-[3rem]">
+                <h1 className="break-words text-[2.35rem] font-semibold leading-none tracking-[-0.04em] text-white md:text-[3rem]">
                   {reference || 'Matter'}
                 </h1>
                 <button type="button" className="inline-flex size-9 items-center justify-center rounded-full text-amber-500 transition hover:bg-amber-50" aria-label="Favourite matter" title="Favourite matter">
@@ -5880,7 +5880,7 @@ function ArchlineMatterHeader({
                   {chips.map((chip) => {
                     const Icon = chip.icon || FileText
                     return (
-                      <span key={chip.key || chip.label} className="inline-flex h-8 items-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-xs font-semibold text-[#35546c]">
+                      <span key={chip.key || chip.label} className="inline-flex h-8 items-center gap-2 rounded-[10px] border border-white/20 bg-white/12 px-3 text-xs font-semibold text-white">
                         <Icon size={14} />
                         {chip.label}
                       </span>
@@ -5892,9 +5892,9 @@ function ArchlineMatterHeader({
 
             <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {metricRows.map((item) => (
-                <article key={item.key} className="min-w-0 border-slate-200 py-1 sm:border-l sm:pl-5">
-                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#60758d]">{item.label}</span>
-                  <strong className="mt-1 block truncate text-base font-semibold text-[#142132]" title={item.value}>{item.value}</strong>
+                <article key={item.key} className="min-w-0 border-white/20 py-1 sm:border-l sm:pl-5">
+                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#d8e7ed]">{item.label}</span>
+                  <strong className="mt-1 block truncate text-base font-semibold text-white" title={item.value}>{item.value}</strong>
                 </article>
               ))}
             </div>
@@ -5923,7 +5923,7 @@ function ArchlineMatterHeader({
                 </h2>
                 {propertySecondary ? <p className="mt-1 text-base font-medium text-[#243b5a]">{propertySecondary}</p> : null}
                 {propertyTertiary ? <p className="mt-1 text-sm text-[#60758d]">{propertyTertiary}</p> : null}
-                <button type="button" className="mt-4 inline-flex h-10 items-center gap-2 rounded-[12px] border border-slate-200 bg-white px-3.5 text-sm font-semibold text-[#142132] transition hover:bg-slate-50" onClick={onViewProperty}>
+                <button type="button" className="mt-4 inline-flex h-10 items-center gap-2 rounded-[12px] border border-white/20 bg-white/12 px-3.5 text-sm font-semibold text-white transition hover:bg-white/18" onClick={onViewProperty}>
                   View Property
                   <ExternalLink size={14} />
                 </button>
@@ -15833,7 +15833,7 @@ function AttorneyTransactionDetail() {
             matterChips={archlineMatterChips}
             workflow={archlineTransferWorkflow}
             tabs={isAgentTransactionView
-              ? workspaceMenuTabs.map((tab) => ({ id: tab.id, label: tab.label, count: tab.meta }))
+              ? workspaceMenuTabs.map((tab) => ({ id: tab.id, label: tab.label }))
               : archlineWorkspaceTabs}
             activeTab={isAgentTransactionView ? activeWorkspaceMenu : archlineActiveWorkspaceTab}
             workspaceLabel={isAgentTransactionView ? 'Transaction Workspace' : 'Legal Matter Workspace'}

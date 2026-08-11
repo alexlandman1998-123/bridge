@@ -138,6 +138,9 @@ const ICON_BY_KEY = {
   handover: KeyRound,
   reports: FileText,
   bond_applications: ClipboardList,
+  bond_applications_active: FileCheck2,
+  bond_applications_incoming: ClipboardList,
+  bond_applications_completed: FileCheck2,
   bond_developments_current: Building2,
   bond_developments_developers: Users,
   bond_reports: FileBarChart2,
@@ -197,7 +200,7 @@ const BOND_NAV_SECTIONS = [
   {
     key: 'workspace',
     label: 'Workspace',
-    itemKeys: ['dashboard', 'bond_applications', 'partners', 'clients', 'bond_developments', 'tasks'],
+    itemKeys: ['dashboard', 'bond_applications', 'bond_developments', 'partners', 'clients'],
   },
   {
     key: 'organisation',
