@@ -441,3 +441,7 @@ Verification:
 Deployment decision:
 
 No production deployment is authorized from Phase 8. Open the reconciliation PR as a draft, wait for GitHub and Vercel checks to go green, mark ready only after review, and deploy only from the merged `main` commit after the deployment gate passes.
+
+Draft reconciliation PR:
+
+- https://github.com/alexlandman1998-123/bridge/pull/16
