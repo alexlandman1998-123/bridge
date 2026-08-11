@@ -15,6 +15,61 @@ function parseBucketCandidates(value) {
     .filter(Boolean)
 }
 
+const configuredDocumentsBuckets = [
+  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_DOCUMENTS_BUCKET || processEnv.VITE_SUPABASE_DOCUMENTS_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_DOCUMENT_BUCKET || processEnv.VITE_SUPABASE_DOCUMENT_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_DOCUMENTS_BUCKET || processEnv.VITE_DOCUMENTS_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_STORAGE_BUCKET || processEnv.VITE_SUPABASE_STORAGE_BUCKET),
+]
+
+export const DOCUMENTS_BUCKET = configuredDocumentsBuckets[0] || 'documents'
+
+export const DOCUMENTS_BUCKET_CANDIDATES = Array.from(
+  new Set([DOCUMENTS_BUCKET, ...configuredDocumentsBuckets, 'documents'].filter(Boolean)),
+)
+
+const configuredLegalTemplateBuckets = [
+  ...parseBucketCandidates(
+    viteEnv.VITE_SUPABASE_LEGAL_TEMPLATES_BUCKET || processEnv.VITE_SUPABASE_LEGAL_TEMPLATES_BUCKET,
+  ),
+  ...parseBucketCandidates(viteEnv.VITE_LEGAL_TEMPLATES_BUCKET || processEnv.VITE_LEGAL_TEMPLATES_BUCKET),
+]
+
+export const LEGAL_TEMPLATES_BUCKET = configuredLegalTemplateBuckets[0] || 'legal-templates'
+
+export const LEGAL_TEMPLATES_BUCKET_CANDIDATES = Array.from(
+  new Set([LEGAL_TEMPLATES_BUCKET, ...configuredLegalTemplateBuckets, ...DOCUMENTS_BUCKET_CANDIDATES].filter(Boolean)),
+)
+
+const configuredBrandingBuckets = [
+  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_BRANDING_BUCKET || processEnv.VITE_SUPABASE_BRANDING_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_BRANDING_BUCKET || processEnv.VITE_BRANDING_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_STORAGE_BUCKET || processEnv.VITE_SUPABASE_STORAGE_BUCKET),
+]
+
+export const BRANDING_BUCKET = configuredBrandingBuckets[0] || 'organisation-branding'
+
+export const BRANDING_BUCKET_CANDIDATES = Array.from(
+  new Set(
+    [BRANDING_BUCKET, ...configuredBrandingBuckets, 'organisation-branding', ...DOCUMENTS_BUCKET_CANDIDATES].filter(
+      Boolean,
+    ),
+  ),
+)
+
+const configuredProfileAvatarBuckets = [
+  ...parseBucketCandidates(
+    viteEnv.VITE_SUPABASE_PROFILE_AVATAR_BUCKET || processEnv.VITE_SUPABASE_PROFILE_AVATAR_BUCKET,
+  ),
+  ...parseBucketCandidates(viteEnv.VITE_PROFILE_AVATAR_BUCKET || processEnv.VITE_PROFILE_AVATAR_BUCKET),
+]
+
+export const PROFILE_AVATAR_BUCKET = configuredProfileAvatarBuckets[0] || 'profile-avatars'
+
+export const PROFILE_AVATAR_BUCKET_CANDIDATES = Array.from(
+  new Set([PROFILE_AVATAR_BUCKET, ...configuredProfileAvatarBuckets, 'profile-avatars'].filter(Boolean)),
+)
+
 function isJwtLikeKey(value = '') {
   const normalized = normalizeConfigValue(value)
   return normalized.startsWith('eyJ') && normalized.split('.').length === 3
@@ -579,58 +634,3 @@ export function createScopedSupabaseClient(headers = {}) {
   scopedClientCache.set(cacheKey, scopedClient)
   return scopedClient
 }
-
-const configuredDocumentsBuckets = [
-  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_DOCUMENTS_BUCKET || processEnv.VITE_SUPABASE_DOCUMENTS_BUCKET),
-  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_DOCUMENT_BUCKET || processEnv.VITE_SUPABASE_DOCUMENT_BUCKET),
-  ...parseBucketCandidates(viteEnv.VITE_DOCUMENTS_BUCKET || processEnv.VITE_DOCUMENTS_BUCKET),
-  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_STORAGE_BUCKET || processEnv.VITE_SUPABASE_STORAGE_BUCKET),
-]
-
-export const DOCUMENTS_BUCKET = configuredDocumentsBuckets[0] || 'documents'
-
-export const DOCUMENTS_BUCKET_CANDIDATES = Array.from(
-  new Set([DOCUMENTS_BUCKET, ...configuredDocumentsBuckets, 'documents'].filter(Boolean)),
-)
-
-const configuredLegalTemplateBuckets = [
-  ...parseBucketCandidates(
-    viteEnv.VITE_SUPABASE_LEGAL_TEMPLATES_BUCKET || processEnv.VITE_SUPABASE_LEGAL_TEMPLATES_BUCKET,
-  ),
-  ...parseBucketCandidates(viteEnv.VITE_LEGAL_TEMPLATES_BUCKET || processEnv.VITE_LEGAL_TEMPLATES_BUCKET),
-]
-
-export const LEGAL_TEMPLATES_BUCKET = configuredLegalTemplateBuckets[0] || 'legal-templates'
-
-export const LEGAL_TEMPLATES_BUCKET_CANDIDATES = Array.from(
-  new Set([LEGAL_TEMPLATES_BUCKET, ...configuredLegalTemplateBuckets, ...DOCUMENTS_BUCKET_CANDIDATES].filter(Boolean)),
-)
-
-const configuredBrandingBuckets = [
-  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_BRANDING_BUCKET || processEnv.VITE_SUPABASE_BRANDING_BUCKET),
-  ...parseBucketCandidates(viteEnv.VITE_BRANDING_BUCKET || processEnv.VITE_BRANDING_BUCKET),
-  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_STORAGE_BUCKET || processEnv.VITE_SUPABASE_STORAGE_BUCKET),
-]
-
-export const BRANDING_BUCKET = configuredBrandingBuckets[0] || 'organisation-branding'
-
-export const BRANDING_BUCKET_CANDIDATES = Array.from(
-  new Set(
-    [BRANDING_BUCKET, ...configuredBrandingBuckets, 'organisation-branding', ...DOCUMENTS_BUCKET_CANDIDATES].filter(
-      Boolean,
-    ),
-  ),
-)
-
-const configuredProfileAvatarBuckets = [
-  ...parseBucketCandidates(
-    viteEnv.VITE_SUPABASE_PROFILE_AVATAR_BUCKET || processEnv.VITE_SUPABASE_PROFILE_AVATAR_BUCKET,
-  ),
-  ...parseBucketCandidates(viteEnv.VITE_PROFILE_AVATAR_BUCKET || processEnv.VITE_PROFILE_AVATAR_BUCKET),
-]
-
-export const PROFILE_AVATAR_BUCKET = configuredProfileAvatarBuckets[0] || 'profile-avatars'
-
-export const PROFILE_AVATAR_BUCKET_CANDIDATES = Array.from(
-  new Set([PROFILE_AVATAR_BUCKET, ...configuredProfileAvatarBuckets, 'profile-avatars'].filter(Boolean)),
-)
