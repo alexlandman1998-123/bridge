@@ -112,7 +112,7 @@ Conflict files:
 
 Decision:
 
-Merge after resolving the limited hook conflict.
+Merged in Phase 4 after resolving the limited hook conflict.
 
 Verification:
 
@@ -121,6 +121,18 @@ cd the-it-guy
 node src/services/__tests__/workspaceResolutionService.test.js
 npm run build
 ```
+
+Result:
+
+Passed via `npm run reconcile:verify -- arch9-attorney-access-permission-bootstrap`.
+
+Conflict resolution:
+
+The current integration branch already included the attorney-firm workspace fallback plus newer boot-membership context handling in `the-it-guy/src/hooks/useAttorneyPermissions.js`. The resolution kept the current implementation, removed duplicate fallback code from the incoming branch, and completed the merge with no net tree change.
+
+Merge commit:
+
+`13729f02`
 
 ### `codex/phase0-closeout-evidence`
 

@@ -54,7 +54,7 @@ Evidence:
 
 ### 2. `codex/arch9-attorney-access-permission-bootstrap`
 
-Status: high priority, conflict resolution required.
+Status: merged and verified in Phase 4.
 
 Why:
 
@@ -70,6 +70,13 @@ cd the-it-guy
 node src/services/__tests__/workspaceResolutionService.test.js
 npm run build
 ```
+
+Evidence:
+
+- merge commit: `13729f02`
+- conflict resolution: kept current boot-membership implementation; no net tree change
+- batch command: `npm run reconcile:verify -- arch9-attorney-access-permission-bootstrap`
+- result: passed
 
 ### 3. `codex/phase0-closeout-evidence`
 

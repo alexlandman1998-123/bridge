@@ -62,6 +62,32 @@ npm run reconcile:verify -- reminder-health-controls
 
 Result: passed. The reminder-health controls test passed and `npm run build` completed successfully.
 
+## Phase 4 Execution
+
+Phase 4, `Second Branch Batch`, is complete as of `2026-08-11 17:15:37 SAST`.
+
+Merged branch:
+
+`origin/codex/arch9-attorney-access-permission-bootstrap`
+
+Merge commit:
+
+`13729f02`
+
+Conflict resolution:
+
+- `the-it-guy/src/hooks/useAttorneyPermissions.js` had the expected conflict.
+- The integration branch already had the richer boot-membership logic and the branch's attorney-firm workspace fallback.
+- The resolution kept the integration branch implementation and removed duplicate fallback code, so the merge commit records reconciliation with no net tree change.
+
+Verification:
+
+```bash
+npm run reconcile:verify -- arch9-attorney-access-permission-bootstrap
+```
+
+Result: passed. The workspace resolution service test passed and `npm run build` completed successfully.
+
 ## Batch Names
 
 Use these batch names during the first reconciliation pass:
@@ -96,6 +122,7 @@ Record each batch result here as reconciliation progresses.
 | 2026-08-11 | `deploy-gate` | working tree | Blocked as expected | `npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge` found PR #13 is still draft |
 | 2026-08-11 | `phase-2-current-checks` | working tree | Passed with deployment blocked | GitHub and Vercel checks for PR #13 were green; deploy gate blocked only because PR #13 remains draft |
 | 2026-08-11 | `reminder-health-controls` | `01f71efe` | Passed | `npm run reconcile:verify -- reminder-health-controls` |
+| 2026-08-11 | `arch9-attorney-access-permission-bootstrap` | `13729f02` | Passed | `npm run reconcile:verify -- arch9-attorney-access-permission-bootstrap` |
 
 ## Batch-Specific Verification
 
