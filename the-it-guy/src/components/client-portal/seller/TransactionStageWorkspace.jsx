@@ -271,22 +271,31 @@ function WorkspaceAction({ action, className, children }) {
   return <Link to={action.href} className={className}>{children}</Link>
 }
 
-function ParticipantCard({ participant }) {
-  const initials = String(participant.name || participant.role || 'T').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()
+function RolePlayerUpdateCard({ update }) {
+  const initials = String(update.name || update.role || 'T').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()
   return (
-    <article className="flex items-center gap-3 border-b border-[#e6edf3] py-3 last:border-0">
-      {participant.avatarUrl ? (
-        <img src={participant.avatarUrl} alt="" className="h-11 w-11 rounded-full object-cover" />
-      ) : (
-        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#e8f4ef] text-xs font-bold text-[#0b5a48]">{initials}</span>
-      )}
-      <div className="min-w-0 flex-1">
-        <span className="text-[0.6rem] font-bold uppercase tracking-[0.12em] text-[#07835e]">{participant.role}</span>
-        <strong className="mt-0.5 block truncate text-sm text-[#102032]">{participant.name}</strong>
-        {participant.company ? <span className="block truncate text-xs text-[#6a7c90]">{participant.company}</span> : null}
+    <article className="flex min-h-[184px] flex-col rounded-[16px] border border-[#dce5ed] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start gap-3">
+        {update.avatarUrl ? (
+          <img src={update.avatarUrl} alt="" className="h-12 w-12 rounded-full object-cover" />
+        ) : (
+          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#e8f4ef] text-xs font-bold text-[#0b5a48]">{initials}</span>
+        )}
+        <div className="min-w-0 flex-1">
+          <span className="text-[0.6rem] font-bold uppercase tracking-[0.12em] text-[#07835e]">{update.role}</span>
+          <strong className="mt-0.5 block truncate text-sm text-[#102032]">{update.name}</strong>
+          {update.company ? <span className="block truncate text-xs text-[#6a7c90]">{update.company}</span> : null}
+        </div>
+        {update.timestampLabel ? (
+          <span className="shrink-0 rounded-full border border-[#dce5ed] bg-[#f8fbff] px-2.5 py-1 text-[0.62rem] font-semibold text-[#68798c]">{update.timestampLabel}</span>
+        ) : null}
       </div>
-      {participant.email ? (
-        <a href={`mailto:${participant.email}`} className="inline-flex h-9 items-center gap-1.5 rounded-[9px] border border-[#d7e1eb] px-2.5 text-xs font-semibold text-[#244159]">
+      <div className="mt-4 flex-1 rounded-[12px] border border-[#e4ecef] bg-[#fbfdff] p-4">
+        <strong className="block text-sm font-semibold text-[#173047]">{update.title || 'Progress update'}</strong>
+        <p className="mt-2 text-sm leading-6 text-[#53667a]">{update.message || 'Updates from this role-player will appear here as the transaction progresses.'}</p>
+      </div>
+      {update.email ? (
+        <a href={`mailto:${update.email}`} className="mt-4 inline-flex h-9 items-center justify-center gap-1.5 rounded-[9px] border border-[#d7e1eb] px-2.5 text-xs font-semibold text-[#244159] transition hover:bg-[#f8fbff]">
           <MessageCircle size={13} /> Message
         </a>
       ) : null}
@@ -299,8 +308,8 @@ export default function TransactionStageWorkspace({
   startedAt,
   completedAt,
   pendingAction,
-  activity = [],
   participants = [],
+  rolePlayerUpdates = [],
   overviewPath,
   documentsPath,
   listingUrl,
@@ -324,6 +333,14 @@ export default function TransactionStageWorkspace({
     ...SELLER_TRANSACTION_STAGE_DEFINITIONS[key],
     state: index < currentIndex ? 'completed' : index === currentIndex ? 'current' : 'upcoming',
   })), [currentIndex])
+  const roleUpdates = rolePlayerUpdates.length
+    ? rolePlayerUpdates
+    : participants.map((participant) => ({
+      ...participant,
+      title: `${participant.role} update`,
+      message: 'Updates from this role-player will appear here as the transaction progresses.',
+      timestampLabel: '',
+    }))
 
   const primaryAction = actionRequired
     ? { href: pendingAction.href || documentsPath, label: pendingAction.label || 'Complete action' }
@@ -333,15 +350,27 @@ export default function TransactionStageWorkspace({
 
   return (
     <section className="space-y-5 pb-24 lg:pb-2">
-      <header className="flex flex-wrap items-start justify-between gap-3 px-0.5">
-        <div>
-          <h1 className="text-[2rem] font-semibold tracking-[-0.05em] text-[#102032]">Progress</h1>
-          <p className="mt-1 text-sm text-[#617287]">A detailed look at where your sale is right now.</p>
-        </div>
+      <header className="flex justify-end px-0.5">
         <Link to={overviewPath} className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[#d4dee9] bg-white px-3 text-sm font-semibold text-[#22384f] transition hover:bg-[#f8fbfd]">
           <ArrowLeft size={15} /> Back to Overview
         </Link>
       </header>
+
+      <article className="rounded-[16px] border border-[#dce5ed] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+        <h3 className="text-sm font-semibold text-[#173047]">What’s next?</h3>
+        <div className="mt-5 overflow-x-auto pb-2">
+          <div className="relative flex min-w-[1040px] justify-between px-2">
+            <div className="absolute left-8 right-8 top-4 h-px bg-[#d8e2ea]" />
+            {timeline.map((item) => (
+              <button key={item.key} type="button" onClick={() => setSelectedKey(item.key)} className="relative z-10 flex w-[100px] flex-col items-center text-center">
+                <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full border-[3px] ${item.state === 'completed' ? 'border-[#08765a] bg-[#08765a] text-white' : item.state === 'current' ? 'border-white bg-[#0b5145] text-white shadow-[0_0_0_2px_#0b5145]' : 'border-[#d9e2e9] bg-[#e8edf2] text-[#9aa9b7]'}`}>{item.state === 'completed' ? <Check size={14} /> : <span className="h-2 w-2 rounded-full bg-current" />}</span>
+                <span className={`mt-3 text-[0.68rem] font-semibold leading-4 ${selectedKey === item.key ? 'text-[#075d4b]' : 'text-[#253c52]'}`}>{item.shortLabel}</span>
+                {item.state === 'current' ? <span className="mt-1 text-[0.62rem] font-semibold text-[#08765a]">In Progress</span> : null}
+              </button>
+            ))}
+          </div>
+        </div>
+      </article>
 
       <article className="rounded-[18px] border border-[#dce5ed] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] md:p-7">
         <div className="grid gap-6 lg:grid-cols-[1.45fr_0.85fr] lg:items-center">
@@ -405,21 +434,13 @@ export default function TransactionStageWorkspace({
         </article>
       </section>
 
-      <article className="rounded-[16px] border border-[#dce5ed] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-        <h3 className="text-sm font-semibold text-[#173047]">What’s next?</h3>
-        <div className="mt-5 overflow-x-auto pb-2">
-          <div className="relative flex min-w-[1040px] justify-between px-2">
-            <div className="absolute left-8 right-8 top-4 h-px bg-[#d8e2ea]" />
-            {timeline.map((item) => (
-              <button key={item.key} type="button" onClick={() => setSelectedKey(item.key)} className="relative z-10 flex w-[100px] flex-col items-center text-center">
-                <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full border-[3px] ${item.state === 'completed' ? 'border-[#08765a] bg-[#08765a] text-white' : item.state === 'current' ? 'border-white bg-[#0b5145] text-white shadow-[0_0_0_2px_#0b5145]' : 'border-[#d9e2e9] bg-[#e8edf2] text-[#9aa9b7]'}`}>{item.state === 'completed' ? <Check size={14} /> : <span className="h-2 w-2 rounded-full bg-current" />}</span>
-                <span className={`mt-3 text-[0.68rem] font-semibold leading-4 ${selectedKey === item.key ? 'text-[#075d4b]' : 'text-[#253c52]'}`}>{item.shortLabel}</span>
-                {item.state === 'current' ? <span className="mt-1 text-[0.62rem] font-semibold text-[#08765a]">In Progress</span> : null}
-              </button>
-            ))}
-          </div>
-        </div>
-      </article>
+      {roleUpdates.length ? (
+        <section className="grid items-stretch gap-4 lg:grid-cols-3">
+          {roleUpdates.map((update) => (
+            <RolePlayerUpdateCard key={`${update.role}-${update.name}`} update={update} />
+          ))}
+        </section>
+      ) : null}
 
       <article className="rounded-[16px] border border-[#dce5ed] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
         <h3 className="text-sm font-semibold text-[#173047]">Frequently asked at this stage</h3>
@@ -432,25 +453,6 @@ export default function TransactionStageWorkspace({
           ))}
         </div>
       </article>
-
-      <section className="grid items-stretch gap-4 lg:grid-cols-3">
-        <article className="rounded-[16px] border border-[#dce5ed] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-          <h3 className="text-sm font-semibold text-[#173047]">Who is working on this?</h3>
-          <div className="mt-2">{participants.length ? participants.map((participant) => <ParticipantCard key={`${participant.role}-${participant.name}`} participant={participant} />) : <p className="mt-4 text-sm text-[#65778b]">Your assigned team will appear here as appointments are confirmed.</p>}</div>
-        </article>
-
-        <article className="rounded-[16px] border border-[#dce5ed] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-          <h3 className="text-sm font-semibold text-[#173047]">Recent activity</h3>
-          <div className="mt-4 max-h-[300px] space-y-0 overflow-y-auto pr-1">
-            {activity.length ? activity.slice(0, 8).map((item) => <div key={item.id || item.message} className="relative border-l border-[#cfe0d9] pb-5 pl-5 last:pb-1"><span className="absolute -left-1 top-1 h-2 w-2 rounded-full bg-[#07835e]" /><div className="flex items-start justify-between gap-3"><p className="text-xs font-medium leading-5 text-[#263e54]">{item.message || item.title}</p><time className="shrink-0 text-[0.62rem] text-[#7b8a9a]">{item.timestampLabel || formatDate(item.createdAt, 'Recent')}</time></div></div>) : <p className="text-sm text-[#65778b]">No seller-facing activity has been shared yet.</p>}
-          </div>
-        </article>
-
-        <article className="rounded-[16px] border border-[#dce5ed] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-          <h3 className="text-sm font-semibold text-[#173047]">Helpful resources</h3>
-          <div className="mt-4 space-y-2">{stage.resources.map((resource) => <Link key={resource.title} to={resource.href} className="flex items-center gap-3 rounded-[10px] border border-[#e0e7ed] p-3 text-xs font-semibold leading-5 text-[#253e53] transition hover:bg-[#f7faf9]"><FileText className="shrink-0 rounded-md bg-[#e9f7f1] p-2 text-[#08765a]" size={34} /> <span className="flex-1">{resource.title}</span><ChevronDown className="-rotate-90" size={14} /></Link>)}</div>
-        </article>
-      </section>
 
       <article className="flex flex-col gap-5 rounded-[16px] border border-[#d3e8df] bg-[linear-gradient(100deg,#edf9f4_0%,#f8fcfa_100%)] p-5 md:flex-row md:items-center md:justify-between">
         <div className="flex items-start gap-4"><span className="inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#08765a] text-white"><ShieldCheck size={32} /></span><div><h3 className="text-lg font-semibold tracking-[-0.03em] text-[#10392f]">You’re exactly where you should be.</h3><p className="mt-2 text-sm leading-6 text-[#46675f]">{tracksElapsedTime ? `Most sellers spend around ${stage.duration.max} days in this stage.` : 'This stage depends on buyer activity and the offer terms you are willing to accept.'}<br />We’ll automatically notify you as soon as your transaction moves forward.</p></div></div>

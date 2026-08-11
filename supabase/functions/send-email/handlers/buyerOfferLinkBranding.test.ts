@@ -13,7 +13,7 @@ function assertNotIncludes(source: string, expected: string, message?: string) {
   }
 }
 
-Deno.test("buyer secure offer link email uses the dark-header logo variant", () => {
+Deno.test("buyer verification link email uses the dark-header logo variant", () => {
   const branding = resolveBuyerOfferLinkEmailLayoutBranding({
     organisationName: "Kingstons Property",
     logoUrl: "https://cdn.example.test/logo-generic.png",
@@ -23,7 +23,7 @@ Deno.test("buyer secure offer link email uses the dark-header logo variant", () 
     secondaryColor: "#fedcba",
   });
   const html = renderBridgeEmailLayout({
-    title: "Offer Link Ready",
+    title: "Buyer Verification Ready",
     greeting: "Hi Buyer,",
     contentHtml: "<p>Body</p>",
     branding,

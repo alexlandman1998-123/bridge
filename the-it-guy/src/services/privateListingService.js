@@ -61,6 +61,7 @@ import {
 import { buildSellerOnboardingPublicationDraft, mergePublicationDraft } from './sellerListingPublicationMapper'
 import {
   buildSellerDocumentRequirementReconciliationReport,
+  getSellerRequiredDocuments,
   summarizeSellerDocumentRequirementReconciliationReport,
 } from './sellerDocumentRequirementsService.js'
 import { areSellerJourneyDocumentsSubmitted, buildSellerJourneyProgressPatch } from './sellerJourneyService.js'
@@ -7499,6 +7500,111 @@ export async function getSellerOnboardingByToken(token, options = {}) {
   }
 }
 
+function resolveSellerPortalUploadFormData(context = {}, listing = {}) {
+  const contextOnboarding = context?.onboarding && typeof context.onboarding === 'object' ? context.onboarding : {}
+  const listingOnboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
+    ? listing.sellerOnboarding
+    : {}
+  const snakeListingOnboarding = listing?.seller_onboarding && typeof listing.seller_onboarding === 'object'
+    ? listing.seller_onboarding
+    : {}
+  return {
+    ...getSellerOnboardingFormData(contextOnboarding),
+    ...getSellerOnboardingFormData(snakeListingOnboarding),
+    ...getSellerOnboardingFormData(listingOnboarding),
+  }
+}
+
+function buildSellerPortalUploadRequirementCandidates(listing = {}, context = {}) {
+  const formData = resolveSellerPortalUploadFormData(context, listing)
+  const derivedRequirements = getSellerRequiredDocuments(listing, formData)
+  const persistedRequirements = Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []
+  const candidates = []
+  const seen = new Set()
+
+  const appendRequirement = (requirement, { portalVisibleSlot = false } = {}) => {
+    if (!isPlainObject(requirement)) return
+    const key = normalizeText(
+      requirement.requirement_key ||
+        requirement.requirementKey ||
+        requirement.key ||
+        requirement.document_key ||
+        requirement.label ||
+        requirement.requirement_name ||
+        requirement.name,
+    )
+    const id = normalizeText(requirement.id || requirement.requirement_id || requirement.requirementId)
+    const canonicalId = normalizeText(requirement.canonical_requirement_instance_id || requirement.canonicalRequirementInstanceId)
+    const keyIdentity = normalizeCompatibilityKey(key)
+    const existingByKey = candidates.find((candidate) => {
+      if (!keyIdentity || normalizeCompatibilityKey(candidate.requirement_key || candidate.key) !== keyIdentity) return false
+      const existingCanonicalId = normalizeText(candidate.canonical_requirement_instance_id || candidate.canonicalRequirementInstanceId)
+      return !canonicalId || !existingCanonicalId || existingCanonicalId === canonicalId
+    })
+    if (existingByKey) {
+      if (!existingByKey.id && id) existingByKey.id = id
+      if (!existingByKey.private_listing_id && (requirement.private_listing_id || requirement.privateListingId || listing?.id)) {
+        existingByKey.private_listing_id = normalizeText(requirement.private_listing_id || requirement.privateListingId || listing?.id || '')
+      }
+      if (!existingByKey.canonical_requirement_instance_id && canonicalId) {
+        existingByKey.canonical_requirement_instance_id = canonicalId
+        existingByKey.canonicalRequirementInstanceId = canonicalId
+      }
+      return
+    }
+
+    const identity = [id, keyIdentity, canonicalId].filter(Boolean).join(':') || String(candidates.length)
+    if (seen.has(identity)) return
+    seen.add(identity)
+
+    const visibility = normalizeText(requirement.document_visibility || requirement.visibility || 'seller_visible')
+    const status = normalizeText(requirement.status || requirement.requiredDocumentStatus || requirement.required_document_status || 'required')
+    candidates.push({
+      ...requirement,
+      id: id || requirement.id || null,
+      private_listing_id: normalizeText(requirement.private_listing_id || requirement.privateListingId || listing?.id || ''),
+      requirement_key: key,
+      key,
+      requirement_name: normalizeText(requirement.requirement_name || requirement.name || requirement.label || key),
+      document_visibility: visibility,
+      visibility,
+      status,
+      is_required: portalVisibleSlot ? true : requirement.is_required !== false && requirement.isRequired !== false,
+      canonical_requirement_instance_id: canonicalId,
+      canonicalRequirementInstanceId: canonicalId,
+    })
+  }
+
+  derivedRequirements.forEach((requirement) => appendRequirement(requirement, { portalVisibleSlot: true }))
+  persistedRequirements.forEach((requirement) => appendRequirement(requirement))
+  return candidates
+}
+
+function resolveSellerPortalUploadRequirement({
+  requirements = [],
+  requirementKey = '',
+  canonicalRequirementInstanceId = '',
+} = {}) {
+  const rows = Array.isArray(requirements) ? requirements : []
+  const normalizedRequirementKey = normalizeCompatibilityKey(requirementKey)
+  const normalizedCanonicalId = normalizeUuid(canonicalRequirementInstanceId)
+
+  if (normalizedCanonicalId) {
+    const canonicalMatch = rows.find((requirement) => {
+      const rowCanonicalId = normalizeUuid(requirement?.canonical_requirement_instance_id || requirement?.canonicalRequirementInstanceId)
+      if (rowCanonicalId !== normalizedCanonicalId) return false
+      const rowKey = normalizeCompatibilityKey(requirement?.requirement_key || requirement?.key)
+      return !normalizedRequirementKey || rowKey === normalizedRequirementKey
+    })
+    if (canonicalMatch) return canonicalMatch
+  }
+
+  return resolveExactSellerRequirement({
+    requirements: rows,
+    requirementKey,
+  })
+}
+
 async function maybeResolveCanonicalSellerRequirements({ listing, formData, client = supabase, reason = 'seller_onboarding_progress', force = false } = {}) {
   if (!isCanonicalOnboardingResolverEnabled({ force })) {
     return {
@@ -8462,10 +8568,11 @@ export async function uploadSellerClientPortalDocument({
 
   const normalizedRequirementKey = normalizeText(requirementKey)
   const canonicalRequirementInstanceId = normalizeUuid(requirementInstanceId)
-  const requiredDocuments = Array.isArray(listing.documentRequirements) ? listing.documentRequirements : []
-  const matchedRequirement = resolveExactSellerRequirement({
+  const requiredDocuments = buildSellerPortalUploadRequirementCandidates(listing, context)
+  const matchedRequirement = resolveSellerPortalUploadRequirement({
     requirements: requiredDocuments,
     requirementKey: normalizedRequirementKey,
+    canonicalRequirementInstanceId,
   })
   let canonicalRequirement = null
   if (canonicalRequirementInstanceId) {

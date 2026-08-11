@@ -931,10 +931,23 @@ function requireScopedClient(headers = {}) {
   return client
 }
 
-function requireClientPortalTokenClient(token) {
+function requireClientPortalTokenClient(token, extraHeaders = {}) {
   return requireScopedClient({
     'x-bridge-client-portal-token': String(token || '').trim(),
+    ...extraHeaders,
   })
+}
+
+function getSellerPortalScopedHeaders({ token, workspace = 'buyer', sellerPortalAccessToken = '' } = {}) {
+  const normalizedWorkspace = String(workspace || '').trim().toLowerCase()
+  if (!['seller', 'selling'].includes(normalizedWorkspace)) return {}
+  const normalizedToken = String(token || '').trim()
+  if (!normalizedToken.toLowerCase().startsWith('seller-')) return {}
+  const normalizedAccessToken = String(sellerPortalAccessToken || '').trim()
+  return {
+    'x-bridge-seller-portal-token': normalizedToken,
+    ...(normalizedAccessToken ? { 'x-bridge-seller-portal-access-token': normalizedAccessToken } : {}),
+  }
 }
 
 function requireOnboardingTokenClient(token) {
@@ -10862,6 +10875,7 @@ async function insertBondHybridWorkflowEvent(
   if (insert.error) {
     if (isMissingTableError(insert.error, 'transaction_finance_workflow_events') || isMissingSchemaError(insert.error))
       return null
+    if (isPermissionDeniedError(insert.error)) return null
     throw insert.error
   }
 
@@ -11190,11 +11204,17 @@ export async function getTransactionFinanceWorkflow(transactionId, options = {})
       .order('outcome_at', { ascending: false }),
   ])
 
-  for (const result of [applicationsQuery, quotesQuery, eventsQuery]) {
+  for (const result of [applicationsQuery, quotesQuery]) {
     if (result.error) {
       if (isMissingSchemaError(result.error)) return null
       throw result.error
     }
+  }
+  const workflowEventRows = eventsQuery.error && (isMissingSchemaError(eventsQuery.error) || isPermissionDeniedError(eventsQuery.error))
+    ? []
+    : eventsQuery.data || []
+  if (eventsQuery.error && !isMissingSchemaError(eventsQuery.error) && !isPermissionDeniedError(eventsQuery.error)) {
+    throw eventsQuery.error
   }
   if (
     decisionsQuery.error &&
@@ -11227,7 +11247,7 @@ export async function getTransactionFinanceWorkflow(transactionId, options = {})
       row.bond_originator_id,
     ]),
     ...(quotesQuery.data || []).flatMap((row) => [row.created_by, row.updated_by, row.uploaded_by]),
-    ...(eventsQuery.data || []).map((row) => row.created_by),
+    ...workflowEventRows.map((row) => row.created_by),
     ...(decisionsQuery.data || []).map((row) => row.decided_by),
     ...(bankOutcomesQuery.data || []).map((row) => row.recorded_by),
     ...(instructionQuery.data
@@ -11245,7 +11265,7 @@ export async function getTransactionFinanceWorkflow(transactionId, options = {})
     .map((row) => normalizeBondApplicationRow(row, profileById))
     .filter(Boolean)
   const baseQuotes = (quotesQuery.data || []).map((row) => normalizeBondQuoteRow(row, profileById)).filter(Boolean)
-  const events = (eventsQuery.data || [])
+  const events = workflowEventRows
     .map((row) => normalizeBondHybridWorkflowEventRow(row, profileById))
     .filter(Boolean)
   const decisions = (decisionsQuery.data || [])
@@ -22837,13 +22857,16 @@ function summarizeClientPortalMatterFinancialAccounts(accounts = []) {
   )
 }
 
-export async function fetchClientPortalMatterFinancialAccounts({ token, workspace = 'buyer' } = {}) {
+export async function fetchClientPortalMatterFinancialAccounts({ token, workspace = 'buyer', sellerPortalAccessToken = '' } = {}) {
   const normalizedToken = normalizeNullableText(token)
   if (!normalizedToken) {
     throw new Error('Client portal token is required.')
   }
 
-  const client = requireClientPortalTokenClient(normalizedToken)
+  const client = requireClientPortalTokenClient(
+    normalizedToken,
+    getSellerPortalScopedHeaders({ token: normalizedToken, workspace, sellerPortalAccessToken }),
+  )
   const rpc = await client.rpc('bridge_client_portal_matter_financial_accounts', {
     p_workspace: String(workspace || 'buyer')
       .trim()
@@ -22928,6 +22951,7 @@ export async function fetchClientPortalMatterFinancialAccounts({ token, workspac
 export async function uploadClientPortalMatterFinancialProof({
   token,
   workspace = 'buyer',
+  sellerPortalAccessToken = '',
   accountId,
   file,
   amount = null,
@@ -22948,7 +22972,10 @@ export async function uploadClientPortalMatterFinancialProof({
     throw new Error('Select a proof of payment file to upload.')
   }
 
-  const client = requireClientPortalTokenClient(normalizedToken)
+  const client = requireClientPortalTokenClient(
+    normalizedToken,
+    getSellerPortalScopedHeaders({ token: normalizedToken, workspace, sellerPortalAccessToken }),
+  )
   const safeName = String(file.name || 'proof-of-payment')
     .trim()
     .replace(/[^a-zA-Z0-9._-]/g, '-')
@@ -23007,6 +23034,7 @@ export async function uploadClientPortalMatterFinancialProof({
 export async function uploadClientPortalMatterFinancialRequestDocument({
   token,
   workspace = 'buyer',
+  sellerPortalAccessToken = '',
   accountId,
   requestId,
   file,
@@ -23031,7 +23059,10 @@ export async function uploadClientPortalMatterFinancialRequestDocument({
     throw new Error('Select the requested finance document to upload.')
   }
 
-  const client = requireClientPortalTokenClient(normalizedToken)
+  const client = requireClientPortalTokenClient(
+    normalizedToken,
+    getSellerPortalScopedHeaders({ token: normalizedToken, workspace, sellerPortalAccessToken }),
+  )
   const safeName = String(file.name || 'finance-document')
     .trim()
     .replace(/[^a-zA-Z0-9._-]/g, '-')
@@ -41617,7 +41648,7 @@ export async function fetchClientPortalByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, transaction_type, property_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
     .maybeSingle()
@@ -41644,6 +41675,8 @@ export async function fetchClientPortalByToken(token) {
       isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
       isMissingColumnError(transactionQuery.error, 'alteration_charge_treatment') ||
       isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
+      isMissingColumnError(transactionQuery.error, 'transaction_type') ||
+      isMissingColumnError(transactionQuery.error, 'property_type') ||
       isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
       isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email'))
@@ -41651,7 +41684,7 @@ export async function fetchClientPortalByToken(token) {
     transactionQuery = await client
       .from('transactions')
       .select(
-        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+        'id, unit_id, buyer_id, sales_price, finance_type, transaction_type, property_type, purchaser_type, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
       )
       .eq('id', link.transaction_id)
       .maybeSingle()
@@ -41671,6 +41704,8 @@ export async function fetchClientPortalByToken(token) {
         isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
         isMissingColumnError(transactionQuery.error, 'alteration_charge_treatment') ||
         isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
+        isMissingColumnError(transactionQuery.error, 'transaction_type') ||
+        isMissingColumnError(transactionQuery.error, 'property_type') ||
         isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
         isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
         isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email'))
@@ -42088,11 +42123,11 @@ export async function fetchClientPortalCoreByToken(token) {
     throw new Error('Client portal is currently disabled for this development.')
   }
 
-  let transactionQuery = await client
-    .from('transactions')
-    .select(
-      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
-    )
+	  let transactionQuery = await client
+	    .from('transactions')
+	    .select(
+	      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, transaction_type, property_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+	    )
     .eq('id', link.transaction_id)
     .maybeSingle()
 
@@ -42115,18 +42150,20 @@ export async function fetchClientPortalCoreByToken(token) {
       isMissingColumnError(transactionQuery.error, 'reservation_payment_details') ||
       isMissingColumnError(transactionQuery.error, 'reservation_requested_at') ||
       isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
-      isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
-      isMissingColumnError(transactionQuery.error, 'alteration_charge_treatment') ||
-      isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
-      isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
-      isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
-      isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email'))
+	      isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
+	      isMissingColumnError(transactionQuery.error, 'alteration_charge_treatment') ||
+	      isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
+	      isMissingColumnError(transactionQuery.error, 'transaction_type') ||
+	      isMissingColumnError(transactionQuery.error, 'property_type') ||
+	      isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
+	      isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
+	      isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email'))
   ) {
-    transactionQuery = await client
-      .from('transactions')
-      .select(
-        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
-      )
+	    transactionQuery = await client
+	      .from('transactions')
+	      .select(
+	        'id, unit_id, buyer_id, sales_price, finance_type, transaction_type, property_type, purchaser_type, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+	      )
       .eq('id', link.transaction_id)
       .maybeSingle()
 
@@ -42142,12 +42179,14 @@ export async function fetchClientPortalCoreByToken(token) {
         isMissingColumnError(transactionQuery.error, 'reservation_payment_details') ||
         isMissingColumnError(transactionQuery.error, 'reservation_requested_at') ||
         isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
-        isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
-        isMissingColumnError(transactionQuery.error, 'alteration_charge_treatment') ||
-        isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
-        isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
-        isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
-        isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email'))
+	        isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
+	        isMissingColumnError(transactionQuery.error, 'alteration_charge_treatment') ||
+	        isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
+	        isMissingColumnError(transactionQuery.error, 'transaction_type') ||
+	        isMissingColumnError(transactionQuery.error, 'property_type') ||
+	        isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
+	        isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
+	        isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email'))
     ) {
       transactionQuery = await client
         .from('transactions')

@@ -57,6 +57,10 @@ function isPlainObject(value) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
+function plainObject(value) {
+  return isPlainObject(value) ? value : {}
+}
+
 function statusIn(value, acceptedStatuses) {
   const normalized = lower(value).replace(/\s+/g, '_')
   return acceptedStatuses.has(normalized)
@@ -103,7 +107,45 @@ function resolveFinanceType({ offer = {}, transaction = {}, lead = {} } = {}) {
   )
 }
 
-function hasOnboardingRecord({ transaction = {}, onboarding = {}, diagnostic = {} } = {}) {
+function getOfferBuyerVerificationArtifacts(offer = {}) {
+  const conditions = plainObject(offer.conditions || offer.conditionsJson || offer.conditions_json)
+  return {
+    buyerVerification: plainObject(offer.buyerVerification || conditions.buyerVerification),
+    buyerOnboarding: plainObject(offer.buyerOnboarding || conditions.buyerOnboarding),
+    buyerVerificationSubmittedAt: firstText(
+      offer.buyerVerificationSubmittedAt,
+      offer.buyer_verification_submitted_at,
+      offer.verificationSubmittedAt,
+      conditions.buyerVerificationSubmittedAt,
+    ),
+  }
+}
+
+function hasOfferBuyerVerificationRecord(offer = {}) {
+  const { buyerVerification, buyerOnboarding, buyerVerificationSubmittedAt } = getOfferBuyerVerificationArtifacts(offer)
+  return Boolean(
+    buyerVerificationSubmittedAt ||
+      buyerVerification.status ||
+      buyerVerification.formData ||
+      buyerOnboarding.status ||
+      buyerOnboarding.formData,
+  )
+}
+
+function hasOfferBuyerVerificationSubmitted(offer = {}) {
+  const { buyerVerification, buyerOnboarding, buyerVerificationSubmittedAt } = getOfferBuyerVerificationArtifacts(offer)
+  return Boolean(
+    buyerVerificationSubmittedAt ||
+      buyerVerification.submittedAt ||
+      buyerVerification.submitted_at ||
+      buyerOnboarding.submittedAt ||
+      buyerOnboarding.submitted_at ||
+      statusIn(buyerVerification.status, ONBOARDING_SUBMITTED_STATUSES) ||
+      statusIn(buyerOnboarding.status, ONBOARDING_SUBMITTED_STATUSES),
+  )
+}
+
+function hasOnboardingRecord({ offer = {}, transaction = {}, onboarding = {}, diagnostic = {} } = {}) {
   return Boolean(
     onboarding?.id ||
       onboarding?.token ||
@@ -111,11 +153,12 @@ function hasOnboardingRecord({ transaction = {}, onboarding = {}, diagnostic = {
       transaction.onboarding_id ||
       transaction.onboardingId ||
       transaction.onboarding_token ||
-      transaction.onboardingToken,
+      transaction.onboardingToken ||
+      hasOfferBuyerVerificationRecord(offer),
   )
 }
 
-function hasOnboardingSubmitted({ transaction = {}, onboarding = {}, diagnostic = {} } = {}) {
+function hasOnboardingSubmitted({ offer = {}, transaction = {}, onboarding = {}, diagnostic = {} } = {}) {
   return Boolean(
     onboarding?.submitted_at ||
       onboarding?.submittedAt ||
@@ -125,6 +168,7 @@ function hasOnboardingSubmitted({ transaction = {}, onboarding = {}, diagnostic 
       transaction.buyerOnboardingSubmittedAt ||
       statusIn(onboarding?.status, ONBOARDING_SUBMITTED_STATUSES) ||
       statusIn(transaction.onboarding_status || transaction.onboardingStatus, ONBOARDING_SUBMITTED_STATUSES) ||
+      hasOfferBuyerVerificationSubmitted(offer) ||
       diagnostic?.checks?.prefillReady === true && hasCompletionSignal(transaction.otp_status, transaction.otpStatus),
   )
 }
@@ -252,9 +296,9 @@ export function buildTransactionHandoffHealth({
     lead.converted_transaction_id,
   )
   const transactionCreated = Boolean(transactionId || diagnostic?.checks?.transactionLinked)
-  const onboardingRecord = hasOnboardingRecord({ transaction, onboarding, diagnostic })
+  const onboardingRecord = hasOnboardingRecord({ offer, transaction, onboarding, diagnostic })
   const onboardingSent = onboardingRecord || statusIn(transaction.onboarding_status || transaction.onboardingStatus, ONBOARDING_SENT_STATUSES)
-  const onboardingSubmitted = hasOnboardingSubmitted({ transaction, onboarding, diagnostic })
+  const onboardingSubmitted = hasOnboardingSubmitted({ offer, transaction, onboarding, diagnostic })
   const financeType = resolveFinanceType({ offer, transaction, lead })
   const bondRequired = isBondFinanceType(financeType)
   const bondAssigned = hasBondAssignment({ transaction, diagnostic })

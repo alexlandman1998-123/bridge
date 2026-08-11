@@ -424,7 +424,7 @@ async function resolveEmailDeliveryContext(
   }
 
   if (
-    ["buyer_offer_link", "offer_link", "post_viewing_offer_link"].includes(
+    ["buyer_verification_link", "buyer_offer_link", "offer_link", "post_viewing_offer_link"].includes(
       communicationType,
     )
   ) {

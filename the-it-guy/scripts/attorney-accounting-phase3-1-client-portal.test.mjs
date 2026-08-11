@@ -27,11 +27,12 @@ assert.doesNotMatch(migrationSource, /grant\s+select[^;]+matter_financial_(accou
 
 assert.match(apiSource, /export async function fetchClientPortalMatterFinancialAccounts/, 'API must expose the portal account read helper')
 assert.match(apiSource, /client\.rpc\('bridge_client_portal_matter_financial_accounts'/, 'API must call the secure portal RPC')
-assert.match(apiSource, /requireClientPortalTokenClient\(normalizedToken\)/, 'API must use the client portal token-scoped client')
+assert.match(apiSource, /requireClientPortalTokenClient\(\s*normalizedToken,/, 'API must use the client portal token-scoped client')
 
 assert.match(portalSource, /ClientPortalMatterAccountsPanel/, 'Client portal must render the account panel')
 assert.match(portalSource, /fetchClientPortalMatterFinancialAccounts/, 'Client portal must load matter account details')
-assert.match(portalSource, /location\.pathname\.endsWith\('\/account'\)/, 'Client portal must route /account to the account section')
+assert.match(portalSource, /function getPortalSectionFromRoute/, 'Client portal must normalize route sections through a route helper')
+assert.match(portalSource, /if \(normalizedSection === 'account'\) return 'account'/, 'Client portal must route /account to the account section')
 assert.match(portalSource, /key: 'account', label: 'Account'/, 'Client portal nav must include the Account section')
 assert.match(portalSource, /const isAccount = workspaceSection === 'account'/, 'Client portal must track the account section flag')
 

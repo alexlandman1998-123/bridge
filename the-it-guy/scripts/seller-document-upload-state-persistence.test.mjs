@@ -11,6 +11,8 @@ const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 const agencyPipelineSource = readFileSync(resolve(appRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
 const agentLeadsSource = readFileSync(resolve(appRoot, 'src/pages/AgentLeadsPage.jsx'), 'utf8')
+const privateListingServiceSource = readFileSync(resolve(appRoot, 'src/services/privateListingService.js'), 'utf8')
+const clientPortalSource = readFileSync(resolve(appRoot, 'src/pages/ClientPortal.jsx'), 'utf8')
 
 assert.equal(
   packageJson.scripts?.['test:seller-document-upload-state-persistence'],
@@ -70,5 +72,9 @@ assert.match(agentLeadsSource, /Agent upload on behalf of seller/)
 assert.match(agentLeadsSource, /uploadPrivateListingDocument\(listingId, file/)
 assert.match(agentLeadsSource, /requirementId,\s*\n\s*requirementKey,/)
 assert.match(agentLeadsSource, /visibility: normalizeText\(document\.visibility\) \|\| 'seller_visible'/)
+assert.match(privateListingServiceSource, /getSellerRequiredDocuments/)
+assert.match(privateListingServiceSource, /buildSellerPortalUploadRequirementCandidates\(listing, context\)/)
+assert.match(privateListingServiceSource, /portalVisibleSlot \? true : requirement\.is_required !== false/)
+assert.match(clientPortalSource, /setDocumentActionError\(message\)/)
 
 console.log('Seller document upload-state persistence regression passed.')

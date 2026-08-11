@@ -193,7 +193,7 @@ const BridgeProductPage = lazyNamed(() => import('./pages/BridgeLanding'), 'Brid
 const BridgeResourcesPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeResourcesPage')
 const BridgeSolutionsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeSolutionsPage')
 const BridgeToolsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeToolsPage')
-const BuyerOfferSubmission = lazy(() => import('./pages/BuyerOfferSubmission'))
+const BuyerVerificationSubmission = lazy(() => import('./pages/BuyerOfferSubmission'))
 const BuyerViewingPreferencesPage = lazy(() => import('./pages/BuyerViewingPreferencesPage'))
 const SellerViewingCoordinationPage = lazy(() => import('./pages/SellerViewingCoordinationPage'))
 const PostViewingOfferPortal = lazy(() => import('./pages/PostViewingOfferPortal'))
@@ -3103,11 +3103,12 @@ function AppRoutes() {
           <Route path="/seller/:token/appointments" element={<SellerLegacyRedirect />} />
           <Route path="/client/:token/documents" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/otp-signing" element={<TokenRouteGate><LegacyOtpSigningRedirect /></TokenRouteGate>} />
-          <Route path="/client/offer/:token" element={<AppErrorBoundary scope="buyer-offer-route" title="Offer link failed to load"><BuyerOfferSubmission /></AppErrorBoundary>} />
+          <Route path="/client/buyer-verification/:token" element={<AppErrorBoundary scope="buyer-verification-route" title="Verification link failed to load"><BuyerVerificationSubmission /></AppErrorBoundary>} />
+          <Route path="/client/offer/:token" element={<AppErrorBoundary scope="buyer-verification-route" title="Verification link failed to load"><BuyerVerificationSubmission /></AppErrorBoundary>} />
           <Route path="/viewing-preferences/:token" element={<AppErrorBoundary scope="buyer-viewing-preferences-route" title="Viewing preferences failed to load"><BuyerViewingPreferencesPage /></AppErrorBoundary>} />
           <Route path="/seller-viewing/:token" element={<AppErrorBoundary scope="seller-viewing-coordination-route" title="Viewing coordination failed to load"><SellerViewingCoordinationPage /></AppErrorBoundary>} />
           <Route path="/offers/session/:token" element={<AppErrorBoundary scope="post-viewing-offer-route" title="Offer portal failed to load"><PostViewingOfferPortal /></AppErrorBoundary>} />
-          <Route path="/offers/:token" element={<AppErrorBoundary scope="buyer-offer-route" title="Offer link failed to load"><BuyerOfferSubmission /></AppErrorBoundary>} />
+          <Route path="/offers/:token" element={<AppErrorBoundary scope="buyer-verification-route" title="Verification link failed to load"><BuyerVerificationSubmission /></AppErrorBoundary>} />
           <Route path="/seller/offers/review/:token" element={<AppErrorBoundary scope="seller-offer-review-route" title="Seller offer review failed to load"><SellerOfferReviewPage /></AppErrorBoundary>} />
           <Route path="/transaction-invite/:token" element={<TokenRouteGate><TransactionPartnerInvitePage /></TokenRouteGate>} />
           <Route path="/invite/:token" element={<TokenRouteGate><InviteResolver /></TokenRouteGate>} />

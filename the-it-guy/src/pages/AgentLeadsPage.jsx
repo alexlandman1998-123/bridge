@@ -3541,7 +3541,7 @@ function getBuyerDealSnapshot(row = {}) {
   const latestTransaction = getLatestTransaction(row)
   const handoff = getLeadHandoffState(row)
   const intakePreference = getLeadClientIntakePreference(row)
-  const offerLinkDelivery = getLatestDeliveryByType(row, ['buyer_offer_link'])
+  const offerLinkDelivery = getLatestDeliveryByType(row, ['buyer_verification_link', 'buyer_offer_link'])
   const sellerReviewDelivery = getLatestDeliveryByType(row, ['seller_offer_review'])
   const onboardingDelivery = getLatestDeliveryByType(row, ['client_onboarding'])
   const offerLifecycle = latestOffer ? getOfferLifecycleState(latestOffer) : null
@@ -13291,7 +13291,7 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, initialMode
     try {
       const emailResponse = await invokeEdgeFunction('send-email', {
         body: {
-          type: 'buyer_offer_link',
+          type: 'buyer_verification_link',
           to: recipientEmail,
           buyerName: contact.name || lead.name || 'Buyer',
           propertyTitle: context.label || 'selected property',
@@ -14145,7 +14145,7 @@ function LeadOfferReadinessPanel({ organisationId, lead, actor, onSaved }) {
     try {
       const emailResponse = await invokeEdgeFunction('send-email', {
         body: {
-          type: 'buyer_offer_link',
+          type: 'buyer_verification_link',
           to: recipientEmail,
           buyerName: contact.name || lead.name || 'Buyer',
           propertyTitle: context.label || 'selected property',

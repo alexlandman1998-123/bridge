@@ -8,6 +8,7 @@ import { assertMvpAcceptedOfferConversionReceipt } from '../core/transactions/mv
 import { mergeResidentialOfferTermsIntoConditions } from '../core/offers/residentialOfferTerms.js'
 import { buildResidentialOfferConditionReviewPatch } from '../core/offers/residentialOfferConditionReview.js'
 import { deriveFinanceManagedBy } from '../core/transactions/financeType.js'
+import { buildBuyerVerificationSubmissionSnapshot } from './offerBuyerOnboardingBridge.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -1471,8 +1472,8 @@ export async function submitCanonicalBuyerOffer({ token = '', submission = {} } 
   const normalizedFinanceType = normalizeText(submission?.financeType).toLowerCase() === 'hybrid'
     ? 'combination'
     : normalizeText(submission?.financeType) || null
-  if (!fullName || !email || !phone || !offerAmount || offerAmount <= 0) {
-    throw new Error('Buyer details and offer amount are required.')
+  if (!fullName || !email || !phone) {
+    throw new Error('Buyer details are required.')
   }
   const buyerSubmittedAt = new Date().toISOString()
   const conditionsJson = mergeResidentialOfferTermsIntoConditions(
@@ -1513,6 +1514,72 @@ export async function submitCanonicalBuyerOffer({ token = '', submission = {} } 
       submitted_at: buyerSubmittedAt,
     },
   })
+}
+
+export async function submitCanonicalBuyerVerification({ token = '', submission = {} } = {}) {
+  const context = await getCanonicalOfferInviteContext(token)
+  if (!context.ok || !context.canonicalOffer?.id) {
+    throw new Error(context.reason === 'expired' ? 'Verification link has expired.' : 'Verification link is not valid.')
+  }
+  const lifecycle = getOfferLifecycleSummary(context.canonicalOffer)
+  if (lifecycle.terminal && !lifecycle.buyerCanResubmit) {
+    throw new Error(lifecycle.blockedReason || 'This buyer verification link is closed.')
+  }
+
+  const fullName = normalizeText(submission?.fullName)
+  const email = normalizeText(submission?.email)
+  const phone = normalizeText(submission?.phone)
+  const idNumber = normalizeText(submission?.idNumber)
+  if (!fullName || !email || !phone || !idNumber) {
+    throw new Error('Buyer details are required.')
+  }
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Buyer verification requires the canonical Supabase offers table.')
+  }
+
+  const submittedAt = new Date().toISOString()
+  const buyerVerification = buildBuyerVerificationSubmissionSnapshot(submission, {
+    source: 'canonical_buyer_verification_link',
+    submittedAt,
+    offerAmount: submission?.offerAmount || context.canonicalOffer.offerAmount,
+    depositAmount: submission?.depositAmount || context.canonicalOffer.depositAmount,
+    loanAmount: submission?.bondAmount || context.canonicalOffer.bondComponent,
+    listing: context.listing,
+    invite: context.invite,
+    offer: context.canonicalOffer,
+  })
+  const buyerOnboarding = {
+    status: 'submitted',
+    submittedAt,
+    source: 'buyer_verification_link',
+    formData: buyerVerification.formData,
+  }
+  const nextConditions = {
+    ...jsonObject(context.canonicalOffer.conditions),
+    buyerVerificationSubmittedAt: submittedAt,
+    buyerVerification,
+    buyerOnboarding,
+  }
+
+  const { data, error } = await supabase
+    .from('offers')
+    .update({ conditions_json: nextConditions })
+    .eq('id', context.canonicalOffer.id)
+    .eq('organisation_id', context.canonicalOffer.organisationId)
+    .select('*')
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Buyer verification could not be saved. Refresh and try again.')
+
+  const mappedOffer = mapOfferDbRow(data)
+  return {
+    ...(mappedOffer || context.canonicalOffer),
+    source: 'buyer_verification_link',
+    verificationStatus: 'submitted',
+    verificationSubmittedAt: submittedAt,
+    buyerVerification,
+    buyerOnboarding,
+  }
 }
 
 function statusToEvent(status) {

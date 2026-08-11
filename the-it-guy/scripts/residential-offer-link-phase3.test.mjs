@@ -131,21 +131,131 @@ assert.equal(approvedPatch.conditions_json.otpPreGenerationReview.status, 'ready
 
 assert.equal(resolveOtpDocumentVariant({ sourceContext: { listing: { developmentId: 'dev-1' } } }), 'new_development')
 
-const buyerOfferPage = await readFile(new URL('../src/pages/BuyerOfferSubmission.jsx', import.meta.url), 'utf8')
+const buyerVerificationPage = await readFile(new URL('../src/pages/BuyerOfferSubmission.jsx', import.meta.url), 'utf8')
 for (const token of [
   'otpDocumentVariant',
-  'Guarantee Delivery Deadline',
-  'Bond Approval Deadline',
-  'Cash Proof Deadline',
-  'Subject to sale of another property',
-  'acknowledgeNhbrcWarranty',
+  "['landing', 'onboarding', 'review', 'complete']",
+  'Start Verification',
+  'Buyer Verification',
+  'BuyerVerificationSubmission',
+  'BUYER_VERIFICATION_STAGES',
+  'readBuyerVerificationDraft',
+  'Expected Purchase Amount',
+  'Bond Support',
+  "goToStage('onboarding')",
+  'handleSubmitVerification',
+  'submitCanonicalBuyerVerification',
+  'submitBuyerVerification',
+  'canSubmitCanonicalVerification',
 ]) {
-  assert.ok(buyerOfferPage.includes(token), `BuyerOfferSubmission should include ${token}.`)
+  assert.ok(buyerVerificationPage.includes(token), `buyer verification page should include ${token}.`)
 }
+for (const blockedToken of [
+  'Enter the expected purchase amount before continuing.',
+  'Enter the expected purchase amount before submitting.',
+  'Choose whether you will manage your bond yourself or need help with your bond.',
+  "key: 'signature'",
+  'Final Check',
+  'handleSubmitOffer',
+  'submitCanonicalBuyerOffer({ token, submission })',
+  'submitBuyerOffer({ token',
+  'buyer_offer_submitted_agent',
+  'canSubmitCanonicalOffer',
+  'BUYER_OFFER_STAGES',
+  'readBuyerOfferDraft',
+]) {
+  assert.equal(buyerVerificationPage.includes(blockedToken), false, `buyer verification page should not include ${blockedToken}.`)
+}
+
+const appShell = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+assert.match(appShell, /path="\/client\/buyer-verification\/:token"/, 'buyer verification should have the canonical public route')
+assert.match(appShell, /path="\/client\/offer\/:token"/, 'legacy buyer offer links should remain routable')
+assert.match(appShell, /BuyerVerificationSubmission/, 'public buyer route component should use verification naming')
 
 const listingOffersService = await readFile(new URL('../src/lib/listingOffersService.js', import.meta.url), 'utf8')
 assert.match(listingOffersService, /otpDocumentVariant/)
 assert.match(listingOffersService, /sourceContext: \{ invite, listing \}/)
+assert.match(listingOffersService, /export function buildBuyerVerificationInviteLink/)
+assert.match(listingOffersService, /\/client\/buyer-verification\/\$\{token\}/)
+assert.match(listingOffersService, /export function buildOfferInviteLink[\s\S]*return getInviteLink\(token, baseUrl\)/, 'legacy invite helper should remain as a compatibility alias')
+assert.match(listingOffersService, /export async function submitBuyerVerification/)
+assert.match(listingOffersService, /buyerVerificationSubmittedAt/)
+assert.equal(listingOffersService.includes('Buyer details and offer amount are required.'), false)
+const submitBuyerVerificationSource = listingOffersService.slice(
+  listingOffersService.indexOf('export async function submitBuyerVerification'),
+  listingOffersService.indexOf('export async function submitBuyerOffer'),
+)
+assert.equal(
+  submitBuyerVerificationSource.includes('writeOfferRecords'),
+  false,
+  'Verification-only submit must not write offer records.',
+)
+assert.equal(
+  submitBuyerVerificationSource.includes('updateCanonicalOfferStatus'),
+  false,
+  'Verification-only submit must not advance canonical offer status.',
+)
+
+const buyerLifecycleService = await readFile(new URL('../src/lib/buyerLifecycleService.js', import.meta.url), 'utf8')
+assert.match(buyerLifecycleService, /export async function submitCanonicalBuyerVerification/)
+assert.match(buyerLifecycleService, /buyerVerificationSubmittedAt/)
+const submitCanonicalBuyerVerificationSource = buyerLifecycleService.slice(
+  buyerLifecycleService.indexOf('export async function submitCanonicalBuyerVerification'),
+  buyerLifecycleService.indexOf('function statusToEvent'),
+)
+assert.equal(
+  submitCanonicalBuyerVerificationSource.includes('updateCanonicalOfferStatus'),
+  false,
+  'Canonical verification submit must not use offer lifecycle status updates.',
+)
+
+const buyerLinkEmailHandler = await readFile(new URL('../../supabase/functions/send-email/handlers/buyerOfferLink.ts', import.meta.url), 'utf8')
+for (const token of [
+  'buyer_verification_link',
+  'Your secure buyer verification link',
+  'Buyer Verification Summary',
+  'Open Buyer Verification',
+  'Buyer Verification Ready',
+  'Secure Buyer Verification',
+]) {
+  assert.ok(buyerLinkEmailHandler.includes(token), `Buyer link email should include ${token}.`)
+}
+for (const blockedToken of [
+  'Offer Link Ready',
+  'Offer Link Summary',
+  'Open Secure Offer Link',
+  'start an offer',
+  'submitting an offer',
+  'secure offer link for',
+]) {
+  assert.equal(buyerLinkEmailHandler.includes(blockedToken), false, `Buyer link email should not include ${blockedToken}.`)
+}
+
+const agentListingDetailSource = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+const agentLeadsSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
+const agencyPipelineSource = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+assert.match(agentListingDetailSource, /type: 'buyer_verification_link'/)
+assert.match(agentListingDetailSource, /communicationType: 'buyer_verification_link'/)
+assert.match(agentLeadsSource, /type: 'buyer_verification_link'/)
+assert.match(agentLeadsSource, /\['buyer_verification_link', 'buyer_offer_link'\]/)
+assert.match(agencyPipelineSource, /type: 'buyer_verification_link'/)
+assert.match(agencyPipelineSource, /buyerVerificationSubmittedAt/)
+assert.match(agencyPipelineSource, /selectedLeadOfferBuyerVerification\.formData/)
+
+const transactionHandoffHealthSource = await readFile(new URL('../src/core/transactions/transactionHandoffHealth.js', import.meta.url), 'utf8')
+assert.match(transactionHandoffHealthSource, /getOfferBuyerVerificationArtifacts/)
+assert.match(transactionHandoffHealthSource, /hasOfferBuyerVerificationSubmitted/)
+
+const buyerProcessDefinitionSource = await readFile(new URL('../src/services/buyerProcessDefinitionService.js', import.meta.url), 'utf8')
+assert.match(buyerProcessDefinitionSource, /buyer_verification_link/)
+assert.match(buyerProcessDefinitionSource, /buyer_verification_link_sent/)
+
+const notificationAutomationSource = await readFile(new URL('../src/services/notificationAutomationContract.js', import.meta.url), 'utf8')
+assert.match(notificationAutomationSource, /'buyer_verification_link'/)
+
+const deliveryCompatibilityMigration = await readFile(new URL('../../supabase/migrations/202608100002_buyer_verification_link_delivery_compat.sql', import.meta.url), 'utf8')
+assert.match(deliveryCompatibilityMigration, /buyer_verification_link/)
+assert.match(deliveryCompatibilityMigration, /communication_type in \('buyer_verification_link', 'buyer_offer_link', 'offer_link', 'post_viewing_offer_link'\)/)
 
 const server = await createServer({ root: process.cwd(), logLevel: 'silent', server: { middlewareMode: true } })
 try {

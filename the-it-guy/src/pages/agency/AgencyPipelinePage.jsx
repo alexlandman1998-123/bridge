@@ -150,21 +150,16 @@ import {
 } from '../../services/appointmentTemplateService'
 import {
   CLIENT_INTAKE_PREFERENCE,
-  buildSellerOfferReviewPreparation,
   createCanonicalOffer,
   createOfferPortalSession,
-  createOfferSellerReviewSession,
   createTransactionFromAcceptedCanonicalOffer,
   getClientIntakePreferenceLabel,
   getBuyerLeadLifecycleDiagnostic,
-  getSellerOfferReviewDeliveryModeLabel,
   listAppointmentViewedListings,
   listCanonicalOffersForLead,
   listOfferPortalSessions,
   normalizeClientIntakePreference,
-  normalizeSellerReviewDeliveryMode,
   recordBuyerLeadActivity,
-  SELLER_REVIEW_DELIVERY_MODE,
   updateCanonicalOfferStatus,
   upsertAppointmentViewedListings,
 } from '../../lib/buyerLifecycleService'
@@ -364,7 +359,7 @@ const BUYER_LEAD_KANBAN_STAGE_META = {
     emptyState: 'Buyer onboarding links that have been sent will appear here.',
   },
   offer_received: {
-    emptyState: 'Uploaded buyer offer documents will appear here for review.',
+    emptyState: 'Uploaded signed OTP documents will appear here for review.',
   },
   transaction: {
     emptyState: 'Buyer transactions opened from accepted offers will appear here.',
@@ -696,7 +691,7 @@ const KINGSTONS_SELLER_PACK_STORAGE_FOLDER = 'kingstons-seller-pack'
 const KINGSTONS_FORMAL_VALUATION_STORAGE_FOLDER = 'kingstons-formal-valuations'
 const BUYER_OFFER_DOCUMENT_STORAGE_FOLDER = 'buyer-offer-documents'
 const BUYER_OFFER_DOCUMENT_TYPE = 'buyer_offer'
-const BUYER_OFFER_DOCUMENT_LABEL = 'Buyer Offer Document'
+const BUYER_OFFER_DOCUMENT_LABEL = 'Signed OTP'
 const KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE = 'kingstons_seller_pack_phase4_listing_handoff'
 const KINGSTONS_SELLER_PACK_TRANSACTION_HANDOFF_SOURCE = 'kingstons_seller_pack_phase5_transaction_handoff'
 const KINGSTONS_SELLER_PACK_PORTAL_REQUEST_SYNC_SOURCE = 'kingstons_seller_pack_phase9_portal_request_sync'
@@ -6690,17 +6685,6 @@ function buildViewingPlannerSmartAutomation({
   }
 }
 
-function describeSellerReviewPreparation(preparation = {}) {
-  const blockers = Array.isArray(preparation?.blockers) ? preparation.blockers : []
-  const warnings = Array.isArray(preparation?.warnings) ? preparation.warnings : []
-  return {
-    blockers,
-    warnings,
-    blockerText: blockers.join(' '),
-    warningText: warnings.join(' '),
-  }
-}
-
 function isPermissionDeniedError(error) {
   const status = Number(error?.status || error?.statusCode || 0)
   const code = String(error?.code || '').trim()
@@ -7144,7 +7128,7 @@ function resolveMandateQuickStartIntro(actionKey = '', step = 'details', signing
 }
 
 function resolveOtpQuickStartPrimaryLabel() {
-  return 'Upload Offer Document'
+  return 'Upload Signed OTP'
 }
 
 function resolveOtpQuickStartIntro() {
@@ -8220,12 +8204,6 @@ function getLeadViewingCompletionBlockers(form = {}, {
 
   return blockers
 }
-
-const SELLER_REVIEW_DELIVERY_OPTIONS = [
-  { value: SELLER_REVIEW_DELIVERY_MODE.EMAIL, label: getSellerOfferReviewDeliveryModeLabel(SELLER_REVIEW_DELIVERY_MODE.EMAIL) },
-  { value: SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED, label: getSellerOfferReviewDeliveryModeLabel(SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED) },
-  { value: SELLER_REVIEW_DELIVERY_MODE.HARD_COPY, label: getSellerOfferReviewDeliveryModeLabel(SELLER_REVIEW_DELIVERY_MODE.HARD_COPY) },
-]
 
 function getAppointmentStatusTone(status) {
   const normalized = normalizeText(status).toLowerCase()
@@ -9471,7 +9449,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const kingstonsPrincipalAttorneyAllocationsCacheRef = useRef(new Map())
   const [canonicalOfferActionId, setCanonicalOfferActionId] = useState('')
   const [canonicalOfferNotesById, setCanonicalOfferNotesById] = useState({})
-  const [sellerReviewDeliveryModeByOfferId, setSellerReviewDeliveryModeByOfferId] = useState({})
   const [appointmentListingOptions, setAppointmentListingOptions] = useState([])
   const [appointmentSchedulingIntegrity, setAppointmentSchedulingIntegrity] = useState(null)
   const [appointmentSchedulingLoading, setAppointmentSchedulingLoading] = useState(false)
@@ -11907,6 +11884,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.buyerOnboardingStatus ||
       selectedLead?.clientOnboardingStatus,
   ).toLowerCase()
+  const selectedLeadOfferConditions = asRecord(
+    selectedLeadLifecycleDiagnostic?.offer?.conditions ||
+      selectedLeadLifecycleDiagnostic?.offer?.conditionsJson ||
+      selectedLeadLifecycleDiagnostic?.offer?.conditions_json,
+  )
+  const selectedLeadOfferBuyerVerification = asRecord(
+    selectedLeadLifecycleDiagnostic?.offer?.buyerVerification ||
+      selectedLeadOfferConditions.buyerVerification,
+  )
+  const selectedLeadOfferBuyerOnboarding = asRecord(
+    selectedLeadLifecycleDiagnostic?.offer?.buyerOnboarding ||
+      selectedLeadOfferConditions.buyerOnboarding,
+  )
   const selectedLeadBuyerOnboardingSubmitted = Boolean(
     selectedLeadBuyerOnboardingStatusKey.includes('submitted') ||
       selectedLeadBuyerOnboardingStatusKey.includes('complete') ||
@@ -11914,7 +11904,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLeadBuyerOnboardingStatusKey.includes('signed_otp_received') ||
       selectedLeadBuyerOnboardingStatusKey.includes('client_onboarding_complete') ||
       selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at ||
-      selectedLeadLifecycleDiagnostic?.transaction?.onboarding_completed_at,
+      selectedLeadLifecycleDiagnostic?.transaction?.onboarding_completed_at ||
+      selectedLeadOfferConditions.buyerVerificationSubmittedAt ||
+      selectedLeadOfferBuyerVerification.submittedAt ||
+      selectedLeadOfferBuyerVerification.submitted_at ||
+      selectedLeadOfferBuyerVerification.status === 'submitted' ||
+      selectedLeadOfferBuyerOnboarding.submittedAt ||
+      selectedLeadOfferBuyerOnboarding.submitted_at ||
+      selectedLeadOfferBuyerOnboarding.status === 'submitted',
   )
   const selectedLeadClientIntakePreference = normalizeClientIntakePreference(
     selectedLeadLifecycleDiagnostic?.onboardingPrefill?.form_data?.bridge_client_intake_preference ||
@@ -11953,9 +11950,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       rawPayload.buyerOnboardingFormData ||
         rawPayload.buyer_onboarding_form_data ||
         selectedLead?.buyerOnboardingFormData ||
-        selectedLead?.buyer_onboarding_form_data,
+        selectedLead?.buyer_onboarding_form_data ||
+        selectedLeadOfferBuyerOnboarding.formData ||
+        selectedLeadOfferBuyerOnboarding.form_data ||
+        selectedLeadOfferBuyerVerification.formData ||
+        selectedLeadOfferBuyerVerification.form_data,
     )
-  }, [selectedLead])
+  }, [selectedLead, selectedLeadOfferBuyerOnboarding, selectedLeadOfferBuyerVerification])
   const selectedLeadBuyerInfoFormData = useMemo(() => ({
     ...(selectedLeadFinanceFormData || {}),
     ...(selectedLeadManualBuyerInfoFormData || {}),
@@ -14634,6 +14635,50 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     return reasons.slice(0, 4)
   }, [selectedLead, selectedLeadBuyerBudgetLabel, selectedLeadOfferCentreProperty, selectedLeadPropertyLabel])
 
+  const selectedLeadOfferStageChecklist = useMemo(() => {
+    const onboardingSent = Boolean(selectedLeadActiveOfferPortalStatus || offerLinkForm.lastOfferLink)
+    const onboardingSubmitted = Boolean(selectedLeadBuyerOnboardingSubmitted || selectedLeadActiveOfferPortalStatus?.submittedAt)
+    const signedOtpUploaded = Boolean(selectedLeadBuyerOfferDocumentUploaded || selectedLeadAcceptedOffer)
+    return [
+      {
+        key: 'onboarding',
+        label: 'Buyer onboarding',
+        status: onboardingSubmitted ? 'Submitted' : onboardingSent ? 'Sent' : 'Pending',
+        done: onboardingSubmitted,
+        detail: onboardingSubmitted
+          ? 'Buyer details captured.'
+          : onboardingSent
+            ? 'Waiting for buyer details.'
+            : 'Send onboarding or capture Buyer Info manually.',
+      },
+      {
+        key: 'signed_otp',
+        label: 'Signed OTP',
+        status: signedOtpUploaded ? 'Uploaded' : 'Pending',
+        done: signedOtpUploaded,
+        detail: signedOtpUploaded
+          ? 'Signed OTP evidence is on file.'
+          : 'Upload the signed OTP received outside Arch9.',
+      },
+      {
+        key: 'conversion',
+        label: 'Transaction conversion',
+        status: selectedLeadAcceptedOfferConversionPreflight?.canConvert ? 'Ready' : 'Blocked',
+        done: Boolean(selectedLeadAcceptedOfferConversionPreflight?.canConvert),
+        detail: selectedLeadAcceptedOfferConversionPreflight?.canConvert
+          ? 'Ready once the agent chooses Create Transaction.'
+          : selectedLeadAcceptedOfferConversionPreflight?.nextFix?.label || 'Complete onboarding and signed OTP evidence.',
+      },
+    ]
+  }, [
+    offerLinkForm.lastOfferLink,
+    selectedLeadAcceptedOffer,
+    selectedLeadAcceptedOfferConversionPreflight,
+    selectedLeadActiveOfferPortalStatus,
+    selectedLeadBuyerOfferDocumentUploaded,
+    selectedLeadBuyerOnboardingSubmitted,
+  ])
+
   const selectedLeadOfferHistoryStages = useMemo(() => {
     const rows = Array.isArray(selectedLeadOffers) ? selectedLeadOffers : []
     const latestOffer = rows
@@ -14642,21 +14687,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const status = normalizeText(latestOffer?.status).toLowerCase()
     const hasOffer = Boolean(latestOffer || offerLinkForm.lastOfferLink)
     const buyerViewed = ['buyer_viewed', 'viewed', 'opened', 'submitted', 'agent_review', 'sent_to_seller', 'seller_viewed', 'accepted', 'converted_to_transaction'].some((item) => status.includes(item))
-    const considering = Boolean(hasOffer && !['draft', 'sent_to_buyer'].includes(status))
+    const signedOtpUploaded = Boolean(selectedLeadBuyerOfferDocumentUploaded || latestOffer)
     const accepted = ['accepted', 'converted_to_transaction'].includes(status) || Boolean(selectedLeadAcceptedOffer)
 	    const transactionCreated = Boolean(latestOffer?.transactionId || selectedLeadLinkedTransactionId)
 	    return [
 	      { key: 'sent', label: 'Onboarding Sent', detail: latestOffer?.createdAt || latestOffer?.submittedAt || offerLinkForm.expiryDate, done: hasOffer, icon: Send },
 	      { key: 'opened', label: 'Onboarding Opened', detail: buyerViewed ? (latestOffer?.updatedAt || latestOffer?.submittedAt) : '', done: buyerViewed, icon: Eye },
-	      { key: 'viewed', label: 'Offer Document Received', detail: buyerViewed ? (latestOffer?.updatedAt || latestOffer?.submittedAt) : '', done: buyerViewed, icon: FileText },
-	      { key: 'considering', label: 'Offer Review', detail: considering ? (latestOffer?.updatedAt || latestOffer?.submittedAt) : '', done: considering, icon: Clock3 },
-      { key: 'accepted', label: 'Offer Accepted', detail: accepted ? (selectedLeadAcceptedOffer?.updatedAt || latestOffer?.updatedAt) : '', done: accepted, icon: CheckCircle2 },
+	      { key: 'signed_otp', label: 'Signed OTP Uploaded', detail: signedOtpUploaded ? (latestOffer?.updatedAt || latestOffer?.submittedAt || selectedLead?.offerDocumentUploadedAt) : '', done: signedOtpUploaded, icon: FileText },
+	      { key: 'details', label: 'Buyer Details Captured', detail: selectedLeadBuyerOnboardingSubmitted ? (selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at || latestOffer?.updatedAt) : '', done: selectedLeadBuyerOnboardingSubmitted, icon: UserRound },
+      { key: 'accepted', label: 'Conversion Ready', detail: accepted ? (selectedLeadAcceptedOffer?.updatedAt || latestOffer?.updatedAt) : '', done: accepted, icon: CheckCircle2 },
       { key: 'transaction', label: 'Transaction Created', detail: transactionCreated ? (latestOffer?.updatedAt || selectedLeadLinkedTransaction?.updatedAt || selectedLeadLinkedTransaction?.createdAt) : '', done: transactionCreated, icon: Home },
     ]
   }, [
     offerLinkForm.expiryDate,
     offerLinkForm.lastOfferLink,
+    selectedLead?.offerDocumentUploadedAt,
     selectedLeadAcceptedOffer,
+    selectedLeadBuyerOfferDocumentUploaded,
+    selectedLeadBuyerOnboardingSubmitted,
+    selectedLeadLifecycleDiagnostic?.onboarding?.submitted_at,
     selectedLeadLinkedTransaction,
     selectedLeadLinkedTransactionId,
     selectedLeadOffers,
@@ -15020,7 +15069,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     {
       key: 'offer',
       label: 'Offer',
-      value: selectedLeadOfferSummary.total ? `${selectedLeadOfferSummary.total} active offer${selectedLeadOfferSummary.total === 1 ? '' : 's'}` : 'No accepted offer linked yet',
+      value: selectedLeadOfferSummary.total ? `${selectedLeadOfferSummary.total} signed OTP record${selectedLeadOfferSummary.total === 1 ? '' : 's'}` : 'No signed OTP linked yet',
       icon: FileText,
     },
     {
@@ -22598,21 +22647,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleBuyerJourneyMakeOfferAction() {
     if (!organisationId || !selectedLead || selectedLeadIsSeller) return
     if (!selectedLeadViewingAppointments.length) {
-      setError('Schedule the first viewing before moving this buyer to Offer.')
+      setError('Schedule the first viewing before opening the buyer offer page.')
       handleBuyerJourneyScheduleViewingAction()
       return
     }
     setBuyerJourneyActionStage('offer')
     setLeadWorkspaceTab('offers')
-    const createdOffer = selectedLeadOfferSummary.total > 0 ? true : await handleCreateBuyerOfferDraft()
-    if (createdOffer === false) return
-    await handleUpdateLeadStage(selectedLead.leadId, 'Offer received', {
-      override: true,
-      successMessage: 'Buyer moved to Offer. Offer centre is open.',
-      activityNote: 'Buyer journey override moved the buyer from Viewing to Offer after a scheduled viewing.',
-      metadata: { source: 'buyer_journey_whats_next', action: 'make_offer' },
-    })
-    setLeadWorkspaceTab('offers')
+    setMessage('Buyer process opened. Send onboarding and upload the signed OTP when it is ready.')
+    setError('')
   }
 
   async function handleMarkBuyerQualifiedAction() {
@@ -22872,7 +22914,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
       const emailResponse = await invokeEdgeFunction('send-email', {
         body: {
-          type: 'buyer_offer_link',
+          type: 'buyer_verification_link',
           to: recipientEmail,
           buyerName: normalizeText(buyerName || offerLinkForm.buyerName) || selectedLeadContactName,
           propertyTitle: normalizeText(propertyTitle),
@@ -22891,7 +22933,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       return { attempted: true, sent: true }
     } catch (emailError) {
-      console.warn('[PIPELINE] buyer offer link email failed', emailError)
+      console.warn('[PIPELINE] buyer onboarding link email failed', emailError)
       return {
         attempted: true,
         sent: false,
@@ -22924,10 +22966,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const requiresDigitalContact = resolvedIntakePreference === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL
 
     if (!selectedListingId) {
-      throw new Error('Select the property before sending the offer link.')
+      throw new Error('Select the property before sending the buyer onboarding link.')
     }
     if (requiresDigitalContact && !resolvedBuyerEmail && !resolvedBuyerPhone) {
-      throw new Error('Add buyer email or phone before sending the offer link.')
+      throw new Error('Add buyer email or phone before sending the buyer onboarding link.')
     }
     const persistedLead = await ensureBuyerLeadPersistedForLifecycle(selectedLead, selectedLeadContact)
     const canonicalBuyerLeadId = normalizeText(persistedLead?.leadId || selectedLead.leadId)
@@ -23199,7 +23241,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       visibility_scope: 'agency',
       created_at: nowIso,
       metadata_json: {
-        source: 'agent_offer_document_upload',
+        source: 'agent_signed_otp_upload',
         offerId: normalizeText(offerId),
         uploadedFileName: uploadedDocument.uploadedFileName,
       },
@@ -23442,16 +23484,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           listingId: selectedListingId,
           agentId: currentAgent.id,
           transactionId: selectedLeadLinkedTransactionId,
-          status: 'submitted',
+	          status: 'accepted',
           offerAmount: buyerOfferUploadForm.offerAmount,
           financeType: normalizeText(buyerOfferUploadForm.financeType || selectedLead.financeType || selectedLead.preferredFinanceType),
           submittedAt: uploadedAt,
           conditionsJson: {
-            source: 'agent_offer_document_upload',
-            captureMethod: 'document_upload',
-            uploadedOfferDocument: uploadedDocument,
-            agentNote: normalizeText(buyerOfferUploadForm.note),
-          },
+	            source: 'agent_signed_otp_upload',
+	            captureMethod: 'signed_otp_upload',
+	            uploadedOfferDocument: uploadedDocument,
+	            agentNote: normalizeText(buyerOfferUploadForm.note),
+	          },
         }, {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         })
@@ -23494,32 +23536,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: 'Offer Document Uploaded',
-        activityNote: `${file.name || BUYER_OFFER_DOCUMENT_LABEL} uploaded as the buyer offer document.`,
-        outcome: offerRecord?.id ? 'Offer received' : `Offer document uploaded${offerErrorMessage ? `; ${offerErrorMessage}` : ''}`,
-        activityDate: uploadedAt,
-      }, { actor: currentAgent })
+	        activityType: 'Signed OTP Uploaded',
+	        activityNote: `${file.name || BUYER_OFFER_DOCUMENT_LABEL} uploaded as the signed OTP.`,
+	        outcome: offerRecord?.id ? 'Signed OTP received' : `Signed OTP uploaded${offerErrorMessage ? `; ${offerErrorMessage}` : ''}`,
+	        activityDate: uploadedAt,
+	      }, { actor: currentAgent })
       setBuyerOfferUploadForm((previous) => ({
         ...previous,
         listingId: selectedListingId,
         offerAmount: '',
         note: '',
       }))
-      const stageMoveResult = await handleUpdateLeadStage(selectedLead.leadId, 'Offer received', {
-        successMessage: 'Offer document uploaded and buyer moved to Offer received.',
-        activityNote: 'Buyer offer document uploaded.',
-        metadata: { source: 'buyer_process_phase4_offer_upload', offerId: normalizeText(offerRecord?.id) },
-      })
-      if (offerErrorMessage) {
-        setError(`Offer document uploaded, but the offer record needs attention: ${offerErrorMessage}`)
-      } else if (!stageMoveResult) {
-        setMessage('Offer document uploaded. The buyer stage still needs workflow review before moving to Offer received.')
-      } else {
-        setMessage('Offer document uploaded. Buyer process moved to Offer received.')
-      }
+	      const stageMoveResult = await handleUpdateLeadStage(selectedLead.leadId, 'Signed OTP received', {
+	        successMessage: 'Signed OTP uploaded and buyer moved to Signed OTP received.',
+	        activityNote: 'Signed OTP uploaded under the buyer offer page.',
+	        metadata: { source: 'buyer_process_phase4_signed_otp_upload', offerId: normalizeText(offerRecord?.id) },
+	      })
+	      if (offerErrorMessage) {
+	        setError(`Signed OTP uploaded, but the internal offer record needs attention: ${offerErrorMessage}`)
+	      } else if (!stageMoveResult) {
+	        setMessage('Signed OTP uploaded. The buyer stage still needs workflow review before moving to Signed OTP received.')
+	      } else {
+	        setMessage('Signed OTP uploaded. Buyer process moved to Signed OTP received.')
+	      }
       await reloadRecords(organisationId)
     } catch (uploadError) {
-      setError(uploadError?.message || 'Unable to upload the buyer offer document.')
+      setError(uploadError?.message || 'Unable to upload the signed OTP.')
     } finally {
       setBuyerOfferDocumentUploading(false)
     }
@@ -23592,37 +23634,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleLeadCanonicalOfferStatus(offer, nextStatus, actionLabel) {
-    if (!organisationId || !offer?.id) return
-    const note = canonicalOfferNotesById[offer.id] || ''
-    try {
-      setCanonicalOfferActionId(`${offer.id}:${nextStatus}`)
-      await updateCanonicalOfferStatus(offer.id, nextStatus, {
-        organisationId,
-        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        patch: buildCanonicalOfferActionPatch(offer, actionLabel || nextStatus, note),
-      })
-      setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: '' }))
-      setSelectedLeadOffersRefreshTick((value) => value + 1)
-      setMessage(`Offer moved to ${nextStatus.replaceAll('_', ' ')}.`)
-      setError('')
-      await reloadRecords(organisationId)
-    } catch (statusError) {
-      setError(statusError?.message || 'Unable to update this offer.')
-    } finally {
-      setCanonicalOfferActionId('')
-    }
-  }
-
-  async function handleLeadCanonicalOfferAccept(offer) {
-    if (!organisationId || !offer?.id) return
-    const confirmed = typeof window === 'undefined'
-      ? true
-      : window.confirm('Accept this offer and prepare it for transaction conversion?')
-    if (!confirmed) return
-    await handleLeadCanonicalOfferStatus(offer, 'accepted', 'Offer accepted from Offer Centre')
-  }
-
   async function resolveLeadOfferSellerRecipient(offer = {}) {
     const listingId = normalizeText(offer?.listingId || selectedLead?.listingId)
     const localListing = listingId
@@ -23649,31 +23660,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       listing,
       sellerLeadId: normalizeText(listing?.sellerLeadId || listing?.seller_lead_id || listing?.leadId || listing?.lead_id),
       sellerContactId: normalizeText(listing?.sellerContactId || listing?.seller_contact_id),
-    }
-  }
-
-  function getLeadSellerReviewDeliveryMode(offerId, sellerRecipient = {}) {
-    return normalizeSellerReviewDeliveryMode(
-      sellerReviewDeliveryModeByOfferId?.[offerId],
-      { sellerEmail: sellerRecipient.sellerEmail, sellerPhone: sellerRecipient.sellerPhone },
-    )
-  }
-
-  async function buildLeadSellerReviewPreparation(offer = {}) {
-    const sellerRecipient = await resolveLeadOfferSellerRecipient(offer)
-    const deliveryMode = getLeadSellerReviewDeliveryMode(offer.id, sellerRecipient)
-    return {
-      sellerRecipient,
-      preparation: buildSellerOfferReviewPreparation({
-        listing: sellerRecipient.listing,
-        offer,
-        deliveryMode,
-        sellerEmail: sellerRecipient.sellerEmail,
-        sellerPhone: sellerRecipient.sellerPhone,
-        sellerName: sellerRecipient.sellerName,
-        sellerLeadId: offer.sellerLeadId || sellerRecipient.sellerLeadId,
-        sellerContactId: offer.sellerContactId || sellerRecipient.sellerContactId,
-      }),
     }
   }
 
@@ -23727,95 +23713,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         listingId: resolvedListingId,
         transactionId,
       }
-    }
-  }
-
-  async function handleLeadCanonicalOfferSendToSeller(offer) {
-    if (!organisationId || !offer?.id) return
-    const note = canonicalOfferNotesById[offer.id] || ''
-    let createdReviewSession = null
-    try {
-      setCanonicalOfferActionId(`${offer.id}:sent_to_seller`)
-      const { sellerRecipient, preparation } = await buildLeadSellerReviewPreparation(offer)
-      const { session } = await createOfferSellerReviewSession({
-        organisationId,
-        offerId: offer.id,
-        offer,
-        listing: sellerRecipient.listing,
-        listingId: offer.listingId || selectedLead?.listingId,
-        sellerLeadId: preparation.sellerLeadId,
-        sellerContactId: preparation.sellerContactId,
-        sellerEmail: sellerRecipient.sellerEmail,
-        sellerPhone: sellerRecipient.sellerPhone,
-        sellerName: sellerRecipient.sellerName,
-        deliveryMode: preparation.deliveryMode,
-        agentId: currentAgent.id,
-        agentReviewNotes: note,
-        metadata: {
-          source: 'lead_workspace_offer_review',
-          leadId: selectedLead?.leadId || offer.buyerLeadId,
-          sellerEmail: sellerRecipient.sellerEmail,
-          sellerPhone: sellerRecipient.sellerPhone,
-          sellerName: sellerRecipient.sellerName,
-        },
-      }, {
-        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      })
-      createdReviewSession = session
-      const reviewLink = session?.token && typeof window !== 'undefined'
-        ? `${window.location.origin}/seller/offers/review/${encodeURIComponent(session.token)}`
-        : ''
-      if (reviewLink && typeof navigator !== 'undefined') {
-        void navigator.clipboard?.writeText(reviewLink)
-      }
-      if (preparation.deliveryMode === SELLER_REVIEW_DELIVERY_MODE.EMAIL) {
-        const emailResponse = await invokeEdgeFunction('send-email', {
-          body: {
-            type: 'seller_offer_review',
-            to: sellerRecipient.sellerEmail,
-            sellerName: sellerRecipient.sellerName,
-            propertyTitle: resolveAppointmentListingLabel(offer.listingId || selectedLead?.listingId) || selectedLeadPropertyLabel,
-            buyerName: selectedLeadDisplayName,
-            offerAmount: formatCurrency(offer.offerAmount),
-            reviewLink,
-            expiresAt: session?.expiresAt || '',
-            agentName: currentAgent.fullName,
-            note,
-          },
-        })
-        if (emailResponse?.error || emailResponse?.data?.error) {
-          throw emailResponse.error || new Error(emailResponse.data.error)
-        }
-      }
-      setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: '' }))
-      setSelectedLeadOffersRefreshTick((value) => value + 1)
-      setMessage(
-        preparation.deliveryMode === SELLER_REVIEW_DELIVERY_MODE.EMAIL
-          ? reviewLink
-            ? `Offer emailed to ${sellerRecipient.sellerEmail}. Seller link copied.`
-            : `Offer emailed to ${sellerRecipient.sellerEmail}.`
-          : reviewLink
-            ? `Seller review prepared for ${preparation.deliveryModeLabel.toLowerCase()}. Review link copied for the agent handoff.`
-            : `Seller review prepared for ${preparation.deliveryModeLabel.toLowerCase()}.`,
-      )
-      setError('')
-      await reloadRecords(organisationId)
-    } catch (sendError) {
-      if (createdReviewSession?.id) {
-        await updateCanonicalOfferStatus(offer.id, 'agent_review', {
-          organisationId,
-          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-          patch: buildCanonicalOfferActionPatch(
-            offer,
-            'Seller email failed',
-            sendError?.message || 'Seller email failed after review link creation.',
-          ),
-        }).catch(() => null)
-        setSelectedLeadOffersRefreshTick((value) => value + 1)
-      }
-      setError(sendError?.message || 'Unable to send this offer to the seller.')
-    } finally {
-      setCanonicalOfferActionId('')
     }
   }
 
@@ -24237,41 +24134,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setMessage('Appointment link copied.')
   }
 
-  async function handleCreateBuyerOfferDraft() {
-    if (!selectedLead || !organisationId) return
-    try {
-      const persistedLead = await ensureBuyerLeadPersistedForLifecycle(selectedLead, selectedLeadContact)
-      await createCanonicalOffer({
-        organisationId,
-        buyerLeadId: normalizeText(persistedLead?.leadId || selectedLead.leadId),
-        buyerContactId: normalizeText(persistedLead?.contactId || selectedLead.contactId),
-        listingId: normalizeText(offerLinkForm.listingId || selectedLead.listingId),
-        agentId: currentAgent.id,
-        status: 'draft',
-        offerAmount: Number(selectedLead.estimatedValue || selectedLead.budget || 0) || null,
-        financeType: selectedLead.financeType || selectedLead.preferredFinanceType || '',
-        conditionsJson: {
-          agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
-          agentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email).toLowerCase(),
-          clientIntakePreference: normalizeClientIntakePreference(offerLinkForm.clientIntakePreference),
-          agentReviewUrl: typeof window !== 'undefined'
-            ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(normalizeText(persistedLead?.leadId || selectedLead.leadId))}`
-            : '',
-        },
-      }, {
-        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      })
-      setError('')
-	      setMessage('Offer draft created. Buyer lead stage updated to Offer Draft.')
-	      setLeadWorkspaceTab('offers')
-	      await reloadRecords(organisationId)
-	      return true
-	    } catch (offerError) {
-	      setError(offerError?.message || 'Unable to create offer draft.')
-	      return false
-	    }
-	  }
-
   function handleBuyerCommandSendListings() {
     setLeadWorkspaceTab('properties')
     const buyerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.email)
@@ -24291,9 +24153,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       void handleLeadCanonicalOfferConversion(selectedLeadAcceptedOffer)
       return
     }
-    setLeadWorkspaceTab('offers')
-    setMessage('An accepted offer is required before converting this buyer to a transaction.')
-  }
+	    setLeadWorkspaceTab('offers')
+	    setMessage('Upload the signed OTP before converting this buyer to a transaction.')
+	  }
 
   function handleBuyerJourneyQuickActivity(activityType) {
     setLeadWorkspaceTab('activity')
@@ -25942,7 +25804,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     },
                                   },
                                   {
-                                    label: 'Upload Offer Document',
+	                                    label: 'Upload Signed OTP',
                                     Icon: CheckSquare,
                                     disabled: otpQuickStartBusy || isOfferLinkSending,
                                     onClick: () => {
@@ -26227,7 +26089,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                          },
 	                                        },
 	                                        {
-	                                          label: 'Upload Offer Document',
+		                                          label: 'Upload Signed OTP',
 	                                          Icon: CheckSquare,
 	                                          tone: 'text-[#29435d]',
 	                                          disabled: otpQuickStartBusy || isOfferLinkSending,
@@ -26742,7 +26604,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ) : buyerJourneyActionStage === 'viewing' ? (
                             selectedLeadViewingAppointments.length ? (
                               <>
-                                <Button type="button" size="sm" onClick={() => void handleBuyerJourneyMakeOfferAction()}>Make offer</Button>
+                                <Button type="button" size="sm" onClick={() => void handleBuyerJourneyMakeOfferAction()}>Open Buyer Process</Button>
                                 <Button type="button" size="sm" variant="secondary" onClick={() => handleBuyerJourneyScheduleViewingAction({ another: true })}>Set another viewing</Button>
                                 <Button type="button" size="sm" variant="secondary" onClick={() => handleLeadWorkspaceTabSelection('appointments')}>Manage viewings</Button>
                               </>
@@ -26751,7 +26613,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             )
                           ) : buyerJourneyActionStage === 'offer' ? (
                             <>
-                              <Button type="button" size="sm" onClick={() => void handleBuyerJourneyMakeOfferAction()}>Make offer</Button>
+                              <Button type="button" size="sm" onClick={() => void handleBuyerJourneyMakeOfferAction()}>Open Buyer Process</Button>
                               <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab('offers')}>View offers</Button>
                             </>
                           ) : buyerJourneyActionStage === 'transaction' ? (
@@ -26929,7 +26791,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </section>
               ) : null}
               {selectedLead && !selectedLeadWorkspaceRouteHydrating ? (
-                <div className={`mt-6 grid min-w-0 gap-6 ${!selectedLeadIsSeller && leadWorkspaceTab === 'activity' ? 'xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
+                <div className="mt-6 grid min-w-0 gap-6">
                   <div className="min-w-0 space-y-6">
                   {leadWorkspaceTab === 'overview' && selectedLeadIsSeller ? (
                   <div className="space-y-6">
@@ -27874,7 +27736,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   title: 'Viewing scheduled',
                                   description: 'Keep the buyer in Viewing until you choose whether to make an offer or set another viewing.',
                                   actions: [
-                                    { key: 'make-offer', label: 'Make offer', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
+                                    { key: 'buyer-process', label: 'Open buyer process', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
                                     { key: 'another-viewing', label: 'Set another viewing', icon: CalendarDays, primary: false, onClick: () => handleBuyerJourneyScheduleViewingAction({ another: true }) },
                                   ],
                                 }
@@ -30499,8 +30361,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <Tag className="h-5 w-5" />
                         </span>
 	                        <div>
-	                          <h3 className="text-2xl font-semibold text-[#0c2440]">Buyer Onboarding + Offer Upload</h3>
-	                          <p className="mt-1 text-sm text-[#5f7690]">Send onboarding first, then upload the buyer's offer document as the source of truth.</p>
+		                          <h3 className="text-2xl font-semibold text-[#0c2440]">Buyer Onboarding + Signed OTP</h3>
+		                          <p className="mt-1 text-sm text-[#5f7690]">Send onboarding and upload the already-signed OTP in parallel. Arch9 only captures the evidence and buyer details here.</p>
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -30518,7 +30380,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </Button>
                         <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab('overview')}>
                           <Settings className="h-4 w-4" />
-                          Offer Settings
+	                          Buyer Setup
                         </Button>
                       </div>
                     </div>
@@ -30605,7 +30467,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </div>
                           ) : (
                             <div className="mt-4 rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
-	                              Select a property before sending onboarding or uploading the buyer offer document.
+	                              Select a property before sending onboarding or uploading the signed OTP.
                             </div>
                           )}
 
@@ -30619,6 +30481,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 </span>
                               ))}
                             </div>
+                          </div>
+                        </section>
+
+                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Parallel Process</p>
+                              <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Collect buyer details while the signed OTP is uploaded.</h4>
+                            </div>
+                            <span className="rounded-full bg-[#eef5ff] px-3 py-1 text-xs font-semibold text-[#0b63f6]">
+                              {selectedLeadOfferStageChecklist.filter((item) => item.done).length}/{selectedLeadOfferStageChecklist.length} ready
+                            </span>
+                          </div>
+                          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                            {selectedLeadOfferStageChecklist.map((item) => (
+                              <div key={item.key} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-semibold text-[#203a54]">{item.label}</p>
+                                    <p className="mt-1 text-xs leading-5 text-[#6f849b]">{item.detail}</p>
+                                  </div>
+                                  <span className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${item.done ? 'bg-[#eaf7ef] text-[#1e7a46]' : 'bg-[#fff4dd] text-[#9a6416]'}`}>
+                                    {item.status}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </section>
 
@@ -30734,11 +30623,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
 	                          <div className="flex items-center gap-2">
 	                            <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">3</span>
-	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Upload Offer Document</h4>
-	                          </div>
-	                          <p className="mt-2 text-sm leading-6 text-[#607891]">
-	                            Upload the buyer's offer document here. This creates the offer record from the uploaded evidence instead of generating an OTP.
-	                          </p>
+		                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Upload Signed OTP</h4>
+		                          </div>
+		                          <p className="mt-2 text-sm leading-6 text-[#607891]">
+		                            Upload the signed OTP received outside Arch9. This stores the document as the source of truth and does not generate or facilitate the offer.
+		                          </p>
 	                          <div className="mt-4 grid gap-4 lg:grid-cols-2">
 	                            <label className="grid gap-1">
 	                              <span className="text-xs font-semibold text-[#6f849b]">Property/listing</span>
@@ -30754,12 +30643,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                              </Field>
 	                            </label>
 	                            <label className="grid gap-1">
-	                              <span className="text-xs font-semibold text-[#6f849b]">Offer amount</span>
+		                              <span className="text-xs font-semibold text-[#6f849b]">Accepted amount</span>
 	                              <Field
 	                                type="number"
 	                                min="0"
 	                                step="1000"
-	                                placeholder="Offer amount"
+		                                placeholder="Accepted amount"
 	                                value={buyerOfferUploadForm.offerAmount}
 	                                onChange={(event) => setBuyerOfferUploadForm((previous) => ({ ...previous, offerAmount: event.target.value }))}
 	                              />
@@ -30773,11 +30662,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                              />
 	                            </label>
 	                            <label className="grid gap-1 lg:row-span-2">
-	                              <span className="text-xs font-semibold text-[#6f849b]">Agent note</span>
+		                              <span className="text-xs font-semibold text-[#6f849b]">Agent note</span>
 	                              <Field
 	                                as="textarea"
 	                                rows={4}
-	                                placeholder="Add context for reviewing this uploaded offer..."
+		                                placeholder="Add context for this uploaded signed OTP..."
 	                                value={buyerOfferUploadForm.note}
 	                                onChange={(event) => setBuyerOfferUploadForm((previous) => ({ ...previous, note: event.target.value }))}
 	                              />
@@ -30786,7 +30675,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                          <div className="mt-4 flex flex-wrap items-center gap-3">
 	                            <label className={`inline-flex min-h-10 items-center gap-2 rounded-[12px] px-4 text-sm font-semibold text-white shadow-[0_12px_22px_rgba(6,29,59,0.18)] ${buyerOfferDocumentUploading ? 'cursor-not-allowed bg-[#8290a0]' : 'cursor-pointer bg-[#061d3b] hover:bg-[#0a2a52]'}`}>
 	                              <Upload className="h-4 w-4" />
-	                              {buyerOfferDocumentUploading ? 'Uploading offer...' : 'Upload Offer Document'}
+		                              {buyerOfferDocumentUploading ? 'Uploading signed OTP...' : 'Upload Signed OTP'}
 	                              <input
 	                                type="file"
 	                                className="sr-only"
@@ -30803,7 +30692,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
 	                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
                           <div className="flex flex-wrap items-center justify-between gap-3">
-                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Offer History</h4>
+	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Process History</h4>
                             <button type="button" className="text-xs font-semibold text-[#0b63f6]" onClick={() => setLeadWorkspaceTab('activity')}>
                               View full timeline
                             </button>
@@ -30846,29 +30735,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 const termDetails = residentialTerms.terms || {}
                                 const conditionRequests = residentialTerms.conditionRequests || {}
                                 const buyerDetails = residentialTerms.buyer || {}
-                                const localSellerListing = normalizeText(offer.listingId || selectedLead?.listingId)
-                                  ? readAgentPrivateListings().find((listing) => normalizeText(listing?.id || listing?.listingId || listing?.listing_id) === normalizeText(offer.listingId || selectedLead?.listingId)) || null
-                                  : null
-                                const sellerReviewPreparation = buildSellerOfferReviewPreparation({
-                                  listing: localSellerListing,
-                                  offer,
-                                  deliveryMode: normalizeSellerReviewDeliveryMode(
-                                    sellerReviewDeliveryModeByOfferId?.[offer.id],
-                                    {
-                                      sellerEmail: resolveSellerEmailFromListing(localSellerListing),
-                                      sellerPhone: resolveSellerPhoneFromListing(localSellerListing),
-                                    },
-                                  ),
-                                  sellerEmail: resolveSellerEmailFromListing(localSellerListing),
-                                  sellerPhone: resolveSellerPhoneFromListing(localSellerListing),
-                                  sellerName: resolveSellerNameFromListing(localSellerListing),
-                                  sellerLeadId: offer.sellerLeadId || localSellerListing?.sellerLeadId || localSellerListing?.leadId,
-                                  sellerContactId: offer.sellerContactId || localSellerListing?.sellerContactId,
-                                })
-                                const sellerReviewPreparationSummary = describeSellerReviewPreparation(sellerReviewPreparation)
-                                const sellerReviewDeliveryMode = sellerReviewPreparation.deliveryMode
-                                const statusTone = statusKey === 'accepted' || statusKey === 'converted_to_transaction'
-                                  ? 'border-[#cfe8dc] bg-[#eefbf4] text-[#17643a]'
+	                                const statusTone = statusKey === 'accepted' || statusKey === 'converted_to_transaction'
+	                                  ? 'border-[#cfe8dc] bg-[#eefbf4] text-[#17643a]'
                                   : statusKey === 'rejected' || statusKey === 'withdrawn' || statusKey === 'expired'
                                     ? 'border-[#f4d4d4] bg-[#fff5f5] text-[#b42318]'
                                     : ['submitted', 'agent_review', 'under_review', 'sent_to_seller', 'seller_viewed', 'sent_to_buyer'].includes(statusKey)
@@ -30876,11 +30744,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       : statusKey === 'changes_requested' || statusKey === 'countered'
                                         ? 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]'
                                         : 'border-[#dbe6f2] bg-white text-[#35546c]'
-	                                const offerToken = normalizeText(offer.offerToken || offer.id)
-	                                const offerLink = offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
-                                const sellerReviewToken = normalizeText(offer.sellerReviewSession?.token || offerConditions.sellerReviewSessionToken)
-                                const sellerReviewLink = sellerReviewToken && typeof window !== 'undefined' ? `${window.location.origin}/seller/offers/review/${encodeURIComponent(sellerReviewToken)}` : ''
-                                const offerDetailRows = [
+	                                const offerDetailRows = [
                                   ['Buyer', buyerDetails.fullName || offerConditions.buyerName],
                                   ['Deposit', offer.depositAmount || financeTerms.depositAmount ? formatCurrency(offer.depositAmount || financeTerms.depositAmount) : ''],
                                   ['Cash', offer.cashComponent || financeTerms.cashContribution ? formatCurrency(offer.cashComponent || financeTerms.cashContribution) : ''],
@@ -30895,16 +30759,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   offerConditions.specialConditions ||
                                   offerConditions.suspensiveConditions,
                                 )
-                                const canAcceptOffer = [
-                                  'submitted',
-                                  'agent_review',
-                                  'under_review',
-                                  'sent_to_seller',
-                                  'seller_viewed',
-                                  'countered',
-                                ].includes(statusKey)
-                                const offerPreflightBlocked = normalizeText(offer.id) === normalizeText(selectedLeadAcceptedOffer?.id) && !selectedLeadAcceptedOfferConversionPreflight?.canConvert
-	                                return (
+		                                return (
                                   <article key={offer.id} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                                       <div>
@@ -30928,31 +30783,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           </p>
                                         ) : null}
                                       </div>
-                                      <div className="flex flex-wrap gap-2">
-                                        {offer.listingId ? (
-                                          <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/listings/${offer.listingId}`)}>Open Listing</Button>
-                                        ) : null}
-                                        {offerLink ? (
-                                          <Button type="button" size="sm" variant="secondary" onClick={() => window.open(offerLink, '_blank', 'noopener,noreferrer')}>
-                                            <ExternalLink className="h-4 w-4" />
-                                            View Offer
-                                          </Button>
-                                        ) : null}
-                                        {sellerReviewLink ? (
-                                          <Button type="button" size="sm" variant="secondary" onClick={() => window.open(sellerReviewLink, '_blank', 'noopener,noreferrer')}>
-                                            <ExternalLink className="h-4 w-4" />
-                                            Seller Review
-                                          </Button>
-                                        ) : null}
-                                        {offerLink ? (
-                                          <Button type="button" size="sm" variant="secondary" onClick={() => {
-                                            if (typeof navigator !== 'undefined') void navigator.clipboard?.writeText(offerLink)
-                                            setMessage('Offer link copied.')
-                                          }}>Copy Link</Button>
-                                        ) : null}
-                                        {offer.transactionId ? (
-                                          <Button type="button" size="sm" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>Open Transaction</Button>
-                                        ) : null}
+	                                      <div className="flex flex-wrap gap-2">
+	                                        {offer.listingId ? (
+	                                          <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/listings/${offer.listingId}`)}>Open Listing</Button>
+	                                        ) : null}
+	                                        {offer.transactionId ? (
+	                                          <Button type="button" size="sm" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>Open Transaction</Button>
+	                                        ) : null}
                                       </div>
                                     </div>
                                     {offerDetailRows.length || offerConditionText ? (
@@ -30975,140 +30812,74 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         ) : null}
                                       </div>
                                     ) : null}
-                                    <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_auto]">
-                                      <Field
-                                        value={canonicalOfferNotesById[offer.id] || ''}
-                                        onChange={(event) => setCanonicalOfferNotesById((previous) => ({ ...previous, [offer.id]: event.target.value }))}
-                                        placeholder="Optional note for the offer timeline"
-                                      />
-                                      <div className="flex flex-wrap gap-2">
-                                        {['submitted', 'draft', 'buyer_viewed', 'sent_to_buyer'].includes(statusKey) ? (
-                                          <Button type="button" size="sm" variant="secondary" disabled={canonicalOfferActionId === `${offer.id}:agent_review`} onClick={() => void handleLeadCanonicalOfferStatus(offer, 'agent_review', 'Agent review started')}>
-                                            Start Review
-                                          </Button>
-                                        ) : null}
-                                        {!['accepted', 'converted_to_transaction', 'rejected', 'withdrawn', 'expired'].includes(statusKey) ? (
-                                          <>
-                                            {['submitted', 'agent_review', 'changes_requested', 'countered', 'sent_to_seller', 'seller_viewed'].includes(statusKey) ? (
-                                              <>
-                                                <Field
-                                                  as="select"
-                                                  className="min-w-[150px]"
-                                                  value={sellerReviewDeliveryMode}
-                                                  onChange={(event) => setSellerReviewDeliveryModeByOfferId((previous) => ({ ...previous, [offer.id]: event.target.value }))}
-                                                >
-                                                  {SELLER_REVIEW_DELIVERY_OPTIONS.map((option) => (
-                                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                                  ))}
-                                                </Field>
-                                                <Button type="button" size="sm" disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`} onClick={() => void handleLeadCanonicalOfferSendToSeller(offer)}>
-                                                  {['sent_to_seller', 'seller_viewed'].includes(statusKey) ? 'Resend to Seller' : 'Send to Seller'}
-                                                </Button>
-                                              </>
-                                            ) : null}
-                                            <Button type="button" size="sm" variant="secondary" disabled={canonicalOfferActionId === `${offer.id}:changes_requested`} onClick={() => void handleLeadCanonicalOfferStatus(offer, 'changes_requested', 'Buyer changes requested')}>
-                                              Request Changes
-                                            </Button>
-                                            {canAcceptOffer ? (
-                                              <Button type="button" size="sm" disabled={canonicalOfferActionId === `${offer.id}:accepted`} onClick={() => void handleLeadCanonicalOfferAccept(offer)}>
-                                                Accept Offer
-                                              </Button>
-                                            ) : null}
-                                          </>
-                                        ) : null}
-                                        {statusKey === 'accepted' || (statusKey === 'converted_to_transaction' && offer.transactionId) ? (
-                                          <Button type="button" size="sm" disabled={canonicalOfferActionId === `${offer.id}:convert` || offerPreflightBlocked} onClick={() => void handleLeadCanonicalOfferConversion(offer)}>
-                                            {statusKey === 'converted_to_transaction' ? 'Resend Onboarding' : 'Create Transaction'}
-                                          </Button>
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                    {sellerReviewPreparationSummary.blockers.length ? (
-                                      <div className="mt-3 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">
-                                        {sellerReviewPreparationSummary.blockerText}
-                                      </div>
-                                    ) : null}
-                                    {!sellerReviewPreparationSummary.blockers.length && sellerReviewPreparationSummary.warnings.length ? (
-                                      <div className="mt-3 rounded-[14px] border border-[#f5d6a8] bg-[#fff8ed] px-3 py-2 text-sm text-[#9a5b11]">
-                                        {sellerReviewPreparationSummary.warningText}
-                                      </div>
-                                    ) : null}
+	                                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-white px-3 py-3">
+	                                      <p className="text-sm leading-6 text-[#607891]">
+	                                        Uploaded evidence only. Handle offer signing outside Arch9, then use this record for transaction conversion.
+	                                      </p>
+	                                      {statusKey === 'accepted' || (statusKey === 'converted_to_transaction' && offer.transactionId) ? (
+	                                        <Button
+	                                          type="button"
+	                                          size="sm"
+	                                          disabled={canonicalOfferActionId === `${offer.id}:convert` || !selectedLeadAcceptedOfferConversionPreflight?.canConvert}
+	                                          onClick={() => void handleLeadCanonicalOfferConversion(offer)}
+	                                        >
+	                                          {statusKey === 'converted_to_transaction' ? 'Resend Onboarding' : 'Create Transaction'}
+	                                        </Button>
+	                                      ) : null}
+	                                    </div>
                                   </article>
                                 )
                               })
-                            ) : (
-                              <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
-                                No offers have been sent yet. Select a property above and send a secure offer link when the buyer is ready.
-                              </div>
-                            )}
+	                            ) : (
+	                              <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
+	                                No signed OTP has been uploaded yet. Send buyer onboarding and upload the signed OTP when it is received.
+	                              </div>
+	                            )}
                           </div>
                         </section>
                       </div>
 
                       <aside className="space-y-5">
-                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
-                          <div className="flex items-center gap-2">
-                            <Eye className="h-4 w-4 text-[#385977]" />
-                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Buyer Preview</h4>
-                          </div>
-                          <div className="mx-auto mt-5 max-w-[330px] rounded-[18px] border border-[#dfe9f4] bg-white p-4 shadow-[0_18px_40px_rgba(12,36,64,0.09)]">
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-lg font-semibold text-[#0c2440]">{organisationName || 'Harcourts'}</p>
-                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#5f7690]">
-                                Secure Offer <ShieldCheck className="h-4 w-4 text-[#1c9f5c]" />
-                              </span>
-                            </div>
-                            {selectedLeadOfferCentreProperty ? (
-                              <>
-                                <img src={selectedLeadOfferCentreProperty.image} alt="" className="mt-4 h-40 w-full rounded-[12px] object-cover" />
-                                <h5 className="mt-4 text-lg font-semibold text-[#102942]">{selectedLeadOfferCentreProperty.title}</h5>
-                                <p className="mt-1 text-sm leading-5 text-[#607891]">{selectedLeadOfferCentreProperty.address}</p>
-                                <p className="mt-4 text-xl font-semibold text-[#0c2440]">{selectedLeadOfferCentreProperty.price}</p>
-                                <div className="mt-3 grid grid-cols-4 gap-2 text-center text-[0.68rem] font-semibold text-[#5f7893]">
-                                  <span>{selectedLeadOfferCentreProperty.bedrooms || '—'} Beds</span>
-                                  <span>{selectedLeadOfferCentreProperty.bathrooms || '—'} Baths</span>
-                                  <span>{selectedLeadOfferCentreProperty.parking || '—'} Garages</span>
-                                  <span>{selectedLeadOfferCentreProperty.sizeLabel}</span>
-                                </div>
-                              </>
-                            ) : null}
-                            <div className="mt-4 flex items-center gap-3 rounded-[14px] bg-[#f5f8fb] p-3">
-                              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#061d3b] text-sm font-semibold text-white">
-                                {getInitials(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email)}
-                              </span>
-                              <div>
-                                <p className="text-sm font-semibold text-[#203a54]">{selectedLead?.assignedAgentName || currentAgent.fullName || 'Assigned agent'}</p>
-                                <p className="text-xs text-[#6f849b]">Your Harcourts Agent</p>
-                              </div>
-                            </div>
-                            <button type="button" className="mt-4 w-full rounded-[12px] bg-[#061d3b] px-4 py-3 text-sm font-semibold text-white">View Offer</button>
-                            <div className="mt-3 grid grid-cols-2 gap-2">
-                              <button type="button" className="rounded-[12px] border border-[#dfe9f4] px-3 py-2 text-xs font-semibold text-[#385977]">Request Info</button>
-                              <button type="button" className="rounded-[12px] border border-[#dfe9f4] px-3 py-2 text-xs font-semibold text-[#385977]">Decline Offer</button>
-                            </div>
-                            <p className="mt-4 flex items-center justify-center gap-2 text-center text-[0.68rem] font-semibold text-[#8aa0b6]">
-                              <Lock className="h-3.5 w-3.5" />
-                              This link is unique to you and secure
-                            </p>
-                          </div>
-                        </section>
+	                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
+	                          <div className="flex items-center gap-2">
+	                            <CheckSquare className="h-4 w-4 text-[#385977]" />
+	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Handoff Snapshot</h4>
+	                          </div>
+	                          <div className="mt-4 space-y-3">
+	                            {selectedLeadOfferStageChecklist.map((item) => (
+	                              <div key={item.key} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-4">
+	                                <div className="flex items-start justify-between gap-3">
+	                                  <div>
+	                                    <p className="text-sm font-semibold text-[#203a54]">{item.label}</p>
+	                                    <p className="mt-1 text-xs leading-5 text-[#6f849b]">{item.detail}</p>
+	                                  </div>
+	                                  {item.done ? (
+	                                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#168257]" />
+	                                  ) : (
+	                                    <Clock3 className="h-4 w-4 shrink-0 text-[#d08a16]" />
+	                                  )}
+	                                </div>
+	                              </div>
+	                            ))}
+	                          </div>
+	                        </section>
 
                         <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
                           <div className="flex items-center gap-2">
                             <RefreshCw className="h-4 w-4 text-[#385977]" />
-                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Transaction Conversion</h4>
-                          </div>
-                          <div className={`mt-4 rounded-[16px] border p-4 ${selectedLeadAcceptedOffer ? 'border-[#cfe8dc] bg-[#f2fbf5]' : 'border-[#f1dfb8] bg-[#fff8e8]'}`}>
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-xs font-semibold text-[#5f7690]">Status</span>
-                              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedLeadAcceptedOffer ? 'bg-[#dff5e8] text-[#17643a]' : 'bg-[#ffe9bd] text-[#9a6416]'}`}>
-                                {selectedLeadAcceptedOffer ? 'Offer Accepted' : 'Awaiting Acceptance'}
-                              </span>
-                            </div>
-                            <p className="mt-3 text-sm leading-6 text-[#5f7690]">
-                              {selectedLeadAcceptedOffer ? 'Ready to create transaction.' : 'Once the buyer accepts the offer, you can create the transaction.'}
-                            </p>
-                          </div>
+	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Transaction Conversion</h4>
+	                          </div>
+	                          <div className={`mt-4 rounded-[16px] border p-4 ${selectedLeadAcceptedOffer ? 'border-[#cfe8dc] bg-[#f2fbf5]' : 'border-[#f1dfb8] bg-[#fff8e8]'}`}>
+	                            <div className="flex items-center justify-between gap-3">
+	                              <span className="text-xs font-semibold text-[#5f7690]">Status</span>
+	                              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedLeadAcceptedOffer ? 'bg-[#dff5e8] text-[#17643a]' : 'bg-[#ffe9bd] text-[#9a6416]'}`}>
+	                                {selectedLeadAcceptedOffer ? 'Signed OTP Ready' : 'Awaiting Signed OTP'}
+	                              </span>
+	                            </div>
+	                            <p className="mt-3 text-sm leading-6 text-[#5f7690]">
+	                              {selectedLeadAcceptedOffer ? 'Signed OTP evidence is ready for conversion once the preflight checks pass.' : 'Upload the signed OTP and complete buyer onboarding before creating the transaction.'}
+	                            </p>
+	                          </div>
                           <AcceptedOfferConversionPreflightPanel
                             preflight={selectedLeadAcceptedOfferConversionPreflight}
                             loading={selectedLeadLifecycleDiagnosticLoading}
@@ -31127,10 +30898,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </div>
                           ) : null}
                           <div className="mt-4 grid gap-2">
-                            {[
-                              ['Offer converted', selectedLeadLifecycleDiagnostic?.checks?.offerConverted],
-                              ['Transaction linked', selectedLeadLifecycleDiagnostic?.checks?.transactionLinked],
-                              ['Onboarding ready', selectedLeadLifecycleDiagnostic?.checks?.onboardingReady],
+	                            {[
+	                              ['Signed OTP converted', selectedLeadLifecycleDiagnostic?.checks?.offerConverted],
+	                              ['Transaction linked', selectedLeadLifecycleDiagnostic?.checks?.transactionLinked],
+	                              ['Onboarding ready', selectedLeadLifecycleDiagnostic?.checks?.onboardingReady],
                             ].map(([label, isDone]) => (
                               <div key={label} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-2">
                                 <span className="text-xs font-semibold text-[#607891]">{label}</span>
@@ -32089,194 +31860,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                   </div>
 
-                  {leadWorkspaceTab === 'activity' ? (
-                  <aside className="space-y-5 xl:sticky xl:top-6 xl:self-start">
-                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Relationship Health</p>
-                          <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadActivityInsights.healthLabel}</h3>
-                        </div>
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          selectedLeadActivityInsights.healthLabel === 'Strong Engagement'
-                            ? 'bg-[#e8f7f1] text-[#1d7a52]'
-                            : selectedLeadActivityInsights.healthLabel === 'Warm'
-                              ? 'bg-[#fff4e5] text-[#b76a12]'
-                              : 'bg-[#eef3f7] text-[#687c91]'
-                        }`}>
-                          {selectedLeadActivityInsights.temperature}
-                        </span>
-                      </div>
-                      <div className="mt-5 space-y-4">
-                        {[
-                          ['Last Contacted', selectedLeadActivityInsights.lastContacted ? formatRelativeTime(selectedLeadActivityInsights.lastContacted) : 'No contact yet'],
-                          ['Response Rate', selectedLeadActivityInsights.responseRate],
-                          ['Lead Temperature', selectedLeadActivityInsights.temperature],
-                        ].map(([label, value]) => (
-                          <div key={label} className="flex items-center justify-between gap-4 border-b border-[#eef3f7] pb-3 text-sm last:border-b-0 last:pb-0">
-                            <span className="font-semibold text-[#8aa0b7]">{label}</span>
-                            <span className="font-semibold text-[#20364c]">{value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-
-                    <section className="rounded-[28px] bg-[#102033] p-6 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_18px_44px_rgba(16,32,51,0.18)]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Next Best Action</p>
-                      <h3 className="mt-3 text-xl font-semibold tracking-[-0.03em]">Upload the buyer offer before interest cools down.</h3>
-                      <p className="mt-3 text-sm leading-6 text-[#c7d5e2]">
-                        {selectedLeadWorkflowHealth.missing?.[0]?.label
-                          ? `${selectedLeadWorkflowHealth.missing[0].label} is still open in this relationship.`
-                          : 'This lead is moving cleanly. Keep the momentum visible in the timeline.'}
-                      </p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="mt-5 bg-white text-[#102033] hover:bg-[#edf4fa]"
-                        onClick={handleSelectedLeadOtpPrimaryAction}
-                        disabled={selectedLeadIsSeller || otpQuickStartBusy || isOfferLinkSending}
-                      >
-                        {otpQuickStartBusy || isOfferLinkSending ? 'Preparing...' : 'Upload Offer Document'}
-                      </Button>
-                      {!selectedLeadIsSeller ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="ml-2 mt-5"
-                          disabled={canonicalOfferActionId === `lead:${selectedLead?.leadId}:buyer-onboarding`}
-                          onClick={() => void handleSendBuyerOnboardingFromLead()}
-                        >
-                          {selectedLeadBuyerOnboardingActionLabel}
-                        </Button>
-                      ) : null}
-                    </section>
-
-                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Open Actions</p>
-                          <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadOpenActions.pendingTasks.length} pending</h3>
-                        </div>
-                        {selectedLeadOpenActions.overdueCount ? (
-                          <span className="rounded-full bg-[#fff1f0] px-3 py-1 text-xs font-semibold text-[#b42318]">
-                            {selectedLeadOpenActions.overdueCount} overdue
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-[#eef8f2] px-3 py-1 text-xs font-semibold text-[#247345]">On track</span>
-                        )}
-                      </div>
-                      <div className="mt-4 space-y-3">
-                        {selectedLeadOpenActions.pendingTasks.slice(0, 3).length ? (
-                          selectedLeadOpenActions.pendingTasks.slice(0, 3).map((action) => (
-                            <div key={action.id} className="rounded-[18px] bg-[#f8fbfd] px-4 py-3">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-[#20364c]">{action.label}</p>
-                                  <p className={`mt-1 text-xs font-semibold ${action.overdue ? 'text-[#b42318]' : 'text-[#7b8fa5]'}`}>{action.meta}</p>
-                                </div>
-                                <Button type="button" size="sm" variant="ghost" className="h-8 px-2" onClick={() => void handleTaskStatusToggle(action.original)}>
-                                  <CheckSquare className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="rounded-[18px] bg-[#f8fbfd] px-4 py-4 text-sm text-[#6d839b]">
-                            No pending tasks or follow-ups.
-                          </div>
-                        )}
-                        {selectedLeadOpenActions.upcomingAppointment ? (
-                          <button
-                            type="button"
-                            className="w-full rounded-[18px] bg-[#f3f7fb] px-4 py-3 text-left transition hover:bg-[#e7f0f8]"
-                            onClick={() => handleOpenAppointmentModal(selectedLeadOpenActions.upcomingAppointment)}
-                          >
-                            <p className="text-sm font-semibold text-[#20364c]">Upcoming appointment</p>
-                            <p className="mt-1 text-xs font-semibold text-[#7b8fa5]">
-                              {formatDate(selectedLeadOpenActions.upcomingAppointment.dateTime || selectedLeadOpenActions.upcomingAppointment.date)}
-                            </p>
-                          </button>
-                        ) : null}
-                      </div>
-                    </section>
-
-                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Quick Actions</p>
-                      <div className="mt-4 divide-y divide-[#eef3f7]">
-                        {[
-                          {
-                            label: 'Schedule Viewing',
-                            Icon: CalendarDays,
-                            disabled: false,
-                            onClick: () => handleOpenAppointmentModal(),
-                          },
-                          {
-                            label: 'Upload Offer Document',
-                            Icon: CheckSquare,
-                            disabled: selectedLeadIsSeller || otpQuickStartBusy || isOfferLinkSending,
-                            onClick: handleSelectedLeadOtpPrimaryAction,
-                          },
-                          {
-                            label: 'Send WhatsApp',
-                            Icon: MessageCircle,
-                            disabled: !normalizeText(selectedLeadContact?.phone || selectedLead?.phone),
-                            onClick: () => {
-                              const phone = normalizeText(selectedLeadContact?.phone || selectedLead?.phone).replace(/[^\d+]/g, '')
-                              if (phone && typeof window !== 'undefined') window.open(`https://wa.me/${phone.replace(/^\+/, '')}`, '_blank', 'noopener,noreferrer')
-                            },
-                          },
-                          {
-                            label: 'Create Offer',
-                            Icon: ArrowUpRight,
-                            disabled: selectedLeadIsSeller,
-                            onClick: () => void handleCreateBuyerOfferDraft(),
-                          },
-                          {
-                            label: 'Assign Agent',
-                            Icon: UserRound,
-                            disabled: true,
-                            onClick: () => {},
-                          },
-                        ].map(({ label, Icon: icon, disabled, onClick }) => (
-                          <button
-                            key={label}
-                            type="button"
-                            disabled={disabled}
-                            onClick={onClick}
-                            className="flex w-full items-center gap-3 py-3 text-left text-sm font-semibold text-[#29435d] transition hover:text-[#16395a] disabled:cursor-not-allowed disabled:opacity-45"
-                          >
-                            <span className="grid h-9 w-9 place-items-center rounded-full bg-[#f3f7fb] text-[#315b7a]">
-                              {createElement(icon, { className: 'h-4 w-4' })}
-                            </span>
-                            <span className="min-w-0 flex-1">{label}</span>
-                            <ChevronRight className="h-4 w-4 text-[#9aacbf]" />
-                          </button>
-                        ))}
-                      </div>
-                    </section>
-
-                    <section className="rounded-[28px] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_40px_rgba(31,54,78,0.05)]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Communication Snapshot</p>
-                      <div className="mt-5 grid grid-cols-2 gap-3">
-                        {[
-                          ['Calls', selectedLeadActivityInsights.counts.calls, Phone],
-                          ['Meetings', selectedLeadActivityInsights.counts.meetings, CalendarDays],
-                          ['Emails', selectedLeadActivityInsights.counts.emails, Mail],
-                          ['WhatsApps', selectedLeadActivityInsights.counts.whatsapps, MessageCircle],
-                        ].map(([label, value, icon]) => (
-                          <div key={label} className="rounded-[18px] bg-[#f8fbfd] p-4">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{label}</span>
-                              {createElement(icon, { className: 'h-4 w-4 text-[#7f96ad]' })}
-                            </div>
-                            <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-[#102033]">{value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  </aside>
-                  ) : null}
-
                 </div>
               ) : (
                 routeLeadId && ['not_found', 'unavailable'].includes(routeLeadHydrationStatus) ? (
@@ -32919,7 +32502,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           setOfferPropertySearch('')
         }}
         title="Change Property"
-        subtitle="Select the property this buyer should receive an offer link for."
+        subtitle="Select the property context for buyer onboarding and signed OTP upload."
         className="max-w-[980px]"
       >
         <div className="grid gap-4">

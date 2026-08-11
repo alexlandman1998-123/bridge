@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
 import {
+  buildBuyerVerificationSubmissionSnapshot,
   buildOfferBuyerVerificationModel,
   mapOfferFormToBuyerOnboardingForm,
 } from '../offerBuyerOnboardingBridge.js'
@@ -45,6 +46,23 @@ assert.equal(selfManagedFormData.bond_help_requested, 'no')
 assert.equal(selfManagedFormData.finance.finance_managed_by, 'client')
 assert.equal(selfManagedFormData.finance_managed_by, 'client')
 
+const verificationSnapshot = buildBuyerVerificationSubmissionSnapshot(offerForm, {
+  submittedAt: '2026-08-10T20:00:00.000Z',
+  source: 'buyer_verification_link_test',
+  confirmedAccuracy: true,
+})
+
+assert.equal(verificationSnapshot.status, 'submitted')
+assert.equal(verificationSnapshot.source, 'buyer_verification_link_test')
+assert.equal(verificationSnapshot.submittedAt, '2026-08-10T20:00:00.000Z')
+assert.equal(verificationSnapshot.buyer.fullName, 'Alex Buyer')
+assert.equal(verificationSnapshot.buyer.email, 'alex@example.test')
+assert.equal(verificationSnapshot.buyer.idNumber, '9001015009087')
+assert.equal(verificationSnapshot.finance.financeType, 'combination')
+assert.equal(verificationSnapshot.formData.purchase_finance_type, 'combination')
+assert.equal(verificationSnapshot.acknowledgements.informationAccurate, true)
+assert.equal(verificationSnapshot.acknowledgements.verificationOnly, true)
+
 const model = buildOfferBuyerVerificationModel(offerForm, { confirmedAccuracy: true })
 const sectionKeys = model.sections.map((section) => section.key)
 
@@ -55,7 +73,6 @@ assert.deepEqual(sectionKeys, [
   'finance',
   'documents',
   'compliance',
-  'signature',
 ])
 assert.equal(model.flow.buyer_finance_branch, 'hybrid')
 assert.equal(model.sections.find((section) => section.key === 'compliance')?.complete, true)

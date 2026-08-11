@@ -52,7 +52,7 @@ try {
   const workflow = await server.ssrLoadModule('/src/lib/workflowEngine.js')
   assert.equal(workflow.normalizeBuyerWorkflowStage('Offer Link Sent'), 'Buyer onboarding sent')
   assert.equal(workflow.normalizeBuyerWorkflowStage('Onboarding Sent'), 'Buyer onboarding sent')
-  assert.equal(workflow.normalizeBuyerWorkflowStage('Ready for OTP generation'), 'Offer received')
+  assert.equal(workflow.normalizeBuyerWorkflowStage('Ready for OTP generation'), 'Signed OTP received')
   assert.equal(workflow.normalizeBuyerWorkflowStage('Offer Accepted'), 'Transaction')
   assert.ok(workflow.isBuyerWorkflowStage('Offer + Onboarding Link Sent'))
   assert.ok(!workflow.BUYER_WORKFLOW_STAGES.includes('Ready to Generate OTP'))

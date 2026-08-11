@@ -27,9 +27,9 @@ for (const signal of [
 }
 
 for (const signal of [
-  'Submit Revised Offer',
+  'Submit Updated Verification',
   'canonicalBanner',
-  'This offer is already under review',
+  'Buyer verification can still be submitted without changing the offer status',
 ]) {
   assert.ok(buyerOfferSubmissionSource.includes(signal), `Buyer offer submission should include "${signal}".`)
 }

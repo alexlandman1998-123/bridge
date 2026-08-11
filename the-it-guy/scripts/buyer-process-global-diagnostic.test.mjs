@@ -20,7 +20,7 @@ const requiredScripts = Object.freeze({
 
 const diagnosticChecks = Object.freeze([
   ['test:buyer-process-definition-phase1', 'global and Kingstons buyer profiles stay split'],
-  ['test:buyer-process-workflow-engine-phase2', 'buyer workflow maps legacy OTP stages into Offer received'],
+  ['test:buyer-process-workflow-engine-phase2', 'buyer workflow maps legacy OTP stages into Signed OTP received'],
   ['test:buyer-process-viewing-actions-phase3', 'viewing actions feed buyer onboarding'],
   ['test:buyer-process-onboarding-offer-upload-phase4', 'buyer onboarding and offer evidence upload are wired'],
   ['test:buyer-process-pipeline-reporting-phase5', 'pipeline reporting keeps buyer stage evidence visible'],

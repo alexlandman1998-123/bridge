@@ -47,8 +47,8 @@ const STAGE_REQUIREMENTS = {
     {
       type: 'document',
       key: 'offer_document_uploaded',
-      message: 'Upload the buyer offer document before moving to Offer received.',
-      documentTypes: ['buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer'],
+      message: 'Upload the signed OTP before moving to Signed OTP received.',
+      documentTypes: ['buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer', 'signed_otp'],
       acceptedStatuses: ['uploaded', 'under_review', 'approved', 'accepted', 'completed'],
       legacyOfferStatuses: ['submitted', 'agent_review', 'changes_requested', 'sent_to_seller', 'seller_viewed', 'countered', 'accepted', 'converted_to_transaction'],
     },
@@ -92,7 +92,7 @@ const AUTOMATION_TASKS = {
   [WORKFLOW_EVENTS.OFFER_DOCUMENT_UPLOADED]: [
     {
       title: 'Review uploaded offer',
-      description: 'Check the uploaded buyer offer document and confirm whether it is ready for transaction conversion.',
+      description: 'Check the uploaded signed OTP and confirm whether it is ready for transaction conversion.',
       dueDays: 1,
       priority: 'High',
     },
@@ -100,7 +100,7 @@ const AUTOMATION_TASKS = {
   [WORKFLOW_EVENTS.OFFER_SUBMITTED]: [
     {
       title: 'Review uploaded offer',
-      description: 'Check the buyer offer document and confirm whether it is ready for transaction conversion.',
+      description: 'Check the signed OTP and confirm whether it is ready for transaction conversion.',
       dueDays: 1,
       priority: 'High',
     },
@@ -155,7 +155,7 @@ const AUTOMATION_ALERTS = {
       alertType: 'offer_review_due',
       severity: 'warning',
       title: 'Offer review required',
-      message: 'A buyer offer document has been received and needs review before transaction conversion.',
+      message: 'A signed OTP has been received and needs review before transaction conversion.',
       dueHours: 24,
     },
   ],
@@ -164,7 +164,7 @@ const AUTOMATION_ALERTS = {
       alertType: 'offer_review_due',
       severity: 'warning',
       title: 'Offer review required',
-      message: 'A buyer offer document has been uploaded and needs review before transaction conversion.',
+      message: 'A signed OTP has been uploaded and needs review before transaction conversion.',
       dueHours: 24,
     },
   ],

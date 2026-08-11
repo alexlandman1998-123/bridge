@@ -23,6 +23,10 @@ function createMissingTableError(table) {
   return { code: '42P01', message: `relation "${table}" does not exist` }
 }
 
+function createRowLevelSecurityError(table) {
+  return { code: '42501', message: `new row violates row-level security policy for table "${table}"` }
+}
+
 function buildMockClient(seed = {}) {
   const state = {
     profiles: [{ id: 'user-bond-1', role: 'bond_originator', firm_id: null, firm_role: null }],
@@ -58,6 +62,7 @@ function buildMockClient(seed = {}) {
     ...seed.state,
   }
   const calls = []
+  const tableActionErrors = seed.tableActionErrors || {}
 
   class Query {
     constructor(table) {
@@ -197,6 +202,10 @@ function buildMockClient(seed = {}) {
       if (MISSING_CANONICAL_WORKFLOW_TABLES.has(this.table)) {
         return { data: this.singleMode ? null : [], error: createMissingTableError(this.table) }
       }
+      const forcedError = tableActionErrors[`${this.table}:${this.action}`]
+      if (forcedError) {
+        return { data: this.singleMode ? null : [], error: forcedError }
+      }
 
       const rows = this._rows()
       if (this.action === 'select') {
@@ -333,6 +342,38 @@ try {
   }
   assert.equal(isBondApplicationTrackerRow(trackerInput), true)
   assert.equal(getBondOriginatorQueueState(trackerInput).status, 'READY_FOR_REVIEW')
+
+  const eventRlsClient = buildMockClient({
+    transaction: {
+      id: 'tx-bond-event-rls',
+      finance_type: 'bond',
+    },
+    state: {
+      transactions: [{ id: 'tx-bond-event-rls', finance_type: 'bond', finance_status: 'Documents' }],
+      transaction_finance_workflows: [{
+        id: 'workflow-event-rls',
+        transaction_id: 'tx-bond-event-rls',
+        workflow_type: 'bond_hybrid',
+        current_stage: 'documents',
+        status: 'active',
+        last_updated_by: 'user-bond-1',
+        last_updated_at: '2026-06-04T08:00:00.000Z',
+        created_at: '2026-06-04T08:00:00.000Z',
+        updated_at: '2026-06-04T08:00:00.000Z',
+      }],
+      transaction_finance_workflow_events: [],
+    },
+    tableActionErrors: {
+      'transaction_finance_workflow_events:insert': createRowLevelSecurityError('transaction_finance_workflow_events'),
+    },
+  })
+  const rlsWorkflow = await updateBondHybridFinanceStage('tx-bond-event-rls', 'bank_review', {
+    client: eventRlsClient,
+    actorRole: 'bond_originator',
+  })
+  assert.equal(eventRlsClient.state.transaction_finance_workflows[0].current_stage, 'bank_review')
+  assert.equal(rlsWorkflow.workflow.currentStage, 'bank_review')
+  assert.equal(eventRlsClient.state.transaction_finance_workflow_events.length, 0)
 
   const approvedQuoteId = '00000000-0000-4000-8000-000000000101'
   const grantDocumentId = '00000000-0000-4000-8000-000000000201'

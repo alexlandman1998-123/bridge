@@ -183,6 +183,54 @@ export function mapOfferFormToBuyerOnboardingForm(form = {}, options = {}) {
   }
 }
 
+export function buildBuyerVerificationSubmissionSnapshot(submission = {}, options = {}) {
+  const submittedAt = normalizeText(options.submittedAt) || new Date().toISOString()
+  const formData = mapOfferFormToBuyerOnboardingForm(submission, options)
+  const fullName = normalizeText(
+    submission.fullName ||
+      [formData.first_name, formData.last_name].filter(Boolean).join(' '),
+  )
+  const buyer = {
+    fullName,
+    firstName: normalizeText(formData.first_name),
+    lastName: normalizeText(formData.last_name),
+    email: normalizeText(submission.email || formData.email).toLowerCase(),
+    phone: normalizeText(submission.phone || formData.phone),
+    idNumber: normalizeText(submission.idNumber || formData.identity_number),
+  }
+  const financeType = normalizeFinanceType(formData.purchase_finance_type || submission.financeType || options.financeType || 'bond')
+  const bondAssistancePreference = normalizeBondAssistancePreference({
+    ...submission,
+    bondAssistancePreference: submission.bondAssistancePreference || formData.bond_assistance_preference,
+  })
+
+  return {
+    status: 'submitted',
+    submittedAt,
+    source: normalizeText(options.source) || 'buyer_verification_link',
+    buyer,
+    finance: {
+      financeType,
+      purchasePrice: moneyNumber(formData.purchase_price),
+      cashAmount: moneyNumber(formData.cash_amount),
+      bondAmount: moneyNumber(formData.bond_amount),
+      cashContributionAvailable: moneyNumber(formData.cash_contribution_available),
+      bondAssistancePreference,
+      bondHelpRequested: bondHelpRequestedValue(bondAssistancePreference),
+      financeManagedBy: normalizeText(formData.finance_managed_by),
+    },
+    formData,
+    acknowledgements: {
+      informationAccurate: Boolean(
+        submission.acknowledgeInfoAccuracy ||
+          submission.confirmedAccuracy ||
+          options.confirmedAccuracy,
+      ),
+      verificationOnly: true,
+    },
+  }
+}
+
 export function buildOfferBuyerVerificationModel(form = {}, options = {}) {
   const formData = mapOfferFormToBuyerOnboardingForm(form, options)
   const financeType = normalizeFinanceType(formData.purchase_finance_type || 'bond')
@@ -263,14 +311,6 @@ export function buildOfferBuyerVerificationModel(form = {}, options = {}) {
       required: 1,
       completed: options.confirmedAccuracy ? 1 : 0,
       complete: Boolean(options.confirmedAccuracy),
-    },
-    {
-      key: 'signature',
-      title: 'Digital Signature',
-      description: 'Review and sign your offer.',
-      required: 1,
-      completed: options.reviewReady ? 1 : 0,
-      complete: Boolean(options.reviewReady),
     },
   ]
 

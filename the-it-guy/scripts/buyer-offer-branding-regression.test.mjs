@@ -6,7 +6,7 @@ import { createBuyerOfferBrandingResponse } from '../server/services/buyerOfferB
 const files = {
   buyerOfferBrandingApi: await readFile(new URL('../server/services/buyerOfferBrandingApi.js', import.meta.url), 'utf8'),
   buyerOfferBrandingRoute: await readFile(new URL('../api/public/buyer-offer-branding.js', import.meta.url), 'utf8'),
-  buyerOfferSubmission: await readFile(new URL('../src/pages/BuyerOfferSubmission.jsx', import.meta.url), 'utf8'),
+  buyerVerificationSubmission: await readFile(new URL('../src/pages/BuyerOfferSubmission.jsx', import.meta.url), 'utf8'),
   viteConfig: await readFile(new URL('../vite.config.js', import.meta.url), 'utf8'),
   packageJson: await readFile(new URL('../package.json', import.meta.url), 'utf8'),
 }
@@ -19,12 +19,12 @@ assert.match(files.buyerOfferBrandingApi, /resolveOnboardingBranding\([\s\S]*bra
 assert.match(files.buyerOfferBrandingApi, /createSignedUrl\(normalizedPath, 60 \* 60 \* 24 \* 7\)/, 'buyer offer branding must mint fresh URLs for stored logo paths')
 assert.match(files.buyerOfferBrandingRoute, /createBuyerOfferBrandingResponse/, 'buyer offer branding route should delegate to the token-scoped API service')
 assert.match(files.viteConfig, /server\.middlewares\.use\('\/api\/public\/buyer-offer-branding'/, 'local dev server should expose the buyer offer branding API')
-assert.match(files.buyerOfferSubmission, /fetchBuyerOfferBrandingSnapshot/, 'buyer offer submission should fetch token-scoped branding')
-assert.match(files.buyerOfferSubmission, /resolveOnboardingBranding\(offerBrandingSnapshot \|\| \{\}, conditions, listing \|\| \{\}, invite \|\| \{\}\)/, 'live settings branding should be merged before embedded offer fallbacks')
-assert.match(files.buyerOfferSubmission, /agencyLogo=\{offerBrand\.logoDarkUrl \|\| offerBrand\.logoLightUrl \|\| offerBrand\.logoIconUrl \|\| ''\}/, 'buyer offer landing should render the resolved organisation logo')
-assert.match(files.buyerOfferSubmission, /data-testid="buyer-offer-action-dock"/, 'buyer offer page should expose the mobile action dock for regression coverage')
-assert.match(files.buyerOfferSubmission, /data-testid="buyer-offer-action-summary"[^>]*hidden[^>]*sm:grid/, 'buyer offer mobile action dock should hide the amount summary on narrow screens')
-assert.match(files.buyerOfferSubmission, /pb-\[calc\(8rem\+env\(safe-area-inset-bottom\)\)\]/, 'buyer offer page should reserve mobile bottom space for the fixed action dock')
+assert.match(files.buyerVerificationSubmission, /fetchBuyerVerificationBrandingSnapshot/, 'buyer verification submission should fetch token-scoped branding')
+assert.match(files.buyerVerificationSubmission, /resolveOnboardingBranding\(verificationBrandingSnapshot \|\| \{\}, conditions, listing \|\| \{\}, invite \|\| \{\}\)/, 'live settings branding should be merged before embedded invite fallbacks')
+assert.match(files.buyerVerificationSubmission, /agencyLogo=\{verificationBrand\.logoDarkUrl \|\| verificationBrand\.logoLightUrl \|\| verificationBrand\.logoIconUrl \|\| ''\}/, 'buyer verification landing should render the resolved organisation logo')
+assert.match(files.buyerVerificationSubmission, /data-testid="buyer-offer-action-dock"/, 'buyer verification page should preserve the legacy mobile action dock test hook')
+assert.match(files.buyerVerificationSubmission, /data-testid="buyer-offer-action-summary"[^>]*hidden[^>]*sm:grid/, 'buyer verification mobile action dock should hide the amount summary on narrow screens')
+assert.match(files.buyerVerificationSubmission, /pb-\[calc\(8rem\+env\(safe-area-inset-bottom\)\)\]/, 'buyer verification page should reserve mobile bottom space for the fixed action dock')
 assert.match(files.packageJson, /"test:buyer-offer-branding-regression": "node scripts\/buyer-offer-branding-regression\.test\.mjs"/)
 
 const optionsResponse = await createBuyerOfferBrandingResponse({ method: 'OPTIONS' })

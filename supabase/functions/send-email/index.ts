@@ -354,12 +354,12 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
-      ["buyer_offer_link", "offer_link", "post_viewing_offer_link"].includes(
+      ["buyer_verification_link", "buyer_offer_link", "offer_link", "post_viewing_offer_link"].includes(
         type,
       )
     ) {
       console.log("[send-email] routing template", {
-        route: "buyer_offer_link",
+        route: type === "buyer_verification_link" ? "buyer_verification_link" : "buyer_offer_link",
         recipient: recipient || null,
       });
       return await handleBuyerOfferLinkEmail(
@@ -1031,6 +1031,7 @@ Deno.serve(async (req: Request) => {
           "seller_viewing_availability_request",
           "additional_document_request",
           "document_request",
+          "buyer_verification_link",
           "buyer_offer_link",
           "buyer_offer_submitted_agent",
           "seller_offer_review",
@@ -1190,6 +1191,7 @@ Deno.serve(async (req: Request) => {
         "property_collection",
         "additional_document_request",
         "document_request",
+        "buyer_verification_link",
         "buyer_offer_link",
         "buyer_offer_submitted_agent",
         "seller_offer_review",

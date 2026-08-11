@@ -54,11 +54,9 @@ import {
 } from '../modules/bond/application'
 import { buildBondOriginatorBuyerOfferGrantViewModel } from '../modules/bond/integrations'
 import GuidedBondApplication from '../modules/bond/application/guided/GuidedBondApplication'
-import { LatestUpdatesCard } from '../components/client-portal/ClientJourneySection'
 import ClientDocumentCentre, { buildDocumentCentreSections } from '../components/client-portal/documents/ClientDocumentCentre'
 import ClientAppointmentsSection from '../components/client-portal/appointments/ClientAppointmentsSection'
 import ClientPortalMatterAccountsPanel from '../components/client-portal/ClientPortalMatterAccountsPanel'
-import SellerOffersPage from '../components/client-portal/offers/SellerOffersPage'
 import TransactionStageWorkspace, { resolveSellerTransactionStageKey } from '../components/client-portal/seller/TransactionStageWorkspace'
 import ProgressTimeline from '../components/ProgressTimeline'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
@@ -66,7 +64,6 @@ import MvpTransactionControlBoard from '../components/transaction/MvpTransaction
 import AttorneyFirmRolePlayerCard from '../components/attorney/branding/AttorneyFirmRolePlayerCard'
 import {
   buildClientJourney,
-  deriveClientJourneyStatusFlag,
   resolveClientJourneyFinanceType,
   resolveClientJourneyPropertyType,
 } from '../core/clientJourney/clientJourney.utils'
@@ -153,10 +150,8 @@ function getClientPortalLoadErrorMessage(error, fallback = 'We could not load yo
 const SELLER_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: Home },
   { key: 'progress', label: 'Progress', icon: BarChart3 },
-  { key: 'offers', label: 'Offers', icon: HandCoins },
   { key: 'appointments', label: 'Appointments', icon: CalendarClock },
   { key: 'listing', label: 'Listing', icon: Home, section: 'overview', hash: '#seller-property-hero' },
-  { key: 'marketing', label: 'Marketing', icon: Megaphone, section: 'overview', hash: '#seller-marketing-activity' },
   { key: 'documents', label: 'Documents', icon: FileText },
   { key: 'account', label: 'Account', icon: HandCoins },
   { key: 'details', label: 'My Details', icon: User },
@@ -173,7 +168,6 @@ const SELLER_PORTAL_NAV_GROUPS = [
     label: 'Your Sale',
     items: [
       { key: 'progress', label: 'Progress', icon: BarChart3 },
-      { key: 'offers', label: 'Offers', icon: HandCoins },
       { key: 'appointments', label: 'Appointments', icon: CalendarClock },
     ],
   },
@@ -181,7 +175,6 @@ const SELLER_PORTAL_NAV_GROUPS = [
     label: 'Property',
     items: [
       { key: 'listing', label: 'Listing', icon: Home, section: 'overview', hash: '#seller-property-hero' },
-      { key: 'marketing', label: 'Marketing', icon: Megaphone, section: 'overview', hash: '#seller-marketing-activity' },
       { key: 'documents', label: 'Documents', icon: FileText },
     ],
   },
@@ -2119,6 +2112,61 @@ function resolveTransactionTypeForDocuments(portal) {
   return normalizePortalStatus(portal?.transaction?.transaction_type || 'developer_sale')
 }
 
+const NEW_DEVELOPMENT_TRANSACTION_TYPES = new Set([
+  'developer',
+  'developer_sale',
+  'development',
+  'development_sale',
+  'new_development',
+  'off_plan',
+])
+
+const RESALE_TRANSACTION_TYPES = new Set([
+  'private',
+  'private_property',
+  'private_sale',
+  'resale',
+  'resale_existing_property',
+  'sale',
+  'second_hand',
+])
+
+function isNewDevelopmentBuyerPortal(portal = {}) {
+  const transaction = portal?.transaction || {}
+  const explicitType = normalizePortalStatus(
+    transaction.transaction_type ||
+      transaction.transactionType ||
+      transaction.property_transaction_type ||
+      transaction.propertyTransactionType ||
+      portal?.transactionType,
+  )
+
+  if (RESALE_TRANSACTION_TYPES.has(explicitType)) return false
+  if (NEW_DEVELOPMENT_TRANSACTION_TYPES.has(explicitType)) return true
+
+  const routeVariant = normalizePortalStatus(
+    portal?.otpPacket?.documentVariant ||
+      portal?.otpPacket?.document_variant ||
+      portal?.otpPacket?.routeVariant ||
+      portal?.otpPacket?.route_variant ||
+      portal?.legalDocumentScenarioProfile?.otpDocumentVariant ||
+      portal?.legalDocumentScenarioProfile?.otp_document_variant,
+  )
+
+  if (RESALE_TRANSACTION_TYPES.has(routeVariant)) return false
+  if (NEW_DEVELOPMENT_TRANSACTION_TYPES.has(routeVariant)) return true
+
+  return Boolean(
+    portal?.unit?.development?.id ||
+      portal?.unit?.development_id ||
+      portal?.unit?.developmentId ||
+      transaction.development_id ||
+      transaction.developmentId ||
+      portal?.link?.development_id ||
+      portal?.link?.developmentId,
+  )
+}
+
 function getFicaRequirementTemplate({ transactionType, purchaserType, maritalRegime }) {
   return [
     ...FICA_REQUIREMENT_CONFIG.base,
@@ -2864,20 +2912,23 @@ function buildSellerMarketingChannels(links = [], agencyLogoUrl = '') {
   const channels = new Map()
   for (const [index, link] of links.entries()) {
     const label = link.platform || 'Listing channel'
-    const key = normalizeSellerPortalKey(label) || String(link.url || '').trim().toLowerCase() || `listing-${index}`
+    const url = String(link.url || '').trim()
+    const sourceText = `${label} ${url}`
+    const key = normalizeSellerPortalKey(label) || url.toLowerCase() || `listing-${index}`
     if (channels.has(key)) continue
-    const logoUrl = key.includes('property24')
+    const normalizedSource = normalizeSellerPortalKey(sourceText)
+    const logoUrl = normalizedSource.includes('property24')
       ? '/lead-sources/property24.png'
-      : key.includes('private_property')
+      : normalizedSource.includes('private_property') || normalizedSource.includes('privateproperty')
         ? '/lead-sources/private-property.jpeg'
-        : key.includes('agency') || key.includes('website')
+        : normalizedSource.includes('agency') || normalizedSource.includes('website')
           ? agencyLogoUrl
           : ''
     channels.set(key, {
       id: link.id || key,
       label,
       status: link.status || 'Live',
-      href: link.url || '',
+      href: url,
       logoUrl,
       updatedLabel: formatShortPortalDate(link.publishedAt || link.updatedAt || link.createdAt, ''),
     })
@@ -4632,13 +4683,15 @@ function BuyerMobilePortal({
         {mobileSection === 'more' ? (
           <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">More</p>
-                <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">Your purchase workspace</h3>
-                <p className="mt-1 text-sm leading-6 text-[#667085]">
-                  Contacts, appointments, handover readiness, settings, and buyer tools are grouped here.
-                </p>
-              </div>
+	              <div className="min-w-0">
+	                <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">More</p>
+	                <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">Your purchase workspace</h3>
+	                <p className="mt-1 text-sm leading-6 text-[#667085]">
+	                  {enabledSections.handover
+	                    ? 'Contacts, appointments, handover readiness, settings, and buyer tools are grouped here.'
+	                    : 'Contacts, appointments, settings, and buyer tools are grouped here.'}
+	                </p>
+	              </div>
               <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'appointments')} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef2f6] text-[#24364d]" aria-label="Open appointments">
                 <CalendarClock size={18} />
               </Link>
@@ -5942,7 +5995,6 @@ function SellerMobilePortal({
   sellerAgentPhone,
   sellerDocumentsNeedingAttention,
   sellerDocumentTracker,
-  sellerOfferItems,
   activeSellerOfferCount,
   sellerActivityItems,
   uploadingDocumentKey = '',
@@ -6006,13 +6058,11 @@ function SellerMobilePortal({
   })
   const primaryDocumentAction = documentActionItems[0] || null
   const previewDocuments = documentActionItems.slice(0, 4)
-  const visibleOffers = sellerOfferItems.slice(0, 3)
   const visibleActivity = sellerActivityItems.slice(0, 3)
   const bottomNavItems = [
     { key: 'overview', section: 'overview', label: 'Home', icon: Home },
     { key: 'tasks', section: 'progress', label: 'Tasks', icon: CheckCircle2 },
     { key: 'documents', section: 'documents', label: 'Documents', icon: FileText },
-    { key: 'offers', section: 'offers', label: 'Offers', icon: Tag },
     { key: 'team', section: 'team', label: 'Team', icon: Users },
   ]
   const nextActionHref = sellerNextStep?.href ||
@@ -6410,17 +6460,6 @@ function SellerMobilePortal({
           />
         ) : null}
 
-        {mobileSection === 'offers' ? (
-          <SellerMobileListCard
-            eyebrow="Offers"
-            title={`${activeSellerOfferCount} active offer${activeSellerOfferCount === 1 ? '' : 's'}`}
-            emptyText="Offers will appear here when your agent receives them."
-            items={visibleOffers.map((offer) => ({ id: offer.id, title: offer.amountLabel || offer.offerAmountLabel || 'Offer received', description: `${offer.buyerName || 'Buyer'} - ${offer.statusLabel || 'Awaiting review'}`, to: 'offers' }))}
-            token={token}
-            workspaceNavigationScope={workspaceNavigationScope}
-          />
-        ) : null}
-
         {mobileSection === 'team' ? (
           <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
             <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Team</p>
@@ -6459,7 +6498,7 @@ function SellerMobilePortal({
       />
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#e4e7ec] bg-white px-3 pb-[max(0.7rem,env(safe-area-inset-bottom))] pt-2 lg:hidden" aria-label="Seller portal mobile navigation">
-        <div className="mx-auto grid max-w-[430px] grid-cols-5 gap-1">
+        <div className="mx-auto grid max-w-[430px] grid-cols-4 gap-1">
           {bottomNavItems.map((item) => {
             const Icon = item.icon
             const isActive = item.key === mobileSection || (item.key === 'overview' && mobileSection === 'overview')
@@ -6871,6 +6910,7 @@ function SellerPropertyHero({
   sellerAgentEmail,
   sellerAgentAvatarUrl,
   sellerAgencyName,
+  sellerAgencyLogoUrl,
   sellerPropertyTitle,
   sellerPropertyImageUrl,
   sellerStatusLabel,
@@ -6913,22 +6953,24 @@ function SellerPropertyHero({
         <p className="mt-3 max-w-2xl text-lg font-medium leading-7 text-[#078449] sm:text-[1.3rem]">
           {statusHeadline}
         </p>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-[#617187]">
-          We&apos;re actively marketing your property across leading platforms and we&apos;ll let you know whenever something important happens.
-        </p>
 
-        <div className="mt-6 flex flex-1">
-          <article className="flex min-h-[172px] w-full flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
+        <div className="mt-7 flex flex-1">
+          <article className="flex min-h-[206px] w-full flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
             <p className="text-[0.67rem] font-semibold uppercase tracking-[0.13em] text-[#718196]">Your agent</p>
-            <div className="mt-3 flex min-w-0 items-center gap-4">
-              <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[16px] bg-[#e6f2ef] text-lg font-semibold text-[#063f37] ring-1 ring-[#d6e8e2]">
+            <div className="mt-4 flex min-w-0 items-center gap-4">
+              <span className="inline-flex h-[76px] w-[76px] shrink-0 items-center justify-center overflow-hidden rounded-[18px] bg-[#e6f2ef] text-xl font-semibold text-[#063f37] ring-1 ring-[#d6e8e2]">
                 {sellerAgentAvatarUrl ? <img src={sellerAgentAvatarUrl} alt="" className="h-full w-full object-cover" /> : getSellerInitials(agentName)}
               </span>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <strong className="block truncate text-[1.05rem] font-semibold text-[#102032]">{agentName}</strong>
                 {sellerAgencyName && sellerAgencyName !== agentName ? <p className="mt-0.5 truncate text-sm text-[#64748b]">{sellerAgencyName}</p> : null}
                 <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[#64748b]"><span className="h-1.5 w-1.5 rounded-full bg-[#16a466]" /> Here when you need us</p>
               </div>
+              {sellerAgencyLogoUrl ? (
+                <span className="hidden h-16 w-[128px] shrink-0 items-center justify-center rounded-[14px] border border-[#e3ebf2] bg-[#f8fbff] px-3 py-2 sm:inline-flex">
+                  <img src={sellerAgencyLogoUrl} alt={`${sellerAgencyName || 'Agency'} logo`} className="max-h-12 max-w-full object-contain" />
+                </span>
+              ) : null}
             </div>
             <div className="mt-4 flex flex-wrap gap-2 border-t border-[#e7edf2] pt-3">
               <SellerPortalAction action={messageAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={primaryButtonClass}>
@@ -7011,28 +7053,28 @@ function SellerMarketingActivity({ channels = [] }) {
     <article id="seller-marketing-activity" className="h-full rounded-[18px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
       <SellerSectionHeading title="Marketing Activity" subtitle="Your property is shown only on channels shared by your agent." />
       {channels.length ? (
-        <div className="mt-5 space-y-2.5">
+        <div className="mt-5 space-y-3">
           {channels.map((channel) => (
-            <div key={channel.id} className="flex items-center justify-between gap-3 rounded-[13px] border border-[#e4ebf2] bg-[#fbfdff] px-3 py-2.5">
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border border-[#e0e8ef] bg-white p-1.5">
-                  {channel.logoUrl ? (
-                    <img src={channel.logoUrl} alt="" className="h-full w-full object-contain" />
-                  ) : (
-                    <Megaphone size={16} className="text-[#047857]" />
-                  )}
-                </span>
+            <div key={channel.id} className="grid gap-3 rounded-[14px] border border-[#e4ebf2] bg-[#fbfdff] p-3 sm:grid-cols-[128px_minmax(0,1fr)] sm:items-center">
+              <div className="flex h-[86px] items-center justify-center overflow-hidden rounded-[12px] border border-[#dde8f0] bg-white px-4 py-3">
+                {channel.logoUrl ? (
+                  <img src={channel.logoUrl} alt="" className="max-h-full max-w-full object-contain" />
+                ) : (
+                  <Megaphone size={28} className="text-[#047857]" />
+                )}
+              </div>
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-[#102032]">{channel.label}</p>
                   <p className="text-xs leading-5 text-[#7b8ca2]">{channel.updatedLabel ? `Updated ${channel.updatedLabel}` : channel.status}</p>
                 </div>
+                {channel.href ? (
+                  <a href={channel.href} target="_blank" rel="noreferrer" className="inline-flex min-h-[34px] shrink-0 items-center gap-1.5 rounded-[9px] bg-[#063f37] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#052f2a]">
+                    View Listing
+                    <ExternalLink size={12} />
+                  </a>
+                ) : <span className="text-xs font-semibold text-[#047857]">{channel.status}</span>}
               </div>
-              {channel.href ? (
-                <a href={channel.href} target="_blank" rel="noreferrer" className="inline-flex min-h-[34px] shrink-0 items-center gap-1.5 rounded-[9px] bg-[#063f37] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#052f2a]">
-                  View Listing
-                  <ExternalLink size={12} />
-                </a>
-              ) : <span className="text-xs font-semibold text-[#047857]">{channel.status}</span>}
             </div>
           ))}
         </div>
@@ -7299,6 +7341,7 @@ function SellerPortalDashboard({
   sellerAgentEmail,
   sellerAgentAvatarUrl,
   sellerAgencyName,
+  sellerAgencyLogoUrl,
   sellerPropertyTitle,
   sellerPropertyImageUrl,
   sellerStatusLabel,
@@ -7332,6 +7375,7 @@ function SellerPortalDashboard({
         sellerAgentEmail={sellerAgentEmail}
         sellerAgentAvatarUrl={sellerAgentAvatarUrl}
         sellerAgencyName={sellerAgencyName}
+        sellerAgencyLogoUrl={sellerAgencyLogoUrl}
         sellerPropertyTitle={sellerPropertyTitle}
         sellerPropertyImageUrl={sellerPropertyImageUrl}
         sellerStatusLabel={sellerStatusLabel}
@@ -7339,14 +7383,14 @@ function SellerPortalDashboard({
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
       />
-      <SellerTransactionHealthCard health={sellerHealth} />
-      <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={sellerStatusLabel} />
       <SellerProgressJourney
         listingProgressModel={sellerListingProgressModel}
         saleProgressModel={sellerSaleProgressModel}
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
       />
+      <SellerTransactionHealthCard health={sellerHealth} />
+      <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={sellerStatusLabel} />
       <SellerListingPerformance performance={sellerListingPerformance} />
       <section className="grid gap-5 xl:grid-cols-3">
         <SellerMarketingActivity channels={sellerMarketingChannels} />
@@ -7387,6 +7431,7 @@ function BuyerOverviewHero({
   primaryAction,
   supportContact,
   financeSectionKey = 'account',
+  isNewDevelopmentTransaction = false,
   token,
   workspaceNavigationScope,
 }) {
@@ -7403,12 +7448,10 @@ function BuyerOverviewHero({
           Welcome, {buyerFirstName}.
         </h1>
         <p className="mt-3 max-w-2xl text-lg font-medium leading-7 text-[#078449] sm:text-[1.3rem]">
-          Your purchase is moving forward, with finance, transfer, and handover in one place.
+          {isNewDevelopmentTransaction
+            ? 'Your purchase is moving forward, with finance, transfer, and handover in one place.'
+            : 'Your purchase is moving forward, with finance, transfer, and documents in one place.'}
         </p>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-[#617187]">
-          See what is needed from you, where the legal and finance work sits, and what happens before key collection.
-        </p>
-
         <div className="mt-6 flex flex-1">
           <article className={`flex min-h-[172px] w-full flex-col rounded-[20px] border border-[#dbe5ec] bg-white p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
             <p className={`text-[0.67rem] font-semibold uppercase tracking-[0.13em] ${PORTAL_DESIGN_TOKENS.text.eyebrow}`}>Your buying team</p>
@@ -7489,109 +7532,6 @@ function BuyerOverviewHero({
   )
 }
 
-function BuyerOverviewActionPanel({
-  actions = [],
-  blockingActionCount = 0,
-  hiddenActionCount = 0,
-  primaryAction = {},
-  nextStepState = {},
-  token,
-  workspaceNavigationScope,
-}) {
-  const visibleActions = actions.slice(0, 4)
-  const fallbackAction = {
-    id: 'buyer-overview-next-step',
-    title: nextStepState?.title || 'Your purchase file is up to date',
-    description: nextStepState?.description || 'Nothing is needed from you right now. Your team will surface the next purchase item here.',
-    actionRoute: primaryAction?.to || 'overview',
-    actionLabel: primaryAction?.label || 'Open',
-    priority: nextStepState?.requiresAction ? 'high' : 'normal',
-    blocking: Boolean(nextStepState?.requiresAction),
-  }
-  const renderedActions = visibleActions.length ? visibleActions : [fallbackAction]
-
-  return (
-    <section className={`${PORTAL_DESIGN_TOKENS.surface.card} p-6 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <SellerSectionHeading title="Buyer Actions" subtitle="The purchase items that may unblock finance, transfer, or handover." />
-        <span className={PORTAL_DESIGN_TOKENS.pill.count}>
-          {blockingActionCount} need action
-        </span>
-      </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
-        {renderedActions.map((action) => {
-          const normalizedPriority = normalizePortalStatus(action?.priority)
-          const isBlocking = Boolean(action?.blocking)
-          const pillClasses = isBlocking || normalizedPriority === 'urgent'
-            ? 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
-            : normalizedPriority === 'informational'
-              ? 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]'
-              : 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
-          const actionRoute = String(action?.actionRoute || primaryAction?.to || 'overview').trim()
-          const dueDateLabel = action?.dueDate ? formatShortPortalDate(action.dueDate, '') : ''
-
-          return (
-            <article key={action?.id || `${action?.type}-${action?.title}`} className={`${PORTAL_DESIGN_TOKENS.surface.cardInset} px-4 py-3.5`}>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.64rem] font-semibold uppercase tracking-[0.1em] ${pillClasses}`}>
-                  {isBlocking ? 'Blocking' : toTitleLabel(normalizedPriority || 'Normal')}
-                </span>
-                {dueDateLabel ? <span className="text-[0.68rem] font-medium text-[#6b7d93]">Due {dueDateLabel}</span> : null}
-              </div>
-              <h3 className="mt-2 text-base font-semibold tracking-[-0.02em] text-[#142132]">{action?.title || 'Action required'}</h3>
-              <p className="mt-1 text-sm leading-6 text-[#566b82]">{action?.description || 'Please review this item.'}</p>
-              <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, actionRoute)} className="mt-3 inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[10px] bg-[#123f3a] px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-[#0b312d]">
-                {action?.actionLabel || primaryAction?.label || 'Open'}
-                <ChevronRight size={14} />
-              </Link>
-            </article>
-          )
-        })}
-      </div>
-      {hiddenActionCount > 0 ? (
-        <p className="mt-3 text-xs font-medium text-[#6b7d93]">
-          {hiddenActionCount} more action{hiddenActionCount === 1 ? '' : 's'} available in your full workflow.
-        </p>
-      ) : null}
-    </section>
-  )
-}
-
-function BuyerOverviewMetricGrid({ cards = [], token, workspaceNavigationScope }) {
-  return (
-    <article className={`${PORTAL_DESIGN_TOKENS.surface.card} p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <SellerSectionHeading title="Purchase Dashboard" subtitle="Documents, finance, appointments, handover, and snags at a glance." />
-        <span className={PORTAL_DESIGN_TOKENS.pill.count}>
-          {cards.length} areas
-        </span>
-      </div>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {cards.map((card) => {
-          const Icon = card.icon
-          const toneClasses = card.tone === 'action'
-            ? 'bg-[#fff8ec] text-[#d97706]'
-            : card.tone === 'complete'
-              ? 'bg-[#eff8f1] text-[#347d43]'
-              : 'bg-[#e8f4ff] text-[#12588e]'
-          return (
-            <Link key={card.key} to={getPortalWorkspacePath(token, workspaceNavigationScope, card.to)} className={`flex min-h-[132px] flex-col justify-between ${PORTAL_DESIGN_TOKENS.surface.cardInset} p-4 transition hover:border-[#c9d8e6] hover:bg-white`}>
-              <div className="flex items-start justify-between gap-3">
-                <p className={`text-[0.68rem] font-semibold uppercase tracking-[0.12em] ${PORTAL_DESIGN_TOKENS.text.eyebrow}`}>{card.label}</p>
-                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-[11px] ${toneClasses}`}>
-                  <Icon size={15} />
-                </span>
-              </div>
-              <p className={`mt-4 truncate text-2xl font-semibold tracking-[-0.03em] ${PORTAL_DESIGN_TOKENS.text.headingDark}`}>{card.value}</p>
-              <p className={`mt-1 text-xs font-medium leading-5 ${PORTAL_DESIGN_TOKENS.text.body}`}>{card.helper}</p>
-            </Link>
-          )
-        })}
-      </div>
-    </article>
-  )
-}
-
 function BuyerStageGuide({ stageEducation = {}, whatHappensNextItems = [], whatsHappeningSummary = [], rolePlayerGuidance = [] }) {
   return (
     <article className={`h-full ${PORTAL_DESIGN_TOKENS.surface.card} p-5 ${PORTAL_DESIGN_TOKENS.shadow.card}`}>
@@ -7669,6 +7609,7 @@ function BuyerProgressJourney({
   nextStageLabel,
   steps = [],
   primaryAction = {},
+  isNewDevelopmentTransaction = false,
   token,
   workspaceNavigationScope,
 }) {
@@ -7676,11 +7617,13 @@ function BuyerProgressJourney({
   const currentLabel = currentStageLabel || 'Your current milestone'
   const nextLabel = nextStageLabel || 'The next milestone'
 
-  return (
-    <PortalProgressJourney
-      title="Your Purchase Journey"
-      subtitle="Follow reservation, OTP, finance, transfer, registration, and handover."
-      statusLabel={`${safeProgress}% complete`}
+	  return (
+	    <PortalProgressJourney
+	      title="Your Purchase Journey"
+	      subtitle={isNewDevelopmentTransaction
+	        ? 'Follow reservation, OTP, finance, transfer, registration, and handover.'
+	        : 'Follow OTP, finance, transfer, and registration.'}
+	      statusLabel={`${safeProgress}% complete`}
       steps={steps.slice(0, 7)}
       progressPercent={safeProgress}
       helperMessage={`Current milestone: ${currentLabel}. Next milestone: ${nextLabel}.`}
@@ -7689,6 +7632,182 @@ function BuyerProgressJourney({
       token={token}
       workspaceNavigationScope={workspaceNavigationScope}
     />
+  )
+}
+
+function getBuyerPurchaseUpdateTone(update = {}) {
+  const roleKey = normalizePortalStatus(pickFirstText(update.authorRole, update.role, update.displayType, update.statusLabel))
+  if (roleKey.includes('attorney') || roleKey.includes('legal')) {
+    return {
+      accent: 'bg-[#d9c38c]',
+      badge: 'border-[#d9c38c]/35 bg-[#d9c38c]/12 text-[#f2dfaa]',
+      avatar: 'border-[#d9c38c]/40 bg-[#2a2419] text-[#f2dfaa]',
+    }
+  }
+  if (roleKey.includes('bond') || roleKey.includes('finance') || roleKey.includes('bank')) {
+    return {
+      accent: 'bg-[#7fb7a0]',
+      badge: 'border-[#7fb7a0]/35 bg-[#7fb7a0]/12 text-[#bfe5d7]',
+      avatar: 'border-[#7fb7a0]/40 bg-[#162c25] text-[#bfe5d7]',
+    }
+  }
+  if (roleKey.includes('agent') || roleKey.includes('sales')) {
+    return {
+      accent: 'bg-[#9eb7da]',
+      badge: 'border-[#9eb7da]/35 bg-[#9eb7da]/12 text-[#d3e2f6]',
+      avatar: 'border-[#9eb7da]/40 bg-[#17263d] text-[#d3e2f6]',
+    }
+  }
+  return {
+    accent: 'bg-[#c7d0d8]',
+    badge: 'border-white/15 bg-white/[0.08] text-[#dce6ee]',
+    avatar: 'border-white/15 bg-white/[0.08] text-white',
+  }
+}
+
+function getBuyerPurchaseUpdateInitials(update = {}) {
+  const name = pickFirstText(update.authorName, update.name, update.authorRole, update.displayType, 'Team')
+  const parts = String(name).trim().split(/\s+/).filter(Boolean)
+  return (parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : parts[0]?.slice(0, 2) || 'TP').toUpperCase()
+}
+
+function BuyerPurchaseUpdatesPanel({
+  updates = [],
+  subtitle = '',
+  commentDraft = '',
+  saving = false,
+  onCommentDraftChange,
+  onCommentSubmit,
+  onActionClick,
+}) {
+  const visibleUpdates = Array.isArray(updates) ? updates.slice(0, 6) : []
+  const featuredUpdate = visibleUpdates[0] || null
+  const roleCount = new Set(
+    visibleUpdates
+      .map((update) => normalizePortalStatus(pickFirstText(update?.authorRole, update?.role, update?.displayType)))
+      .filter(Boolean),
+  ).size
+
+  const renderUpdate = (update, index, compact = false) => {
+    const tone = getBuyerPurchaseUpdateTone(update)
+    const title = pickFirstText(update?.title, update?.statusLabel, update?.displayType, 'Progress update')
+    const message = pickFirstText(update?.message, update?.commentBody, update?.description, update?.metadata?.description, 'Your team will add more detail here.')
+    const authorName = pickFirstText(update?.authorName, update?.name, 'Transaction team')
+    const authorRole = pickFirstText(update?.authorRole, update?.role, update?.displayType, 'Role player')
+    const timestamp = pickFirstText(update?.timestampLabel, formatShortPortalDate(update?.createdAt || update?.timestamp, 'Today'))
+    const statusLabel = pickFirstText(update?.statusLabel, update?.dueStatus, update?.displayType, index === 0 ? 'Latest' : 'Update')
+    const key = update?.id || `${authorName}-${title}-${index}`
+
+    return (
+      <article key={key} className={`relative overflow-hidden rounded-[18px] border border-white/10 bg-white/[0.055] ${compact ? 'px-4 py-3.5' : 'p-5'} shadow-[0_18px_40px_rgba(0,0,0,0.18)]`}>
+        <span className={`absolute left-0 top-0 h-full w-1 ${tone.accent}`} aria-hidden="true" />
+        <div className="flex items-start gap-3">
+          <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] border text-sm font-semibold ${tone.avatar}`}>
+            {getBuyerPurchaseUpdateInitials(update)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`inline-flex min-h-[26px] items-center rounded-full border px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.12em] ${tone.badge}`}>
+                {statusLabel}
+              </span>
+              <span className="text-xs font-medium text-[#9eaeb8]">{timestamp}</span>
+            </div>
+            <h3 className={`mt-2 font-semibold tracking-[-0.02em] text-white ${compact ? 'text-sm' : 'text-[1.16rem]'}`}>{title}</h3>
+            <p className={`${compact ? 'mt-1 line-clamp-2 text-xs leading-5' : 'mt-2 text-sm leading-6'} text-[#cbd7df]`}>{message}</p>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3">
+              <p className="min-w-0 truncate text-xs font-medium text-[#9eaeb8]">
+                <span className="text-[#eef4f7]">{authorName}</span>
+                <span className="mx-1.5 text-[#647989]">/</span>
+                {authorRole}
+              </p>
+              {update?.actionLabel && onActionClick ? (
+                <button
+                  type="button"
+                  className="inline-flex min-h-[32px] items-center justify-center gap-1.5 rounded-full border border-[#d9c38c]/35 bg-[#d9c38c]/12 px-3 py-1.5 text-xs font-semibold text-[#f2dfaa] transition hover:bg-[#d9c38c]/18"
+                  onClick={() => onActionClick(update)}
+                >
+                  {update.actionLabel}
+                  <ChevronRight size={13} />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </article>
+    )
+  }
+
+  return (
+    <section className="overflow-hidden rounded-[28px] border border-[#d9c38c]/35 bg-[#0c1417] text-white shadow-[0_26px_70px_rgba(8,16,20,0.24)]">
+      <div className="border-b border-white/10 bg-[linear-gradient(135deg,#0c1417_0%,#172125_48%,#251f14_100%)] px-5 py-5 sm:px-7">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#d9c38c]">Role-player ledger</p>
+            <h2 className="mt-2 text-[1.65rem] font-semibold leading-tight tracking-[-0.04em] text-white sm:text-[2rem]">Purchase Updates</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#cbd7df]">
+              {subtitle || 'The latest progress comments from your agent, legal team, finance team, and transaction desk.'}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <span className="inline-flex min-h-[34px] items-center gap-2 rounded-full border border-white/12 bg-white/[0.07] px-3 text-xs font-semibold text-[#eef4f7]">
+              <MessageCircle size={14} />
+              {visibleUpdates.length} updates
+            </span>
+            <span className="inline-flex min-h-[34px] items-center gap-2 rounded-full border border-[#d9c38c]/30 bg-[#d9c38c]/12 px-3 text-xs font-semibold text-[#f2dfaa]">
+              <Users size={14} />
+              {roleCount || 1} teams
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-5 sm:p-7 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+        <div className="min-w-0">
+          {featuredUpdate ? (
+            renderUpdate(featuredUpdate, 0)
+          ) : (
+            <article className="rounded-[18px] border border-white/10 bg-white/[0.055] p-5">
+              <p className="text-sm font-semibold text-white">No progress comments yet.</p>
+              <p className="mt-2 text-sm leading-6 text-[#cbd7df]">Your role players can add their next update here when the transaction moves.</p>
+            </article>
+          )}
+          {visibleUpdates.length > 1 ? (
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {visibleUpdates.slice(1).map((update, index) => renderUpdate(update, index + 1, true))}
+            </div>
+          ) : null}
+        </div>
+
+        <form className="flex min-h-full flex-col rounded-[20px] border border-[#d9c38c]/25 bg-[#f8f4ea] p-5 text-[#132027]" onSubmit={onCommentSubmit}>
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#132027] text-[#f2dfaa]">
+              <MessageCircle size={18} />
+            </span>
+            <div>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8b7446]">Add a note</p>
+              <h3 className="text-base font-semibold tracking-[-0.02em] text-[#132027]">Progress comment</h3>
+            </div>
+          </div>
+          <textarea
+            className="mt-4 min-h-[170px] flex-1 rounded-[16px] border border-[#dfd2b6] bg-white px-4 py-3 text-sm leading-6 text-[#132027] outline-none transition placeholder:text-[#8a98a3] focus:border-[#b69755] focus:ring-2 focus:ring-[#d9c38c]/35"
+            value={commentDraft}
+            onChange={(event) => onCommentDraftChange?.(event.target.value)}
+            placeholder="Share a purchase update or ask the team for clarity."
+          />
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <p className="text-xs leading-5 text-[#6c7a84]">Visible to the transaction team.</p>
+            <button
+              type="submit"
+              className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-full bg-[#132027] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0b1418] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={saving || !String(commentDraft || '').trim() || !onCommentSubmit}
+            >
+              {saving ? 'Posting...' : 'Post update'}
+              <ArrowRight size={15} />
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
   )
 }
 
@@ -7734,16 +7853,10 @@ function BuyerPortalDashboard({
   timeInStageLabel,
   stageUpdatedDateLabel,
   financeSectionKey,
-  nextStepState,
   primaryAction,
-  blockingActionCount,
-  prioritizedNextActions,
-  hiddenNextActionCount,
-  metricCards,
   journeySteps,
   updates,
   latestUpdatesSubtitle,
-  latestAttorneyUpdate,
   commentDraft,
   saving,
   onCommentDraftChange,
@@ -7756,6 +7869,7 @@ function BuyerPortalDashboard({
   controlBoard,
   supportContact,
   buyerPortalAccessDescription,
+  isNewDevelopmentTransaction = false,
   token,
   workspaceNavigationScope,
 }) {
@@ -7773,44 +7887,32 @@ function BuyerPortalDashboard({
         progressPercent={progressPercent}
         timeInStageLabel={timeInStageLabel}
         stageUpdatedDateLabel={stageUpdatedDateLabel}
+	        primaryAction={primaryAction}
+	        supportContact={supportContact}
+	        financeSectionKey={financeSectionKey}
+	        isNewDevelopmentTransaction={isNewDevelopmentTransaction}
+	        token={token}
+	        workspaceNavigationScope={workspaceNavigationScope}
+	      />
+      <BuyerProgressJourney
+        progressPercent={progressPercent}
+        currentStageLabel={currentStageLabel}
+        nextStageLabel={nextStageLabel}
+        steps={journeySteps}
         primaryAction={primaryAction}
-        supportContact={supportContact}
-        financeSectionKey={financeSectionKey}
+        isNewDevelopmentTransaction={isNewDevelopmentTransaction}
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
       />
-      <BuyerOverviewActionPanel
-        actions={prioritizedNextActions}
-        blockingActionCount={blockingActionCount}
-        hiddenActionCount={hiddenNextActionCount}
-        primaryAction={primaryAction}
-        nextStepState={nextStepState}
-        token={token}
-        workspaceNavigationScope={workspaceNavigationScope}
+      <BuyerPurchaseUpdatesPanel
+        updates={updates}
+        subtitle={latestUpdatesSubtitle}
+        commentDraft={commentDraft}
+        saving={saving}
+        onCommentDraftChange={onCommentDraftChange}
+        onCommentSubmit={onCommentSubmit}
+        onActionClick={onActionClick}
       />
-      <BuyerOverviewMetricGrid cards={metricCards} token={token} workspaceNavigationScope={workspaceNavigationScope} />
-      <AttorneySaysCard update={latestAttorneyUpdate} fallbackStageLabel={currentStageLabel} />
-      <section className="grid gap-5 xl:grid-cols-2">
-        <BuyerProgressJourney
-          progressPercent={progressPercent}
-          currentStageLabel={currentStageLabel}
-          nextStageLabel={nextStageLabel}
-          steps={journeySteps}
-          primaryAction={primaryAction}
-          token={token}
-          workspaceNavigationScope={workspaceNavigationScope}
-        />
-        <LatestUpdatesCard
-          updates={updates}
-          commentDraft={commentDraft}
-          saving={saving}
-          onCommentDraftChange={onCommentDraftChange}
-          onCommentSubmit={onCommentSubmit}
-          onActionClick={onActionClick}
-          heading="Purchase Updates"
-          subtitle={latestUpdatesSubtitle}
-        />
-      </section>
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
         <BuyerStageGuide
           stageEducation={stageEducation}
@@ -7846,7 +7948,7 @@ function SellerPortalPasswordGate({
     ? sessionExpired
       ? 'Your secure session ended. Enter your password to continue—your portal link is still active.'
       : 'Use the password you created for this seller portal.'
-    : 'Create a password before opening your seller portal and document centre.'
+    : 'Create a password before opening your seller portal and document centre. Use this secure portal link when you return.'
   const propertyTitle = String(authState?.propertyTitle || '').trim()
   const sellerEmail = String(authState?.sellerEmail || '').trim()
   const sellerPlatformFeeConfig = getPlatformFeeConsentConfig('seller')
@@ -7873,6 +7975,9 @@ function SellerPortalPasswordGate({
           <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
             {propertyTitle ? <strong className="block text-sm font-semibold text-[#142132]">{propertyTitle}</strong> : null}
             {sellerEmail ? <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{sellerEmail}</p> : null}
+            <p className="mt-2 text-xs leading-5 text-[#6b7d93]">
+              This password is for this private seller portal link. It is separate from the main Arch9 platform sign-in.
+            </p>
           </div>
         ) : null}
 
@@ -7986,7 +8091,6 @@ function ClientPortal() {
   const [bondApplicationSaving, setBondApplicationSaving] = useState(false)
   const [reservationProofUploadFeedback, setReservationProofUploadFeedback] = useState({ tone: '', message: '' })
   const [documentActionError, setDocumentActionError] = useState('')
-  const [expandedJourneyStepId, setExpandedJourneyStepId] = useState(null)
   const [myDetailsDraft, setMyDetailsDraft] = useState({})
   const [myDetailsEditingSection, setMyDetailsEditingSection] = useState('')
   const [myDetailsSavingSection, setMyDetailsSavingSection] = useState('')
@@ -8932,6 +9036,7 @@ function ClientPortal() {
     try {
       setUploadingDocumentKey(options.uploadingKey || documentKey)
       setError('')
+      setDocumentActionError('')
       if (isReservationProofUpload) {
         setReservationProofUploadFeedback({
           tone: 'loading',
@@ -8977,14 +9082,16 @@ function ClientPortal() {
         setError('')
         return { ok: false, error: 'Your secure seller session expired. Please sign in again.' }
       }
-      setError(uploadError.message)
+      const message = uploadError.message || 'Upload failed. Please try again.'
+      setError(message)
+      setDocumentActionError(message)
       if (isReservationProofUpload) {
         setReservationProofUploadFeedback({
           tone: 'error',
           message: 'Upload failed. Please try again.',
         })
       }
-      return { ok: false, error: uploadError.message || 'Upload failed. Please try again.' }
+      return { ok: false, error: message }
     } finally {
       setUploadingDocumentKey('')
     }
@@ -9323,18 +9430,21 @@ function ClientPortal() {
     financeTypeForPortal === 'bond' || financeTypeForPortal === 'combination' || financeTypeForPortal === 'hybrid'
   const financeManagedByForPortal = resolvePortalFinanceManagedBy(portal)
   const isOriginatorManagedPortalFinance = isBondOrHybridTransaction && financeManagedByForPortal === 'bond_originator'
+  const isNewDevelopmentTransaction = isNewDevelopmentBuyerPortal(portal)
+  const handoverSectionEnabled = isNewDevelopmentTransaction
+  const snagsSectionEnabled = isNewDevelopmentTransaction && Boolean(portal?.settings?.snag_reporting_enabled)
 
   const sectionEnabled = {
     overview: true,
     progress: true,
     appointments: true,
-    offers: true,
+    offers: requestedWorkspace !== 'seller',
     details: true,
     account: true,
     bond_application: isOriginatorManagedPortalFinance,
     documents: true,
-    handover: true,
-    snags: Boolean(portal?.settings?.snag_reporting_enabled),
+    handover: handoverSectionEnabled,
+    snags: snagsSectionEnabled,
     settings: true,
     team: true,
     alterations: Boolean(portal?.settings?.alteration_requests_enabled),
@@ -9384,6 +9494,7 @@ function ClientPortal() {
         const result = await fetchClientPortalMatterFinancialAccounts({
           token,
           workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+          sellerPortalAccessToken: effectiveWorkspace === 'seller' ? sellerPortalAccessToken : '',
         })
         if (!active) return
         setMatterAccountsState({
@@ -9412,7 +9523,7 @@ function ClientPortal() {
     return () => {
       active = false
     }
-  }, [effectiveWorkspace, portal?.transaction?.id, token])
+  }, [effectiveWorkspace, portal?.transaction?.id, sellerPortalAccessToken, token])
 
   const handleUploadMatterAccountProof = useCallback(async ({ account, file, amount, paidOn, reference, notes, requestId } = {}) => {
     const accountId = account?.id || ''
@@ -9431,6 +9542,7 @@ function ClientPortal() {
       const result = await uploadClientPortalMatterFinancialProof({
         token,
         workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+        sellerPortalAccessToken: effectiveWorkspace === 'seller' ? sellerPortalAccessToken : '',
         accountId,
         file,
         amount,
@@ -9442,6 +9554,7 @@ function ClientPortal() {
       const refreshed = await fetchClientPortalMatterFinancialAccounts({
         token,
         workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+        sellerPortalAccessToken: effectiveWorkspace === 'seller' ? sellerPortalAccessToken : '',
       })
       setMatterAccountsState({
         accounts: refreshed.accounts || [],
@@ -9467,7 +9580,7 @@ function ClientPortal() {
     } finally {
       setUploadingMatterProofAccountId('')
     }
-  }, [effectiveWorkspace, token])
+  }, [effectiveWorkspace, sellerPortalAccessToken, token])
 
   const handleUploadMatterRequestDocument = useCallback(async ({ account, request, file, amount, documentDate, reference, notes } = {}) => {
     const accountId = account?.id || ''
@@ -9487,6 +9600,7 @@ function ClientPortal() {
       const result = await uploadClientPortalMatterFinancialRequestDocument({
         token,
         workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+        sellerPortalAccessToken: effectiveWorkspace === 'seller' ? sellerPortalAccessToken : '',
         accountId,
         requestId,
         file,
@@ -9498,6 +9612,7 @@ function ClientPortal() {
       const refreshed = await fetchClientPortalMatterFinancialAccounts({
         token,
         workspace: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+        sellerPortalAccessToken: effectiveWorkspace === 'seller' ? sellerPortalAccessToken : '',
       })
       setMatterAccountsState({
         accounts: refreshed.accounts || [],
@@ -9523,7 +9638,7 @@ function ClientPortal() {
     } finally {
       setUploadingMatterRequestId('')
     }
-  }, [effectiveWorkspace, token])
+  }, [effectiveWorkspace, sellerPortalAccessToken, token])
 
   const handleJourneyChange = useCallback((value) => {
     if (value === 'seller' && !hasSellingContext) {
@@ -9695,7 +9810,6 @@ function ClientPortal() {
   const isOverview = workspaceSection === 'overview'
   const isProgress = workspaceSection === 'progress'
   const isAppointments = workspaceSection === 'appointments'
-  const isOffers = workspaceSection === 'offers'
   const isDetails = workspaceSection === 'details'
   const isAccount = workspaceSection === 'account'
   const isBondApplication = workspaceSection === 'bond_application'
@@ -10765,15 +10879,7 @@ function ClientPortal() {
     subjectToSale: hasSubjectToSaleIndicator,
     sellerStatus: sellerJourneyStatus,
   })
-  const journeyStatusFlag = deriveClientJourneyStatusFlag({
-    nextStepState,
-    stageAgeDays,
-  })
-  const resolvedExpandedJourneyStepId =
-    expandedJourneyStepId && clientJourneySteps.some((step) => step.id === expandedJourneyStepId)
-      ? expandedJourneyStepId
-      : currentStepId || clientJourneySteps[0]?.id || null
-  const journeyCurrentStep = clientJourneySteps.find((step) => step.id === resolvedExpandedJourneyStepId) ||
+  const journeyCurrentStep = clientJourneySteps.find((step) => step.id === currentStepId) ||
     clientJourneySteps.find((step) => step.status === 'current' || step.status === 'blocked') ||
     clientJourneySteps[0] ||
     null
@@ -10879,7 +10985,9 @@ function ClientPortal() {
     {
       title: 'Arch9 Support',
       name: portal?.unit?.development?.developer_company || 'Arch9 Operations',
-      detail: 'Keeps the transaction workspace, documents, and handover records aligned.',
+      detail: isNewDevelopmentTransaction
+        ? 'Keeps the transaction workspace, documents, and handover records aligned.'
+        : 'Keeps the transaction workspace and documents aligned.',
     },
   ]
   const buyerSupportContact = teamMembers.find((member) => member.email || member.phone) || teamMembers[0] || {}
@@ -10887,7 +10995,8 @@ function ClientPortal() {
     if (effectiveWorkspace === 'seller') {
       return false
     }
-    if (item.key === 'snags' && !portal?.settings?.snag_reporting_enabled) return false
+    if (item.key === 'handover' && !handoverSectionEnabled) return false
+    if (item.key === 'snags' && !snagsSectionEnabled) return false
     if (item.key === 'bond_application' && !isBondOrHybridTransaction) return false
     return true
   })
@@ -10925,7 +11034,7 @@ function ClientPortal() {
           : null,
     appointments: upcomingAppointmentCount > 0 ? `${upcomingAppointmentCount} upcoming` : null,
     offers: activeSellerOfferCount > 0 ? `${activeSellerOfferCount}` : null,
-    snags: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : null,
+    snags: snagsSectionEnabled ? `${snagOpenCount} open` : null,
   }
   const activeMenuItem = portalNavigationItems.find((item) => item.key === activeSection) || portalNavigationItems[0] || CLIENT_PORTAL_MENU[0]
   const activeSectionLabel =
@@ -10953,55 +11062,6 @@ function ClientPortal() {
       }
     : null
   const buyerMobileDocumentItems = buildBuyerMobileDocumentItems(workspaceData?.documentCenter || {})
-  const buyerOverviewMetricCards = [
-    {
-      key: 'documents',
-      label: 'Purchase Docs',
-      value: missingRequired ? `${missingRequired} required` : 'Ready',
-      helper: missingRequired ? 'Buyer uploads needed' : 'No buyer uploads due',
-      to: 'documents',
-      icon: FileText,
-      tone: missingRequired ? 'action' : 'complete',
-    },
-    {
-      key: 'finance',
-      label: 'Purchase Finance',
-      value: buyerFinanceTypeLabel,
-      helper: matterAccountsState.summary?.documentCount
-        ? `${matterAccountsState.summary.documentCount} account document${matterAccountsState.summary.documentCount === 1 ? '' : 's'}`
-        : 'Finance workspace',
-      to: buyerMobileFinanceSectionKey,
-      icon: HandCoins,
-      tone: 'info',
-    },
-    {
-      key: 'appointments',
-      label: 'Buyer Meetings',
-      value: upcomingAppointmentCount ? `${upcomingAppointmentCount} upcoming` : 'None',
-      helper: upcomingAppointmentCount ? 'Review your schedule' : 'No meeting scheduled',
-      to: 'appointments',
-      icon: CalendarClock,
-      tone: upcomingAppointmentCount ? 'info' : 'complete',
-    },
-    {
-      key: 'handover',
-      label: 'Key Handover',
-      value: handoverReadinessStatus,
-      helper: handoverScheduled ? 'Key date on file' : 'Awaiting key date',
-      to: 'handover',
-      icon: KeyRound,
-      tone: handoverCompleted ? 'complete' : 'info',
-    },
-    {
-      key: 'snags',
-      label: 'Snag List',
-      value: portal?.settings?.snag_reporting_enabled ? `${snagOpenCount} open` : 'Inactive',
-      helper: portal?.settings?.snag_reporting_enabled ? `${snagResolvedCount} resolved` : 'Not active for this unit',
-      to: 'snags',
-      icon: Wrench,
-      tone: snagOpenCount ? 'action' : 'complete',
-    },
-  ]
   const sellerDisplayName = pickFirstText(portal?.buyer?.name, activeSellingContext?.clientName, activeSellingContext?.client_name, 'Seller')
   const sellerFirstName = String(sellerDisplayName || 'Seller').trim().split(/\s+/)[0] || 'Seller'
   const sellerPropertyTitle = pickFirstText(
@@ -11114,17 +11174,6 @@ function ClientPortal() {
     activeSellingContext?.assigned_agent_phone,
     activeSellingContext?.agentPhone,
     activeSellingContext?.agent_phone,
-  )
-  const sellerOfferAskingPrice = Number(
-    activeSellingContext?.askingPrice ||
-      activeSellingContext?.asking_price ||
-      activeSellingContext?.listPrice ||
-      activeSellingContext?.list_price ||
-      portal?.activeSellingContext?.askingPrice ||
-      portal?.activeSellingContext?.asking_price ||
-      portal?.unit?.price ||
-      purchasePriceValue ||
-      0,
   )
   const sellerOnboardingFormData =
     portal?.onboardingFormData?.formData && typeof portal.onboardingFormData.formData === 'object'
@@ -11454,6 +11503,37 @@ function ClientPortal() {
         }
       : null,
   ].filter((participant) => participant?.name)
+  const latestAttorneyUpdateMessage = pickFirstText(
+    latestAttorneyUpdate?.message,
+    latestAttorneyUpdate?.commentBody,
+    latestAttorneyUpdate?.description,
+    latestAttorneyUpdate?.metadata?.description,
+  )
+  const sellerProgressRolePlayerUpdates = sellerProgressParticipants.map((participant) => {
+    const roleKey = normalizePortalStatus(participant.role)
+    if (roleKey.includes('attorney')) {
+      return {
+        ...participant,
+        title: pickFirstText(latestAttorneyUpdate?.title, latestAttorneyUpdate?.metadata?.title, 'Legal team update'),
+        message: latestAttorneyUpdateMessage || 'The transferring attorney will share legal progress, document requests, and registration milestones here.',
+        timestampLabel: latestAttorneyUpdate ? formatShortPortalDate(latestAttorneyUpdate.createdAt || latestAttorneyUpdate.timestamp, 'Today') : '',
+      }
+    }
+    if (roleKey.includes('bond')) {
+      return {
+        ...participant,
+        title: 'Finance update',
+        message: 'The bond originator will share finance progress and lender milestones when they apply to this sale.',
+        timestampLabel: '',
+      }
+    }
+    return {
+      ...participant,
+      title: 'Agent update',
+      message: sellerAgentUpdate?.message || 'Your estate agent will share viewing, offer, and seller milestone updates here.',
+      timestampLabel: sellerAgentUpdate?.timestampLabel || '',
+    }
+  })
   const sellerProgressAction = {
     ...sellerNextStep,
     href: sellerNextStep?.href || getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep?.to || 'documents'),
@@ -11552,6 +11632,7 @@ function ClientPortal() {
     { to: 'team', label: 'Team Contacts', icon: Users },
     { to: 'documents', label: 'Documents', icon: FileText },
   ]
+    .filter((action) => action.to !== 'handover' || handoverSectionEnabled)
     .filter((action) => action.to !== primaryOverviewAction.to)
     .slice(0, 2)
   const primaryOverviewActionClasses =
@@ -11855,7 +11936,6 @@ function ClientPortal() {
             sellerAgentPhone={sellerAgentPhone}
             sellerDocumentsNeedingAttention={sellerDocumentsNeedingAttention}
             sellerDocumentTracker={sellerDocumentTracker}
-            sellerOfferItems={sellerOfferItems}
             activeSellerOfferCount={activeSellerOfferCount}
             sellerActivityItems={sellerActivityItems}
             uploadingDocumentKey={uploadingDocumentKey}
@@ -11950,35 +12030,20 @@ function ClientPortal() {
                   <img
                     src={sellerSidebarLogoUrl}
                     alt={`${sellerAgencyName || 'Agency'} logo`}
-                    className="max-h-14 max-w-[210px] object-contain object-left"
+                    className="max-h-24 max-w-full object-contain object-left"
                   />
                 ) : (
                   <h1 className="text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#f8fbff]">{sellerAgencyName || 'Seller Portal'}</h1>
                 )}
-                <p className="mt-2 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Seller Portal</p>
               </div>
             ) : (
-            <>
-              <div className="min-h-[72px]">
-                <h1 className="text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#f8fbff]">Arch9</h1>
-                <p className="mt-2 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Buyer Workspace</p>
-              </div>
-            <div className="mt-4 rounded-[14px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3 py-3">
-              <label htmlFor="client-journey-selector" className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#a8bdd2]">
-                Workspace
-              </label>
-              <select
-                id="client-journey-selector"
-                value={selectedJourney}
-                onChange={(event) => handleJourneyChange(event.target.value)}
-                className="mt-1.5 w-full rounded-[10px] border border-white/12 bg-[rgba(10,20,32,0.55)] px-2.5 py-2 text-sm font-semibold text-white outline-none focus:border-[#7aa3cc] focus:ring-2 focus:ring-[#7aa3cc]/35"
-              >
-                <option value="buyer">Buying</option>
-                <option value="seller">{canSwitchJourney ? 'Selling' : 'Selling (Request access)'}</option>
-              </select>
-            </div>
-            </>
-            )}
+	            <>
+	              <div className="min-h-[72px]">
+	                <h1 className="text-[2rem] font-bold leading-tight tracking-[-0.04em] text-[#f8fbff]">Arch9</h1>
+	                <p className="mt-2 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Buyer Workspace</p>
+	              </div>
+	            </>
+	            )}
           </div>
 
           {effectiveWorkspace === 'seller' ? (
@@ -12167,24 +12232,9 @@ function ClientPortal() {
             </div>
           </div>
 
-          <div className="space-y-6 px-3 py-5 md:px-4 md:py-8 xl:px-5">
-            {hideSellerWorkspaceHeader || (isOverview && effectiveWorkspace !== 'seller') ? null : (
-            <section className="rounded-[24px] border border-[#223d57] bg-[linear-gradient(135deg,#10253a_0%,#1d3c5b_60%,#2a5078_100%)] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]">
-              <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#f8fbff]">Welcome, {clientFirstName}</h2>
-              <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
-                This is your secure transaction workspace. Your updates, documents, and next steps are kept in one place so
-                you can always see what is happening.
-              </p>
-              <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
-                {effectiveWorkspace === 'seller'
-                  ? 'Track your sale from onboarding through mandate, offers, and transfer with clear progress updates.'
-                  : 'Track your purchase from onboarding to registration with clear stage-by-stage guidance.'}
-              </p>
-            </section>
-            )}
-
-            {hideSellerWorkspaceHeader || (isOverview && effectiveWorkspace !== 'seller') ? null : (
-            <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
+	          <div className="space-y-6 px-3 py-5 md:px-4 md:py-8 xl:px-5">
+	            {hideSellerWorkspaceHeader || (isOverview && effectiveWorkspace !== 'seller') ? null : (
+	              <section className="rounded-[28px] border border-[#dbe5ef] bg-white px-6 py-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
               {effectiveWorkspace === 'seller' ? (
                 <div>
                   <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#64748b]">
@@ -12438,23 +12488,23 @@ function ClientPortal() {
                         <FileText size={15} />
                         Documents
                       </Link>
-                      {isHandover || isBondApplication ? (
-                        <Link
-                          to={getClientPortalPath(token, 'overview')}
-                          className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
-                        >
-                          <LayoutDashboard size={15} />
-                          Overview
-                        </Link>
-                      ) : (
-                        <Link
-                          to={getClientPortalPath(token, 'handover')}
-                          className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
-                        >
-                          <KeyRound size={15} />
-                          Handover
-                        </Link>
-                      )}
+	                      {isHandover || isBondApplication ? (
+	                        <Link
+	                          to={getClientPortalPath(token, 'overview')}
+	                          className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+	                        >
+	                          <LayoutDashboard size={15} />
+	                          Overview
+	                        </Link>
+	                      ) : handoverSectionEnabled ? (
+	                        <Link
+	                          to={getClientPortalPath(token, 'handover')}
+	                          className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+	                        >
+	                          <KeyRound size={15} />
+	                          Handover
+	                        </Link>
+	                      ) : null}
                       <Link
                         to={getClientPortalPath(token, 'team')}
                         className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#2f5478] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#254664]"
@@ -12502,6 +12552,7 @@ function ClientPortal() {
                       sellerAgentEmail={sellerAgentEmail}
                       sellerAgentAvatarUrl={sellerAgentAvatarUrl}
                       sellerAgencyName={sellerAgencyName}
+                      sellerAgencyLogoUrl={sellerAgencyLogoUrl}
                       sellerPropertyTitle={sellerPropertyTitle}
                       sellerPropertyImageUrl={sellerPropertyImageUrl}
                       sellerStatusLabel={sellerDashboardStatusLabel}
@@ -12596,21 +12647,10 @@ function ClientPortal() {
                   timeInStageLabel={timeInStageLabel}
                   stageUpdatedDateLabel={stageUpdatedDateLabel}
                   financeSectionKey={buyerMobileFinanceSectionKey}
-                  nextStepState={nextStepState}
                   primaryAction={primaryOverviewAction}
-                  blockingActionCount={blockingActionCount}
-                  prioritizedNextActions={prioritizedNextActions}
-                  hiddenNextActionCount={hiddenNextActionCount}
-                  metricCards={buyerOverviewMetricCards}
-                  journeyStatus={journeyStatusFlag}
                   journeySteps={clientJourneySteps}
-                  expandedJourneyStepId={resolvedExpandedJourneyStepId}
-                  onToggleJourneyStep={(stepId) =>
-                    setExpandedJourneyStepId((previous) => (previous === stepId ? null : stepId))
-                  }
                   updates={latestJourneyFeedItems}
                   latestUpdatesSubtitle={latestUpdatesSubtitle}
-                  latestAttorneyUpdate={latestAttorneyUpdate}
                   commentDraft={commentDraft}
                   saving={saving}
                   onCommentDraftChange={setCommentDraft}
@@ -12620,13 +12660,40 @@ function ClientPortal() {
                   whatHappensNextItems={whatHappensNextItems}
                   whatsHappeningSummary={whatsHappeningSummary}
                   rolePlayerGuidance={rolePlayerGuidance}
-                  controlBoard={workspaceData?.mvpControlBoard}
-                  supportContact={buyerSupportContact}
-                  buyerPortalAccessDescription={buyerPortalAccessDescription}
-                  token={token}
-                  workspaceNavigationScope={workspaceNavigationScope}
-                />
-                {effectiveWorkspace !== 'seller' && showReservationDepositUploadCard ? (
+	                  controlBoard={workspaceData?.mvpControlBoard}
+	                  supportContact={buyerSupportContact}
+	                  buyerPortalAccessDescription={buyerPortalAccessDescription}
+	                  isNewDevelopmentTransaction={isNewDevelopmentTransaction}
+	                  token={token}
+	                  workspaceNavigationScope={workspaceNavigationScope}
+	                />
+                {effectiveWorkspace !== 'seller' && sectionEnabled.bond_application ? (
+                  <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Finance</p>
+                        <h3 className="mt-1 text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">Bond Application</h3>
+                        <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
+                          Application status: <span className="font-semibold text-[#324559]">{bondApplicationStatus}</span>
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] ${bondApplicationStatusClasses}`}>
+                          {bondApplicationStatus}
+                        </span>
+                        <Link
+                          to={getPortalWorkspacePath(token, workspaceNavigationScope, buyerMobileFinanceSectionKey)}
+                          className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[12px] bg-[#142132] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0b1522]"
+                        >
+                          Open finance
+                          <ArrowRight size={15} />
+                        </Link>
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
+
+                {effectiveWorkspace !== 'seller' && reservationRequiredForClient && showReservationDepositUploadCard ? (
                   <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
                     <div className="grid gap-5 lg:grid-cols-[1.45fr_0.55fr]">
                       <div className="min-w-0">
@@ -12735,8 +12802,8 @@ function ClientPortal() {
                 }
                 completedAt={portal?.transaction?.completed_at || portal?.transaction?.registered_at}
                 pendingAction={sellerProgressAction}
-                activity={sellerActivityItems}
                 participants={sellerProgressParticipants}
+                rolePlayerUpdates={sellerProgressRolePlayerUpdates}
                 overviewPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')}
                 documentsPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
                 listingUrl={sellerListingUrl}
@@ -12760,20 +12827,6 @@ function ClientPortal() {
                 }}
                 onRequestReschedule={(appointment, payload) => {
                   void handleRespondToAppointment(appointment, 'reschedule', payload || {})
-                }}
-              />
-            ) : null}
-
-            {isOffers && effectiveWorkspace === 'seller' ? (
-              <SellerOffersPage
-                offers={rawSellerOffers}
-                askingPrice={sellerOfferAskingPrice}
-                transactionId={portal?.transaction?.id || ''}
-                propertyId={sellerListingId || portal?.unit?.id || ''}
-                agent={{
-                  name: sellerAgentName,
-                  email: sellerAgentEmail,
-                  phone: sellerAgentPhone,
                 }}
               />
             ) : null}
@@ -15415,33 +15468,36 @@ function ClientPortal() {
             </div>
           </section>
 
-          <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-            <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Workspace configuration</h4>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {[
-                  ['Snag reporting', portal?.settings?.snag_reporting_enabled ? 'Enabled' : 'Not active'],
-                  ['Alteration requests', portal?.settings?.alteration_requests_enabled ? 'Enabled' : 'Not active'],
-                  ['Service reviews', portal?.settings?.service_reviews_enabled ? 'Enabled' : 'Not active'],
-                  ['Document uploads', 'Always available when requested'],
-                ].map(([label, value]) => (
-                  <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">{label}</span>
-                    <strong className="mt-3 block text-sm font-semibold text-[#142132]">{value}</strong>
-                  </article>
-                ))}
-              </div>
-            </section>
+	          <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+	            <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+	              <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Workspace configuration</h4>
+	              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+	                {[
+	                  isNewDevelopmentTransaction ? ['Handover', handoverSectionEnabled ? 'Available' : 'Not active'] : null,
+	                  isNewDevelopmentTransaction ? ['Snag reporting', snagsSectionEnabled ? 'Enabled' : 'Not active'] : null,
+	                  ['Alteration requests', portal?.settings?.alteration_requests_enabled ? 'Enabled' : 'Not active'],
+	                  ['Service reviews', portal?.settings?.service_reviews_enabled ? 'Enabled' : 'Not active'],
+	                  ['Document uploads', 'Always available when requested'],
+	                ].filter(Boolean).map(([label, value]) => (
+	                  <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+	                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">{label}</span>
+	                    <strong className="mt-3 block text-sm font-semibold text-[#142132]">{value}</strong>
+	                  </article>
+	                ))}
+	              </div>
+	            </section>
 
             <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
               <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Support notes</h4>
               <div className="mt-4 space-y-3">
-                {[
-                  'Keep your purchase workspace link private. Anyone who needs access should use the link sent by your transaction team.',
-                  'Use Comments & Updates on the progress page when you want your team to respond inside the shared transaction record.',
-                  'Document upload requests will appear automatically in your document workspace as different role players ask for additional items.',
-                  'Handover scheduling and warranty information will only appear once your transaction is close enough to occupation or transfer.',
-                ].map((note) => (
+	                {[
+	                  'Keep your purchase workspace link private. Anyone who needs access should use the link sent by your transaction team.',
+	                  'Use Comments & Updates on the progress page when you want your team to respond inside the shared transaction record.',
+	                  'Document upload requests will appear automatically in your document workspace as different role players ask for additional items.',
+	                  isNewDevelopmentTransaction
+	                    ? 'Handover scheduling and warranty information will only appear once your transaction is close enough to occupation or transfer.'
+	                    : null,
+	                ].filter(Boolean).map((note) => (
                   <article key={note} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4 text-sm leading-6 text-[#5a6b80]">
                     {note}
                   </article>

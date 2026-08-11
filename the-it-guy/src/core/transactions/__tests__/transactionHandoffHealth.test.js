@@ -39,6 +39,43 @@ assert.equal(
   'attention',
 )
 
+const verificationOnlyTransaction = buildTransactionHandoffHealth({
+  offer: {
+    id: 'offer-verification',
+    status: 'converted_to_transaction',
+    transactionId: 'tx-verification',
+    financeType: 'cash',
+    conditions: {
+      buyerVerificationSubmittedAt: '2026-08-10T20:00:00.000Z',
+      buyerVerification: {
+        status: 'submitted',
+        formData: {
+          first_name: 'Verify',
+          last_name: 'Buyer',
+          purchase_finance_type: 'cash',
+        },
+      },
+      buyerOnboarding: {
+        status: 'submitted',
+        submittedAt: '2026-08-10T20:00:00.000Z',
+      },
+    },
+  },
+  transaction: {
+    id: 'tx-verification',
+    finance_type: 'cash',
+  },
+})
+
+assert.equal(
+  verificationOnlyTransaction.checks.find((check) => check.key === 'buyer_onboarding_sent')?.status,
+  'complete',
+)
+assert.equal(
+  verificationOnlyTransaction.checks.find((check) => check.key === 'buyer_onboarding_submitted')?.status,
+  'complete',
+)
+
 const cashTransactionHealthyEnoughForHandoff = buildTransactionHandoffHealth({
   offer: {
     status: 'converted_to_transaction',

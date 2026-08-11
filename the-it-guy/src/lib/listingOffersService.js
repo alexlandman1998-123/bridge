@@ -5,6 +5,7 @@ import { createTransactionFromAcceptedOffer } from './transactionLifecycleServic
 import { buildResidentialOfferTermsSnapshot, mergeResidentialOfferTermsIntoConditions } from '../core/offers/residentialOfferTerms.js'
 import { buildResidentialOfferConditionReviewPatch } from '../core/offers/residentialOfferConditionReview.js'
 import { resolveOtpDocumentVariant } from '../core/documents/otpRouteUniverse.js'
+import { buildBuyerVerificationSubmissionSnapshot } from './offerBuyerOnboardingBridge.js'
 
 const KEY_OFFER_INVITES = 'itg:listing-offer-invites:v1'
 const KEY_OFFER_RECORDS = 'itg:listing-offer-records:v1'
@@ -102,7 +103,11 @@ function getInviteLink(token, baseUrl = '') {
     (typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
       : 'https://app.arch9.co.za')
-  return `${origin}/client/offer/${token}`
+  return `${origin}/client/buyer-verification/${token}`
+}
+
+export function buildBuyerVerificationInviteLink(token, baseUrl = '') {
+  return getInviteLink(token, baseUrl)
 }
 
 export function buildOfferInviteLink(token, baseUrl = '') {
@@ -362,6 +367,71 @@ export function getOffersForListing(listingId) {
   return rows
 }
 
+export async function submitBuyerVerification({ token, submission } = {}) {
+  const context = getOfferInviteContext(token)
+  if (!context.ok) {
+    throw new Error(context.reason === 'expired' ? 'Verification link has expired.' : 'Verification link is not valid.')
+  }
+  const { invite, listing } = context
+  if (!listing) {
+    throw new Error('Listing is not available for this verification link.')
+  }
+
+  const fullName = String(submission?.fullName || '').trim()
+  const email = String(submission?.email || '').trim()
+  const phone = String(submission?.phone || '').trim()
+  const idNumber = String(submission?.idNumber || '').trim()
+  if (!fullName || !email || !phone || !idNumber) {
+    throw new Error('Buyer details are required.')
+  }
+
+  const submittedAt = new Date().toISOString()
+  const buyerVerification = buildBuyerVerificationSubmissionSnapshot(submission, {
+    source: 'legacy_buyer_verification_link',
+    submittedAt,
+    offerAmount: submission?.offerAmount,
+    depositAmount: submission?.depositAmount,
+    loanAmount: submission?.bondAmount,
+    listing,
+    invite,
+  })
+  const buyerOnboarding = {
+    status: 'submitted',
+    submittedAt,
+    source: 'buyer_verification_link',
+    formData: buyerVerification.formData,
+  }
+
+  const invites = getOfferInvites().map((row) =>
+    String(row?.token || '') === String(token || '')
+      ? {
+          ...row,
+          verificationStatus: 'submitted',
+          buyerVerificationSubmittedAt: submittedAt,
+          buyerVerification,
+          buyerOnboarding,
+          updatedAt: submittedAt,
+        }
+      : row,
+  )
+  writeOfferInvites(invites)
+  notifyUpdates()
+
+  return {
+    id: invite.id,
+    token,
+    source: 'buyer_verification_link',
+    status: invite.status,
+    verificationStatus: 'submitted',
+    submittedAt,
+    listingId: invite.listingId,
+    buyerLeadId: invite.buyerLeadId,
+    organisationId: invite.organisationId || listing?.organisationId || listing?.organisation_id || '',
+    buyerVerification,
+    buyerOnboarding,
+  }
+}
+
 export async function submitBuyerOffer({ token, submission, mode = 'new' } = {}) {
   const context = getOfferInviteContext(token)
   if (!context.ok) {
@@ -377,8 +447,8 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
   const phone = String(submission?.phone || '').trim()
   const idNumber = String(submission?.idNumber || '').trim()
   const offerAmount = money(submission?.offerAmount)
-  if (!fullName || !email || !phone || !idNumber || offerAmount <= 0) {
-    throw new Error('Buyer details and offer amount are required.')
+  if (!fullName || !email || !phone || !idNumber) {
+    throw new Error('Buyer details are required.')
   }
   const records = getOfferRecords()
   const existingForInvite = records

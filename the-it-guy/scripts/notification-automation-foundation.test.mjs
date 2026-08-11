@@ -136,6 +136,14 @@ assert.equal(
   'buyer_onboarding_sent',
 )
 assert.equal(
+  resolveNotificationAutomationKey({ communicationType: 'buyer_verification_link' }),
+  'buyer_onboarding_sent',
+)
+assert.equal(
+  resolveNotificationAutomationKey({ communicationType: 'buyer_offer_link' }),
+  'buyer_onboarding_sent',
+)
+assert.equal(
   resolveNotificationAutomationKey({ communicationType: 'seller_onboarding_link_seller' }),
   'seller_onboarding_sent',
 )

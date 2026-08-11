@@ -379,6 +379,14 @@ function isExistingOrUnconfirmedUserError(error) {
   )
 }
 
+function isEmailNotConfirmedError(error) {
+  return normalizeErrorMessage(error).toLowerCase().includes('email not confirmed')
+}
+
+function getEmailNotConfirmedMessage() {
+  return 'Email not confirmed. Check your inbox for the Arch9 verification email, or resend verification below. Seller Portal passwords only open the secure seller portal link and do not activate the main platform sign-in.'
+}
+
 function Auth({ onDevBypass = null }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -610,6 +618,13 @@ function Auth({ onDevBypass = null }) {
         })
 
         if (signInError) {
+          if (isEmailNotConfirmedError(signInError)) {
+            setPendingVerificationEmail(email.trim())
+            setMessage('')
+            setError(getEmailNotConfirmedMessage())
+            setPassword('')
+            return
+          }
           throw signInError
         }
 

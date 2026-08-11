@@ -165,6 +165,7 @@ const evidenceKeys = [
   assert.equal(normalizeBuyerProcessStageKey('Qualified'), BUYER_PROCESS_STAGE_KEYS.qualification)
   assert.equal(normalizeBuyerProcessStageKey('Viewing Completed'), BUYER_PROCESS_STAGE_KEYS.viewing)
   assert.equal(normalizeBuyerProcessStageKey('Offer + Onboarding Link Sent'), BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent)
+  assert.equal(normalizeBuyerProcessStageKey('Buyer Verification Link Sent'), BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent)
   assert.equal(normalizeBuyerProcessStageKey('Offer Submitted'), BUYER_PROCESS_STAGE_KEYS.offerReceived)
   assert.equal(normalizeBuyerProcessStageKey('Ready to Generate OTP'), BUYER_PROCESS_STAGE_KEYS.offerReceived)
   assert.equal(normalizeBuyerProcessStageKey('OTP Generated'), BUYER_PROCESS_STAGE_KEYS.offerReceived)
@@ -174,7 +175,7 @@ const evidenceKeys = [
   assert.equal(normalizeBuyerProcessStageKey('Finance'), BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.equal(normalizeBuyerProcessStageKey('Transfer'), BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.equal(normalizeBuyerProcessStageKey('Lost'), BUYER_PROCESS_STAGE_KEYS.lost)
-  assert.equal(getBuyerProcessStageLabel('offer_submitted'), 'Offer received')
+  assert.equal(getBuyerProcessStageLabel('offer_submitted'), 'Signed OTP received')
 }
 
 {
@@ -184,9 +185,9 @@ const evidenceKeys = [
     BUYER_PROCESS_STAGE_KEYS.lost,
   ])
   assert.equal(canTransitionBuyerProcessStage('Captured', 'Qualification'), true)
-  assert.equal(canTransitionBuyerProcessStage('Captured', 'Offer received'), false)
+  assert.equal(canTransitionBuyerProcessStage('Captured', 'Signed OTP received'), false)
   assert.equal(canTransitionBuyerProcessStage('Viewing', 'Buyer onboarding sent'), true)
-  assert.equal(canTransitionBuyerProcessStage('Offer received', 'Transaction'), true)
+  assert.equal(canTransitionBuyerProcessStage('Signed OTP received', 'Transaction'), true)
   assert.equal(canTransitionBuyerProcessStage('Lost', 'Captured'), false)
 }
 
@@ -211,6 +212,8 @@ const evidenceKeys = [
 
   const offerGate = definition.evidenceGates.find((gate) => gate.key === 'offer_document_uploaded')
   assert.deepEqual(offerGate.documentTypes, ['buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer'])
+  const onboardingGate = definition.evidenceGates.find((gate) => gate.key === 'buyer_onboarding_link_sent')
+  assert.deepEqual(onboardingGate.communicationTypes, ['client_onboarding', 'buyer_verification_link', 'buyer_offer_link'])
   assert.equal(JSON.stringify(definition).includes('generate_otp'), false)
   assert.equal(JSON.stringify(definition).includes('otp_generated'), false)
 }

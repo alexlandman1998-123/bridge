@@ -5133,7 +5133,14 @@ function buildAgentFinanceWorkspaceModel({
         formData: onboardingFormData,
       })
   const bondLike = isBondFinanceType(financeType)
-  const originatorManaged = bondLike && financeManagedBy === FINANCE_MANAGED_BY.BOND_ORIGINATOR
+  const bondOriginatorAssigned = Boolean(
+    transaction?.bond_originator ||
+      transaction?.assigned_bond_originator_name ||
+      transaction?.assignedBondOriginatorName ||
+      transaction?.assigned_bond_originator_email ||
+      transaction?.assignedBondOriginatorEmail,
+  )
+  const originatorManaged = bondLike && (financeManagedBy === FINANCE_MANAGED_BY.BOND_ORIGINATOR || bondOriginatorAssigned)
   const proofRequirement = getFinanceEvidenceRequirement(requiredDocumentChecklist, ['proof_of_funds', 'proof of funds', 'cash proof'])
   const proofDocument = getFinanceEvidenceDocument(documents, ['proof_of_funds', 'cash proof', 'proof of funds'])
   const grantRequirement = getFinanceEvidenceRequirement(requiredDocumentChecklist, ['bond_grant', 'grant_letter', 'bond_approval', 'bond approved'])
@@ -5222,7 +5229,7 @@ function FinanceEvidenceCard({ title, description, uploaded = false, updatedAt =
   )
 }
 
-function AgentFinanceWorkspace({ model, onUploadProofOfFunds, onUploadBondGrant, onOpenDocuments }) {
+function AgentFinanceWorkspace({ model, onUploadProofOfFunds, onUploadBondGrant, onOpenDocuments, compactOriginatorManaged = false }) {
   const isOriginatorManaged = model?.originatorManaged
   const isSelfManagedBond = model?.selfManagedBond
   const isCash = model?.cash || (!model?.bondLike && !isOriginatorManaged)
@@ -5253,7 +5260,7 @@ function AgentFinanceWorkspace({ model, onUploadProofOfFunds, onUploadBondGrant,
         </div>
       </section>
 
-      {isOriginatorManaged ? (
+      {isOriginatorManaged && !compactOriginatorManaged ? (
         <>
           <section className="grid gap-3 md:grid-cols-3">
             {[
@@ -8545,7 +8552,7 @@ function buildConfiguredBankRows({ workflowData = null, bankPanel = [] } = {}) {
   })
 }
 
-function BankSubmissionTracker({ rows = [], onViewAll }) {
+function BankSubmissionTracker({ rows = [], onViewAll, actionLabel = 'View all bank submissions' }) {
   return (
     <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
       <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Bank Submission Tracker</h3>
@@ -8585,10 +8592,12 @@ function BankSubmissionTracker({ rows = [], onViewAll }) {
           No bank submissions yet. Submit this application to one or more banks to start tracking responses.
         </p>
       )}
-      <button type="button" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primaryDark" onClick={onViewAll}>
-        View all bank submissions
-        <ChevronRight size={14} />
-      </button>
+      {onViewAll ? (
+        <button type="button" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primaryDark" onClick={onViewAll}>
+          {actionLabel}
+          <ChevronRight size={14} />
+        </button>
+      ) : null}
     </section>
   )
 }
@@ -8604,7 +8613,7 @@ function getBestQuote(quotes = []) {
     })[0] || null
 }
 
-function BestQuoteSummary({ quote = null, quotes = [], onAccept, onViewAll, loading = false }) {
+function BestQuoteSummary({ quote = null, quotes = [], onAccept, onViewAll, loading = false, readOnly = false, actionLabel = 'View All Quotes' }) {
   const nextBest = quotes.filter((item) => item.id !== quote?.id).sort((left, right) => Number(left.monthlyRepayment || 0) - Number(right.monthlyRepayment || 0))[0] || null
   const saving = quote && nextBest ? Math.max(0, Number(nextBest.monthlyRepayment || 0) - Number(quote.monthlyRepayment || 0)) * Number(quote.termMonths || 240) : 0
 
@@ -8644,20 +8653,80 @@ function BestQuoteSummary({ quote = null, quotes = [], onAccept, onViewAll, load
               </article>
             ))}
           </div>
-          <div className="flex flex-wrap gap-2 pt-1">
-            <Button type="button" size="sm" disabled={loading || ['accepted', 'approved_by_buyer'].includes(String(quote.quoteStatus || '').toLowerCase())} onClick={() => onAccept?.(quote.id)}>
-              Accept Quote
-            </Button>
-            <Button type="button" variant="secondary" size="sm" onClick={onViewAll}>
-              View All Quotes
-            </Button>
-          </div>
+          {!readOnly || onViewAll ? (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {!readOnly ? (
+                <Button type="button" size="sm" disabled={loading || ['accepted', 'approved_by_buyer'].includes(String(quote.quoteStatus || '').toLowerCase())} onClick={() => onAccept?.(quote.id)}>
+                  Accept Quote
+                </Button>
+              ) : null}
+              {onViewAll ? (
+                <Button type="button" variant="secondary" size="sm" onClick={onViewAll}>
+                  {actionLabel}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : (
         <p className="mt-5 rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm leading-6 text-textMuted">
           No quotes received yet. Quotes will appear here once banks respond to the submitted application.
         </p>
       )}
+    </section>
+  )
+}
+
+function BondFinanceWorkflowTracker({
+  workflowData = null,
+  readiness = null,
+  bankRows = [],
+  bestQuote = null,
+  quotes = [],
+  loadingAction = '',
+  viewerRole = '',
+  editable = false,
+  onStageChange,
+  onStepNavigate,
+  onViewIssues,
+  onViewActionPlan,
+  onViewBankSubmissions,
+  onAcceptQuote,
+  onViewQuotes,
+}) {
+  return (
+    <section className="space-y-7">
+      <FinanceProgressBar
+        workflowData={workflowData}
+        mode={editable ? 'editable' : 'readonly'}
+        viewerRole={viewerRole}
+        loadingStage={loadingAction}
+        onStageChange={onStageChange}
+        onStepNavigate={onStepNavigate}
+      />
+
+      <FinanceReadinessDashboard
+        readiness={readiness}
+        onViewIssues={onViewIssues}
+        onViewActionPlan={onViewActionPlan}
+      />
+
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
+        <BankSubmissionTracker
+          rows={bankRows}
+          onViewAll={onViewBankSubmissions}
+          actionLabel={editable ? 'View all bank submissions' : 'Open finance documents'}
+        />
+        <BestQuoteSummary
+          quote={bestQuote}
+          quotes={quotes}
+          loading={Boolean(loadingAction)}
+          onAccept={onAcceptQuote}
+          onViewAll={onViewQuotes}
+          readOnly={!editable}
+          actionLabel={editable ? 'View All Quotes' : 'Open finance documents'}
+        />
+      </section>
     </section>
   )
 }
@@ -10346,15 +10415,15 @@ const MATTER_OVERVIEW_HEADER_THEMES = {
     eyebrow: 'border-white/25 bg-white/14 text-blue-50 shadow-[0_10px_26px_rgba(2,8,23,0.12)]',
     title: 'text-white',
     body: 'text-blue-50',
-    muted: 'text-blue-100/82',
-    icon: 'text-blue-100',
+    muted: 'text-blue-50',
+    icon: 'text-blue-50',
     card: 'border-white/16 bg-white/13 shadow-[0_16px_32px_rgba(2,8,23,0.14)] backdrop-blur',
-    cardLabel: 'text-blue-100/75',
+    cardLabel: 'text-blue-100',
     cardValue: 'text-white',
     panel: 'border-white/18 bg-white/15 shadow-[0_18px_36px_rgba(2,8,23,0.16)] backdrop-blur',
-    panelLabel: 'text-blue-100/76',
+    panelLabel: 'text-blue-100',
     panelValue: 'text-white',
-    panelMeta: 'text-blue-100/82',
+    panelMeta: 'text-blue-50',
     healthBadge: 'border-white/20 bg-white/14 text-white',
   },
   seller: {
@@ -10365,15 +10434,15 @@ const MATTER_OVERVIEW_HEADER_THEMES = {
     eyebrow: 'border-white/24 bg-white/14 text-emerald-50 shadow-[0_10px_26px_rgba(2,8,23,0.12)]',
     title: 'text-white',
     body: 'text-emerald-50',
-    muted: 'text-emerald-100/82',
-    icon: 'text-emerald-100',
+    muted: 'text-emerald-50',
+    icon: 'text-emerald-50',
     card: 'border-white/16 bg-white/13 shadow-[0_16px_32px_rgba(2,8,23,0.14)] backdrop-blur',
-    cardLabel: 'text-emerald-100/75',
+    cardLabel: 'text-emerald-100',
     cardValue: 'text-white',
     panel: 'border-white/18 bg-white/15 shadow-[0_18px_36px_rgba(2,8,23,0.16)] backdrop-blur',
-    panelLabel: 'text-emerald-100/76',
+    panelLabel: 'text-emerald-100',
     panelValue: 'text-white',
-    panelMeta: 'text-emerald-100/82',
+    panelMeta: 'text-emerald-50',
     healthBadge: 'border-white/20 bg-white/14 text-white',
   },
   transaction: {
@@ -10383,18 +10452,26 @@ const MATTER_OVERVIEW_HEADER_THEMES = {
     glow: 'bg-[linear-gradient(180deg,rgba(255,255,255,0.15)_0%,rgba(255,255,255,0)_100%)]',
     eyebrow: 'border-white/22 bg-white/13 text-slate-50 shadow-[0_10px_26px_rgba(2,8,23,0.12)]',
     title: 'text-white',
-    body: 'text-slate-100',
-    muted: 'text-slate-200/78',
-    icon: 'text-slate-200',
+    body: 'text-slate-50',
+    muted: 'text-slate-50',
+    icon: 'text-slate-50',
     card: 'border-white/14 bg-white/12 shadow-[0_16px_32px_rgba(2,8,23,0.14)] backdrop-blur',
-    cardLabel: 'text-slate-200/72',
+    cardLabel: 'text-slate-200',
     cardValue: 'text-white',
     panel: 'border-white/17 bg-white/14 shadow-[0_18px_36px_rgba(2,8,23,0.16)] backdrop-blur',
-    panelLabel: 'text-slate-200/76',
+    panelLabel: 'text-slate-200',
     panelValue: 'text-white',
-    panelMeta: 'text-slate-200/78',
+    panelMeta: 'text-slate-50',
     healthBadge: 'border-white/20 bg-white/14 text-white',
   },
+}
+
+function getMatterOverviewHeaderActionButtonClassName(action = {}) {
+  if ((action.variant || 'secondary') === 'primary') {
+    return 'w-full justify-center !border !border-emerald-300/40 !bg-emerald-500 !text-white shadow-[0_10px_24px_rgba(2,8,23,0.16)] hover:!bg-emerald-400 disabled:!border-emerald-200/25 disabled:!bg-emerald-500/40 disabled:!text-emerald-50 disabled:!opacity-100'
+  }
+
+  return 'w-full justify-center !border !border-white/30 !bg-white/95 !text-slate-900 shadow-[0_10px_24px_rgba(2,8,23,0.14)] hover:!bg-white disabled:!border-white/20 disabled:!bg-white/20 disabled:!text-white disabled:!opacity-100'
 }
 
 function getMatterOverviewHeaderTheme({
@@ -10555,7 +10632,13 @@ function MatterOverviewHeader({
               <div className="mt-4 grid gap-2">
                 {actionButtons.map((action) => {
                   const button = (
-                    <Button type="button" variant={action.variant || 'secondary'} className="w-full justify-center" onClick={action.onClick} disabled={action.disabled}>
+                    <Button
+                      type="button"
+                      variant={action.variant || 'secondary'}
+                      className={getMatterOverviewHeaderActionButtonClassName(action)}
+                      onClick={action.onClick}
+                      disabled={action.disabled}
+                    >
                       {action.icon ? createElement(action.icon, { size: 14 }) : null}
                       {action.busy ? action.busyLabel || 'Preparing...' : action.label}
                     </Button>
@@ -10768,7 +10851,7 @@ function getConveyancingLaneIcon(laneKey = 'transfer') {
   return Workflow
 }
 
-function AgentConveyancingLaneCard({ lane, onOpenActivity }) {
+function AgentConveyancingLaneCard({ lane, selected = false, onSelectProgress, onOpenActivity }) {
   const accent = LANE_ACCENTS[lane?.key] || LANE_ACCENTS.transfer
   const statusMeta = WORKFLOW_STATUS_META[lane?.statusKey] || WORKFLOW_STATUS_META.not_started
   const Icon = getConveyancingLaneIcon(lane?.key)
@@ -10782,7 +10865,9 @@ function AgentConveyancingLaneCard({ lane, onOpenActivity }) {
       : WORKFLOW_STATUS_META.completed
 
   return (
-    <article className={`flex h-full min-w-0 flex-col rounded-[18px] border border-borderDefault border-l-4 bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5 ${accent.ring}`}>
+    <article className={`flex h-full min-w-0 flex-col rounded-[18px] border border-l-4 bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5 ${accent.ring} ${
+      selected ? 'border-primary ring-2 ring-primary/15' : 'border-borderDefault'
+    }`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-[12px] ring-1 ${accent.icon}`}>
@@ -10846,17 +10931,27 @@ function AgentConveyancingLaneCard({ lane, onOpenActivity }) {
         <span className="text-xs font-medium text-textMuted">
           {lane.activityCount || 0} update{lane.activityCount === 1 ? '' : 's'}
         </span>
-        <Button type="button" size="sm" variant="secondary" onClick={() => onOpenActivity?.(lane.key)}>
-          <MessageCircle size={14} />
-          View Updates
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" onClick={() => onSelectProgress?.(lane.key)}>
+            <Workflow size={14} />
+            View Progress
+          </Button>
+          <Button type="button" size="sm" variant="secondary" onClick={() => onOpenActivity?.(lane.key)}>
+            <MessageCircle size={14} />
+            View Updates
+          </Button>
+        </div>
       </div>
     </article>
   )
 }
 
-function AgentConveyancingWorkspace({ model, onOpenActivity }) {
+function AgentConveyancingWorkspace({ model, diagnostics = null, onOpenActivity }) {
   const lanes = Array.isArray(model?.applicableLanes) ? model.applicableLanes : []
+  const [selectedLaneKey, setSelectedLaneKey] = useState('')
+  const selectedLane = lanes.find((lane) => lane.key === selectedLaneKey) || lanes[0] || null
+  const selectedWorkflow = selectedLane?.sourceWorkflow || null
+  const selectedStatusMeta = WORKFLOW_STATUS_META[selectedWorkflow?.statusKey || selectedLane?.statusKey] || WORKFLOW_STATUS_META.not_started
   const summary = model?.summary || {}
   const summaryMeta = summary.blocked
     ? WORKFLOW_STATUS_META.blocked
@@ -10886,9 +10981,40 @@ function AgentConveyancingWorkspace({ model, onOpenActivity }) {
 
       <div className="grid items-stretch gap-4 xl:grid-cols-2">
         {lanes.map((lane) => (
-          <AgentConveyancingLaneCard key={lane.key} lane={lane} onOpenActivity={onOpenActivity} />
+          <AgentConveyancingLaneCard
+            key={lane.key}
+            lane={lane}
+            selected={selectedLane?.key === lane.key}
+            onSelectProgress={setSelectedLaneKey}
+            onOpenActivity={onOpenActivity}
+          />
         ))}
       </div>
+
+      {selectedWorkflow ? (
+        <section className="space-y-4">
+          <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textMuted">Selected Attorney Workflow</p>
+                <h2 className="mt-2 text-[1.2rem] font-semibold tracking-[-0.03em] text-textStrong">{selectedWorkflow.title || selectedLane.label}</h2>
+                <p className="mt-1 text-sm leading-6 text-textMuted">
+                  Live progress from {selectedWorkflow.assignedDisplay || selectedLane.assignedDisplay || selectedLane.roleLabel}.
+                </p>
+              </div>
+              <span className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${selectedStatusMeta.border} ${selectedStatusMeta.bg} ${selectedStatusMeta.text}`}>
+                <span className={`h-2 w-2 rounded-full ${selectedStatusMeta.dot}`} />
+                {selectedWorkflow.statusLabel || selectedLane.statusLabel}
+              </span>
+            </div>
+          </section>
+
+          <LegalWorkflowProgressBar
+            workflow={selectedWorkflow}
+            diagnostics={diagnostics}
+          />
+        </section>
+      ) : null}
 
       {!lanes.length ? (
         <section className="rounded-[18px] border border-dashed border-borderDefault bg-white px-5 py-8 text-sm text-textMuted">
@@ -13096,6 +13222,32 @@ function AttorneyTransactionDetail() {
       transactionFinanceWorkflow,
     ],
   )
+  const agentHasOriginatorManagedBondWorkflow = Boolean(
+    agentFinanceWorkspaceModel.originatorManaged ||
+      (agentFinanceWorkspaceModel.bondLike && (assignedBondOriginator || savedBondOriginatorRoleplayer)),
+  )
+  const displayedAgentFinanceWorkspaceModel = useMemo(() => {
+    if (!agentHasOriginatorManagedBondWorkflow || agentFinanceWorkspaceModel.originatorManaged) {
+      return agentFinanceWorkspaceModel
+    }
+    return {
+      ...agentFinanceWorkspaceModel,
+      originatorManaged: true,
+      selfManagedBond: false,
+      originatorName:
+        getParticipantDisplayName(assignedBondOriginator) ||
+        savedBondOriginatorRoleplayer?.organisationName ||
+        savedBondOriginatorRoleplayer?.organisation_name ||
+        savedBondOriginatorRoleplayer?.partnerName ||
+        savedBondOriginatorRoleplayer?.partner_name ||
+        agentFinanceWorkspaceModel.originatorName,
+    }
+  }, [
+    agentFinanceWorkspaceModel,
+    agentHasOriginatorManagedBondWorkflow,
+    assignedBondOriginator,
+    savedBondOriginatorRoleplayer,
+  ])
   const overviewPrimaryNextAction = useMemo(
     () =>
       USE_TRANSACTION_ROLLUP_OVERVIEW && transactionRollup
@@ -16850,31 +17002,23 @@ function AttorneyTransactionDetail() {
       <div className="space-y-6">
         {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'overview' ? (
           <section className="space-y-7">
-            <FinanceProgressBar
+            <BondFinanceWorkflowTracker
               workflowData={transactionFinanceWorkflow}
-              mode="editable"
+              readiness={financeReadinessDashboard}
+              bankRows={bondSubmissionRows}
+              bestQuote={bestBondQuote}
+              quotes={transactionFinanceWorkflow?.quotes || transactionFinanceWorkflow?.offers || []}
+              loadingAction={bondHybridFinanceActionLoading}
               viewerRole={workspaceRole}
-              loadingStage={bondHybridFinanceActionLoading}
+              editable
               onStageChange={(stageKey) => void handleBondHybridFinanceStage(stageKey)}
               onStepNavigate={handleBondProgressStepNavigate}
-            />
-
-            <FinanceReadinessDashboard
-              readiness={financeReadinessDashboard}
               onViewIssues={() => openWorkspaceMenu('documents')}
               onViewActionPlan={() => openWorkspaceMenu('tasks')}
+              onViewBankSubmissions={() => setWorkspaceMenu('banks_quotes')}
+              onAcceptQuote={(quoteId) => void handleApproveBondHybridQuote(quoteId)}
+              onViewQuotes={() => setWorkspaceMenu('banks_quotes')}
             />
-
-            <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
-              <BankSubmissionTracker rows={bondSubmissionRows} onViewAll={() => setWorkspaceMenu('banks_quotes')} />
-              <BestQuoteSummary
-                quote={bestBondQuote}
-                quotes={transactionFinanceWorkflow?.quotes || transactionFinanceWorkflow?.offers || []}
-                loading={Boolean(bondHybridFinanceActionLoading)}
-                onAccept={(quoteId) => void handleApproveBondHybridQuote(quoteId)}
-                onViewAll={() => setWorkspaceMenu('banks_quotes')}
-              />
-            </section>
 
             <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -17285,6 +17429,7 @@ function AttorneyTransactionDetail() {
                   isAgentTransactionView ? (
                     <AgentConveyancingWorkspace
                       model={conveyancingLaneModel}
+                      diagnostics={routingDiagnostics}
                       onOpenActivity={handleOpenAgentConveyancingActivity}
                     />
                   ) : activeLegalWorkflowDetailKey ? (
@@ -18772,20 +18917,53 @@ function AttorneyTransactionDetail() {
         {activeWorkspaceMenu === 'finance' && workspaceRole !== 'attorney' ? (
           <section className="space-y-5">
             {isAgentTransactionView ? (
-              <AgentFinanceWorkspace
-                model={agentFinanceWorkspaceModel}
-                onUploadProofOfFunds={() => openDocumentUploadModal({
-                  requirement: agentFinanceWorkspaceModel.proofOfFunds.requirement,
-                  category: 'finance',
-                  documentType: 'proof_of_funds',
-                })}
-                onUploadBondGrant={() => openDocumentUploadModal({
-                  requirement: agentFinanceWorkspaceModel.bondGrant.requirement,
-                  category: 'finance',
-                  documentType: 'bond_grant',
-                })}
-                onOpenDocuments={() => openWorkspaceMenu('documents')}
-              />
+              agentHasOriginatorManagedBondWorkflow ? (
+                <>
+                  <AgentFinanceWorkspace
+                    model={displayedAgentFinanceWorkspaceModel}
+                    compactOriginatorManaged
+                    onUploadProofOfFunds={() => openDocumentUploadModal({
+                      requirement: displayedAgentFinanceWorkspaceModel.proofOfFunds.requirement,
+                      category: 'finance',
+                      documentType: 'proof_of_funds',
+                    })}
+                    onUploadBondGrant={() => openDocumentUploadModal({
+                      requirement: displayedAgentFinanceWorkspaceModel.bondGrant.requirement,
+                      category: 'finance',
+                      documentType: 'bond_grant',
+                    })}
+                    onOpenDocuments={() => openWorkspaceMenu('documents')}
+                  />
+                  <BondFinanceWorkflowTracker
+                    workflowData={transactionFinanceWorkflow}
+                    readiness={financeReadinessDashboard}
+                    bankRows={bondSubmissionRows}
+                    bestQuote={bestBondQuote}
+                    quotes={transactionFinanceWorkflow?.quotes || transactionFinanceWorkflow?.offers || []}
+                    loadingAction={bondHybridFinanceActionLoading}
+                    viewerRole={workspaceRole}
+                    onViewIssues={() => openWorkspaceMenu('documents')}
+                    onViewActionPlan={() => openWorkspaceMenu('documents')}
+                    onViewBankSubmissions={() => openWorkspaceMenu('documents')}
+                    onViewQuotes={() => openWorkspaceMenu('documents')}
+                  />
+                </>
+              ) : (
+                <AgentFinanceWorkspace
+                  model={displayedAgentFinanceWorkspaceModel}
+                  onUploadProofOfFunds={() => openDocumentUploadModal({
+                    requirement: displayedAgentFinanceWorkspaceModel.proofOfFunds.requirement,
+                    category: 'finance',
+                    documentType: 'proof_of_funds',
+                  })}
+                  onUploadBondGrant={() => openDocumentUploadModal({
+                    requirement: displayedAgentFinanceWorkspaceModel.bondGrant.requirement,
+                    category: 'finance',
+                    documentType: 'bond_grant',
+                  })}
+                  onOpenDocuments={() => openWorkspaceMenu('documents')}
+                />
+              )
             ) : financeCommandCenterPanel}
           </section>
         ) : null}

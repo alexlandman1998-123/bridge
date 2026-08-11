@@ -33,8 +33,8 @@ export async function handleBuyerOfferLinkEmail(
     return jsonResponse(400, { error: "Missing required field: to" });
   }
 
-  const offerLink = normalizeText(payload.offerLink);
-  if (!offerLink) {
+  const verificationLink = normalizeText(payload.offerLink);
+  if (!verificationLink) {
     return jsonResponse(400, { error: "Missing required field: offerLink" });
   }
 
@@ -85,14 +85,14 @@ export async function handleBuyerOfferLinkEmail(
     (propertyCount > 1
       ? `${propertyCount} viewed properties`
       : "the property you viewed");
-  const subject = `Your secure offer link${
+  const subject = `Your secure buyer verification link${
     propertyTitle ? ` for ${propertyTitle}` : ""
   }`;
   const introParagraphs = [
     propertyCount > 1
-      ? `Your agent has prepared a secure offer portal for the properties you viewed.`
-      : `Your agent has prepared a secure offer link for ${propertyLabel}.`,
-    "Open the link below when you are ready to review the details and start an offer.",
+      ? `Your agent has prepared a secure buyer verification link for the properties you viewed.`
+      : `Your agent has prepared a secure buyer verification link for ${propertyLabel}.`,
+    "Open the link below when you are ready to confirm your details and finance context for the agency record.",
     note ? `Agent note: ${note}` : "",
   ];
   const contentHtml = [
@@ -106,22 +106,22 @@ export async function handleBuyerOfferLinkEmail(
         { label: "Agent", value: agentName },
         { label: "Link Expires", value: expiresAt },
       ],
-      "Offer Link Summary",
+      "Buyer Verification Summary",
     ),
-    renderBridgeCta("Open Secure Offer Link", offerLink, {
+    renderBridgeCta("Open Buyer Verification", verificationLink, {
       primaryColor: branding.primaryColor,
     }),
   ].join("");
   const html = renderBridgeEmailLayout({
-    preheader: `Your secure offer link from ${branding.organisationName} is ready for ${propertyLabel}.`,
-    title: "Offer Link Ready",
+    preheader: `Your secure buyer verification link from ${branding.organisationName} is ready for ${propertyLabel}.`,
+    title: "Buyer Verification Ready",
     greeting: `Hi ${buyerName},`,
     contentHtml,
-    securityTitle: "Secure Offer Portal",
+    securityTitle: "Secure Buyer Verification",
     securityBody:
-      `${branding.organisationName} uses Arch9 to keep the offer, viewing, and transaction record connected securely.`,
+      `${branding.organisationName} uses Arch9 to keep your buyer verification, viewing, and transaction record connected securely.`,
     helpBody:
-      "Need help? Reply to this email or contact your agent before submitting an offer.",
+      "Need help? Reply to this email or contact your agent before submitting your buyer verification.",
     organisationName: branding.organisationName,
     supportEmail: branding.supportEmail,
     supportPhone: branding.supportPhone,
@@ -131,18 +131,19 @@ export async function handleBuyerOfferLinkEmail(
     `Hi ${buyerName},`,
     "",
     propertyCount > 1
-      ? "Your agent has prepared a secure offer portal for the properties you viewed."
-      : `Your agent has prepared a secure offer link for ${propertyLabel}.`,
+      ? "Your agent has prepared a secure buyer verification link for the properties you viewed."
+      : `Your agent has prepared a secure buyer verification link for ${propertyLabel}.`,
+    "Open the link below when you are ready to confirm your details and finance context for the agency record.",
     note ? `Agent note: ${note}` : null,
     "",
     `Property: ${propertyLabel}`,
     agentName ? `Agent: ${agentName}` : null,
     expiresAt ? `Link expires: ${expiresAt}` : null,
     "",
-    "Open Secure Offer Link:",
-    offerLink,
+    "Open Buyer Verification:",
+    verificationLink,
     "",
-    "Need help? Reply to this email or contact your agent before submitting an offer.",
+    "Need help? Reply to this email or contact your agent before submitting your buyer verification.",
     "",
     branding.organisationName,
     "Powered by Arch9",
@@ -151,7 +152,7 @@ export async function handleBuyerOfferLinkEmail(
   const delivery = await prepareEmailDelivery(
     payload as Record<string, unknown>,
     {
-      communicationType: "buyer_offer_link",
+      communicationType: "buyer_verification_link",
       recipient: to,
       recipientRole: "buyer",
       subject,
@@ -173,11 +174,11 @@ export async function handleBuyerOfferLinkEmail(
   if (!emailResult.ok) {
     await markEmailDeliveryFailed(delivery?.id || "", {
       errorMessage: emailResult.error?.message ||
-        "Failed to send buyer offer link email.",
+        "Failed to send buyer verification link email.",
     });
     return jsonResponse(500, {
       error: emailResult.error?.message ||
-        "Failed to send buyer offer link email.",
+        "Failed to send buyer verification link email.",
       details: emailResult.error,
     });
   }
@@ -188,7 +189,7 @@ export async function handleBuyerOfferLinkEmail(
 
   return jsonResponse(200, {
     ok: true,
-    type: "buyer_offer_link",
+    type: "buyer_verification_link",
     emailId: emailResult.data?.id || null,
     deliveryId: delivery?.id || null,
   });

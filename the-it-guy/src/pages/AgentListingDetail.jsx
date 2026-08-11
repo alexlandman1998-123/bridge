@@ -3688,14 +3688,14 @@ function AgentListingDetail() {
         leadId: selectedLead.leadId || selectedLead.id,
         listingId: listingRecord.id,
         offerId: canonicalOffer?.offerId || canonicalOffer?.id || '',
-        communicationType: 'buyer_offer_link',
+        communicationType: 'buyer_verification_link',
         notificationMode: deliveryPlan.notificationMode,
         recipientName: buyerName,
         recipientRole: 'buyer',
         email: buyerEmail,
         phone: buyerPhone,
-        subject: `Secure offer link: ${propertyLabel}`,
-        message: `Secure offer link prepared for ${buyerName}.`,
+        subject: `Secure buyer verification link: ${propertyLabel}`,
+        message: `Secure buyer verification link prepared for ${buyerName}.`,
         dedupeKey: `buyer-offer-link:${canonicalOffer?.offerId || canonicalOffer?.id || ''}`,
         metadata: { offerLink: link, expiresAt: invite?.expiresAt || '', controlledDelivery: true },
       })
@@ -3704,7 +3704,7 @@ function AgentListingDetail() {
         const item = outboxItems.find((entry) => entry.channel === channel)
         if (!item?.id) return
         await updateNotificationOutboxStatus({ eventId: item.id, status, errorMessage, provider }).catch((error) => {
-          console.warn('[Offers] offer-link outbox status update failed', error)
+          console.warn('[Offers] buyer verification link outbox status update failed', error)
         })
       }
       const deliveryFailures = []
@@ -3712,7 +3712,7 @@ function AgentListingDetail() {
         try {
           await invokeEdgeFunction('send-email', {
             body: {
-              type: 'buyer_offer_link',
+              type: 'buyer_verification_link',
               to: buyerEmail,
               buyerName,
               propertyTitle: propertyLabel,
@@ -3742,10 +3742,10 @@ function AgentListingDetail() {
       }
 
       setOfferActionMessage(deliveryFailures.length
-        ? `Secure offer link generated, but ${deliveryFailures.join(' and ')} delivery failed. Check the notification outbox before retrying.`
+        ? `Secure buyer verification link generated, but ${deliveryFailures.join(' and ')} delivery failed. Check the notification outbox before retrying.`
         : deliveryPlan.suppressed
-          ? 'Secure offer link generated for the controlled test. External delivery was suppressed and recorded in the notification outbox.'
-          : `Secure offer link sent via ${deliveryPlan.label}.`)
+          ? 'Secure buyer verification link generated for the controlled test. External delivery was suppressed and recorded in the notification outbox.'
+          : `Secure buyer verification link sent via ${deliveryPlan.label}.`)
       setShowSendOfferLinkForm(false)
       setOfferInviteDraft({
         buyerLeadId: '',
@@ -3766,7 +3766,7 @@ function AgentListingDetail() {
 
   function handleCopyOfferLink(token) {
     if (!token) return
-    const link = `${window.location.origin}/client/offer/${token}`
+    const link = `${window.location.origin}/client/buyer-verification/${token}`
     navigator.clipboard.writeText(link).then(
       () => {
         setCopiedOfferToken(token)

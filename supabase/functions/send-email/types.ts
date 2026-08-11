@@ -1050,7 +1050,11 @@ export type SendSellerMandateSignedPayload = {
 };
 
 export type SendBuyerOfferLinkPayload = {
-  type: "buyer_offer_link" | "offer_link" | "post_viewing_offer_link";
+  type:
+    | "buyer_verification_link"
+    | "buyer_offer_link"
+    | "offer_link"
+    | "post_viewing_offer_link";
   to: string;
   buyerName?: string;
   propertyTitle?: string;

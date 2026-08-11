@@ -145,7 +145,7 @@ export const NOTIFICATION_AUTOMATION_DEFINITIONS = Object.freeze([
     recipientRole: 'buyer',
     implementationStatus: NOTIFICATION_AUTOMATION_STATUSES.ACTIVE,
     defaultEnabled: true,
-    communicationTypes: ['client_onboarding'],
+    communicationTypes: ['client_onboarding', 'buyer_verification_link', 'buyer_offer_link'],
   }),
   definition({
     key: NOTIFICATION_AUTOMATION_KEYS.SELLER_ONBOARDING_SENT,
@@ -1436,7 +1436,7 @@ export function resolveNotificationAutomationKey({
   const normalizedEmailKind = normalizeKey(emailKind)
   const normalizedRoleType = normalizeKey(roleType)
 
-  if (normalizedCommunicationType === 'client_onboarding') {
+  if (['client_onboarding', 'buyer_verification_link', 'buyer_offer_link'].includes(normalizedCommunicationType)) {
     return NOTIFICATION_AUTOMATION_KEYS.BUYER_ONBOARDING_SENT
   }
   if (['seller_onboarding_link_seller', 'seller_onboarding', 'seller_onboarding_link'].includes(normalizedCommunicationType)) {

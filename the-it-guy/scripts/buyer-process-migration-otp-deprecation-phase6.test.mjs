@@ -35,8 +35,8 @@ const legacyOtpMigration = resolveBuyerProcessStageMigration({
 
 assert.equal(legacyOtpMigration.migrated, true)
 assert.equal(legacyOtpMigration.stageKey, 'offer_received')
-assert.equal(legacyOtpMigration.stageLabel, 'Offer received')
-assert.equal(legacyOtpMigration.statusLabel, 'Offer received')
+assert.equal(legacyOtpMigration.stageLabel, 'Signed OTP received')
+assert.equal(legacyOtpMigration.statusLabel, 'Signed OTP received')
 assert.equal(legacyOtpMigration.previousStage, 'Ready to Generate OTP')
 assert.equal(legacyOtpMigration.previousStatus, 'OTP Generated')
 assert.equal(legacyOtpMigration.deprecatedOtpStage, true)
@@ -48,8 +48,8 @@ const migratedLegacyOtpLead = migrateBuyerProcessLeadRecord({
   status: 'OTP Generated',
 })
 
-assert.equal(migratedLegacyOtpLead.stage, 'Offer received')
-assert.equal(migratedLegacyOtpLead.status, 'Offer received')
+assert.equal(migratedLegacyOtpLead.stage, 'Signed OTP received')
+assert.equal(migratedLegacyOtpLead.status, 'Signed OTP received')
 assert.equal(migratedLegacyOtpLead.buyerProcessStageKey, 'offer_received')
 assert.equal(migratedLegacyOtpLead.buyerProcessMigrationVersion, BUYER_PROCESS_MIGRATION_VERSION)
 assert.equal(migratedLegacyOtpLead.buyerProcessOtpDeprecated, true)
@@ -77,9 +77,9 @@ assert.equal(sellerLead.buyerProcessStageKey, undefined)
 
 assert.equal(isDeprecatedBuyerOtpStage('Ready to Generate OTP'), true)
 assert.equal(isDeprecatedBuyerOtpStage('Finance'), true)
-assert.equal(isDeprecatedBuyerOtpStage('Offer received'), false)
+assert.equal(isDeprecatedBuyerOtpStage('Signed OTP received'), false)
 assert.equal(isDeprecatedBuyerOtpAction('Generate OTP'), true)
-assert.equal(isDeprecatedBuyerOtpAction('Upload Offer Document'), false)
+assert.equal(isDeprecatedBuyerOtpAction('Upload Signed OTP'), false)
 
 assert.match(agencyPipelineServiceSource, /import \{ migrateBuyerProcessLeadRecord \}/)
 assert.match(agencyPipelineServiceSource, /return migrateBuyerProcessLeadRecord\(normalizedLead\)/)
@@ -88,7 +88,7 @@ assert.match(agencyCrmRepositorySource, /return migrateBuyerProcessLeadRecord\(l
 
 assert.match(agencyPipelinePageSource, /BUYER_OTP_DEPRECATION_NOTICE/)
 assert.match(agencyPipelinePageSource, /OTP generator deprecated/)
-assert.match(agencyPipelinePageSource, /label: 'Upload Offer Document'/)
+assert.match(agencyPipelinePageSource, /label: 'Upload Signed OTP'/)
 assert.doesNotMatch(agencyPipelinePageSource, /label: 'Generate OTP'/)
 assert.doesNotMatch(agencyPipelinePageSource, /Generate & Send OTP/)
 assert.doesNotMatch(agencyPipelinePageSource, /Preparing OTP pack/)

@@ -6,16 +6,19 @@ const source = await fs.readFile(new URL('../src/pages/ClientPortal.jsx', import
 const privateListingSource = await fs.readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
 const workspaceServiceSource = await fs.readFile(new URL('../src/services/clientPortalWorkspaceService.js', import.meta.url), 'utf8')
 const stageWorkspaceSource = await fs.readFile(new URL('../src/components/client-portal/seller/TransactionStageWorkspace.jsx', import.meta.url), 'utf8')
-const sellerOffersSource = await fs.readFile(new URL('../src/components/client-portal/offers/SellerOffersPage.jsx', import.meta.url), 'utf8')
 const sellerAppointmentsSource = await fs.readFile(new URL('../src/components/client-portal/appointments/SellerAppointmentsPage.jsx', import.meta.url), 'utf8')
 const sellerDocumentsSource = await fs.readFile(new URL('../src/components/client-portal/documents/SellerDocumentWorkspace.jsx', import.meta.url), 'utf8')
 const clientDocumentCentreSource = await fs.readFile(new URL('../src/components/client-portal/documents/ClientDocumentCentre.jsx', import.meta.url), 'utf8')
+const sellerPortalMenu = source.match(/const SELLER_PORTAL_MENU = \[[\s\S]*?\n\]/)?.[0] || ''
+const sellerPortalNavGroups = source.match(/const SELLER_PORTAL_NAV_GROUPS = \[[\s\S]*?\n\]\n\nconst SELLER_ONBOARDING_STATUS_LABELS/)?.[0] || ''
 const linkNormalizer = source.match(/function normalizeSellerVisibleListingLinks[\s\S]*?\n}\n\nfunction getFriendlySellerStatusLabel/)?.[0] || ''
 const marketingBuilder = source.match(/function buildSellerMarketingChannels[\s\S]*?\n}\n\nfunction buildSellerAgentUpdate/)?.[0] || ''
 const sellerHero = source.match(/function SellerPropertyHero[\s\S]*?\n}\n\nfunction SellerTransactionHealthCard/)?.[0] || ''
 const sellerDashboard = source.match(/function SellerPortalDashboard[\s\S]*?\n}\n\nfunction SellerPortalPasswordGate/)?.[0] || ''
 const sellerLogoResolver = source.match(/const sellerAgencyLogoUrl = pickFirstText\([\s\S]*?\n  \)/)?.[0] || ''
 const sellerSidebarLogoResolver = source.match(/const sellerSidebarLogoUrl = pickFirstText\([\s\S]*?\n  \)/)?.[0] || ''
+const sellerDesktopSidebarLogoHeader = source.match(/sellerSidebarLogoUrl \? \([\s\S]*?\) : \(/)?.[0] || ''
+const sellerProgressWorkspace = stageWorkspaceSource.match(/export default function TransactionStageWorkspace[\s\S]*?\n}\n?$/)?.[0] || ''
 
 assert.match(linkNormalizer, /const linksByChannel = new Map\(\)/, 'seller-visible links should be deduplicated before dashboard models are built')
 assert.match(linkNormalizer, /const channelKey = platformKey \|\| urlKey/, 'marketing channels should deduplicate by platform with URL fallback')
@@ -23,6 +26,15 @@ assert.match(marketingBuilder, /const channels = new Map\(\)/, 'marketing cards 
 assert.match(source, /const sellerAgencyLogoUrl = pickFirstText\(/, 'seller portal should resolve the agent entity logo from listing branding')
 assert.match(source, /const sellerSidebarLogoUrl = pickFirstText\(/, 'seller portal should resolve a logo specifically for the dark sidebar')
 assert.match(source, /src=\{sellerSidebarLogoUrl\}/, 'seller sidebar should render the dark-background logo')
+assert.match(source, /className="max-h-24 max-w-full object-contain object-left"/, 'seller sidebar logo should be large enough for dark-menu branding')
+assert.doesNotMatch(sellerDesktopSidebarLogoHeader, /Seller Portal/, 'seller sidebar should not render redundant Seller Portal text below the logo')
+assert.doesNotMatch(sellerPortalMenu, /key: 'offers'/, 'seller portal menu should hide the Offers page')
+assert.doesNotMatch(sellerPortalMenu, /key: 'marketing'/, 'seller portal menu should hide the Marketing page')
+assert.doesNotMatch(sellerPortalNavGroups, /key: 'offers'/, 'seller sidebar groups should hide the Offers page')
+assert.doesNotMatch(sellerPortalNavGroups, /key: 'marketing'/, 'seller sidebar groups should hide the Marketing page')
+assert.match(source, /offers: requestedWorkspace !== 'seller'/, 'seller offers route should be disabled while buyer offers stay available')
+assert.doesNotMatch(source, /SellerOffersPage/, 'seller offers page component should not be imported or rendered while hidden')
+assert.match(source, /This password is for this private seller portal link\. It is separate from the main Arch9 platform sign-in\./, 'seller portal password setup should not imply the password activates main platform login')
 assert.ok(
   sellerLogoResolver.indexOf('agencyLogoLightUrl') < sellerLogoResolver.indexOf('agencyLogoDarkUrl'),
   'seller general logo should prefer the light-background logo for light portal surfaces',
@@ -53,15 +65,23 @@ assert.match(privateListingSource, /organisationLogoLightUrl: resolvedPortalBran
 assert.match(privateListingSource, /function mapSellerClientPortalCorePayload[\s\S]*?payloadExternalLinks[\s\S]*?external_links: payloadExternalLinks/, 'seller core payload should preserve agent-published external listing links')
 assert.doesNotMatch(workspaceServiceSource, /name: listing\?\.agencyName \|\| listing\?\.organisationName \|\| 'Selling'/, 'seller portal payload should not use Selling as an agency name')
 assert.doesNotMatch(sellerHero, /Your listing/i, 'seller hero should not render the redundant listing summary card')
+assert.doesNotMatch(sellerHero, /actively marketing your property/, 'seller overview hero should not render the removed marketing explainer copy')
 assert.match(sellerHero, /Your agent/i, 'seller hero should retain the expanded agent card')
+assert.match(sellerHero, /sellerAgencyLogoUrl/, 'seller agent card should include agency branding alongside the agent visual')
 assert.match(source, /Listing Progress[\s\S]*Sale Progress/, 'seller progress should expose both listing and sale workflow tabs')
 assert.match(source, /listingProgressModel=\{sellerListingProgressModel\}/, 'seller dashboard should retain the listing workflow after sale progress starts')
 assert.match(source, /saleProgressModel=\{sellerSaleProgressModel\}/, 'seller dashboard should expose the sale workflow independently')
+assert.ok(
+  sellerDashboard.indexOf('SellerProgressJourney') < sellerDashboard.indexOf('SellerTransactionHealthCard'),
+  'seller dashboard should show listing progress above transaction health',
+)
 assert.match(source, /gridTemplateColumns: `repeat\(\$\{stepCount\}, 120px\)`/, 'seller progress nodes should stretch across the available timeline rail')
 assert.match(sellerHero, /flex h-full min-w-0 flex-col/, 'seller agent column should stretch to align with the property image')
+assert.match(marketingBuilder, /const sourceText = `\$\{label\} \$\{url\}`/, 'marketing channel logos should inspect the URL as well as the label')
 assert.match(marketingBuilder, /lead-sources\/property24\.png/, 'Property24 marketing rows should use the platform logo')
 assert.match(marketingBuilder, /lead-sources\/private-property\.jpeg/, 'Private Property marketing rows should use the platform logo')
 assert.match(source, /buildSellerMarketingChannels\(sellerVisibleListingLinks, sellerAgencyLogoUrl\)/, 'agency website rows should receive the agency logo')
+assert.match(source, /sm:grid-cols-\[128px_minmax\(0,1fr\)\]/, 'marketing rows should reserve a large left logo panel')
 assert.match(source, /View Listing/, 'marketing rows should expose outbound listing actions')
 assert.match(source, /max-h-\[250px\].*overflow-y-auto/, 'seller journey timeline should scroll within its card')
 assert.match(sellerDashboard, /SellerConversationCard/, 'seller dashboard should render the property-team chat card')
@@ -91,10 +111,18 @@ assert.match(stageWorkspaceSource, /SELLER_TRANSACTION_STAGE_DEFINITIONS/, 'sell
 assert.match(stageWorkspaceSource, /otp:[\s\S]*title: 'Offer to Purchase'/, 'seller progress should represent the pre-acceptance OTP milestone instead of falling through to Offer Accepted')
 assert.match(stageWorkspaceSource, /instruction_sent:[\s\S]*attorney_opening_file:[\s\S]*fica_verification:[\s\S]*transfer_documents:/, 'stage registry should cover the detailed transfer workflow')
 assert.match(stageWorkspaceSource, /Frequently asked at this stage/, 'stage workspace should provide stage-specific FAQs')
-assert.match(stageWorkspaceSource, /Who is working on this\?/, 'stage workspace should expose assigned transaction participants')
-assert.match(stageWorkspaceSource, /Recent activity/, 'stage workspace should expose seller-facing activity')
+assert.doesNotMatch(sellerProgressWorkspace, />Progress</, 'seller progress page should not render the old Progress page title')
+assert.doesNotMatch(sellerProgressWorkspace, /A detailed look at where your sale is right now\./, 'seller progress page should not render the old subtitle')
+assert.ok(
+  sellerProgressWorkspace.indexOf('What’s next?') < sellerProgressWorkspace.indexOf('Current Stage'),
+  'seller progress page should move What’s next above the current-stage explainer',
+)
+assert.match(stageWorkspaceSource, /RolePlayerUpdateCard/, 'stage workspace should show role-player update boxes')
+assert.match(source, /rolePlayerUpdates=\{sellerProgressRolePlayerUpdates\}/, 'seller progress should receive role-player update data')
+assert.doesNotMatch(stageWorkspaceSource, /Who is working on this\?/, 'stage workspace should remove the old participant list')
+assert.doesNotMatch(stageWorkspaceSource, /Recent activity/, 'stage workspace should remove the old recent-activity panel')
+assert.doesNotMatch(stageWorkspaceSource, /Helpful resources/, 'stage workspace should remove the old helpful-resources panel')
 assert.match(stageWorkspaceSource, /fixed inset-x-0 bottom-0/, 'action-required stages should provide a mobile sticky CTA')
-assert.doesNotMatch(sellerOffersSource, /max-w-\[1440px\]|lg:px-6/, 'seller offers should inherit the dashboard page gutter without a nested width cap or horizontal padding')
 assert.doesNotMatch(sellerAppointmentsSource, /max-w-\[1440px\]/, 'seller appointments should inherit the full dashboard content width')
 assert.doesNotMatch(sellerDocumentsSource, /rounded-\[32px\][^\n]*p-4/, 'seller documents should not add a second padded page shell inside the dashboard gutter')
 

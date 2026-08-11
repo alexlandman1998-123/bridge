@@ -6,7 +6,7 @@ import {
 } from './buyerProcessDefinitionService.js'
 
 export const BUYER_PROCESS_MIGRATION_VERSION = 'buyer_process_phase6_otp_deprecation_v1'
-export const BUYER_OTP_DEPRECATION_NOTICE = 'OTP generation is deprecated for buyer leads. Upload the signed buyer offer document and move the buyer through Offer received instead.'
+export const BUYER_OTP_DEPRECATION_NOTICE = 'OTP generation is deprecated for buyer leads. Upload the signed OTP and move the buyer through Signed OTP received instead.'
 
 const DEPRECATED_BUYER_OTP_STAGE_KEYS = new Set([
   'ready_to_generate_otp',

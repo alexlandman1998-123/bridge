@@ -15,7 +15,6 @@ import {
   Home,
   Landmark,
   LockKeyhole,
-  PenLine,
   Ruler,
   ShieldCheck,
   UserRound,
@@ -27,28 +26,26 @@ import PremiumOnboardingLanding from '../components/onboarding/PremiumOnboarding
 import {
   getCanonicalOfferInviteContext,
   getOfferLifecycleSummary,
-  submitCanonicalBuyerOffer,
+  submitCanonicalBuyerVerification,
 } from '../lib/buyerLifecycleService'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
 import { buildOfferBuyerVerificationModel } from '../lib/offerBuyerOnboardingBridge'
-import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
   getOfferInviteContext,
   OFFER_WORKFLOW_STATUS,
   normalizeOfferWorkflowStatus,
-  submitBuyerOffer,
+  submitBuyerVerification,
 } from '../lib/listingOffersService'
 import { resolveOtpDocumentVariant } from '../core/documents/otpRouteUniverse'
 
 const ARCH_GREEN = '#0F7A5A'
 const WARM_WHITE = '#FAFAF8'
 const PRIMARY_TEXT = '#111827'
-const BUYER_OFFER_DRAFT_VERSION = 1
-const BUYER_OFFER_STAGES = ['landing', 'offer', 'onboarding', 'review', 'complete']
-const BUYER_OFFER_PROGRESS = [
-  { key: 'offer', label: 'Offer' },
+const BUYER_VERIFICATION_DRAFT_VERSION = 1
+const BUYER_VERIFICATION_STAGES = ['landing', 'onboarding', 'review', 'complete']
+const BUYER_VERIFICATION_PROGRESS = [
   { key: 'onboarding', label: 'Buyer Verification' },
-  { key: 'review', label: 'Review & Sign' },
+  { key: 'review', label: 'Review Details' },
 ]
 const BOND_ASSISTANCE_OPTIONS = Object.freeze({
   SELF_MANAGED: 'self_managed',
@@ -94,50 +91,59 @@ function firstText(...values) {
   return values.map(normalizeText).find(Boolean) || ''
 }
 
-function getBuyerOfferDraftKey(token = '') {
+function getBuyerVerificationDraftKey(token = '') {
+  const safeToken = normalizeText(token)
+  return safeToken ? `arch9:buyer-verification-draft:${safeToken}` : ''
+}
+
+function getLegacyBuyerVerificationDraftKey(token = '') {
   const safeToken = normalizeText(token)
   return safeToken ? `arch9:buyer-offer-onboarding-draft:${safeToken}` : ''
 }
 
-function readBuyerOfferDraft(token = '') {
-  const key = getBuyerOfferDraftKey(token)
-  if (!key || typeof window === 'undefined') return null
-  try {
-    const raw = window.localStorage.getItem(key)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (parsed?.version !== BUYER_OFFER_DRAFT_VERSION) return null
-    return parsed
-  } catch {
-    return null
+function readBuyerVerificationDraft(token = '') {
+  const keys = [getBuyerVerificationDraftKey(token), getLegacyBuyerVerificationDraftKey(token)].filter(Boolean)
+  if (!keys.length || typeof window === 'undefined') return null
+  for (const key of keys) {
+    try {
+      const raw = window.localStorage.getItem(key)
+      if (!raw) continue
+      const parsed = JSON.parse(raw)
+      if (parsed?.version === BUYER_VERIFICATION_DRAFT_VERSION) return parsed
+    } catch {
+      // Try the next compatible draft key.
+    }
   }
+  return null
 }
 
-function writeBuyerOfferDraft(token = '', draft = {}) {
-  const key = getBuyerOfferDraftKey(token)
+function writeBuyerVerificationDraft(token = '', draft = {}) {
+  const key = getBuyerVerificationDraftKey(token)
   if (!key || typeof window === 'undefined') return
   try {
     window.localStorage.setItem(key, JSON.stringify({
-      version: BUYER_OFFER_DRAFT_VERSION,
+      version: BUYER_VERIFICATION_DRAFT_VERSION,
       ...draft,
       savedAt: new Date().toISOString(),
     }))
+    const legacyKey = getLegacyBuyerVerificationDraftKey(token)
+    if (legacyKey && legacyKey !== key) window.localStorage.removeItem(legacyKey)
   } catch {
-    // Local resume is helpful but should never block the public offer flow.
+    // Local resume is helpful but should never block the public buyer verification flow.
   }
 }
 
-function clearBuyerOfferDraft(token = '') {
-  const key = getBuyerOfferDraftKey(token)
-  if (!key || typeof window === 'undefined') return
+function clearBuyerVerificationDraft(token = '') {
+  const keys = [getBuyerVerificationDraftKey(token), getLegacyBuyerVerificationDraftKey(token)].filter(Boolean)
+  if (!keys.length || typeof window === 'undefined') return
   try {
-    window.localStorage.removeItem(key)
+    keys.forEach((key) => window.localStorage.removeItem(key))
   } catch {
     // Ignore storage failures.
   }
 }
 
-async function fetchBuyerOfferBrandingSnapshot(token = '') {
+async function fetchBuyerVerificationBrandingSnapshot(token = '') {
   const normalizedToken = normalizeText(token)
   if (!normalizedToken || typeof fetch !== 'function') return null
 
@@ -152,7 +158,8 @@ async function fetchBuyerOfferBrandingSnapshot(token = '') {
 
 function normalizeStage(value = '', fallback = 'landing') {
   const stage = normalizeText(value).toLowerCase()
-  return BUYER_OFFER_STAGES.includes(stage) ? stage : fallback
+  if (stage === 'offer') return 'onboarding'
+  return BUYER_VERIFICATION_STAGES.includes(stage) ? stage : fallback
 }
 
 function isBondFinanceType(value = '') {
@@ -261,21 +268,6 @@ function TextInput({ label, value, onChange, type = 'text', placeholder = '', in
   )
 }
 
-function TextAreaInput({ label, value, onChange, placeholder = '' }) {
-  return (
-    <label className="grid gap-2">
-      <span className="text-[0.78rem] font-semibold text-[#4B5563]">{label}</span>
-      <textarea
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        rows={3}
-        className="min-h-[96px] rounded-[16px] border border-[#E5E7EB] bg-white px-4 py-3 text-base font-semibold text-[#111827] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
-      />
-    </label>
-  )
-}
-
 function PropertyFeature({ icon, label, value }) {
   if (!value) return null
   return (
@@ -314,27 +306,12 @@ function ChoicePill({ label, selected, onClick }) {
   )
 }
 
-function ConditionButton({ label, active, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-[16px] border px-4 text-sm font-semibold transition ${
-        active ? 'border-[#0F7A5A] bg-[#F0FAF5] text-[#0F7A5A]' : 'border-[#E5E7EB] bg-white text-[#374151] hover:border-[#B8D8C9]'
-      }`}
-    >
-      <span className="text-xl leading-none">+</span>
-      {label}
-    </button>
-  )
-}
-
 function ProgressDots({ stage }) {
-  const activeIndex = Math.max(0, BUYER_OFFER_PROGRESS.findIndex((item) => item.key === stage))
+  const activeIndex = Math.max(0, BUYER_VERIFICATION_PROGRESS.findIndex((item) => item.key === stage))
   return (
     <div className="sticky top-0 z-30 overflow-x-hidden border-b border-[#E5E7EB] bg-[#FAFAF8]/95 px-4 py-3 backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center justify-between">
-        {BUYER_OFFER_PROGRESS.map((item, index) => {
+        {BUYER_VERIFICATION_PROGRESS.map((item, index) => {
           const active = activeIndex === index
           const done = activeIndex > index || stage === 'complete'
           return (
@@ -343,7 +320,7 @@ function ProgressDots({ stage }) {
                 {done ? <CheckCircle2 size={14} /> : index + 1}
               </div>
               <span className={`ml-2 min-w-0 text-[11px] font-bold leading-tight sm:text-xs ${active ? 'text-[#111827]' : 'text-[#6B7280]'}`}>{item.label}</span>
-              {index < BUYER_OFFER_PROGRESS.length - 1 ? <div className="mx-2 h-px min-w-3 flex-1 bg-[#E5E7EB]" /> : null}
+              {index < BUYER_VERIFICATION_PROGRESS.length - 1 ? <div className="mx-2 h-px min-w-3 flex-1 bg-[#E5E7EB]" /> : null}
             </div>
           )
         })}
@@ -359,16 +336,15 @@ const BUYER_VERIFICATION_ICONS = {
   finance: Landmark,
   documents: FileText,
   compliance: ShieldCheck,
-  signature: PenLine,
 }
 
-function BuyerOfferSubmission() {
+function BuyerVerificationSubmission() {
   const { token = '' } = useParams()
   const [refreshKey, setRefreshKey] = useState(0)
   const [canonicalContext, setCanonicalContext] = useState(null)
   const [canonicalLoading, setCanonicalLoading] = useState(false)
-  const [offerBrandingSnapshot, setOfferBrandingSnapshot] = useState(null)
-  const [offerBrandingLoaded, setOfferBrandingLoaded] = useState(false)
+  const [verificationBrandingSnapshot, setVerificationBrandingSnapshot] = useState(null)
+  const [verificationBrandingLoaded, setVerificationBrandingLoaded] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -461,26 +437,26 @@ function BuyerOfferSubmission() {
     .sort((left, right) => new Date(right?.updatedAt || right?.submittedAt || right?.createdAt || 0) - new Date(left?.updatedAt || left?.submittedAt || left?.createdAt || 0))[0] || null
   const latestStatus = normalizeOfferWorkflowStatus(latestOffer?.status || '')
   const counterPendingBuyer = canonicalLifecycle?.effectiveStatus === 'countered' || latestStatus === OFFER_WORKFLOW_STATUS.BUYER_REVIEW_COUNTER || latestStatus === OFFER_WORKFLOW_STATUS.COUNTERED
-  const canSubmitCanonicalOffer = !canonicalLifecycle || canonicalLifecycle.buyerCanResubmit
+  const canSubmitCanonicalVerification = !canonicalLifecycle || !canonicalLifecycle.terminal
 
   useEffect(() => {
     let active = true
-    setOfferBrandingSnapshot(null)
-    setOfferBrandingLoaded(false)
+    setVerificationBrandingSnapshot(null)
+    setVerificationBrandingLoaded(false)
     if (!token || !context?.ok) {
       return () => {
         active = false
       }
     }
-    fetchBuyerOfferBrandingSnapshot(token)
+    fetchBuyerVerificationBrandingSnapshot(token)
       .then((branding) => {
-        if (active) setOfferBrandingSnapshot(branding)
+        if (active) setVerificationBrandingSnapshot(branding)
       })
       .catch(() => {
-        if (active) setOfferBrandingSnapshot(null)
+        if (active) setVerificationBrandingSnapshot(null)
       })
       .finally(() => {
-        if (active) setOfferBrandingLoaded(true)
+        if (active) setVerificationBrandingLoaded(true)
       })
     return () => {
       active = false
@@ -507,61 +483,55 @@ function BuyerOfferSubmission() {
   const depositAmount = moneyNumber(form.depositAmount)
   const loanAmount = financeType === 'cash' ? 0 : Math.max(0, offerAmount - depositAmount)
   const financeLabel = financeType === 'cash' ? 'Cash' : financeType === 'hybrid' || financeType === 'combination' ? 'Combination' : 'Bond'
-  const bondConditionSelected = Boolean(form.conditionBondApproval || form.bondApprovalDeadline || ['bond', 'hybrid', 'combination'].includes(financeType))
-  const otherConditionSelected = Boolean(form.conditionOther || form.suspensiveConditions || form.specialConditions || form.includedFixtures || form.excludedFixtures)
-  const selectedConditionCount = [
-    bondConditionSelected,
-    form.subjectToSale,
-    form.occupationalRent,
-    otherConditionSelected,
-  ].filter(Boolean).length
   const propertyImageUrl = getListingImageUrl(listing)
   const agentName = firstText(context?.canonicalOffer?.conditions?.agentName, invite?.agentName) || 'Assigned agent'
   const agencyName = firstText(context?.canonicalOffer?.conditions?.organisationName, context?.canonicalOffer?.conditions?.agencyName) || 'Arch9 Partner Agency'
-  const offerBrand = useMemo(() => {
+  const verificationBrand = useMemo(() => {
     const conditions = context?.canonicalOffer?.conditions || {}
-    const resolved = resolveOnboardingBranding(offerBrandingSnapshot || {}, conditions, listing || {}, invite || {})
+    const resolved = resolveOnboardingBranding(verificationBrandingSnapshot || {}, conditions, listing || {}, invite || {})
     return {
       ...resolved,
       organisationName: resolved.organisationName || agencyName,
     }
-  }, [agencyName, context?.canonicalOffer?.conditions, invite, listing, offerBrandingSnapshot])
-  const submitButtonLabel = counterPendingBuyer ? 'Submit Revised Offer' : 'Submit Offer + Onboarding'
+  }, [agencyName, context?.canonicalOffer?.conditions, invite, listing, verificationBrandingSnapshot])
+  const submitButtonLabel = counterPendingBuyer ? 'Submit Updated Verification' : 'Submit Buyer Verification'
   const buyerVerificationModel = useMemo(
     () =>
       buildOfferBuyerVerificationModel(form, {
         confirmedAccuracy,
-        reviewReady: flowStage === 'review' || flowStage === 'complete',
         offerAmount,
         depositAmount,
         loanAmount,
         financeType,
         transaction: canonicalOffer || latestOffer || {},
       }),
-    [canonicalOffer, confirmedAccuracy, depositAmount, financeType, flowStage, form, latestOffer, loanAmount, offerAmount],
+    [canonicalOffer, confirmedAccuracy, depositAmount, financeType, form, latestOffer, loanAmount, offerAmount],
   )
   const buyerSectionCards = buyerVerificationModel.sections
-  const hasDraft = useMemo(() => Boolean(readBuyerOfferDraft(token)), [token, draftLoaded])
-  const stageIndex = BUYER_OFFER_STAGES.indexOf(flowStage)
-  const previousStage = stageIndex > 1 ? BUYER_OFFER_STAGES[stageIndex - 1] : 'offer'
-  const offerAmountLabel = offerAmount > 0 ? formatCurrency(offerAmount) : 'Pending'
+  const hasDraft = useMemo(() => {
+    void draftLoaded
+    return Boolean(readBuyerVerificationDraft(token))
+  }, [token, draftLoaded])
+  const stageIndex = BUYER_VERIFICATION_STAGES.indexOf(flowStage)
+  const previousStage = stageIndex > 1 ? BUYER_VERIFICATION_STAGES[stageIndex - 1] : 'landing'
+  const expectedPurchaseAmountLabel = offerAmount > 0 ? formatCurrency(offerAmount) : 'Pending'
 
   const canonicalBanner = useMemo(() => {
     if (!canonicalLifecycle) return null
     if (canonicalLifecycle.effectiveStatus === 'countered') {
-      return { tone: 'amber', text: 'Seller sent a counter offer. Update the terms below and submit a revised offer if you still want to proceed.' }
+      return { tone: 'amber', text: 'Updated purchase details were requested. Review the information below before submitting your verification.' }
     }
     if (canonicalLifecycle.effectiveStatus === 'changes_requested') {
-      return { tone: 'amber', text: 'The agent asked for changes before the offer goes back to the seller. Update the details and resubmit.' }
+      return { tone: 'amber', text: 'The agent asked for changes before the buyer record can be finalised. Update the details and resubmit.' }
     }
     if (canonicalLifecycle.activeNegotiation) {
-      return { tone: 'amber', text: canonicalLifecycle.blockedReason || 'This offer is already under review. Wait for feedback before sending another version.' }
+      return { tone: 'amber', text: 'This record already has offer activity in review. Buyer verification can still be submitted without changing the offer status.' }
     }
     if (canonicalLifecycle.acceptedOrConverted) {
       return { tone: 'green', text: canonicalLifecycle.blockedReason }
     }
     if (canonicalLifecycle.terminal && !canonicalLifecycle.buyerCanResubmit) {
-      return { tone: 'red', text: canonicalLifecycle.blockedReason || 'This offer is closed. Ask the agent for a new secure link if negotiations restart.' }
+      return { tone: 'red', text: canonicalLifecycle.blockedReason || 'This buyer verification link is closed. Ask the agent for a new secure link if needed.' }
     }
     return null
   }, [canonicalLifecycle])
@@ -569,7 +539,7 @@ function BuyerOfferSubmission() {
   useEffect(() => {
     if (!context?.ok || draftLoaded) return
     const conditions = context?.canonicalOffer?.conditions || {}
-    const draft = readBuyerOfferDraft(token)
+    const draft = readBuyerVerificationDraft(token)
     const draftForm = draft?.form && typeof draft.form === 'object' ? draft.form : {}
     setForm((previous) => ({
       ...previous,
@@ -610,7 +580,7 @@ function BuyerOfferSubmission() {
 
   useEffect(() => {
     if (!context?.ok || !draftLoaded || flowStage === 'complete') return
-    writeBuyerOfferDraft(token, {
+    writeBuyerVerificationDraft(token, {
       stage: flowStage,
       activeBuyerSection,
       form,
@@ -653,14 +623,6 @@ function BuyerOfferSubmission() {
   }
 
   function validateStageTransition(nextStage) {
-    if (['onboarding', 'review'].includes(nextStage) && !offerAmount) {
-      setErrorMessage('Enter your offer amount before continuing.')
-      return false
-    }
-    if (['onboarding', 'review'].includes(nextStage) && bondFinanceSelected && !bondAssistancePreference) {
-      setErrorMessage('Choose whether you will manage your bond yourself or need help with your bond.')
-      return false
-    }
     if (nextStage === 'review' && (!form.fullName || !form.email || !form.phone || !form.idNumber)) {
       setErrorMessage('Complete your buyer details before review.')
       return false
@@ -678,10 +640,6 @@ function BuyerOfferSubmission() {
 
   function goNext() {
     if (flowStage === 'landing') {
-      goToStage('offer')
-      return
-    }
-    if (flowStage === 'offer') {
       goToStage('onboarding')
       return
     }
@@ -690,19 +648,13 @@ function BuyerOfferSubmission() {
     }
   }
 
-  async function handleSubmitOffer(event) {
+  async function handleSubmitVerification(event) {
     event.preventDefault()
     setErrorMessage('')
     setSuccessMessage('')
     try {
-      if (context?.source === 'canonical' && !canSubmitCanonicalOffer) {
-        throw new Error(canonicalLifecycle?.blockedReason || 'This offer cannot be updated from this link anymore.')
-      }
-      if (!offerAmount) {
-        throw new Error('Enter your offer amount before submitting.')
-      }
-      if (bondFinanceSelected && !bondAssistancePreference) {
-        throw new Error('Choose whether you will manage your bond yourself or need help with your bond.')
+      if (context?.source === 'canonical' && !canSubmitCanonicalVerification) {
+        throw new Error(canonicalLifecycle?.blockedReason || 'This buyer verification cannot be updated from this link anymore.')
       }
       if (!form.fullName || !form.email || !form.phone || !form.idNumber) {
         throw new Error('Complete your buyer details before submitting.')
@@ -721,52 +673,20 @@ function BuyerOfferSubmission() {
         otpDocumentVariant,
       }
       setSubmitting(true)
-      let submittedOffer = null
       if (context?.source === 'canonical') {
-        submittedOffer = await submitCanonicalBuyerOffer({ token, submission })
+        await submitCanonicalBuyerVerification({ token, submission })
       } else {
-        submittedOffer = await submitBuyerOffer({ token, mode: counterPendingBuyer ? 'counter_response' : 'new', submission })
+        await submitBuyerVerification({ token, submission })
       }
-      await sendAgentOfferSubmittedNotification(submittedOffer).catch((notificationError) => {
-        console.warn('[BUYER OFFER] agent offer submission notification failed', notificationError)
-      })
-      clearBuyerOfferDraft(token)
-      setSuccessMessage('Offer submitted successfully. The agent will review any conditions before OTP generation.')
+      clearBuyerVerificationDraft(token)
+      setSuccessMessage('Buyer verification submitted successfully. The agent will review the details before moving the transaction forward.')
       setFlowStage('complete')
       setRefreshKey((value) => value + 1)
     } catch (error) {
-      setErrorMessage(error?.message || 'Unable to submit offer right now.')
+      setErrorMessage(error?.message || 'Unable to submit buyer verification right now.')
     } finally {
       setSubmitting(false)
     }
-  }
-
-  async function sendAgentOfferSubmittedNotification(offer = {}) {
-    const conditions = context?.canonicalOffer?.conditions || offer?.conditions || {}
-    const agentEmail = normalizeText(conditions.agentEmail || context?.invite?.agentEmail).toLowerCase()
-    if (!agentEmail) return null
-
-    const response = await invokeEdgeFunction('send-email', {
-      body: {
-        type: 'buyer_offer_submitted_agent',
-        to: agentEmail,
-        organisationId: normalizeText(offer?.organisationId || context?.canonicalOffer?.organisationId),
-        leadId: normalizeText(offer?.buyerLeadId || context?.canonicalOffer?.buyerLeadId || context?.invite?.buyerLeadId),
-        listingId: normalizeText(offer?.listingId || listing?.id || context?.canonicalOffer?.listingId),
-        appointmentId: normalizeText(offer?.viewingAppointmentId || context?.canonicalOffer?.viewingAppointmentId),
-        offerId: normalizeText(offer?.id),
-        agentName: normalizeText(conditions.agentName || context?.invite?.agentName),
-        buyerName: normalizeText(form.fullName || conditions.buyerName || context?.invite?.buyerLeadName),
-        propertyTitle: getListingTitle(listing),
-        offerAmount: formatCurrency(offer?.offerAmount || form.offerAmount),
-        financeType: normalizeText(offer?.financeType || form.financeType),
-        offerSubmittedAt: formatDateTime(offer?.buyerSubmittedAt || offer?.submittedAt || new Date().toISOString()),
-        agentReviewUrl: normalizeText(conditions.agentReviewUrl),
-        note: normalizeText(form.specialConditions || form.suspensiveConditions),
-      },
-    })
-    if (response?.error || response?.data?.error) throw response.error || new Error(response.data.error)
-    return response?.data || null
   }
 
   const propertySummary = (
@@ -816,9 +736,9 @@ function BuyerOfferSubmission() {
   const activeBuyerCard = buyerSectionCards.find((section) => section.key === activeBuyerSection) || buyerSectionCards[0]
   const offerIdentityCount = [form.fullName, form.idNumber, form.email, form.phone].filter(Boolean).length
   const activeBuyerProgressLabel = activeBuyerSection === 'about'
-    ? `${offerIdentityCount} of 4 offer identity fields captured`
+    ? `${offerIdentityCount} of 4 identity fields captured`
     : activeBuyerSection === 'finance'
-      ? `${financeLabel} route seeded from your offer`
+      ? `${financeLabel} route captured for verification`
       : activeBuyerSection === 'documents'
         ? `${buyerVerificationModel.requiredDocuments.length} downstream document requirements`
         : 'Buyer onboarding rule set'
@@ -830,7 +750,7 @@ function BuyerOfferSubmission() {
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0F7A5A]">Buyer verification</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-[#111827]">Tell us about yourself.</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-            This follows the buyer onboarding rules for the selected offer structure. Your progress is saved on this device.
+            This follows the buyer verification rules for the selected property context. Your progress is saved on this device.
           </p>
         </div>
         <span className="w-fit rounded-full bg-[#EEF6F2] px-3 py-1.5 text-xs font-bold text-[#0F7A5A]">{buyerSectionCards.length} sections</span>
@@ -875,6 +795,16 @@ function BuyerOfferSubmission() {
         ) : null}
         {activeBuyerSection === 'finance' ? (
           <div className="grid gap-4 md:grid-cols-2">
+            <TextInput label="Expected Purchase Amount" value={form.offerAmount} onChange={(event) => updateForm('offerAmount', event.target.value)} placeholder="2500000" inputMode="decimal" />
+            <TextInput label="Deposit Amount (Optional)" value={form.depositAmount} onChange={(event) => updateForm('depositAmount', event.target.value)} placeholder="0" inputMode="decimal" />
+            <div className="grid gap-2 md:col-span-2">
+              <span className="text-[0.78rem] font-semibold text-[#4B5563]">Finance Type</span>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <ChoicePill label="Cash" selected={financeType === 'cash'} onClick={() => updateFinanceType('cash')} />
+                <ChoicePill label="Bond" selected={financeType === 'bond'} onClick={() => updateFinanceType('bond')} />
+                <ChoicePill label="Combination" selected={financeType === 'hybrid' || financeType === 'combination'} onClick={() => updateFinanceType('hybrid')} />
+              </div>
+            </div>
             <div className="rounded-[18px] bg-[#F7F7F4] p-4">
               <p className="text-xs font-semibold text-[#6B7280]">Finance Route</p>
               <p className="mt-1 text-lg font-bold text-[#111827]">{financeLabel}</p>
@@ -884,6 +814,23 @@ function BuyerOfferSubmission() {
               <p className="mt-1 text-lg font-bold text-[#111827]">{formatCurrency(loanAmount)}</p>
             </div>
             {financeType !== 'bond' ? <TextInput label="Cash Contribution" value={form.cashContribution} onChange={(event) => updateForm('cashContribution', event.target.value)} placeholder="250000" inputMode="decimal" /> : null}
+            {bondFinanceSelected ? (
+              <div className="grid gap-2 md:col-span-2">
+                <span className="text-[0.78rem] font-semibold text-[#4B5563]">Bond Support</span>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <ChoicePill
+                    label="I'll sort out my bond myself"
+                    selected={bondAssistancePreference === BOND_ASSISTANCE_OPTIONS.SELF_MANAGED}
+                    onClick={() => updateBondAssistancePreference(BOND_ASSISTANCE_OPTIONS.SELF_MANAGED)}
+                  />
+                  <ChoicePill
+                    label="I need help with my bond"
+                    selected={bondAssistancePreference === BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED}
+                    onClick={() => updateBondAssistancePreference(BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED)}
+                  />
+                </div>
+              </div>
+            ) : null}
             <TextInput label="Proof of Funds URL" value={form.proofOfFundsUrl} onChange={(event) => updateForm('proofOfFundsUrl', event.target.value)} placeholder="Optional document link" />
           </div>
         ) : null}
@@ -893,13 +840,11 @@ function BuyerOfferSubmission() {
             <span>I confirm the information captured so far is accurate.</span>
           </label>
         ) : null}
-        {['household', 'employment', 'documents', 'signature'].includes(activeBuyerSection) ? (
+        {['household', 'employment', 'documents'].includes(activeBuyerSection) ? (
           <div className="rounded-[18px] bg-[#F7F7F4] p-4 text-sm leading-6 text-[#4B5563]">
             {activeBuyerSection === 'documents'
               ? `${buyerVerificationModel.requiredDocuments.length} supporting document requirement${buyerVerificationModel.requiredDocuments.length === 1 ? '' : 's'} will follow from the buyer onboarding rules.`
-              : activeBuyerSection === 'signature'
-                ? 'Your offer can be reviewed and signed after the offer facts and buyer verification details are checked.'
-                : 'This section is governed by the buyer onboarding rules and remains part of the full buyer onboarding record.'}
+              : 'This section is governed by the buyer onboarding rules and remains part of the full buyer onboarding record.'}
           </div>
         ) : null}
       </div>
@@ -911,114 +856,15 @@ function BuyerOfferSubmission() {
     </section>
   )
 
-  const offerDetails = (
-    <div className="space-y-4">
-      <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 shadow-[0_18px_45px_rgba(17,24,39,0.04)] md:p-6">
-        <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Your Offer</h2>
-        <div className="mt-5 grid gap-4">
-          <TextInput label="Offer Amount" value={form.offerAmount} onChange={(event) => updateForm('offerAmount', event.target.value)} placeholder="2500000" inputMode="decimal" />
-          <TextInput label="Deposit Amount (Optional)" value={form.depositAmount} onChange={(event) => updateForm('depositAmount', event.target.value)} placeholder="0" inputMode="decimal" />
-          <div className="grid gap-2">
-            <span className="text-[0.78rem] font-semibold text-[#4B5563]">Finance Type</span>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <ChoicePill label="Cash" selected={financeType === 'cash'} onClick={() => updateFinanceType('cash')} />
-              <ChoicePill label="Bond" selected={financeType === 'bond'} onClick={() => updateFinanceType('bond')} />
-              <ChoicePill label="Combination" selected={financeType === 'hybrid' || financeType === 'combination'} onClick={() => updateFinanceType('hybrid')} />
-            </div>
-          </div>
-          <TextInput label="Offer Expiry Date" type="date" value={form.expiryDate} onChange={(event) => updateForm('expiryDate', event.target.value)} />
-          <div className="rounded-[18px] bg-[#F7F7F4] p-4">
-            <p className="text-xs font-semibold text-[#6B7280]">Bond Required</p>
-            <p className="mt-1 text-lg font-bold text-[#111827]">{formatCurrency(loanAmount)}</p>
-          </div>
-          {bondFinanceSelected ? (
-            <div className="grid gap-2">
-              <span className="text-[0.78rem] font-semibold text-[#4B5563]">Bond Support</span>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <ChoicePill
-                  label="I'll sort out my bond myself"
-                  selected={bondAssistancePreference === BOND_ASSISTANCE_OPTIONS.SELF_MANAGED}
-                  onClick={() => updateBondAssistancePreference(BOND_ASSISTANCE_OPTIONS.SELF_MANAGED)}
-                />
-                <ChoicePill
-                  label="I need help with my bond"
-                  selected={bondAssistancePreference === BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED}
-                  onClick={() => updateBondAssistancePreference(BOND_ASSISTANCE_OPTIONS.ORIGINATOR_ASSISTED)}
-                />
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 shadow-[0_18px_45px_rgba(17,24,39,0.04)] md:p-6">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Conditions <span className="text-base font-medium text-[#6B7280]">(Optional)</span></h2>
-          {selectedConditionCount ? <span className="rounded-full bg-[#EEF6F2] px-2.5 py-1 text-xs font-bold text-[#0F7A5A]">{selectedConditionCount} selected</span> : null}
-        </div>
-        <p className="mt-2 text-sm leading-6 text-[#6B7280]">Add only the conditions that apply to your offer.</p>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <ConditionButton label="Bond Approval" active={bondConditionSelected} onClick={() => updateForm('conditionBondApproval', !form.conditionBondApproval)} />
-          <ConditionButton label="Sale of Existing Property" active={Boolean(form.subjectToSale)} onClick={() => updateForm('subjectToSale', !form.subjectToSale)} />
-          <ConditionButton label="Occupational Rent" active={Boolean(form.occupationalRent)} onClick={() => updateForm('occupationalRent', !form.occupationalRent)} />
-          <ConditionButton label="Other Condition" active={otherConditionSelected} onClick={() => updateForm('conditionOther', !form.conditionOther)} />
-        </div>
-        {bondConditionSelected ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <TextInput label="Bond Approval Deadline" type="date" value={form.bondApprovalDeadline} onChange={(event) => updateForm('bondApprovalDeadline', event.target.value)} />
-            <TextInput label="Guarantee Delivery Deadline" type="date" value={form.guaranteeDeliveryDeadline} onChange={(event) => updateForm('guaranteeDeliveryDeadline', event.target.value)} />
-          </div>
-        ) : null}
-        {form.subjectToSale ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <TextInput label="Property To Be Sold" value={form.subjectSaleProperty} onChange={(event) => updateForm('subjectSaleProperty', event.target.value)} placeholder="Address or property description" />
-            <TextInput label="Minimum Sale Price" value={form.subjectSaleMinimumPrice} onChange={(event) => updateForm('subjectSaleMinimumPrice', event.target.value)} placeholder="2000000" inputMode="decimal" />
-            <TextInput label="Fulfilment Date" type="date" value={form.subjectSaleFulfilmentDate} onChange={(event) => updateForm('subjectSaleFulfilmentDate', event.target.value)} />
-            <TextInput label="Timeline Note" value={form.subjectSaleTimeline} onChange={(event) => updateForm('subjectSaleTimeline', event.target.value)} placeholder="For example, within 90 days" />
-          </div>
-        ) : null}
-        {form.occupationalRent ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <TextInput label="Occupation Date" type="date" value={form.occupationDate} onChange={(event) => updateForm('occupationDate', event.target.value)} />
-            <TextInput label="Occupational Rent Amount" value={form.occupationalRentAmount} onChange={(event) => updateForm('occupationalRentAmount', event.target.value)} placeholder="18000" inputMode="decimal" />
-          </div>
-        ) : null}
-        {otherConditionSelected ? (
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <TextAreaInput label="Included Fixtures" value={form.includedFixtures} onChange={(event) => updateForm('includedFixtures', event.target.value)} placeholder="Fixtures the buyer wants included" />
-            <TextAreaInput label="Excluded Fixtures" value={form.excludedFixtures} onChange={(event) => updateForm('excludedFixtures', event.target.value)} placeholder="Fixtures the seller may remove" />
-            <TextAreaInput label="Other Suspensive Conditions" value={form.suspensiveConditions} onChange={(event) => updateForm('suspensiveConditions', event.target.value)} placeholder="Deal-specific conditions for agent review" />
-            <TextAreaInput label="Special Conditions" value={form.specialConditions} onChange={(event) => updateForm('specialConditions', event.target.value)} placeholder="Deal-specific special conditions" />
-          </div>
-        ) : null}
-      {isDevelopmentOffer ? (
-        <div className="mt-5 grid gap-3 rounded-[22px] bg-[#F7F7F4] p-5">
-          {[
-            ['acknowledgeDevelopmentRules', 'I acknowledge this is a new-development offer route.'],
-            ['acknowledgeNhbrcWarranty', 'I acknowledge NHBRC/building warranty information may form part of the agreement.'],
-            ['acknowledgeBodyCorporateRules', 'I acknowledge body corporate or scheme rules may apply.'],
-            ['acknowledgeUtilityConnectionCharges', 'I acknowledge levies, rates, deposits or connection charges may apply.'],
-          ].map(([key, label]) => (
-            <label key={key} className="flex items-start gap-3 text-sm font-semibold text-[#374151]">
-              <input type="checkbox" checked={Boolean(form[key])} onChange={(event) => updateForm(key, event.target.checked)} className="mt-1" />
-              <span>{label}</span>
-            </label>
-          ))}
-        </div>
-      ) : null}
-      </section>
-    </div>
-  )
-
   const trustSection = (
     <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 md:p-6">
       <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Why Buyers Trust Arch9</h2>
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <TrustItem>Secure Submission</TrustItem>
         <TrustItem>Time Stamped</TrustItem>
-        <TrustItem>Seller Notified Instantly</TrustItem>
-        <TrustItem>Legally Recorded</TrustItem>
-        <TrustItem>All Offers Tracked</TrustItem>
+        <TrustItem>Agent Notified</TrustItem>
+        <TrustItem>Details Recorded</TrustItem>
+        <TrustItem>Verification Tracked</TrustItem>
       </div>
     </section>
   )
@@ -1027,7 +873,7 @@ function BuyerOfferSubmission() {
     <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 md:p-6">
       <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">What Happens Next?</h2>
       <div className="mt-5 flex gap-3 overflow-x-auto pb-1">
-        {['Submit Offer + Onboarding', 'Agent Reviews Conditions', 'OTP Generated', 'Buyer Signs', 'Seller Accepts'].map((item, index) => (
+        {['Submit Buyer Verification', 'Agent Reviews Details', 'Agency Document Handled Separately', 'Transaction Readiness Checked'].map((item, index) => (
           <div key={item} className="min-w-[150px] rounded-[18px] bg-[#F7F7F4] p-4">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F7A5A] text-sm font-bold text-white">{index + 1}</div>
             <p className="mt-3 text-sm font-bold text-[#111827]">{item}</p>
@@ -1039,16 +885,16 @@ function BuyerOfferSubmission() {
 
   const reviewSection = (
     <section className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 md:p-6">
-      <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Review & Submit</h2>
+      <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#111827]">Review Details</h2>
       <div className="mt-5 grid gap-3">
         {[
           ['Property', getListingTitle(listing)],
-          ['Offer Amount', formatCurrency(offerAmount)],
+          ['Expected Purchase Amount', formatCurrency(offerAmount)],
           ['Deposit', formatCurrency(depositAmount)],
           ['Finance', financeLabel],
           ['Bond Required', formatCurrency(loanAmount)],
           ...(bondFinanceSelected ? [['Bond Support', bondAssistanceLabel]] : []),
-          ['OTP Route', isDevelopmentOffer ? 'New Development' : 'Normal Sale'],
+          ['Verification Route', isDevelopmentOffer ? 'New Development' : 'Normal Sale'],
           ['Bond Deadline', form.bondApprovalDeadline ? formatDate(form.bondApprovalDeadline) : 'Not set'],
           ['Guarantee Deadline', form.guaranteeDeliveryDeadline ? formatDate(form.guaranteeDeliveryDeadline) : 'Not set'],
           ['Occupation', form.occupationDate ? formatDate(form.occupationDate) : 'Not set'],
@@ -1075,9 +921,9 @@ function BuyerOfferSubmission() {
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#DCFCE7] text-[#166534]">
             <BadgeCheck size={24} />
           </div>
-          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.055em] text-[#111827]">Offer submitted.</h2>
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.055em] text-[#111827]">Verification submitted.</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#6B7280]">
-            Your offer and buyer onboarding have been securely delivered to {agentName}. The agent will review the conditions before moving the transaction forward.
+            Your buyer verification details have been securely delivered to {agentName}. The agent will review the information before moving the transaction forward.
           </p>
         </div>
         <span className="w-fit rounded-full bg-[#EDF9F0] px-3 py-1.5 text-xs font-bold text-[#17643A]">Securely submitted</span>
@@ -1086,9 +932,9 @@ function BuyerOfferSubmission() {
         {[
           ['Property', getListingTitle(listing)],
           ['Buyer', form.fullName || 'Buyer'],
-          ['Offer Amount', offerAmountLabel],
+          ['Expected Purchase Amount', expectedPurchaseAmountLabel],
           ['Agent', agentName],
-          ['Agency', offerBrand.organisationName || agencyName],
+          ['Agency', verificationBrand.organisationName || agencyName],
           ['Submitted', formatDateTime(new Date().toISOString())],
         ].map(([label, value]) => (
           <div key={label} className="rounded-[18px] bg-[#F7F7F4] p-4">
@@ -1098,7 +944,7 @@ function BuyerOfferSubmission() {
         ))}
       </div>
       <div className="mt-6 grid gap-3 sm:grid-cols-5">
-        {['Offer submitted', 'Agent review', 'Seller feedback', 'OTP prepared', 'Signature'].map((item, index) => (
+        {['Verification submitted', 'Agent review', 'Agency document handled separately', 'Transaction readiness'].map((item, index) => (
           <div key={item} className="rounded-[18px] border border-[#E5E7EB] bg-white p-4">
             <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${index === 0 ? 'bg-[#0F7A5A] text-white' : 'bg-[#F7F7F4] text-[#6B7280]'}`}>{index + 1}</div>
             <p className="mt-3 text-sm font-bold text-[#111827]">{item}</p>
@@ -1108,9 +954,7 @@ function BuyerOfferSubmission() {
     </section>
   )
 
-  const activeStageContent = flowStage === 'offer' ? (
-    offerDetails
-  ) : flowStage === 'onboarding' ? (
+  const activeStageContent = flowStage === 'onboarding' ? (
     buyerOnboardingWorkspace
   ) : flowStage === 'review' ? (
     <>
@@ -1122,9 +966,7 @@ function BuyerOfferSubmission() {
     confirmationSection
   ) : null
 
-  const stageCtaLabel = flowStage === 'offer'
-    ? 'Continue to Buyer Verification'
-    : flowStage === 'onboarding'
+  const stageCtaLabel = flowStage === 'onboarding'
       ? 'Continue to Review'
       : flowStage === 'review'
         ? (submitting ? 'Submitting...' : submitButtonLabel)
@@ -1133,27 +975,27 @@ function BuyerOfferSubmission() {
   const stageCtaIcon = flowStage === 'review' ? <ShieldCheck size={16} /> : <ArrowRight size={16} />
   const canShowFooter = flowStage !== 'complete'
   const canGoBack = ['onboarding', 'review'].includes(flowStage)
-  const showPropertyAside = flowStage === 'offer'
+  const showPropertyAside = flowStage === 'onboarding'
   const pageTitle = flowStage === 'onboarding'
-    ? 'Almost there!'
+    ? 'Buyer Verification'
     : flowStage === 'review'
-      ? 'Review & Sign'
+      ? 'Review Details'
       : flowStage === 'complete'
-        ? 'Offer Submitted'
-        : 'Make an Offer'
+        ? 'Verification Submitted'
+        : 'Buyer Verification'
   const pageSubtitle = flowStage === 'onboarding'
-    ? 'Now we need a few details from you to complete your buyer profile.'
+    ? 'Confirm your details and finance context for the agency record.'
     : flowStage === 'review'
-      ? 'Check your offer and buyer details before submitting.'
+      ? 'Check your buyer details before submitting.'
       : flowStage === 'complete'
         ? ''
-        : 'Submit your offer on this property in a few simple steps.'
+        : 'Confirm the property and finance context before completing buyer verification.'
 
-  if ((canonicalLoading && !context?.ok) || (context?.ok && flowStage === 'landing' && !offerBrandingLoaded)) {
+  if ((canonicalLoading && !context?.ok) || (context?.ok && flowStage === 'landing' && !verificationBrandingLoaded)) {
     return (
       <main className="min-h-screen bg-[#FAFAF8] px-4 py-8">
         <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#E5E7EB] bg-white p-6 text-sm font-semibold text-[#6B7280]">
-          Loading secure offer link...
+          Loading secure verification link...
         </section>
       </main>
     )
@@ -1166,9 +1008,9 @@ function BuyerOfferSubmission() {
           <div className="flex items-start gap-3 text-[#B42318]">
             <AlertTriangle className="mt-0.5 h-5 w-5" />
             <div>
-              <h1 className="text-xl font-semibold text-[#111827]">Offer link unavailable</h1>
+              <h1 className="text-xl font-semibold text-[#111827]">Verification link unavailable</h1>
               <p className="mt-2 text-sm text-[#6B7280]">
-                {context?.reason === 'expired' ? 'This offer link has expired. Ask the agent to send a new secure offer link.' : 'This offer link is invalid or no longer active.'}
+                {context?.reason === 'expired' ? 'This verification link has expired. Ask the agent to send a new secure verification link.' : 'This verification link is invalid or no longer active.'}
               </p>
             </div>
           </div>
@@ -1181,34 +1023,34 @@ function BuyerOfferSubmission() {
     return (
       <PremiumOnboardingLanding
         portalType="buyer"
-        agencyLogo={offerBrand.logoDarkUrl || offerBrand.logoLightUrl || offerBrand.logoIconUrl || ''}
-        agencyName={offerBrand.organisationName || agencyName}
+        agencyLogo={verificationBrand.logoDarkUrl || verificationBrand.logoLightUrl || verificationBrand.logoIconUrl || ''}
+        agencyName={verificationBrand.organisationName || agencyName}
         personName={form.fullName || invite?.buyerLeadName || ''}
         propertyAddress={getListingAddress(listing)}
         propertyImage={propertyImageUrl}
         propertyTitle={getListingTitle(listing)}
         propertyMeta={[getListingAddress(listing), getListingType(listing)].filter(Boolean).join(' · ')}
         propertyPrice={askingPrice ? formatCurrency(askingPrice) : ''}
-        primaryColour={offerBrand.primaryColour}
-        secondaryColour={offerBrand.secondaryColour}
-        accentColour={offerBrand.accentColour}
-        label="MAKE AN OFFER"
-        headlinePrefix="Let's make"
-        headlineAccent="your move."
-        subtext="Submit your residential property offer and complete buyer onboarding in one secure flow."
-        ctaLabel={hasDraft ? 'Resume Offer' : 'Start Offer'}
+        primaryColour={verificationBrand.primaryColour}
+        secondaryColour={verificationBrand.secondaryColour}
+        accentColour={verificationBrand.accentColour}
+        label="BUYER VERIFICATION"
+        headlinePrefix="Let's verify"
+        headlineAccent="your details."
+        subtext="Confirm your buyer details and finance context in one secure flow."
+        ctaLabel={hasDraft ? 'Resume Verification' : 'Start Verification'}
         reassuranceRows={[
-          { title: 'Secure offer link', description: 'Private token access', icon: ShieldCheck },
+          { title: 'Secure verification link', description: 'Private token access', icon: ShieldCheck },
           { title: 'Save and continue later', description: 'Progress is saved here', icon: Bookmark },
           { title: 'Review before submit', description: 'Nothing is sent early', icon: Clock3 },
         ]}
         contextRows={[
           { icon: UserRound, label: 'Property Professional', value: agentName },
-          { icon: ChevronRight, label: 'Process', value: 'Offer terms, buyer details, review and submit' },
+          { icon: ChevronRight, label: 'Process', value: 'Property context, buyer details, review and submit' },
         ]}
-        beforeStartTitle="One guided offer flow."
-        beforeStartText="You can save and continue later. Your agent receives the offer only after you review and submit."
-        onStart={() => goToStage('offer')}
+        beforeStartTitle="One guided verification flow."
+        beforeStartText="You can save and continue later. Your agent receives the details only after you review and submit."
+        onStart={() => goToStage('onboarding')}
       />
     )
   }
@@ -1216,7 +1058,7 @@ function BuyerOfferSubmission() {
   return (
     <main style={{ background: WARM_WHITE, color: PRIMARY_TEXT }} className="min-h-screen overflow-x-hidden pb-[calc(8rem+env(safe-area-inset-bottom))] sm:pb-32 md:pb-28">
       <ProgressDots stage={flowStage} />
-      <form onSubmit={handleSubmitOffer}>
+      <form onSubmit={handleSubmitVerification}>
         <div className="mx-auto w-full max-w-[980px] px-4 py-8 md:px-8 md:py-10">
           <header className="mb-7">
             <h1 className="break-words text-4xl font-semibold tracking-[-0.055em] text-[#111827] md:text-5xl">{pageTitle}</h1>
@@ -1227,7 +1069,7 @@ function BuyerOfferSubmission() {
             <div className="mt-4 grid gap-3">
               {counterPendingBuyer ? (
                 <section className="rounded-[20px] border border-[#F5DBB0] bg-[#FFF8EC] px-4 py-3 text-sm font-semibold text-[#8A4B08]">
-                  Seller sent a counter offer. Submit a revised offer to respond.
+                  Updated purchase details were requested. Submit updated verification details to respond.
                 </section>
               ) : null}
               {canonicalBanner ? (
@@ -1260,9 +1102,9 @@ function BuyerOfferSubmission() {
             </button>
             <div data-testid="buyer-offer-action-summary" className="hidden min-w-0 flex-1 grid-cols-3 gap-3 sm:grid">
               {[
-                ['Offer', offerAmountLabel],
-                ['Deposit', formatCurrency(depositAmount)],
-                ['Bond Required', formatCurrency(loanAmount)],
+                ['Buyer', form.fullName || 'Not captured'],
+                ['Finance', financeLabel],
+                ['Progress', `${buyerVerificationModel.completion.completed}/${buyerVerificationModel.completion.total}`],
               ].map(([label, value]) => (
                 <div key={label} className="min-w-0">
                   <p className="truncate text-xs font-semibold text-[#4B5563]">{label}</p>
@@ -1273,7 +1115,7 @@ function BuyerOfferSubmission() {
             <button
               type={flowStage === 'review' ? 'submit' : 'button'}
               onClick={flowStage === 'review' ? undefined : goNext}
-              disabled={submitting || (flowStage === 'review' && context?.source === 'canonical' && !canSubmitCanonicalOffer)}
+              disabled={submitting || (flowStage === 'review' && context?.source === 'canonical' && !canSubmitCanonicalVerification)}
               className="inline-flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-[18px] bg-[#0F7A5A] px-4 text-center text-sm font-bold text-white shadow-[0_12px_28px_rgba(15,122,90,0.22)] transition hover:bg-[#0B654A] disabled:bg-[#9CA3AF] sm:flex-none sm:px-5 sm:min-w-[260px]"
             >
               <span className="min-w-0 whitespace-nowrap">{stageCtaLabel}</span>
@@ -1286,4 +1128,4 @@ function BuyerOfferSubmission() {
   )
 }
 
-export default BuyerOfferSubmission
+export default BuyerVerificationSubmission

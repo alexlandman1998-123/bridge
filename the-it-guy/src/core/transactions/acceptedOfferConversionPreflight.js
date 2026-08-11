@@ -111,10 +111,10 @@ export function buildAcceptedOfferConversionPreflight({
     ),
     check(
       'accepted_offer',
-      'Accepted offer',
+      'Signed OTP evidence',
       offerId && accepted ? 'complete' : offerId ? 'blocked' : 'pending',
-      offerId && accepted ? 'Offer is accepted and can be converted.' : offerId ? 'Offer must be accepted before conversion.' : 'No accepted offer selected.',
-      'Accept the seller-approved offer before creating a transaction.',
+      offerId && accepted ? 'Signed OTP evidence is ready for conversion.' : offerId ? 'Signed OTP evidence must be marked ready before conversion.' : 'No signed OTP evidence selected.',
+      'Upload the signed OTP before creating a transaction.',
     ),
     check(
       'buyer_lead',
@@ -182,6 +182,6 @@ export function buildAcceptedOfferConversionPreflight({
 export function formatAcceptedOfferConversionPreflightMessage(preflight = {}) {
   if (preflight.canConvert) return ''
   const nextFix = preflight.nextFix || preflight.blockers?.[0]
-  if (!nextFix) return 'Accepted offer conversion needs attention before the transaction can be created.'
+  if (!nextFix) return 'Signed OTP conversion needs attention before the transaction can be created.'
   return `${nextFix.detail || nextFix.label} ${nextFix.action || ''}`.trim()
 }
