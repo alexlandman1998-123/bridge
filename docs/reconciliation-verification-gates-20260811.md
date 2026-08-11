@@ -186,7 +186,7 @@ Required before deployment:
 
 ## Phase 9 Execution
 
-Phase 9, `Ready for Merge and Production Handoff`, started as of `2026-08-11 17:39:51 SAST`.
+Phase 9, `Ready for Merge and Production Handoff`, is complete as of `2026-08-11 17:43:01 SAST`.
 
 PR transition:
 
@@ -205,6 +205,36 @@ Result: passed with all PR checks and Vercel statuses green after PR #13 was mar
 Phase 9 guardrail:
 
 Before merging or allowing production handoff, rerun the live PR checks and fail-closed deploy gate against the latest pushed head. If this Phase 9 evidence commit restarts checks, wait for those checks before merge.
+
+Merge result:
+
+- PR #13 merged into `main`.
+- Merge commit: `60a1521e9d4197ad1400a7d746b29c6f87e474ff`
+- `main` Supabase Phase 0, Phase 6, Phase 7, and Phase 8 guard workflows passed on the merge commit.
+- `Vercel - bridge` and `Vercel - bridge-admin` reported successful production deployments for the merge commit.
+- The post-merge deploy gate passed.
+
+External Supabase Preview note:
+
+The Supabase GitHub app's `Supabase Preview` check reported `Remote migration versions not found in local migrations directory` on the `main` merge commit. The repository-owned fail-closed Supabase guard workflows passed, so this remains a Supabase branching/ledger follow-up rather than a production deploy blocker for the reconciled app release.
+
+## Phase 10 Execution
+
+Phase 10, `Closeout and Freeze Lift`, is complete as of `2026-08-11 17:47:57 SAST`.
+
+Closeout checks:
+
+- PR #13 state: merged.
+- `origin/main`: `60a1521e9d4197ad1400a7d746b29c6f87e474ff`
+- `https://app.arch9.co.za/release-manifest.json` release ID: `60a1521e9d4197ad1400a7d746b29c6f87e474ff`
+- app release manifest version: `1`
+- app release manifest Supabase origin: `https://isdowlnollckzvltkasn.supabase.co`
+- app release manifest detected the listing-detail asset.
+- `https://admin.arch9.co.za/` served the production admin bundle and the `Vercel - bridge-admin` status passed; the admin Vite app does not currently expose `release-manifest.json`.
+
+Result:
+
+The reconciliation soft freeze is lifted. PR #11 remains gated pending explicit Phase 0 guard-retirement approval, and last-pass branches remain deferred for separate focused audits.
 
 ## Batch Names
 
@@ -247,6 +277,8 @@ Record each batch result here as reconciliation progresses.
 | 2026-08-11 | `final-smoke` | `ba683a9a` | Passed | `npm run reconcile:verify -- final-smoke` |
 | 2026-08-11 | `deploy-gate-final` | `cc471c6c` | Blocked as expected | `npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge` found all checks green and PR #13 still draft |
 | 2026-08-11 | `deploy-gate-ready` | `7f449bd2` | Passed | `npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge` passed after PR #13 was marked ready for review |
+| 2026-08-11 | `post-merge-deploy-gate` | `60a1521e` | Passed | `npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge` passed after PR #13 merged |
+| 2026-08-11 | `phase10-closeout` | `60a1521e` | Passed with follow-up noted | Live app release manifest matched `60a1521e`; production Vercel statuses passed; external Supabase Preview reported a migration-ledger follow-up |
 
 ## Batch-Specific Verification
 
