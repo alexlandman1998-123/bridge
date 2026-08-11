@@ -1,4 +1,10 @@
-import { isMissingColumnError, isMissingTableError, getAuthenticatedUser, requireClient } from '../attorneyFirmServiceShared'
+import {
+  isMissingColumnError,
+  isMissingTableError,
+  isPermissionDeniedError,
+  getAuthenticatedUser,
+  requireClient,
+} from '../attorneyFirmServiceShared'
 import {
   assertCanPublishVisibility,
   canReviewAttorneyDocuments,
@@ -635,6 +641,25 @@ function sanitizeError(error, fallback) {
   return message
 }
 
+function buildVirtualLaneRow({ transactionId, laneKey, assignment = null, reason = 'read_only_fallback' } = {}) {
+  const meta = LANE_META[laneKey]
+  const stages = getLaneStages(laneKey)
+  return {
+    id: `virtual-${transactionId}-${laneKey}`,
+    transaction_id: transactionId,
+    process_type: meta.processType,
+    owner_type: 'attorney',
+    status: 'not_started',
+    attorney_role: meta.attorneyRole,
+    attorney_assignment_id: assignment?.id || null,
+    current_stage: stages[0] || null,
+    lane_status: 'not_started',
+    lane_metadata: { source: reason },
+    created_at: null,
+    updated_at: null,
+  }
+}
+
 async function insertTransactionEvent(client, {
   transactionId,
   eventType,
@@ -699,7 +724,7 @@ async function fetchLaneRows(client, transactionId) {
     .order('created_at', { ascending: true })
 
   if (query.error) {
-    if (isMissingSchemaError(query.error)) return []
+    if (isMissingSchemaError(query.error) || isPermissionDeniedError(query.error)) return []
     throw query.error
   }
   return query.data || []
@@ -960,12 +985,14 @@ function buildMissingStepRows(laneRow, laneKey, existingSteps = []) {
 
 async function upsertLaneStepRows(client, stepRows = []) {
   if (!stepRows.length) return false
+  const persistedStepRows = stepRows.filter((row) => !String(row.subprocess_id || '').startsWith('virtual-'))
+  if (!persistedStepRows.length) return false
   let stepInsert = await client
     .from('transaction_subprocess_steps')
-    .upsert(stepRows, { onConflict: 'subprocess_id,step_key', ignoreDuplicates: true })
+    .upsert(persistedStepRows, { onConflict: 'subprocess_id,step_key', ignoreDuplicates: true })
 
   if (stepInsert.error && isMissingColumnError(stepInsert.error, 'visibility_scope')) {
-    const fallbackRows = stepRows.map((row) => {
+    const fallbackRows = persistedStepRows.map((row) => {
       const next = { ...row }
       delete next.visibility_scope
       return next
@@ -974,7 +1001,10 @@ async function upsertLaneStepRows(client, stepRows = []) {
       .from('transaction_subprocess_steps')
       .upsert(fallbackRows, { onConflict: 'subprocess_id,step_key', ignoreDuplicates: true })
   }
-  if (stepInsert.error) throw stepInsert.error
+  if (stepInsert.error) {
+    if (isPermissionDeniedError(stepInsert.error)) return false
+    throw stepInsert.error
+  }
   return true
 }
 
@@ -1071,18 +1101,40 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
   )
 
   if (initialize && missingRequiredLaneKeys.length) {
+    const createdLaneKeys = []
     for (const laneKey of missingRequiredLaneKeys) {
-      await createLane(client, {
+      try {
+        await createLane(client, {
+          transactionId: normalizedTransactionId,
+          laneKey,
+          assignment: mapAssignmentForLane(assignments, laneKey),
+          actorId: actor?.id || null,
+        })
+        createdLaneKeys.push(laneKey)
+      } catch (error) {
+        if (!isMissingSchemaError(error) && !isPermissionDeniedError(error)) throw error
+      }
+    }
+    if (createdLaneKeys.length) {
+      laneRows = await fetchLaneRows(client, normalizedTransactionId)
+    }
+  }
+
+  const persistedLaneKeys = new Set(laneRows.map((row) => normalizeLaneKey(row.process_type === 'attorney' ? 'transfer' : row.process_type)))
+  const virtualLaneRows = permissionLaneKeys
+    .filter((laneKey) => !persistedLaneKeys.has(laneKey) && laneContexts[laneKey]?.canViewLegalWorkspace)
+    .map((laneKey) =>
+      buildVirtualLaneRow({
         transactionId: normalizedTransactionId,
         laneKey,
         assignment: mapAssignmentForLane(assignments, laneKey),
-        actorId: actor?.id || null,
-      })
-    }
-    laneRows = await fetchLaneRows(client, normalizedTransactionId)
-  }
+      }),
+    )
+  laneRows = [...laneRows, ...virtualLaneRows]
 
-  const laneIds = laneRows.map((row) => row.id).filter(Boolean)
+  const laneIds = laneRows
+    .map((row) => row.id)
+    .filter((id) => id && !String(id).startsWith('virtual-'))
   let [steps, updates, history, documentRequests, notificationDeliveries] = await Promise.all([
     fetchSteps(client, laneIds),
     fetchLaneUpdates(client, normalizedTransactionId),
@@ -1095,6 +1147,10 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     accumulator[step.subprocess_id].push(step)
     return accumulator
   }, {})
+
+  for (const row of virtualLaneRows) {
+    stepsBySubprocessId[row.id] = buildMissingStepRows(row, normalizeLaneKey(row.process_type), [])
+  }
 
   if (initialize) {
     const syncedSteps = await ensureCanonicalLaneSteps(client, laneRows, stepsBySubprocessId)

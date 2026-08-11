@@ -3388,7 +3388,7 @@ export async function ensureTransactionSubprocesses(client, transactionId, { cre
     .order('created_at', { ascending: true })
 
   if (subprocessQuery.error) {
-    if (isMissingSchemaError(subprocessQuery.error)) {
+    if (isMissingSchemaError(subprocessQuery.error) || isPermissionDeniedError(subprocessQuery.error)) {
       return buildDefaultSubprocessState(transactionId, {
         financeType: transactionFinanceType,
         includeLevyClearanceSteps,
@@ -3462,7 +3462,20 @@ export async function ensureTransactionSubprocesses(client, transactionId, { cre
         .select('id, transaction_id, process_type, owner_type, status, created_at, updated_at')
 
       if (patchResult.error) {
-        if (!isMissingSchemaError(patchResult.error)) {
+        if (isPermissionDeniedError(patchResult.error)) {
+          subprocesses = [
+            ...subprocesses,
+            ...missingTypes.map((processType) => ({
+              id: `virtual-${transactionId}-${processType}`,
+              transaction_id: transactionId,
+              process_type: processType,
+              owner_type: SUBPROCESS_DEFAULT_OWNERS[normalizeWorkflowProcessType(processType)] || 'internal',
+              status: 'not_started',
+              created_at: null,
+              updated_at: null,
+            })),
+          ]
+        } else if (!isMissingSchemaError(patchResult.error)) {
           throw patchResult.error
         }
       } else if (patchResult.data?.length) {
@@ -3496,7 +3509,7 @@ export async function ensureTransactionSubprocesses(client, transactionId, { cre
       .order('sort_order', { ascending: true })
 
     if (stepQuery.error) {
-      if (isMissingSchemaError(stepQuery.error)) {
+      if (isMissingSchemaError(stepQuery.error) || isPermissionDeniedError(stepQuery.error)) {
         return buildDefaultSubprocessState(transactionId, {
           financeType: transactionFinanceType,
           includeLevyClearanceSteps,
@@ -3558,28 +3571,47 @@ export async function ensureTransactionSubprocesses(client, transactionId, { cre
     } else {
       const persistedMissingStepRows = missingStepRows.filter((row) => isUuidLike(row.subprocess_id))
       if (!persistedMissingStepRows.length) {
-        return buildDefaultSubprocessState(transactionId, {
-          financeType: transactionFinanceType,
-          includeLevyClearanceSteps,
-        })
-      }
+        stepRows = [
+          ...stepRows,
+          ...missingStepRows.map((row) => ({
+            id: `virtual-${row.subprocess_id}-${row.step_key}`,
+            ...row,
+            completed_at: null,
+            comment: null,
+            created_at: null,
+            updated_at: null,
+          })),
+        ]
+      } else {
+        const stepInsertResult = await client
+          .from('transaction_subprocess_steps')
+          .upsert(persistedMissingStepRows, {
+            onConflict: 'subprocess_id,step_key',
+            ignoreDuplicates: true,
+          })
+          .select(
+            'id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, created_at, updated_at',
+          )
 
-      const stepInsertResult = await client
-        .from('transaction_subprocess_steps')
-        .upsert(persistedMissingStepRows, {
-          onConflict: 'subprocess_id,step_key',
-          ignoreDuplicates: true,
-        })
-        .select(
-          'id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, created_at, updated_at',
-        )
-
-      if (stepInsertResult.error) {
-        if (!isMissingSchemaError(stepInsertResult.error)) {
-          throw stepInsertResult.error
+        if (stepInsertResult.error) {
+          if (isPermissionDeniedError(stepInsertResult.error)) {
+            stepRows = [
+              ...stepRows,
+              ...missingStepRows.map((row) => ({
+                id: `virtual-${row.subprocess_id}-${row.step_key}`,
+                ...row,
+                completed_at: null,
+                comment: null,
+                created_at: null,
+                updated_at: null,
+              })),
+            ]
+          } else if (!isMissingSchemaError(stepInsertResult.error)) {
+            throw stepInsertResult.error
+          }
+        } else if (stepInsertResult.data?.length) {
+          stepRows = [...stepRows, ...stepInsertResult.data]
         }
-      } else if (stepInsertResult.data?.length) {
-        stepRows = [...stepRows, ...stepInsertResult.data]
       }
     }
   }

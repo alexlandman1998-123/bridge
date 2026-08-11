@@ -13,12 +13,29 @@ const TRANSFER_SUBPROCESS_ID = '22222222-2222-4222-8222-222222222222'
 const capturedSubprocessStepFilters = []
 
 class FakeQuery {
-  constructor(table) {
+  constructor(table, scenario = 'persisted-transfer') {
     this.table = table
+    this.scenario = scenario
   }
 
   select() {
     return this
+  }
+
+  upsert() {
+    if (this.scenario === 'subprocess-upsert-denied' && this.table === 'transaction_subprocesses') {
+      return {
+        select: () =>
+          Promise.resolve({
+            data: null,
+            error: { code: '42501', message: 'permission denied for table transaction_subprocesses' },
+          }),
+      }
+    }
+
+    return {
+      select: () => Promise.resolve({ data: [], error: null }),
+    }
   }
 
   eq() {
@@ -51,6 +68,10 @@ class FakeQuery {
 
   order() {
     if (this.table === 'transaction_subprocesses') {
+      if (this.scenario === 'subprocess-upsert-denied') {
+        return Promise.resolve({ data: [], error: null })
+      }
+
       return Promise.resolve({
         data: [
           {
@@ -106,6 +127,12 @@ const fakeClient = {
   },
 }
 
+const permissionDeniedClient = {
+  from(table) {
+    return new FakeQuery(table, 'subprocess-upsert-denied')
+  },
+}
+
 try {
   const { ensureTransactionSubprocesses } = await server.ssrLoadModule('/src/lib/api.js')
   const subprocesses = await ensureTransactionSubprocesses(fakeClient, TRANSACTION_ID, { createIfMissing: false })
@@ -123,6 +150,17 @@ try {
   assert.ok(
     finance.steps.every((step) => String(step.id || '').startsWith(`virtual-${finance.id}-`)),
     'virtual finance steps should remain client-side virtual rows',
+  )
+
+  const readOnlySubprocesses = await ensureTransactionSubprocesses(permissionDeniedClient, TRANSACTION_ID)
+  assert.deepEqual(
+    readOnlySubprocesses.map((item) => item.id),
+    [`virtual-${TRANSACTION_ID}-finance`, `virtual-${TRANSACTION_ID}-transfer`],
+    'RLS-denied subprocess initialization should fall back to virtual rows instead of throwing',
+  )
+  assert.ok(
+    readOnlySubprocesses.every((item) => item.steps.length > 0),
+    'RLS-denied subprocess initialization should still return display steps',
   )
 
   console.log('client portal virtual subprocess id tests passed')

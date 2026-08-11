@@ -16,6 +16,8 @@ const COMPLETE_ONBOARDING_STATUSES = new Set([
 
 export const TRANSFER_INSTRUCTION_LIFECYCLE_ASSURANCE_VIEW = 'transfer_firm_allocation_lifecycle_v2'
 
+const unavailableOptionalRelations = new Set()
+
 function normalize(value = '') {
   return String(value || '').trim().toLowerCase().replace(/[\s/-]+/g, '_')
 }
@@ -26,7 +28,15 @@ function compact(values = []) {
 
 function isMissingRelation(error) {
   const code = String(error?.code || '').toUpperCase()
-  return ['42P01', 'PGRST205'].includes(code) || String(error?.message || '').toLowerCase().includes('does not exist')
+  const status = Number(error?.status || error?.statusCode || 0)
+  const message = String(error?.message || error?.details || error?.hint || '').toLowerCase()
+  return (
+    ['42P01', 'PGRST205'].includes(code) ||
+    status === 404 ||
+    message.includes('does not exist') ||
+    message.includes('schema cache') ||
+    message.includes('could not find the table')
+  )
 }
 
 function isMissingColumn(error) {
@@ -287,11 +297,15 @@ export function buildTransferInstructionLifecycle({
 }
 
 async function fetchRows(table, configure) {
+  if (unavailableOptionalRelations.has(table)) return []
   let query = supabase.from(table).select('*')
   query = configure(query)
   const result = await query
   if (result.error) {
-    if (isMissingRelation(result.error) || isMissingColumn(result.error)) return []
+    if (isMissingRelation(result.error) || isMissingColumn(result.error)) {
+      unavailableOptionalRelations.add(table)
+      return []
+    }
     throw result.error
   }
   return result.data || []

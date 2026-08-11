@@ -60,17 +60,31 @@ const RECONCILIATION_SELECT = [
   'lifecycle_updated_at',
 ].join(',')
 
+const missingReadinessViews = new Set()
+
 function isMissingReadinessViewError(error) {
   const code = String(error?.code || '').toUpperCase()
-  return ['42P01', 'PGRST205'].includes(code)
+  const status = Number(error?.status || error?.statusCode || 0)
+  const message = String(error?.message || error?.details || error?.hint || '').toLowerCase()
+  return (
+    ['42P01', 'PGRST205'].includes(code) ||
+    status === 404 ||
+    message.includes('does not exist') ||
+    message.includes('schema cache') ||
+    message.includes('could not find the table')
+  )
 }
 
 async function fetchOptionalReadinessRows(client, table, select, { organisationId = '' } = {}) {
+  if (missingReadinessViews.has(table)) return { rows: [], missing: true }
   let query = client.from(table).select(select)
   if (organisationId) query = query.eq('organisation_id', organisationId)
   const result = await query
   if (result.error) {
-    if (isMissingReadinessViewError(result.error)) return { rows: [], missing: true }
+    if (isMissingReadinessViewError(result.error)) {
+      missingReadinessViews.add(table)
+      return { rows: [], missing: true }
+    }
     throw result.error
   }
   return { rows: result.data || [], missing: false }
@@ -81,12 +95,25 @@ export async function getAttorneyFirmFirstReadinessReport({ organisationId = '',
     return buildAttorneyFirmFirstReadinessReport([], { source: 'supabase_not_configured' })
   }
 
+  if (missingReadinessViews.has(ATTORNEY_FIRM_FIRST_LIFECYCLE_VIEW)) {
+    const report = buildAttorneyFirmFirstReadinessReport([], { source: 'phase7_assurance_view_missing' })
+    return {
+      ...report,
+      gate: {
+        status: 'blocked',
+        releaseRecommended: false,
+        reason: 'Deploy the Phase 7 lifecycle assurance migration before running the Phase 8 release gate.',
+      },
+    }
+  }
+
   let query = client.from(ATTORNEY_FIRM_FIRST_LIFECYCLE_VIEW).select(READINESS_SELECT)
   if (organisationId) query = query.eq('organisation_id', organisationId)
   const result = await query
 
   if (result.error) {
     if (isMissingReadinessViewError(result.error)) {
+      missingReadinessViews.add(ATTORNEY_FIRM_FIRST_LIFECYCLE_VIEW)
       const report = buildAttorneyFirmFirstReadinessReport([], { source: 'phase7_assurance_view_missing' })
       return {
         ...report,
