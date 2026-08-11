@@ -184,6 +184,28 @@ Required before deployment:
 - merge PR #13 into `main`
 - rerun the fail-closed deploy gate against the merged deployment candidate
 
+## Phase 9 Execution
+
+Phase 9, `Ready for Merge and Production Handoff`, started as of `2026-08-11 17:39:51 SAST`.
+
+PR transition:
+
+- PR #13 was marked ready for review.
+- The draft blocker was removed.
+- The pre-merge deploy gate passed against the then-current head.
+
+Pre-merge deploy gate:
+
+```bash
+npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge
+```
+
+Result: passed with all PR checks and Vercel statuses green after PR #13 was marked ready for review.
+
+Phase 9 guardrail:
+
+Before merging or allowing production handoff, rerun the live PR checks and fail-closed deploy gate against the latest pushed head. If this Phase 9 evidence commit restarts checks, wait for those checks before merge.
+
 ## Batch Names
 
 Use these batch names during the first reconciliation pass:
@@ -224,6 +246,7 @@ Record each batch result here as reconciliation progresses.
 | 2026-08-11 | `hq-owner-dashboard` | `06eca9a7` | Passed | `npm run reconcile:verify -- hq-owner-dashboard` |
 | 2026-08-11 | `final-smoke` | `ba683a9a` | Passed | `npm run reconcile:verify -- final-smoke` |
 | 2026-08-11 | `deploy-gate-final` | `cc471c6c` | Blocked as expected | `npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge` found all checks green and PR #13 still draft |
+| 2026-08-11 | `deploy-gate-ready` | `7f449bd2` | Passed | `npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge` passed after PR #13 was marked ready for review |
 
 ## Batch-Specific Verification
 
