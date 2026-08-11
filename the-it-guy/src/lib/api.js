@@ -38431,6 +38431,118 @@ async function markTransactionAwaitingSignedOtp(client, { transactionId, formDat
   }
 }
 
+function getBuyerOnboardingProjectionErrorCategory(error) {
+  if (isPermissionDeniedError(error)) return 'permission_denied'
+  if (isMissingSchemaError(error)) return 'schema_unavailable'
+  if (isMissingFunctionError(error)) return 'function_unavailable'
+  return 'projection_failed'
+}
+
+function buildBuyerOnboardingProjectionFailurePayload({
+  projection = '',
+  transaction = null,
+  onboarding = null,
+  purchaserType = '',
+  financeType = '',
+  submit = false,
+  completedAt = '',
+  error = null,
+} = {}) {
+  return {
+    source: 'buyer_onboarding_projection_recovery_marker',
+    projection: normalizeTextValue(projection),
+    recoveryRequired: true,
+    retryable: true,
+    submit: Boolean(submit),
+    transactionId: normalizeNullableUuid(transaction?.id || transaction?.transaction_id),
+    onboardingId: normalizeNullableUuid(onboarding?.id || onboarding?.onboarding_id),
+    purchaserType: normalizePurchaserType(purchaserType || transaction?.purchaser_type || onboarding?.purchaserType),
+    financeType: normalizeFinanceType(financeType || transaction?.finance_type || 'cash'),
+    completedAt: normalizeNullableText(completedAt),
+    errorCategory: getBuyerOnboardingProjectionErrorCategory(error),
+    errorCode: normalizeNullableText(error?.code || error?.status || error?.statusCode),
+  }
+}
+
+async function recordBuyerOnboardingProjectionFailureMarker(
+  client,
+  {
+    transactionId = '',
+    eventType = '',
+    projection = '',
+    transaction = null,
+    onboarding = null,
+    purchaserType = '',
+    financeType = '',
+    submit = false,
+    completedAt = '',
+    error = null,
+  } = {},
+) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId || transaction?.id || transaction?.transaction_id)
+  if (!normalizedTransactionId || !eventType) return null
+
+  try {
+    return await logTransactionEventIfPossible(client, {
+      transactionId: normalizedTransactionId,
+      eventType,
+      createdByRole: 'system',
+      eventData: buildBuyerOnboardingProjectionFailurePayload({
+        projection,
+        transaction,
+        onboarding,
+        purchaserType,
+        financeType,
+        submit,
+        completedAt,
+        error,
+      }),
+    })
+  } catch (markerError) {
+    console.warn('Buyer onboarding projection recovery marker could not be recorded', markerError)
+    return null
+  }
+}
+
+const BUYER_ONBOARDING_PROJECTION_REPAIR_EVENT_TYPES = {
+  required_documents: 'buyer_onboarding_required_documents_projection_failed',
+  platform_fee_consent: 'buyer_onboarding_platform_fee_consent_projection_failed',
+  information_sheet: 'buyer_onboarding_information_sheet_projection_failed',
+  roleplayer: 'buyer_onboarding_roleplayer_projection_failed',
+  workflow_evidence: 'buyer_onboarding_workflow_evidence_projection_failed',
+  awaiting_signed_otp: 'buyer_onboarding_awaiting_signed_otp_projection_failed',
+  finance_event: 'buyer_onboarding_finance_event_projection_failed',
+}
+
+const BUYER_ONBOARDING_REPAIRABLE_PROJECTIONS = Object.freeze(
+  Object.keys(BUYER_ONBOARDING_PROJECTION_REPAIR_EVENT_TYPES),
+)
+
+function normalizeBuyerOnboardingRepairProjection(value = '') {
+  const normalized = normalizeTextValue(value).toLowerCase()
+  if (!normalized) return ''
+  const fromEvent = Object.entries(BUYER_ONBOARDING_PROJECTION_REPAIR_EVENT_TYPES).find(
+    ([, eventType]) => eventType === normalized,
+  )
+  if (fromEvent) return fromEvent[0]
+  const canonical = normalized.replace(/^buyer_onboarding_/, '').replace(/_projection_failed$/, '')
+  if (canonical === 'required_document' || canonical === 'required_documents') return 'required_documents'
+  if (canonical === 'platform_fee' || canonical === 'platform_fee_consent') return 'platform_fee_consent'
+  if (canonical === 'information_sheet') return 'information_sheet'
+  if (canonical === 'roleplayer' || canonical === 'buyer_bond_originator_roleplayer') return 'roleplayer'
+  if (canonical === 'workflow' || canonical === 'workflow_evidence') return 'workflow_evidence'
+  if (canonical === 'awaiting_signed_otp' || canonical === 'otp') return 'awaiting_signed_otp'
+  if (canonical === 'finance' || canonical === 'finance_event' || canonical === 'finance_type_event') return 'finance_event'
+  return BUYER_ONBOARDING_REPAIRABLE_PROJECTIONS.includes(normalized) ? normalized : ''
+}
+
+function normalizeBuyerOnboardingRepairProjectionList(projections = []) {
+  const normalized = (Array.isArray(projections) ? projections : [projections])
+    .map(normalizeBuyerOnboardingRepairProjection)
+    .filter(Boolean)
+  return [...new Set(normalized)]
+}
+
 async function acceptBuyerPlatformFeeConsent(client, {
   transaction = null,
   buyer = null,
@@ -39510,6 +39622,10 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     funding_sources: fundingSources,
   }
 
+  if (submit && !isPlatformFeeConsentAccepted(formDataForPersistence, 'buyer')) {
+    throw new Error(getPlatformFeeConsentConfig('buyer').validationMessage)
+  }
+
   const snapshotSave = await syncOnboardingTransactionFinanceSnapshot(client, {
     transaction,
     formData: formDataForPersistence,
@@ -39530,19 +39646,38 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
   const clientPortalLink = buyerPortalAccess.clientPortalLink
   const clientPortalPath = buyerPortalAccess.clientPortalPath
 
-  await ensureTransactionRequiredDocuments(client, {
-    transactionId: transaction.id,
-    purchaserType,
-    financeType: financeSnapshot.financeType,
-    reservationRequired: financeSnapshot.reservationRequired,
-    cashAmount: financeSnapshot.cashAmount,
-    bondAmount: financeSnapshot.bondAmount,
-    formData: formDataForPersistence,
-  })
-
   const updatedOnboarding = snapshotSave?.onboarding || null
   if (!updatedOnboarding?.id) {
     throw new Error('Buyer onboarding state could not be saved.')
+  }
+  const projectionMarkerContext = {
+    transactionId: transaction.id,
+    transaction,
+    onboarding: updatedOnboarding,
+    purchaserType,
+    financeType: financeSnapshot.financeType,
+    submit,
+    completedAt: submit ? now : '',
+  }
+
+  try {
+    await ensureTransactionRequiredDocuments(client, {
+      transactionId: transaction.id,
+      purchaserType,
+      financeType: financeSnapshot.financeType,
+      reservationRequired: financeSnapshot.reservationRequired,
+      cashAmount: financeSnapshot.cashAmount,
+      bondAmount: financeSnapshot.bondAmount,
+      formData: formDataForPersistence,
+    })
+  } catch (requiredDocumentsError) {
+    console.warn('Buyer onboarding required document projection failed after snapshot save', requiredDocumentsError)
+    await recordBuyerOnboardingProjectionFailureMarker(client, {
+      ...projectionMarkerContext,
+      eventType: 'buyer_onboarding_required_documents_projection_failed',
+      projection: 'required_documents',
+      error: requiredDocumentsError,
+    })
   }
 
   let buyerOnboardingCompletionHook = null
@@ -39552,74 +39687,94 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
   let informationSheetCapture = null
 
   if (submit) {
-    await acceptBuyerPlatformFeeConsent(client, {
-      transaction,
-      buyer,
-      formData: formDataForPersistence,
-      onboarding: updatedOnboarding,
-      acceptedAt: now,
-    })
-
-    const existingInformationSheetRequirement = await fetchTransactionRequiredDocumentByKeyIfPossible(client, {
-      transactionId: transaction.id,
-      documentKey: INFORMATION_SHEET_DOCUMENT_KEY,
-    })
-    informationSheetCapture = buildOnboardingInformationSheetCapture({
-      transaction,
-      onboarding: updatedOnboarding,
-      formData: formDataForPersistence,
-      existingRequirement: existingInformationSheetRequirement,
-      capturedAt: now,
-      source: 'buyer_onboarding_completed',
-    })
-
-    await updateTransactionRequiredDocumentCaptureIfPossible(client, {
-      transactionId: transaction.id,
-      documentKey: informationSheetCapture.documentKey,
-      requirementId: informationSheetCapture.requirementId,
-      patch: informationSheetCapture.requirementPatch,
-    })
-
-    if (informationSheetCapture.workflowEvidence) {
-      try {
-        await processWorkflowEvidenceIfPossible(client, {
-          transactionId: transaction.id,
-          ...informationSheetCapture.workflowEvidence,
-          createdBy: null,
-          payload: {
-            captureKind: informationSheetCapture.captureKind,
-            documentKey: informationSheetCapture.documentKey,
-            onboardingId: updatedOnboarding.id,
-            uploadedDocumentId: informationSheetCapture.uploadedDocumentId,
-          },
-        })
-      } catch (informationSheetEvidenceError) {
-        if (!isPermissionDeniedError(informationSheetEvidenceError) && !isMissingSchemaError(informationSheetEvidenceError)) {
-          throw informationSheetEvidenceError
-        }
-        console.warn('Information sheet workflow evidence projection skipped', informationSheetEvidenceError)
-      }
+    try {
+      await acceptBuyerPlatformFeeConsent(client, {
+        transaction,
+        buyer,
+        formData: formDataForPersistence,
+        onboarding: updatedOnboarding,
+        acceptedAt: now,
+      })
+    } catch (platformFeeConsentError) {
+      console.warn('Buyer onboarding platform fee consent projection failed after snapshot save', platformFeeConsentError)
+      await recordBuyerOnboardingProjectionFailureMarker(client, {
+        ...projectionMarkerContext,
+        eventType: 'buyer_onboarding_platform_fee_consent_projection_failed',
+        projection: 'platform_fee_consent',
+        error: platformFeeConsentError,
+      })
     }
 
-    if (informationSheetCapture.event) {
-      try {
-        await logTransactionEventIfPossible(client, {
-          transactionId: transaction.id,
-          eventType: informationSheetCapture.event.type,
-          createdByRole: 'client',
-          eventData: {
-            ...informationSheetCapture.event.data,
-            version: informationSheetCapture.version,
-            status: informationSheetCapture.status,
-            isUploaded: informationSheetCapture.isUploaded,
-          },
-        })
-      } catch (informationSheetEventError) {
-        if (!isPermissionDeniedError(informationSheetEventError) && !isMissingSchemaError(informationSheetEventError)) {
-          throw informationSheetEventError
+    try {
+      const existingInformationSheetRequirement = await fetchTransactionRequiredDocumentByKeyIfPossible(client, {
+        transactionId: transaction.id,
+        documentKey: INFORMATION_SHEET_DOCUMENT_KEY,
+      })
+      informationSheetCapture = buildOnboardingInformationSheetCapture({
+        transaction,
+        onboarding: updatedOnboarding,
+        formData: formDataForPersistence,
+        existingRequirement: existingInformationSheetRequirement,
+        capturedAt: now,
+        source: 'buyer_onboarding_completed',
+      })
+
+      await updateTransactionRequiredDocumentCaptureIfPossible(client, {
+        transactionId: transaction.id,
+        documentKey: informationSheetCapture.documentKey,
+        requirementId: informationSheetCapture.requirementId,
+        patch: informationSheetCapture.requirementPatch,
+      })
+
+      if (informationSheetCapture.workflowEvidence) {
+        try {
+          await processWorkflowEvidenceIfPossible(client, {
+            transactionId: transaction.id,
+            ...informationSheetCapture.workflowEvidence,
+            createdBy: null,
+            payload: {
+              captureKind: informationSheetCapture.captureKind,
+              documentKey: informationSheetCapture.documentKey,
+              onboardingId: updatedOnboarding.id,
+              uploadedDocumentId: informationSheetCapture.uploadedDocumentId,
+            },
+          })
+        } catch (informationSheetEvidenceError) {
+          if (!isPermissionDeniedError(informationSheetEvidenceError) && !isMissingSchemaError(informationSheetEvidenceError)) {
+            throw informationSheetEvidenceError
+          }
+          console.warn('Information sheet workflow evidence projection skipped', informationSheetEvidenceError)
         }
-        console.warn('Information sheet document capture event skipped', informationSheetEventError)
       }
+
+      if (informationSheetCapture.event) {
+        try {
+          await logTransactionEventIfPossible(client, {
+            transactionId: transaction.id,
+            eventType: informationSheetCapture.event.type,
+            createdByRole: 'client',
+            eventData: {
+              ...informationSheetCapture.event.data,
+              version: informationSheetCapture.version,
+              status: informationSheetCapture.status,
+              isUploaded: informationSheetCapture.isUploaded,
+            },
+          })
+        } catch (informationSheetEventError) {
+          if (!isPermissionDeniedError(informationSheetEventError) && !isMissingSchemaError(informationSheetEventError)) {
+            throw informationSheetEventError
+          }
+          console.warn('Information sheet document capture event skipped', informationSheetEventError)
+        }
+      }
+    } catch (informationSheetError) {
+      console.warn('Buyer onboarding information sheet projection failed after snapshot save', informationSheetError)
+      await recordBuyerOnboardingProjectionFailureMarker(client, {
+        ...projectionMarkerContext,
+        eventType: 'buyer_onboarding_information_sheet_projection_failed',
+        projection: 'information_sheet',
+        error: informationSheetError,
+      })
     }
 
     try {
@@ -39637,10 +39792,13 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
         source: 'buyer_onboarding_completed',
       })
     } catch (roleplayerRequestError) {
-      if (!isMissingSchemaError(roleplayerRequestError) && !isPermissionDeniedError(roleplayerRequestError)) {
-        throw roleplayerRequestError
-      }
       console.warn('Buyer bond originator request processing failed', roleplayerRequestError)
+      await recordBuyerOnboardingProjectionFailureMarker(client, {
+        ...projectionMarkerContext,
+        eventType: 'buyer_onboarding_roleplayer_projection_failed',
+        projection: 'buyer_bond_originator_roleplayer',
+        error: roleplayerRequestError,
+      })
     }
 
     // The token-bound snapshot RPC has already recorded the immutable
@@ -39662,17 +39820,36 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
         },
       })
     } catch (workflowEvidenceError) {
-      if (!isPermissionDeniedError(workflowEvidenceError) && !isMissingSchemaError(workflowEvidenceError)) {
-        throw workflowEvidenceError
-      }
       console.warn('Onboarding workflow evidence projection skipped', workflowEvidenceError)
+      await recordBuyerOnboardingProjectionFailureMarker(client, {
+        ...projectionMarkerContext,
+        eventType: 'buyer_onboarding_workflow_evidence_projection_failed',
+        projection: 'workflow_evidence',
+        error: workflowEvidenceError,
+      })
     }
 
-    const otpPendingState = await markTransactionAwaitingSignedOtp(client, {
-      transactionId: transaction.id,
-      formData: formDataForPersistence,
+    let otpPendingState = {
+      onboardingStatus: 'awaiting_signed_otp',
+      nextAction: onboardingNextAction,
       completedAt: now,
-    })
+    }
+    try {
+      otpPendingState =
+        (await markTransactionAwaitingSignedOtp(client, {
+          transactionId: transaction.id,
+          formData: formDataForPersistence,
+          completedAt: now,
+        })) || otpPendingState
+    } catch (otpProjectionError) {
+      console.warn('Buyer onboarding awaiting-signed-OTP projection failed after snapshot save', otpProjectionError)
+      await recordBuyerOnboardingProjectionFailureMarker(client, {
+        ...projectionMarkerContext,
+        eventType: 'buyer_onboarding_awaiting_signed_otp_projection_failed',
+        projection: 'awaiting_signed_otp',
+        error: otpProjectionError,
+      })
+    }
 
     let completionRolePlayers = []
     try {
@@ -39867,10 +40044,13 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
         },
       })
     } catch (financeEventError) {
-      if (!isPermissionDeniedError(financeEventError) && !isMissingSchemaError(financeEventError)) {
-        throw financeEventError
-      }
       console.warn('Buyer finance event projection skipped', financeEventError)
+      await recordBuyerOnboardingProjectionFailureMarker(client, {
+        ...projectionMarkerContext,
+        eventType: 'buyer_onboarding_finance_event_projection_failed',
+        projection: 'finance_type_event',
+        error: financeEventError,
+      })
     }
 
     await addTransactionDiscussionComment({
@@ -39966,6 +40146,336 @@ export async function submitClientOnboarding({ token, formData }) {
     formData,
     submit: true,
   })
+}
+
+async function resolveBuyerOnboardingProjectionRepairTargets(
+  client,
+  { transactionId = '', projections = [], useRecoveryMarkers = true } = {},
+) {
+  const explicitTargets = normalizeBuyerOnboardingRepairProjectionList(projections)
+  if (explicitTargets.length) return explicitTargets
+
+  if (!useRecoveryMarkers) {
+    return [...BUYER_ONBOARDING_REPAIRABLE_PROJECTIONS]
+  }
+
+  const markerEventTypes = Object.values(BUYER_ONBOARDING_PROJECTION_REPAIR_EVENT_TYPES)
+  const markerQuery = await client
+    .from('transaction_events')
+    .select('event_type, event_data, created_at')
+    .eq('transaction_id', transactionId)
+    .in('event_type', markerEventTypes)
+    .order('created_at', { ascending: false })
+
+  if (markerQuery.error) {
+    if (
+      isMissingTableError(markerQuery.error, 'transaction_events') ||
+      isMissingSchemaError(markerQuery.error) ||
+      isPermissionDeniedError(markerQuery.error)
+    ) {
+      return [...BUYER_ONBOARDING_REPAIRABLE_PROJECTIONS]
+    }
+    throw markerQuery.error
+  }
+
+  const markerTargets = (markerQuery.data || [])
+    .filter((event) => event?.event_data?.recoveryRequired !== false)
+    .map((event) => normalizeBuyerOnboardingRepairProjection(event.event_data?.projection || event.event_type))
+    .filter(Boolean)
+
+  return markerTargets.length ? [...new Set(markerTargets)] : [...BUYER_ONBOARDING_REPAIRABLE_PROJECTIONS]
+}
+
+function isBuyerOnboardingSubmittedForProjectionRepair(transaction = {}, onboarding = null) {
+  const transactionStatus = normalizeTextValue(transaction?.onboarding_status || transaction?.onboardingStatus)
+    .toLowerCase()
+  const onboardingStatus = normalizeTextValue(onboarding?.status).toLowerCase()
+  return (
+    ['awaiting_signed_otp', 'signed_otp_received', 'client_onboarding_complete'].includes(transactionStatus) ||
+    ['submitted', 'reviewed', 'approved'].includes(onboardingStatus) ||
+    Boolean(transaction?.onboarding_completed_at || transaction?.onboardingCompletedAt) ||
+    Boolean(transaction?.external_onboarding_submitted_at || transaction?.externalOnboardingSubmittedAt) ||
+    Boolean(onboarding?.submittedAt || onboarding?.submitted_at)
+  )
+}
+
+async function runBuyerOnboardingProjectionRepair(client, projection, context) {
+  const {
+    transaction,
+    buyer,
+    onboarding,
+    formData,
+    purchaserType,
+    financeSnapshot,
+    rolePlayerPolicy,
+    buyerBondOriginatorRequest,
+    completedAt,
+  } = context
+  const transactionId = transaction.id
+
+  if (projection === 'required_documents') {
+    return ensureTransactionRequiredDocuments(client, {
+      transactionId,
+      purchaserType,
+      financeType: financeSnapshot.financeType,
+      reservationRequired: financeSnapshot.reservationRequired,
+      cashAmount: financeSnapshot.cashAmount,
+      bondAmount: financeSnapshot.bondAmount,
+      formData,
+    })
+  }
+
+  if (projection === 'platform_fee_consent') {
+    if (!isPlatformFeeConsentAccepted(formData, 'buyer')) {
+      return { skipped: true, reason: 'platform_fee_consent_not_accepted' }
+    }
+    if (!onboarding?.token) {
+      throw new Error('Active buyer onboarding token is required to replay platform fee consent.')
+    }
+    const tokenClient = requireOnboardingTokenClient(onboarding.token)
+    return acceptBuyerPlatformFeeConsent(tokenClient, {
+      transaction,
+      buyer,
+      formData,
+      onboarding,
+      acceptedAt: completedAt || new Date().toISOString(),
+    })
+  }
+
+  if (projection === 'information_sheet') {
+    const capturedAt = completedAt || new Date().toISOString()
+    const existingRequirement = await fetchTransactionRequiredDocumentByKeyIfPossible(client, {
+      transactionId,
+      documentKey: INFORMATION_SHEET_DOCUMENT_KEY,
+    })
+    const informationSheetCapture = buildOnboardingInformationSheetCapture({
+      transaction,
+      onboarding,
+      formData,
+      existingRequirement,
+      capturedAt,
+      source: 'buyer_onboarding_projection_replay',
+    })
+
+    await updateTransactionRequiredDocumentCaptureIfPossible(client, {
+      transactionId,
+      documentKey: informationSheetCapture.documentKey,
+      requirementId: informationSheetCapture.requirementId,
+      patch: informationSheetCapture.requirementPatch,
+    })
+
+    if (informationSheetCapture.workflowEvidence) {
+      await processWorkflowEvidenceIfPossible(client, {
+        transactionId,
+        ...informationSheetCapture.workflowEvidence,
+        createdBy: null,
+        payload: {
+          captureKind: informationSheetCapture.captureKind,
+          documentKey: informationSheetCapture.documentKey,
+          onboardingId: onboarding?.id || null,
+          uploadedDocumentId: informationSheetCapture.uploadedDocumentId,
+        },
+      })
+    }
+
+    return informationSheetCapture
+  }
+
+  if (projection === 'roleplayer') {
+    await upsertBondApplicationConsent(client, {
+      transaction,
+      request: buyerBondOriginatorRequest,
+      actorRole: 'system_repair',
+    })
+    return processBuyerAppointedBondOriginatorRequest(client, {
+      transaction,
+      buyer,
+      formData,
+      policy: rolePlayerPolicy,
+      request: buyerBondOriginatorRequest,
+      source: 'buyer_onboarding_projection_replay',
+    })
+  }
+
+  if (projection === 'workflow_evidence') {
+    return processWorkflowEvidenceIfPossible(client, {
+      transactionId,
+      evidenceType: 'onboarding',
+      evidenceId: onboarding?.id || null,
+      evidenceKey: 'buyer_onboarding_complete',
+      status: 'completed',
+      source: 'buyer_onboarding_projection_replay',
+      createdBy: null,
+      payload: {
+        purchaserType,
+        financeType: financeSnapshot.financeType,
+      },
+    })
+  }
+
+  if (projection === 'awaiting_signed_otp') {
+    return markTransactionAwaitingSignedOtp(client, {
+      transactionId,
+      formData,
+      completedAt: completedAt || new Date().toISOString(),
+    })
+  }
+
+  if (projection === 'finance_event') {
+    return logTransactionEventIfPossible(client, {
+      transactionId,
+      eventType: 'finance_type_selected',
+      createdByRole: 'system_repair',
+      eventData: {
+        source: 'buyer_onboarding_projection_replay',
+        financeType: financeSnapshot.financeType,
+      },
+    })
+  }
+
+  return { skipped: true, reason: 'unsupported_projection' }
+}
+
+export async function replayBuyerOnboardingProjections({
+  transactionId,
+  projections = [],
+  useRecoveryMarkers = true,
+  actorRole = null,
+  throwOnFailure = false,
+} = {}) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) throw new Error('Transaction is required.')
+
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'agent')
+  if (!['agent', 'agency_admin', 'developer', 'internal_admin', 'admin', 'platform_admin'].includes(normalizedActorRole)) {
+    throw new Error('Your role does not have permission to repair buyer onboarding projections.')
+  }
+
+  const { transaction, unit, buyer } = await resolveTransactionAndContext(client, normalizedTransactionId)
+  const onboarding = await getOrCreateTransactionOnboardingRecord(
+    client,
+    {
+      transactionId: normalizedTransactionId,
+      purchaserType: transaction.purchaser_type || 'individual',
+    },
+    { createIfMissing: false },
+  )
+  if (!onboarding?.id) {
+    throw new Error('Transaction onboarding record was not found.')
+  }
+  if (!isBuyerOnboardingSubmittedForProjectionRepair(transaction, onboarding)) {
+    throw new Error('Buyer onboarding must be submitted before projections can be replayed.')
+  }
+
+  const formDataRow = await fetchOnboardingFormDataForTransaction(
+    client,
+    normalizedTransactionId,
+    transaction.purchaser_type || onboarding.purchaserType || 'individual',
+  )
+  const formData = formDataRow?.formData || {}
+  const purchaserType = normalizePurchaserType(formData.purchaser_type || transaction.purchaser_type || onboarding.purchaserType)
+  const financeSnapshot = getOnboardingFinanceSnapshot({ formData, transaction })
+  const completedAt =
+    transaction.onboarding_completed_at ||
+    transaction.external_onboarding_submitted_at ||
+    onboarding.submittedAt ||
+    onboarding.updatedAt ||
+    new Date().toISOString()
+
+  const developmentId = unit?.development_id || transaction.development_id
+  let rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(DEFAULT_DEVELOPMENT_SETTINGS)
+  if (developmentId) {
+    try {
+      const developmentSettings = await ensureDevelopmentSettings(client, developmentId, {
+        createIfMissing: false,
+      })
+      rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(developmentSettings)
+    } catch (settingsError) {
+      if (!isMissingSchemaError(settingsError) && !isPermissionDeniedError(settingsError)) {
+        throw settingsError
+      }
+    }
+  }
+
+  const buyerBondOriginatorRequest = getBuyerAppointedBondOriginatorRequest({
+    formData,
+    transaction,
+    buyer,
+    policy: rolePlayerPolicy,
+    now: completedAt,
+  })
+  const targets = await resolveBuyerOnboardingProjectionRepairTargets(client, {
+    transactionId: normalizedTransactionId,
+    projections,
+    useRecoveryMarkers,
+  })
+  const context = {
+    transaction,
+    unit,
+    buyer,
+    onboarding,
+    formData,
+    purchaserType,
+    financeSnapshot,
+    rolePlayerPolicy,
+    buyerBondOriginatorRequest,
+    completedAt,
+  }
+  const results = []
+
+  for (const projection of targets) {
+    try {
+      const result = await runBuyerOnboardingProjectionRepair(client, projection, context)
+      results.push({ projection, status: result?.skipped ? 'skipped' : 'repaired', result: result || null })
+    } catch (error) {
+      const failure = {
+        projection,
+        status: 'failed',
+        errorCategory: getBuyerOnboardingProjectionErrorCategory(error),
+        errorCode: normalizeNullableText(error?.code || error?.status || error?.statusCode),
+        message: normalizeTextValue(error?.message || String(error)),
+      }
+      results.push(failure)
+      if (throwOnFailure) throw error
+    }
+  }
+
+  const failedCount = results.filter((result) => result.status === 'failed').length
+  const repairedCount = results.filter((result) => result.status === 'repaired').length
+  const skippedCount = results.filter((result) => result.status === 'skipped').length
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: normalizedTransactionId,
+    eventType: failedCount ? 'buyer_onboarding_projection_replay_failed' : 'buyer_onboarding_projection_replay_completed',
+    createdBy: actorProfile.userId || null,
+    createdByRole: normalizedActorRole,
+    eventData: {
+      source: 'buyer_onboarding_projection_replay',
+      projections: targets,
+      repairedCount,
+      skippedCount,
+      failedCount,
+      results: results.map((result) => ({
+        projection: result.projection,
+        status: result.status,
+        errorCategory: result.errorCategory || null,
+        errorCode: result.errorCode || null,
+      })),
+    },
+  }).catch((eventError) => {
+    console.warn('Buyer onboarding projection replay summary could not be recorded', eventError)
+  })
+
+  return {
+    transactionId: normalizedTransactionId,
+    projections: targets,
+    repairedCount,
+    skippedCount,
+    failedCount,
+    results,
+  }
 }
 
 async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
