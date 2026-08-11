@@ -635,3 +635,39 @@ No production deployment is authorized from Phase 8. Open the reconciliation PR 
 Draft reconciliation PR:
 
 - https://github.com/alexlandman1998-123/bridge/pull/16
+
+## Buyer Diagnostic Repair Phase 4
+
+Purpose: repair and rerun the buyer-facing diagnostics after the Offers / OTP workspace forward-port so stale expectations cannot hide a rollback.
+
+Current result:
+
+- no runtime buyer workflow code needed another patch in Phase 4
+- no executable buyer diagnostic needed another assertion repair in Phase 4
+- the remaining old buyer strings found by the scan are historical notes in this reconciliation log, compatibility aliases such as `onboarding_otp`, or valid default public-offer copy for non-countered links
+- PR #16 Vercel checks are green for both `bridge` and `bridge-admin`; Supabase Preview remains skipped by its integration
+
+Buyer surfaces covered:
+
+- `AgentLeadsPage.jsx` keeps `offers` as the canonical buyer deal-progression tab
+- legacy buyer URL aliases such as `onboarding_otp`, `otp`, `buyer_onboarding`, and `buyer_onboarding_otp` still normalize into Offers
+- buyer workspace tabs expose `Property Match` and `Offers`
+- buyer next actions open Offers instead of the retired Onboarding / OTP tab
+- public buyer offer links keep `Submit Buyer Onboarding` for first submission and `Submit Revised Offer` for seller-countered links
+- buyer onboarding keeps the bond-originator handoff contract without exposing originator contact fields in the buyer intake
+
+Verification:
+
+- `gh pr checks 16`
+- `rg -n "Open Onboarding / OTP|label: 'Onboarding / OTP'|label: 'Properties'|BUYER_ONBOARDING_OTP_TAB_KEY = 'onboarding_otp'|Submit Buyer Onboarding|Submit Revised Offer|already under review" the-it-guy/scripts/*.mjs`
+- `npm run test:buyer-process-global-diagnostic`
+- `npm run verify:otp-chapter1`
+- `npm run test:agency-pipeline-buyer-offer-workspace-phase2`
+- `npm run test:agent-leads-workspace`
+- `npm run test:lead-ingestion`
+- `npm run test:viewing-workflow-qa`
+- `npm run test:show-day-phase5`
+- `npm run test:buyer-offer-branding-regression`
+- `npm run test:buyer-onboarding-flow-contract`
+- `npm run test:buyer-onboarding-sa-scenarios`
+- `npm run test:buyer-onboarding-originator-handoff-phase3`
