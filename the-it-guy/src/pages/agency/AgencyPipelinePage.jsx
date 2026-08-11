@@ -690,6 +690,7 @@ const KINGSTONS_SELLER_PACK_KEY_SET = new Set(KINGSTONS_SELLER_PACK_DOCUMENTS.ma
 const KINGSTONS_SELLER_PACK_STORAGE_FOLDER = 'kingstons-seller-pack'
 const KINGSTONS_FORMAL_VALUATION_STORAGE_FOLDER = 'kingstons-formal-valuations'
 const BUYER_OFFER_DOCUMENT_STORAGE_FOLDER = 'buyer-offer-documents'
+const LEAD_WORKSPACE_DOCUMENT_STORAGE_FOLDER = 'lead-workspace-documents'
 const BUYER_OFFER_DOCUMENT_TYPE = 'buyer_offer'
 const BUYER_OFFER_DOCUMENT_LABEL = 'Signed OTP'
 const KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE = 'kingstons_seller_pack_phase4_listing_handoff'
@@ -2814,6 +2815,21 @@ async function uploadBuyerOfferDocumentFile({
   })
 }
 
+async function uploadLeadWorkspaceDocumentFile({
+  file,
+  organisationId = '',
+  leadId = '',
+  documentKey = '',
+} = {}) {
+  return uploadKingstonsSellerPackFile({
+    file,
+    organisationId,
+    leadId,
+    documentKey,
+    storageFolder: LEAD_WORKSPACE_DOCUMENT_STORAGE_FOLDER,
+  })
+}
+
 function resolveAgencyOfferEmailBranding({ organisationId = '', organisationName = '', profile = {}, currentWorkspace = {}, workspace = {} } = {}) {
   const resolved = resolveOnboardingBranding(currentWorkspace, workspace, profile)
   const fallbackName = normalizeText(
@@ -3386,7 +3402,7 @@ function isStaleMandateGenerationRecoveryMessage(value = '') {
 }
 
 const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity', 'listing_journey'])
-const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'properties', 'appointments', 'activity', 'offers'])
+const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'properties', 'appointments', 'documents', 'activity', 'offers'])
 
 function resolveLeadWorkspaceTabFromSearch(search = '') {
   if (!search) return 'overview'
@@ -3613,6 +3629,61 @@ function sellerLeadDocumentHasFileEvidence(row = {}) {
       row?.uploadedAt ||
       row?.uploaded_at,
   )
+}
+
+function normalizeLeadWorkspaceDocumentArray(value) {
+  if (Array.isArray(value)) return value.filter((row) => row && typeof row === 'object')
+  if (value && typeof value === 'object') return Object.values(value).filter((row) => row && typeof row === 'object')
+  return []
+}
+
+function getLeadWorkspaceUploadedDocuments(lead = {}, leadType = 'all') {
+  const leadRecord = lead && typeof lead === 'object' ? lead : {}
+  const rawPayload = parseLeadRawEnquiryPayload(leadRecord.rawEnquiryPayload || leadRecord.raw_enquiry_payload)
+  const includeBuyer = leadType === 'all' || leadType === 'buyer'
+  const includeSeller = leadType === 'all' || leadType === 'seller'
+  return [
+    ...normalizeLeadWorkspaceDocumentArray(rawPayload.leadDocuments),
+    ...normalizeLeadWorkspaceDocumentArray(rawPayload.uploadedDocuments),
+    ...normalizeLeadWorkspaceDocumentArray(leadRecord.leadDocuments),
+    ...normalizeLeadWorkspaceDocumentArray(leadRecord.uploadedDocuments),
+    ...(includeBuyer ? [
+      ...normalizeLeadWorkspaceDocumentArray(rawPayload.buyerDocuments),
+      ...normalizeLeadWorkspaceDocumentArray(leadRecord.buyerDocuments),
+    ] : []),
+    ...(includeSeller ? [
+      ...normalizeLeadWorkspaceDocumentArray(rawPayload.sellerDocuments),
+      ...normalizeLeadWorkspaceDocumentArray(leadRecord.sellerDocuments),
+    ] : []),
+  ]
+}
+
+function documentLookupKeys(row = {}) {
+  return [
+    row?.key,
+    row?.id,
+    row?.requirementKey,
+    row?.requirement_key,
+    row?.documentType,
+    row?.document_type,
+    row?.documentDefinitionKey,
+    row?.document_definition_key,
+    row?.label,
+    row?.title,
+  ].map((value) => normalizeKey(value)).filter(Boolean)
+}
+
+function mergeLeadWorkspaceUploadedDocument(documentRow = {}, uploadedDocuments = []) {
+  const lookupKeys = new Set(documentLookupKeys(documentRow))
+  const uploaded = (Array.isArray(uploadedDocuments) ? uploadedDocuments : []).find((candidate) =>
+    documentLookupKeys(candidate).some((key) => lookupKeys.has(key)),
+  )
+  if (!uploaded) return documentRow
+  return mergeSellerLeadDocumentRows(documentRow, {
+    ...uploaded,
+    status: uploaded.status || 'uploaded',
+    statusLabel: uploaded.statusLabel || uploaded.status || 'Uploaded',
+  })
 }
 
 function mergeSellerLeadDocumentRows(existing = {}, incoming = {}) {
@@ -3916,6 +3987,7 @@ function buildSellerLeadDocumentRowsFromSource({
 } = {}) {
   const listingRecord = listing && typeof listing === 'object' ? listing : {}
   const leadRecord = lead && typeof lead === 'object' ? lead : {}
+  const sellerLeadUploadedDocuments = getLeadWorkspaceUploadedDocuments(leadRecord, 'seller')
   const formData = {
     ...getListingSellerFormData(listingRecord),
     ...getLeadSellerOnboardingFormData(leadRecord),
@@ -3923,6 +3995,7 @@ function buildSellerLeadDocumentRowsFromSource({
   const documents = [
     ...(Array.isArray(listingRecord?.documents) ? listingRecord.documents : []),
     ...(Array.isArray(journey?.documents) ? journey.documents.map((document) => document?.original?.document || document).filter(Boolean) : []),
+    ...sellerLeadUploadedDocuments,
   ]
   const sourceListing = {
     ...leadRecord,
@@ -4187,6 +4260,7 @@ function buildBuyerFicaRoleplayerModel({
   formData = {},
   transaction = {},
   onboardingSubmitted = false,
+  uploadedDocuments = [],
 } = {}) {
   let configuration = null
   try {
@@ -4222,19 +4296,26 @@ function buildBuyerFicaRoleplayerModel({
     })
 
   return roleplayers.map((roleplayer) => {
-    const items = getBuyerFicaRoleplayerDocumentDefinitions(roleplayer).map((definition, index) => ({
-      ...definition,
-      id: normalizeKey(`buyer_fica_${roleplayer.id}_${definition.key}`),
-      key: normalizeKey(`buyer_fica_${roleplayer.id}_${definition.key}`),
-      label: definition.label,
-      title: definition.label,
-      description: definition.description,
-      required: true,
-      status: onboardingSubmitted ? 'In review' : 'Not requested',
-      statusLabel: onboardingSubmitted ? 'In review' : 'Not requested',
-      ficaDocumentOrder: index,
-      fica_document_order: index,
-    }))
+    const items = getBuyerFicaRoleplayerDocumentDefinitions(roleplayer).map((definition, index) => {
+      const row = {
+        ...definition,
+        id: normalizeKey(`buyer_fica_${roleplayer.id}_${definition.key}`),
+        key: normalizeKey(`buyer_fica_${roleplayer.id}_${definition.key}`),
+        requirementKey: definition.key,
+        requirement_key: definition.key,
+        label: definition.label,
+        title: definition.label,
+        description: definition.description,
+        category: 'buyer_fica',
+        document_category: 'buyer_fica',
+        required: true,
+        status: onboardingSubmitted ? 'In review' : 'Not requested',
+        statusLabel: onboardingSubmitted ? 'In review' : 'Not requested',
+        ficaDocumentOrder: index,
+        fica_document_order: index,
+      }
+      return mergeLeadWorkspaceUploadedDocument(row, uploadedDocuments)
+    })
     return {
       id: roleplayer.id,
       role: roleplayer.role,
@@ -4971,7 +5052,7 @@ function getBuyerUrgencyClassName(label = '') {
 function resolveBuyerWorkspaceTabKey(tabKey = '') {
   const normalized = normalizeText(tabKey)
   if (normalized === 'activities') return 'activity'
-  if (['documents', 'insights', 'mapping'].includes(normalized)) return 'overview'
+  if (['insights', 'mapping'].includes(normalized)) return 'overview'
   return normalized
 }
 
@@ -9220,6 +9301,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerPackUploadingKey, setSellerPackUploadingKey] = useState('')
   const [formalValuationUploading, setFormalValuationUploading] = useState(false)
   const [buyerOfferDocumentUploading, setBuyerOfferDocumentUploading] = useState(false)
+  const [leadDocumentUploadingKey, setLeadDocumentUploadingKey] = useState('')
   const [activeSellerFicaRoleplayerId, setActiveSellerFicaRoleplayerId] = useState('')
   const [activeBuyerFicaRoleplayerId, setActiveBuyerFicaRoleplayerId] = useState('')
   const formalValuationUploadInputRef = useRef(null)
@@ -12002,7 +12084,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('overview')
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
     }
-    if (!selectedLeadIsSeller && ['seller', 'property', 'mandate', 'listing_journey', 'documents', 'insights', 'mapping'].includes(leadWorkspaceTab)) {
+    if (!selectedLeadIsSeller && ['seller', 'property', 'mandate', 'listing_journey', 'insights', 'mapping'].includes(leadWorkspaceTab)) {
       setLeadWorkspaceTab('overview')
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
     }
@@ -13596,6 +13678,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [selectedLeadDisplayName, selectedSellerDocumentCategories],
   )
 
+  const selectedBuyerDocumentUploads = useMemo(
+    () => getLeadWorkspaceUploadedDocuments(selectedLead || {}, 'buyer'),
+    [selectedLead],
+  )
+
   const selectedBuyerFicaRoleplayerModel = useMemo(
     () => buildBuyerFicaRoleplayerModel({
       lead: selectedLead || {},
@@ -13603,13 +13690,80 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       formData: selectedLeadBuyerInfoFormData || {},
       transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {},
       onboardingSubmitted: selectedLeadBuyerOnboardingSubmitted,
+      uploadedDocuments: selectedBuyerDocumentUploads,
     }),
     [
       selectedLead,
       selectedLeadBuyerOnboardingSubmitted,
+      selectedBuyerDocumentUploads,
       selectedLeadContact,
       selectedLeadBuyerInfoFormData,
       selectedLeadLinkedTransaction,
+    ],
+  )
+
+  const selectedBuyerDocumentRows = useMemo(
+    () => [
+      {
+        id: 'buyer-upload',
+        key: 'buyer_upload_pack',
+        requirementKey: 'buyer_upload_pack',
+        requirement_key: 'buyer_upload_pack',
+        label: 'Buyer upload pack',
+        title: 'Buyer upload pack',
+        status: selectedLeadBuyerOnboardingSubmitted ? 'Submitted' : 'Pending',
+        statusLabel: selectedLeadBuyerOnboardingSubmitted ? 'Submitted' : 'Pending',
+        category: 'buyer_documents',
+        document_category: 'buyer_documents',
+        required: true,
+      },
+      {
+        id: 'fica',
+        key: 'buyer_fica_documents',
+        requirementKey: 'buyer_fica_documents',
+        requirement_key: 'buyer_fica_documents',
+        label: 'FICA documents',
+        title: 'FICA documents',
+        status: selectedLeadBuyerOnboardingSubmitted ? 'In review' : 'Not requested',
+        statusLabel: selectedLeadBuyerOnboardingSubmitted ? 'In review' : 'Not requested',
+        category: 'buyer_fica',
+        document_category: 'buyer_fica',
+        required: true,
+      },
+      {
+        id: 'offer-document',
+        key: BUYER_OFFER_DOCUMENT_TYPE,
+        requirementKey: BUYER_OFFER_DOCUMENT_TYPE,
+        requirement_key: BUYER_OFFER_DOCUMENT_TYPE,
+        label: 'Uploaded offer document',
+        title: 'Uploaded offer document',
+        status: selectedLeadBuyerOfferDocumentUploaded ? `${selectedLeadOfferSummary.total || 1} offer record${(selectedLeadOfferSummary.total || 1) === 1 ? '' : 's'}` : 'Upload required',
+        statusLabel: selectedLeadBuyerOfferDocumentUploaded ? 'Uploaded' : 'Upload required',
+        category: 'buyer_offer',
+        document_category: 'buyer_offer',
+        required: true,
+        uploadMode: 'buyer_offer',
+      },
+      {
+        id: 'preapproval',
+        key: 'buyer_preapproval_documents',
+        requirementKey: 'buyer_preapproval_documents',
+        requirement_key: 'buyer_preapproval_documents',
+        label: 'Pre-approval documents',
+        title: 'Pre-approval documents',
+        status: selectedLeadFinanceReadinessSummary.confidenceLabel || 'Not captured',
+        statusLabel: selectedLeadFinanceReadinessSummary.confidenceLabel || 'Not captured',
+        category: 'buyer_finance',
+        document_category: 'buyer_finance',
+        required: false,
+      },
+    ].map((documentRow) => mergeLeadWorkspaceUploadedDocument(documentRow, selectedBuyerDocumentUploads)),
+    [
+      selectedBuyerDocumentUploads,
+      selectedLeadBuyerOfferDocumentUploaded,
+      selectedLeadBuyerOnboardingSubmitted,
+      selectedLeadFinanceReadinessSummary.confidenceLabel,
+      selectedLeadOfferSummary.total,
     ],
   )
 
@@ -22468,6 +22622,171 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function handleUploadLeadWorkspaceDocument(documentRow = {}, event = null, {
+    leadType = selectedLeadIsSeller ? 'seller' : 'buyer',
+    categoryKey = '',
+  } = {}) {
+    const file = event?.target?.files?.[0] || null
+    if (event?.target) event.target.value = ''
+    const leadIdForUpload = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLeadRecordId || routeLeadId)
+    if (!organisationId || !selectedLead || !file || !leadIdForUpload) return
+
+    const documentKey = normalizeKey(
+      documentRow.key ||
+        documentRow.requirementKey ||
+        documentRow.requirement_key ||
+        documentRow.documentType ||
+        documentRow.document_type ||
+        documentRow.id ||
+        documentRow.label ||
+        documentRow.title ||
+        'lead_document',
+    )
+    const uploadKey = `${leadType}:${documentKey}`
+    const uploadedAt = new Date().toISOString()
+    const documentLabel = normalizeText(documentRow.label || documentRow.title || documentRow.name) || 'Document'
+
+    try {
+      setLeadDocumentUploadingKey(uploadKey)
+      setError('')
+      const upload = await withPipelineTimeout(
+        uploadLeadWorkspaceDocumentFile({
+          file,
+          organisationId,
+          leadId: leadIdForUpload,
+          documentKey,
+        }),
+        'Document upload is taking too long. Please check your connection and try again.',
+        30000,
+      )
+      const uploadedDocument = {
+        ...documentRow,
+        id: documentRow.id || documentKey,
+        key: documentKey,
+        requirementKey: normalizeKey(documentRow.requirementKey || documentRow.requirement_key || documentKey),
+        requirement_key: normalizeKey(documentRow.requirementKey || documentRow.requirement_key || documentKey),
+        documentType: normalizeKey(documentRow.documentType || documentRow.document_type || documentKey),
+        document_type: normalizeKey(documentRow.documentType || documentRow.document_type || documentKey),
+        label: documentLabel,
+        title: documentLabel,
+        category: categoryKey || documentRow.category || documentRow.document_category || `${leadType}_documents`,
+        document_category: categoryKey || documentRow.document_category || documentRow.category || `${leadType}_documents`,
+        status: 'uploaded',
+        statusLabel: 'Uploaded',
+        uploadedAt,
+        uploaded_at: uploadedAt,
+        uploadedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+        uploaded_by: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+        uploadedFileName: file.name || documentLabel,
+        uploaded_file_name: file.name || documentLabel,
+        fileName: file.name || documentLabel,
+        file_name: file.name || documentLabel,
+        fileSize: Number(file.size || 0) || null,
+        file_size: Number(file.size || 0) || null,
+        fileType: normalizeText(file.type),
+        file_type: normalizeText(file.type),
+        storageBucket: upload.storageBucket,
+        storage_bucket: upload.storageBucket,
+        storagePath: upload.storagePath,
+        storage_path: upload.storagePath,
+        url: upload.url,
+        fileUrl: upload.url,
+        file_url: upload.url,
+        downloadUrl: upload.url,
+        download_url: upload.url,
+        uploadedByRole: 'agent',
+        uploaded_by_role: 'agent',
+        uploadSource: `${leadType}_lead_agent_document_tab`,
+        upload_source: `${leadType}_lead_agent_document_tab`,
+      }
+
+      const upsertDocument = (rows = []) => {
+        const targetKeys = new Set(documentLookupKeys(uploadedDocument))
+        const remaining = (Array.isArray(rows) ? rows : []).filter((row) =>
+          !documentLookupKeys(row).some((key) => targetKeys.has(key)),
+        )
+        return [uploadedDocument, ...remaining]
+      }
+      const rawPayload = parseLeadRawEnquiryPayload(selectedLead.rawEnquiryPayload || selectedLead.raw_enquiry_payload)
+      const leadDocuments = upsertDocument([
+        ...normalizeLeadWorkspaceDocumentArray(rawPayload.leadDocuments),
+        ...normalizeLeadWorkspaceDocumentArray(selectedLead.leadDocuments),
+      ])
+      const typedKey = leadType === 'seller' ? 'sellerDocuments' : 'buyerDocuments'
+      const typedDocuments = upsertDocument([
+        ...normalizeLeadWorkspaceDocumentArray(rawPayload[typedKey]),
+        ...normalizeLeadWorkspaceDocumentArray(selectedLead[typedKey]),
+      ])
+      const rawEnquiryPayload = {
+        ...rawPayload,
+        leadDocuments,
+        uploadedDocuments: leadDocuments,
+        [typedKey]: typedDocuments,
+      }
+      const leadPatch = {
+        rawEnquiryPayload,
+        leadDocuments,
+        uploadedDocuments: leadDocuments,
+        [typedKey]: typedDocuments,
+      }
+
+      patchSelectedLeadRecord(leadPatch, leadIdForUpload)
+      await withPipelineTimeout(
+        updateAgencyCrmLeadRecord(organisationId, leadIdForUpload, leadPatch),
+        'Document uploaded, but updating the lead record is taking too long.',
+        15000,
+      )
+      await createAgencyCrmLeadActivity(organisationId, leadIdForUpload, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: `${leadType === 'seller' ? 'Seller' : 'Buyer'} Document Uploaded`,
+        activityNote: `${file.name || documentLabel} uploaded by agent for ${documentLabel}.`,
+        outcome: documentLabel,
+        activityDate: uploadedAt,
+      }, { actor: currentAgent }).catch((activityError) => {
+        console.warn('[AgencyPipelinePage] Lead document upload activity could not be recorded.', activityError)
+      })
+
+      const linkedListingId = normalizeText(
+        selectedLeadLinkedListing?.id ||
+          selectedLeadLinkedListing?.listingId ||
+          selectedLeadLinkedListing?.listing_id ||
+          selectedLead?.listingId ||
+          selectedLead?.listing_id ||
+          selectedLead?.privateListingId ||
+          selectedLead?.private_listing_id,
+      )
+      if (leadType === 'seller' && linkedListingId) {
+        await linkPrivateListingDocument(linkedListingId, {
+          requirementKey: uploadedDocument.requirementKey,
+          documentType: uploadedDocument.documentType,
+          documentCategory: uploadedDocument.document_category || uploadedDocument.category,
+          documentName: uploadedDocument.uploadedFileName,
+          filePath: upload.storagePath,
+          fileUrl: upload.storagePath ? '' : upload.url,
+          visibility: 'internal',
+          status: 'uploaded',
+          uploadedAt,
+          metadata: {
+            source: 'seller_lead_agent_document_tab_upload',
+            leadId: leadIdForUpload,
+            documentKey,
+            uploadedByRole: 'agent',
+          },
+        }).catch((linkError) => {
+          console.warn('[AgencyPipelinePage] Lead document uploaded but could not be linked to listing documents.', linkError)
+        })
+      }
+
+      setMessage(`${documentLabel} uploaded for this ${leadType} lead.`)
+      await reloadRecords(organisationId)
+    } catch (uploadError) {
+      setError(uploadError?.message || `Unable to upload ${documentLabel}.`)
+    } finally {
+      setLeadDocumentUploadingKey('')
+      hideDocumentUploadOverlay()
+    }
+  }
+
   function buildLeadViewingCompletionListingRows(appointment, existingRows = []) {
     const mappedExistingRows = (Array.isArray(existingRows) ? existingRows : [])
       .map((row) => {
@@ -26454,11 +26773,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                 {selectedLead && !selectedLeadIsSeller ? (
                   <div className="mx-5 mb-5 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)] sm:mx-7 lg:mx-8" role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
-                    <div className="grid min-w-[680px] grid-cols-5 gap-2">
+                    <div className="grid min-w-[760px] grid-cols-6 gap-2">
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+                        { key: 'documents', label: 'Documents', meta: selectedBuyerDocumentRows.filter((row) => getSellerLeadDocumentStatusMeta(row).state === 'review' || getSellerLeadDocumentStatusMeta(row).state === 'complete').length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                         { key: 'offers', label: 'Offers', meta: selectedLeadOfferSummary.total },
                       ].map((tab) => {
@@ -26738,11 +27058,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </section>
 
 	                  <section className="scroll-mt-4 overflow-x-auto rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_10px_30px_rgba(31,54,78,0.045)]" role="tablist" aria-label="Buyer workspace sections" data-testid="lead-workspace-tabs">
-	                    <div className="grid min-w-[680px] grid-cols-5">
+	                    <div className="grid min-w-[760px] grid-cols-6">
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+                        { key: 'documents', label: 'Documents', meta: selectedBuyerDocumentRows.filter((row) => getSellerLeadDocumentStatusMeta(row).state === 'review' || getSellerLeadDocumentStatusMeta(row).state === 'complete').length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                         { key: 'offers', label: 'Offers', meta: selectedLeadOfferSummary.total },
                       ].map((tab) => {
@@ -31563,10 +31884,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                        )
 	                                        const isKingstonsFicaDocument = documentKey === 'signed_fica_form' || isKingstonsOwnershipDrivenDocument
 	                                        const canUploadKingstonsSellerPackDocument = !isKingstonsFicaDocument || selectedKingstonsSellerPackSummary.sellerTypeCaptured
-	                                        const canUploadKingstonsDocument = isKingstonsFormalValuationDocument ||
-	                                          ((isKingstonsSellerPackDocument || isKingstonsOwnershipDrivenDocument) && canUploadKingstonsSellerPackDocument)
-	                                        const isUploadingKingstonsDocument = isKingstonsFormalValuationDocument ? formalValuationUploading : sellerPackUploadingKey === documentKey
-	                                        return (
+		                                        const canUploadKingstonsDocument = isKingstonsFormalValuationDocument ||
+		                                          ((isKingstonsSellerPackDocument || isKingstonsOwnershipDrivenDocument) && canUploadKingstonsSellerPackDocument)
+		                                        const isUploadingKingstonsDocument = isKingstonsFormalValuationDocument ? formalValuationUploading : sellerPackUploadingKey === documentKey
+		                                        const documentUploadKey = documentKey || normalizeKey(documentRow.id || documentRow.label || documentRow.title || 'lead_document')
+		                                        const isUploadingLeadWorkspaceDocument = leadDocumentUploadingKey === `seller:${documentUploadKey}`
+		                                        const canUploadLeadWorkspaceDocument = !canUploadKingstonsDocument && !(isKingstonsFicaDocument && !selectedKingstonsSellerPackSummary.sellerTypeCaptured)
+		                                        return (
 	                                          <div key={documentRow.id || documentRow.key || documentRow.label} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#e6eef7] bg-white px-4 py-3">
 	                                            <div className="flex min-w-0 items-center gap-3">
                                               <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[13px] ${statusMeta.iconClass}`}>
@@ -31636,10 +31960,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                                  Capture details
 	                                                </button>
 	                                              ) : null}
-	                                              {canUploadKingstonsDocument ? (
-	                                                <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border px-3 text-xs font-semibold transition ${isUploadingKingstonsDocument ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
-	                                                  <Upload className="h-3.5 w-3.5" />
-	                                                  {isUploadingKingstonsDocument ? 'Uploading...' : documentHasFile ? 'Replace' : 'Upload'}
+		                                              {canUploadKingstonsDocument ? (
+		                                                <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border px-3 text-xs font-semibold transition ${isUploadingKingstonsDocument ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
+		                                                  <Upload className="h-3.5 w-3.5" />
+		                                                  {isUploadingKingstonsDocument ? 'Uploading...' : documentHasFile ? 'Replace' : 'Upload'}
 	                                                  <input
 	                                                    ref={isKingstonsFormalValuationDocument ? formalValuationUploadInputRef : null}
 	                                                    type="file"
@@ -31669,11 +31993,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                                      }
 	                                                      void handleKingstonsSellerPackUpload(documentKey, event, documentRow).finally(hideDocumentUploadOverlay)
 	                                                    }}
-	                                                  />
-	                                                </label>
-	                                              ) : null}
-	                                            </div>
-	                                          </div>
+		                                                  />
+		                                                </label>
+		                                              ) : null}
+		                                              {canUploadLeadWorkspaceDocument ? (
+		                                                <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border px-3 text-xs font-semibold transition ${isUploadingLeadWorkspaceDocument ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
+		                                                  <Upload className="h-3.5 w-3.5" />
+		                                                  {isUploadingLeadWorkspaceDocument ? 'Uploading...' : documentHasFile ? 'Replace' : 'Upload'}
+		                                                  <input
+		                                                    type="file"
+		                                                    className="sr-only"
+		                                                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+		                                                    disabled={isUploadingLeadWorkspaceDocument}
+		                                                    onChange={(event) => {
+		                                                      const selectedFile = event.target.files?.[0]
+		                                                      if (!selectedFile) return
+		                                                      showDocumentUploadOverlay({
+		                                                        documentLabel: documentRow.label || documentRow.title || 'Document',
+		                                                        fileName: selectedFile.name,
+		                                                      })
+		                                                      void handleUploadLeadWorkspaceDocument(documentRow, event, {
+		                                                        leadType: 'seller',
+		                                                        categoryKey: category.key,
+		                                                      })
+		                                                    }}
+		                                                  />
+		                                                </label>
+		                                              ) : null}
+		                                            </div>
+		                                          </div>
 	                                        )
                                       }) : (
                                         <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-white px-4 py-5 text-sm font-semibold text-[#7890a8]">
@@ -31769,46 +32117,137 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     })}
                                   </div>
                                   <div className="mt-3 grid gap-2">
-                                    {(activeBuyerFicaRoleplayer?.items || []).map((documentRow) => {
-                                      const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
-                                      const StatusIcon = statusMeta.Icon
-                                      return (
-                                        <div key={documentRow.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-white px-4 py-3">
-                                          <div className="flex min-w-0 items-center gap-3">
+	                                    {(activeBuyerFicaRoleplayer?.items || []).map((documentRow) => {
+	                                      const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
+	                                      const StatusIcon = statusMeta.Icon
+	                                      const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
+	                                      const documentStoragePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
+	                                      const documentHasFile = Boolean(documentUrl || documentStoragePath)
+	                                      const buyerDocumentKey = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key || documentRow.id || documentRow.label || 'buyer_fica_document')
+	                                      const isUploadingBuyerDocument = leadDocumentUploadingKey === `buyer:${buyerDocumentKey}`
+	                                      return (
+	                                        <div key={documentRow.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-white px-4 py-3">
+	                                          <div className="flex min-w-0 items-center gap-3">
                                             <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[12px] ${statusMeta.iconClass}`}>
                                               <StatusIcon className="h-4 w-4" />
                                             </span>
                                             <div className="min-w-0">
                                               <p className="truncate text-sm font-semibold text-[#203a54]" title={documentRow.label}>{documentRow.label}</p>
-                                              <p className="mt-0.5 text-xs font-medium text-[#6a8098]">{documentRow.description}</p>
-                                            </div>
-                                          </div>
-                                          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
-                                        </div>
-                                      )
-                                    })}
+	                                              <p className="mt-0.5 text-xs font-medium text-[#6a8098]">{documentRow.description}</p>
+	                                            </div>
+	                                          </div>
+	                                          <div className="flex items-center gap-2">
+	                                            <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
+	                                            {documentHasFile ? (
+	                                              documentStoragePath || !documentUrl ? (
+	                                                <button
+	                                                  type="button"
+	                                                  onClick={() => void handleDownloadSellerLeadDocumentUrl(documentRow)}
+	                                                  className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]"
+	                                                >
+	                                                  Open <ExternalLink className="h-3.5 w-3.5" />
+	                                                </button>
+	                                              ) : (
+	                                                <a href={documentUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]">
+	                                                  Open <ExternalLink className="h-3.5 w-3.5" />
+	                                                </a>
+	                                              )
+	                                            ) : null}
+	                                            <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border px-3 text-xs font-semibold transition ${isUploadingBuyerDocument ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
+	                                              <Upload className="h-3.5 w-3.5" />
+	                                              {isUploadingBuyerDocument ? 'Uploading...' : documentHasFile ? 'Replace' : 'Upload'}
+	                                              <input
+	                                                type="file"
+	                                                className="sr-only"
+	                                                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+	                                                disabled={isUploadingBuyerDocument}
+	                                                onChange={(event) => {
+	                                                  const selectedFile = event.target.files?.[0]
+	                                                  if (!selectedFile) return
+	                                                  showDocumentUploadOverlay({
+	                                                    documentLabel: documentRow.label || documentRow.title || 'Document',
+	                                                    fileName: selectedFile.name,
+	                                                  })
+	                                                  void handleUploadLeadWorkspaceDocument(documentRow, event, {
+	                                                    leadType: 'buyer',
+	                                                    categoryKey: 'buyer_fica',
+	                                                  })
+	                                                }}
+	                                              />
+	                                            </label>
+	                                          </div>
+	                                        </div>
+	                                      )
+	                                    })}
                                   </div>
                                 </>
                               )
                             })()}
                           </div>
                         ) : null}
-                        <div className="mt-4 grid gap-2" data-testid="seller-documents-list">
-                          {[
-                            { id: 'buyer-upload', label: 'Buyer upload pack', status: selectedLeadBuyerOnboardingSubmitted ? 'Submitted' : 'Pending' },
-                            { id: 'fica', label: 'FICA documents', status: selectedLeadBuyerOnboardingSubmitted ? 'In review' : 'Not requested' },
-	                            { id: 'offer-document', label: 'Uploaded offer document', status: selectedLeadBuyerOfferDocumentUploaded ? `${selectedLeadOfferSummary.total || 1} offer record${(selectedLeadOfferSummary.total || 1) === 1 ? '' : 's'}` : 'Upload required' },
-                            { id: 'preapproval', label: 'Pre-approval documents', status: selectedLeadFinanceReadinessSummary.confidenceLabel || 'Not captured' },
-                          ].map((documentRow) => (
-                            <div key={documentRow.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-4 py-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-[#203a54]">{documentRow.label}</p>
-                                <p className="mt-0.5 text-xs font-medium text-[#6a8098]">{documentRow.status || 'Not uploaded'}</p>
-                              </div>
-                              <span className="rounded-full bg-[#eef3f7] px-2.5 py-1 text-xs font-semibold text-[#7b8ca2]">Pending</span>
-                            </div>
-                          ))}
-                        </div>
+	                        <div className="mt-4 grid gap-2" data-testid="seller-documents-list">
+	                          {selectedBuyerDocumentRows.map((documentRow) => {
+	                            const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
+	                            const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
+	                            const documentStoragePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
+	                            const documentHasFile = Boolean(documentUrl || documentStoragePath)
+	                            const buyerDocumentKey = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key || documentRow.id || documentRow.label || 'buyer_document')
+	                            const isBuyerOfferUpload = documentRow.uploadMode === 'buyer_offer'
+	                            const isUploadingBuyerDocument = isBuyerOfferUpload ? buyerOfferDocumentUploading : leadDocumentUploadingKey === `buyer:${buyerDocumentKey}`
+	                            return (
+	                              <div key={documentRow.id || documentRow.key} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-4 py-3">
+	                                <div className="min-w-0">
+	                                  <p className="truncate text-sm font-semibold text-[#203a54]" title={documentRow.label || documentRow.title}>{documentRow.label || documentRow.title}</p>
+	                                  <p className="mt-0.5 text-xs font-medium text-[#6a8098]">{documentRow.statusLabel || documentRow.status || 'Not uploaded'}</p>
+	                                </div>
+	                                <div className="flex items-center gap-2">
+	                                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusMeta.pillClass}`}>{statusMeta.label}</span>
+	                                  {documentHasFile ? (
+	                                    documentStoragePath || !documentUrl ? (
+	                                      <button
+	                                        type="button"
+	                                        onClick={() => void handleDownloadSellerLeadDocumentUrl(documentRow)}
+	                                        className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]"
+	                                      >
+	                                        Open <ExternalLink className="h-3.5 w-3.5" />
+	                                      </button>
+	                                    ) : (
+	                                      <a href={documentUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]">
+	                                        Open <ExternalLink className="h-3.5 w-3.5" />
+	                                      </a>
+	                                    )
+	                                  ) : null}
+	                                  <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border px-3 text-xs font-semibold transition ${isUploadingBuyerDocument ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
+	                                    <Upload className="h-3.5 w-3.5" />
+	                                    {isUploadingBuyerDocument ? 'Uploading...' : documentHasFile ? 'Replace' : 'Upload'}
+	                                    <input
+	                                      type="file"
+	                                      className="sr-only"
+	                                      accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+	                                      disabled={isUploadingBuyerDocument}
+	                                      onChange={(event) => {
+	                                        const selectedFile = event.target.files?.[0]
+	                                        if (!selectedFile) return
+	                                        showDocumentUploadOverlay({
+	                                          documentLabel: documentRow.label || documentRow.title || 'Document',
+	                                          fileName: selectedFile.name,
+	                                        })
+	                                        if (isBuyerOfferUpload) {
+	                                          void handleUploadBuyerOfferDocument(event).finally(hideDocumentUploadOverlay)
+	                                          return
+	                                        }
+	                                        void handleUploadLeadWorkspaceDocument(documentRow, event, {
+	                                          leadType: 'buyer',
+	                                          categoryKey: documentRow.category || documentRow.document_category || 'buyer_documents',
+	                                        })
+	                                      }}
+	                                    />
+	                                  </label>
+	                                </div>
+	                              </div>
+	                            )
+	                          })}
+	                        </div>
                       </section>
                     )}
                   </div>

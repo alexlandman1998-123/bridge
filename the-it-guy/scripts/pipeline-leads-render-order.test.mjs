@@ -24,4 +24,31 @@ for (const dependencyName of [
   )
 }
 
+assert.match(
+  source,
+  /const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set\(\['overview', 'properties', 'appointments', 'documents', 'activity', 'offers'\]\)/,
+  'Buyer lead workspaces should expose the documents tab.',
+)
+
+assert.match(
+  source,
+  /if \(\['insights', 'mapping'\]\.includes\(normalized\)\) return 'overview'/,
+  'Buyer documents tab should not be remapped back to overview.',
+)
+
+for (const expectedSnippet of [
+  'handleUploadLeadWorkspaceDocument',
+  'leadDocumentUploadingKey',
+  'selectedBuyerDocumentRows',
+  'seller_lead_agent_document_tab_upload',
+  "leadType: 'seller'",
+  "leadType: 'buyer'",
+  'handleUploadBuyerOfferDocument(event).finally(hideDocumentUploadOverlay)',
+]) {
+  assert.ok(
+    source.includes(expectedSnippet),
+    `AgencyPipelinePage.jsx should include ${expectedSnippet}.`,
+  )
+}
+
 console.log('pipeline leads render-order checks passed')
