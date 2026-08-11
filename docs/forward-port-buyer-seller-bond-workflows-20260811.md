@@ -413,3 +413,31 @@ Verification:
 - `npm run test:forward-port-bond-originator-phase5`
 - `npm run test:bond-originator-banks`
 - `npm run build` from `the-it-guy/`
+
+## Phase 8 Verification
+
+Reconciliation closeout and draft PR readiness gate.
+
+Changed:
+
+- `the-it-guy/scripts/forward-port-reconciliation-closeout-phase8.test.mjs`
+- `the-it-guy/package.json`
+
+Behavior guarded:
+
+- Phase 0 through Phase 7 verification sections remain recorded in this reconciliation document
+- targeted phase verification scripts remain wired in `package.json`
+- branch scope stays on `codex/forward-port-buyer-seller-bond-workflows-20260811`
+- reconciliation remains a draft PR/checks-first workflow
+- production deployment remains blocked from this branch
+
+Verification:
+
+- `npm run test:forward-port-reconciliation-closeout-phase8`
+- `git grep -n -E '^(<<<<<<<|=======|>>>>>>>)' -- .`
+- `npm test`
+- `npm run build` from `the-it-guy/`
+
+Deployment decision:
+
+No production deployment is authorized from Phase 8. Open the reconciliation PR as a draft, wait for GitHub and Vercel checks to go green, mark ready only after review, and deploy only from the merged `main` commit after the deployment gate passes.

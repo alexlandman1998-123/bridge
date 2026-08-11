@@ -576,6 +576,7 @@
     "test:forward-port-bond-originator-phase5": "node scripts/forward-port-bond-originator-phase5.test.mjs",
     "test:forward-port-bond-originator-emails-phase6": "node scripts/forward-port-bond-originator-emails-phase6.test.mjs",
     "test:forward-port-supabase-migrations-phase7": "node scripts/forward-port-supabase-migrations-phase7.test.mjs",
+    "test:forward-port-reconciliation-closeout-phase8": "node scripts/forward-port-reconciliation-closeout-phase8.test.mjs",
     "test:buyer-process-global-diagnostic": "node scripts/buyer-process-global-diagnostic.test.mjs",
     "verify:buyer-process-global-diagnostic": "npm run test:buyer-process-global-diagnostic",
     "test:seller-process-evaluator-phase3": "node scripts/seller-process-evaluator-phase3.test.mjs",
