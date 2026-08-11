@@ -14,6 +14,29 @@ The runner is implemented at:
 
 `scripts/reconciliation-verify-batch.mjs`
 
+## Phase 2 Execution
+
+Phase 2, `Finish Current Checks`, is complete as of `2026-08-11 17:08:02 SAST`.
+
+PR #13 check state at completion:
+
+- `Supabase Phase 0 Guard`: passed
+- `Supabase Phase 6 Staging Gate`: passed
+- `Supabase Phase 7 Production Gate`: passed
+- `Supabase Phase 8 Closeout Gate`: passed
+- `Supabase Preview`: skipped
+- `Vercel Preview Comments`: passed
+- `Vercel - bridge`: passed
+- `Vercel - bridge-admin`: passed
+
+The deploy gate was run after the check rollup went green:
+
+```bash
+npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge
+```
+
+Result: blocked as expected because PR #13 remains draft. No deployment is authorized.
+
 ## Batch Names
 
 Use these batch names during the first reconciliation pass:
@@ -46,6 +69,7 @@ Record each batch result here as reconciliation progresses.
 | --- | --- | --- | --- | --- |
 | 2026-08-11 | `seller-process-next-action-fix` | working tree | Passed | `npm run reconcile:verify -- seller-process-next-action-fix` |
 | 2026-08-11 | `deploy-gate` | working tree | Blocked as expected | `npm run reconcile:deploy-gate -- --pr 13 --repo alexlandman1998-123/bridge` found PR #13 is still draft |
+| 2026-08-11 | `phase-2-current-checks` | working tree | Passed with deployment blocked | GitHub and Vercel checks for PR #13 were green; deploy gate blocked only because PR #13 remains draft |
 
 ## Batch-Specific Verification
 
