@@ -20076,13 +20076,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               job: generatedVersionResult?.job || null,
               warnings: generatedVersionResult?.validation?.warnings || [],
             })
-          : draftReadyOnly
-            ? buildMandateDraftReadyStatus({
-                packet: generatedVersionResult?.packet || packet,
-                version: generatedVersionResult?.version || null,
-                warnings: generatedVersionResult?.validation?.warnings || [],
-                actionHint: 'Mandate draft saved. Generate again to continue from the saved source.',
-              })
+	              : draftReadyOnly
+	            ? buildMandateDraftReadyStatus({
+	                packet: generatedVersionResult?.packet || packet,
+	                version: generatedVersionResult?.version || null,
+	                warnings: generatedVersionResult?.validation?.warnings || [],
+	                actionHint: 'Mandate draft saved. Refresh status after the database hot path recovers; do not start a duplicate generation.',
+	              })
           : {
               packetType: 'mandate',
               state: 'generated',
@@ -21848,11 +21848,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           setMandateQuickStartNotice('Mandate generation has started in the background. Signing will unlock automatically when the PDF is ready.')
           return
         }
-        if (generated?.draftReadyOnly === true) {
-          setMandateQuickStartPacketId(mandatePacketId)
-          setMandateQuickStartNotice('Mandate source draft is saved, but the signable PDF was not confirmed before the database timed out. Refresh after the database hot path recovers, then generate once.')
-          return
-        }
+	        if (generated?.draftReadyOnly === true) {
+	          setMandateQuickStartPacketId(mandatePacketId)
+	          setMandateQuickStartNotice('Mandate source draft is saved, but the signable PDF was not confirmed before the database timed out. Refresh status after the database hot path recovers; do not start a duplicate generation.')
+	          return
+	        }
       }
 
       if (!isUuidLike(mandatePacketId)) {

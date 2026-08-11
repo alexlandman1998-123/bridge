@@ -114,16 +114,21 @@ assert.ok(
 
 const quickStartBlock = getFunctionBlock('handleMandateQuickStartGenerateAndSend')
 for (const reference of [
-  'selectedLeadMandateQuickStartBlockers.length',
-  'handleGenerateMandateFromSellerLead',
-  'generated?.draftReadyOnly === true',
-  'signable PDF was not confirmed before the database timed out',
-  'handleSendMandateToSeller({',
-  'packetVersionId: mandatePacketVersionId',
-  'setMandateQuickStartOpen(false)',
+	'selectedLeadMandateQuickStartBlockers.length',
+	'handleGenerateMandateFromSellerLead',
+	'generated?.draftReadyOnly === true',
+	'signable PDF was not confirmed before the database timed out',
+	'do not start a duplicate generation',
+	'handleSendMandateToSeller({',
+	'packetVersionId: mandatePacketVersionId',
+	'setMandateQuickStartOpen(false)',
 ]) {
   assert.ok(quickStartBlock.includes(reference), `Quick start flow should keep ${reference}.`)
 }
+assert.ok(
+  !quickStartBlock.includes('then generate once'),
+  'Draft-ready timeout guidance should not ask agents to generate a duplicate mandate.',
+)
 
 assert.ok(
   source.includes('() => selectedLeadMandateReadiness.rows'),
