@@ -378,3 +378,38 @@ Verification:
 - `deno test --no-check supabase/functions/send-email/content/brandedTemplates.test.ts`
 - `npm run test:bond-intake-notifications`
 - `npm run build` from `the-it-guy/`
+
+## Phase 7 Verification
+
+Forward-port review for the Supabase migration queue.
+
+Changed:
+
+- `the-it-guy/scripts/forward-port-supabase-migrations-phase7.test.mjs`
+- `the-it-guy/package.json`
+
+Already current and not changed:
+
+- `supabase/migrations/202608050011_agent_bond_originator_progress_detail_view.sql`
+- guided bond migrations `202607280003` through `202607280015`
+- originator rollout migrations `202607280016` through `202607280024`
+
+Reason: all Phase 7 migration files are already present locally. Several source branches are missing this migration history entirely, while `origin/codex/agency-public-intake-phase8` has an older `202607280005` shape that gates multiple column additions behind a single first-column existence check. Current keeps the safer per-column `add column if not exists` form, so no SQL was replaced.
+
+Behavior guarded:
+
+- the complete timestamped guided bond and originator rollout migration queue remains present and ordered
+- surety/revision migration keeps idempotent `add column if not exists` additions for submission supersession fields
+- guided bond submission, participant, export, originator intake, progress, offer/grant, buyer decision, agent view, attorney handoff, recipient format and governance migrations remain present
+- rollout phases R1 through R9 keep readiness, workspace, document request, progress, offer/grant capture, pilot, hardening, multi-originator and optional formal integration history
+- originator migration history keeps read-only/no-live-delivery/no-bank-workflow-mutation safety flags
+- detailed agent progress view keeps document request, offer capture and grant capture detail output
+
+Verification:
+
+- compared the Phase 7 migration queue against the source and comparison branches listed above
+- `npm run test:forward-port-supabase-migrations-phase7`
+- `npm run test:guided-bond-application-phase7`
+- `npm run test:forward-port-bond-originator-phase5`
+- `npm run test:bond-originator-banks`
+- `npm run build` from `the-it-guy/`
