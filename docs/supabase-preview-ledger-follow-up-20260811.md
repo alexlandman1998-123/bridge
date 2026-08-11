@@ -29,3 +29,5 @@ Result:
 - Remaining blockers: `202607310007` and `202607310008`
 
 The remaining blockers are pure local-only reconciliation migrations that still need a production promotion plan. They are separate from the Supabase Preview failure mode that prompted this follow-up.
+
+Because this branch restores reviewed migration history while the freeze remains active, the PR must carry the `database-reconciliation` label before merge.
