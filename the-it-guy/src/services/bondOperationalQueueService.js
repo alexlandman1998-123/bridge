@@ -1,31 +1,31 @@
-import { resolvePermissionContext } from '../auth/permissions/permissionResolver'
-import { BOND_SCOPE_LEVELS } from '../constants/workspaceUnits'
+import { resolvePermissionContext } from '../auth/permissions/permissionResolver.js'
+import { BOND_SCOPE_LEVELS } from '../constants/workspaceUnits.js'
 import {
   canViewFinanceWorkflow,
   resolveFinanceWorkflowOwners,
-} from './bondFinanceWorkflowOwnershipService'
+} from './bondFinanceWorkflowOwnershipService.js'
 import {
   BOND_INTAKE_STATUS_LABELS,
   BOND_INTAKE_STATUSES,
   getBondApplicationProgress,
   getBondIntakeSummary,
-} from '../core/transactions/bondIntakeSelectors'
+} from '../core/transactions/bondIntakeSelectors.js'
 import {
   getBondHybridFinanceStageLabel,
   normalizeBondHybridFinanceStage,
-} from '../core/transactions/bondHybridFinanceWorkflow'
-import { financeTypeShortLabel } from '../core/transactions/financeType'
+} from '../core/transactions/bondHybridFinanceWorkflow.js'
+import { financeTypeShortLabel } from '../core/transactions/financeType.js'
 import {
   buildFinanceReadinessHandoffPacket,
   getFinanceReadinessSummary,
-} from '../core/finance/financeReadinessSelectors'
+} from '../core/finance/financeReadinessSelectors.js'
 import {
   calculateApprovalProbability,
   calculateOperationalRisk,
   calculateTransactionVelocity,
   generateFinanceInsights,
   getReadinessOutcomeCalibrationForRow,
-} from './financeIntelligenceService'
+} from './financeIntelligenceService.js'
 import {
   resolvePortalBuyerName,
   resolvePortalPropertyLabel,

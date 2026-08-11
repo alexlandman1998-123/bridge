@@ -774,7 +774,7 @@ export async function assignApplication(applicationId = '', context = {}, worksp
         routingSource: preview.routingSource,
         capacity: preview.capacity || null,
       },
-    }, application)
+    }, application, { persistSecurityAudit: !options.forceLocal && options.persistSecurityAudit !== false })
   } catch (error) {
     console.warn('[bondApplicationAssignmentService] universal assignment event skipped', error)
   }
@@ -850,7 +850,7 @@ export async function reassignApplication(applicationId = '', toConsultantId = '
         previousConsultantId: previousConsultant?.id || null,
         assignmentMethod: BOND_APPLICATION_ASSIGNMENT_METHODS.reassigned,
       },
-    }, application)
+    }, application, { persistSecurityAudit: !options.forceLocal && options.persistSecurityAudit !== false })
   } catch (error) {
     console.warn('[bondApplicationAssignmentService] universal reassignment event skipped', error)
   }

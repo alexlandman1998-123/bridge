@@ -81,8 +81,8 @@ const onboardingOtpBlock = extractBlock(
 )
 
 for (const contract of [
-  /BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY = 'onboarding_otp'/,
-  /BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set\(\['overview', 'properties', 'appointments', 'activity', BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY\]\)/,
+  /BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY = 'offers'/,
+  /BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set\(\['overview', 'properties', 'appointments', 'documents', 'activity', 'offers'\]\)/,
   /normalizeLeadWorkspaceTabKey/,
   /parseBuyerViewingPlanNoteBlock/,
   /buildBuyerViewingPlanNotes/,

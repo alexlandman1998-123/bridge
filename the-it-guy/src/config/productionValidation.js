@@ -8,6 +8,10 @@ function asBoolean(value, fallback = false) {
   return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)
 }
 
+function runtimeEnv() {
+  return import.meta.env || {}
+}
+
 export const UNSAFE_PRODUCTION_FLAG_NAMES = Object.freeze([
   'VITE_ENABLE_DEMO_MODE',
   'VITE_ENABLE_LOCAL_FALLBACKS',
@@ -19,7 +23,8 @@ export const UNSAFE_PRODUCTION_FLAG_NAMES = Object.freeze([
 ])
 
 export function getDeploymentEnvironment() {
-  return normalize(import.meta.env.VITE_APP_ENV || import.meta.env.VITE_DEPLOY_ENV || import.meta.env.MODE || 'development').toLowerCase()
+  const env = runtimeEnv()
+  return normalize(env.VITE_APP_ENV || env.VITE_DEPLOY_ENV || env.MODE || 'development').toLowerCase()
 }
 
 export function isProductionEnvironment() {
@@ -31,14 +36,15 @@ export function isDemoLikeEnvironment() {
 }
 
 export function getUnsafeProductionFlags() {
+  const env = runtimeEnv()
   return {
-    VITE_ENABLE_DEMO_MODE: asBoolean(import.meta.env.VITE_ENABLE_DEMO_MODE, false),
-    VITE_ENABLE_LOCAL_FALLBACKS: asBoolean(import.meta.env.VITE_ENABLE_LOCAL_FALLBACKS, false),
-    VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS: asBoolean(import.meta.env.VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS, false),
-    VITE_ENABLE_DEV_AUTH_BYPASS: asBoolean(import.meta.env.VITE_ENABLE_DEV_AUTH_BYPASS, false),
-    VITE_ENABLE_MOCK_DATA: asBoolean(import.meta.env.VITE_ENABLE_MOCK_DATA, false),
-    VITE_ENABLE_MISSION_CONTROL_MOCKS: asBoolean(import.meta.env.VITE_ENABLE_MISSION_CONTROL_MOCKS, false),
-    VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS: asBoolean(import.meta.env.VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS, false),
+    VITE_ENABLE_DEMO_MODE: asBoolean(env.VITE_ENABLE_DEMO_MODE, false),
+    VITE_ENABLE_LOCAL_FALLBACKS: asBoolean(env.VITE_ENABLE_LOCAL_FALLBACKS, false),
+    VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS: asBoolean(env.VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS, false),
+    VITE_ENABLE_DEV_AUTH_BYPASS: asBoolean(env.VITE_ENABLE_DEV_AUTH_BYPASS, false),
+    VITE_ENABLE_MOCK_DATA: asBoolean(env.VITE_ENABLE_MOCK_DATA, false),
+    VITE_ENABLE_MISSION_CONTROL_MOCKS: asBoolean(env.VITE_ENABLE_MISSION_CONTROL_MOCKS, false),
+    VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS: asBoolean(env.VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS, false),
   }
 }
 
@@ -49,14 +55,15 @@ export function getRequiredProductionEnvVars() {
 }
 
 export function validateProductionConfiguration({ strict = isProductionEnvironment() } = {}) {
+  const env = runtimeEnv()
   const unsafeFlags = getUnsafeProductionFlags()
   const enabledUnsafeFlags = Object.entries(unsafeFlags)
     .filter(([, enabled]) => Boolean(enabled))
     .map(([name]) => name)
   const requiredEnvVars = getRequiredProductionEnvVars()
-  const missingEnvVars = requiredEnvVars.filter((name) => !normalize(import.meta.env[name]))
+  const missingEnvVars = requiredEnvVars.filter((name) => !normalize(env[name]))
   const hasBrowserSupabaseKey = Boolean(
-    normalize(import.meta.env.VITE_SUPABASE_ANON_KEY) || normalize(import.meta.env.VITE_SUPABASE_KEY),
+    normalize(env.VITE_SUPABASE_ANON_KEY) || normalize(env.VITE_SUPABASE_KEY),
   )
   const issues = []
 

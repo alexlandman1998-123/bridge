@@ -76,10 +76,10 @@ for (const copy of ['Create Lead', 'Buyer Lead', 'Seller Lead', 'Other Lead', 'I
 assert.match(pageSource, /buyer-lead-workspace/, 'buyer leads should keep the residential buyer workspace shell')
 assert.match(pageSource, /\{ key: 'requirements', label: 'Requirements' \}/, 'buyer workspace should retain internal requirement state for commands and qualification')
 assert.match(pageSource, /\{ key: 'property_match', label: 'Property Match' \}/, 'buyer workspace should expose Property Match as the residential matching surface')
-assert.match(pageSource, /BUYER_ONBOARDING_OTP_TAB_KEY = 'onboarding_otp'/, 'buyer workspace should define the canonical onboarding / OTP tab key')
-assert.match(pageSource, /\{ key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Onboarding \/ OTP' \}/, 'buyer workspace should expose Onboarding / OTP as the residential deal progression surface')
-assert.match(pageSource, /normalizeBuyerLeadWorkspaceTabKey/, 'buyer workspace should keep old offer tab aliases routed into Onboarding / OTP')
-assert.match(pageSource, /tabs\.filter\(\(tab\) => !\['requirements', 'tasks'\]\.includes\(tab\.key\)\)/, 'visible buyer tabs should use the current simplified residential tab row')
+assert.match(pageSource, /BUYER_ONBOARDING_OTP_TAB_KEY = 'offers'/, 'buyer workspace should define Offers as the canonical deal progression tab key')
+assert.match(pageSource, /\{ key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Offers' \}/, 'buyer workspace should expose Offers as the residential deal progression surface')
+assert.match(pageSource, /normalizeBuyerLeadWorkspaceTabKey/, 'buyer workspace should keep old onboarding and OTP aliases routed into Offers')
+assert.match(pageSource, /tabs\.filter\(\(tab\) => !\['requirements', 'tasks', 'documents'\]\.includes\(tab\.key\)\)/, 'visible buyer tabs should use the current simplified residential tab row')
 assert.match(pageSource, /<BuyerLeadOverview/, 'buyer overview should remain the primary buyer workspace entry point')
 assert.match(pageSource, /<BuyerPropertyMatchPanel/, 'buyer workspace should render the property match panel')
 assert.match(pageSource, /<LeadDealProgressionPanel/, 'buyer workspace should render the offers and transactions panel')
@@ -111,7 +111,7 @@ for (const copy of [
 ]) {
   assert.match(pageSource, new RegExp(copy), `seller lead workspace consolidation should render ${copy}`)
 }
-assert.match(pageSource, /grid min-w-0 gap-5 lg:grid-cols-12/)
+assert.match(pageSource, /grid min-w-0 gap-4 lg:grid-cols-12/)
 const sellerDetailsSource = pageSource.slice(pageSource.indexOf('function SellerDetailsCard'), pageSource.indexOf('function SellerDocumentsSummaryCard'))
 assert.doesNotMatch(sellerDetailsSource, /Legacy Budget|Area Interest|Property Interest|Property Alerts|Saved Searches/)
 const sellerCommunicationSource = pageSource.slice(pageSource.indexOf('function SellerCommunicationCard'), pageSource.indexOf('function SellerTimelinePanel'))

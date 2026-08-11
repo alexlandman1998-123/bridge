@@ -182,6 +182,12 @@ function shouldUseWorkspaceBranding(authState) {
   return authState.workspaceType === WORKSPACE_TYPES.attorneyFirm || authState.currentWorkspace?.type === WORKSPACE_TYPES.attorneyFirm
 }
 
+function buildWorkspaceOrganisationFallbackSnapshot(authState = {}) {
+  if (authState.status !== 'authenticated' || !authState.user?.id) return null
+  if (!getAuthWorkspaceId(authState)) return null
+  return buildWorkspaceOrganisationSnapshot(authState)
+}
+
 function buildImmediateOrganisationSnapshot(authState = {}) {
   if (authState.status !== 'authenticated' || !authState.user?.id) return null
   if (isDevAuthOrganisation(authState)) return buildAuthOrganisationSnapshot(authState)
@@ -216,11 +222,15 @@ export function OrganisationProvider({ children }) {
     () => buildImmediateOrganisationSnapshot(authState),
     [authState],
   )
-  const renderState = useMemo(
-    () => immediateSnapshot || resolveOrganisationRenderState(authState, state),
-    [authState, immediateSnapshot, state],
+  const fallbackSnapshot = useMemo(
+    () => immediateSnapshot || buildWorkspaceOrganisationFallbackSnapshot(authState),
+    [authState, immediateSnapshot],
   )
-  const hasImmediateSnapshot = Boolean(immediateSnapshot)
+  const renderState = useMemo(
+    () => immediateSnapshot || resolveOrganisationRenderState(authState, state) || fallbackSnapshot,
+    [authState, fallbackSnapshot, immediateSnapshot, state],
+  )
+  const hasRenderableSnapshot = Boolean(renderState)
 
   const applyOrganisationState = useCallback((nextState) => {
     const normalized = normalizeOrganisationSnapshot(nextState)
@@ -264,6 +274,14 @@ export function OrganisationProvider({ children }) {
       nextState = await fetchAgencyOnboardingSettings({ forceRefresh })
       return applyOrganisationState(nextState)
     } catch (refreshError) {
+      const fallbackState = resolveOrganisationRenderState(authState, state) || buildWorkspaceOrganisationFallbackSnapshot(authState)
+      if (fallbackState) {
+        bootstrapOutcome = 'degraded'
+        setError('')
+        nextState = fallbackState
+        return applyOrganisationState(fallbackState)
+      }
+
       bootstrapOutcome = 'failed'
       setError(refreshError?.message || 'Unable to load organisation settings.')
       throw refreshError
@@ -281,7 +299,7 @@ export function OrganisationProvider({ children }) {
       })
       setLoading(false)
     }
-  }, [applyOrganisationState, authState])
+  }, [applyOrganisationState, authState, state])
 
   useEffect(() => {
     let active = true
@@ -343,9 +361,17 @@ export function OrganisationProvider({ children }) {
             bootstrapOutcome = 'cancelled'
           }
         } catch (hydrateError) {
-          bootstrapOutcome = active ? 'failed' : 'cancelled'
+          const fallbackState = buildWorkspaceOrganisationFallbackSnapshot(authState)
+          if (active && fallbackState) {
+            bootstrapOutcome = 'degraded'
+            nextState = fallbackState
+            applyOrganisationState(fallbackState)
+            setError('')
+          } else {
+            bootstrapOutcome = active ? 'failed' : 'cancelled'
+          }
           if (active) {
-            setError(hydrateError?.message || 'Unable to load organisation settings.')
+            setError(fallbackState ? '' : hydrateError?.message || 'Unable to load organisation settings.')
           }
         } finally {
           void persistDashboardPerformanceTrace(bootstrapTrace, {
@@ -390,12 +416,12 @@ export function OrganisationProvider({ children }) {
       membershipRole: renderState?.membershipRole || '',
       membershipStatus: renderState?.membershipStatus || '',
       branding: renderState?.branding || EMPTY_ORGANISATION_BRANDING,
-      loading: loading && !hasImmediateSnapshot,
-      error,
+      loading: loading && !hasRenderableSnapshot,
+      error: hasRenderableSnapshot ? '' : error,
       refreshOrganisation,
       applyOrganisationState,
     }),
-    [applyOrganisationState, error, hasImmediateSnapshot, loading, refreshOrganisation, renderState],
+    [applyOrganisationState, error, hasRenderableSnapshot, loading, refreshOrganisation, renderState],
   )
 
   return <OrganisationContext.Provider value={value}>{children}</OrganisationContext.Provider>
@@ -416,6 +442,7 @@ export function useOptionalOrganisation() {
 export const __organisationContextTestUtils = Object.freeze({
   buildImmediateOrganisationSnapshot,
   buildWorkspaceOrganisationSnapshot,
+  buildWorkspaceOrganisationFallbackSnapshot,
   getAuthWorkspaceId,
   getOrganisationSnapshotWorkspaceId,
   resolveOrganisationRenderState,

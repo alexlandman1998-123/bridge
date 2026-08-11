@@ -3300,6 +3300,7 @@ export async function createBondBranch(payload = {}, context = {}, workspaceId =
     workspaceType: WORKSPACE_TYPES.bondOriginator,
     workspaceKind: getContextWorkspaceKind(context),
     entitlementKey: ENTITLEMENT_KEYS.maxBranches,
+    forceLocal: options.forceLocal,
   })
   const validated = validateBranchPayload(payload, existingBranches, { regions, users })
   const now = new Date().toISOString()
@@ -3602,6 +3603,7 @@ export async function createBondConsultant(payload = {}, context = {}, workspace
       workspaceType: WORKSPACE_TYPES.bondOriginator,
       workspaceKind: getContextWorkspaceKind(context),
       entitlementKey: ENTITLEMENT_KEYS.maxUsers,
+      forceLocal: options.forceLocal,
     })
   }
   const now = new Date().toISOString()

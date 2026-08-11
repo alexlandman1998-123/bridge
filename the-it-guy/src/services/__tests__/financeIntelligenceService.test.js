@@ -297,7 +297,7 @@ try {
       assert.match(dashboardMarkup, /Final financial approval remains subject to lender assessment/)
     })
   } catch (error) {
-    if (!/require is not defined|ERR_AMBIGUOUS_MODULE_SYNTAX/i.test(String(error?.message || error))) {
+    if (!/require is not defined|module is not defined|ERR_AMBIGUOUS_MODULE_SYNTAX/i.test(String(error?.message || error))) {
       throw error
     }
     console.log('skip - dashboard analytics render check requires React Router SSR compatibility')

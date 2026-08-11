@@ -1,16 +1,16 @@
-import { ORG_ROLES, normalizeOrgRole } from '../constants/orgRoles'
-import { BOND_SCOPE_LEVELS } from '../constants/workspaceUnits'
-import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
+import { ORG_ROLES, normalizeOrgRole } from '../constants/orgRoles.js'
+import { BOND_SCOPE_LEVELS } from '../constants/workspaceUnits.js'
+import { PERMISSIONS } from '../auth/permissions/permissionRegistry.js'
 import {
   can,
   canAccessWorkspaceRecord,
   resolvePermissionContext,
-} from '../auth/permissions/permissionResolver'
+} from '../auth/permissions/permissionResolver.js'
 import {
   resolveEffectiveBondAssignment,
   resolveParticipantBondAssignment,
   resolveRolePlayerBondAssignment,
-} from './bondAssignmentService'
+} from './bondAssignmentService.js'
 
 function normalizeText(value) {
   return String(value || '').trim()

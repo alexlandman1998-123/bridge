@@ -27,7 +27,7 @@ for (const marker of [
   'Onboarding Ready',
   'Show Day Follow-Up',
   'Log Follow-Up Call',
-  'Open Onboarding / OTP',
+  'Open Offers',
   'This buyer has already viewed the property.',
   'Post-show-day calls, buyer feedback, and onboarding intent',
 ]) {

@@ -1,6 +1,6 @@
-import { APP_ROLES } from '../../constants/appRoles'
-import { ORG_ROLES } from '../../constants/orgRoles'
-import { WORKSPACE_TYPES } from '../../constants/workspaceTypes'
+import { APP_ROLES } from '../../constants/appRoles.js'
+import { ORG_ROLES } from '../../constants/orgRoles.js'
+import { WORKSPACE_TYPES } from '../../constants/workspaceTypes.js'
 
 export const ACCESS_SCOPES = Object.freeze({
   allWorkspace: 'all_workspace',

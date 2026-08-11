@@ -1,7 +1,7 @@
-import { APP_ROLES, normalizeCanonicalAppRole } from '../constants/appRoles'
-import { normalizeOrgRole, ORG_ROLES } from '../constants/orgRoles'
-import { SYSTEM_ROLES, SYSTEM_ROLE_VALUES, normalizeSystemRole } from '../constants/systemRoles'
-import { inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../constants/workspaceTypes'
+import { APP_ROLES, normalizeCanonicalAppRole } from '../constants/appRoles.js'
+import { normalizeOrgRole, ORG_ROLES } from '../constants/orgRoles.js'
+import { SYSTEM_ROLES, SYSTEM_ROLE_VALUES, normalizeSystemRole } from '../constants/systemRoles.js'
+import { inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../constants/workspaceTypes.js'
 
 export { SYSTEM_ROLES, SYSTEM_ROLE_VALUES, normalizeSystemRole }
 

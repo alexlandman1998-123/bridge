@@ -1,4 +1,4 @@
-import { getFeatureFlags } from './envValidation'
+import { getFeatureFlags } from './envValidation.js'
 
 function readBoolean(value, fallback = false) {
   const normalized = String(value || '').trim().toLowerCase()

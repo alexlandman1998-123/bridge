@@ -63,10 +63,11 @@ for (const requiredText of [
   assert.match(runbook.toLowerCase(), new RegExp(requiredText.toLowerCase()), `Buyer diagnostic runbook must mention ${requiredText}`)
 }
 
-assert.match(agencyPipelinePage, /Upload OTP/)
+assert.match(agencyPipelinePage, /Upload Signed OTP/)
 assert.match(agencyPipelinePage, /OTP workspace ready/)
 assert.doesNotMatch(agencyPipelinePage, /label: 'Generate OTP'/)
-assert.match(buyerOfferPage, /Manual OTP Upload/)
+assert.match(buyerOfferPage, /OTP Transaction/)
+assert.match(buyerOfferPage, /OTP prepared or uploaded/)
 assert.doesNotMatch(buyerOfferPage, /OTP Generated/)
 assert.doesNotMatch(buyerOfferPage, /before OTP generation/)
 assert.match(postViewingPortal, /manual signed OTP upload/)

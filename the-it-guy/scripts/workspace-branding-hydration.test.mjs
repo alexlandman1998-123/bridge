@@ -10,7 +10,11 @@ const server = await createServer({
 
 try {
   const { __organisationContextTestUtils } = await server.ssrLoadModule('/src/context/OrganisationContext.jsx')
-  const { buildImmediateOrganisationSnapshot, resolveOrganisationRenderState } = __organisationContextTestUtils
+  const {
+    buildImmediateOrganisationSnapshot,
+    buildWorkspaceOrganisationFallbackSnapshot,
+    resolveOrganisationRenderState,
+  } = __organisationContextTestUtils
 
   const authState = {
     status: 'authenticated',
@@ -72,10 +76,51 @@ try {
     'sign-out must clear the previous workspace brand synchronously',
   )
 
-  const [sidebarSource, stylesheetSource] = await Promise.all([
+  const degradedAgencyAuthState = {
+    status: 'authenticated',
+    user: { id: 'user-2' },
+    appRole: 'bond_originator',
+    workspaceType: 'agency',
+    workspaceAccessDegraded: true,
+    currentWorkspace: {
+      id: 'produktive-realty',
+      name: 'Produktive Realty',
+      type: 'agency',
+      logoUrl: 'https://example.test/produktive-realty-logo.png',
+    },
+    currentMembership: {
+      id: 'agency-membership',
+      source: 'last_good_workspace_state',
+      workspaceId: 'produktive-realty',
+      workspaceRole: 'bond_originator',
+      status: 'active',
+    },
+  }
+  assert.equal(
+    buildImmediateOrganisationSnapshot(degradedAgencyAuthState),
+    null,
+    'agency workspaces must still prefer hydrated onboarding settings when the backend is healthy',
+  )
+  const degradedAgencyFallback = buildWorkspaceOrganisationFallbackSnapshot(degradedAgencyAuthState)
+  assert.equal(degradedAgencyFallback.organisation.id, 'produktive-realty')
+  assert.equal(degradedAgencyFallback.branding.logoUrl, 'https://example.test/produktive-realty-logo.png')
+  assert.equal(degradedAgencyFallback.onboardingMode, 'workspace_auth_snapshot')
+
+  const [organisationContextSource, sidebarSource, stylesheetSource] = await Promise.all([
+    readFile(new URL('../src/context/OrganisationContext.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/Sidebar.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/index.css', import.meta.url), 'utf8'),
   ])
+  assert.match(
+    organisationContextSource,
+    /resolveOrganisationRenderState\(authState, state\) \|\| fallbackSnapshot/,
+    'organisation rendering must fall back to auth workspace branding when backend hydration is unavailable',
+  )
+  assert.match(
+    organisationContextSource,
+    /error:\s*hasRenderableSnapshot \? '' : error/,
+    'organisation gate errors must stay non-fatal once a workspace snapshot can render',
+  )
   assert.match(sidebarSource, /currentLogoLoadStatus[\s\S]*logoLoaded/)
   assert.match(sidebarSource, /ui-sidebar-brand-logo-placeholder[\s\S]*ui-sidebar-brand-logo-pending/)
   assert.match(sidebarSource, /onLoad=\{\(\) => setLogoLoadState\(\{ url: branding\.logoUrl, status: 'loaded' \}\)\}/)

@@ -1,6 +1,6 @@
-import { APP_ROLES, normalizeCanonicalAppRole } from '../../constants/appRoles'
-import { isActiveMembershipStatus, normalizeMembershipStatus } from '../../constants/membershipStatuses'
-import { normalizeOrgRole, ORG_ROLES } from '../../constants/orgRoles'
+import { APP_ROLES, normalizeCanonicalAppRole } from '../../constants/appRoles.js'
+import { isActiveMembershipStatus, normalizeMembershipStatus } from '../../constants/membershipStatuses.js'
+import { normalizeOrgRole, ORG_ROLES } from '../../constants/orgRoles.js'
 import {
   BOND_SCOPE_LEVELS,
   BRANCH_SCOPES,
@@ -10,14 +10,14 @@ import {
   mapLegacyScopeToBondScope,
   normalizeBranchScope,
   normalizeScopeLevel,
-} from '../../constants/workspaceUnits'
+} from '../../constants/workspaceUnits.js'
 import {
   WORKSPACE_TYPES,
   inferWorkspaceTypeFromAppRole,
   normalizeWorkspaceType,
-} from '../../constants/workspaceTypes'
-import { FEATURE_FLAGS } from '../../lib/featureFlags'
-import { resolveSystemRole, resolveWorkspaceRole, SYSTEM_ROLES } from '../../services/roleResolutionService'
+} from '../../constants/workspaceTypes.js'
+import { FEATURE_FLAGS } from '../../lib/featureFlags.js'
+import { resolveSystemRole, resolveWorkspaceRole, SYSTEM_ROLES } from '../../services/roleResolutionService.js'
 import {
   ACCESS_SCOPES,
   clientPermissions,
@@ -26,7 +26,7 @@ import {
   permissionsByWorkspaceRole,
   platformAdminPermissions,
   routePermissionRules,
-} from './permissionRegistry'
+} from './permissionRegistry.js'
 
 const LEGACY_CAPABILITY_MAP = Object.freeze({
   manage_organisation_settings: PERMISSIONS.manageWorkspaceSettings,

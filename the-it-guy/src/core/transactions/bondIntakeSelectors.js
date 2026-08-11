@@ -1,7 +1,7 @@
 import {
   deriveFinanceManagedBy,
   isBondFinanceType as isCanonicalBondFinanceType,
-} from './financeType'
+} from './financeType.js'
 
 export const BOND_INTAKE_STATUSES = Object.freeze({
   AWAITING_BUYER_APPLICATION: 'AWAITING_BUYER_APPLICATION',
