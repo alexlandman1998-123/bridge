@@ -69,8 +69,18 @@ assert.match(
 )
 assert.match(
   privateListingService,
-  /deferSellerOnboardingFollowUp\('seller requirement sync after onboarding progress update'[\s\S]*?syncPrivateListingRequirements\(rpcContext\.listing, \{[\s\S]*?reason: 'seller_onboarding_progress'/,
-  'seller onboarding draft saves should not wait for requirement sync before returning',
+  /function enqueueSellerOnboardingProgressProjection\(client, \{[\s\S]*?enqueueKeyedOperation\(sellerOnboardingProjectionQueues, listingId, async \(\) => \{[\s\S]*?persistCanonicalSellerFactPayload\(client,[\s\S]*?syncPrivateListingRequirements\(listing,[\s\S]*?maybeResolveCanonicalSellerRequirements\(/,
+  'seller onboarding draft projections should be queued per listing without blocking the save response',
+)
+assert.match(
+  privateListingService,
+  /void enqueueSellerOnboardingProgressProjection\(client, \{[\s\S]*?listing: rpcContext\.listing,[\s\S]*?reason: 'seller_onboarding_progress'/,
+  'seller onboarding draft saves should queue projection work after the RPC returns',
+)
+assert.match(
+  privateListingService,
+  /void enqueueSellerOnboardingProgressProjection\(client, \{[\s\S]*?listing: listingForProgress,[\s\S]*?reason: 'seller_onboarding_progress_fallback'/,
+  'seller onboarding fallback draft saves should queue projection work after the direct update returns',
 )
 assert.match(
   privateListingService,
