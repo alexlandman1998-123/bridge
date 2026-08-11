@@ -958,3 +958,32 @@ Noted:
 
 - `npm run test:sidebar-parent-navigation` was attempted first and is not defined in `package.json`; the same diagnostic passed via `node scripts/sidebar-parent-navigation.test.mjs`.
 - `npm run test:finance-intelligence` still skips its dashboard render check when React Router SSR compatibility is unavailable under the current Node runtime; all non-render finance intelligence assertions passed.
+
+## Ready PR And Deploy Gate Phase 10
+
+Purpose: move the reconciliation PR from draft to ready only after the clean-branch verification batch and remote checks are green, while keeping production deploy gated behind merge/production approval.
+
+Changed:
+
+- `docs/forward-port-buyer-seller-bond-workflows-20260811.md`
+
+Gate result:
+
+- PR #16 `Forward-port buyer seller bond workflow reconciliation` is the active reconciliation PR
+- source branch: `codex/forward-port-buyer-seller-bond-workflows-20260811`
+- base branch: `main`
+- local worktree was clean before the Phase 10 gate documentation change
+- Phase 9 verification passed locally
+- remote checks before the Phase 10 record were green:
+  - `certify`
+  - `Vercel - bridge`
+  - `Vercel - bridge-admin`
+  - `Vercel Preview Comments`
+  - `Supabase Preview` skipped as expected
+- production deploy remains gated; no production deployment was performed in Phase 10
+
+Verification:
+
+- `git status --short --branch`
+- `gh pr view 16 --json number,title,url,isDraft,mergeStateStatus,state,headRefName,baseRefName,reviewDecision,latestReviews,commits,statusCheckRollup`
+- `gh pr checks 16`
