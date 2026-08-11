@@ -149,3 +149,44 @@ Verification:
 
 - `node the-it-guy/scripts/sidebar-parent-navigation.test.mjs`
 - `npm run build` from `the-it-guy/`
+
+## Phase 2 Verification
+
+Forward-ported the agency pipeline buyer offer workspace changes from `origin/codex/seller-first-contact-reload`.
+
+Changed:
+
+- `the-it-guy/src/pages/agency/AgencyPipelinePage.jsx`
+- `the-it-guy/scripts/agency-pipeline-buyer-offer-workspace-phase2.test.mjs`
+- buyer-process/show-day contract scripts that referenced the retired agency-pipeline OTP copy
+- `the-it-guy/package.json`
+
+Already current against source and not changed:
+
+- `the-it-guy/src/pages/AgentLeadsPage.jsx`
+- `the-it-guy/src/pages/BuyerOfferSubmission.jsx`
+- `the-it-guy/src/lib/buyerLifecycleService.js`
+- `the-it-guy/src/lib/listingOffersService.js`
+- `the-it-guy/src/lib/offerBuyerOnboardingBridge.js`
+- `the-it-guy/src/services/buyerProcessDefinitionService.js`
+- `the-it-guy/src/services/buyerProcessMigrationService.js`
+- `the-it-guy/src/lib/workflowEngine.js`
+
+Behavior restored:
+
+- legacy buyer workspace aliases such as `onboarding_otp` now route to the `offers` workspace
+- buyer lead tabs expose `Documents` and `Offers`
+- signed OTP upload stores a canonical `buyer_offer` document labelled `Signed OTP`
+- signed OTP upload creates an accepted canonical offer instead of directly creating a transaction from the lead
+
+Verification:
+
+- `npm run test:agency-pipeline-buyer-offer-workspace-phase2`
+- `npm run test:buyer-process-onboarding-offer-upload-phase4`
+- `npm run test:buyer-process-migration-otp-deprecation-phase6`
+- `npm run test:show-day-phase5`
+- `npm run build` from `the-it-guy/`
+
+Additional diagnostic:
+
+- `npm run test:buyer-process-global-diagnostic` was attempted after the Phase 2 patch. It passed through the updated agency pipeline buyer checks and failed later in `test:offer-to-transaction-scenario-matrix` because `BuyerOfferSubmission.jsx` does not contain `Submit Revised Offer`. That gap is also absent from `origin/codex/seller-first-contact-reload`, so it is recorded as out-of-scope for this agency-pipeline forward-port batch.

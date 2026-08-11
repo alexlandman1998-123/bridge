@@ -12,8 +12,9 @@ assert.equal(
   'package.json should expose the buyer process onboarding + OTP upload Phase 4 contract.',
 )
 
-assert.match(source, /BUYER_OTP_DOCUMENT_STORAGE_FOLDER = 'buyer-otp-documents'/)
-assert.match(source, /BUYER_OTP_DOCUMENT_TYPE = 'uploaded_otp'/)
+assert.match(source, /BUYER_OFFER_DOCUMENT_STORAGE_FOLDER = 'buyer-offer-documents'/)
+assert.match(source, /BUYER_OFFER_DOCUMENT_TYPE = 'buyer_offer'/)
+assert.match(source, /BUYER_OFFER_DOCUMENT_LABEL = 'Signed OTP'/)
 assert.match(source, /function uploadBuyerOfferDocumentFile/)
 
 assert.match(source, /async function handleSendBuyerOnboardingFromAppointment/)
@@ -22,16 +23,17 @@ assert.match(source, /toStage: nextStage/)
 assert.match(source, /'Buyer onboarding sent'/)
 
 assert.match(source, /async function handleUploadBuyerOfferDocument/)
-assert.match(source, /agent_otp_upload/)
-assert.match(source, /document_type: BUYER_OTP_DOCUMENT_TYPE/)
-assert.match(source, /OTP uploaded and buyer moved to OTP transaction\./)
-assert.match(source, /'OTP Transaction'/)
+assert.match(source, /agent_signed_otp_upload/)
+assert.match(source, /document_type: BUYER_OFFER_DOCUMENT_TYPE/)
+assert.match(source, /createCanonicalOffer\(\{/)
+assert.match(source, /status: 'accepted'/)
+assert.match(source, /Signed OTP uploaded and buyer moved to Signed OTP received\./)
+assert.match(source, /'Signed OTP received'/)
 
-assert.match(source, /Buyer Onboarding \+ OTP Transaction/)
+assert.match(source, /<h3 className="text-2xl font-semibold text-\[#0c2440\]">Signed OTP<\/h3>/)
 assert.match(source, /Send Buyer Onboarding/)
-assert.match(source, /Upload OTP/)
-assert.match(source, /Upload the OTP once it is available/)
-assert.match(source, /Uploaded OTP/)
+assert.match(source, /Upload Signed OTP/)
+assert.match(source, /Upload the signed OTP once it is available/)
 
 assert.doesNotMatch(source, /Send Offer Link/)
 assert.doesNotMatch(source, /Offer CTA/)
