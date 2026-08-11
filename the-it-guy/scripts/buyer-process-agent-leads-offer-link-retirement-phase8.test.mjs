@@ -5,12 +5,12 @@ const workspaceSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx'
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 
 assert.ok(
-  workspaceSource.includes("const BUYER_ONBOARDING_OTP_TAB_KEY = 'onboarding_otp'"),
-  'buyer workspace should keep the canonical onboarding / OTP tab key',
+  workspaceSource.includes("const BUYER_ONBOARDING_OTP_TAB_KEY = 'offers'"),
+  'buyer workspace should keep the canonical Offers tab key',
 )
 assert.ok(
-  workspaceSource.includes("label: 'Onboarding / OTP'"),
-  'buyer workspace should expose onboarding / OTP instead of the old visible offers tab',
+  workspaceSource.includes("label: 'Offers'"),
+  'buyer workspace should expose Offers as the visible deal progression tab',
 )
 assert.ok(
   workspaceSource.includes('function DealOfferComposerModal'),

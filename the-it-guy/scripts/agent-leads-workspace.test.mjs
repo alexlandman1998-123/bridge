@@ -209,15 +209,16 @@ try {
   assert.match(workspaceSource, /const activeRows = filtered\.filter\(\(row\) => !isArchivedLead\(row\)\)/, 'active lead tabs should hide archived leads')
   assert.match(workspaceSource, /xl:grid-cols-5/, 'lead category tabs should make room for the archived view')
   const buyerTabsSource = workspaceSource.match(/: \[\n      \{ key: 'overview'[\s\S]*?\n    \], \[isSellerLeadWorkspace\]\)/)?.[0] || ''
-  const buyerTabKeys = [...buyerTabsSource.matchAll(/\{ key: (?:'([^']+)'|BUYER_ONBOARDING_OTP_TAB_KEY)/g)].map((match) => match[1] || 'onboarding_otp')
+  const buyerTabKeys = [...buyerTabsSource.matchAll(/\{ key: (?:'([^']+)'|BUYER_ONBOARDING_OTP_TAB_KEY)/g)].map((match) => match[1] || 'offers')
   assert.deepEqual(buyerTabKeys, [
     'overview',
-    'onboarding_otp',
+    'offers',
     'appointments',
     'property_match',
     'timeline',
   ], 'buyer lead workspace should expose the requested visible tab order')
-  assert.ok(buyerTabsSource.includes("{ key: 'property_match', label: 'Properties' }"), 'buyer property match tab should be labelled Properties')
+  assert.ok(buyerTabsSource.includes("{ key: 'property_match', label: 'Property Match' }"), 'buyer property match tab should be labelled Property Match')
+  assert.ok(buyerTabsSource.includes("{ key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Offers' }"), 'buyer deal progression tab should be labelled Offers')
   assert.ok(buyerTabsSource.includes("{ key: 'timeline', label: 'Activity' }"), 'buyer timeline tab should be labelled Activity')
   assert.match(workspaceSource, /const visibleBuyerTabs = useMemo\(\s*\(\) => tabs\.filter\(\(tab\) => !\['requirements', 'tasks', 'documents'\]\.includes\(tab\.key\)\)/, 'buyer menu should hide internal requirements, tasks, and documents tabs')
   for (const retiredTab of ['requirements', 'tasks', 'documents', 'suggestions', 'listings', 'recommendations', 'saved_searches']) {
@@ -268,11 +269,11 @@ try {
   assert.ok(workspaceSource.includes('updateAppointmentAsync(organisationId'), 'lead appointment cards should update appointment outcomes through the appointment service')
   assert.ok(workspaceSource.includes('upsertAppointmentViewedListings'), 'completed viewing outcomes should record the viewed property relationship')
   assert.ok(workspaceSource.includes('lead_workspace_viewing_outcome'), 'viewing outcome history should be tagged with the lead workspace source')
-  assert.ok(workspaceSource.includes("const BUYER_ONBOARDING_OTP_TAB_KEY = 'onboarding_otp'"), 'buyer workspace should define the canonical onboarding / OTP tab key')
-  assert.ok(workspaceSource.includes("label: 'Onboarding / OTP'"), 'buyer workspace should expose the onboarding / OTP tab label')
-  assert.ok(workspaceSource.includes('normalizeBuyerLeadWorkspaceTabKey'), 'buyer workspace should route legacy offer tab aliases into onboarding / OTP')
-  assert.ok(!workspaceSource.includes("{ key: 'offers', label: 'Offers' }"), 'buyer workspace should not expose the old visible offers tab')
-  assert.ok(workspaceSource.includes('function DealOfferComposerModal'), 'onboarding / OTP workspace should retain a manual offer capture escape hatch')
+  assert.ok(workspaceSource.includes("const BUYER_ONBOARDING_OTP_TAB_KEY = 'offers'"), 'buyer workspace should define Offers as the canonical deal progression tab key')
+  assert.ok(workspaceSource.includes("label: 'Offers'"), 'buyer workspace should expose the Offers tab label')
+  assert.ok(workspaceSource.includes('normalizeBuyerLeadWorkspaceTabKey'), 'buyer workspace should route legacy onboarding and OTP aliases into Offers')
+  assert.ok(workspaceSource.includes("{ key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Offers' }"), 'buyer workspace should expose the visible offers tab')
+  assert.ok(workspaceSource.includes('function DealOfferComposerModal'), 'offers workspace should retain a manual offer capture escape hatch')
   assert.ok(workspaceSource.includes('getLeadOfferPropertyContexts'), 'manual captured offers should be created from ranked property/viewing context')
   assert.ok(workspaceSource.includes('createCanonicalOffer'), 'manual captured offers should still persist through the canonical offer service')
   assert.ok(workspaceSource.includes("source: 'manual_offer_capture'"), 'manual captured offers should be explicitly tagged as manual evidence')

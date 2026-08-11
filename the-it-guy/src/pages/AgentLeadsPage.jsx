@@ -303,7 +303,7 @@ const BUYER_INTERNAL_WORKFLOW_TABS = [
   { key: 'requirements', label: 'Requirements' },
   { key: 'documents', label: 'Documents' },
 ]
-const BUYER_ONBOARDING_OTP_TAB_KEY = 'onboarding_otp'
+const BUYER_ONBOARDING_OTP_TAB_KEY = 'offers'
 
 function normalizeBuyerLeadWorkspaceTabKey(tabKey = '') {
   const normalized = normalizeText(tabKey).toLowerCase()
@@ -2270,7 +2270,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: 'Deal fell through',
         copy: deal.transactionStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'amber',
         blockers: ['Restart or close out'],
@@ -2281,7 +2281,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: 'Buyer onboarding needs attention',
         copy: deal.transactionStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'amber',
         blockers: ['Buyer onboarding'],
@@ -2303,7 +2303,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: deal.transactionStateLabel,
         copy: deal.transactionStateHelper,
-        actionLabel: deal.transactionStateLabel === 'Buyer onboarding pending' ? 'Open Onboarding / OTP' : 'Open Transaction',
+        actionLabel: deal.transactionStateLabel === 'Buyer onboarding pending' ? 'Open Offers' : 'Open Transaction',
         actionId: deal.transactionStateLabel === 'Buyer onboarding pending' ? BUYER_ONBOARDING_OTP_TAB_KEY : 'convert',
         tone: deal.transactionStateTone,
         blockers: deal.transactionStateLabel === 'Buyer onboarding pending' ? ['Buyer onboarding'] : deal.transactionStateLabel === 'Buyer onboarding sent' ? ['Buyer response'] : ['Prepare OTP'],
@@ -2325,7 +2325,7 @@ function getBuyerWorkspaceCommand(row = {}) {
     return {
       title: 'Accepted offer is ready for conversion',
       copy: deal.transactionStateHelper,
-      actionLabel: 'Open Onboarding / OTP',
+      actionLabel: 'Open Offers',
       actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
       tone: 'amber',
       blockers: ['Transaction workspace'],
@@ -2338,7 +2338,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: deal.offerStateLabel,
         copy: deal.offerStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'amber',
         blockers: ['Restart or close out'],
@@ -2349,7 +2349,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: deal.offerStateLabel,
         copy: deal.offerStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'amber',
         blockers: ['Delivery retry'],
@@ -2360,7 +2360,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: 'Buyer offer needs seller routing',
         copy: deal.offerStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'blue',
         blockers: ['Seller review'],
@@ -2371,7 +2371,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: deal.offerStateLabel,
         copy: deal.offerStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: deal.offerStateTone,
         blockers: ['Seller decision'],
@@ -2382,7 +2382,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       return {
         title: 'Counter-offer needs buyer feedback',
         copy: deal.offerStateHelper,
-        actionLabel: 'Open Onboarding / OTP',
+        actionLabel: 'Open Offers',
         actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
         tone: 'amber',
         blockers: ['Buyer response'],
@@ -2395,7 +2395,7 @@ function getBuyerWorkspaceCommand(row = {}) {
     return {
       title: 'Viewing is done, lock the next move',
       copy: 'Capture the actual outcome now: buyer onboarding, OTP upload, another viewing, or a clean close-out.',
-      actionLabel: 'Open Onboarding / OTP',
+      actionLabel: 'Open Offers',
       actionId: BUYER_ONBOARDING_OTP_TAB_KEY,
       tone: 'blue',
       blockers: ['Viewing outcome'],
@@ -2440,8 +2440,8 @@ function getBuyerWorkspaceCommand(row = {}) {
     const actionMap = {
       qualified: ['Qualify Buyer', 'qualification'],
       viewing: ['Schedule Viewing', 'schedule_viewing'],
-      offer_submitted: ['Open Onboarding / OTP', BUYER_ONBOARDING_OTP_TAB_KEY],
-      offer_accepted: ['Open Onboarding / OTP', BUYER_ONBOARDING_OTP_TAB_KEY],
+      offer_submitted: ['Open Offers', BUYER_ONBOARDING_OTP_TAB_KEY],
+      offer_accepted: ['Open Offers', BUYER_ONBOARDING_OTP_TAB_KEY],
       won: ['Open Transaction', 'convert'],
     }
     const [actionLabel, actionId] = actionMap[nextStep.key] || ['Review Timeline', 'timeline']
@@ -2458,7 +2458,7 @@ function getBuyerWorkspaceCommand(row = {}) {
   return {
     title: 'Buyer journey is transaction-ready',
     copy: 'The buyer has enough journey signal to review transaction handoff.',
-    actionLabel: deal.latestTransaction ? 'Open Transaction' : 'Open Onboarding / OTP',
+    actionLabel: deal.latestTransaction ? 'Open Transaction' : 'Open Offers',
     actionId: deal.latestTransaction ? 'convert' : BUYER_ONBOARDING_OTP_TAB_KEY,
     tone: 'green',
     blockers: [],
@@ -2905,9 +2905,9 @@ function BuyerNextActionsCard({ row, onViewTasks, onSendMatches, onScheduleViewi
     },
     {
       icon: FileText,
-      title: 'Onboarding / OTP',
+      title: 'Offers',
       description: 'Capture buyer details first, then manage OTP and transaction handoff.',
-      buttonLabel: 'Open Onboarding / OTP',
+      buttonLabel: 'Open Offers',
       onClick: onCreateOffer,
     },
   ]
@@ -3992,7 +3992,7 @@ function BuyerOutreachProgress({
                 Capture Offer Submitted
               </button>
               <button type="button" onClick={onOpenOffers} className="inline-flex min-h-9 items-center justify-center rounded-xl border border-blue-200 bg-white px-3 text-xs font-semibold text-blue-700 hover:bg-blue-50">
-                Open Onboarding / OTP
+                Open Offers
               </button>
             </div>
           ) : null}
@@ -4002,7 +4002,7 @@ function BuyerOutreachProgress({
                 Review Offer
               </button>
               <p className="text-[11px] font-medium leading-4 text-slate-500">
-                Mark seller acceptance from the Onboarding / OTP workspace.
+                Mark seller acceptance from the Offers workspace.
               </p>
             </div>
           ) : null}
@@ -14495,7 +14495,7 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
       otpAmount,
       sourceMode: DOCUMENT_START_SOURCE_MODES.saved,
       legalScenario: acceptedOtpLegalScenario,
-      returnTo: `/pipeline/leads/${encodeURIComponent(normalizeText(lead?.leadId))}?tab=onboarding_otp`,
+      returnTo: `/pipeline/leads/${encodeURIComponent(normalizeText(lead?.leadId))}?tab=offers`,
     })
     if (!path) {
       setTransactionError('Unable to open the OTP workspace for this accepted offer.')
@@ -14530,7 +14530,7 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
       <section className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_16px_42px_rgba(15,23,42,0.045)] sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-[-0.055em] text-slate-950">Onboarding / OTP</h1>
+            <h1 className="text-2xl font-semibold tracking-[-0.055em] text-slate-950">Offers</h1>
           </div>
           <div className="flex flex-wrap gap-2 lg:justify-end">
             <button type="button" onClick={() => onNavigate?.('overview')} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
@@ -14771,7 +14771,7 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
       listingId: acceptedListingId,
       sourceMode,
       legalScenario: selection?.legalScenario,
-      returnTo: `/pipeline/leads/${encodeURIComponent(normalizeText(lead?.leadId))}?tab=onboarding_otp`,
+      returnTo: `/pipeline/leads/${encodeURIComponent(normalizeText(lead?.leadId))}?tab=offers`,
     })
     if (!path) {
       setError('Unable to open the OTP workspace for this accepted offer.')
@@ -23657,9 +23657,9 @@ function AgentLeadWorkspace() {
     ]
     : [
       { key: 'overview', label: 'Overview' },
-      { key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Onboarding / OTP' },
+      { key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Offers' },
       { key: 'appointments', label: 'Appointments' },
-      { key: 'property_match', label: 'Properties' },
+      { key: 'property_match', label: 'Property Match' },
       { key: 'timeline', label: 'Activity' },
     ], [isSellerLeadWorkspace])
   const availableTabs = useMemo(

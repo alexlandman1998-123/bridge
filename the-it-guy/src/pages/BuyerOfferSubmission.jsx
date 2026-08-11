@@ -577,7 +577,7 @@ function BuyerOfferSubmission() {
       organisationName: resolved.organisationName || agencyName,
     }
   }, [agencyName, context?.canonicalOffer?.conditions, invite, listing, offerBrandingSnapshot])
-  const submitButtonLabel = 'Submit Buyer Onboarding'
+  const submitButtonLabel = counterPendingBuyer ? 'Submit Revised Offer' : 'Submit Buyer Onboarding'
   const buyerVerificationModel = useMemo(
     () =>
       buildOfferBuyerVerificationModel(form, {
@@ -622,7 +622,7 @@ function BuyerOfferSubmission() {
       return { tone: 'amber', text: 'The agent asked for updated buyer details. Review the onboarding information and resubmit.' }
     }
     if (canonicalLifecycle.activeNegotiation) {
-      return { tone: 'amber', text: canonicalLifecycle.blockedReason || 'This buyer onboarding is already under review. Wait for feedback before sending another version.' }
+      return { tone: 'amber', text: canonicalLifecycle.blockedReason || 'This offer is already under review. Wait for feedback before sending another version.' }
     }
     if (canonicalLifecycle.acceptedOrConverted) {
       return { tone: 'green', text: canonicalLifecycle.blockedReason }

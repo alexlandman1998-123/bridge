@@ -343,6 +343,44 @@ Additional diagnostic:
 
 - `npm run test:buyer-process-global-diagnostic` was attempted after the Phase 2 patch. It passed through the updated agency pipeline buyer checks and failed later in `test:offer-to-transaction-scenario-matrix` because `BuyerOfferSubmission.jsx` does not contain `Submit Revised Offer`. That gap is also absent from `origin/codex/seller-first-contact-reload`, so it is recorded as out-of-scope for this agency-pipeline forward-port batch.
 
+## Phase 3 Buyer Workflow Patch Recheck
+
+Recorded at `2026-08-11 19:44:26 SAST` for the buyer reconciliation sequence requested after the Phase 2 buyer surface audit.
+
+Changed:
+
+- `the-it-guy/src/pages/AgentLeadsPage.jsx`
+- `the-it-guy/src/pages/BuyerOfferSubmission.jsx`
+- `the-it-guy/scripts/lead-ingestion.test.mjs`
+- `the-it-guy/scripts/agent-leads-workspace.test.mjs`
+- `the-it-guy/scripts/buyer-process-agent-leads-onboarding-otp-phase7.test.mjs`
+- `the-it-guy/scripts/buyer-process-agent-leads-offer-link-retirement-phase8.test.mjs`
+- `the-it-guy/scripts/viewing-workflow-qa.test.mjs`
+
+Behavior restored:
+
+- the buyer lead/workspace progression tab now resolves to `offers`
+- legacy buyer URL aliases such as `onboarding_otp`, `otp`, `buyer_onboarding`, and `buyer_onboarding_otp` still normalize into the `offers` tab
+- buyer next-action copy now opens `Open Offers` instead of `Open Onboarding / OTP`
+- the visible buyer property matching tab is labelled `Property Match`
+- accepted-offer return paths now return to `?tab=offers`
+- countered public buyer offer links now expose `Submit Revised Offer`
+- blocked canonical public offer links use the compatibility copy `This offer is already under review. Wait for feedback before sending another version.`
+
+Verification:
+
+- `npm run test:lead-ingestion`
+- `node scripts/agent-leads-workspace.test.mjs`
+- `node scripts/buyer-process-agent-leads-onboarding-otp-phase7.test.mjs`
+- `node scripts/buyer-process-agent-leads-offer-link-retirement-phase8.test.mjs`
+- `node scripts/viewing-workflow-qa.test.mjs`
+- `node scripts/offer-to-transaction-scenario-matrix.test.mjs`
+- `npm run test:buyer-process-global-diagnostic`
+
+Result:
+
+- all listed Phase 3 buyer workflow patch checks passed.
+
 ## Phase 3 Verification
 
 Forward-port check for seller first-contact and seller workspace behavior.
