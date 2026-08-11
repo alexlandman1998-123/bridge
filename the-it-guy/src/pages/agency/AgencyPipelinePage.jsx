@@ -9129,7 +9129,7 @@ function TransactionHandoffHealthPanel({ health = null }) {
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Gauge className="h-4 w-4 text-[#385977]" />
-          <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Transaction Handoff Health</h4>
+          <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Handoff Health</h4>
         </div>
         <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.className}`}>
           {statusMeta.label}
@@ -23755,9 +23755,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         selectedLead?.listingId,
     )
     if (!selectedListingId) {
-      setError('Select the property before uploading the offer document.')
+      setError('Select the property before uploading the signed OTP.')
       return
     }
+    const resolvedOfferAmount = normalizeText(buyerOfferUploadForm.offerAmount) ||
+      parseCurrencyAmount(selectedLeadOfferCentreProperty?.price || selectedLead?.budget || selectedLead?.budgetLabel || '') ||
+      ''
 
     const uploadedAt = new Date().toISOString()
     try {
@@ -23804,7 +23807,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           agentId: currentAgent.id,
           transactionId: selectedLeadLinkedTransactionId,
 	          status: 'accepted',
-          offerAmount: buyerOfferUploadForm.offerAmount,
+          offerAmount: resolvedOfferAmount,
           financeType: normalizeText(buyerOfferUploadForm.financeType || selectedLead.financeType || selectedLead.preferredFinanceType),
           submittedAt: uploadedAt,
           conditionsJson: {
@@ -30678,15 +30681,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   <div className="space-y-5">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="flex items-start gap-3">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#eef5ff] text-[#0b63f6]">
-                          <Tag className="h-5 w-5" />
-                        </span>
+	                        <span className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#eef5ff] text-[#0b63f6]">
+	                          <Tag className="h-5 w-5" />
+	                        </span>
 	                        <div>
-		                          <h3 className="text-2xl font-semibold text-[#0c2440]">Buyer Onboarding + Signed OTP</h3>
-		                          <p className="mt-1 text-sm text-[#5f7690]">Send onboarding and upload the already-signed OTP in parallel. Arch9 only captures the evidence and buyer details here.</p>
+		                          <h3 className="text-2xl font-semibold text-[#0c2440]">Signed OTP</h3>
+		                          <p className="mt-1 text-sm text-[#5f7690]">Upload the fully signed OTP received outside Arch9. The file is stored against the buyer lead, accepted offer, and linked transaction context.</p>
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
+                        <label className={`inline-flex min-h-9 items-center gap-2 rounded-[12px] px-3 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(6,29,59,0.16)] ${buyerOfferDocumentUploading || !selectedLeadOfferCentreProperty ? 'cursor-not-allowed bg-[#8290a0]' : 'cursor-pointer bg-[#061d3b] hover:bg-[#0a2a52]'}`}>
+                          <Upload className="h-4 w-4" />
+                          {buyerOfferDocumentUploading ? 'Uploading...' : 'Upload Signed OTP'}
+                          <input
+                            type="file"
+                            className="sr-only"
+                            accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                            disabled={buyerOfferDocumentUploading || !selectedLeadOfferCentreProperty}
+                            onChange={(event) => void handleUploadBuyerOfferDocument(event)}
+                          />
+                        </label>
                         <Button
                           type="button"
                           size="sm"
@@ -30706,7 +30720,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                     </div>
 
-                    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_430px]">
+                    <div className="grid gap-5">
                       <div className="space-y-5">
                         <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
                           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -30788,7 +30802,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </div>
                           ) : (
                             <div className="mt-4 rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
-	                              Select a property before sending onboarding or uploading the signed OTP.
+		                              Select a property before uploading the signed OTP.
                             </div>
                           )}
 
@@ -30805,242 +30819,47 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </div>
                         </section>
 
-                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Parallel Process</p>
-                              <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Collect buyer details while the signed OTP is uploaded.</h4>
-                            </div>
-                            <span className="rounded-full bg-[#eef5ff] px-3 py-1 text-xs font-semibold text-[#0b63f6]">
-                              {selectedLeadOfferStageChecklist.filter((item) => item.done).length}/{selectedLeadOfferStageChecklist.length} ready
-                            </span>
-                          </div>
-                          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                            {selectedLeadOfferStageChecklist.map((item) => (
-                              <div key={item.key} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-4">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <p className="text-sm font-semibold text-[#203a54]">{item.label}</p>
-                                    <p className="mt-1 text-xs leading-5 text-[#6f849b]">{item.detail}</p>
-                                  </div>
-                                  <span className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${item.done ? 'bg-[#eaf7ef] text-[#1e7a46]' : 'bg-[#fff4dd] text-[#9a6416]'}`}>
-                                    {item.status}
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </section>
-
-                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
-                          <div className="flex items-center gap-2">
-                            <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">2</span>
-	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Send Buyer Onboarding</h4>
-	                          </div>
-	                          <form className="mt-4 grid gap-4" data-offer-centre="true" onSubmit={handleSendBuyerOnboardingFromAppointment}>
-                            <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
-                              <label className="grid gap-1">
-                                <span className="text-xs font-semibold text-[#6f849b]">Recipient</span>
-                                <div className="flex items-center justify-between gap-3 rounded-[14px] border border-[#dfe9f4] bg-[#fbfdff] px-4 py-3">
-                                  <div className="flex min-w-0 items-center gap-3">
-                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[#eef5ff] text-[#0b63f6]">
-                                      <UserRound className="h-5 w-5" />
-                                    </span>
-                                    <div className="min-w-0">
-                                      <p className="truncate text-sm font-semibold text-[#18324b]">{offerLinkForm.buyerName || selectedLeadContactName}</p>
-                                      <p className="truncate text-xs text-[#6f849b]">{offerLinkForm.buyerEmail || selectedLeadContact?.email || selectedLead?.email || 'Email pending'}</p>
-                                    </div>
-                                  </div>
-                                  <ChevronDown className="h-4 w-4 text-[#8aa0b6]" />
-                                </div>
-                              </label>
-                              <label className="grid gap-1">
-	                                <span className="text-xs font-semibold text-[#6f849b]">Onboarding Link Expiry</span>
-                                <Field type="date" value={offerLinkForm.expiryDate} onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, expiryDate: event.target.value }))} />
-                                <span className="text-[0.68rem] text-[#7b8fa5]">Link will expire at 23:59 on this date</span>
-                              </label>
-                            </div>
-
-                            <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
-                              <label className="grid gap-1">
-                                <span className="text-xs font-semibold text-[#6f849b]">Buyer Intake Mode</span>
-                                <Field
-                                  as="select"
-                                  value={offerLinkForm.clientIntakePreference}
-                                  onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, clientIntakePreference: event.target.value }))}
-                                >
-                                  {CLIENT_INTAKE_PREFERENCE_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                  ))}
-                                </Field>
-                                <span className="text-[0.68rem] text-[#7b8fa5]">Carry this through if the buyer wants portal, assisted capture, or hard-copy paperwork.</span>
-                              </label>
-                            </div>
-
-                            <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
-                              <label className="grid gap-1">
-                                <span className="text-xs font-semibold text-[#6f849b]">Personal Message (Optional)</span>
-                                <Field
-                                  as="textarea"
-                                  rows={3}
-                                  placeholder="Add a personal message for the buyer..."
-                                  value={offerLinkForm.note}
-                                  onChange={(event) => setOfferLinkForm((previous) => ({ ...previous, note: event.target.value }))}
-                                />
-                              </label>
-                              <div className="rounded-[14px] border border-[#dfe9f4] bg-white p-4">
-                                <p className="text-xs font-semibold text-[#6f849b]">Send via</p>
-                                <div className="mt-3 grid gap-2">
-                                  {[
-                                    ['email', Mail, 'Email'],
-                                    ['sms', MessageCircle, 'SMS'],
-                                    ['whatsapp', Phone, 'WhatsApp'],
-                                  ].map(([key, Icon, label]) => (
-                                    <label key={key} className="flex items-center gap-2 text-sm font-medium text-[#203a54]">
-                                      <input
-                                        type="checkbox"
-                                        checked={offerLinkChannels[key] === true}
-                                        onChange={(event) => setOfferLinkChannels((previous) => ({ ...previous, [key]: event.target.checked }))}
-                                        className="h-4 w-4 rounded border-[#cbd8e6] text-[#0b63f6]"
-                                      />
-                                      {createElement(Icon, { className: 'h-4 w-4 text-[#5f7893]' })}
-                                      {label}
-                                    </label>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-
-                            {offerLinkForm.lastOfferLink ? (
-                              <div className="rounded-[14px] border border-[#cde7d5] bg-[#f2fbf5] px-4 py-3 text-sm text-[#286b43]">
-	                                Buyer onboarding link ready: {offerLinkForm.lastOfferLink}
-                              </div>
-                            ) : null}
-
-                            {selectedLeadActiveOfferPortalStatus ? (
-                              <div className={`rounded-[14px] border px-4 py-3 text-sm ${selectedLeadActiveOfferPortalStatus.tone}`}>
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div>
-                                    <p className="font-semibold">{selectedLeadActiveOfferPortalStatus.label}</p>
-                                    <p className="mt-1 text-xs opacity-80">{selectedLeadActiveOfferPortalStatus.detail || 'Timestamp pending'}</p>
-                                  </div>
-                                  <div className="text-right text-xs font-semibold opacity-80">
-                                    {selectedLeadActiveOfferPortalStatus.openedAt ? <p>Opened {formatDate(selectedLeadActiveOfferPortalStatus.openedAt)}</p> : null}
-                                    {selectedLeadActiveOfferPortalStatus.submittedAt ? <p>Submitted {formatDate(selectedLeadActiveOfferPortalStatus.submittedAt)}</p> : null}
-                                  </div>
-                                </div>
-                              </div>
-                            ) : null}
-
-	                            <div className="flex flex-wrap items-center gap-3">
-	                              <Button type="submit" disabled={isOfferLinkSending || !selectedLeadOfferCentreProperty} className="rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]">
-	                                <Send className="h-4 w-4" />
-	                                {isOfferLinkSending ? 'Sending...' : 'Send Buyer Onboarding'}
-	                              </Button>
-	                            </div>
-	                          </form>
-	                        </section>
-
 	                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
-	                          <div className="flex items-center gap-2">
-	                            <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">3</span>
+	                          <div className="flex flex-wrap items-center justify-between gap-3">
+	                            <div className="flex items-center gap-2">
+	                              <Upload className="h-4 w-4 text-[#385977]" />
 		                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Upload Signed OTP</h4>
 		                          </div>
+	                            <span className="text-xs font-semibold text-[#7b8fa5]">PDF, image, or Word document</span>
+	                          </div>
 		                          <p className="mt-2 text-sm leading-6 text-[#607891]">
-		                            Upload the signed OTP received outside Arch9. This stores the document as the source of truth and does not generate or facilitate the offer.
+		                            Use the button above once the signed OTP is back. Arch9 stores it as the signed offer record and refreshes the linked lead, offer, document, and transaction views.
 		                          </p>
-	                          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-	                            <label className="grid gap-1">
-	                              <span className="text-xs font-semibold text-[#6f849b]">Property/listing</span>
-	                              <Field
-	                                as="select"
-	                                value={buyerOfferUploadForm.listingId || offerLinkForm.listingId || selectedLeadOfferCentreProperty?.id || ''}
-	                                onChange={(event) => setBuyerOfferUploadForm((previous) => ({ ...previous, listingId: event.target.value }))}
-	                              >
-	                                <option value="">Select property/listing</option>
-	                                {leadAppointmentOfferListingOptions.map((listing) => (
-	                                  <option key={listing.id} value={listing.id}>{listing.label}</option>
-	                                ))}
-	                              </Field>
-	                            </label>
-	                            <label className="grid gap-1">
-		                              <span className="text-xs font-semibold text-[#6f849b]">Accepted amount</span>
-	                              <Field
-	                                type="number"
-	                                min="0"
-	                                step="1000"
-		                                placeholder="Accepted amount"
-	                                value={buyerOfferUploadForm.offerAmount}
-	                                onChange={(event) => setBuyerOfferUploadForm((previous) => ({ ...previous, offerAmount: event.target.value }))}
-	                              />
-	                            </label>
-	                            <label className="grid gap-1">
-	                              <span className="text-xs font-semibold text-[#6f849b]">Finance type</span>
-	                              <Field
-	                                placeholder="Cash, bond, mixed..."
-	                                value={buyerOfferUploadForm.financeType}
-	                                onChange={(event) => setBuyerOfferUploadForm((previous) => ({ ...previous, financeType: event.target.value }))}
-	                              />
-	                            </label>
-	                            <label className="grid gap-1 lg:row-span-2">
-		                              <span className="text-xs font-semibold text-[#6f849b]">Agent note</span>
-	                              <Field
-	                                as="textarea"
-	                                rows={4}
-		                                placeholder="Add context for this uploaded signed OTP..."
-	                                value={buyerOfferUploadForm.note}
-	                                onChange={(event) => setBuyerOfferUploadForm((previous) => ({ ...previous, note: event.target.value }))}
-	                              />
-	                            </label>
-	                          </div>
-	                          <div className="mt-4 flex flex-wrap items-center gap-3">
-	                            <label className={`inline-flex min-h-10 items-center gap-2 rounded-[12px] px-4 text-sm font-semibold text-white shadow-[0_12px_22px_rgba(6,29,59,0.18)] ${buyerOfferDocumentUploading ? 'cursor-not-allowed bg-[#8290a0]' : 'cursor-pointer bg-[#061d3b] hover:bg-[#0a2a52]'}`}>
-	                              <Upload className="h-4 w-4" />
-		                              {buyerOfferDocumentUploading ? 'Uploading signed OTP...' : 'Upload Signed OTP'}
-	                              <input
-	                                type="file"
-	                                className="sr-only"
-	                                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-	                                disabled={buyerOfferDocumentUploading}
-	                                onChange={(event) => void handleUploadBuyerOfferDocument(event)}
-	                              />
-	                            </label>
-	                            <span className="text-xs font-semibold text-[#7b8fa5]">
-	                              Accepted: PDF, images, Word documents
-	                            </span>
-	                          </div>
+	                          {selectedLeadOfferCentreProperty ? (
+	                            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+	                              <div className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
+	                                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8fa5]">Property</p>
+	                                <p className="mt-1 truncate text-sm font-semibold text-[#203a54]" title={selectedLeadOfferCentreProperty.title}>{selectedLeadOfferCentreProperty.title}</p>
+	                              </div>
+	                              <div className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
+	                                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8fa5]">Accepted amount</p>
+	                                <p className="mt-1 text-sm font-semibold text-[#203a54]">{buyerOfferUploadForm.offerAmount ? formatCurrency(buyerOfferUploadForm.offerAmount) : selectedLeadOfferCentreProperty.price || selectedLeadBuyerBudgetLabel || 'From OTP'}</p>
+	                              </div>
+	                              <div className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-3">
+	                                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8fa5]">Finance</p>
+	                                <p className="mt-1 text-sm font-semibold text-[#203a54]">{buyerOfferUploadForm.financeType || selectedLead?.financeType || selectedLead?.preferredFinanceType || 'From OTP'}</p>
+	                              </div>
+	                            </div>
+	                          ) : (
+	                            <div className="mt-4 rounded-[14px] border border-[#f1dfb8] bg-[#fff8e8] px-3 py-2 text-sm text-[#8a641d]">
+	                              Select a property before uploading the signed OTP.
+	                            </div>
+	                          )}
 	                        </section>
 
 	                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
                           <div className="flex flex-wrap items-center justify-between gap-3">
-	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Process History</h4>
+		                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Signed OTP Records</h4>
                             <button type="button" className="text-xs font-semibold text-[#0b63f6]" onClick={() => setLeadWorkspaceTab('activity')}>
                               View full timeline
                             </button>
                           </div>
-                          <div className="mt-5 overflow-x-auto pb-2">
-                            <div className="grid min-w-[760px] grid-cols-6 gap-0">
-                              {selectedLeadOfferHistoryStages.map((stage, index) => {
-                                const Icon = stage.icon
-                                return (
-                                  <div key={stage.key} className="relative px-2">
-                                    {index < selectedLeadOfferHistoryStages.length - 1 ? (
-                                      <div className={`absolute left-[50%] right-[-50%] top-5 h-0.5 ${stage.done ? 'bg-[#0b63f6]' : 'bg-[#dce6f2]'}`} />
-                                    ) : null}
-                                    <div className="relative z-10 flex flex-col items-center text-center">
-                                      <span className={`flex h-10 w-10 items-center justify-center rounded-full border ${stage.done ? 'border-[#0b63f6] bg-[#0b63f6] text-white' : 'border-[#d5e1ee] bg-white text-[#8aa0b6]'}`}>
-                                        <Icon className="h-4 w-4" />
-                                      </span>
-                                      <p className="mt-3 text-xs font-semibold text-[#203a54]">{stage.label}</p>
-                                      <p className="mt-1 text-[0.68rem] text-[#7b8fa5]">{stage.done ? formatDateShort(stage.detail) : '—'}</p>
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-
-                          {selectedLeadOffersError ? (
+	                          {selectedLeadOffersError ? (
                             <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{selectedLeadOffersError}</div>
                           ) : null}
 
@@ -31153,89 +30972,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               })
 	                            ) : (
 	                              <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
-	                                No signed OTP has been uploaded yet. Send buyer onboarding and upload the signed OTP when it is received.
+		                                No signed OTP has been uploaded yet.
 	                              </div>
 	                            )}
                           </div>
                         </section>
                       </div>
 
-                      <aside className="space-y-5">
-	                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
-	                          <div className="flex items-center gap-2">
-	                            <CheckSquare className="h-4 w-4 text-[#385977]" />
-	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Handoff Snapshot</h4>
-	                          </div>
-	                          <div className="mt-4 space-y-3">
-	                            {selectedLeadOfferStageChecklist.map((item) => (
-	                              <div key={item.key} className="rounded-[14px] border border-[#e6eef7] bg-[#fbfdff] p-4">
-	                                <div className="flex items-start justify-between gap-3">
-	                                  <div>
-	                                    <p className="text-sm font-semibold text-[#203a54]">{item.label}</p>
-	                                    <p className="mt-1 text-xs leading-5 text-[#6f849b]">{item.detail}</p>
-	                                  </div>
-	                                  {item.done ? (
-	                                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#168257]" />
-	                                  ) : (
-	                                    <Clock3 className="h-4 w-4 shrink-0 text-[#d08a16]" />
-	                                  )}
-	                                </div>
-	                              </div>
-	                            ))}
-	                          </div>
-	                        </section>
-
-                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
-                          <div className="flex items-center gap-2">
-                            <RefreshCw className="h-4 w-4 text-[#385977]" />
-	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Transaction Conversion</h4>
-	                          </div>
-	                          <div className={`mt-4 rounded-[16px] border p-4 ${selectedLeadAcceptedOffer ? 'border-[#cfe8dc] bg-[#f2fbf5]' : 'border-[#f1dfb8] bg-[#fff8e8]'}`}>
-	                            <div className="flex items-center justify-between gap-3">
-	                              <span className="text-xs font-semibold text-[#5f7690]">Status</span>
-	                              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedLeadAcceptedOffer ? 'bg-[#dff5e8] text-[#17643a]' : 'bg-[#ffe9bd] text-[#9a6416]'}`}>
-	                                {selectedLeadAcceptedOffer ? 'Signed OTP Ready' : 'Awaiting Signed OTP'}
-	                              </span>
-	                            </div>
-	                            <p className="mt-3 text-sm leading-6 text-[#5f7690]">
-	                              {selectedLeadAcceptedOffer ? 'Signed OTP evidence is ready for conversion once the preflight checks pass.' : 'Upload the signed OTP and complete buyer onboarding before creating the transaction.'}
-	                            </p>
-	                          </div>
-                          <AcceptedOfferConversionPreflightPanel
-                            preflight={selectedLeadAcceptedOfferConversionPreflight}
-                            loading={selectedLeadLifecycleDiagnosticLoading}
-                          />
-                          <Button
-                            type="button"
-                            disabled={!selectedLeadAcceptedOffer || !selectedLeadAcceptedOfferConversionPreflight?.canConvert || canonicalOfferActionId === `${selectedLeadAcceptedOffer?.id}:convert`}
-                            className="mt-4 w-full rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]"
-                            onClick={() => selectedLeadAcceptedOffer ? void handleLeadCanonicalOfferConversion(selectedLeadAcceptedOffer) : null}
-                          >
-                            Create Transaction
-                          </Button>
-                          {selectedLeadLifecycleDiagnosticError ? (
-                            <div className="mt-3 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">
-                              {selectedLeadLifecycleDiagnosticError}
-                            </div>
-                          ) : null}
-                          <div className="mt-4 grid gap-2">
-	                            {[
-	                              ['Signed OTP converted', selectedLeadLifecycleDiagnostic?.checks?.offerConverted],
-	                              ['Transaction linked', selectedLeadLifecycleDiagnostic?.checks?.transactionLinked],
-	                              ['Onboarding ready', selectedLeadLifecycleDiagnostic?.checks?.onboardingReady],
-                            ].map(([label, isDone]) => (
-                              <div key={label} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e6eef7] bg-[#fbfdff] px-3 py-2">
-                                <span className="text-xs font-semibold text-[#607891]">{label}</span>
-                                <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${isDone ? 'bg-[#eaf7ef] text-[#1e7a46]' : 'bg-[#f3f6f9] text-[#7b8fa5]'}`}>
-                                  {selectedLeadLifecycleDiagnosticLoading ? 'Checking' : isDone ? 'OK' : 'Open'}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </section>
-
-                        <TransactionHandoffHealthPanel health={selectedLeadTransactionHandoffHealth} />
-                      </aside>
                     </div>
                   </div>
                   ) : null}

@@ -14597,7 +14597,7 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
       <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-slate-950">Transaction Conversion</h3>
+            <h3 className="text-sm font-semibold text-slate-950">Transaction</h3>
             <p className="mt-1 text-sm text-slate-500">Send an offer link first. Once the seller accepts an offer, Arch9 can create the transaction from that accepted offer.</p>
           </div>
           <StatusPill tone="slate">Waiting for offer</StatusPill>
@@ -14627,7 +14627,7 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
     <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-slate-950">Transaction Conversion</h3>
+          <h3 className="text-sm font-semibold text-slate-950">Transaction</h3>
           <p className="mt-1 text-sm text-slate-500">
             Accepted offers should land in one transaction workspace. Once it exists, keep working from that transaction instead of creating another one.
           </p>
