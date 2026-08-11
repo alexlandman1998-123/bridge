@@ -78,7 +78,7 @@ import {
 } from '../../lib/agentListingStorage'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { DOCUMENTS_BUCKET_CANDIDATES, assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, ensurePrivateListingDocumentRequirements, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, linkPrivateListingDocument, markPrivateListingDocumentsPendingTransactionPromotion, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, ensurePrivateListingDocumentRequirements, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, linkPrivateListingDocument, markPrivateListingDocumentsPendingTransactionPromotion, sendSellerOnboarding, updatePrivateListing, uploadPrivateListingDocument } from '../../services/privateListingService'
 import { allocatePrivateListingTransferAttorneyPreInstruction, getPrivateListingTransferAttorneyAllocation, listPrivateListingTransferAttorneyAllocations } from '../../services/privateListingAttorneyAllocationService'
 import { repairSellerDocumentTransactionContinuity } from '../../services/sellerDocumentTransactionContinuityService'
 import { activateSellerPortalForListing, SELLER_PORTAL_ACTIVATION_SOURCES } from '../../services/sellerPortalActivationService'
@@ -9549,6 +9549,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const sellerPreferredAttorneysRequestRef = useRef(0)
   const [isMandateGenerating, setIsMandateGenerating] = useState(false)
   const [isMandateSending, setIsMandateSending] = useState(false)
+  const [isMandateUploading, setIsMandateUploading] = useState(false)
   const [mandateQuickStartOpen, setMandateQuickStartOpen] = useState(false)
   const [mandateQuickStartBusy, setMandateQuickStartBusy] = useState(false)
   const [mandateQuickStartProgress, setMandateQuickStartProgress] = useState('')
@@ -20161,6 +20162,189 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setIsMandateGenerating(false)
     }
   }
+
+  async function handleUploadSignedMandateForSelectedLead(event = null) {
+    const file = event?.target?.files?.[0] || null
+    if (event?.target) event.target.value = ''
+    if (!file || !selectedLead || !selectedLeadIsSeller || isMandateUploading) return
+    if (!organisationId) {
+      setError('Select an agency workspace before uploading a mandate.')
+      return
+    }
+    if (!isSupabaseConfigured) {
+      setError('Signed mandate upload needs live document storage. Reload once Supabase is configured.')
+      return
+    }
+
+    const leadIdForUpload = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLeadRecordId || routeLeadId)
+    if (!leadIdForUpload) {
+      setError('This seller lead could not be identified for mandate upload.')
+      return
+    }
+
+    showDocumentUploadOverlay({ documentLabel: 'Signed Mandate', fileName: file.name })
+    try {
+      setError('')
+      setMessage('Uploading signed mandate...')
+      setIsMandateUploading(true)
+
+      let listingId = normalizeText(
+        selectedLeadLinkedListing?.id ||
+          selectedLeadLinkedListing?.listingId ||
+          selectedLeadLinkedListing?.listing_id ||
+          selectedLead?.listingId ||
+          selectedLead?.listing_id ||
+          selectedLead?.privateListingId ||
+          selectedLead?.private_listing_id,
+      )
+      if (!listingId) {
+        setMessage('Creating seller listing shell...')
+        const created = await createPrivateListing({
+          organisationId,
+          assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
+          sellerLeadId: normalizeLeadIdentityKey(selectedLead?.sellerWorkflowLeadId || leadIdForUpload),
+          originatingCrmLeadId: normalizeLeadIdentityKey(leadIdForUpload),
+          listingStatus: 'seller_lead',
+          sellerOnboardingStatus: normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
+            ? 'completed'
+            : 'in_progress',
+          mandateStatus: 'not_started',
+          listingVisibility: 'internal',
+          title: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress || selectedLeadDisplayName) || 'Seller mandate',
+          propertyType: normalizeText(selectedLeadPropertyType) || 'House',
+          listingCategory: 'private_sale',
+          askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+          estimatedValue: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+          addressLine1: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+          formattedAddress: normalizeText(selectedLead?.formattedAddress),
+          streetAddress: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
+          suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
+          city: normalizeText(selectedLead?.city),
+          province: normalizeText(selectedLead?.province),
+          country: normalizeText(selectedLead?.country) || 'South Africa',
+          postalCode: normalizeText(selectedLead?.postalCode),
+          latitude: selectedLead?.latitude ?? null,
+          longitude: selectedLead?.longitude ?? null,
+          googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
+          description: normalizeText(selectedLead?.notes),
+          source: 'pipeline_seller_mandate_manual_upload',
+        }, {
+          includeRequirementsAndDocuments: false,
+          syncRequirements: false,
+        })
+        listingId = normalizeText(created?.listing?.id)
+      }
+      if (!listingId) throw new Error('Create or link a seller listing before uploading a mandate.')
+
+      setMessage('Saving signed mandate...')
+      const safeFileBase = sanitizeSellerLeadDownloadFileName(selectedLeadDisplayName || selectedLead?.name || 'seller', 'seller')
+        .replace(/\.(html?|pdf|docx?|png|jpe?g)$/i, '')
+      const uploaded = await withPipelineTimeout(
+        uploadPrivateListingDocument(listingId, file, {
+          requirementKey: 'signed_mandate',
+          documentType: 'signed_mandate',
+          documentCategory: 'Mandate',
+          documentName: file.name || `${safeFileBase}-signed-mandate.pdf`,
+          visibility: 'seller_visible',
+          status: 'uploaded',
+        }),
+        'Signed mandate upload is taking too long. Please check your connection and try again.',
+        45000,
+      )
+      const uploadedAt = uploaded?.uploaded_at || new Date().toISOString()
+      const uploadedDocument = {
+        id: uploaded?.id || uploaded?.storage_path || `${listingId}-signed-mandate`,
+        key: 'signed_mandate',
+        requirementKey: 'signed_mandate',
+        requirement_key: 'signed_mandate',
+        documentType: uploaded?.document_type || 'signed_mandate',
+        document_type: uploaded?.document_type || 'signed_mandate',
+        label: 'Signed Mandate',
+        title: 'Signed Mandate',
+        category: uploaded?.category || 'Mandate',
+        document_category: uploaded?.category || 'Mandate',
+        status: uploaded?.status || 'uploaded',
+        statusLabel: 'Uploaded',
+        uploadedAt,
+        uploaded_at: uploadedAt,
+        uploadedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+        uploadedFileName: file.name || `${safeFileBase}-signed-mandate.pdf`,
+        fileName: file.name || `${safeFileBase}-signed-mandate.pdf`,
+        fileSize: Number(file.size || 0) || null,
+        fileType: normalizeText(file.type),
+        storagePath: uploaded?.storage_path || '',
+        storage_path: uploaded?.storage_path || '',
+        url: uploaded?.url || '',
+        privateListingId: listingId,
+        upload_source: 'seller_lead_mandate_tab_manual_upload',
+      }
+      const upsertDocument = (rows = []) => {
+        const targetKeys = new Set(documentLookupKeys(uploadedDocument))
+        const remaining = (Array.isArray(rows) ? rows : []).filter((row) =>
+          !documentLookupKeys(row).some((key) => targetKeys.has(key)),
+        )
+        return [uploadedDocument, ...remaining]
+      }
+      const rawPayload = parseLeadRawEnquiryPayload(selectedLead.rawEnquiryPayload || selectedLead.raw_enquiry_payload)
+      const leadDocuments = upsertDocument([
+        ...normalizeLeadWorkspaceDocumentArray(rawPayload.leadDocuments),
+        ...normalizeLeadWorkspaceDocumentArray(selectedLead.leadDocuments),
+      ])
+      const sellerDocuments = upsertDocument([
+        ...normalizeLeadWorkspaceDocumentArray(rawPayload.sellerDocuments),
+        ...normalizeLeadWorkspaceDocumentArray(selectedLead.sellerDocuments),
+      ])
+      const rawEnquiryPayload = {
+        ...rawPayload,
+        leadDocuments,
+        uploadedDocuments: leadDocuments,
+        sellerDocuments,
+      }
+      const leadPatch = {
+        stage: 'Mandate Signed',
+        status: 'Mandate Signed',
+        listingId,
+        mandateStatus: 'signed_uploaded',
+        mandateSignedAt: uploadedAt,
+        mandateSignedDocumentPath: uploadedDocument.storagePath,
+        mandateSignedDocumentUrl: uploadedDocument.url,
+        rawEnquiryPayload,
+        leadDocuments,
+        uploadedDocuments: leadDocuments,
+        sellerDocuments,
+      }
+
+      patchSelectedLeadRecord(leadPatch, leadIdForUpload)
+      await updateAgencyCrmLeadRecord(organisationId, leadIdForUpload, leadPatch).catch((leadUpdateError) => {
+        console.warn('[AgencyPipelinePage] Seller mandate upload lead sync failed.', leadUpdateError)
+        return null
+      })
+      await createAgencyCrmLeadActivity(organisationId, leadIdForUpload, {
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType: 'Mandate Uploaded',
+        activityNote: `${file.name || 'Signed Mandate'} was uploaded manually and marked as signed.`,
+        outcome: 'Signed mandate uploaded',
+        activityDate: uploadedAt,
+      }, { actor: currentAgent }).catch((activityError) => {
+        console.warn('[AgencyPipelinePage] Seller mandate upload activity could not be recorded.', activityError)
+      })
+
+      await refreshSelectedLeadMandateTarget({
+        leadId: leadIdForUpload,
+        leadPatch,
+        reason: 'signed mandate manual upload',
+      })
+      setMessage('Signed mandate uploaded and marked on this seller lead.')
+      await reloadRecords(organisationId)
+    } catch (uploadError) {
+      setMessage('')
+      setError(uploadError?.message || 'Unable to upload the signed mandate.')
+    } finally {
+      setIsMandateUploading(false)
+      hideDocumentUploadOverlay()
+    }
+  }
+
   generateMandateFromSellerLeadRef.current = handleGenerateMandateFromSellerLead
 
   async function syncKingstonsSellerPackToListing(listingId, lead = selectedLead, handoffPayload = null) {
@@ -31436,9 +31620,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <h4 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102033]">{selectedLeadMandatePrimaryLabel}</h4>
                           <p className="mt-1 text-sm leading-6 text-[#60758b]">{selectedLeadMandateActionTitle || 'Prepare, generate, send, or view the mandate from the current packet state.'}</p>
                         </div>
-                        <Button type="button" size="sm" onClick={() => void handleSelectedLeadMandatePrimaryAction()} disabled={selectedLeadMandateActionDisabled}>
-                          {selectedLeadMandatePrimaryLabel}
-                        </Button>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <Button type="button" size="sm" onClick={() => void handleSelectedLeadMandatePrimaryAction()} disabled={selectedLeadMandateActionDisabled}>
+                            {selectedLeadMandatePrimaryLabel}
+                          </Button>
+                          <label className={`inline-flex min-h-9 items-center justify-center gap-2 rounded-[12px] border px-3 text-sm font-semibold shadow-sm transition ${isMandateUploading ? 'cursor-not-allowed border-[#e5edf5] bg-[#f8fbff] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] bg-white text-[#315b7a] hover:border-[#a9bfd6]'}`}>
+                            <Upload className="h-4 w-4" />
+                            {isMandateUploading ? 'Uploading...' : 'Upload Mandate'}
+                            <input
+                              type="file"
+                              className="sr-only"
+                              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                              disabled={isMandateUploading}
+                              onChange={(event) => void handleUploadSignedMandateForSelectedLead(event)}
+                            />
+                          </label>
+                        </div>
                       </div>
                       <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                         {selectedLeadMandateQuickStartRows.map((row) => (
