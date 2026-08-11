@@ -144,6 +144,60 @@ Branch created from clean `main` at `3227d045f6900cfe24c844a79585d312b74190fb`.
 
 No runtime changes are included in Phase 0.
 
+## Phase 1 Current Truth Recheck
+
+Recorded at `2026-08-11 19:33:18 SAST` after the workflow freeze label was applied.
+
+### Branch And Deployment Truth
+
+| Surface | Current ref | Evidence |
+| --- | --- | --- |
+| `origin/main` | `3227d045f6900cfe24c844a79585d312b74190fb` | Local `origin/main` and `main` both resolve to this baseline. |
+| PR #16 branch | `dc43fae1a9ad952c2da177ccfdad69c3baed7c27` | Current branch `codex/forward-port-buyer-seller-bond-workflows-20260811`. |
+| Production `app.arch9.co.za` | `550cd8fb498c7d8aa5416a80d738fe55253de003` | `release-manifest.json` and Vercel build logs show production was deployed from this reconciliation branch at commit `550cd8f`. |
+| PR preview | `dc43fae1a9ad952c2da177ccfdad69c3baed7c27` | GitHub PR checks for PR #16 passed after the Phase 0 freeze commit; Supabase Preview skipped. |
+
+Production is not currently equal to `origin/main`. It is a production deployment from the reconciliation branch at `550cd8fb`, which is one documentation-only commit behind the current PR #16 head.
+
+### Code Truth
+
+`git diff --shortstat origin/main...HEAD` reports `23 files changed, 1943 insertions(+), 169 deletions(-)`.
+
+Runtime/code files changed by PR #16 relative to `origin/main` are limited to:
+
+- `the-it-guy/src/components/Sidebar.jsx`
+- `the-it-guy/src/pages/agency/AgencyPipelinePage.jsx`
+- `the-it-guy/src/services/sellerProcessActionModelService.js`
+- `the-it-guy/src/services/sellerProcessDefinitionService.js`
+- `the-it-guy/src/services/sellerProcessEvidenceMappingService.js`
+- `the-it-guy/src/services/sellerProcessRailModelService.js`
+
+The current PR does not modify `the-it-guy/src/pages/AgentLeadsPage.jsx` or `the-it-guy/src/pages/BuyerOfferSubmission.jsx`.
+
+### Buyer Surface Truth
+
+`AgencyPipelinePage.jsx` has the new buyer offer/OTP surface in production and PR #16:
+
+- `BUYER_OFFER_DOCUMENT_LABEL = 'Signed OTP'`
+- `Open Offers`
+- `Offers` buyer tab labels
+- `Upload Signed OTP`
+- `Signed OTP` buyer workspace heading
+
+`AgentLeadsPage.jsx` is unchanged across `origin/main`, production commit `550cd8fb`, and PR #16 head. It still contains legacy buyer workspace language including:
+
+- `Open Onboarding / OTP`
+- `Onboarding / OTP`
+- `Property Match`
+
+Conclusion: the visible buyer mismatch is not a full rollback. Production has the agency pipeline forward-port, but the lead/workspace surface in `AgentLeadsPage.jsx` was not forward-ported in this PR and remains on the old copy/model.
+
+### Bond-Originator Truth
+
+The current PR adds bond-originator verification scripts, but the inspected diff against `origin/main` does not include runtime changes under the bond UI/service paths listed for Phase 5 or the email handlers listed for Phase 6.
+
+Conclusion: bond-originator runtime parity still needs a focused source-branch comparison before claiming it is caught up.
+
 ## Phase 1 Verification
 
 Forward-ported the Sidebar parent navigation fix from `origin/codex/seller-first-contact-reload`.
