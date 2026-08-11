@@ -15,8 +15,17 @@ const COMPLETE_ONBOARDING_STATUSES = new Set([
 ])
 
 export const TRANSFER_INSTRUCTION_LIFECYCLE_ASSURANCE_VIEW = 'transfer_firm_allocation_lifecycle_v2'
+export const TRANSFER_INSTRUCTION_LIFECYCLE_ASSURANCE_VIEW_FLAG = 'VITE_ENABLE_TRANSFER_FIRM_LIFECYCLE_ASSURANCE_VIEW'
 
 const unavailableOptionalRelations = new Set()
+
+function isTruthyFlag(value) {
+  return ['1', 'true', 'yes', 'on', 'enabled'].includes(String(value || '').trim().toLowerCase())
+}
+
+export function isTransferLifecycleAssuranceViewEnabled(env = import.meta?.env || {}) {
+  return isTruthyFlag(env?.[TRANSFER_INSTRUCTION_LIFECYCLE_ASSURANCE_VIEW_FLAG])
+}
 
 function normalize(value = '') {
   return String(value || '').trim().toLowerCase().replace(/[\s/-]+/g, '_')
@@ -320,6 +329,7 @@ export async function getTransferInstructionLifecycle(transactionId) {
   const transaction = transactionResult.data
   if (!transaction) return null
 
+  const lifecycleAssuranceEnabled = isTransferLifecycleAssuranceViewEnabled()
   const [allocations, roleplayers, assignments, documents, lifecycleAssuranceRows] = await Promise.all([
     transaction.listing_id
       ? fetchRows('private_listing_role_players', (query) =>
@@ -331,8 +341,10 @@ export async function getTransferInstructionLifecycle(transactionId) {
       query.eq('transaction_id', normalizedTransactionId).order('updated_at', { ascending: false })),
     fetchRows('documents', (query) =>
       query.eq('transaction_id', normalizedTransactionId).order('created_at', { ascending: false })),
-    fetchRows(TRANSFER_INSTRUCTION_LIFECYCLE_ASSURANCE_VIEW, (query) =>
-      query.eq('transaction_id', normalizedTransactionId).limit(1)),
+    lifecycleAssuranceEnabled
+      ? fetchRows(TRANSFER_INSTRUCTION_LIFECYCLE_ASSURANCE_VIEW, (query) =>
+          query.eq('transaction_id', normalizedTransactionId).limit(1))
+      : Promise.resolve([]),
   ])
 
   const sellerProcessProfileResolution = resolveSellerProcessProfileForOrganisation({

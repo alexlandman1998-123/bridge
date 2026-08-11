@@ -5,6 +5,7 @@ import {
   buildAttorneyFirmFirstReadinessReport,
 } from '../lib/attorneyFirmFirstReadiness.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
+import { isTransferLifecycleAssuranceViewEnabled } from './transferInstructionLifecycleService.js'
 
 const READINESS_SELECT = [
   'transaction_id',
@@ -95,7 +96,7 @@ export async function getAttorneyFirmFirstReadinessReport({ organisationId = '',
     return buildAttorneyFirmFirstReadinessReport([], { source: 'supabase_not_configured' })
   }
 
-  if (missingReadinessViews.has(ATTORNEY_FIRM_FIRST_LIFECYCLE_VIEW)) {
+  if (!isTransferLifecycleAssuranceViewEnabled() || missingReadinessViews.has(ATTORNEY_FIRM_FIRST_LIFECYCLE_VIEW)) {
     const report = buildAttorneyFirmFirstReadinessReport([], { source: 'phase7_assurance_view_missing' })
     return {
       ...report,
