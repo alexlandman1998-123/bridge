@@ -775,3 +775,54 @@ Verification:
 - `npm run test:bond-bank-outcome-originator-rls`
 - `node scripts/bond-partner-profile.test.mjs`
 - `npm run build` from `the-it-guy/`
+
+## Seller Workflow Sanity Check Phase 7
+
+Purpose: verify the seller workspace, Kingstons seller pack flow, listing handoff, seller portal, document, viewing, and process-panel surfaces after the buyer and bond-originator forward-port work.
+
+Changed:
+
+- `the-it-guy/src/pages/agency/AgencyPipelinePage.jsx`
+- `the-it-guy/scripts/pipeline-seller-portal-stability.test.mjs`
+
+Repair made:
+
+- restored the visible Kingstons digital-signing decision point in the agency lead workspace documents surface so agents see the paused digital-signing path before attempting mandate actions
+- updated the seller portal stability diagnostic to match the current lead-workspace hydration variable names and the scoped pinned-lead merge behavior introduced during the recent seller reload work
+
+Behavior guarded:
+
+- seller lead workspace and Kingstons seller process forward-port diagnostics remain green
+- Kingstons seller pack operational handoff, transaction readiness, readiness enforcement, seller portal refinement, digital-signing decision, listing handoff, and transaction handoff remain covered
+- seller portal alignment, seller portal UI regression, pipeline seller portal stability, listing conversion, listing relationship integrity, seller document source of truth, lead ingestion, viewing workflow, seller journey, and seller readiness remain green
+- app build completes after the lead workspace JSX patch
+
+Verification:
+
+- `npm run test:forward-port-seller-workspace-phase3`
+- `npm run test:forward-port-kingstons-seller-process-phase4`
+- `npm run test:seller-process-evaluator-phase3`
+- `npm run test:seller-process-projection-phase4`
+- `npm run test:seller-process-global-smoke-phase1`
+- `npm run test:seller-process-shadow-integration-phase5`
+- `npm run test:seller-process-panel-model-phase7`
+- `npm run test:seller-process-workspace-panel-phase8`
+- `npm run test:seller-process-panel-action-routing-phase9`
+- `npm run test:kingstons-seller-pack-phase4-operational-handoff`
+- `npm run test:kingstons-seller-pack-phase5-transaction-readiness`
+- `npm run test:kingstons-seller-pack-phase6-readiness-enforcement`
+- `npm run test:kingstons-seller-portal-refinement-phase7`
+- `npm run test:kingstons-digital-signing-decision-phase8`
+- `npm run test:kingstons-listing-handoff-phase4`
+- `npm run test:kingstons-transaction-handoff-phase5`
+- `npm run test:seller-portal-alignment`
+- `npm run test:seller-portal-ui-regression`
+- `npm run test:pipeline-seller-portal-stability`
+- `npm run test:seller-listing-conversion-idempotency`
+- `npm run test:seller-listing-relationship-integrity`
+- `npm run test:seller-document-source-of-truth`
+- `npm run test:lead-ingestion`
+- `npm run test:viewing-workflow-qa`
+- `npm run test:seller-journey`
+- `npm run test:seller-readiness`
+- `npm run build` from `the-it-guy/`

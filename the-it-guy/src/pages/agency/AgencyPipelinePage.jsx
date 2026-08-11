@@ -31591,6 +31591,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             ))}
                           </div>
 
+                          {selectedLeadKingstonsDigitalSigningDecision.blocked ? (
+                            <div className="mt-6 rounded-[18px] border border-[#f2dfbd] bg-[#fff9ec] px-4 py-3 text-sm font-semibold text-[#7a5a17]" data-testid="kingstons-digital-signing-decision">
+                              {selectedLeadKingstonsDigitalSigningDecision.label}: {selectedLeadKingstonsDigitalSigningDecision.agentAction}
+                            </div>
+                          ) : null}
+
                           {selectedLeadHasKingstonsPipelineSignal ? (
                             <div className="mt-6">
                               <KingstonsListingTermsSummaryCard
