@@ -17,11 +17,20 @@ assert.match(
 )
 assert.match(agencyPipelinePageSource, /BUYER_PROFILE_WORKSPACE_TAB_KEY = 'buyer_profile'/)
 assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === 'overview' && !selectedLeadIsSeller \? \(/)
+assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === BUYER_PROFILE_WORKSPACE_TAB_KEY && !selectedLeadIsSeller \? \(/)
 assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY/)
 assert.match(agencyPipelinePageSource, /Open Onboarding \/ OTP/)
 for (const overviewPanelLabel of ['Buyer Qualification', 'What’s next', 'Activity Logger', 'Viewing Planner']) {
   assert.match(agencyPipelinePageSource, new RegExp(overviewPanelLabel), `${overviewPanelLabel} should render from the buyer overview workspace.`)
 }
+
+assert.match(agencyPipelinePageSource, /getOnboardingStepDefinitions/)
+assert.match(agencyPipelinePageSource, /buildBuyerOnboardingProfileModel/)
+assert.match(agencyPipelinePageSource, /data-testid="buyer-profile-onboarding-fields"/)
+assert.match(agencyPipelinePageSource, /This profile mirrors the buyer onboarding form fields/)
+assert.match(agencyPipelinePageSource, /Download onboarding form/)
+assert.match(agencyPipelinePageSource, /downloadBuyerOnboardingForm/)
+assert.match(agencyPipelinePageSource, /selectedLeadBuyerProfileModel\.sections\.map/)
 
 assert.match(agencyPipelinePageSource, /data-testid="simplified-viewing-planner"/)
 assert.match(agencyPipelinePageSource, /Plan the viewing in 3 simple steps\./)

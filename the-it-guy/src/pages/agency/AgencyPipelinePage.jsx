@@ -167,7 +167,7 @@ import {
   updateCanonicalOfferStatus,
   upsertAppointmentViewedListings,
 } from '../../lib/buyerLifecycleService'
-import { deriveOnboardingConfiguration } from '../../lib/purchaserPersonas'
+import { deriveOnboardingConfiguration, getOnboardingStepDefinitions } from '../../lib/purchaserPersonas'
 import { isBuyerWorkflowStage, transitionBuyerLeadStage } from '../../lib/workflowEngine'
 import {
   FINANCE_READINESS_DISCLAIMER,
@@ -4013,6 +4013,334 @@ function sanitizeSellerLeadDownloadFileName(value = '', fallback = 'seller-docum
 function toSellerLeadPdfFileName(value = '', fallback = 'seller-document.pdf') {
   const raw = sanitizeSellerLeadDownloadFileName(value || fallback, fallback)
   return raw.replace(/\.(html?|pdf)$/i, '') + '.pdf'
+}
+
+function sanitizeBuyerOnboardingDownloadFileName(value = '', fallback = 'buyer-onboarding-form.html') {
+  const normalized = normalizeText(value)
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return normalized || fallback
+}
+
+function escapeBuyerOnboardingHtml(value = '') {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function readBuyerOnboardingFieldValue(formData = {}, key = '') {
+  const fieldKey = normalizeText(key)
+  if (!fieldKey || !isPlainObject(formData)) return ''
+  if (Object.prototype.hasOwnProperty.call(formData, fieldKey)) return formData[fieldKey]
+  const parts = fieldKey.split('.').filter(Boolean)
+  let current = formData
+  for (const part of parts) {
+    if (!isPlainObject(current) && !Array.isArray(current)) return ''
+    current = current?.[part]
+    if (current === undefined || current === null) return ''
+  }
+  return current
+}
+
+function isBuyerOnboardingValueFilled(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (typeof value === 'boolean') return true
+  if (Array.isArray(value)) return value.some((item) => isBuyerOnboardingValueFilled(item))
+  if (typeof value === 'object') return Object.values(value).some((item) => isBuyerOnboardingValueFilled(item))
+  return false
+}
+
+function formatBuyerOnboardingChoice(value = '', options = []) {
+  const values = Array.isArray(value) ? value : [value]
+  const labels = values.map((item) => {
+    const normalized = normalizeText(item)
+    const option = (Array.isArray(options) ? options : []).find((candidate) => normalizeText(candidate?.value) === normalized)
+    return normalizeText(option?.label || normalized)
+  }).filter(Boolean)
+  return labels.join(', ')
+}
+
+function formatBuyerOnboardingFieldValue(field = {}, value) {
+  if (!isBuyerOnboardingValueFilled(value)) return 'Not captured'
+  if (field.type === 'checkbox') return value ? 'Yes' : 'No'
+  if (field.type === 'currency') return formatCurrency(value)
+  if (field.type === 'select' || field.type === 'multi_select' || field.type === 'radio') {
+    return formatBuyerOnboardingChoice(value, field.options) || 'Not captured'
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => isPlainObject(item) ? Object.values(item).filter(isBuyerOnboardingValueFilled).join(', ') : normalizeText(item)).filter(Boolean).join('; ') || 'Not captured'
+  }
+  if (isPlainObject(value)) {
+    return Object.entries(value)
+      .filter(([, entryValue]) => isBuyerOnboardingValueFilled(entryValue))
+      .map(([entryKey, entryValue]) => `${titleCaseWorkspaceValue(entryKey)}: ${normalizeText(entryValue)}`)
+      .join('; ') || 'Not captured'
+  }
+  return normalizeText(value) || 'Not captured'
+}
+
+function buildBuyerOnboardingSectionRows(sections = [], formData = {}) {
+  return (Array.isArray(sections) ? sections : []).map((section) => {
+    const fields = Array.isArray(section?.fields) ? section.fields : []
+    if (section?.repeatable) {
+      const entries = Array.isArray(formData?.[section.key]) ? formData[section.key] : []
+      const rows = entries.length
+        ? entries.map((entry, index) => ({
+            key: `${section.key}-${index}`,
+            title: `${section.itemLabel || section.title || 'Entry'} ${index + 1}`,
+            fields: fields.map((field) => {
+              const value = readBuyerOnboardingFieldValue(entry, field.key)
+              const required = Boolean(field.required || (typeof field.requiredWhen === 'function' && field.requiredWhen(entry)))
+              return {
+                key: field.key,
+                label: field.label || titleCaseWorkspaceValue(field.key),
+                required,
+                value,
+                displayValue: formatBuyerOnboardingFieldValue(field, value),
+                complete: !required || isBuyerOnboardingValueFilled(value),
+              }
+            }),
+          }))
+        : [{
+            key: `${section.key}-empty`,
+            title: section.itemLabel || section.title || 'Entry',
+            fields: fields.map((field) => {
+              const required = Boolean(field.required)
+              return {
+                key: field.key,
+                label: field.label || titleCaseWorkspaceValue(field.key),
+                required,
+                value: '',
+                displayValue: 'Not captured',
+                complete: !required,
+              }
+            }),
+          }]
+      const flatFields = rows.flatMap((row) => row.fields)
+      return {
+        ...section,
+        rows,
+        fields: flatFields,
+        requiredCount: flatFields.filter((field) => field.required).length,
+        completedRequiredCount: flatFields.filter((field) => field.required && field.complete).length,
+      }
+    }
+
+    const sectionFields = fields.map((field) => {
+      const value = readBuyerOnboardingFieldValue(formData, field.key)
+      const required = Boolean(field.required || (typeof field.requiredWhen === 'function' && field.requiredWhen(formData)))
+      return {
+        key: field.key,
+        label: field.label || titleCaseWorkspaceValue(field.key),
+        required,
+        value,
+        displayValue: formatBuyerOnboardingFieldValue(field, value),
+        complete: !required || isBuyerOnboardingValueFilled(value),
+      }
+    })
+    return {
+      ...section,
+      rows: [{ key: section.key, title: section.title, fields: sectionFields }],
+      fields: sectionFields,
+      requiredCount: sectionFields.filter((field) => field.required).length,
+      completedRequiredCount: sectionFields.filter((field) => field.required && field.complete).length,
+    }
+  })
+}
+
+function buildBuyerOnboardingProfileModel({ lead = {}, contact = {}, formData = {}, transaction = {}, onboarding = {}, onboardingSubmitted = false } = {}) {
+  const normalizedFormData = isPlainObject(formData) ? formData : {}
+  const enrichedFormData = {
+    purchaser_entity_type: normalizeText(normalizedFormData.purchaser_entity_type || normalizedFormData.purchaser_type || transaction?.purchaser_type || lead?.purchaserType || lead?.buyerType) || 'individual',
+    purchaser_type: normalizeText(normalizedFormData.purchaser_type || normalizedFormData.purchaser_entity_type || transaction?.purchaser_type || lead?.purchaserType || lead?.buyerType) || 'individual',
+    purchase_finance_type: normalizeText(normalizedFormData.purchase_finance_type || normalizedFormData.financeType || normalizedFormData.finance_type || transaction?.finance_type || lead?.financeType || lead?.finance_type) || 'bond',
+    first_name: normalizeText(normalizedFormData.first_name || contact?.firstName || lead?.firstName),
+    last_name: normalizeText(normalizedFormData.last_name || contact?.lastName || lead?.lastName),
+    email: normalizeText(normalizedFormData.email || contact?.email || lead?.email),
+    phone: normalizeText(normalizedFormData.phone || contact?.phone || lead?.phone),
+    purchase_price: normalizeText(normalizedFormData.purchase_price || transaction?.purchase_price || lead?.budget || lead?.estimatedValue),
+    ...normalizedFormData,
+  }
+  const detailStep = getOnboardingStepDefinitions(enrichedFormData, {
+    transaction,
+    purchaserType: enrichedFormData.purchaser_type,
+    financeType: enrichedFormData.purchase_finance_type,
+  }).find((step) => step.key === 'details')
+  const onboardingSections = buildBuyerOnboardingSectionRows(detailStep?.sections || [], enrichedFormData)
+  const routeFields = [
+    { key: 'purchaser_entity_type', label: 'Purchaser Type', required: true, type: 'text' },
+    { key: 'purchase_finance_type', label: 'Finance Type', required: true, type: 'text' },
+    { key: 'bridge_client_intake_preference', label: 'Buyer Intake Mode', type: 'text' },
+  ].map((field) => {
+    const value = readBuyerOnboardingFieldValue(enrichedFormData, field.key)
+    return {
+      ...field,
+      value,
+      displayValue: formatBuyerOnboardingFieldValue(field, value),
+      complete: !field.required || isBuyerOnboardingValueFilled(value),
+    }
+  })
+  const sections = [
+    {
+      key: 'routing',
+      title: 'Onboarding Routing',
+      description: 'These fields decide which buyer onboarding questions and document requirements apply.',
+      rows: [{ key: 'routing', title: 'Onboarding Routing', fields: routeFields }],
+      fields: routeFields,
+      requiredCount: routeFields.filter((field) => field.required).length,
+      completedRequiredCount: routeFields.filter((field) => field.required && field.complete).length,
+    },
+    ...onboardingSections,
+  ]
+  const requiredCount = sections.reduce((total, section) => total + section.requiredCount, 0)
+  const completedRequiredCount = sections.reduce((total, section) => total + section.completedRequiredCount, 0)
+  const capturedCount = sections.reduce((total, section) => total + section.fields.filter((field) => isBuyerOnboardingValueFilled(field.value)).length, 0)
+  const totalFieldCount = sections.reduce((total, section) => total + section.fields.length, 0)
+  const buyerName = normalizeText(
+    [enrichedFormData.first_name, enrichedFormData.last_name].filter(Boolean).join(' ') ||
+      enrichedFormData.fullName ||
+      enrichedFormData.company_name ||
+      enrichedFormData.trust_name ||
+      getLeadPrimaryPersonName(lead, contact),
+  ) || 'Buyer'
+
+  return {
+    buyerName,
+    formData: enrichedFormData,
+    sections,
+    totalFieldCount,
+    capturedCount,
+    requiredCount,
+    completedRequiredCount,
+    completionPercent: requiredCount ? Math.round((completedRequiredCount / requiredCount) * 100) : 0,
+    statusLabel: onboardingSubmitted ? 'Submitted' : capturedCount ? 'In progress' : 'Not started',
+    submittedAt: normalizeText(onboarding?.submitted_at || onboarding?.submittedAt || transaction?.onboarding_completed_at),
+    updatedAt: normalizeText(onboarding?.updated_at || onboarding?.updatedAt || transaction?.updated_at || lead?.updatedAt),
+  }
+}
+
+function buildBuyerOnboardingDownloadHtml(profile = {}) {
+  const sectionsMarkup = (profile.sections || []).map((section) => `
+    <section>
+      <h2>${escapeBuyerOnboardingHtml(section.title || 'Section')}</h2>
+      ${section.description ? `<p class="description">${escapeBuyerOnboardingHtml(section.description)}</p>` : ''}
+      ${(section.rows || []).map((row) => `
+        ${row.title && row.title !== section.title ? `<h3>${escapeBuyerOnboardingHtml(row.title)}</h3>` : ''}
+        <table>
+          <tbody>
+            ${(row.fields || []).map((field) => `
+              <tr>
+                <th>${escapeBuyerOnboardingHtml(field.label)}${field.required ? ' *' : ''}</th>
+                <td>${escapeBuyerOnboardingHtml(field.displayValue)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `).join('')}
+    </section>
+  `).join('')
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>${escapeBuyerOnboardingHtml(profile.buyerName || 'Buyer')} Onboarding Form</title>
+    <style>
+      body { margin: 0; background: #f5f8fb; color: #102033; font-family: Inter, Arial, sans-serif; }
+      main { max-width: 920px; margin: 0 auto; padding: 40px 28px; }
+      header, section { background: #fff; border: 1px solid #dce7f2; border-radius: 18px; padding: 24px; margin-bottom: 18px; }
+      h1 { margin: 0; font-size: 28px; letter-spacing: -0.04em; }
+      h2 { margin: 0 0 6px; font-size: 18px; }
+      h3 { margin: 18px 0 8px; font-size: 14px; color: #29435d; }
+      .meta, .description { color: #60758b; font-size: 13px; line-height: 1.55; }
+      .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+      .pill { border: 1px solid #cfe4db; background: #f4fbf7; border-radius: 999px; padding: 7px 11px; font-size: 12px; font-weight: 700; color: #17643a; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+      th, td { border-top: 1px solid #edf3f8; padding: 10px 8px; text-align: left; vertical-align: top; font-size: 13px; }
+      th { width: 38%; color: #60758b; font-weight: 700; }
+      td { color: #102033; font-weight: 600; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="meta">Buyer onboarding form</p>
+        <h1>${escapeBuyerOnboardingHtml(profile.buyerName || 'Buyer')}</h1>
+        <p class="meta">Status: ${escapeBuyerOnboardingHtml(profile.statusLabel || 'Not started')}${profile.submittedAt ? ` - Submitted: ${escapeBuyerOnboardingHtml(formatDateTime(profile.submittedAt))}` : ''}</p>
+        <div class="stats">
+          <span class="pill">${profile.completedRequiredCount || 0}/${profile.requiredCount || 0} required fields</span>
+          <span class="pill">${profile.capturedCount || 0}/${profile.totalFieldCount || 0} fields captured</span>
+        </div>
+      </header>
+      ${sectionsMarkup}
+    </main>
+  </body>
+</html>`
+}
+
+function triggerBuyerOnboardingHtmlDownload(profile = {}) {
+  if (typeof document === 'undefined' || typeof URL === 'undefined' || typeof Blob === 'undefined') return
+  const html = buildBuyerOnboardingDownloadHtml(profile)
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  const objectUrl = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = objectUrl
+  anchor.download = sanitizeBuyerOnboardingDownloadFileName(`${profile.buyerName || 'buyer'}-onboarding-form.html`)
+  anchor.rel = 'noopener'
+  anchor.style.display = 'none'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000)
+}
+
+async function downloadBuyerOnboardingForm(profile = {}) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  const fileName = sanitizeBuyerOnboardingDownloadFileName(`${profile.buyerName || 'buyer'}-onboarding-form.pdf`, 'buyer-onboarding-form.pdf')
+  let pdfStage = null
+  try {
+    const { default: html2pdf } = await import('html2pdf.js/src/index.js')
+    const html = buildBuyerOnboardingDownloadHtml(profile)
+    const pdfDocument = new window.DOMParser().parseFromString(html, 'text/html')
+    pdfStage = document.createElement('div')
+    pdfStage.style.position = 'fixed'
+    pdfStage.style.left = '-10000px'
+    pdfStage.style.top = '0'
+    pdfStage.style.width = '210mm'
+    pdfStage.style.background = '#ffffff'
+    pdfStage.style.pointerEvents = 'none'
+    pdfStage.innerHTML = pdfDocument.body.innerHTML
+    document.body.appendChild(pdfStage)
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    await html2pdf()
+      .set({
+        margin: 0,
+        filename: fileName,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          windowWidth: 794,
+          windowHeight: 1123,
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] },
+      })
+      .from(pdfStage)
+      .save()
+  } catch (downloadError) {
+    console.warn('[AgencyPipelinePage] Buyer onboarding PDF export fell back to HTML.', downloadError)
+    triggerBuyerOnboardingHtmlDownload(profile)
+  } finally {
+    pdfStage?.remove()
+  }
 }
 
 async function triggerSellerLeadBrowserDownload(url = '', fileName = 'seller-document.pdf') {
@@ -11983,10 +12311,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ? 'Sending...'
     : 'Send Seller Portal Link'
   const selectedLeadFinanceFormData = useMemo(() => (
+    selectedLeadLifecycleDiagnostic?.onboarding?.form_data ||
+    selectedLeadLifecycleDiagnostic?.onboarding?.formData ||
     selectedLeadLifecycleDiagnostic?.onboardingPrefill?.form_data ||
     selectedLeadLifecycleDiagnostic?.onboardingPrefill?.formData ||
+    selectedLead?.buyerOnboarding?.formData ||
+    selectedLead?.buyerOnboarding?.form_data ||
+    selectedLead?.buyer_onboarding?.form_data ||
+    selectedLead?.buyer_onboarding?.formData ||
     {}
-  ), [selectedLeadLifecycleDiagnostic?.onboardingPrefill])
+  ), [selectedLead, selectedLeadLifecycleDiagnostic?.onboarding, selectedLeadLifecycleDiagnostic?.onboardingPrefill])
+  const selectedLeadBuyerProfileModel = useMemo(() => buildBuyerOnboardingProfileModel({
+    lead: selectedLead || {},
+    contact: selectedLeadContact || {},
+    formData: selectedLeadFinanceFormData,
+    transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {
+      id: selectedLeadLinkedTransactionId,
+      finance_type: selectedLead?.financeType || selectedLead?.finance_type,
+      purchase_price: selectedLead?.budget || selectedLead?.estimatedValue,
+      deposit_amount: selectedLead?.depositAmount,
+    },
+    onboarding: selectedLeadLifecycleDiagnostic?.onboarding || selectedLeadLifecycleDiagnostic?.onboardingPrefill || {},
+    onboardingSubmitted: selectedLeadBuyerOnboardingSubmitted,
+  }), [
+    selectedLead,
+    selectedLead?.budget,
+    selectedLead?.depositAmount,
+    selectedLead?.estimatedValue,
+    selectedLead?.financeType,
+    selectedLead?.finance_type,
+    selectedLeadBuyerOnboardingSubmitted,
+    selectedLeadContact,
+    selectedLeadFinanceFormData,
+    selectedLeadLifecycleDiagnostic?.onboarding,
+    selectedLeadLifecycleDiagnostic?.onboardingPrefill,
+    selectedLeadLinkedTransaction,
+    selectedLeadLinkedTransactionId,
+  ])
   const selectedLeadFinanceReadinessSummary = useMemo(() => getFinanceReadinessSummary({
     transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {
       id: selectedLeadLinkedTransactionId,
@@ -29596,6 +29957,97 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </>
                         )
                       })()}
+                    </div>
+                  ) : null}
+
+                  {resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === BUYER_PROFILE_WORKSPACE_TAB_KEY && !selectedLeadIsSeller ? (
+                    <div className="space-y-5" data-testid="buyer-profile-onboarding-fields">
+                      <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]">
+                        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-6 py-5 sm:px-8">
+                          <div>
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Buyer Profile</p>
+                            <h2 className="mt-2 text-2xl font-semibold text-[#102033]">{selectedLeadBuyerProfileModel.buyerName}</h2>
+                            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#60758b]">
+                              This profile mirrors the buyer onboarding form fields, including the purchaser route, finance route, and conditional sections.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full border border-[#cfe4db] bg-[#f4fbf7] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#17643a]">
+                              {selectedLeadBuyerProfileModel.statusLabel}
+                            </span>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => void downloadBuyerOnboardingForm(selectedLeadBuyerProfileModel)}>
+                              <Download className="h-4 w-4" />
+                              Download onboarding form
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-4 px-6 py-5 sm:px-8 lg:grid-cols-4">
+                          {[
+                            ['Required fields', `${selectedLeadBuyerProfileModel.completedRequiredCount}/${selectedLeadBuyerProfileModel.requiredCount}`],
+                            ['Fields captured', `${selectedLeadBuyerProfileModel.capturedCount}/${selectedLeadBuyerProfileModel.totalFieldCount}`],
+                            ['Completion', `${selectedLeadBuyerProfileModel.completionPercent}%`],
+                            ['Last updated', selectedLeadBuyerProfileModel.updatedAt ? formatDateTime(selectedLeadBuyerProfileModel.updatedAt) : 'Not captured'],
+                          ].map(([label, value]) => (
+                            <div key={label} className="rounded-[16px] border border-[#e1eaf4] bg-[#fbfdff] px-4 py-3">
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">{label}</p>
+                              <p className="mt-2 text-sm font-semibold text-[#20364c]">{value}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {selectedLeadBuyerProfileModel.submittedAt ? (
+                          <div className="mx-6 mb-5 rounded-[16px] border border-[#cfe4db] bg-[#f4fbf7] px-4 py-3 text-sm font-semibold text-[#17643a] sm:mx-8">
+                            Buyer onboarding submitted {formatDateTime(selectedLeadBuyerProfileModel.submittedAt)}.
+                          </div>
+                        ) : null}
+                      </section>
+
+                      <div className="grid gap-5">
+                        {selectedLeadBuyerProfileModel.sections.map((section) => (
+                          <section key={section.key} className="rounded-[22px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_30px_rgba(31,54,78,0.045)] sm:p-6">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <h3 className="text-lg font-semibold text-[#102033]">{section.title}</h3>
+                                {section.description ? <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758b]">{section.description}</p> : null}
+                              </div>
+                              <span className="rounded-full border border-[#dce7f2] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#60758b]">
+                                {section.completedRequiredCount}/{section.requiredCount} required
+                              </span>
+                            </div>
+
+                            <div className="mt-5 space-y-4">
+                              {section.rows.map((row) => (
+                                <div key={row.key} className="rounded-[16px] border border-[#edf3f8] bg-[#fbfdff] p-4">
+                                  {row.title && row.title !== section.title ? (
+                                    <p className="mb-3 text-sm font-semibold text-[#20364c]">{row.title}</p>
+                                  ) : null}
+                                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                    {row.fields.map((field) => (
+                                      <div key={`${row.key}-${field.key}`} className="min-w-0 rounded-[14px] border border-[#e4edf6] bg-white px-3 py-3">
+                                        <div className="flex items-start justify-between gap-3">
+                                          <p className="min-w-0 text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7d93aa]">
+                                            <span className="break-words">{field.label}</span>
+                                            {field.required ? <span className="text-[#b7791f]"> *</span> : null}
+                                          </p>
+                                          {field.required ? (
+                                            field.complete
+                                              ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#157a4d]" />
+                                              : <Clock3 className="h-4 w-4 shrink-0 text-[#b7791f]" />
+                                          ) : null}
+                                        </div>
+                                        <p className={`mt-2 break-words text-sm font-semibold leading-6 ${field.displayValue === 'Not captured' ? 'text-[#8a9aad]' : 'text-[#102033]'}`}>
+                                          {field.displayValue}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
 
