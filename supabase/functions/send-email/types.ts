@@ -284,6 +284,7 @@ export type SendLeadOperationsNotificationPayload = {
     | "lead_reassigned"
     | "lead_unassigned"
     | "lead_claimed_confirmation"
+    | "buyer_viewing_times_submitted_agent"
     | "lead_operations_notification";
   to: string;
   recipientName?: string;
@@ -1193,8 +1194,11 @@ export type SendBuyerViewingAvailabilityRequestPayload = {
   subject?: string;
   buyerName?: string;
   recipientName?: string;
+  recipient_name?: string;
   agentName?: string;
+  agent_name?: string;
   agentEmail?: string;
+  agent_email?: string;
   note?: string;
   message?: string;
   actionLink?: string;
@@ -1204,11 +1208,22 @@ export type SendBuyerViewingAvailabilityRequestPayload = {
   propertyCount?: number;
   properties?: ViewingAvailabilityRequestPropertyPayload[];
   organisationName?: string;
+  organisation_name?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  leadId?: string;
+  lead_id?: string;
+  recipientRole?: string;
+  recipient_role?: string;
   supportEmail?: string;
+  support_email?: string;
   supportPhone?: string;
+  support_phone?: string;
   resend?: boolean;
   idempotencyKey?: string;
   idempotency_key?: string;
+  deliveryMetadata?: JsonRecord;
+  delivery_metadata?: JsonRecord;
 } & DeliveryContextPayload;
 
 export type SellerViewingAvailabilityRequestPropertyPayload = {

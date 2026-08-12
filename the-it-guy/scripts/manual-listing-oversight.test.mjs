@@ -29,10 +29,10 @@ assert.match(
   'Residential listing cards should map the unfiltered residential card list.',
 )
 
-assert.match(
+assert.doesNotMatch(
   source,
   /Listing follow-ups/,
-  'Listing cards should still show their own follow-up hints.',
+  'Listing cards should not render follow-up hints on the residential grid.',
 )
 
 assert.match(

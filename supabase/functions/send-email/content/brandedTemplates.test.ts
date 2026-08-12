@@ -392,6 +392,7 @@ Deno.test("buyer viewing availability request renders company branding and prope
       },
     ],
     actionLink: "https://app.example.test/viewing-preferences/token-123",
+    organisationName: branding.organisationName,
     branding,
   });
   const text = buildBuyerViewingAvailabilityRequestEmailText({
@@ -405,20 +406,25 @@ Deno.test("buyer viewing availability request renders company branding and prope
   });
 
   assertIncludes(html, "Kingstons Property");
-  assertIncludes(html, "background: #123abc");
-  assertIncludes(html, "border-bottom: 4px solid #fedcba");
-  assertIncludes(html, "Viewing Options");
-  assertIncludes(html, "Confirm viewings");
+  assertIncludes(html, "https://cdn.example.test/kingstons.png");
+  assertIncludes(html, "Let us set up your viewing.");
+  assertIncludes(html, "Select 3 viewing times");
+  assertIncludes(html, "Secure public link. No sign-in needed.");
+  assertIncludes(html, "Property requested");
+  assertIncludes(html, "Meet your agent");
+  assertIncludes(html, "What we ask you to choose");
+  assertIncludes(html, "First preferred viewing date and time");
+  assertIncludes(html, "What happens next");
+  assertIncludes(html, "viewing planner");
   assertIncludes(
     html,
     "https://app.example.test/viewing-preferences/token-123",
   );
   assertIncludes(html, "114 West Street");
-  assertIncludes(html, "https://cdn.example.test/listings/114.jpg");
-  assertIncludes(html, `alt="114 West Street"`);
   assertIncludes(html, "View property details");
-  assertIncludes(text, "Confirm your preferred viewings here:");
+  assertIncludes(text, "Select 3 viewing times here:");
   assertIncludes(text, "Or reply with:");
+  assertIncludes(text, "Exactly three time windows that work for you.");
   assertIncludes(text, "Support: support@example.test | +27 21 000 0000");
 });
 

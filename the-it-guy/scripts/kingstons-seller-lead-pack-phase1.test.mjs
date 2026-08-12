@@ -7,6 +7,8 @@ const pagePath = path.join(repoRoot, 'src/pages/agency/AgencyPipelinePage.jsx')
 const listingDetailPath = path.join(repoRoot, 'src/pages/AgentListingDetail.jsx')
 const source = fs.readFileSync(pagePath, 'utf8')
 const listingDetailSource = fs.readFileSync(listingDetailPath, 'utf8')
+const removedPauseLabel = ['Digital signing', 'paused'].join(' ')
+const removedSellerPackAction = ['Upload the signed Seller Pack documents', 'instead.'].join(' ')
 
 function assertIncludes(snippet, message) {
   assert.ok(source.includes(snippet), message)
@@ -32,17 +34,23 @@ assertIncludes('Choose whether the FICA seller is a natural person or juristic p
 assertIncludes('Complete the Kingston Seller Pack before creating the listing.', 'Create listing must be gated by Seller Pack completion.')
 assertIncludes('Send Seller Portal Link', 'Seller tab must use the Seller Portal Link wording.')
 assertIncludes("selectedLeadHasKingstonsPipelineSignal && leadWorkspaceTab === 'mandate'", 'Kingstons seller leads must be redirected away from the digital Mandate tab.')
-assertIncludes('selectedLeadKingstonsDigitalSigningDecision.message', 'Kingstons digital mandate actions must redirect agents to manual Seller Pack uploads.')
+assertIncludes("handleLeadWorkspaceTabSelection('documents')", 'Kingstons digital mandate actions must redirect agents to manual Seller Pack uploads.')
 assertIncludes("...(selectedLeadHasKingstonsPipelineSignal ? [] : [{ key: 'mandate', label: 'Mandate', meta: '' }])", 'Kingstons seller leads must not show the Mandate tab in the live workspace.')
-assertIncludes("['Upload Seller Pack', Upload, () => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')]", 'Kingstons quick actions must prefer the manual Seller Pack capture/upload path over generated mandate/PDF actions.')
+assertIncludes("id === 'complete_seller_pack' || id === 'seller_pack_signed'", 'Kingstons quick actions must route manual Seller Pack actions.')
+assertIncludes("openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')", 'Kingstons quick actions must prefer the manual Seller Pack capture/upload path over generated mandate/PDF actions.')
 assert.ok(!/>\s*Seller Journey\s*<\/p>[\s\S]{0,2000}leadWorkspaceTab === 'seller'/.test(source), 'Seller Journey block should not remain at the bottom of the Seller tab.')
+assert.equal(source.includes(removedPauseLabel), false, 'Kingstons seller lead workspace must not show the removed digital signing warning.')
+assert.equal(source.includes(removedSellerPackAction), false, 'Kingstons seller lead workspace must not show the removed seller pack action copy.')
 
 assert.ok(
     listingDetailSource.includes('listingHasKingstonsSellerProcess') &&
     listingDetailSource.includes('Upload signed Seller Pack') &&
     listingDetailSource.includes('open={mandateStartOpen && !listingHasKingstonsSellerProcess}') &&
-    listingDetailSource.includes('listingKingstonsDigitalSigningDecision.message'),
+    listingDetailSource.includes("openSellerWorkspaceSection('documents')"),
   'Kingstons listing detail must hide digital onboarding/mandate starts and route agents to manual Seller Pack upload.',
 )
+assert.equal(listingDetailSource.includes(removedPauseLabel), false, 'Kingstons listing detail must not show the removed digital signing warning.')
+assert.equal(listingDetailSource.includes(removedSellerPackAction), false, 'Kingstons listing detail must not show the removed seller pack action copy.')
+assert.equal(listingDetailSource.includes('kingstons-listing-digital-signing-decision'), false, 'Kingstons listing detail must not render the old digital signing warning panel.')
 
 console.log('Kingstons seller lead pack phase 1 guard passed.')

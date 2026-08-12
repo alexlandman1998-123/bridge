@@ -39,6 +39,10 @@ const EVENT_LABELS: Record<string, { title: string; subject: string }> = {
     title: "Lead Claimed",
     subject: "Lead claimed",
   },
+  buyer_viewing_times_submitted_agent: {
+    title: "Buyer Viewing Times Submitted",
+    subject: "Buyer submitted viewing times",
+  },
 };
 
 function envEnabled(value: string | undefined, fallback = true) {
@@ -105,6 +109,11 @@ function defaultMessage({
     return `${leadName || "A lead"} has been claimed${
       assignedAgentName ? ` by ${assignedAgentName}` : ""
     }.`;
+  }
+  if (eventKind === "buyer_viewing_times_submitted_agent") {
+    return `${
+      leadName || "A buyer"
+    } submitted three preferred viewing times. Review the options and send the best times to the seller for access confirmation.`;
   }
   return `${
     leadName || "A lead"

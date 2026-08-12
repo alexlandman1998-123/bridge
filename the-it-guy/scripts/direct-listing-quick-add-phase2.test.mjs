@@ -42,12 +42,13 @@ test('Quick Add exposes the required global seller ownership options', () => {
   }
 })
 
-test('Quick Add exposes declaration tickboxes without making upload evidence required', () => {
-  assert.match(agentListingsSource, /Signed mandate held/)
-  assert.match(agentListingsSource, /Signed property disclosure/)
-  assert.match(agentListingsSource, /Signed FICA form held/)
-  assert.match(agentListingsSource, /Send seller portal link/)
-  assert.match(agentListingsSource, /No uploads are required for these answers/)
+test('Quick Add exposes existing-document cards and seller portal actions without upload gates', () => {
+  assert.match(agentListingsSource, /Existing Documents/)
+  assert.match(agentListingsSource, /Signed Mandate/)
+  assert.match(agentListingsSource, /Property Disclosure/)
+  assert.match(agentListingsSource, /Seller FICA/)
+  assert.match(agentListingsSource, /Send Seller Portal/)
+  assert.match(agentListingsSource, /Uploads are optional later and do not block Quick Add/)
 
   const payload = buildDirectListingIntakePayload({
     sellerType: 'company',

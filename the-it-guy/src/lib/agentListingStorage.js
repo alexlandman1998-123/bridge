@@ -174,6 +174,46 @@ function normalizeRecordId(value) {
   return String(value || '').trim()
 }
 
+function normalizeListingDeleteIdentity(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function addListingDeleteIdentity(ids, prefix, value) {
+  const normalized = normalizeListingDeleteIdentity(value)
+  if (normalized) ids.add(`${prefix}:${normalized}`)
+}
+
+function getListingAddressFingerprint(record = {}) {
+  return [
+    record.addressLine1,
+    record.address_line_1,
+    record.propertyAddress,
+    record.property_address,
+    record.formattedAddress,
+    record.formatted_address,
+    record.streetAddress,
+    record.street_address,
+    record.propertyDetails?.addressLine1,
+    record.propertyDetails?.formattedAddress,
+    record.address,
+    record.unitNumber,
+    record.unit_number,
+    record.sectionNumber,
+    record.section_number,
+    record.complexName,
+    record.complex_name,
+    record.estateName,
+    record.estate_name,
+    record.addressLine2,
+    record.address_line_2,
+    record.suburb,
+    record.city,
+    record.province,
+    record.postalCode,
+    record.postal_code,
+  ].map(normalizeListingDeleteIdentity).filter(Boolean).join(' ')
+}
+
 export function readDeletedListingIds() {
   return new Set(readRows(AGENT_DELETED_LISTINGS_STORAGE_KEY).map(normalizeRecordId).filter(Boolean))
 }
@@ -185,7 +225,7 @@ function writeDeletedListingIds(ids = []) {
 function collectListingDeleteIds(recordOrId = {}) {
   if (typeof recordOrId === 'string') return new Set([normalizeRecordId(recordOrId)].filter(Boolean))
   const record = recordOrId && typeof recordOrId === 'object' ? recordOrId : {}
-  return new Set([
+  const ids = new Set([
     record.id,
     record.listingId,
     record.listing_id,
@@ -200,6 +240,14 @@ function collectListingDeleteIds(recordOrId = {}) {
     record.originatingCrmLeadId,
     record.originating_crm_lead_id,
   ].map(normalizeRecordId).filter(Boolean))
+  addListingDeleteIdentity(ids, 'ref', record.listingReference || record.listing_reference || record.listingCode || record.listing_code)
+  addListingDeleteIdentity(ids, 'p24', record.property24Reference || record.property24_reference)
+  addListingDeleteIdentity(ids, 'private-property', record.privatePropertyReference || record.private_property_reference)
+  addListingDeleteIdentity(ids, 'place', record.googlePlaceId || record.google_place_id || record.placeId || record.place_id)
+  addListingDeleteIdentity(ids, 'url', record.property24ListingUrl || record.property24_listing_url)
+  addListingDeleteIdentity(ids, 'url', record.privatePropertyListingUrl || record.private_property_listing_url)
+  addListingDeleteIdentity(ids, 'address', getListingAddressFingerprint(record))
+  return ids
 }
 
 function listingMatchesDeletedIds(record = {}, deletedIds = new Set()) {

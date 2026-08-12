@@ -412,6 +412,7 @@ Deno.serve(async (req: Request) => {
         "lead_reassigned",
         "lead_unassigned",
         "lead_claimed_confirmation",
+        "buyer_viewing_times_submitted_agent",
         "lead_operations_notification",
       ].includes(type)
     ) {
@@ -1045,6 +1046,7 @@ Deno.serve(async (req: Request) => {
           "lead_reassigned",
           "lead_unassigned",
           "lead_claimed_confirmation",
+          "buyer_viewing_times_submitted_agent",
           "lead_operations_notification",
           "lead_property_share",
           "property_collection",
@@ -1209,6 +1211,7 @@ Deno.serve(async (req: Request) => {
         "lead_reassigned",
         "lead_unassigned",
         "lead_claimed_confirmation",
+        "buyer_viewing_times_submitted_agent",
         "lead_operations_notification",
         "lead_property_share",
         "property_collection",

@@ -9462,8 +9462,8 @@ const BUYER_PRE_APPROVAL_OPTIONS = ['', 'Not started', 'Pre-approved', 'Submitte
 const BUYER_PROPERTY_TO_SELL_OPTIONS = ['', 'No', 'Yes', 'Unsure']
 const BUYER_VIEWING_PLAN_STATUS_OPTIONS = [
   { key: 'draft', label: 'Draft', meta: 'Select properties' },
-  { key: 'buyer_availability', label: 'Confirm times', meta: 'Choose RSVP path' },
-  { key: 'buyer_confirmed', label: 'Buyer confirmed', meta: 'Times received' },
+  { key: 'buyer_availability', label: 'Client times', meta: 'Await 3 options' },
+  { key: 'buyer_confirmed', label: 'Client submitted', meta: 'Review 3 times' },
   { key: 'seller_coordination', label: 'Seller coordination', meta: 'Confirm access' },
   { key: 'booked', label: 'Booked', meta: 'Appointments set' },
 ]
@@ -17603,7 +17603,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (!availabilityWindows) {
-      setMessage('Capture the buyer availability windows before saving the response.')
+      setMessage('Capture the client requested viewing times before saving the response.')
+      return
+    }
+    const requestedTimeCount = availabilityWindows.split(/\r?\n/).map(normalizeText).filter(Boolean).length
+    if (requestedTimeCount !== 3) {
+      setMessage('Capture exactly three client requested viewing times before saving.')
       return
     }
 
@@ -22282,7 +22287,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (['generate_mandate', 'send_mandate', 'view_signing_status', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(id)) {
       if (selectedLeadKingstonsDigitalSigningDecision.blocked) {
         handleLeadWorkspaceTabSelection('documents')
-        setError(selectedLeadKingstonsDigitalSigningDecision.message)
         return
       }
       void handleSelectedLeadMandatePrimaryAction()
@@ -30885,9 +30889,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <div className="flex flex-wrap items-start justify-between gap-4">
                                 <div>
                                   <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Viewing Plan</p>
-                                  <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">Schedule selected viewings</h3>
+                                  <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">Client viewing requested times</h3>
                                   <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758b]">
-                                    Build a viewing shortlist from the enquiry property and best matches before asking the buyer for available times.
+                                    Capture the buyer's three preferred viewing times, review them, then send suitable options to the seller for access confirmation.
                                   </p>
                                 </div>
                                 <span className="rounded-full border border-[#d7e6f2] bg-[#f8fbfd] px-3 py-1 text-xs font-semibold text-[#60758b]">
@@ -30954,11 +30958,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <div className="mt-4 rounded-[16px] border border-[#e3ecf5] bg-[#fbfdff] p-4">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                       <div>
-                                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Buyer Response</p>
-                                        <h4 className="mt-1 text-sm font-semibold text-[#102033]">Confirmed viewings and times</h4>
+                                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7c91a8]">Client Requested Viewing Times</p>
+                                        <h4 className="mt-1 text-sm font-semibold text-[#102033]">Review buyer-submitted options</h4>
                                       </div>
                                       <span className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${viewingPlanStatus === 'buyer_confirmed' ? 'bg-[#e8f4ee] text-[#17643a]' : 'bg-[#eef4f9] text-[#60758b]'}`}>
-                                        {viewingPlanStatus === 'buyer_confirmed' ? 'Captured' : 'Awaiting response'}
+                                        {viewingPlanStatus === 'buyer_confirmed' ? 'Submitted' : 'Awaiting 3 times'}
                                       </span>
                                     </div>
 
@@ -30990,12 +30994,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                                     <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.55fr)]">
                                       <label className="grid gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#6d839b]">
-                                        Available time windows
+                                        Client requested time windows
                                         <Field
                                           as="textarea"
                                           rows={4}
                                           className="rounded-[12px] px-3 py-2.5 text-sm font-medium normal-case leading-5 tracking-normal"
-                                          placeholder="Wed morning, Thu 14:00-16:00, Sat after 10:00..."
+                                          placeholder={'Thu 14:00-16:00\nFri 09:00-11:00\nSat after 10:00'}
                                           value={viewingPlanResponseForm.availabilityWindows}
                                           onChange={(event) => updateViewingPlanResponseField('availabilityWindows', event.target.value)}
                                         />
@@ -31021,7 +31025,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         onClick={() => void handleCaptureBuyerViewingResponse()}
                                       >
                                         <CheckCircle2 className="h-4 w-4" />
-                                        {isLeadDetailSaving ? 'Saving...' : 'Capture buyer response'}
+                                        {isLeadDetailSaving ? 'Saving...' : 'Save client requested times'}
                                       </Button>
                                     </div>
                                   </div>

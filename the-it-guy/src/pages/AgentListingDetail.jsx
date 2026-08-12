@@ -22,9 +22,13 @@ import {
   Pencil,
   Plus,
   Copy,
+  Download,
   Link2,
+  MessageSquare,
   Send,
   ShieldCheck,
+  Search,
+  SlidersHorizontal,
   Star,
   Trash2,
   TrendingUp,
@@ -33,7 +37,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import SellerDocumentReviewActions from '../components/documents/SellerDocumentReviewActions'
@@ -42,7 +46,6 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { activateAnchorOnSpace } from '../lib/keyboardActivation'
 import {
   DOCUMENT_START_DOCUMENT_KINDS,
   DOCUMENT_START_ENTRY_POINTS,
@@ -148,7 +151,6 @@ import {
   issueSellerPortalInvite,
   isSellerPortalInviteReadyAfterSignedMandate,
   markPrivateListingDocumentsPendingTransactionPromotion,
-  manageSellerPortalAccess,
   resetSellerPortalPassword,
   sendSellerOnboarding,
   syncPrivateListingDistributionData,
@@ -225,16 +227,6 @@ const DETAIL_TABS = [
   { key: 'role_players', label: 'Role Players' },
 ]
 
-const SELLER_ONBOARDING_EMAIL_TYPES = new Set([
-  'seller_onboarding',
-  'seller_onboarding_link',
-  'seller_onboarding_link_seller',
-  'seller_portal_link',
-  'seller_portal_link_seller',
-  'seller_onboarding_submitted',
-  'seller_onboarding_submitted_agent',
-])
-
 const CLIENT_INTAKE_PREFERENCE_OPTIONS = [
   { value: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL, label: getClientIntakePreferenceLabel(CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL) },
   { value: CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED, label: getClientIntakePreferenceLabel(CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED) },
@@ -249,9 +241,9 @@ const SELLER_REVIEW_DELIVERY_OPTIONS = [
 
 const SELLER_WORKSPACE_TABS = [
   { key: 'overview', label: 'Overview' },
-  { key: 'offers', label: 'Offers' },
+  { key: 'leads', label: 'Leads' },
   { key: 'seller', label: 'Seller' },
-  { key: 'listing', label: 'Listing' },
+  { key: 'marketing', label: 'Marketing' },
   { key: 'documents', label: 'Documents' },
   { key: 'commission', label: 'Commission' },
   { key: 'activity', label: 'Activity' },
@@ -354,7 +346,8 @@ const LISTING_PERFORMANCE_OVERRIDE_KEYS = new Set(LISTING_PERFORMANCE_OVERRIDE_F
 
 function getSellerWorkspaceTabFromSearch(search = '') {
   const requestedTab = new URLSearchParams(String(search || '')).get('tab')
-  return SELLER_WORKSPACE_TABS.some((tab) => tab.key === requestedTab) ? requestedTab : ''
+  const normalizedTab = requestedTab === 'offers' ? 'leads' : requestedTab === 'listing' ? 'marketing' : requestedTab
+  return SELLER_WORKSPACE_TABS.some((tab) => tab.key === normalizedTab) ? normalizedTab : ''
 }
 
 function isUuidLike(value) {
@@ -924,6 +917,26 @@ function formatPercentValue(value, digits = 1) {
   const number = Number(value || 0)
   if (!Number.isFinite(number)) return '0%'
   return `${number.toFixed(digits)}%`
+}
+
+function formatSignedPercentValue(value, digits = 1) {
+  const number = Number(value || 0)
+  if (!Number.isFinite(number) || number === 0) return '0%'
+  return `${number > 0 ? '+' : ''}${number.toFixed(digits)}%`
+}
+
+function formatOverviewTimestamp(value) {
+  if (!value) return 'Date pending'
+  const parsed = new Date(typeof value === 'string' ? value.replace(/^(\d{4}-\d{2}-\d{2})\s+/, '$1T') : value)
+  if (Number.isNaN(parsed.getTime())) return 'Date pending'
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const day = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()).getTime()
+  const time = parsed.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })
+  if (day === today) return `Today ${time}`
+  if (day === today - 24 * 60 * 60 * 1000) return `Yesterday ${time}`
+  if (day === today + 24 * 60 * 60 * 1000) return `Tomorrow ${time}`
+  return parsed.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: parsed.getFullYear() === now.getFullYear() ? undefined : 'numeric' })
 }
 
 function toCleanText(value) {
@@ -1652,52 +1665,6 @@ function formatStatusLabel(value) {
     .join(' ')
 }
 
-function getDeliveryActivityDate(delivery = {}) {
-  return firstDraftValue(
-    delivery.deliveredAt,
-    delivery.delivered_at,
-    delivery.sentAt,
-    delivery.sent_at,
-    delivery.failedAt,
-    delivery.failed_at,
-    delivery.preparedAt,
-    delivery.prepared_at,
-    delivery.createdAt,
-    delivery.created_at,
-  )
-}
-
-function isSellerOnboardingEmailDelivery(delivery = {}) {
-  const type = normalizeKey(delivery.communicationType || delivery.communication_type || delivery.type)
-  return SELLER_ONBOARDING_EMAIL_TYPES.has(type)
-}
-
-function buildSellerOnboardingEmailDiagnostics(deliveries = []) {
-  const rows = (Array.isArray(deliveries) ? deliveries : [])
-    .filter(isSellerOnboardingEmailDelivery)
-    .sort((left, right) => new Date(getDeliveryActivityDate(right) || 0) - new Date(getDeliveryActivityDate(left) || 0))
-
-  const failed = rows.filter((row) => normalizeKey(row.status) === 'failed')
-  const sent = rows.filter((row) => ['sent', 'delivered'].includes(normalizeKey(row.status)))
-  const prepared = rows.filter((row) => ['prepared', 'queued'].includes(normalizeKey(row.status)))
-  const latest = rows[0] || null
-  const latestFailure = failed[0] || null
-
-  return {
-    rows,
-    recentRows: rows.slice(0, 4),
-    total: rows.length,
-    sent: sent.length,
-    failed: failed.length,
-    prepared: prepared.length,
-    latest,
-    latestFailure,
-    latestStatus: latest ? formatStatusLabel(latest.status) : 'No delivery logged',
-    latestAt: latest ? getDeliveryActivityDate(latest) : '',
-    latestFailureMessage: latestFailure?.errorMessage || latestFailure?.error_message || '',
-  }
-}
-
 function statusClass(status) {
   const key = String(status || '').trim().toLowerCase()
   if (key === 'approved' || key === 'completed' || key === 'accepted' || key === 'delivered') return 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
@@ -1781,8 +1748,8 @@ function CompactSnapshotRow({ label, value }) {
 
 function StatusPill({ status = '', label = '' }) {
   const normalized = String(status || label || '').trim().toLowerCase()
-  const done = ['done', 'complete', 'completed', 'uploaded', 'signed', 'published', 'active'].includes(normalized)
-  const pending = ['pending', 'in_progress', 'in progress', 'under_review', 'sent'].includes(normalized)
+  const done = ['done', 'complete', 'completed', 'uploaded', 'signed', 'published', 'active', 'activated', 'profile_complete', 'live', 'verified'].includes(normalized)
+  const pending = ['pending', 'in_progress', 'in progress', 'under_review', 'sent', 'invitation_sent', 'invitation_pending', 'draft', 'requested'].includes(normalized)
   const className = done
     ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
     : pending
@@ -2350,6 +2317,23 @@ function getDaysOnMarket(createdAt) {
   return Math.max(0, Math.floor(delta / (1000 * 60 * 60 * 24)))
 }
 
+function getListingMarketStartDate(listing = {}, draft = {}) {
+  return firstDraftValue(
+    draft?.listingDate,
+    listing?.listingDate,
+    listing?.publishedAt,
+    listing?.published_at,
+    listing?.firstPublishedAt,
+    listing?.first_published_at,
+    listing?.marketedAt,
+    listing?.marketed_at,
+    listing?.listedAt,
+    listing?.listed_at,
+    listing?.mandateStartDate,
+    listing?.createdAt,
+  )
+}
+
 function getOfferAverage(offers = []) {
   const prices = offers.map((offer) => Number(offer?.offerPrice || 0)).filter((value) => Number.isFinite(value) && value > 0)
   if (!prices.length) return 0
@@ -2358,6 +2342,78 @@ function getOfferAverage(offers = []) {
 
 function getLeadStage(lead) {
   return String(lead?.journeyStage || lead?.status || '').trim().toLowerCase()
+}
+
+function getLeadRecordId(lead = {}) {
+  return String(lead?.leadId || lead?.lead_id || lead?.id || '').trim()
+}
+
+function getLeadContactId(lead = {}) {
+  return String(lead?.contactId || lead?.contact_id || '').trim()
+}
+
+function getLeadCreatedAt(lead = {}) {
+  return firstDraftValue(lead?.createdAt, lead?.created_at, lead?.leadCreatedAt, lead?.lead_created_at)
+}
+
+function getLeadContactedAt(lead = {}) {
+  return firstDraftValue(
+    lead?.lastContactedAt,
+    lead?.last_contacted_at,
+    lead?.contactedAt,
+    lead?.contacted_at,
+    lead?.lastCommunicationAt,
+    lead?.last_communication_at,
+    lead?.lastOutboundAt,
+    lead?.last_outbound_at,
+  )
+}
+
+function getLeadContactedBy(lead = {}) {
+  return firstDraftValue(
+    lead?.lastContactedByName,
+    lead?.last_contacted_by_name,
+    lead?.lastContactedBy,
+    lead?.last_contacted_by,
+    lead?.assignedAgentName,
+    lead?.assignedAgentEmail,
+    lead?.assigned_agent_name,
+    lead?.assigned_agent_email,
+  )
+}
+
+function normalizeLeadSourceLabel(value = '') {
+  const key = normalizeKey(value || 'manual')
+  if (key.includes('property24') || key === 'p24') return 'Property24'
+  if (key.includes('private_property') || key.includes('privateproperty')) return 'Private Property'
+  if (key.includes('arch9') || key.includes('agency_website')) return 'Arch9'
+  if (key.includes('website') || key.includes('web')) return 'Website'
+  if (key.includes('whatsapp')) return 'WhatsApp'
+  if (key.includes('facebook')) return 'Facebook'
+  if (key.includes('instagram')) return 'Instagram'
+  if (key.includes('referral')) return 'Referral'
+  if (key.includes('show_day')) return 'Show Day'
+  if (key.includes('manual') || key.includes('direct')) return 'Manual'
+  return formatStatusLabel(value || 'Manual')
+}
+
+function getListingLeadStatusGroup(value = '') {
+  const key = normalizeKey(value)
+  if (key.includes('convert') || key.includes('transaction') || key.includes('sold')) return 'converted'
+  if (key.includes('lost') || key.includes('not_interested') || key.includes('dismiss') || key.includes('archive')) return 'lost'
+  if (key.includes('offer') || key.includes('negotiat')) return 'offer'
+  if (key.includes('view')) return 'viewing'
+  if (key.includes('contact') || key.includes('sent') || key.includes('shortlist')) return 'contacted'
+  return 'new'
+}
+
+function formatListingLeadStatusLabel(value = '') {
+  const key = normalizeKey(value)
+  if (!key) return 'New Lead'
+  if (key === 'viewing_scheduled' || key === 'viewing_requested') return key === 'viewing_scheduled' ? 'Viewing Scheduled' : 'Viewing Requested'
+  if (key === 'offer_submitted') return 'Offer Submitted'
+  if (key === 'not_interested') return 'Not Interested'
+  return formatStatusLabel(value)
 }
 
 function getNextBestAction({ pendingOffers, missingDocuments, onboardingStatus }) {
@@ -2698,11 +2754,10 @@ function AgentListingDetail() {
   const [activeListingDocumentTab, setActiveListingDocumentTab] = useState('property')
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
   const [resettingSellerPortalPassword, setResettingSellerPortalPassword] = useState(false)
-  const [managingSellerPortalAction, setManagingSellerPortalAction] = useState('')
   const [sellerPortalAccessState, setSellerPortalAccessState] = useState(null)
-  const [sellerPortalAccessLoading, setSellerPortalAccessLoading] = useState(false)
+  const [, setSellerPortalAccessLoading] = useState(false)
   const [sellerPortalSecurityDiagnostics, setSellerPortalSecurityDiagnostics] = useState(null)
-  const [sellerPortalSecurityDiagnosticsLoading, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
+  const [, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
   const [sellerPortalActivationOpen, setSellerPortalActivationOpen] = useState(false)
   const [sellerPortalActivationDraft, setSellerPortalActivationDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' })
   const [sellerPortalActivationSending, setSellerPortalActivationSending] = useState(false)
@@ -2752,6 +2807,13 @@ function AgentListingDetail() {
   const [sentPropertiesError, setSentPropertiesError] = useState('')
   const [interestedLeadsLoading, setInterestedLeadsLoading] = useState(false)
   const [interestedLeadsError, setInterestedLeadsError] = useState('')
+  const [listingLeadSearch, setListingLeadSearch] = useState('')
+  const [listingLeadFiltersOpen, setListingLeadFiltersOpen] = useState(false)
+  const [listingLeadStatusFilter, setListingLeadStatusFilter] = useState('all')
+  const [listingLeadSourceFilter, setListingLeadSourceFilter] = useState('all')
+  const [listingLeadActivityFilter, setListingLeadActivityFilter] = useState('all')
+  const [listingLeadDateFilter, setListingLeadDateFilter] = useState('all')
+  const [listingLeadPage, setListingLeadPage] = useState(1)
   const [suggestedLeadRows, setSuggestedLeadRows] = useState([])
   const [suggestedLeadsLoading, setSuggestedLeadsLoading] = useState(false)
   const [suggestedLeadsError, setSuggestedLeadsError] = useState('')
@@ -4061,50 +4123,6 @@ function AgentListingDetail() {
     }
   }
 
-  async function handleManageSellerPortalAccess(action) {
-    const token = resolveSellerPortalTokenFromListing(listingRecord)
-    if (!token) {
-      setDetailError('No seller portal is linked to this listing yet.')
-      return
-    }
-    if (
-      action === 'revoke' &&
-      typeof window !== 'undefined' &&
-      !window.confirm('Revoke this seller portal? The seller will immediately lose access until it is reactivated.')
-    ) return
-
-    setDetailError('')
-    setDetailMessage('')
-    try {
-      setManagingSellerPortalAction(action)
-      const result = await manageSellerPortalAccess(token, {
-        action,
-        reason: action === 'revoke' ? 'Revoked from listing workspace' : '',
-      })
-      setSellerPortalAccessState((previous) => ({
-        ...(previous || {}),
-        valid: Boolean(result?.linkActive),
-        linkActive: Boolean(result?.linkActive),
-        revokedAt: result?.revokedAt || null,
-        revocationReason: result?.revocationReason || '',
-        accessTokenExpiresAt: result?.sessionsRevoked ? null : previous?.accessTokenExpiresAt,
-      }))
-      const diagnostics = await getSellerPortalSecurityDiagnostics(token)
-      setSellerPortalSecurityDiagnostics(diagnostics || null)
-      setDetailMessage(
-        action === 'revoke'
-          ? 'Seller portal access revoked and active sessions ended.'
-          : action === 'reactivate'
-            ? 'Seller portal access reactivated. Send a fresh seller link when ready.'
-            : 'The seller has been signed out on all devices.',
-      )
-    } catch (error) {
-      setDetailError(error?.message || 'Unable to update seller portal access.')
-    } finally {
-      setManagingSellerPortalAction('')
-    }
-  }
-
   async function handleOpenSellerDocument(doc) {
     if (!doc?.uploaded) return
     setDetailError('')
@@ -4205,15 +4223,57 @@ function AgentListingDetail() {
   }
 
   function openSellerWorkspaceSection(tab, message = '') {
-    if (!SELLER_WORKSPACE_TABS.some((item) => item.key === tab)) return
+    const normalizedTab = tab === 'offers' ? 'leads' : tab === 'listing' ? 'marketing' : tab
+    if (!SELLER_WORKSPACE_TABS.some((item) => item.key === normalizedTab)) return
     setActiveTab('seller')
-    setSellerWorkspaceTab((currentTab) => (currentTab === tab ? currentTab : tab))
+    setSellerWorkspaceTab((currentTab) => (currentTab === normalizedTab ? currentTab : normalizedTab))
     setDetailError('')
     if (message) setDetailMessage(message)
     if (typeof window !== 'undefined') {
       const nextUrl = new URL(window.location.href)
-      nextUrl.searchParams.set('tab', tab)
+      nextUrl.searchParams.set('tab', normalizedTab)
       window.history.replaceState(window.history.state, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
+    }
+  }
+
+  function handleExportListingLeads() {
+    const headers = ['Lead', 'Phone', 'Email', 'Source', 'Status', 'Contacted', 'Viewing', 'Offer', 'Date Added']
+    const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`
+    const rows = filteredListingLeadRows.map((lead) => {
+      const viewing = lead.viewing
+        ? [formatDate(lead.viewing.proposed_date), lead.viewing.proposed_time, formatViewingStatusLabel(lead.viewing.status)].filter(Boolean).join(' ')
+        : ''
+      const offer = lead.offer
+        ? [lead.offer.offerPrice ? formatMoneyValue(lead.offer.offerPrice) : '', formatStatusLabel(lead.offer.status)].filter(Boolean).join(' ')
+        : ''
+      return [
+        lead.name,
+        lead.phone,
+        lead.email,
+        lead.sourceLabel,
+        lead.statusLabel,
+        lead.contactedAt ? `${formatOverviewTimestamp(lead.contactedAt)}${lead.contactedBy ? ` by ${lead.contactedBy}` : ''}` : '',
+        viewing,
+        offer,
+        formatDate(lead.createdAt),
+      ].map(escapeCsv).join(',')
+    })
+    const csv = [headers.map(escapeCsv).join(','), ...rows].join('\n')
+    const fileName = `${sanitizeFileName(listingIdentity.title || 'listing')}-leads.csv`
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), fileName)
+  }
+
+  function handleContactListingLead(lead = {}) {
+    if (lead.leadId) {
+      navigate(`/pipeline/leads/${lead.leadId}`)
+      return
+    }
+    if (lead.email && typeof window !== 'undefined') {
+      window.location.href = `mailto:${lead.email}`
+      return
+    }
+    if (lead.phone && typeof window !== 'undefined') {
+      window.location.href = `tel:${lead.phone}`
     }
   }
 
@@ -4458,7 +4518,6 @@ function AgentListingDetail() {
     if (listingKingstonsDigitalSigningDecision.blocked) {
       setMandateStartOpen(false)
       openSellerWorkspaceSection('documents')
-      setDetailError(listingKingstonsDigitalSigningDecision.message)
       return
     }
     const sourceMode = selection?.sourceMode || DOCUMENT_START_SOURCE_MODES.saved
@@ -5047,7 +5106,7 @@ function AgentListingDetail() {
       listingId: listingRecord?.id,
       sourceMode,
       legalScenario: selection?.legalScenario,
-      returnTo: `/agent/listings/${encodeURIComponent(String(listingRecord?.id || ''))}?tab=offers`,
+      returnTo: `/agent/listings/${encodeURIComponent(String(listingRecord?.id || ''))}?tab=leads`,
     })
     if (!path) {
       setOfferActionError('Unable to open the OTP workspace for this accepted offer.')
@@ -5166,6 +5225,191 @@ function AgentListingDetail() {
     () => getBuyerLeadOptions(pipelineLeads, listingRecord),
     [listingRecord, pipelineLeads],
   )
+
+  const listingLeadRows = useMemo(() => {
+    const leadMap = new Map()
+    const addLead = (lead = {}, extras = {}) => {
+      const leadId = getLeadRecordId(lead) || String(extras.leadId || '').trim()
+      const contactId = getLeadContactId(lead) || String(extras.contactId || '').trim()
+      const key = leadId || contactId || String(extras.fallbackKey || '').trim()
+      if (!key) return
+      const existing = leadMap.get(key) || {}
+      leadMap.set(key, {
+        ...existing,
+        ...lead,
+        ...extras,
+        id: leadId || existing.id || key,
+        leadId: leadId || existing.leadId || '',
+        contactId: contactId || existing.contactId || '',
+        name: lead?.name || extras.name || existing.name || lead?.buyerName || lead?.contactName || 'Unnamed lead',
+        email: lead?.email || lead?.buyerEmail || extras.email || existing.email || '',
+        phone: lead?.phone || lead?.buyerPhone || extras.phone || existing.phone || '',
+        source: extras.source || lead?.source || existing.source || lead?.leadSource || lead?.lead_source || 'Manual',
+        status: extras.status || lead?.journeyStage || lead?.stage || lead?.status || existing.status || 'new_lead',
+        createdAt: extras.createdAt || getLeadCreatedAt(lead) || existing.createdAt || '',
+      })
+    }
+
+    listingLeads.forEach((lead) => addLead(lead))
+    interestedLeadRows.forEach((interest) => {
+      addLead(interest.lead || {}, {
+        leadId: interest.leadId,
+        contactId: interest.contactId,
+        source: interest.source || interest.lead?.source,
+        status: interest.status,
+        createdAt: interest.createdAt,
+        interest,
+        fallbackKey: interest.interestId,
+      })
+    })
+
+    const leadIdFor = (row = {}) => String(row?.leadId || row?.buyerLeadId || row?.buyer_lead_id || row?.id || '').trim()
+    const viewingsByLead = new Map()
+    viewings.forEach((viewing) => {
+      const leadId = String(viewing?.buyer_lead_id || viewing?.buyerLeadId || '').trim()
+      if (!leadId) return
+      const current = viewingsByLead.get(leadId) || []
+      current.push(viewing)
+      viewingsByLead.set(leadId, current)
+    })
+
+    const offersByLead = new Map()
+    offerRows.forEach((offer) => {
+      const leadId = leadIdFor(offer)
+      if (!leadId) return
+      const current = offersByLead.get(leadId) || []
+      current.push(offer)
+      offersByLead.set(leadId, current)
+    })
+
+    const sentByLead = new Map()
+    sentPropertyRows.forEach((share) => {
+      const leadId = String(share?.leadId || share?.lead_id || '').trim()
+      if (!leadId) return
+      const timestamp = firstDraftValue(share?.sentAt, share?.sent_at, share?.deliveredAt, share?.delivered_at, share?.createdAt, share?.created_at)
+      const existing = sentByLead.get(leadId)
+      if (!existing || new Date(timestamp || 0) > new Date(existing.timestamp || 0)) {
+        sentByLead.set(leadId, {
+          timestamp,
+          by: share?.agentName || share?.agentId || 'Agent',
+        })
+      }
+    })
+
+    const timestampForViewing = (viewing = {}) => {
+      const schedule = [viewing?.proposed_date, viewing?.proposed_time].filter(Boolean).join(' ')
+      const timestamp = new Date(schedule || viewing?.updated_at || viewing?.created_at || 0).getTime()
+      return Number.isFinite(timestamp) ? timestamp : 0
+    }
+    const timestampForOffer = (offer = {}) => {
+      const timestamp = new Date(offer?.offerDate || offer?.submittedAt || offer?.updatedAt || offer?.updated_at || offer?.createdAt || offer?.created_at || 0).getTime()
+      return Number.isFinite(timestamp) ? timestamp : 0
+    }
+    const relevantViewingFor = (rows = []) => {
+      if (!rows.length) return null
+      const upcomingStatuses = [VIEWING_STATUS.CONFIRMED, VIEWING_STATUS.PENDING_APPROVAL, VIEWING_STATUS.RESCHEDULE_REQUESTED, VIEWING_STATUS.VIEWING_REQUESTED]
+      const upcoming = rows
+        .filter((viewing) => upcomingStatuses.includes(String(viewing?.status || '').trim().toLowerCase()))
+        .sort((left, right) => timestampForViewing(left) - timestampForViewing(right))
+      if (upcoming.length) return upcoming[0]
+      return [...rows].sort((left, right) => timestampForViewing(right) - timestampForViewing(left))[0] || null
+    }
+
+    return Array.from(leadMap.values())
+      .map((lead) => {
+        const leadId = getLeadRecordId(lead)
+        const contact = sentByLead.get(leadId)
+        const leadContactedAt = getLeadContactedAt(lead)
+        const contactedAt = contact?.timestamp || leadContactedAt || ''
+        const contactedBy = contact?.by || getLeadContactedBy(lead) || ''
+        const viewingRows = viewingsByLead.get(leadId) || []
+        const offerRowsForLead = offersByLead.get(leadId) || []
+        const viewing = relevantViewingFor(viewingRows)
+        const offer = [...offerRowsForLead].sort((left, right) => timestampForOffer(right) - timestampForOffer(left))[0] || null
+        const statusSeed = offer
+          ? 'offer_submitted'
+          : viewing
+            ? String(viewing.status || '').toLowerCase() === VIEWING_STATUS.COMPLETED ? 'viewed' : 'viewing_scheduled'
+            : contactedAt
+              ? 'contacted'
+              : lead.status
+        const status = lead.status && lead.status !== 'new_lead' ? lead.status : statusSeed
+        return {
+          ...lead,
+          leadId,
+          sourceLabel: normalizeLeadSourceLabel(lead.source),
+          status,
+          statusLabel: formatListingLeadStatusLabel(status),
+          statusGroup: getListingLeadStatusGroup(status),
+          contactedAt,
+          contactedBy,
+          viewing,
+          viewingCount: viewingRows.length,
+          offer,
+          offerCount: offerRowsForLead.length,
+          createdAt: lead.createdAt || getLeadCreatedAt(lead),
+          searchText: [lead.name, lead.email, lead.phone, lead.source, status].map((value) => String(value || '').toLowerCase()).join(' '),
+        }
+      })
+      .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0))
+  }, [interestedLeadRows, listingLeads, offerRows, sentPropertyRows, viewings])
+
+  const listingLeadSummary = useMemo(() => {
+    const total = listingLeadRows.length
+    const percent = (value) => total ? `${Math.round((value / total) * 100)}% of total` : '0% of total'
+    const now = Date.now()
+    const sevenDays = 7 * 24 * 60 * 60 * 1000
+    const newThisWeek = listingLeadRows.filter((lead) => {
+      const timestamp = new Date(lead.createdAt || 0).getTime()
+      return Number.isFinite(timestamp) && now - timestamp <= sevenDays
+    }).length
+    const contacted = listingLeadRows.filter((lead) => lead.contactedAt || ['contacted', 'viewing', 'offer', 'converted'].includes(lead.statusGroup)).length
+    const viewingsBooked = listingLeadRows.filter((lead) => lead.viewingCount > 0).length
+    const offers = listingLeadRows.filter((lead) => lead.offerCount > 0 || lead.statusGroup === 'offer' || lead.statusGroup === 'converted').length
+    const converted = listingLeadRows.filter((lead) => lead.statusGroup === 'converted' || [OFFER_WORKFLOW_STATUS.ACCEPTED, OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION].includes(normalizeOfferWorkflowStatus(lead.offer?.status))).length
+    return {
+      total,
+      newThisWeek,
+      contacted,
+      viewingsBooked,
+      offers,
+      converted,
+      percent,
+    }
+  }, [listingLeadRows])
+
+  const listingLeadSourceOptions = useMemo(() => {
+    return ['all', ...Array.from(new Set(listingLeadRows.map((lead) => lead.sourceLabel).filter(Boolean))).sort()]
+  }, [listingLeadRows])
+
+  const filteredListingLeadRows = useMemo(() => {
+    const query = listingLeadSearch.trim().toLowerCase()
+    const now = Date.now()
+    const dayMs = 24 * 60 * 60 * 1000
+    return listingLeadRows.filter((lead) => {
+      if (query && !lead.searchText.includes(query)) return false
+      if (listingLeadStatusFilter !== 'all' && lead.statusGroup !== listingLeadStatusFilter) return false
+      if (listingLeadSourceFilter !== 'all' && lead.sourceLabel !== listingLeadSourceFilter) return false
+      if (listingLeadActivityFilter === 'has_viewing' && !lead.viewingCount) return false
+      if (listingLeadActivityFilter === 'has_offer' && !lead.offerCount) return false
+      if (listingLeadActivityFilter === 'needs_follow_up' && (lead.contactedAt || lead.statusGroup !== 'new')) return false
+      if (listingLeadDateFilter !== 'all') {
+        const created = new Date(lead.createdAt || 0).getTime()
+        if (!Number.isFinite(created)) return false
+        const range = listingLeadDateFilter === 'today' ? dayMs : listingLeadDateFilter === '7_days' ? 7 * dayMs : 30 * dayMs
+        if (now - created > range) return false
+      }
+      return true
+    })
+  }, [listingLeadActivityFilter, listingLeadDateFilter, listingLeadRows, listingLeadSearch, listingLeadSourceFilter, listingLeadStatusFilter])
+
+  const listingLeadPageSize = 10
+  const listingLeadPageCount = Math.max(1, Math.ceil(filteredListingLeadRows.length / listingLeadPageSize))
+  const visibleListingLeadRows = filteredListingLeadRows.slice((listingLeadPage - 1) * listingLeadPageSize, listingLeadPage * listingLeadPageSize)
+
+  useEffect(() => {
+    setListingLeadPage(1)
+  }, [listingLeadActivityFilter, listingLeadDateFilter, listingLeadSearch, listingLeadSourceFilter, listingLeadStatusFilter])
   const selectedBuyerOfferLead = useMemo(
     () => buyerOfferLeads.find((lead) => String(lead?.id || '') === String(offerInviteDraft.buyerLeadId || '')) || null,
     [buyerOfferLeads, offerInviteDraft.buyerLeadId],
@@ -5292,7 +5536,8 @@ function AgentListingDetail() {
         OFFER_WORKFLOW_STATUS.ACCEPTED,
       ].includes(status)
     }).length
-    const daysOnMarket = getDaysOnMarket(listingRecord?.createdAt)
+    const marketStartDate = getListingMarketStartDate(listingRecord, marketingDraft)
+    const daysOnMarket = getDaysOnMarket(marketStartDate)
     const offerAverage = getOfferAverage(offerRows)
     const leadCount = listingLeads.length
     const viewingCount = viewings.filter((item) => [VIEWING_STATUS.CONFIRMED, VIEWING_STATUS.COMPLETED, VIEWING_STATUS.PENDING_APPROVAL, VIEWING_STATUS.RESCHEDULE_REQUESTED].includes(String(item?.status || '').trim().toLowerCase())).length
@@ -5305,6 +5550,7 @@ function AgentListingDetail() {
       pendingOffers,
       activeOffers,
       daysOnMarket,
+      marketStartDate,
       offerAverage,
       highestOffer: Math.max(0, ...offerRows.map((offer) => Number(offer?.offerPrice || 0))),
       leadCount,
@@ -5313,7 +5559,7 @@ function AgentListingDetail() {
       acceptedCount,
       estimatedViews,
     }
-  }, [listingLeads, listingRecord?.createdAt, offerRows, viewings])
+  }, [listingLeads, listingRecord, marketingDraft, offerRows, viewings])
 
   const sourceBreakdown = useMemo(() => {
     const counts = new Map([
@@ -5783,22 +6029,6 @@ function AgentListingDetail() {
     }
   }, [listingRecord, mandateWorkspace.expiryDate, marketingDraft.addressLine1, marketingDraft.listingDate, marketingDraft.price, sellerFormData])
 
-  const keyInformationItems = useMemo(() => {
-    const listingStatus = String(marketingDraft.listingStatus || listingRecord?.status || '').toLowerCase()
-    const bridgeStatus = String(marketingDraft.bridgeListingStatus || listingRecord?.bridgeListingStatus || '').toLowerCase()
-    const published = ['active', 'published', 'live'].includes(listingStatus) || bridgeStatus === 'published'
-    return [
-      { icon: MapPin, label: 'Location', value: [marketingDraft.suburb, marketingDraft.city].filter(Boolean).join(', ') || 'Location pending' },
-      { icon: TrendingUp, label: 'Pipeline Value', value: formatCurrency(marketingDraft.price || listingRecord?.askingPrice) },
-      { icon: Home, label: 'Property Type', value: marketingDraft.propertyType || listingRecord?.propertyType || 'Not captured' },
-      { icon: UserRound, label: 'Assigned Agent', value: listingRecord?.assignedAgentName || listingRecord?.assignedAgent || listingRecord?.assignedAgentEmail || 'Unassigned' },
-      { icon: ExternalLink, label: 'Listing Published', value: published ? 'Published' : 'Not published', status: published ? 'done' : 'pending' },
-      { icon: HandCoins, label: 'Price Approved', value: Number(marketingDraft.price || listingRecord?.askingPrice || 0) ? 'Price captured' : 'No price', status: Number(marketingDraft.price || listingRecord?.askingPrice || 0) ? 'done' : 'missing' },
-      { icon: Camera, label: 'Photos Uploaded', value: `${marketingDraft.galleryImages.length} photo${marketingDraft.galleryImages.length === 1 ? '' : 's'}`, status: marketingDraft.galleryImages.length ? 'done' : 'missing' },
-      { icon: FileText, label: 'Description Complete', value: marketingDraft.description.trim() ? 'Description ready' : 'Description missing', status: marketingDraft.description.trim() ? 'done' : 'missing' },
-    ]
-  }, [listingRecord, marketingDraft])
-
   const commissionWorkspace = useMemo(() => {
     const commission = listingRecord?.commission || {}
     const percentage = Number(firstDraftValue(
@@ -5847,174 +6077,6 @@ function AgentListingDetail() {
       lastUpdatedSource: lastUpdated ? `Updated ${formatDate(lastUpdated)}` : 'No captured source',
     }
   }, [listingRecord, marketingDraft.price, sellerFormData])
-
-  const followUpActions = useMemo(() => {
-    const sellerEmail = resolveSellerEmailFromListing(listingRecord)
-    const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
-    const getSellerField = (sectionKey, fieldKey) => sellerProfile.sections
-      .find((section) => section.key === sectionKey)?.rows
-      .find((row) => row.key === fieldKey)
-    const sellerIdentity = getSellerField('seller_details', 'idNumber')
-    const ficaStatus = getSellerField('compliance', 'ficaStatus')
-    const sellerFactsComplete = sellerProfile.completionPercent >= 80
-    const documentsReady = Boolean(sellerDocumentExperience.summary.ready)
-    const hasPhotos = marketingDraft.galleryImages.length > 0
-    const hasExternalListingLink = normalizeExternalListingLinks(marketingDraft.externalLinks).some((link) => link.url)
-    const onboardingStarted = ['sent', 'viewed', 'in_progress', 'submitted', 'under_review', 'completed'].includes(
-      String(listingRecord?.sellerOnboardingStatus || listingRecord?.seller_onboarding_status || listingRecord?.sellerOnboarding?.status || '').trim().toLowerCase(),
-    )
-
-    return [
-      ...(listingHasKingstonsSellerProcess ? [] : [
-        {
-          key: 'send_onboarding',
-          icon: Send,
-          title: 'Send seller onboarding',
-          copy: 'Create or resend the seller onboarding link so the seller can complete their profile.',
-          complete: onboardingStarted,
-          priorityLabel: onboardingStarted ? 'Complete' : 'High priority',
-          buttonLabel: onboardingStarted ? 'Resend onboarding' : 'Send onboarding',
-        },
-        {
-          key: 'generate_mandate',
-          icon: FileText,
-          title: 'Generate Mandate',
-          copy: 'Start the mandate from saved listing details or seller onboarding data.',
-          complete: mandateWorkspace.status === 'ready' || mandateWorkspace.isSigned,
-          priorityLabel: mandateWorkspace.isSigned ? 'Complete' : 'Required',
-          buttonLabel: 'Generate Mandate',
-        },
-      ]),
-      {
-        key: 'upload_signed_mandate',
-        icon: Upload,
-        title: listingHasKingstonsSellerProcess ? 'Upload signed Seller Pack' : 'Upload signed mandate',
-        copy: listingHasKingstonsSellerProcess
-          ? 'Upload the signed mandate, defect form, and FICA form from the manual Kingston Seller Pack.'
-          : 'Signed manually outside the portal? Attach signed mandate evidence and keep the canonical mandate record current.',
-        complete: mandateWorkspace.isSigned,
-        priorityLabel: mandateWorkspace.isSigned ? 'Complete' : 'Required',
-        buttonLabel: 'Open documents',
-      },
-      {
-        key: 'add_seller_contact',
-        icon: UserRound,
-        title: 'Add seller contact',
-        copy: 'Capture at least one usable seller contact method before sending documents or links.',
-        complete: Boolean(sellerEmail || sellerPhone),
-        priorityLabel: sellerEmail || sellerPhone ? 'Complete' : 'Blocked',
-        buttonLabel: 'Open seller',
-      },
-      {
-        key: 'add_seller_identity',
-        icon: ShieldCheck,
-        title: 'Add seller ID / registration number',
-        copy: 'Capture the seller identity or registration number for mandate and FICA readiness.',
-        complete: isSellerProfileFilled(sellerIdentity?.rawValue),
-        priorityLabel: isSellerProfileFilled(sellerIdentity?.rawValue) ? 'Complete' : 'Required',
-        buttonLabel: 'Open seller',
-      },
-      {
-        key: 'add_seller_fica',
-        icon: ShieldCheck,
-        title: 'Add seller FICA',
-        copy: 'Collect seller FICA requirements so the listing is ready for attorney handoff.',
-        complete: documentsReady || isSellerProfileFilled(ficaStatus?.rawValue),
-        priorityLabel: documentsReady ? 'Complete' : 'Required',
-        buttonLabel: 'Open documents',
-      },
-      {
-        key: 'complete_seller_facts',
-        icon: Home,
-        title: 'Complete seller facts',
-        copy: 'Fill the seller profile sections that drive documents, mandate generation, and handoff.',
-        complete: sellerFactsComplete,
-        priorityLabel: sellerFactsComplete ? 'Complete' : `${sellerProfile.completionPercent}% complete`,
-        buttonLabel: 'Open seller',
-      },
-      {
-        key: 'confirm_commission',
-        icon: HandCoins,
-        title: 'Confirm commission',
-        copy: 'Confirm commission percentage, fixed fee, VAT handling, and payment terms.',
-        complete: commissionWorkspace.hasData,
-        priorityLabel: commissionWorkspace.hasData ? 'Complete' : 'Required',
-        buttonLabel: 'Open commission',
-      },
-      {
-        key: 'add_photos',
-        icon: Camera,
-        title: 'Add photos',
-        copy: 'Upload listing images and choose a cover image for buyer-facing distribution.',
-        complete: hasPhotos,
-        priorityLabel: hasPhotos ? 'Complete' : 'Recommended',
-        buttonLabel: 'Open listing',
-      },
-      {
-        key: 'add_external_link',
-        icon: ExternalLink,
-        title: 'Add external listing link',
-        copy: 'Store portal references such as Property24 or Private Property links.',
-        complete: hasExternalListingLink,
-        priorityLabel: hasExternalListingLink ? 'Complete' : 'Recommended',
-        buttonLabel: 'Open listing',
-      },
-    ]
-  }, [
-    commissionWorkspace.hasData,
-    listingHasKingstonsSellerProcess,
-    listingRecord,
-    mandateWorkspace.isSigned,
-    mandateWorkspace.status,
-    marketingDraft.externalLinks,
-    marketingDraft.galleryImages.length,
-    sellerDocumentExperience.summary.ready,
-    sellerProfile.completionPercent,
-    sellerProfile.sections,
-  ])
-
-  const listingFollowUpsComplete = !followUpActions.length || followUpActions.every((action) => action.complete)
-  const shouldShowListingFollowUps = sellerWorkspaceTab === 'overview' && !listingFollowUpsComplete
-
-  function handleListingFollowUpAction(action = {}) {
-    const key = String(action.key || '').trim()
-    if (key === 'send_onboarding') {
-      if (listingHasKingstonsSellerProcess) {
-        openSellerPortalActivationModal()
-        return
-      }
-      void handleSendSellerOnboardingFollowUp()
-      return
-    }
-    if (key === 'generate_mandate') {
-      if (listingKingstonsDigitalSigningDecision.blocked) {
-        openSellerWorkspaceSection('documents')
-        setDetailError(listingKingstonsDigitalSigningDecision.message)
-        return
-      }
-      setMandateStartOpen(true)
-      return
-    }
-    if (key === 'upload_signed_mandate' || key === 'add_seller_fica') {
-      openSellerWorkspaceSection('documents')
-      return
-    }
-    if (key === 'complete_seller_facts') {
-      openSellerProfileBuilder('Complete the internal seller profile below. Saving will refresh document requirements.')
-      return
-    }
-    if (key === 'add_seller_contact' || key === 'add_seller_identity') {
-      openSellerWorkspaceSection('seller')
-      return
-    }
-    if (key === 'confirm_commission') {
-      openSellerWorkspaceSection('commission')
-      return
-    }
-    if (key === 'add_photos' || key === 'add_external_link') {
-      openSellerWorkspaceSection('listing')
-    }
-  }
 
   const listingMandateStartSummary = useMemo(() => {
     const sellerEmail = resolveSellerEmailFromListing(listingRecord)
@@ -6271,9 +6333,9 @@ function AgentListingDetail() {
     const portalViews = Number(analytics?.portalViews || analytics?.property24Views || analytics?.privatePropertyViews || 0)
     const bridgeViews = Number(analytics?.bridgeViews || analytics?.websiteViews || 0)
     const explicitViews = Number(analytics?.totalViews || analytics?.views || 0)
-    const totalViews = explicitViews || portalViews + bridgeViews || metrics.estimatedViews
-    const resolvedPortalViews = portalViews || Math.max(0, Math.round(totalViews * 0.72))
-    const resolvedBridgeViews = bridgeViews || Math.max(0, totalViews - resolvedPortalViews)
+    const totalViews = explicitViews || portalViews + bridgeViews || 0
+    const priorViews = Number(analytics?.previousPeriodViews || analytics?.previous30DayViews || analytics?.priorViews || 0)
+    const viewChangePercent = priorViews ? ((totalViews - priorViews) / priorViews) * 100 : null
     const now = Date.now()
     const sevenDays = 1000 * 60 * 60 * 24 * 7
     const newThisWeek = listingLeads.filter((lead) => {
@@ -6296,12 +6358,13 @@ function AgentListingDetail() {
     const highestOffer = metrics.highestOffer || offerSummary.highest || 0
     const offerToAskRatio = askingPrice && averageOffer ? (averageOffer / askingPrice) * 100 : askingPrice && highestOffer ? (highestOffer / askingPrice) * 100 : 0
     const areaAverageDays = Number(analytics?.areaAverageDaysOnMarket || listingRecord?.market?.areaAverageDaysOnMarket || listingRecord?.areaAverageDaysOnMarket || 0)
-    const resolvedAreaAverage = areaAverageDays || Math.max(metrics.daysOnMarket + 15, 30)
-    const daysDelta = resolvedAreaAverage ? ((resolvedAreaAverage - metrics.daysOnMarket) / resolvedAreaAverage) * 100 : 0
+    const daysDelta = areaAverageDays ? ((areaAverageDays - metrics.daysOnMarket) / areaAverageDays) * 100 : 0
     const basePerformance = {
       totalViews,
-      portalViews: resolvedPortalViews,
-      bridgeViews: resolvedBridgeViews,
+      portalViews,
+      bridgeViews,
+      priorViews,
+      viewChangePercent,
       leadCount: metrics.leadCount,
       newThisWeek,
       qualifiedLeads,
@@ -6315,7 +6378,8 @@ function AgentListingDetail() {
       averageOffer,
       offerToAskRatio,
       daysOnMarket: metrics.daysOnMarket,
-      areaAverageDays: resolvedAreaAverage,
+      marketStartDate: metrics.marketStartDate,
+      areaAverageDays,
       daysPerformance: daysDelta,
       acceptedSales: metrics.acceptedCount,
       pendingOffers: metrics.pendingOffers,
@@ -6344,59 +6408,6 @@ function AgentListingDetail() {
     ]
   }, [listingPerformance])
 
-  const viewingRequestOverview = useMemo(() => {
-    const statusFor = (viewing) => String(viewing?.status || '').trim().toLowerCase()
-    const timestampFor = (viewing) => {
-      const scheduleValue = [viewing?.proposed_date, viewing?.proposed_time].filter(Boolean).join(' ')
-      const timestamp = new Date(scheduleValue || viewing?.updated_at || viewing?.created_at || 0).getTime()
-      return Number.isFinite(timestamp) ? timestamp : 0
-    }
-    const scheduleLabelFor = (viewing) => {
-      const date = viewing?.proposed_date ? formatDate(viewing.proposed_date) : ''
-      const time = String(viewing?.proposed_time || '').trim()
-      return [date, time].filter(Boolean).join(' at ') || 'Date pending'
-    }
-    const pendingStatuses = [
-      VIEWING_STATUS.PENDING_APPROVAL,
-      VIEWING_STATUS.RESCHEDULE_REQUESTED,
-      VIEWING_STATUS.VIEWING_REQUESTED,
-    ]
-    const pendingRows = viewings.filter((viewing) => pendingStatuses.includes(statusFor(viewing)))
-    const confirmedRows = viewings.filter((viewing) => statusFor(viewing) === VIEWING_STATUS.CONFIRMED)
-    const completedRows = viewings.filter((viewing) => statusFor(viewing) === VIEWING_STATUS.COMPLETED)
-    const needsFeedbackRows = completedRows.filter((viewing) => !viewing?.feedback)
-    const priorityFor = (viewing) => {
-      const status = statusFor(viewing)
-      if (pendingStatuses.includes(status)) return 0
-      if (status === VIEWING_STATUS.CONFIRMED) return 1
-      if (status === VIEWING_STATUS.COMPLETED && !viewing?.feedback) return 2
-      if (status === VIEWING_STATUS.COMPLETED) return 3
-      return 4
-    }
-    const activeRows = [...pendingRows, ...confirmedRows].sort((left, right) => timestampFor(left) - timestampFor(right))
-    const rows = [...viewings]
-      .sort((left, right) => {
-        const priorityDifference = priorityFor(left) - priorityFor(right)
-        if (priorityDifference) return priorityDifference
-        return timestampFor(left) - timestampFor(right)
-      })
-      .slice(0, 4)
-      .map((viewing) => ({
-        ...viewing,
-        scheduleLabel: scheduleLabelFor(viewing),
-      }))
-    const nextViewing = activeRows[0] || null
-    return {
-      pendingCount: pendingRows.length,
-      confirmedCount: confirmedRows.length,
-      completedCount: completedRows.length,
-      needsFeedbackCount: needsFeedbackRows.length,
-      attentionCount: pendingRows.length + needsFeedbackRows.length,
-      nextViewing: nextViewing ? { ...nextViewing, scheduleLabel: scheduleLabelFor(nextViewing) } : null,
-      rows,
-    }
-  }, [viewings])
-
   const offerPriceOverview = useMemo(() => {
     const askingPrice = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
     const timestampFor = (offer) => {
@@ -6423,61 +6434,150 @@ function AgentListingDetail() {
     }
   }, [listingPerformance, listingRecord?.askingPrice, marketingDraft.price, offerRows])
 
-  const sellerCommunicationMetrics = useMemo(() => {
+  const overviewBuyerActivity = useMemo(() => {
+    const timestampFor = (value) => {
+      const timestamp = new Date(value || 0).getTime()
+      return Number.isFinite(timestamp) ? timestamp : 0
+    }
+    const events = []
+    listingLeads.forEach((lead) => {
+      events.push({
+        id: `lead-${lead?.id || lead?.leadId || events.length}`,
+        buyerName: lead?.name || lead?.buyerName || lead?.contactName || 'Buyer lead',
+        event: lead?.source ? `New ${formatStatusLabel(lead.source)} enquiry` : 'New lead received',
+        source: lead?.source || '',
+        timestamp: lead?.createdAt || lead?.created_at || lead?.updatedAt || lead?.updated_at,
+      })
+    })
+    viewings.forEach((viewing) => {
+      const status = String(viewing?.status || '').trim().toLowerCase()
+      const statusLabel = status === VIEWING_STATUS.COMPLETED
+        ? 'Viewing completed'
+        : status === VIEWING_STATUS.CONFIRMED
+          ? 'Viewing confirmed'
+          : status === VIEWING_STATUS.RESCHEDULE_REQUESTED
+            ? 'Viewing reschedule requested'
+            : 'Requested viewing'
+      events.push({
+        id: `viewing-${viewing?.viewing_id || viewing?.id || events.length}`,
+        buyerName: viewing?.buyer_name || viewing?.buyerName || 'Buyer',
+        event: viewing?.feedback ? 'Feedback received' : statusLabel,
+        source: '',
+        timestamp: viewing?.updated_at || viewing?.updatedAt || viewing?.created_at || viewing?.createdAt || viewing?.proposed_date,
+      })
+    })
+    offerRows.forEach((offer) => {
+      events.push({
+        id: `offer-${offer?.id || offer?.offerId || events.length}`,
+        buyerName: offer?.buyerName || offer?.buyerLeadName || 'Buyer',
+        event: 'Offer submitted',
+        source: offer?.offerPrice ? formatMoneyValue(offer.offerPrice) : '',
+        timestamp: offer?.offerDate || offer?.submittedAt || offer?.updatedAt || offer?.updated_at || offer?.createdAt || offer?.created_at,
+      })
+    })
+    return events
+      .filter((event) => timestampFor(event.timestamp))
+      .sort((left, right) => timestampFor(right.timestamp) - timestampFor(left.timestamp))
+      .slice(0, 5)
+  }, [listingLeads, offerRows, viewings])
+
+  const overviewUpcomingViewings = useMemo(() => {
+    const timestampFor = (viewing) => {
+      const scheduleValue = [viewing?.proposed_date, viewing?.proposed_time].filter(Boolean).join(' ')
+      const timestamp = new Date(scheduleValue || viewing?.created_at || viewing?.createdAt || 0).getTime()
+      return Number.isFinite(timestamp) ? timestamp : 0
+    }
+    const upcomingStatuses = [
+      VIEWING_STATUS.CONFIRMED,
+      VIEWING_STATUS.PENDING_APPROVAL,
+      VIEWING_STATUS.RESCHEDULE_REQUESTED,
+      VIEWING_STATUS.VIEWING_REQUESTED,
+    ]
+    return viewings
+      .filter((viewing) => upcomingStatuses.includes(String(viewing?.status || '').trim().toLowerCase()))
+      .map((viewing) => {
+        const dateLabel = viewing?.proposed_date ? formatOverviewTimestamp([viewing.proposed_date, viewing.proposed_time].filter(Boolean).join(' ')) : 'Date pending'
+        return {
+          id: viewing?.viewing_id || viewing?.id || `${viewing?.buyer_name || 'buyer'}-${dateLabel}`,
+          buyerName: viewing?.buyer_name || viewing?.buyerName || 'Buyer',
+          status: viewing?.status || VIEWING_STATUS.VIEWING_REQUESTED,
+          dateLabel,
+          timestamp: timestampFor(viewing),
+        }
+      })
+      .sort((left, right) => left.timestamp - right.timestamp)
+      .slice(0, 4)
+  }, [viewings])
+
+  const overviewSellerSnapshot = useMemo(() => {
     const lastOfferShare = offerRows.find((offer) => offer?.sentToSellerAt || normalizeOfferWorkflowStatus(offer?.status) === OFFER_WORKFLOW_STATUS.SELLER_REVIEW)
-    const portalViewedAt = firstDraftValue(
-      listingRecord?.sellerOnboarding?.lastViewedAt,
-      listingRecord?.sellerOnboarding?.viewedAt,
-      listingRecord?.sellerOnboarding?.portalViewedAt,
-      listingRecord?.sellerOnboarding?.submittedAt,
-    )
-    const lastUpdate = firstDraftValue(
+    const lastSellerContact = firstDraftValue(
       lastOfferShare?.sentToSellerAt,
       listingRecord?.sellerReport?.lastSentAt,
       listingRecord?.sellerOnboarding?.updatedAt,
       mandateWorkspace.signedDate,
       listingRecord?.updatedAt,
     )
-    const unreadMessages = Number(
-      listingRecord?.sellerMessages?.unreadCount ||
-        listingRecord?.sellerCommunication?.unreadCount ||
-        listingRecord?.unreadSellerMessages ||
-        0,
-    ) || 0
-    const uploadedDocuments = sellerDocumentTrackerRows.filter((document) => document.uploaded).length ||
-      (Array.isArray(listingRecord?.documents) ? listingRecord.documents.length : 0)
+    const ficaField = sellerProfile.sections
+      .find((section) => section.key === 'compliance')?.rows
+      .find((row) => row.key === 'ficaStatus')
+    const ficaComplete = sellerDocuments.length
+      ? sellerDocuments.every((document) => ['approved', 'complete', 'completed', 'uploaded', 'verified'].includes(normalizeKey(document.status)))
+      : isSellerProfileFilled(ficaField?.rawValue)
     return {
-      lastUpdate,
-      portalViewedAt,
-      lastLogin: firstDraftValue(
-        listingRecord?.sellerOnboarding?.lastLoginAt,
-        listingRecord?.sellerOnboarding?.last_login_at,
-        listingRecord?.sellerOnboarding?.lastAccessedAt,
-        portalViewedAt,
-      ),
-      unreadMessages,
-      uploadedDocuments,
-      offersShared: offerRows.filter((offer) => offer?.sentToSellerAt || [OFFER_WORKFLOW_STATUS.SELLER_REVIEW, OFFER_WORKFLOW_STATUS.SELLER_VIEWED, OFFER_WORKFLOW_STATUS.ACCEPTED].includes(normalizeOfferWorkflowStatus(offer?.status))).length,
-      viewingsShared: viewings.filter((item) => [VIEWING_STATUS.CONFIRMED, VIEWING_STATUS.COMPLETED].includes(String(item?.status || '').trim().toLowerCase())).length,
-      reportsSent: Number(listingRecord?.sellerReport?.sentCount || listingRecord?.sellerReportsSent || 0) || 0,
+      name: resolveSellerNameFromListing(listingRecord) || sellerProfile.name || 'Seller pending',
+      portalStatus: getSellerPortalStatusLabel(sellerPortalLifecycleStatus),
+      portalStatusKey: sellerPortalLifecycleStatus,
+      ficaStatus: ficaComplete ? 'Complete' : ficaField?.value && ficaField.value !== 'Not captured' ? ficaField.value : 'Outstanding',
+      ficaStatusKey: ficaComplete ? 'complete' : 'pending',
+      mandateStatus: mandateWorkspace.isSigned ? 'Signed' : mandateWorkspace.label || 'Draft',
+      mandateStatusKey: mandateWorkspace.isSigned ? 'signed' : mandateWorkspace.status,
+      mandateExpiry: mandateWorkspace.expiryDate ? formatDate(mandateWorkspace.expiryDate) : 'Not captured',
+      lastContact: lastSellerContact ? formatOverviewTimestamp(lastSellerContact) : 'No recent contact',
     }
-  }, [listingRecord, mandateWorkspace.signedDate, offerRows, sellerDocumentTrackerRows, viewings])
+  }, [listingRecord, mandateWorkspace, offerRows, sellerDocuments, sellerPortalLifecycleStatus, sellerProfile])
 
-  const sellerPortalPasswordStatus = useMemo(() => {
-    if (!resolveSellerPortalTokenFromListing(listingRecord)) return 'No portal link'
-    if (sellerPortalAccessLoading) return 'Checking...'
-    if (!sellerPortalAccessState?.valid) return 'Unknown'
-    if (sellerPortalAccessState?.passwordSet) return 'Password set'
-    return 'Password not set'
-  }, [listingRecord, sellerPortalAccessLoading, sellerPortalAccessState])
+  const overviewMarketingSnapshot = useMemo(() => {
+    const portalRows = [
+      ['Property24', marketingDraft.property24Status, marketingDraft.property24ListingUrl || marketingDraft.property24Reference],
+      ['Private Property', marketingDraft.privatePropertyStatus, marketingDraft.privatePropertyListingUrl || marketingDraft.privatePropertyReference],
+      ['Arch9', marketingDraft.bridgeListingStatus || marketingDraft.publicationStatus, arch9PublicListingUrl || marketingDraft.bridgeListingPublicUrl],
+    ]
+      .filter(([, status, reference]) => normalizeKey(status) !== 'not_published' || reference)
+      .map(([label, status, reference]) => ({
+        label,
+        value: normalizeKey(status) === 'not_published' && reference ? 'Linked' : formatStatusLabel(status || 'not_published'),
+        status: normalizeKey(status) === 'published' || normalizeKey(status) === 'live' || normalizeKey(status) === 'active' ? 'published' : 'pending',
+      }))
+    return {
+      portalRows,
+      rows: [
+        ...portalRows,
+        { label: 'Photos', value: `${marketingDraft.galleryImages.length} uploaded`, status: marketingDraft.galleryImages.length ? 'complete' : 'pending' },
+        { label: 'Description', value: marketingDraft.description.trim() ? 'Ready' : 'Needs improvement', status: marketingDraft.description.trim() ? 'complete' : 'pending' },
+      ].slice(0, 5),
+    }
+  }, [arch9PublicListingUrl, marketingDraft])
 
-  const sellerPortalAccessStatus = useMemo(() => {
-    if (!resolveSellerPortalTokenFromListing(listingRecord)) return 'No portal link'
-    if (sellerPortalAccessLoading) return 'Checking...'
-    if (sellerPortalAccessState?.linkActive === false || sellerPortalAccessState?.revokedAt) return 'Revoked'
-    if (sellerPortalAccessState?.locked) return 'Temporarily locked'
-    return sellerPortalAccessState?.valid ? 'Active' : 'Unknown'
-  }, [listingRecord, sellerPortalAccessLoading, sellerPortalAccessState])
+  const overviewRecentActivity = useMemo(() => {
+    return [...activityItems, ...mandateActivityItems]
+      .filter((item) => item?.timestamp)
+      .sort((left, right) => new Date(right.timestamp || 0) - new Date(left.timestamp || 0))
+      .slice(0, 5)
+  }, [activityItems, mandateActivityItems])
+
+  const overviewPricePosition = useMemo(() => {
+    const percentageDifference = offerPriceOverview.differenceToAsking && offerPriceOverview.askingPrice
+      ? (offerPriceOverview.differenceToAsking / offerPriceOverview.askingPrice) * 100
+      : 0
+    return {
+      ...offerPriceOverview,
+      percentageDifference,
+      differenceLabel: offerPriceOverview.offerCount && offerPriceOverview.askingPrice
+        ? `${offerPriceOverview.differenceToAsking > 0 ? '+' : ''}${formatMoneyValue(offerPriceOverview.differenceToAsking)} (${formatSignedPercentValue(percentageDifference)})`
+        : '—',
+    }
+  }, [offerPriceOverview])
 
   const sellerPortalLifecycleStatus = useMemo(
     () => resolveSellerPortalLifecycle({
@@ -6497,11 +6597,6 @@ function AgentListingDetail() {
       agentName: listingActor.name || profile?.fullName || profile?.email || '',
     }),
     [listingActor.name, listingRecord, profile?.agencyName, profile?.companyName, profile?.email, profile?.fullName, profile?.organisationName, sellerPortalActivationDraft.firstName, sellerPortalActivationDraft.lastName],
-  )
-
-  const sellerOnboardingEmailDiagnostics = useMemo(
-    () => buildSellerOnboardingEmailDiagnostics(communicationDeliveryRows),
-    [communicationDeliveryRows],
   )
 
   function openSellerPortalActivationModal() {
@@ -10317,714 +10412,554 @@ function AgentListingDetail() {
           </nav>
 
           {sellerWorkspaceTab === 'overview' ? (
-            <section className="space-y-6">
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <section className="space-y-5">
+              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h2 className="text-base font-semibold text-[#142132]">Listing Performance</h2>
-                    <p className="mt-1 text-sm text-[#607387]">A focused read on buyer attention, conversion, and market movement.</p>
+                    <h2 className="text-base font-semibold text-[#142132]">Performance</h2>
                     {listingPerformance.hasOverrides ? (
                       <p className="mt-1 text-xs font-semibold text-[#1f7d44]">Manual seller-facing stats are active.</p>
                     ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <span className="inline-flex min-h-9 items-center rounded-lg border border-[#dbe6f2] bg-[#f7fbff] px-3 text-xs font-semibold text-[#35546c]">
+                      Last 30 days
+                    </span>
                     <Button type="button" size="sm" variant="secondary" onClick={openListingPerformanceEditor}>
                       <Pencil size={14} />
                       Edit Stats
                     </Button>
-                    <button
-                      type="button"
-                      onClick={() => navigate('/listings')}
-                      className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold uppercase tracking-[0.08em] text-[#5f7894] hover:border-[#b7c8db] hover:text-[#1f4f78]"
-                    >
-                      <ArrowLeft size={13} />
-                      Back
-                    </button>
                   </div>
                 </div>
 
-                <div className="mt-5 grid items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="mt-4 grid items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   {[
-                    { label: 'Views', value: formatCompactNumber(listingPerformance.totalViews), meta: `${formatCompactNumber(listingPerformance.portalViews)} portal / ${formatCompactNumber(listingPerformance.bridgeViews)} Arch9`, icon: Eye },
+                    {
+                      label: 'Views',
+                      value: formatCompactNumber(listingPerformance.totalViews),
+                      meta: listingPerformance.viewChangePercent !== null && listingPerformance.viewChangePercent !== undefined
+                        ? `${formatSignedPercentValue(listingPerformance.viewChangePercent)} vs previous 30 days`
+                        : listingPerformance.portalViews || listingPerformance.bridgeViews
+                          ? `${formatCompactNumber(listingPerformance.portalViews)} portal / ${formatCompactNumber(listingPerformance.bridgeViews)} Arch9`
+                          : 'Analytics not recorded',
+                      icon: Eye,
+                    },
                     { label: 'Leads', value: formatCompactNumber(listingPerformance.leadCount), meta: `${formatCompactNumber(listingPerformance.newThisWeek)} new this week`, icon: Users },
-                    { label: 'Viewings', value: formatCompactNumber(listingPerformance.scheduledViewings), meta: `${formatCompactNumber(listingPerformance.completedViewings)} completed`, icon: CalendarDays },
-                    { label: 'Offers', value: formatCompactNumber(listingPerformance.offerCount), meta: `${formatCompactNumber(listingPerformance.pendingOffers)} active / pending`, icon: HandCoins },
-                    { label: 'Days Mkt', value: formatCompactNumber(listingPerformance.daysOnMarket), meta: `${formatCompactNumber(listingPerformance.areaAverageDays)} day area avg`, icon: BarChart3 },
+                    { label: 'Viewings', value: formatCompactNumber(listingPerformance.scheduledViewings), meta: `${formatCompactNumber(listingPerformance.upcomingViewings)} upcoming`, icon: CalendarDays },
+                    { label: 'Offers', value: formatCompactNumber(listingPerformance.offerCount), meta: `${formatCompactNumber(listingPerformance.pendingOffers)} active`, icon: HandCoins },
+                    {
+                      label: 'Days on market',
+                      value: formatCompactNumber(listingPerformance.daysOnMarket),
+                      meta: listingPerformance.areaAverageDays
+                        ? `Area avg. ${formatCompactNumber(listingPerformance.areaAverageDays)}`
+                        : `Listed ${formatDate(listingPerformance.marketStartDate)}`,
+                      icon: BarChart3,
+                    },
                   ].map((card) => {
                     const Icon = card.icon
                     return (
-                      <div key={card.label} className="flex h-full min-h-[128px] flex-col justify-between rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                      <div key={card.label} className="flex h-full min-h-[112px] flex-col justify-between rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                         <div className="flex items-start justify-between gap-3">
-                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{card.label}</p>
-                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[11px] bg-[#eef5fb] text-[#1f4f78]">
+                          <p className="text-[0.72rem] font-semibold text-[#6f8198]">{card.label}</p>
+                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#eef5fb] text-[#1f4f78]">
                             <Icon size={15} />
                           </span>
                         </div>
-                        <p className="mt-4 text-2xl font-semibold text-[#10243a]">{card.value}</p>
-                        <p className="mt-2 text-sm leading-5 text-[#607387]">{card.meta}</p>
+                        <p className="mt-3 text-2xl font-semibold text-[#10243a]">{card.value}</p>
+                        <p className="mt-1 text-xs font-semibold leading-5 text-[#607387]">{card.meta}</p>
                       </div>
                     )
                   })}
                 </div>
+              </article>
 
-                <div className="mt-5 grid items-stretch gap-3 md:grid-cols-3">
-                  {listingConversionMetrics.map((metric) => (
-                    <div key={metric.label} className="flex min-h-[86px] items-center justify-between gap-4 rounded-[16px] border border-[#e5edf6] bg-white px-4 py-3">
-                      <div>
-                        <p className="text-sm font-semibold text-[#243d56]">{metric.label}</p>
-                        <p className="mt-1 text-xs font-medium text-[#607387]">{metric.meta}</p>
-                      </div>
-                      <p className="shrink-0 text-xl font-semibold text-[#1f4f78]">{formatPercentValue(metric.value)}</p>
+              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-semibold text-[#142132]">Buyer Interest Funnel</h2>
+                  <Info size={15} className="text-[#7890aa]" />
+                </div>
+                <div className="mt-4 grid items-center gap-3 lg:grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)_24px_minmax(0,1fr)_24px_minmax(0,1fr)]">
+                  {[
+                    { label: 'Views', value: listingPerformance.totalViews, icon: Eye },
+                    { label: 'Leads', value: listingPerformance.leadCount, icon: Users },
+                    { label: 'Viewings', value: listingPerformance.scheduledViewings, icon: CalendarDays },
+                    { label: 'Offers', value: listingPerformance.offerCount, icon: HandCoins },
+                  ].map((stage, index) => {
+                    const Icon = stage.icon
+                    return (
+                      <Fragment key={stage.label}>
+                        <div className="flex min-h-[64px] items-center gap-3 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3">
+                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#eef5fb] text-[#1f4f78]">
+                            <Icon size={15} />
+                          </span>
+                          <div>
+                            <p className="text-lg font-semibold text-[#142132]">{formatCompactNumber(stage.value)}</p>
+                            <p className="text-xs font-semibold text-[#6b7d93]">{stage.label}</p>
+                          </div>
+                        </div>
+                        {index < 3 ? <ChevronRight className="hidden justify-self-center text-[#7890aa] lg:block" size={20} /> : null}
+                      </Fragment>
+                    )
+                  })}
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  {[
+                    { label: 'Enquiry rate', value: listingConversionMetrics[0]?.value || 0 },
+                    { label: 'Viewing conversion', value: listingConversionMetrics[1]?.value || 0 },
+                    { label: 'Offer conversion', value: listingConversionMetrics[2]?.value || 0 },
+                  ].map((metric) => (
+                    <div key={metric.label} className="flex min-h-[52px] items-center justify-between gap-3 border-t border-[#e7edf5] pt-3">
+                      <span className="text-xs font-semibold text-[#6b7d93]">{metric.label}</span>
+                      <span className="text-sm font-semibold text-[#142132]">{formatPercentValue(metric.value)}</span>
                     </div>
                   ))}
                 </div>
               </article>
 
-              {shouldShowListingFollowUps ? (
-                <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-[#142132]">Listing Follow-Ups</h3>
-                      <p className="mt-1 text-sm text-[#607387]">Complete a Quick Add listing here without restarting seller onboarding.</p>
-                    </div>
-                    <span className="inline-flex min-h-8 items-center rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 text-xs font-semibold text-[#35546c]">
-                      {followUpActions.filter((action) => !action.complete).length} open
-                    </span>
+              <section className="grid items-stretch gap-5 xl:grid-cols-2">
+                <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-base font-semibold text-[#142132]">Latest Buyer Activity</h2>
+                    <button type="button" onClick={() => openSellerWorkspaceSection('leads')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                      View all leads
+                      <ChevronRight size={14} />
+                    </button>
                   </div>
-                  <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    {followUpActions.filter((action) => !action.complete).map((action) => (
-                      <FollowUpActionCard
-                        key={action.key}
-                        action={action}
-                        loading={followUpActionId === action.key}
-                        onAction={handleListingFollowUpAction}
-                      />
-                    ))}
-                  </div>
-                </article>
-              ) : null}
-
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-[#142132]">Viewings & Viewing Requests</h3>
-                    <p className="mt-1 text-sm text-[#607387]">Keep pending requests, confirmed appointments, and feedback follow-ups visible from the overview.</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="secondary" onClick={() => setActiveTab('pipeline')}>
-                      Open Viewings
-                    </Button>
-                    <Button size="sm" onClick={() => { setActiveTab('pipeline'); setShowViewingForm(true) }}>
-                      <Plus size={14} />
-                      New Request
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="mt-5 grid items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {[
-                    { label: 'Requests', value: viewingRequestOverview.pendingCount, meta: 'Awaiting approval or reschedule', icon: CircleAlert },
-                    { label: 'Confirmed', value: viewingRequestOverview.confirmedCount, meta: 'Booked appointments', icon: CalendarDays },
-                    { label: 'Completed', value: viewingRequestOverview.completedCount, meta: 'Held viewings', icon: CheckCircle2 },
-                    { label: 'Feedback Due', value: viewingRequestOverview.needsFeedbackCount, meta: 'Completed without notes', icon: FileText },
-                  ].map((item) => {
-                    const Icon = item.icon
-                    return (
-                      <div key={item.label} className="flex min-h-[104px] items-start justify-between gap-3 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                        <div>
-                          <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
-                          <p className="mt-2 text-2xl font-semibold text-[#10243a]">{formatCompactNumber(item.value)}</p>
-                          <p className="mt-1 text-xs font-medium text-[#607387]">{item.meta}</p>
-                        </div>
-                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eef5fb] text-[#1f4f78]">
-                          <Icon size={16} />
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                  <div className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h4 className="text-sm font-semibold text-[#142132]">Latest Viewing Activity</h4>
-                      <span className="rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c]">
-                        {viewingRequestOverview.rows.length} shown
-                      </span>
-                    </div>
-                    <div className="mt-3 space-y-3">
-                      {viewingRequestOverview.rows.length ? viewingRequestOverview.rows.map((viewing) => (
-                        <article key={viewing.viewing_id || `${viewing.buyer_name}-${viewing.scheduleLabel}`} className="flex flex-col gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-3 py-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-[#22374d]">{viewing.buyer_name || 'Buyer'}</p>
-                            <p className="mt-1 text-xs font-semibold text-[#607387]">{viewing.scheduleLabel}</p>
-                            <p className="mt-1 line-clamp-2 text-xs text-[#7b8ca2]">{viewing.notes || 'No viewing notes captured.'}</p>
-                          </div>
-                          <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${statusClass(viewing.status)}`}>
-                            {formatViewingStatusLabel(viewing.status)}
-                          </span>
-                        </article>
-                      )) : (
-                        <div className="rounded-[14px] border border-dashed border-[#d3deea] bg-white px-3 py-5 text-sm text-[#607387]">
-                          No viewing requests or appointments have been captured for this listing yet.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <aside className="flex min-h-[220px] flex-col rounded-[18px] border border-[#dce6f2] bg-[#f7fbff] p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Next Viewing</p>
-                        <p className="mt-2 text-sm font-semibold leading-5 text-[#142132]">
-                          {viewingRequestOverview.nextViewing?.buyer_name || 'No upcoming viewing'}
-                        </p>
-                        <p className="mt-1 text-sm text-[#607387]">
-                          {viewingRequestOverview.nextViewing?.scheduleLabel || 'Create a request when a buyer is ready to view.'}
-                        </p>
-                      </div>
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-white text-[#1f4f78]">
-                        <CalendarDays size={16} />
-                      </span>
-                    </div>
-                    <div className="mt-auto border-t border-[#d9e5f1] pt-4">
-                      <p className="text-sm font-semibold text-[#22374d]">
-                        {viewingRequestOverview.attentionCount
-                          ? `${viewingRequestOverview.attentionCount} item${viewingRequestOverview.attentionCount === 1 ? '' : 's'} need attention`
-                          : 'No viewing action due'}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-[#607387]">
-                        Pending requests and completed viewings without feedback are counted here.
-                      </p>
-                    </div>
-                  </aside>
-                </div>
-              </article>
-
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <h3 className="text-base font-semibold text-[#142132]">Key Information</h3>
-                <div className="mt-5 grid gap-x-7 md:grid-cols-2 xl:grid-cols-4">
-                  {keyInformationItems.map((item) => {
-                    const Icon = item.icon
-                    return (
-                      <div key={item.label} className="flex min-h-[82px] items-start gap-3 border-b border-[#e7edf5] py-3">
-                        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-[11px] bg-[#eef5fb] text-[#1f4f78]">
-                          <Icon size={15} />
+                  <div className="mt-4 flex-1 space-y-3">
+                    {overviewBuyerActivity.length ? overviewBuyerActivity.map((item) => (
+                      <div key={item.id} className="flex items-center gap-3">
+                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#eef5fb] text-[0.72rem] font-semibold text-[#1f4f78]">
+                          {getInitials(item.buyerName)}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{item.label}</p>
-                            {item.status ? <StatusPill status={item.status} /> : null}
-                          </div>
-                          <p className="mt-1 break-words text-sm font-semibold leading-5 text-[#243d56]">{item.value || 'Not captured'}</p>
+                          <p className="truncate text-sm font-semibold text-[#22374d]">{item.buyerName}</p>
+                          <p className="truncate text-xs text-[#607387]">{item.event}{item.source ? ` · ${item.source}` : ''}</p>
+                        </div>
+                        <span className="shrink-0 text-xs font-semibold text-[#7b8ca2]">{formatOverviewTimestamp(item.timestamp)}</span>
+                      </div>
+                    )) : (
+                      <div className="rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387]">
+                        No buyer leads yet.
+                      </div>
+                    )}
+                  </div>
+                  <Button type="button" size="sm" variant="secondary" className="mt-4" onClick={openShowDayCaptureModal}>
+                    <Plus size={14} />
+                    Add Lead
+                  </Button>
+                </article>
+
+                <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-base font-semibold text-[#142132]">Upcoming Viewings</h2>
+                    <button type="button" onClick={() => setActiveTab('pipeline')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                      View all
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                  <div className="mt-4 flex-1 divide-y divide-[#e7edf5]">
+                    {overviewUpcomingViewings.length ? overviewUpcomingViewings.map((viewing) => (
+                      <div key={viewing.id} className="grid gap-2 py-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto] sm:items-center">
+                        <span className="text-sm font-semibold text-[#607387]">{viewing.dateLabel}</span>
+                        <span className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-[#22374d]">
+                          <UserRound size={14} className="shrink-0 text-[#607387]" />
+                          <span className="truncate">{viewing.buyerName}</span>
+                        </span>
+                        <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClass(viewing.status)}`}>
+                          {formatViewingStatusLabel(viewing.status)}
+                        </span>
+                      </div>
+                    )) : (
+                      <div className="rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387]">
+                        No upcoming viewings.
+                      </div>
+                    )}
+                  </div>
+                  <Button type="button" size="sm" variant="secondary" className="mt-4" onClick={() => { setActiveTab('pipeline'); setShowViewingForm(true) }}>
+                    <CalendarDays size={14} />
+                    {overviewUpcomingViewings.length ? 'Open Viewing Planner' : 'Schedule Viewing'}
+                  </Button>
+                </article>
+              </section>
+
+              <section className="grid items-stretch gap-5 xl:grid-cols-3">
+                <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-base font-semibold text-[#142132]">Seller</h2>
+                    <button type="button" onClick={() => openSellerWorkspaceSection('seller')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                      Open seller
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                  <p className="mt-4 text-sm font-semibold text-[#142132]">{overviewSellerSnapshot.name}</p>
+                  <div className="mt-3 space-y-2">
+                    {[
+                      { label: 'Seller Portal', value: overviewSellerSnapshot.portalStatus, status: overviewSellerSnapshot.portalStatusKey },
+                      { label: 'FICA', value: overviewSellerSnapshot.ficaStatus, status: overviewSellerSnapshot.ficaStatusKey },
+                      { label: 'Mandate', value: overviewSellerSnapshot.mandateStatus, status: overviewSellerSnapshot.mandateStatusKey },
+                      { label: 'Mandate expiry', value: overviewSellerSnapshot.mandateExpiry },
+                      { label: 'Last contact', value: overviewSellerSnapshot.lastContact },
+                    ].map((row) => (
+                      <div key={row.label} className="flex min-h-[34px] items-center justify-between gap-3 border-b border-[#edf2f7] py-1.5 last:border-b-0">
+                        <span className="text-xs font-semibold text-[#6b7d93]">{row.label}</span>
+                        {row.status ? <StatusPill status={row.status} label={row.value} /> : <span className="text-right text-xs font-semibold text-[#142132]">{row.value}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </article>
+
+                <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-base font-semibold text-[#142132]">Marketing</h2>
+                    <button type="button" onClick={() => openSellerWorkspaceSection('marketing')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                      Open marketing
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {overviewMarketingSnapshot.rows.length ? overviewMarketingSnapshot.rows.map((row) => (
+                      <div key={row.label} className="flex min-h-[34px] items-center justify-between gap-3 border-b border-[#edf2f7] py-1.5 last:border-b-0">
+                        <span className="text-xs font-semibold text-[#6b7d93]">{row.label}</span>
+                        <StatusPill status={row.status} label={row.value} />
+                      </div>
+                    )) : (
+                      <div className="rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387]">
+                        This listing has not been published to any marketing portals yet.
+                      </div>
+                    )}
+                  </div>
+                </article>
+
+                <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-base font-semibold text-[#142132]">Price Position</h2>
+                    <button type="button" onClick={() => openSellerWorkspaceSection('marketing')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                      Edit pricing
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                  <div className="mt-4 grid gap-x-5 gap-y-3 sm:grid-cols-2">
+                    <CompactSnapshotRow label="Asking Price" value={overviewPricePosition.askingPrice ? formatMoneyValue(overviewPricePosition.askingPrice) : '—'} />
+                    <CompactSnapshotRow label="Highest Offer" value={overviewPricePosition.highestOffer ? formatMoneyValue(overviewPricePosition.highestOffer) : '—'} />
+                    <CompactSnapshotRow label="Average Offer" value={overviewPricePosition.averageOffer ? formatMoneyValue(overviewPricePosition.averageOffer) : '—'} />
+                    <CompactSnapshotRow label="Difference" value={overviewPricePosition.differenceLabel} />
+                  </div>
+                  {!overviewPricePosition.offerCount ? (
+                    <p className="mt-4 rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-3 text-sm text-[#607387]">
+                      No offers received yet.
+                    </p>
+                  ) : null}
+                </article>
+              </section>
+
+              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-base font-semibold text-[#142132]">Recent Activity</h2>
+                  <button type="button" onClick={() => openSellerWorkspaceSection('activity')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                    View all activity
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  {overviewRecentActivity.length ? overviewRecentActivity.map((item, index) => {
+                    const Icon = item.icon || FolderKanban
+                    return (
+                      <div key={`${item.title}-${index}`} className="flex min-h-[82px] items-start gap-3 rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
+                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#eef5fb] text-[#1f4f78]">
+                          <Icon size={15} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="line-clamp-1 text-xs font-semibold text-[#22374d]">{item.title}</p>
+                          <p className="mt-1 line-clamp-2 text-xs text-[#607387]">{item.copy}</p>
+                          <p className="mt-1 text-[0.68rem] font-semibold text-[#7b8ca2]">{formatOverviewTimestamp(item.timestamp)}</p>
                         </div>
                       </div>
                     )
-                  })}
+                  }) : (
+                    <div className="rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387] md:col-span-2 xl:col-span-5">
+                      No recent listing activity.
+                    </div>
+                  )}
                 </div>
               </article>
-
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-[#142132]">Offer vs Asking Price</h3>
-                    <p className="mt-1 text-sm text-[#607387]">Offer quality against the seller's current asking position.</p>
-                  </div>
-                  <StatusPill status={offerPriceOverview.offerCount ? 'done' : 'pending'} label={`${formatCompactNumber(offerPriceOverview.offerCount)} offer${offerPriceOverview.offerCount === 1 ? '' : 's'}`} />
-                </div>
-
-                <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
-                  <div className="space-y-4">
-                    {[
-                      { label: 'Asking Price', value: formatCurrency(offerPriceOverview.askingPrice), fill: offerPriceOverview.askingFill, color: '#1f4f78' },
-                      { label: 'Highest Offer', value: offerPriceOverview.highestOffer ? formatMoneyValue(offerPriceOverview.highestOffer) : '—', fill: offerPriceOverview.highestFill, color: '#2f8f6b' },
-                      { label: 'Latest Offer', value: offerPriceOverview.latestOffer ? formatMoneyValue(offerPriceOverview.latestOffer) : '—', fill: offerPriceOverview.latestFill, color: '#1769d1' },
-                      { label: 'Average Offer', value: offerPriceOverview.averageOffer ? formatMoneyValue(offerPriceOverview.averageOffer) : '—', fill: offerPriceOverview.averageFill, color: '#c58b35' },
-                    ].map((row) => (
-                      <div key={row.label}>
-                        <div className="flex items-center justify-between gap-4 text-sm">
-                          <span className="font-semibold text-[#425970]">{row.label}</span>
-                          <span className="text-right font-semibold text-[#142132]">{row.value}</span>
-                        </div>
-                        <div className="mt-2 h-3 overflow-hidden rounded-full bg-[#e8eef5]">
-                          <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, row.fill))}%`, backgroundColor: row.color }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                    {[
-                      { label: 'Highest Offer', value: offerPriceOverview.highestOffer ? formatMoneyValue(offerPriceOverview.highestOffer) : '—' },
-                      { label: 'Latest Offer', value: offerPriceOverview.latestOffer ? formatMoneyValue(offerPriceOverview.latestOffer) : '—' },
-                      { label: 'Average Offer', value: offerPriceOverview.averageOffer ? formatMoneyValue(offerPriceOverview.averageOffer) : '—' },
-                      {
-                        label: 'Difference to Asking',
-                        value: offerPriceOverview.offerCount && offerPriceOverview.askingPrice
-                          ? `${offerPriceOverview.differenceToAsking > 0 ? '+' : ''}${formatMoneyValue(offerPriceOverview.differenceToAsking)}`
-                          : '—',
-                      },
-                      { label: 'Offer Count', value: formatCompactNumber(offerPriceOverview.offerCount) },
-                    ].map((item) => (
-                      <div key={item.label} className="flex min-h-[62px] items-center justify-between gap-4 border-b border-[#e7edf5] py-2.5 last:border-b-0">
-                        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{item.label}</span>
-                        <span className="text-right text-sm font-semibold text-[#142132]">{item.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </article>
-
-              <section>
-                <article className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Seller Portal</p>
-                      <h3 className="mt-1 text-base font-semibold text-[#142132]">Portal Activation</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#607387]">Portal lifecycle is tracked separately from listing and mandate status.</p>
-                    </div>
-                    <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
-                      sellerPortalLifecycleStatus === 'activated' || sellerPortalLifecycleStatus === 'profile_complete'
-                        ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
-                        : sellerPortalLifecycleStatus === 'invitation_sent'
-                          ? 'border-[#dbe6f2] bg-[#f5f8fb] text-[#2f5478]'
-                          : 'border-[#f2d0c9] bg-[#fff4f1] text-[#a43f2d]'
-                    }`}>
-                      {getSellerPortalStatusLabel(sellerPortalLifecycleStatus)}
-                    </span>
-                  </div>
-                  <div className="mt-5 grid gap-x-6 sm:grid-cols-2">
-                    <CompactSnapshotRow label="Seller" value={resolveSellerNameFromListing(listingRecord) || 'Seller pending'} />
-                    <CompactSnapshotRow label="Email" value={resolveSellerEmailFromListing(listingRecord) || 'Email missing'} />
-                    <CompactSnapshotRow label="Mobile" value={resolveSellerPhoneFromListing(listingRecord) || 'Mobile missing'} />
-                    <CompactSnapshotRow label="Invitation Sent" value={listingRecord?.sellerOnboarding?.invitationLastSentAt || listingRecord?.sellerOnboarding?.inviteCreatedAt ? formatDateTime(listingRecord?.sellerOnboarding?.invitationLastSentAt || listingRecord?.sellerOnboarding?.inviteCreatedAt) : 'Not sent'} />
-                    <CompactSnapshotRow label="Activated" value={listingRecord?.sellerOnboarding?.activatedAt || listingRecord?.sellerOnboarding?.termsAcceptedAt || listingRecord?.sellerOnboarding?.inviteConsumedAt ? formatDateTime(listingRecord?.sellerOnboarding?.activatedAt || listingRecord?.sellerOnboarding?.termsAcceptedAt || listingRecord?.sellerOnboarding?.inviteConsumedAt) : 'Not activated'} />
-                    <CompactSnapshotRow label="Terms" value={listingRecord?.sellerOnboarding?.termsAcceptedAt ? `Accepted ${listingRecord?.sellerOnboarding?.termsVersion || ''}`.trim() : 'Not accepted'} />
-                    <CompactSnapshotRow label="Portal Access" value={sellerPortalAccessStatus} />
-                    <CompactSnapshotRow label="Portal Password" value={sellerPortalPasswordStatus} />
-                    <CompactSnapshotRow label="Documents Uploaded" value={formatCompactNumber(sellerCommunicationMetrics.uploadedDocuments)} />
-                  </div>
-                  <div className="mt-5 border-t border-[#e7edf5] pt-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <h4 className="text-sm font-semibold text-[#22374d]">Portal Security</h4>
-                        <p className="mt-1 text-xs text-[#6b7d93]">Authentication health, invitation state, and recent secure access activity.</p>
-                      </div>
-                      <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
-                        ['locked', 'attention_required', 'revoked'].includes(sellerPortalSecurityDiagnostics?.health)
-                          ? 'border-[#f2d0c9] bg-[#fff4f1] text-[#a43f2d]'
-                          : 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
-                      }`}>
-                        {sellerPortalSecurityDiagnosticsLoading ? 'Checking...' : formatStatusLabel(sellerPortalSecurityDiagnostics?.health || 'unavailable')}
-                      </span>
-                    </div>
-                    <div className="mt-3 grid gap-x-5 sm:grid-cols-2">
-                      <CompactSnapshotRow label="Invitation" value={formatStatusLabel(sellerPortalSecurityDiagnostics?.invitation?.status || 'unavailable')} />
-                      <CompactSnapshotRow label="Recovery" value={formatStatusLabel(sellerPortalSecurityDiagnostics?.recovery?.status || 'not_requested')} />
-                      <CompactSnapshotRow label="Session" value={formatStatusLabel(sellerPortalSecurityDiagnostics?.session?.status || 'unavailable')} />
-                      <CompactSnapshotRow label="Failed Attempts" value={formatCompactNumber(sellerPortalSecurityDiagnostics?.authentication?.failedLoginCount || 0)} />
-                      <CompactSnapshotRow label="Failures (24h)" value={formatCompactNumber(sellerPortalSecurityDiagnostics?.authentication?.failedEvents24h || 0)} />
-                    </div>
-                    {sellerPortalSecurityDiagnostics?.openAlerts?.length ? (
-                      <div className="mt-3 rounded-[12px] border border-[#f2d0c9] bg-[#fff4f1] px-3 py-2">
-                        <p className="text-xs font-semibold text-[#a43f2d]">
-                          {sellerPortalSecurityDiagnostics.openAlerts.length} open security alert{sellerPortalSecurityDiagnostics.openAlerts.length === 1 ? '' : 's'}
-                        </p>
-                        <p className="mt-1 text-xs text-[#7b5148]">
-                          Latest: {formatStatusLabel(sellerPortalSecurityDiagnostics.openAlerts[0]?.alert_type || 'security alert')}
-                          {sellerPortalSecurityDiagnostics.openAlerts[0]?.created_at ? ` • ${formatDateTime(sellerPortalSecurityDiagnostics.openAlerts[0].created_at)}` : ''}
-                        </p>
-                      </div>
-                    ) : null}
-                    {sellerPortalSecurityDiagnostics?.recentEvents?.length ? (
-                      <div className="mt-3 space-y-2">
-                        {sellerPortalSecurityDiagnostics.recentEvents.slice(0, 4).map((event) => (
-                          <div key={event.id} className="flex items-center justify-between gap-3 border-b border-[#edf2f7] pb-2 last:border-b-0 last:pb-0">
-                            <div className="min-w-0">
-                              <p className="truncate text-xs font-semibold text-[#2d445e]">{formatStatusLabel(event.event_name)}</p>
-                              <p className="mt-0.5 truncate text-xs text-[#6b7d93]">{formatStatusLabel(event.reason || event.outcome)}</p>
-                            </div>
-                            <span className="shrink-0 text-[0.68rem] font-semibold text-[#7b8ca2]">{formatDateTime(event.created_at)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="mt-5 border-t border-[#e7edf5] pt-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <h4 className="text-sm font-semibold text-[#22374d]">Seller Onboarding Email Diagnostics</h4>
-                        <p className="mt-1 text-xs text-[#6b7d93]">
-                          Latest status: {sellerOnboardingEmailDiagnostics.latestStatus}
-                          {sellerOnboardingEmailDiagnostics.latestAt ? ` • ${formatDateTime(sellerOnboardingEmailDiagnostics.latestAt)}` : ''}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c]">
-                          {sellerOnboardingEmailDiagnostics.total} logged
-                        </span>
-                        <span className="inline-flex rounded-full border border-[#d8eddf] bg-[#ecfaf1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#1f7d44]">
-                          {sellerOnboardingEmailDiagnostics.sent} sent
-                        </span>
-                        {sellerOnboardingEmailDiagnostics.failed ? (
-                          <span className="inline-flex rounded-full border border-[#f6d7d7] bg-[#fff5f5] px-2.5 py-1 text-[0.68rem] font-semibold text-[#b42318]">
-                            {sellerOnboardingEmailDiagnostics.failed} failed
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                    {sellerOnboardingEmailDiagnostics.latestFailureMessage ? (
-                      <p className="mt-3 rounded-[12px] border border-[#f6d7d7] bg-[#fff5f5] px-3 py-2 text-xs font-medium text-[#b42318]">
-                        Latest failure: {sellerOnboardingEmailDiagnostics.latestFailureMessage}
-                      </p>
-                    ) : null}
-                    <div className="mt-3 space-y-2">
-                      {sentPropertiesLoading ? (
-                        <p className="text-xs text-[#607387]">Loading seller email diagnostics...</p>
-                      ) : null}
-                      {!sentPropertiesLoading && sellerOnboardingEmailDiagnostics.recentRows.length ? sellerOnboardingEmailDiagnostics.recentRows.map((delivery) => (
-                        <div key={delivery.id || `${delivery.communicationType}-${delivery.recipient}-${getDeliveryActivityDate(delivery)}`} className="flex flex-col gap-2 border-b border-[#edf2f7] pb-2 last:border-b-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0">
-                            <p className="truncate text-xs font-semibold text-[#2d445e]">{formatStatusLabel(delivery.communicationType || delivery.communication_type)}</p>
-                            <p className="mt-0.5 truncate text-xs text-[#6b7d93]">
-                              {delivery.recipient || 'Recipient pending'} {delivery.subject ? `• ${delivery.subject}` : ''}
-                            </p>
-                            {delivery.errorMessage || delivery.error_message ? (
-                              <p className="mt-0.5 truncate text-xs text-[#b42318]">{delivery.errorMessage || delivery.error_message}</p>
-                            ) : null}
-                          </div>
-                          <div className="flex shrink-0 flex-wrap items-center gap-2">
-                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClass(delivery.status)}`}>
-                              {formatStatusLabel(delivery.status)}
-                            </span>
-                            <span className="text-[0.68rem] font-semibold text-[#7b8ca2]">{formatDateTime(getDeliveryActivityDate(delivery))}</span>
-                          </div>
-                        </div>
-                      )) : null}
-                      {!sentPropertiesLoading && !sellerOnboardingEmailDiagnostics.recentRows.length ? (
-                        <p className="text-xs text-[#607387]">No seller onboarding email delivery rows have been logged for this listing yet.</p>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="mt-auto grid gap-2 pt-5 sm:grid-cols-2 xl:grid-cols-5">
-                    <Button size="sm" onClick={openSellerPortalActivationModal} disabled={sellerPortalActivationSending || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
-                      <UserRound size={15} />
-                      {sellerPortalActivationSending
-                        ? 'Sending...'
-                        : sellerPortalLifecycleStatus === 'not_activated' || sellerPortalLifecycleStatus === 'invitation_pending'
-                          ? 'Activate Seller Portal'
-                          : 'Resend Invitation'}
-                    </Button>
-                    {resolveSellerPortalTokenFromListing(listingRecord) && sellerPortalAccessState?.linkActive !== false ? (
-                      <a href={buildSellerClientPortalLink(resolveSellerPortalTokenFromListing(listingRecord))} target="_blank" rel="noreferrer" onKeyDown={activateAnchorOnSpace} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#1f4f78]">
-                        Open Seller Portal
-                        <ExternalLink size={14} />
-                      </a>
-                    ) : (
-                      <Button size="sm" variant="secondary" disabled>Open Seller Portal</Button>
-                    )}
-                    <Button size="sm" variant="secondary" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
-                      {resendingSellerPortalLink ? 'Sending...' : 'Send Portal Documents Link'}
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={() => void handleResetSellerPortalPasswordAndResend()} disabled={resettingSellerPortalPassword || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false || !resolveSellerPortalTokenFromListing(listingRecord)}>
-                      {resettingSellerPortalPassword ? 'Resetting...' : 'Reset Password'}
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={() => void handleManageSellerPortalAccess('revoke_sessions')} disabled={Boolean(managingSellerPortalAction) || sellerPortalAccessState?.linkActive === false || !sellerPortalAccessState?.passwordSet}>
-                      {managingSellerPortalAction === 'revoke_sessions' ? 'Signing out...' : 'Sign Out Sessions'}
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={() => void handleManageSellerPortalAccess(sellerPortalAccessState?.linkActive === false ? 'reactivate' : 'revoke')} disabled={Boolean(managingSellerPortalAction) || !resolveSellerPortalTokenFromListing(listingRecord)}>
-                      {managingSellerPortalAction
-                        ? 'Updating...'
-                        : sellerPortalAccessState?.linkActive === false
-                          ? 'Reactivate Portal'
-                          : 'Revoke Portal'}
-                    </Button>
-                  </div>
-                </article>
-              </section>
             </section>
           ) : null}
 
-          {sellerWorkspaceTab === 'offers' ? (
+          {sellerWorkspaceTab === 'leads' ? (
             <section className="space-y-5">
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h2 className="text-2xl font-semibold text-[#142132]">Offers</h2>
-                    <p className="mt-1 text-sm text-[#607387]">Historical offer records are retained for audit. New buyer intake starts from buyer onboarding.</p>
+                    <h2 className="text-xl font-semibold text-[#142132]">Leads for this listing</h2>
+                    <p className="mt-1 text-sm text-[#607387]">All enquiries and leads that came in through this property.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="secondary" onClick={() => setActiveTab('offers')}>
-                      Open Full Offer Workspace
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setListingLeadFiltersOpen((current) => !current)}>
+                      <SlidersHorizontal size={14} />
+                      Filters
                     </Button>
-                    <Button size="sm" variant="secondary" onClick={() => {
-                      setOfferActionError(OFFER_WORKFLOW_RETIRED_MESSAGE)
-                      setActiveTab('offers')
-                      setShowSendOfferLinkForm(false)
-                    }}>
-                      <Link2 size={15} />
-                      Offer Workflow Retired
+                    <Button type="button" size="sm" variant="secondary" onClick={handleExportListingLeads} disabled={!filteredListingLeadRows.length}>
+                      <Download size={14} />
+                      Export
+                    </Button>
+                    <Button type="button" size="sm" onClick={openShowDayCaptureModal}>
+                      <Plus size={14} />
+                      Add Lead
                     </Button>
                   </div>
                 </div>
 
-                {offerActionError ? (
-                  <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{offerActionError}</div>
+                {(interestedLeadsError || canonicalOffersError) ? (
+                  <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">
+                    {interestedLeadsError || canonicalOffersError}
+                  </div>
                 ) : null}
-                {offerActionMessage ? (
-                  <div className="mt-4 rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-3 py-2 text-sm text-[#1f7d44]">{offerActionMessage}</div>
-                ) : null}
-                {canonicalOffersError ? (
-                  <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{canonicalOffersError}</div>
+                {(interestedLeadsLoading || canonicalOffersLoading) ? (
+                  <div className="mt-4 rounded-[14px] border border-[#d8e6f6] bg-[#f3f8fd] px-3 py-2 text-sm font-semibold text-[#2c5a89]">
+                    Loading listing leads...
+                  </div>
                 ) : null}
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                  <MetricCard label="Total Offers" value={offerSummary.total} meta="Canonical + legacy rows" />
-                  <MetricCard label="Highest Offer" value={offerSummary.highest ? formatCurrency(offerSummary.highest) : '—'} meta="Top buyer position" />
-                  <MetricCard label="Submitted" value={offerSummary.submitted} meta="Awaiting review" />
-                  <MetricCard label="Seller Review" value={offerSummary.sellerReview} meta="Sent to seller" />
-                  <MetricCard label="Accepted" value={offerSummary.accepted} meta="Ready to convert" />
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+                  {[
+                    { label: 'Total leads', value: listingLeadSummary.total, meta: 'All time', icon: Users },
+                    { label: 'New this week', value: listingLeadSummary.newThisWeek, meta: 'Last 7 days', icon: UserRound },
+                    { label: 'Contacted', value: listingLeadSummary.contacted, meta: listingLeadSummary.percent(listingLeadSummary.contacted), icon: MessageSquare },
+                    { label: 'Viewings booked', value: listingLeadSummary.viewingsBooked, meta: listingLeadSummary.percent(listingLeadSummary.viewingsBooked), icon: CalendarDays },
+                    { label: 'Offers', value: listingLeadSummary.offers, meta: listingLeadSummary.percent(listingLeadSummary.offers), icon: HandCoins },
+                    { label: 'Converted', value: listingLeadSummary.converted, meta: 'Leads to transaction', icon: CheckCircle2 },
+                  ].map((card) => {
+                    const Icon = card.icon
+                    return (
+                      <article key={card.label} className="flex min-h-[116px] flex-col justify-between rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                        <div className="flex items-start gap-3">
+                          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eef5fb] text-[#1f4f78]">
+                            <Icon size={16} />
+                          </span>
+                          <p className="pt-1 text-sm font-semibold text-[#607387]">{card.label}</p>
+                        </div>
+                        <p className="mt-4 text-2xl font-semibold text-[#10243a]">{formatCompactNumber(card.value)}</p>
+                        <p className="mt-1 text-sm font-medium text-[#607387]">{card.meta}</p>
+                      </article>
+                    )
+                  })}
                 </div>
+
+                <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <label className="relative block min-w-0 flex-1">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7b8ca2]" />
+                    <Field
+                      className="pl-9"
+                      value={listingLeadSearch}
+                      onChange={(event) => setListingLeadSearch(event.target.value)}
+                      placeholder="Search lead, phone, or email"
+                    />
+                  </label>
+                  <span className="text-sm font-semibold text-[#607387]">{filteredListingLeadRows.length} shown</span>
+                </div>
+
+                {listingLeadFiltersOpen ? (
+                  <div className="mt-4 grid gap-3 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4 md:grid-cols-2 xl:grid-cols-4">
+                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                      Status
+                      <Field as="select" value={listingLeadStatusFilter} onChange={(event) => setListingLeadStatusFilter(event.target.value)}>
+                        <option value="all">All statuses</option>
+                        <option value="new">New</option>
+                        <option value="contacted">Contacted</option>
+                        <option value="viewing">Viewing</option>
+                        <option value="offer">Offer</option>
+                        <option value="converted">Converted</option>
+                        <option value="lost">Lost</option>
+                      </Field>
+                    </label>
+                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                      Source
+                      <Field as="select" value={listingLeadSourceFilter} onChange={(event) => setListingLeadSourceFilter(event.target.value)}>
+                        {listingLeadSourceOptions.map((source) => (
+                          <option key={source} value={source}>{source === 'all' ? 'All sources' : source}</option>
+                        ))}
+                      </Field>
+                    </label>
+                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                      Activity
+                      <Field as="select" value={listingLeadActivityFilter} onChange={(event) => setListingLeadActivityFilter(event.target.value)}>
+                        <option value="all">All activity</option>
+                        <option value="has_viewing">Has viewing</option>
+                        <option value="has_offer">Has offer</option>
+                        <option value="needs_follow_up">Needs follow-up</option>
+                      </Field>
+                    </label>
+                    <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                      Date
+                      <Field as="select" value={listingLeadDateFilter} onChange={(event) => setListingLeadDateFilter(event.target.value)}>
+                        <option value="all">All dates</option>
+                        <option value="today">Today</option>
+                        <option value="7_days">Last 7 days</option>
+                        <option value="30_days">Last 30 days</option>
+                      </Field>
+                    </label>
+                  </div>
+                ) : null}
               </article>
 
-              <article className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-3 border-b border-[#e5edf6] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-[#142132]">Offer Table</h3>
-                    <p className="mt-1 text-sm text-[#607387]">Review buyer offer values, status, finance route, review links, and conversion readiness.</p>
-                  </div>
-                  {canonicalOffersLoading ? (
-                    <span className="rounded-full border border-[#d8e6f6] bg-[#f3f8fd] px-3 py-1 text-xs font-semibold text-[#2c5a89]">Loading canonical offers</span>
-                  ) : (
-                    <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">{offerRows.length} offer rows</span>
-                  )}
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1180px] table-fixed text-left text-sm">
-                    <thead className="bg-[#f8fbfd] text-[0.66rem] uppercase tracking-[0.1em] text-[#7b8ca2]">
-                      <tr className="border-b border-[#e5edf6]">
-                        <th className="w-[16%] px-5 py-3">Buyer</th>
-                        <th className="w-[12%] px-5 py-3">Offer</th>
-                        <th className="w-[12%] px-5 py-3">Status</th>
-                        <th className="w-[12%] px-5 py-3">Source</th>
-                        <th className="w-[12%] px-5 py-3">Submitted</th>
-                        <th className="w-[12%] px-5 py-3">Finance</th>
-                        <th className="w-[14%] px-5 py-3">Conditions</th>
-                        <th className="w-[10%] px-5 py-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#edf2f7]">
-                      {offerRows.length ? offerRows.map((offer) => {
-                        const statusKey = normalizeOfferWorkflowStatus(offer.status)
-                        const sellerReviewPreparation = offer.sourceSystem === 'canonical_offer' ? buildListingSellerReviewPreparation(offer) : null
-                        const sellerReviewPreparationSummary = describeSellerReviewPreparation(sellerReviewPreparation)
-                        const sellerReviewDeliveryMode = sellerReviewPreparation?.deliveryMode || SELLER_REVIEW_DELIVERY_MODE.EMAIL
-                        const sellerReviewSession = offer.sellerReviewSession || {}
-                        const sellerReviewToken = String(sellerReviewSession.token || offer.conditionsJson?.sellerReviewSessionToken || '').trim()
-                        const sellerReviewLink = sellerReviewToken && typeof window !== 'undefined'
-                          ? `${window.location.origin}/seller/offers/review/${encodeURIComponent(sellerReviewToken)}`
-                          : ''
-                        const canSendToSeller = offer.sourceSystem === 'canonical_offer' && ![
-                          OFFER_WORKFLOW_STATUS.ACCEPTED,
-                          OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION,
-                          OFFER_WORKFLOW_STATUS.REJECTED,
-                          OFFER_WORKFLOW_STATUS.WITHDRAWN,
-                          OFFER_WORKFLOW_STATUS.EXPIRED,
-                        ].includes(statusKey)
-                        const canConvert = offer.sourceSystem === 'canonical_offer' && (
-                          statusKey === OFFER_WORKFLOW_STATUS.ACCEPTED ||
-                          (statusKey === OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION && offer.transactionId)
-                        )
-                        const buyerOtpReadiness = offer.kingstonsBuyerOtpReadiness || null
-                        const buyerOtpRow = buyerOtpReadiness?.rows?.[0] || null
-                        const buyerOtpReady = buyerOtpReadiness?.gate?.offerConversionReady === true
-                        const buyerOtpUploadControlKey = `kingstons-buyer-otp:${offer.canonicalOfferId || offer.offerId || offer.id || offer.buyerLeadId || ''}`
-                        return (
-                          <tr key={offer.id} className="align-top text-[#425970] transition hover:bg-[#fbfdff]">
-                            <td className="px-5 py-4">
-                              <p className="truncate font-semibold text-[#243d56]" title={offer.buyerName || 'Buyer pending'}>{offer.buyerName || 'Buyer pending'}</p>
-                              {offer.buyerLeadId ? (
-                                <button type="button" onClick={() => navigate(`/pipeline/leads/${offer.buyerLeadId}`)} className="mt-1 text-xs font-semibold text-[#1f4f78] hover:text-[#163d5f]">
-                                  Open buyer lead
-                                </button>
-                              ) : (
-                                <p className="mt-1 text-xs text-[#74879d]">No buyer lead linked</p>
-                              )}
-                            </td>
-                            <td className="px-5 py-4">
-                              <p className="font-semibold text-[#142132]">{offer.offerPrice ? formatCurrency(offer.offerPrice) : '—'}</p>
-                              {offer.depositAmount ? <p className="mt-1 text-xs text-[#74879d]">Deposit {formatCurrency(offer.depositAmount)}</p> : null}
-                            </td>
-                            <td className="px-5 py-4">
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(offer.status)}`}>
-                                {formatStatusLabel(offer.status)}
-                              </span>
-                            </td>
-                            <td className="px-5 py-4">
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${
-                                offer.sourceSystem === 'canonical_offer'
-                                  ? 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]'
-                                  : 'border-[#dbe6f2] bg-white text-[#35546c]'
-                              }`}>
-                                {offer.sourceSystem === 'canonical_offer' ? 'Platform offer' : 'Legacy listing offer'}
-                              </span>
-                            </td>
-                            <td className="px-5 py-4">
-                              <p>{formatDate(offer.offerDate)}</p>
-                              <p className="mt-1 text-xs text-[#74879d]">Expires {formatDate(offer.expiryDate)}</p>
-                            </td>
-                            <td className="px-5 py-4 capitalize">{offer.financeType || 'Unknown'}</td>
-                            <td className="px-5 py-4">
-                              <p className="line-clamp-2 text-sm text-[#607387]" title={offer.conditions || ''}>{offer.conditions || 'No conditions captured'}</p>
-                              {sellerReviewLink ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (typeof navigator !== 'undefined') void navigator.clipboard?.writeText(sellerReviewLink)
-                                    setOfferActionMessage('Seller review link copied.')
-                                  }}
-                                  className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]"
-                                >
-                                  <Copy size={12} />
-                                  Copy seller link
-                                </button>
-                              ) : null}
-                              {sellerReviewPreparationSummary.blockers.length ? (
-                                <p className="mt-2 text-xs font-semibold text-[#b42318]">{sellerReviewPreparationSummary.blockerText}</p>
-                              ) : null}
-                              {!sellerReviewPreparationSummary.blockers.length && sellerReviewPreparationSummary.warnings.length ? (
-                                <p className="mt-2 text-xs font-semibold text-[#9a5b11]">{sellerReviewPreparationSummary.warningText}</p>
-                              ) : null}
-                            </td>
-                            <td className="px-5 py-4">
-                              <div className="flex flex-col items-end gap-2">
-                                {listingHasKingstonsSellerProcess ? (
-                                  <div data-testid="kingstons-buyer-otp-upload" className="w-full min-w-[170px] rounded-[12px] border border-[#dbe6f2] bg-[#f8fbff] p-2 text-left">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#607387]">Signed OTP</span>
-                                      <span className={`rounded-full border px-2 py-0.5 text-[0.65rem] font-semibold ${
-                                        buyerOtpReady
-                                          ? 'border-[#cfe9d8] bg-[#ecfaf1] text-[#1f7d44]'
-                                          : buyerOtpRow?.attention
-                                            ? 'border-[#f0c8c4] bg-[#fff7f6] text-[#963d35]'
-                                            : 'border-[#f3d9b0] bg-[#fff9ee] text-[#8f5c18]'
-                                      }`}>
-                                        {buyerOtpRow?.statusLabel || 'Missing'}
-                                      </span>
-                                    </div>
-                                    <p className="mt-1 text-xs leading-5 text-[#607387]">
-                                      {buyerOtpReadiness?.gate?.reason || 'Upload the manually signed OTP.'}
-                                    </p>
-                                    <label className={`mt-2 inline-flex min-h-8 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-2.5 text-xs font-semibold text-[#1f4f78] transition ${buyerOtpUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
-                                      {buyerOtpUploadKey === buyerOtpUploadControlKey ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                                      {buyerOtpReady ? 'Replace OTP' : 'Upload OTP'}
-                                      <input
-                                        type="file"
-                                        accept=".pdf,image/*"
-                                        className="hidden"
-                                        disabled={Boolean(buyerOtpUploadKey)}
-                                        onChange={(event) => void handleKingstonsBuyerOtpUpload(offer, event)}
-                                      />
-                                    </label>
-                                  </div>
-                                ) : null}
-                                {canSendToSeller && !OFFER_WORKFLOW_RETIRED ? (
-                                  <>
-                                    <Field
-                                      as="select"
-                                      className="w-full min-w-[150px]"
-                                      value={sellerReviewDeliveryMode}
-                                      onChange={(event) => setSellerReviewDeliveryModeByOfferId((previous) => ({ ...previous, [offer.id]: event.target.value }))}
-                                    >
-                                      {SELLER_REVIEW_DELIVERY_OPTIONS.map((option) => (
-                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                      ))}
-                                    </Field>
-                                    <Button
-                                      size="sm"
-                                      type="button"
-                                      disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`}
-                                      onClick={() => void handleCanonicalListingOfferSendToSeller(offer)}
-                                    >
-                                      {[OFFER_WORKFLOW_STATUS.SELLER_REVIEW, OFFER_WORKFLOW_STATUS.SELLER_VIEWED].includes(statusKey) ? 'Resend to Seller' : 'Send Offer to Seller'}
-                                    </Button>
-                                  </>
-                                ) : null}
-                                {canConvert && !OFFER_WORKFLOW_RETIRED ? (
-                                  <Button
-                                    size="sm"
-                                    type="button"
-                                    variant="secondary"
-                                    disabled={canonicalOfferActionId === `${offer.id}:convert`}
-                                    onClick={() => void handleCanonicalListingOfferConversion(offer)}
-                                  >
-                                    Convert
-                                  </Button>
-                                ) : null}
-                                {offer.transactionId ? (
-                                  <>
-                                    <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>
-                                      Transaction
-                                    </Button>
-                                    {!listingKingstonsBuyerOtpDigitalDecision.blocked ? (
-                                      <Button size="sm" type="button" variant="secondary" onClick={() => handleAcceptedOfferPrepareOtpClick(offer)}>
-                                        Prepare OTP
-                                      </Button>
-                                    ) : null}
-                                  </>
-                                ) : null}
-                                {OFFER_WORKFLOW_RETIRED && !offer.transactionId ? (
-                                  <span className="text-right text-xs font-semibold text-[#9a5b11]">Use buyer onboarding</span>
-                                ) : !canSendToSeller && !canConvert && !offer.transactionId ? (
-                                  <span className="text-xs text-[#9aa9b8]">—</span>
-                                ) : null}
-                              </div>
-                            </td>
+              <article className="overflow-hidden rounded-[20px] border border-[#dde4ee] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                {listingLeadRows.length ? (
+                  <>
+                    <div className="hidden overflow-x-auto lg:block">
+                      <table className="w-full min-w-[1120px] table-fixed text-left text-sm">
+                        <thead className="bg-[#f8fbfd] text-[0.66rem] uppercase tracking-[0.1em] text-[#7b8ca2]">
+                          <tr className="border-b border-[#e5edf6]">
+                            <th className="w-[18%] px-5 py-3">Lead</th>
+                            <th className="w-[12%] px-5 py-3">Source</th>
+                            <th className="w-[13%] px-5 py-3">Status</th>
+                            <th className="w-[13%] px-5 py-3">Contacted</th>
+                            <th className="w-[14%] px-5 py-3">Viewing</th>
+                            <th className="w-[12%] px-5 py-3">Offer</th>
+                            <th className="w-[10%] px-5 py-3">Date added ↓</th>
+                            <th className="w-[8%] px-5 py-3 text-right">Actions</th>
                           </tr>
-                        )
-                      }) : (
-                        <tr>
-                          <td colSpan={8} className="px-5 py-10 text-center text-sm text-[#607387]">
-                            No offer audit rows for this listing yet. Use buyer onboarding for new buyer intake.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </article>
-
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-[#142132]">Secure Offer Links</h3>
-                    <p className="mt-1 text-sm text-[#607387]">Recently generated buyer offer links for this listing.</p>
-                  </div>
-                  <span className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">{offerInviteRows.length} links</span>
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {offerInviteRows.length ? offerInviteRows.slice(0, 6).map((invite) => (
-                    <article key={invite.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3">
-                      <div>
-                        <p className="text-sm font-semibold text-[#22374d]">{invite.buyerLeadName || 'Buyer lead'}</p>
-                        <p className="mt-1 text-xs text-[#607387]">Status: {formatStatusLabel(invite.status)} • Expires {formatDate(invite.expiresAt)}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyOfferLink(invite.token)}
-                        className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]"
-                      >
-                        <Copy size={12} />
-                        {copiedOfferToken === invite.token ? 'Copied' : 'Copy Link'}
-                      </button>
-                    </article>
-                  )) : (
-                    <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#6b7d93] md:col-span-2">
-                      No secure offer links have been generated for this listing yet.
+                        </thead>
+                        <tbody className="divide-y divide-[#edf2f7]">
+                          {visibleListingLeadRows.length ? visibleListingLeadRows.map((lead) => (
+                            <tr key={lead.leadId || lead.id} className="align-middle text-[#425970] transition hover:bg-[#fbfdff]">
+                              <td className="px-5 py-4">
+                                <button type="button" onClick={() => lead.leadId && navigate(`/pipeline/leads/${lead.leadId}`)} className="flex min-w-0 items-center gap-3 text-left" disabled={!lead.leadId}>
+                                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#eef5fb] text-xs font-semibold text-[#1f4f78]">
+                                    {getInitials(lead.name)}
+                                  </span>
+                                  <span className="min-w-0">
+                                    <span className="block truncate font-semibold text-[#243d56]">{lead.name}</span>
+                                    <span className="mt-1 block truncate text-xs text-[#607387]">{lead.phone || lead.email || 'Contact pending'}</span>
+                                  </span>
+                                </button>
+                              </td>
+                              <td className="px-5 py-4">
+                                <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.7rem] font-semibold text-[#35546c]">
+                                  {lead.sourceLabel}
+                                </span>
+                              </td>
+                              <td className="px-5 py-4">
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${statusClass(lead.statusGroup)}`}>
+                                  {lead.statusLabel}
+                                </span>
+                              </td>
+                              <td className="px-5 py-4">
+                                {lead.contactedAt ? (
+                                  <>
+                                    <p className="font-semibold text-[#243d56]">{formatOverviewTimestamp(lead.contactedAt)}</p>
+                                    <p className="mt-1 text-xs text-[#607387]">by {lead.contactedBy || 'Agent'}</p>
+                                  </>
+                                ) : <span className="text-[#9aa9b8]">—</span>}
+                              </td>
+                              <td className="px-5 py-4">
+                                {lead.viewing ? (
+                                  <>
+                                    <p className="font-semibold text-[#243d56]">{formatDate(lead.viewing.proposed_date)}</p>
+                                    <p className="mt-1 text-xs text-[#607387]">{lead.viewing.proposed_time || 'Time pending'}</p>
+                                    <p className="mt-1 text-xs font-semibold text-[#1f7d44]">{formatViewingStatusLabel(lead.viewing.status)}</p>
+                                  </>
+                                ) : <span className="text-[#9aa9b8]">—</span>}
+                              </td>
+                              <td className="px-5 py-4">
+                                {lead.offer ? (
+                                  <>
+                                    <p className="font-semibold text-[#142132]">{lead.offer.offerPrice ? formatMoneyValue(lead.offer.offerPrice) : '—'}</p>
+                                    <p className="mt-1 text-xs text-[#607387]">{formatStatusLabel(lead.offer.status)}</p>
+                                  </>
+                                ) : <span className="text-[#9aa9b8]">—</span>}
+                              </td>
+                              <td className="px-5 py-4 font-semibold text-[#607387]">{formatOverviewTimestamp(lead.createdAt)}</td>
+                              <td className="px-5 py-4">
+                                <div className="flex justify-end gap-2">
+                                  <button type="button" onClick={() => handleContactListingLead(lead)} className="grid h-9 w-9 place-items-center rounded-xl border border-[#dbe6f2] bg-white text-[#1f4f78] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]" aria-label={`Contact ${lead.name}`} title="Contact lead">
+                                    <MessageSquare size={15} />
+                                  </button>
+                                  <details className="group relative">
+                                    <summary className="grid h-9 w-9 cursor-pointer list-none place-items-center rounded-xl border border-[#dbe6f2] bg-white text-[#1f4f78] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden" aria-label={`Lead actions for ${lead.name}`} title="Actions">
+                                      <MoreVertical size={15} />
+                                    </summary>
+                                    <div className="absolute right-0 z-20 mt-2 w-44 overflow-hidden rounded-[14px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_16px_30px_rgba(15,23,42,0.14)]">
+                                      <button type="button" onClick={() => lead.leadId && navigate(`/pipeline/leads/${lead.leadId}`)} disabled={!lead.leadId} className="flex min-h-9 w-full items-center rounded-[10px] px-3 text-left text-xs font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50">
+                                        Open lead
+                                      </button>
+                                      <button type="button" onClick={() => { setActiveTab('pipeline'); setShowViewingForm(true) }} className="flex min-h-9 w-full items-center rounded-[10px] px-3 text-left text-xs font-semibold text-[#243d56] hover:bg-[#f7fbff]">
+                                        Schedule viewing
+                                      </button>
+                                      <button type="button" onClick={() => setActiveTab('offers')} className="flex min-h-9 w-full items-center rounded-[10px] px-3 text-left text-xs font-semibold text-[#243d56] hover:bg-[#f7fbff]">
+                                        Open offers
+                                      </button>
+                                    </div>
+                                  </details>
+                                </div>
+                              </td>
+                            </tr>
+                          )) : (
+                            <tr>
+                              <td colSpan={8} className="px-5 py-10 text-center text-sm text-[#607387]">No leads match the current filters.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
-                  )}
-                </div>
+
+                    <div className="grid gap-3 p-4 lg:hidden">
+                      {visibleListingLeadRows.length ? visibleListingLeadRows.map((lead) => (
+                        <article key={lead.leadId || lead.id} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#eef5fb] text-xs font-semibold text-[#1f4f78]">{getInitials(lead.name)}</span>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-[#22374d]">{lead.name}</p>
+                                <p className="mt-1 truncate text-xs text-[#607387]">{lead.phone || lead.email || 'Contact pending'}</p>
+                              </div>
+                            </div>
+                            <button type="button" onClick={() => handleContactListingLead(lead)} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-[#dbe6f2] bg-white text-[#1f4f78]">
+                              <MessageSquare size={15} />
+                            </button>
+                          </div>
+                          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                            <CompactSnapshotRow label="Source" value={lead.sourceLabel} />
+                            <CompactSnapshotRow label="Status" value={lead.statusLabel} />
+                            <CompactSnapshotRow label="Contacted" value={lead.contactedAt ? formatOverviewTimestamp(lead.contactedAt) : '—'} />
+                            <CompactSnapshotRow label="Viewing" value={lead.viewing ? `${formatDate(lead.viewing.proposed_date)} ${formatViewingStatusLabel(lead.viewing.status)}` : '—'} />
+                            <CompactSnapshotRow label="Offer" value={lead.offer?.offerPrice ? formatMoneyValue(lead.offer.offerPrice) : '—'} />
+                            <CompactSnapshotRow label="Date added" value={formatOverviewTimestamp(lead.createdAt)} />
+                          </div>
+                        </article>
+                      )) : (
+                        <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#607387]">No leads match the current filters.</div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-3 border-t border-[#e5edf6] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-[#607387]">
+                        Showing {filteredListingLeadRows.length ? ((listingLeadPage - 1) * listingLeadPageSize) + 1 : 0} to {Math.min(listingLeadPage * listingLeadPageSize, filteredListingLeadRows.length)} of {filteredListingLeadRows.length} leads
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => setListingLeadPage((page) => Math.max(1, page - 1))} disabled={listingLeadPage <= 1} className="grid h-9 w-9 place-items-center rounded-lg border border-[#dbe6f2] bg-white text-[#1f4f78] disabled:opacity-40">
+                          <ChevronLeft size={15} />
+                        </button>
+                        <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-lg border border-[#b8d8cc] bg-[#f2fbf7] px-3 text-sm font-semibold text-[#1f7d44]">{listingLeadPage}</span>
+                        <span className="text-sm font-semibold text-[#7b8ca2]">of {listingLeadPageCount}</span>
+                        <button type="button" onClick={() => setListingLeadPage((page) => Math.min(listingLeadPageCount, page + 1))} disabled={listingLeadPage >= listingLeadPageCount} className="grid h-9 w-9 place-items-center rounded-lg border border-[#dbe6f2] bg-white text-[#1f4f78] disabled:opacity-40">
+                          <ChevronRight size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="px-5 py-12 text-center">
+                    <div className="mx-auto grid h-12 w-12 place-items-center rounded-[16px] bg-[#eef5fb] text-[#1f4f78]">
+                      <Users size={20} />
+                    </div>
+                    <h3 className="mt-4 text-lg font-semibold text-[#142132]">No leads yet</h3>
+                    <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#607387]">Buyer enquiries for this listing will appear here as they come in.</p>
+                    <Button type="button" className="mt-5" onClick={openShowDayCaptureModal}>
+                      <Plus size={14} />
+                      Add Lead
+                    </Button>
+                  </div>
+                )}
               </article>
             </section>
           ) : null}
@@ -11072,12 +11007,6 @@ function AgentListingDetail() {
                   </Button>
                 </div>
               </div>
-              {listingKingstonsDigitalSigningDecision.blocked ? (
-                <div className="rounded-[18px] border border-[#f2dfbd] bg-[#fff9ec] px-4 py-3 text-sm font-semibold text-[#7a5a17]" data-testid="kingstons-listing-digital-signing-decision">
-                  {listingKingstonsDigitalSigningDecision.label}: {listingKingstonsDigitalSigningDecision.agentAction}
-                </div>
-              ) : null}
-
               {sellerProfile.completionPercent < 60 ? (
                 <article data-testid="listing-seller-profile-builder-prompt" className="rounded-[24px] border border-[#cfe0ee] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
                   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -11302,7 +11231,7 @@ function AgentListingDetail() {
             </section>
           ) : null}
 
-          {sellerWorkspaceTab === 'listing' ? (
+          {sellerWorkspaceTab === 'marketing' ? (
             <section className="space-y-5">
               <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
                 <article className="flex h-full flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">

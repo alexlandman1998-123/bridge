@@ -102,8 +102,8 @@ function BuyerViewingPreferencesPage() {
       setErrorMessage('Choose at least one property you would like to view.')
       return
     }
-    if (!windows.length) {
-      setErrorMessage('Add at least one preferred viewing time.')
+    if (windows.length !== 3) {
+      setErrorMessage('Please add three preferred viewing times.')
       return
     }
 
@@ -161,9 +161,9 @@ function BuyerViewingPreferencesPage() {
       <div className="mx-auto max-w-5xl">
         <header className="mb-7 rounded-[8px] bg-[#081735] px-6 py-6 text-white shadow-sm sm:px-8">
           <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#D8B15F]">{normalizeText(session?.organisationName) || 'Produktive Real Estate'}</p>
-          <h1 className="mt-4 text-3xl font-bold tracking-normal sm:text-4xl">Confirm Viewings</h1>
+          <h1 className="mt-4 text-3xl font-bold tracking-normal sm:text-4xl">Choose 3 Viewing Times</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-[#E5ECF7]">
-            {normalizeText(session?.agentName) || 'Your agent'} has shared these selected properties for your preferred viewing times.
+            {normalizeText(session?.agentName) || 'Your agent'} will review your options and coordinate the best time with the seller.
           </p>
         </header>
 
@@ -242,9 +242,12 @@ function BuyerViewingPreferencesPage() {
 
             <aside className="h-fit rounded-[8px] border border-[#DDE7DF] bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-lg font-bold text-[#142132]">Preferred Times</h2>
+                <h2 className="text-lg font-bold text-[#142132]">Your 3 Times</h2>
                 <span className="rounded-full bg-[#EDF4F1] px-3 py-1 text-xs font-bold text-[#0F7A5A]">{confirmedCount} selected</span>
               </div>
+              <p className="mt-2 text-sm leading-6 text-[#526678]">
+                Add three options so your agent has enough flexibility to confirm access quickly.
+              </p>
               <div className="mt-4 grid gap-3">
                 {availabilityWindows.map((value, index) => (
                   <label key={index} className="grid gap-2">
@@ -252,7 +255,7 @@ function BuyerViewingPreferencesPage() {
                     <input
                       value={value}
                       onChange={(event) => setAvailabilityWindows((previous) => previous.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
-                      placeholder="e.g. Thu 6 Aug, 14:00-16:00"
+                      placeholder={index === 0 ? 'e.g. Thu 13 Aug, 14:00-16:00' : index === 1 ? 'e.g. Fri 14 Aug, 09:00-11:00' : 'e.g. Sat 15 Aug, after 10:00'}
                       className="min-h-11 rounded-[8px] border border-[#DDE7DF] px-3 text-sm font-semibold text-[#142132] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
                     />
                   </label>
@@ -289,7 +292,7 @@ function BuyerViewingPreferencesPage() {
                 className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[#0F7A5A] px-4 text-sm font-bold text-white transition hover:bg-[#0C654B] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                {submitting ? 'Sending' : 'Send viewing preferences'}
+                {submitting ? 'Sending' : 'Send 3 viewing times'}
               </button>
               {session?.expiresAt ? (
                 <p className="mt-4 text-center text-xs font-semibold text-[#718398]">Link expires {formatDate(session.expiresAt)}</p>

@@ -346,7 +346,6 @@ async function auditManualListingInterventionUi() {
     'Confirm commission',
     'Add photos',
     'Add external listing link',
-    'Listing follow-ups',
     'Create Listing',
     'Save Seller Lead & Send Onboarding',
     'updatePrivateListing',

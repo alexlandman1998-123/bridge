@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, CheckCircle2, CircleAlert, FileText, FolderKanban, Loader2, MoreVertical, Plus, Search, Share2, Trash2, UserRound, X } from 'lucide-react'
+import { ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, HelpCircle, Link, Loader2, Mail, MessageCircle, MoreVertical, Plus, Search, Share2, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -109,9 +109,11 @@ const QUICK_ADD_MANDATE_STATUS_OPTIONS = [
 ]
 const DIRECT_LISTING_SELLER_TYPE_OPTIONS = [
   { value: 'individual', label: 'Individual' },
-  { value: 'multiple_owners', label: 'Multiple owners' },
+  { value: 'multiple_owners', label: 'Multiple individuals' },
   { value: 'company', label: 'Company' },
+  { value: 'close_corporation', label: 'Close corporation' },
   { value: 'trust', label: 'Trust' },
+  { value: 'other', label: 'Other entity' },
   { value: 'foreign_individual', label: 'Foreign individual' },
 ]
 const DIRECT_LISTING_MARITAL_STATUS_OPTIONS = [
@@ -167,6 +169,53 @@ const QUICK_ADD_INTENT_OPTIONS = [
   },
 ]
 
+const QUICK_ADD_LIFECYCLE_OPTIONS = [
+  {
+    value: 'active',
+    label: 'Active Listing',
+    description: 'Currently being marketed.',
+    quickAddIntent: 'active_listing',
+  },
+  {
+    value: 'under_offer',
+    label: 'Under Offer',
+    description: 'OTP exists / sale underway.',
+    quickAddIntent: 'under_offer',
+  },
+  {
+    value: 'sold',
+    label: 'Historical',
+    description: 'Already sold / closed.',
+    quickAddIntent: 'under_offer',
+  },
+  {
+    value: 'draft',
+    label: 'Draft / Pre-market',
+    description: 'Not live yet.',
+    quickAddIntent: 'draft',
+  },
+]
+
+const QUICK_ADD_SELLER_TYPE_CARDS = [
+  { value: 'individual', label: 'Individual', description: 'One individual owner', icon: UserRound },
+  { value: 'multiple_owners', label: 'Multiple Individuals', description: 'Two or more individual owners', icon: UsersRound },
+  { value: 'company', label: 'Company', description: 'Pty Ltd / Ltd company', icon: Building2 },
+  { value: 'close_corporation', label: 'Close Corporation', description: 'Registered close corp', icon: Building2 },
+  { value: 'trust', label: 'Trust', description: 'Trust / Estate', icon: UsersRound },
+  { value: 'other', label: 'Other Entity', description: 'Other legal entity', icon: Building2 },
+]
+
+const QUICK_ADD_HELP_STEPS = [
+  'Listing Status',
+  'Ownership & Seller Type',
+  'Seller / Entity Details',
+  'Property Details',
+  'Assignment',
+  'Existing Documents',
+  'Seller Portal',
+  'Create Listing',
+]
+
 function getQuickAddIntentOption(value) {
   const normalized = normalizeKey(value)
   return QUICK_ADD_INTENT_OPTIONS.find((option) => option.value === normalized) || QUICK_ADD_INTENT_OPTIONS[0]
@@ -200,6 +249,7 @@ function getQuickListingMandateDateState(form = {}) {
 function buildQuickListingMandatePack(form = {}, mandateStatusValue = '') {
   const mandateStatus = mandateStatusValue || getQuickListingMandateStatus(form)
   const manualMandateFileSelected = Boolean(normalizeText(form.manualMandateFileName))
+  const mandateReportedHeld = form?.hasSignedMandate === true
   const dateState = getQuickListingMandateDateState(form)
   const supportingDocumentNames = Array.isArray(form.supportingDocumentNames)
     ? form.supportingDocumentNames.map(normalizeText).filter(Boolean)
@@ -217,11 +267,12 @@ function buildQuickListingMandatePack(form = {}, mandateStatusValue = '') {
     dateState: dateState.key,
     dateStateLabel: dateState.label,
     daysRemaining: dateState.daysRemaining,
-    signed: manualMandateFileSelected,
+    signed: mandateReportedHeld || manualMandateFileSelected,
+    reportedHeld: mandateReportedHeld,
     uploadStatus: manualMandateFileSelected
       ? 'evidence_selected'
-      : isQuickListingManualMandateReportedStatus(mandateStatus)
-        ? 'evidence_missing'
+      : mandateReportedHeld || isQuickListingManualMandateReportedStatus(mandateStatus)
+        ? 'reported_held_pending_upload'
         : 'not_required',
     document: {
       category: 'Mandate evidence',
@@ -245,7 +296,6 @@ function getQuickListingMandateCaptureWarnings(form = {}, mandateStatusValue = '
   const mandatePack = buildQuickListingMandatePack(form, mandateStatusValue)
   if (!mandatePack.expected) return []
   const warnings = []
-  if (mandatePack.uploadStatus === 'evidence_missing') warnings.push('Manual mandate evidence upload outstanding')
   if (!mandatePack.startDate || !mandatePack.endDate) warnings.push('Mandate dates missing')
   if (mandatePack.dateState === 'expired') warnings.push('Mandate expired')
   if (mandatePack.commission.status === 'missing') warnings.push('Commission missing')
@@ -318,6 +368,65 @@ function formatCurrency(value) {
   }).format(amount)
 }
 
+function QuickAddSection({ number, title, copy, children }) {
+  return (
+    <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)] sm:p-5">
+      <div className="mb-4 flex items-start gap-3">
+        <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#1f6fb8] text-xs font-bold text-white">
+          {number}
+        </span>
+        <div>
+          <h4 className="text-sm font-bold uppercase tracking-[0.08em] text-[#294563]">{title}</h4>
+          {copy ? <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{copy}</p> : null}
+        </div>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function QuickAddChoiceCard({ active = false, title, description, icon = Circle, onClick }) {
+  const ChoiceIcon = icon
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`min-h-[112px] rounded-[14px] border p-3 text-left transition ${
+        active
+          ? 'border-[#1f8a4c] bg-[#f0fbf4] text-[#145d33] shadow-[0_10px_24px_rgba(31,138,76,0.12)]'
+          : 'border-[#dce6f2] bg-white text-[#22374d] hover:border-[#b7c8db] hover:bg-[#fbfdff]'
+      }`}
+      aria-pressed={active}
+    >
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <ChoiceIcon size={17} className={active ? 'text-[#1f8a4c]' : 'text-[#4f6d8c]'} />
+        {active ? <CheckCircle2 size={16} className="text-[#1f8a4c]" /> : <Circle size={14} className="text-[#8fa3b8]" />}
+      </div>
+      <p className="text-sm font-bold">{title}</p>
+      {description ? <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{description}</p> : null}
+    </button>
+  )
+}
+
+function QuickAddCheckCard({ checked = false, title, description, onChange }) {
+  return (
+    <label className={`flex min-h-[68px] cursor-pointer items-start gap-3 rounded-[14px] border px-3 py-3 transition ${
+      checked ? 'border-[#1f8a4c] bg-[#f0fbf4]' : 'border-[#dce6f2] bg-white hover:border-[#b7c8db]'
+    }`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1 h-4 w-4 rounded border-[#b8c8da] text-[#1f8a4c]"
+      />
+      <span>
+        <span className="block text-sm font-bold text-[#22374d]">{title}</span>
+        {description ? <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{description}</span> : null}
+      </span>
+    </label>
+  )
+}
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -373,6 +482,28 @@ function buildDirectListingMapperForm(form = {}) {
     trustees: parseDirectListingPeopleText(form.trusteesText, 'Trustee'),
     multipleOwners: parseDirectListingPeopleText(form.multipleOwnersText, 'Owner'),
   }
+}
+
+function getQuickAddSellerDisplayName(form = {}) {
+  const legalType = normalizeDirectListingKey(form.sellerType || 'individual')
+  if (legalType === 'company' || legalType === 'close_corporation' || legalType === 'other') {
+    return normalizeText(form.companyName || form.sellerName)
+  }
+  if (legalType === 'trust') return normalizeText(form.trustName || form.sellerName)
+  if (legalType === 'multiple_owners') {
+    return normalizeText(form.sellerName || parseDirectListingPeopleText(form.multipleOwnersText, 'Owner')[0]?.fullName)
+  }
+  return [normalizeText(form.sellerName), normalizeText(form.sellerSurname)].filter(Boolean).join(' ').trim()
+}
+
+function getQuickAddSellerNameRequirementLabel(form = {}) {
+  const legalType = normalizeDirectListingKey(form.sellerType || 'individual')
+  if (legalType === 'company') return 'Company name is required.'
+  if (legalType === 'close_corporation') return 'CC name is required.'
+  if (legalType === 'trust') return 'Trust name is required.'
+  if (legalType === 'other') return 'Entity name is required.'
+  if (legalType === 'multiple_owners') return 'At least one owner name is required.'
+  return 'Seller full name is required.'
 }
 
 function buildDirectListingCanonicalFactReadiness(canonicalFacts = {}) {
@@ -615,6 +746,46 @@ function normalizeContact(value) {
   return normalizeText(value).toLowerCase().replace(/[^\da-z@.+-]/g, '')
 }
 
+function normalizeListingDeleteIdentity(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function addListingIdentityKey(keys, prefix, value) {
+  const normalized = normalizeListingDeleteIdentity(value)
+  if (normalized) keys.push(`${prefix}:${normalized}`)
+}
+
+function getListingAddressFingerprint(row = {}) {
+  return [
+    row.addressLine1,
+    row.address_line_1,
+    row.propertyAddress,
+    row.property_address,
+    row.formattedAddress,
+    row.formatted_address,
+    row.streetAddress,
+    row.street_address,
+    row.propertyDetails?.addressLine1,
+    row.propertyDetails?.formattedAddress,
+    row.address,
+    row.unitNumber,
+    row.unit_number,
+    row.sectionNumber,
+    row.section_number,
+    row.complexName,
+    row.complex_name,
+    row.estateName,
+    row.estate_name,
+    row.addressLine2,
+    row.address_line_2,
+    row.suburb,
+    row.city,
+    row.province,
+    row.postalCode,
+    row.postal_code,
+  ].map(normalizeListingDeleteIdentity).filter(Boolean).join(' ')
+}
+
 function normalizeDocumentCategoryKey(value) {
   const normalized = normalizeText(value)
   const supported = LISTING_DOCUMENT_CATEGORIES.find((category) => normalizeKey(category) === normalizeKey(normalized))
@@ -626,7 +797,7 @@ function isUuidLike(value) {
 }
 
 function getListingIdentityKeys(row = {}) {
-  return [
+  const keys = [
     row.id,
     row.listingId,
     row.listing_id,
@@ -641,6 +812,16 @@ function getListingIdentityKeys(row = {}) {
     row.originatingCrmLeadId,
     row.originating_crm_lead_id,
   ].map((value) => String(value || '').trim()).filter(Boolean)
+
+  addListingIdentityKey(keys, 'ref', row.listingReference || row.listing_reference || row.listingCode || row.listing_code)
+  addListingIdentityKey(keys, 'p24', row.property24Reference || row.property24_reference)
+  addListingIdentityKey(keys, 'private-property', row.privatePropertyReference || row.private_property_reference)
+  addListingIdentityKey(keys, 'place', row.googlePlaceId || row.google_place_id || row.placeId || row.place_id)
+  addListingIdentityKey(keys, 'url', row.property24ListingUrl || row.property24_listing_url)
+  addListingIdentityKey(keys, 'url', row.privatePropertyListingUrl || row.private_property_listing_url)
+  addListingIdentityKey(keys, 'address', getListingAddressFingerprint(row))
+
+  return Array.from(new Set(keys))
 }
 
 function rowMatchesDeletedListing(row = {}, deletedIds = new Set()) {
@@ -1397,6 +1578,114 @@ function resolveAgentAssignmentIds(profile = {}, organisationUsers = []) {
   return Array.from(ids)
 }
 
+function formatListingFactValue(value, label = '') {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number <= 0) return ''
+  const formatted = Number.isInteger(number) ? String(number) : String(number).replace(/\.0+$/, '')
+  return `${formatted} ${label}`.trim()
+}
+
+function getListingPropertyFacts(listing = {}, quickMetadata = null) {
+  const metadataProperty = quickMetadata?.property && typeof quickMetadata.property === 'object' ? quickMetadata.property : {}
+  return [
+    formatListingFactValue(listing.bedrooms || listing.bedroomCount || listing.bedroom_count || metadataProperty.bedrooms, 'bed'),
+    formatListingFactValue(listing.bathrooms || listing.bathroomCount || listing.bathroom_count || metadataProperty.bathrooms, 'bath'),
+    formatListingFactValue(listing.parkingCount || listing.parking_count || listing.garages || metadataProperty.parkingCount, 'parking'),
+  ].filter(Boolean)
+}
+
+function getUserIdentityMatches(user = {}) {
+  return [
+    user?.id,
+    user?.userId,
+    user?.user_id,
+    user?.organisationUserId,
+    user?.organisation_user_id,
+    user?.email,
+  ].map((value) => normalizeText(value).toLowerCase()).filter(Boolean)
+}
+
+function resolveListingAssignedAgent(listing = {}, organisationUsers = []) {
+  const assignedObject = listing?.assignedAgent && typeof listing.assignedAgent === 'object' ? listing.assignedAgent : {}
+  const assignedName = normalizeText(
+    listing.assignedAgentName ||
+      listing.assigned_agent_name ||
+      (typeof listing.assignedAgent === 'string' ? listing.assignedAgent : '') ||
+      listing.assigned_agent ||
+      assignedObject.name ||
+      assignedObject.fullName ||
+      assignedObject.full_name,
+  )
+  const assignedEmail = normalizeText(
+    listing.assignedAgentEmail ||
+      listing.assigned_agent_email ||
+      assignedObject.email,
+  ).toLowerCase()
+  const assignedIds = [
+    listing.assignedAgentId,
+    listing.assigned_agent_id,
+    listing.assignedUserId,
+    listing.assigned_user_id,
+    assignedObject.id,
+    assignedObject.userId,
+    assignedObject.user_id,
+  ].map((value) => normalizeText(value).toLowerCase()).filter(Boolean)
+
+  const assignedKeys = new Set([...assignedIds, assignedEmail].filter(Boolean))
+  const matchedUser = assignedKeys.size
+    ? (Array.isArray(organisationUsers) ? organisationUsers : []).find((user) => (
+        getUserIdentityMatches(user).some((key) => assignedKeys.has(key))
+      ))
+    : null
+  const name = normalizeText(matchedUser?.fullName || matchedUser?.name || assignedName)
+  const email = normalizeText(matchedUser?.email || assignedEmail).toLowerCase()
+  const avatarUrl = normalizeText(
+    matchedUser?.avatarUrl ||
+      matchedUser?.avatar_url ||
+      assignedObject.avatarUrl ||
+      assignedObject.avatar_url ||
+      assignedObject.photoUrl ||
+      assignedObject.photo_url,
+  )
+  const isAssigned = Boolean(name || email || assignedIds.length)
+
+  return {
+    name: isAssigned ? (name || email || 'Assigned Agent') : 'Unassigned',
+    email,
+    avatarUrl,
+    isAssigned,
+  }
+}
+
+function getAgentInitials(agent = {}) {
+  const name = normalizeText(agent?.name)
+  if (!agent?.isAssigned) return ''
+  const source = name || normalizeText(agent?.email)
+  const words = source.split(/[\s.@_-]+/).filter(Boolean)
+  return words.slice(0, 2).map((word) => word[0]?.toUpperCase()).join('') || 'A'
+}
+
+function ListingAgentAvatar({ agent = {} }) {
+  const initials = getAgentInitials(agent)
+  const avatarUrl = normalizeText(agent?.avatarUrl)
+
+  return (
+    <span className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#d7e2ee] bg-[#eef4fa] text-[0.72rem] font-bold text-[#1f4f78]">
+      {initials ? <span>{initials}</span> : <UserRound size={16} className="text-[#6f8398]" />}
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={(event) => {
+            event.currentTarget.style.display = 'none'
+          }}
+        />
+      ) : null}
+    </span>
+  )
+}
+
 function ListingCardImage({ src = '', alt = '' }) {
   if (src) {
     return <img src={src} alt={alt} className="h-full w-full object-cover" />
@@ -1474,6 +1763,7 @@ function buildInitialListingLeadForm(profile, workspace) {
     hasSignedPropertyConditionDisclosure: false,
     hasSignedFicaForm: false,
     sellerPortalInviteRequested: false,
+    sellerPortalDeliveryMethod: '',
     propertyAddress: '',
     propertyAddressValue: null,
     formattedAddress: '',
@@ -1577,7 +1867,8 @@ function mergeQuickListingMetadataInNotes(value = '', patch = {}) {
 function buildListingCompleteness({ form } = {}) {
   const mandateStatus = getQuickListingMandateStatus(form)
   const mandatePackExpected = isQuickListingMandatePackExpected(form, mandateStatus)
-  const mandateSigned = Boolean(mandatePackExpected && normalizeText(form?.manualMandateFileName))
+  const mandateSigned = Boolean(mandatePackExpected && (form?.hasSignedMandate || normalizeText(form?.manualMandateFileName)))
+  const sellerDisplayName = getQuickAddSellerDisplayName(form)
   const sellerHasContact = Boolean(normalizeText(form?.sellerEmail) || normalizeText(form?.sellerPhone))
   const commissionCaptured = Boolean(
     normalizeText(form?.commissionValue) ||
@@ -1588,7 +1879,7 @@ function buildListingCompleteness({ form } = {}) {
   const checks = [
     { label: 'Property address', complete: Boolean(normalizeText(form?.propertyAddress)) },
     { label: 'Listing price', complete: Number(form?.listingPrice || form?.estimatedAskingPrice || 0) > 0 },
-    { label: 'Seller name', complete: Boolean(normalizeText(form?.sellerName)) },
+    { label: 'Seller / entity name', complete: Boolean(sellerDisplayName) },
     { label: 'Seller contact details', complete: sellerHasContact },
     { label: 'Signed mandate', complete: mandateSigned },
     ...(mandatePackExpected ? [{ label: 'Mandate dates', complete: mandateDatesCaptured }] : []),
@@ -1624,10 +1915,11 @@ function buildQuickListingNotes(form, completeness, mandateStatus) {
   const quickAddIntent = getQuickAddIntentOption(form.quickAddIntent)
   const mandatePack = buildQuickListingMandatePack(form, mandateStatus)
   const mandateStatusLabel = getQuickListingMandateStatusLabel(mandateStatus)
+  const sellerDisplayName = getQuickAddSellerDisplayName(form)
   const humanNotes = [
     normalizeText(form.notes),
     `Capture type: ${quickAddIntent.label}`,
-    `Seller Contact: ${normalizeText(form.sellerName)} · ${normalizeText(form.sellerEmail)} · ${normalizeText(form.sellerPhone)}`,
+    `Seller Contact: ${sellerDisplayName} · ${normalizeText(form.sellerEmail)} · ${normalizeText(form.sellerPhone)}`,
     `Quick Add Meta: Beds ${form.bedrooms || '-'} · Baths ${form.bathrooms || '-'} · Parking ${form.parkingCount || '-'} · Erf ${form.erfSize || '-'} · Floor ${form.floorSize || '-'}`,
     `Mandate: ${mandateStatusLabel} · ${mandatePack.type} · ${mandatePack.startDate || '-'} → ${mandatePack.endDate || '-'} · ${mandatePack.dateStateLabel}`,
     `Commission: ${mandatePack.commission.type} · ${mandatePack.commission.value || 'Not captured'}`,
@@ -1688,6 +1980,7 @@ function isQuickListingManualMandateReportedStatus(value) {
 
 function canQuickListingActivateWithMandateStatus(mandateStatus = '', form = {}) {
   return (
+    form?.hasSignedMandate === true ||
     ['signed_uploaded', 'uploaded_signed'].includes(normalizeKey(mandateStatus)) ||
     (isQuickListingManualMandateReportedStatus(mandateStatus) && Boolean(normalizeText(form?.manualMandateFileName)))
   )
@@ -1859,13 +2152,12 @@ function buildListingAddressValueFromForm(form = {}) {
 
 function validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent = true }) {
   const errors = []
+  const sellerDisplayName = getQuickAddSellerDisplayName(form)
   if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
-  if (isSectionalTitleProperty(form)) {
-    if (!normalizeText(form.unitNumber)) errors.push('Unit number is required for sectional title listings.')
-    if (!normalizeText(form.complexName)) errors.push('Complex / scheme name is required for sectional title listings.')
-  }
-  if (!normalizeText(form.sellerName)) errors.push('Seller display name is required.')
-  if (!normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) errors.push('Seller email or phone is required.')
+  if (!Number(form.listingPrice || form.estimatedAskingPrice || 0)) errors.push('Listing price is required.')
+  if (!normalizeText(form.propertyType)) errors.push('Property type is required.')
+  if (!sellerDisplayName) errors.push(getQuickAddSellerNameRequirementLabel(form))
+  if (!normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) errors.push('Seller email or mobile is required.')
   if (requireAssignedAgent && !normalizeText(assignedAgentKey)) errors.push('Assigned agent is required.')
   if (!MANUAL_LISTING_STATUSES.includes(normalizeKey(form.listingStatus))) errors.push('Listing status must be Draft, Mandate Signed, Active, Under Offer, or Sold.')
   return errors
@@ -1876,7 +2168,7 @@ function validateQuickListingActiveRules({ form, assignedAgentKey }) {
   const errors = validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent: true })
   const mandateStatus = getQuickListingMandateStatus(form)
   if (!canQuickListingActivateWithMandateStatus(mandateStatus, form)) {
-    errors.push('Upload the signed hard-copy mandate before marking the listing Active.')
+    errors.push('Confirm whether a signed mandate already exists before marking the listing Active.')
   }
   return [...new Set(errors)]
 }
@@ -1922,6 +2214,8 @@ function AgentListings({ initialTab = null } = {}) {
   const [quickAddDuplicateAction, setQuickAddDuplicateAction] = useState('')
   const [quickAddSuccess, setQuickAddSuccess] = useState(null)
   const [isListingSaving, setIsListingSaving] = useState(false)
+  const [quickAddGuideOpen, setQuickAddGuideOpen] = useState(false)
+  const [quickAddAdditionalDetailsOpen, setQuickAddAdditionalDetailsOpen] = useState(false)
 
   const [form, setForm] = useState(() => buildInitialListingLeadForm(profile, workspace))
   const selectedWorkspaceOrganisationId = useMemo(
@@ -2093,20 +2387,35 @@ function AgentListings({ initialTab = null } = {}) {
     }
   }
 
-  function applyQuickAddIntent(intentValue) {
-    const intent = QUICK_ADD_INTENT_OPTIONS.find((option) => option.value === intentValue) || QUICK_ADD_INTENT_OPTIONS[0]
+  function applyQuickAddLifecycleStatus(statusValue) {
+    const option = QUICK_ADD_LIFECYCLE_OPTIONS.find((item) => item.value === statusValue) || QUICK_ADD_LIFECYCLE_OPTIONS.at(-1)
     setForm((previous) => ({
       ...previous,
-      quickAddIntent: intent.value,
-      quickStep: intent.nextStep,
-      listingStatus: intent.listingStatus,
-      manualMandateStatus: intent.mandateStatus,
-      mandateSigned: false,
-      mandateStatusCaptured: intent.mandateStatus !== 'not_started',
+      listingStatus: option.value,
+      quickAddIntent: option.quickAddIntent,
+      quickStep: 'property',
     }))
     setQuickAddDuplicateMatches([])
     setQuickAddDuplicateOverride(false)
     setQuickAddDuplicateAction('')
+  }
+
+  function applyQuickAddMandateStatus(hasMandate) {
+    setForm((previous) => ({
+      ...previous,
+      hasSignedMandate: Boolean(hasMandate),
+      manualMandateStatus: hasMandate ? 'signed_external_pending_upload' : 'not_started',
+      mandateStatusCaptured: true,
+      mandateSigned: false,
+    }))
+  }
+
+  function applySellerPortalDeliveryMethod(method) {
+    setForm((previous) => ({
+      ...previous,
+      sellerPortalInviteRequested: true,
+      sellerPortalDeliveryMethod: method,
+    }))
   }
 
   function updatePropertyAddress(nextValue) {
@@ -2168,7 +2477,6 @@ function AgentListings({ initialTab = null } = {}) {
   const isPrincipalListingMode = listingModalMode === 'principal'
   const isQuickAddListingFlow = listingModalFlow === 'quick_add' || listingModalFlow === 'manual'
   const isManualListingFlow = isQuickAddListingFlow
-  const activeQuickAddIntent = getQuickAddIntentOption(form.quickAddIntent)
   const quickAddMandatePanelOpen =
     isManualListingFlow &&
     (form.quickStep === 'mandate' || isQuickListingMandatePackExpected(form, form.manualMandateStatus))
@@ -2226,24 +2534,6 @@ function AgentListings({ initialTab = null } = {}) {
     if (!currentBranchId) return []
     return [{ id: currentBranchId, name: 'Current branch' }]
   }, [branchOptions, currentBranchId])
-
-  function openSellerLeadModal() {
-    try {
-      assertMvpPilotCreationAllowed({ operation: 'start a new seller listing' })
-    } catch (freezeError) {
-      setError(freezeError.message)
-      return
-    }
-    setListingModalMode(agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
-    setListingModalFlow('seller_lead')
-    setForm((previous) => ({ ...buildInitialListingLeadForm(profile, workspace), branchId: currentBranchId || previous.branchId }))
-    setShowNewListingModal(true)
-    setQuickAddDuplicateMatches([])
-    setQuickAddDuplicateOverride(false)
-    setQuickAddDuplicateAction('')
-    setQuickAddSuccess(null)
-    setError('')
-  }
 
   function openQuickAddListingModal() {
     try {
@@ -2348,7 +2638,7 @@ function AgentListings({ initialTab = null } = {}) {
       const longitude = propertyAddressValue?.longitude ?? form.longitude ?? null
       const addressLine2 = buildSectionalTitleAddressLine(form)
       const listingPropertyCanonicalFacts = buildListingPropertyCanonicalFacts(form)
-      const sellerDisplayName = [sellerName, sellerSurname].filter(Boolean).join(' ').trim() || sellerName
+      const sellerDisplayName = getQuickAddSellerDisplayName(form) || sellerName
       const selectedQuickAddIntent = getQuickAddIntentOption(form.quickAddIntent)
       const mandateStatus = getQuickListingMandateStatus(form)
       const mandatePack = buildQuickListingMandatePack(form, mandateStatus)
@@ -2803,7 +3093,7 @@ function AgentListings({ initialTab = null } = {}) {
       let handoffPlan = null
       let directListingRequirementSync = null
       let directListingSellerPortalInvite = null
-      const sellerDisplayName = [sellerName, sellerSurname].filter(Boolean).join(' ').trim()
+      const sellerDisplayName = getQuickAddSellerDisplayName(form)
       const directListingPersistence = buildQuickAddDirectListingPersistencePayload(form, {
         capturedBy: profile?.id || profile?.email || '',
         listingStatus: resolvedListingStatus,
@@ -3601,7 +3891,6 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   const privateListingCards = useMemo(() => {
-    const agentName = String(profile?.fullName || profile?.name || profile?.email || 'Assigned Agent').trim()
     return privateListings
       .filter((listing) => !rowMatchesDeletedListing(listing, deletedListingIds) && !isDeletedListingRecord(listing))
       .map((listing) => {
@@ -3636,6 +3925,7 @@ function AgentListings({ initialTab = null } = {}) {
       const identityKeys = getListingIdentityKeys(listing)
       const quickAddHandoffPlan = getQuickAddHandoffPlanFromListing(listing, quickMetadata)
       const quickAddHandoffActions = normalizeQuickAddHandoffActions(identityKeys[0] || String(listing.id || ''), quickAddHandoffPlan)
+      const assignedAgent = resolveListingAssignedAgent(listing, organisationUsers)
       return {
         id: identityKeys[0] || String(listing.id || ''),
         identityKeys,
@@ -3647,13 +3937,11 @@ function AgentListings({ initialTab = null } = {}) {
         originLabel: getListingOriginLabel(listing),
         propertyStructureType,
         propertyStructureTypeLabel: getPropertyStructureTypeLabel(propertyStructureType),
-        title: listing.listingTitle || listing.title || 'Untitled listing',
+        title: listing.listingTitle || listing.title || getListingAddress(listing) || 'Untitled listing',
         suburb: [listing.suburb, listing.city].filter(Boolean).join(', ') || 'Location pending',
         address: [listing.addressLine1 || listing.propertyAddress, listing.suburb, listing.city].filter(Boolean).join(', ') || 'Address pending',
         price: Number(listing.askingPrice || 0),
-        bedroomsText: `${Number(listing.bedrooms || listing.bedroomCount || quickMetadata?.property?.bedrooms || 0) || 0} bed`,
-        bathroomsText: `${Number(listing.bathrooms || listing.bathroomCount || quickMetadata?.property?.bathrooms || 0) || 0} bath`,
-        parkingText: `${Number(listing.parkingCount || listing.parking_count || listing.garages || quickMetadata?.property?.parkingCount || 0) || 0} parking`,
+        propertyFacts: getListingPropertyFacts(listing, quickMetadata),
         listingStatusKey: statusKey,
         listingStatusLabel: getListingStatusLabel(statusKey),
         lifecycleGroup,
@@ -3680,7 +3968,9 @@ function AgentListings({ initialTab = null } = {}) {
         listingVisibilityLabel: String(listing?.listingVisibility || listing?.listing_visibility || 'internal').replace(/_/g, ' '),
         listingRecord: listing,
         imageUrl: resolveListingImageUrl(listing),
-        agentName,
+        assignedAgent,
+        agentName: assignedAgent.name,
+        agentEmail: assignedAgent.email,
       }
     }).map((card) => {
       const baseFollowUpQueue = buildListingFollowUpQueue(card)
@@ -3703,7 +3993,7 @@ function AgentListings({ initialTab = null } = {}) {
         quickAddPrimaryAction: enrichedCard.followUpQueue[0] || enrichedCard.quickAddPrimaryAction,
       }
     })
-  }, [deletedListingIds, privateListings, profile?.email, profile?.fullName, profile?.name])
+  }, [deletedListingIds, organisationUsers, privateListings])
 
   const residentialListingCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
@@ -4104,133 +4394,97 @@ function AgentListings({ initialTab = null } = {}) {
                 >
                   <div className="relative h-[132px] w-full overflow-hidden border-b border-[#e5edf6]">
                     <ListingCardImage src={card.imageUrl} alt={card.title} />
-                    <div className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full border border-white/25 bg-[#091322]/58 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur">
+                    <div className="absolute left-3 right-14 top-3 inline-flex max-w-[calc(100%-4.5rem)] items-center gap-2 rounded-full border border-white/25 bg-[#091322]/58 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur">
                       <span className={`h-2 w-2 rounded-full ${inventoryDotClass(card.inventoryStatusKey)}`} />
-                      {card.inventoryStatusLabel}
+                      <span className="truncate">{card.inventoryStatusLabel}</span>
+                    </div>
+                    <div className="absolute right-3 top-3">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setOpenListingMenuId((previous) => (previous === card.id ? '' : card.id))
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/45 bg-white/90 text-[#607387] shadow-[0_8px_18px_rgba(9,19,34,0.14)] transition hover:bg-white"
+                        aria-label={`Open actions for ${card.title}`}
+                      >
+                        <MoreVertical size={16} />
+                      </button>
+                      {openListingMenuId === card.id ? (
+                        <div
+                          className="absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={(event) => openListingMandateWorkspace(card, event)}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#1f4f78] transition hover:bg-[#f5f9fd]"
+                          >
+                            <FileText size={14} />
+                            Generate Mandate
+                          </button>
+                          {getRemoteListingIdForCard(card) ? (
+                            <button
+                              type="button"
+                              onClick={(event) => openPartnerShareModal(card, event)}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#1f4f78] transition hover:bg-[#f5f9fd]"
+                            >
+                              <Share2 size={14} />
+                              Share With Partners
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              setOpenListingMenuId('')
+                              handleDeleteListing(card, event)
+                            }}
+                            disabled={deletingListingId === card.id}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#a13b35] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {deletingListingId === card.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                            Delete Listing
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
-                  <div className="flex flex-1 flex-col gap-3.5 p-4">
-                    <div className="flex items-start justify-end gap-3">
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setOpenListingMenuId((previous) => (previous === card.id ? '' : card.id))
-                          }}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#dce6f2] bg-white text-[#607387] transition hover:border-[#b8c8db] hover:bg-[#f7fbff]"
-                          aria-label={`Open actions for ${card.title}`}
-                        >
-                          <MoreVertical size={16} />
-                        </button>
-                        {openListingMenuId === card.id ? (
-                          <div
-                            className="absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-[12px] border border-[#dce6f2] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]"
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            <button
-                              type="button"
-                              onClick={(event) => openListingMandateWorkspace(card, event)}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#1f4f78] transition hover:bg-[#f5f9fd]"
-                            >
-                              <FileText size={14} />
-                              Generate Mandate
-                            </button>
-                            {getRemoteListingIdForCard(card) ? (
-                              <button
-                                type="button"
-                                onClick={(event) => openPartnerShareModal(card, event)}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#1f4f78] transition hover:bg-[#f5f9fd]"
-                              >
-                                <Share2 size={14} />
-                                Share With Partners
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                setOpenListingMenuId('')
-                                handleDeleteListing(card, event)
-                              }}
-                              disabled={deletingListingId === card.id}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#a13b35] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {deletingListingId === card.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                              Delete Listing
-                            </button>
-                          </div>
+                  <div className="flex flex-1 flex-col gap-3 p-4">
+                    <div>
+                      <h3 className="line-clamp-2 text-[1.02rem] font-semibold leading-6 text-[#142132]">{card.title}</h3>
+                      <p className="mt-2 text-[1.05rem] font-semibold text-[#1f4f78]">{formatCurrency(card.price)}</p>
+                    </div>
+
+                    {card.propertyFacts?.length ? (
+                      <div className="grid gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-center text-[0.76rem] font-semibold text-[#35546c]" style={{ gridTemplateColumns: `repeat(${card.propertyFacts.length}, minmax(0, 1fr))` }}>
+                        {card.propertyFacts.map((fact) => (
+                          <span key={fact} className="truncate">{fact}</span>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-auto flex min-w-0 items-center gap-3 border-t border-[#eef3f8] pt-3">
+                      <ListingAgentAvatar agent={card.assignedAgent} />
+                      <div className="min-w-0">
+                        <p className="truncate text-[0.84rem] font-semibold text-[#20364d]">{card.assignedAgent?.name || 'Unassigned'}</p>
+                        {card.assignedAgent?.email ? (
+                          <p className="mt-0.5 truncate text-[0.72rem] text-[#6d8095]">{card.assignedAgent.email}</p>
                         ) : null}
                       </div>
                     </div>
 
-                    <div>
-                      <h3 className="line-clamp-2 text-[1.02rem] font-semibold leading-6 text-[#142132]">{card.title}</h3>
-                      <p className="mt-2 text-[1.05rem] font-semibold text-[#1f4f78]">{formatCurrency(card.price)}</p>
-                      <p className="mt-1 line-clamp-1 text-sm text-[#607387]">{card.address}</p>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-[0.76rem] font-semibold text-[#35546c]">
-                      <span>{card.bedroomsText}</span>
-                      <span>{card.bathroomsText}</span>
-                      <span>{card.parkingText}</span>
-                    </div>
-
-                    {card.attentionLine ? (
-                      <div className="flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#f2dfbf] bg-[#fff8ea] px-3 py-2 text-[0.82rem] font-semibold text-[#8a5b16]">
-                        <CircleAlert size={15} />
-                        <span className="line-clamp-1">{card.attentionLine}</span>
-                      </div>
-                    ) : (
-                      <div className="flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#d8ecdf] bg-[#f3fbf6] px-3 py-2 text-[0.82rem] font-semibold text-[#2d7650]">
-                        <CheckCircle2 size={15} />
-                        <span>No open listing blockers.</span>
-                      </div>
-                    )}
-
-                    {card.quickAddPrimaryAction ? (
-                      <div className="rounded-[12px] border border-[#cfe4d8] bg-[#f4fbf7] px-3 py-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#4d8060]">Listing follow-ups</p>
-                            <p className="mt-1 truncate text-[0.82rem] font-semibold text-[#24583a]">{card.quickAddPrimaryAction.label}</p>
-                            {card.quickAddPrimaryAction.reminderLabel ? (
-                              <p className="mt-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#5f8a6f]">{card.quickAddPrimaryAction.reminderLabel}</p>
-                            ) : null}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              openQuickAddHandoffAction(card.quickAddPrimaryAction, card.id)
-                            }}
-                            className="shrink-0 rounded-full border border-[#b9dec8] bg-white px-3 py-1 text-[0.72rem] font-semibold text-[#1f7d44] transition hover:border-[#8bcaa4] hover:bg-[#edf8f1]"
-                          >
-                            Open
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    <div className="mt-auto space-y-3 border-t border-[#eef3f8] pt-3 text-[0.82rem] text-[#53687f]">
-                      <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold">
-                        <UserRound size={14} className="shrink-0 text-[#1f4f78]" />
-                        <span className="truncate">{card.agentName || 'Assigned Agent'}</span>
-                      </span>
-                      <div>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            navigate(`/agent/listings/${encodeURIComponent(card.id)}`)
-                          }}
-                          className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#c6d8ea] bg-white px-3 text-[0.76rem] font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
-                        >
-                          <span className="truncate">Open</span>
-                          <ArrowRight size={14} className="shrink-0" />
-                        </button>
-                      </div>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        navigate(`/agent/listings/${encodeURIComponent(card.id)}`)
+                      }}
+                      className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#c6d8ea] bg-white px-3 text-[0.76rem] font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"
+                    >
+                      <span className="truncate">Open</span>
+                      <ArrowRight size={14} className="shrink-0" />
+                    </button>
                   </div>
                 </article>
               ))}
@@ -4414,23 +4668,61 @@ function AgentListings({ initialTab = null } = {}) {
 
       {showNewListingModal ? (
         <div className="fixed inset-0 z-[70] grid place-items-center bg-[#091322]/40 p-5 backdrop-blur-[1.5px]">
-          <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[24px] border border-[#dce4ef] bg-white p-6 shadow-[0_22px_56px_rgba(15,23,42,0.24)]">
-            <SectionHeader
-              title={
-                isManualListingFlow
-                  ? 'Quick Add Listing'
-                  : isPrincipalListingMode
-                    ? 'New Seller Lead (Principal)'
-                    : 'New Seller Lead'
-              }
-              copy={
-                isManualListingFlow
-                  ? 'Use this when the listing or mandate already exists outside Bridge. Capture the seller and property now, then complete mandate documents as follow-up.'
-                  : isPrincipalListingMode
-                    ? 'Capture lead setup, assign role players, and push onboarding through the agency workflow.'
-                    : 'Capture core seller details and trigger onboarding quickly. The principal team can enrich the listing later.'
-              }
-            />
+          <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-[24px] border border-[#dce4ef] bg-[#f8fafc] p-5 shadow-[0_22px_56px_rgba(15,23,42,0.24)] sm:p-6">
+            <div className="relative">
+              {isManualListingFlow ? (
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-start gap-4">
+                    <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] border border-[#dce6f2] bg-white text-[#1f8a4c] shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+                      <Sparkles size={24} />
+                    </span>
+                    <div>
+                      <h3 className="text-2xl font-bold tracking-normal text-[#122136]">Quick Add Listing</h3>
+                      <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758c]">
+                        Capture an existing or external listing in minutes. Complete missing details and documents later from the listing workspace.
+                      </p>
+                    </div>
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setQuickAddGuideOpen((open) => !open)}>
+                    <HelpCircle size={15} />
+                    Need help?
+                  </Button>
+                </div>
+              ) : (
+                <SectionHeader
+                  title={isPrincipalListingMode ? 'New Seller Lead (Principal)' : 'New Seller Lead'}
+                  copy={
+                    isPrincipalListingMode
+                      ? 'Capture lead setup, assign role players, and push onboarding through the agency workflow.'
+                      : 'Capture core seller details and trigger onboarding quickly. The principal team can enrich the listing later.'
+                  }
+                />
+              )}
+
+              {isManualListingFlow && quickAddGuideOpen ? (
+                <div className="absolute right-0 top-14 z-10 w-full max-w-sm rounded-[18px] border border-[#dce6f2] bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.18)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-[#142132]">Quick Add Guide</p>
+                      <p className="mt-1 text-xs leading-5 text-[#60758c]">
+                        Quick Add is designed for existing and legacy listings. Capture the minimum now and complete the rest from the Listing Workspace.
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => setQuickAddGuideOpen(false)} className="rounded-full p-1 text-[#7b8ca2] hover:bg-[#f2f6fb]">
+                      <X size={15} />
+                    </button>
+                  </div>
+                  <ol className="mt-4 space-y-2">
+                    {QUICK_ADD_HELP_STEPS.map((step, index) => (
+                      <li key={step} className="flex items-center gap-2 text-xs font-semibold text-[#3b5774]">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#eef4fb] text-[#1f4f78]">{index + 1}</span>
+                        {step}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ) : null}
+            </div>
 
             {error ? (
               <p className="mt-4 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#b42318]">
@@ -4441,64 +4733,6 @@ function AgentListings({ initialTab = null } = {}) {
               <p className="mt-4 rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm font-semibold text-[#1f7d44]">
                 {workflowMessage}
               </p>
-            ) : null}
-
-            {isManualListingFlow ? (
-              <div className="mt-5 rounded-[16px] border border-[#d8e6f2] bg-[#f6fbff] px-4 py-3">
-                <p className="text-sm font-semibold text-[#22374d]">Quick Add is for manual or external listings.</p>
-                <p className="mt-1 text-xs text-[#60758c]">
-                  Required now: property address, seller name, seller phone or email, and assigned agent. Mandate uploads, FICA, photos, commission, and external links can be completed after save.
-                </p>
-              </div>
-            ) : null}
-
-            {isManualListingFlow ? (
-              <div className="mt-5 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Listing status</p>
-                    <p className="mt-1 text-sm text-[#60758c]">{activeQuickAddIntent.description}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {QUICK_ADD_INTENT_OPTIONS.map((intent) => {
-                      const active = form.quickAddIntent === intent.value
-                      return (
-                        <button
-                          key={intent.value}
-                          type="button"
-                          onClick={() => applyQuickAddIntent(intent.value)}
-                          className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold transition ${
-                            active
-                              ? 'border-[#1f7d44] bg-[#edf8f0] text-[#1f7d44] shadow-[0_8px_18px_rgba(31,125,68,0.12)]'
-                              : 'border-[#d6e2ee] bg-white text-[#3b5774] hover:border-[#b7c8db]'
-                          }`}
-                        >
-                          {active ? <CheckCircle2 size={15} /> : <CircleAlert size={14} />}
-                          <span>{intent.label}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.06em] text-[#3b5774]">Smart focus: {activeQuickAddIntent.requiredNow}</p>
-              </div>
-            ) : null}
-
-            {isManualListingFlow ? (
-              <div className="mt-4 flex flex-col gap-3 rounded-[16px] border border-[#dce6f2] bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-[#22374d]">Required capture stays on one page.</p>
-                  <p className="mt-1 text-xs text-[#60758c]">Mandate, commission, and document details can be added now or completed from the listing workspace.</p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={quickAddMandatePanelOpen ? 'primary' : 'secondary'}
-                  onClick={() => updateForm('quickStep', quickAddMandatePanelOpen ? 'property' : 'mandate')}
-                >
-                  {quickAddMandatePanelOpen ? 'Hide mandate details' : 'Add mandate details'}
-                </Button>
-              </div>
             ) : null}
 
             {isManualListingFlow && quickAddDuplicateMatches.length ? (
@@ -4547,7 +4781,448 @@ function AgentListings({ initialTab = null } = {}) {
               </div>
             ) : null}
 
-            <form className="mt-5 space-y-6" onSubmit={handleSaveListing} noValidate>
+            <form className="mt-5 space-y-5" onSubmit={handleSaveListing} noValidate>
+              {isManualListingFlow ? (
+                <>
+                  <QuickAddSection
+                    number="1"
+                    title="Listing Status"
+                    copy="Tell us what stage this listing is in and whether a mandate already exists."
+                  >
+                    <div className="grid gap-5 xl:grid-cols-[1fr_290px]">
+                      <div>
+                        <p className="mb-2 text-xs font-bold text-[#2d445e]">Listing lifecycle status *</p>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                          {QUICK_ADD_LIFECYCLE_OPTIONS.map((option) => (
+                            <QuickAddChoiceCard
+                              key={option.value}
+                              active={normalizeKey(form.listingStatus) === option.value}
+                              title={option.label}
+                              description={option.description}
+                              onClick={() => applyQuickAddLifecycleStatus(option.value)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs font-bold text-[#2d445e]">Mandate status *</p>
+                        <div className="grid gap-3">
+                          <QuickAddChoiceCard
+                            active={Boolean(form.hasSignedMandate)}
+                            title="Signed mandate"
+                            description="Mandate already exists."
+                            icon={FileText}
+                            onClick={() => applyQuickAddMandateStatus(true)}
+                          />
+                          <QuickAddChoiceCard
+                            active={!form.hasSignedMandate}
+                            title="Mandate still needs"
+                            description="To be completed."
+                            icon={CircleAlert}
+                            onClick={() => applyQuickAddMandateStatus(false)}
+                          />
+                        </div>
+                        {form.hasSignedMandate ? (
+                          <label className="mt-3 grid gap-2">
+                            <span className="text-sm font-semibold text-[#2d445e]">Mandate type</span>
+                            <Field as="select" value={form.mandateType} onChange={(event) => updateForm('mandateType', event.target.value)}>
+                              {DIRECT_LISTING_MANDATE_TYPE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </Field>
+                          </label>
+                        ) : null}
+                      </div>
+                    </div>
+                    <p className="mt-4 border-t border-[#e6edf5] pt-3 text-xs font-semibold text-[#2f6fa8]">
+                      You can update this later in the listing workspace.
+                    </p>
+                  </QuickAddSection>
+
+                  <QuickAddSection number="2" title="Ownership & Seller Type" copy="Who owns the property?">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                      {QUICK_ADD_SELLER_TYPE_CARDS.map((option) => (
+                        <QuickAddChoiceCard
+                          key={option.value}
+                          active={normalizeDirectListingKey(form.sellerType) === option.value}
+                          title={option.label}
+                          description={option.description}
+                          icon={option.icon}
+                          onClick={() => updateForm('sellerType', option.value)}
+                        />
+                      ))}
+                    </div>
+                  </QuickAddSection>
+
+                  <QuickAddSection
+                    number="3"
+                    title="Seller / Entity Details"
+                    copy="Details will adjust based on the ownership type selected above."
+                  >
+                    {(() => {
+                      const selectedSellerType = normalizeDirectListingKey(form.sellerType || 'individual')
+                      const entityNameLabel =
+                        selectedSellerType === 'company'
+                          ? 'Company name *'
+                          : selectedSellerType === 'close_corporation'
+                            ? 'CC name *'
+                            : selectedSellerType === 'trust'
+                              ? 'Trust name *'
+                              : selectedSellerType === 'other'
+                                ? 'Entity name *'
+                                : 'Full name *'
+                      const registrationLabel =
+                        selectedSellerType === 'trust'
+                          ? 'Trust registration/reference number'
+                          : selectedSellerType === 'individual' || selectedSellerType === 'multiple_owners'
+                            ? 'ID number'
+                            : 'Registration number'
+                      const contactNameLabel =
+                        selectedSellerType === 'trust'
+                          ? 'Trustee / contact person'
+                          : selectedSellerType === 'individual' || selectedSellerType === 'multiple_owners'
+                            ? 'Full name *'
+                            : 'Contact person'
+                      return (
+                        <div className="space-y-4">
+                          <div className="rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3">
+                            <p className="text-sm font-bold text-[#22374d]">
+                              {(QUICK_ADD_SELLER_TYPE_CARDS.find((option) => option.value === selectedSellerType)?.label || 'Individual')} selected
+                            </p>
+                            <p className="mt-1 text-xs text-[#6b7d93]">
+                              Capture the minimum seller or entity details now. FICA detail can be completed from the Seller Portal or Listing Workspace.
+                            </p>
+                          </div>
+
+                          {['company', 'close_corporation', 'trust', 'other'].includes(selectedSellerType) ? (
+                            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                              <label className="grid gap-2">
+                                <span className="text-sm font-semibold text-[#2d445e]">{entityNameLabel}</span>
+                                <Field
+                                  value={selectedSellerType === 'trust' ? form.trustName : form.companyName}
+                                  onChange={(event) => updateForm(selectedSellerType === 'trust' ? 'trustName' : 'companyName', event.target.value)}
+                                  placeholder={entityNameLabel.replace(' *', '')}
+                                />
+                              </label>
+                              <label className="grid gap-2">
+                                <span className="text-sm font-semibold text-[#2d445e]">{registrationLabel}</span>
+                                <Field
+                                  value={selectedSellerType === 'trust' ? form.trustRegistrationNumber : form.companyRegistrationNumber}
+                                  onChange={(event) => updateForm(selectedSellerType === 'trust' ? 'trustRegistrationNumber' : 'companyRegistrationNumber', event.target.value)}
+                                  placeholder="Optional"
+                                />
+                              </label>
+                              <label className="grid gap-2">
+                                <span className="text-sm font-semibold text-[#2d445e]">{contactNameLabel}</span>
+                                <Field value={form.sellerName} onChange={(event) => updateForm('sellerName', event.target.value)} placeholder="Contact full name" />
+                              </label>
+                              <label className="grid gap-2">
+                                <span className="text-sm font-semibold text-[#2d445e]">Contact email</span>
+                                <Field type="email" value={form.sellerEmail} onChange={(event) => updateForm('sellerEmail', event.target.value)} placeholder="seller@email.com" />
+                              </label>
+                              <label className="grid gap-2">
+                                <span className="text-sm font-semibold text-[#2d445e]">Contact mobile</span>
+                                <Field value={form.sellerPhone} onChange={(event) => updateForm('sellerPhone', event.target.value)} placeholder="082 123 4567" />
+                              </label>
+                              {selectedSellerType === 'trust' ? (
+                                <label className="grid gap-2 md:col-span-2 xl:col-span-3">
+                                  <span className="text-sm font-semibold text-[#2d445e]">Trustees</span>
+                                  <Field as="textarea" value={form.trusteesText} onChange={(event) => updateForm('trusteesText', event.target.value)} placeholder="One trustee per line" />
+                                </label>
+                              ) : selectedSellerType === 'company' || selectedSellerType === 'close_corporation' ? (
+                                <label className="grid gap-2 md:col-span-2 xl:col-span-3">
+                                  <span className="text-sm font-semibold text-[#2d445e]">Directors / members</span>
+                                  <Field as="textarea" value={form.companyDirectorsText} onChange={(event) => updateForm('companyDirectorsText', event.target.value)} placeholder="One person per line" />
+                                </label>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                              <label className="grid gap-2">
+                                <span className="text-sm font-semibold text-[#2d445e]">{contactNameLabel}</span>
+                                <Field value={form.sellerName} onChange={(event) => updateForm('sellerName', event.target.value)} placeholder="Seller full name" />
+                              </label>
+                              <label className="grid gap-2">
+                                <span className="text-sm font-semibold text-[#2d445e]">{registrationLabel}</span>
+                                <Field value={form.sellerRegistrationNumber} onChange={(event) => updateForm('sellerRegistrationNumber', event.target.value)} placeholder="Optional" />
+                              </label>
+                              <label className="grid gap-2">
+                                <span className="text-sm font-semibold text-[#2d445e]">Email</span>
+                                <Field type="email" value={form.sellerEmail} onChange={(event) => updateForm('sellerEmail', event.target.value)} placeholder="seller@email.com" />
+                              </label>
+                              <label className="grid gap-2">
+                                <span className="text-sm font-semibold text-[#2d445e]">Mobile</span>
+                                <Field value={form.sellerPhone} onChange={(event) => updateForm('sellerPhone', event.target.value)} placeholder="082 123 4567" />
+                              </label>
+                              <label className="grid gap-2">
+                                <span className="text-sm font-semibold text-[#2d445e]">Marital status</span>
+                                <Field as="select" value={form.maritalStatus} onChange={(event) => updateForm('maritalStatus', event.target.value)}>
+                                  {DIRECT_LISTING_MARITAL_STATUS_OPTIONS.map((option) => (
+                                    <option key={option.value || 'not_captured'} value={option.value}>{option.label}</option>
+                                  ))}
+                                </Field>
+                              </label>
+                              {selectedSellerType === 'multiple_owners' ? (
+                                <label className="grid gap-2 md:col-span-2 xl:col-span-4">
+                                  <span className="text-sm font-semibold text-[#2d445e]">Additional owners</span>
+                                  <Field as="textarea" value={form.multipleOwnersText} onChange={(event) => updateForm('multipleOwnersText', event.target.value)} placeholder="Owner 2, email, mobile - one owner per line" />
+                                </label>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </QuickAddSection>
+
+                  <QuickAddSection number="4" title="Property Details" copy="Start with the essentials. You can add more later.">
+                    <div className="grid gap-4 lg:grid-cols-[minmax(260px,1fr)_180px_170px_150px]">
+                      <AddressAutocomplete
+                        label="Property address *"
+                        value={buildListingAddressValueFromForm(form)}
+                        onChange={updatePropertyAddress}
+                        onInputValueChange={updatePropertyAddressInput}
+                        predictionTypes={['address']}
+                        placeholder="Start typing the property address..."
+                        required
+                      />
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Listing price *</span>
+                        <Field type="number" value={form.listingPrice} onChange={(event) => updateForm('listingPrice', event.target.value)} placeholder="2500000" min="0" step="1000" />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Property type *</span>
+                        <Field as="select" value={form.propertyType} onChange={(event) => updateForm('propertyType', event.target.value)}>
+                          <option>House</option>
+                          <option>Apartment</option>
+                          <option>Townhouse</option>
+                          <option>Sectional Title</option>
+                        </Field>
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Listing type *</span>
+                        <Field as="select" value={form.listingType} onChange={(event) => updateForm('listingType', event.target.value)}>
+                          <option value="sale">Sale</option>
+                          <option value="rental">Rental</option>
+                        </Field>
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setQuickAddAdditionalDetailsOpen((open) => !open)}
+                      className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-[12px] border border-[#dce6f2] bg-white px-3 text-sm font-semibold text-[#2d567d] hover:border-[#b7c8db]"
+                    >
+                      {quickAddAdditionalDetailsOpen ? 'Hide additional details' : 'Show additional details (optional)'}
+                      <ArrowRight size={14} className={quickAddAdditionalDetailsOpen ? 'rotate-90 transition' : 'transition'} />
+                    </button>
+                    {quickAddAdditionalDetailsOpen ? (
+                      <div className="mt-4 grid gap-4 border-t border-[#e6edf5] pt-4 md:grid-cols-2 xl:grid-cols-4">
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Suburb / area</span>
+                          <Field value={form.suburb} onChange={(event) => updateForm('suburb', event.target.value)} placeholder="Suburb" />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">City</span>
+                          <Field value={form.city} onChange={(event) => updateForm('city', event.target.value)} placeholder="City" />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Province</span>
+                          <Field value={form.province} onChange={(event) => updateForm('province', event.target.value)} placeholder="Province" />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Property category</span>
+                          <Field as="select" value={form.propertyCategory} onChange={(event) => updateForm('propertyCategory', event.target.value)}>
+                            {PROPERTY_CATEGORIES.filter((category) => ['residential', 'mixed_use', 'vacant_land'].includes(category)).map((category) => (
+                              <option key={category} value={category}>{getPropertyCategoryLabel(category)}</option>
+                            ))}
+                          </Field>
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Ownership / structure type</span>
+                          <Field as="select" value={form.propertyStructureType} onChange={(event) => updateForm('propertyStructureType', event.target.value)}>
+                            {PROPERTY_STRUCTURE_TYPES.map((structureType) => (
+                              <option key={structureType} value={structureType}>{getPropertyStructureTypeLabel(structureType)}</option>
+                            ))}
+                          </Field>
+                        </label>
+                        {isSectionalTitleProperty(form) ? (
+                          <>
+                            <label className="grid gap-2">
+                              <span className="text-sm font-semibold text-[#2d445e]">Unit number</span>
+                              <Field value={form.unitNumber} onChange={(event) => updateForm('unitNumber', event.target.value)} placeholder="12" />
+                            </label>
+                            <label className="grid gap-2">
+                              <span className="text-sm font-semibold text-[#2d445e]">Section number</span>
+                              <Field value={form.sectionNumber} onChange={(event) => updateForm('sectionNumber', event.target.value)} placeholder="Section 12" />
+                            </label>
+                            <label className="grid gap-2">
+                              <span className="text-sm font-semibold text-[#2d445e]">Complex / scheme name</span>
+                              <Field value={form.complexName} onChange={(event) => updateForm('complexName', event.target.value)} placeholder="Complex or scheme" />
+                            </label>
+                          </>
+                        ) : null}
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Bedrooms</span>
+                          <Field type="number" min="0" value={form.bedrooms} onChange={(event) => updateForm('bedrooms', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Bathrooms</span>
+                          <Field type="number" min="0" value={form.bathrooms} onChange={(event) => updateForm('bathrooms', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Garages / parking</span>
+                          <Field type="number" min="0" value={form.parkingCount} onChange={(event) => updateForm('parkingCount', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Erf size (sqm)</span>
+                          <Field type="number" min="0" value={form.erfSize} onChange={(event) => updateForm('erfSize', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Property size (sqm)</span>
+                          <Field type="number" min="0" value={form.floorSize} onChange={(event) => updateForm('floorSize', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 xl:col-span-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Property24 / external listing URL</span>
+                          <Field value={form.externalListingLink} onChange={(event) => updateForm('externalListingLink', event.target.value)} placeholder="https://..." />
+                        </label>
+                        <label className="grid gap-2 xl:col-span-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Internal notes</span>
+                          <Field as="textarea" value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} placeholder="Internal notes" />
+                        </label>
+                      </div>
+                    ) : null}
+                  </QuickAddSection>
+
+                  <QuickAddSection number="5" title="Assignment" copy="Assign the listing to an agent and branch.">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_220px_200px]">
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Assigned agent *</span>
+                        <Field
+                          as="select"
+                          value={form.assignedAgentId || form.assignedAgentEmail}
+                          onChange={(event) => {
+                            const selected = assignableAgents.find((agent) => normalizeText(agent.userId || agent.id || agent.email) === event.target.value)
+                            updateForm('assignedAgentId', normalizeText(selected?.userId || selected?.id || event.target.value))
+                            updateForm('assignedAgent', normalizeText(selected?.fullName || selected?.email))
+                            updateForm('assignedAgentEmail', normalizeText(selected?.email))
+                            if (selected?.branchId && !form.branchId) updateForm('branchId', selected.branchId)
+                          }}
+                        >
+                          {assignableAgents.map((agent) => {
+                            const value = normalizeText(agent.userId || agent.id || agent.email)
+                            return (
+                              <option key={value} value={value}>
+                                {agent.fullName || agent.email || 'Agent'}{agent.email ? ` - ${agent.email}` : ''}
+                              </option>
+                            )
+                          })}
+                        </Field>
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Branch</span>
+                        <Field
+                          as="select"
+                          value={form.branchId}
+                          onChange={(event) => {
+                            const selected = effectiveBranchOptions.find((branch) => normalizeText(branch.id) === event.target.value)
+                            updateForm('branchId', event.target.value)
+                            updateForm('branchName', selected?.name || '')
+                          }}
+                        >
+                          <option value="">Auto-assigned from agent</option>
+                          {effectiveBranchOptions.map((branch) => (
+                            <option key={branch.id || branch.name} value={branch.id}>{branch.name || branch.id}</option>
+                          ))}
+                        </Field>
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Visibility</span>
+                        <Field as="select" value={form.visibility} onChange={(event) => updateForm('visibility', event.target.value)}>
+                          <option value="agent">Agent only</option>
+                          {canAssignWithinBranch ? <option value="branch">Branch</option> : null}
+                          {canAssignAcrossOrganisation ? <option value="organisation">Organisation</option> : null}
+                        </Field>
+                      </label>
+                    </div>
+                  </QuickAddSection>
+
+                  <QuickAddSection number="6" title="Existing Documents" copy="What documents or information do you already have?">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <QuickAddCheckCard
+                        checked={Boolean(form.hasSignedMandate)}
+                        title="Signed Mandate"
+                        description="Mandate already signed by seller."
+                        onChange={applyQuickAddMandateStatus}
+                      />
+                      <QuickAddCheckCard
+                        checked={Boolean(form.hasSignedPropertyConditionDisclosure)}
+                        title="Property Disclosure"
+                        description="Disclosure form completed."
+                        onChange={(checked) => updateForm('hasSignedPropertyConditionDisclosure', checked)}
+                      />
+                      <QuickAddCheckCard
+                        checked={Boolean(form.hasSignedFicaForm)}
+                        title="Seller FICA"
+                        description="FICA documents/details already available."
+                        onChange={(checked) => updateForm('hasSignedFicaForm', checked)}
+                      />
+                    </div>
+                    <p className="mt-3 text-xs font-semibold text-[#6b7d93]">
+                      These selections record existence/status only. Uploads are optional later and do not block Quick Add.
+                    </p>
+                  </QuickAddSection>
+
+                  <QuickAddSection number="7" title="Send Seller Portal" copy="Invite the seller to complete what's missing.">
+                    <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+                      <div className="flex items-start gap-4">
+                        <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#e6f7ec] text-[#1f8a4c]">
+                          <Mail size={22} />
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold text-[#22374d]">The seller portal can help the seller:</p>
+                          <ul className="mt-2 grid gap-1 text-xs leading-5 text-[#60758c] sm:grid-cols-2">
+                            <li>Complete seller details</li>
+                            <li>Upload outstanding documents</li>
+                            <li>Complete FICA</li>
+                            <li>Complete/sign mandate where applicable</li>
+                            <li>Complete disclosure information</li>
+                            <li>Track outstanding requirements</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs font-bold text-[#2d445e]">Send link via</p>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { key: 'email', label: 'Email', icon: Mail },
+                            { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
+                            { key: 'copy_link', label: 'Copy link', icon: Link },
+                          ].map((method) => {
+                            const Icon = method.icon
+                            const active = form.sellerPortalInviteRequested && form.sellerPortalDeliveryMethod === method.key
+                            return (
+                              <Button
+                                key={method.key}
+                                type="button"
+                                variant={active ? 'primary' : 'secondary'}
+                                size="sm"
+                                onClick={() => applySellerPortalDeliveryMethod(method.key)}
+                              >
+                                <Icon size={15} />
+                                {method.label}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                        <p className="mt-3 text-xs font-semibold text-[#2d445e]">
+                          Status: {form.sellerPortalInviteRequested ? 'Ready to send after creation' : 'Not sent'}
+                        </p>
+                      </div>
+                    </div>
+                  </QuickAddSection>
+                </>
+              ) : (
+                <>
               <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                 <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Seller</h4>
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -4812,8 +5487,8 @@ function AgentListings({ initialTab = null } = {}) {
                 <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                      <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Compliance Declarations</h4>
-                      <p className="mt-1 text-xs text-[#60758c]">Declarations only. No uploads are required for these answers.</p>
+                      <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Legacy Lead Documents</h4>
+                      <p className="mt-1 text-xs text-[#60758c]">Document details can be completed from the listing workspace.</p>
                     </div>
                     {directListingCompliancePreview ? (
                       <div className="flex flex-wrap gap-2 text-xs font-semibold">
@@ -4834,7 +5509,7 @@ function AgentListings({ initialTab = null } = {}) {
                         onChange={(event) => updateForm('hasSignedMandate', event.target.checked)}
                         className="h-4 w-4 rounded border-[#b8c8da] text-[#1f7d44]"
                       />
-                      <span className="text-sm font-semibold text-[#2d445e]">Signed mandate held</span>
+                      <span className="text-sm font-semibold text-[#2d445e]">Mandate recorded</span>
                     </label>
                     {form.hasSignedMandate ? (
                       <label className="grid gap-2">
@@ -4853,7 +5528,7 @@ function AgentListings({ initialTab = null } = {}) {
                         onChange={(event) => updateForm('hasSignedPropertyConditionDisclosure', event.target.checked)}
                         className="h-4 w-4 rounded border-[#b8c8da] text-[#1f7d44]"
                       />
-                      <span className="text-sm font-semibold text-[#2d445e]">Signed property disclosure</span>
+                      <span className="text-sm font-semibold text-[#2d445e]">Property disclosure recorded</span>
                     </label>
                     <label className="flex min-h-[44px] items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2">
                       <input
@@ -4862,7 +5537,7 @@ function AgentListings({ initialTab = null } = {}) {
                         onChange={(event) => updateForm('hasSignedFicaForm', event.target.checked)}
                         className="h-4 w-4 rounded border-[#b8c8da] text-[#1f7d44]"
                       />
-                      <span className="text-sm font-semibold text-[#2d445e]">Signed FICA form held</span>
+                      <span className="text-sm font-semibold text-[#2d445e]">FICA recorded</span>
                     </label>
                     <label className="flex min-h-[44px] items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2 xl:col-span-2">
                       <input
@@ -4871,7 +5546,7 @@ function AgentListings({ initialTab = null } = {}) {
                         onChange={(event) => updateForm('sellerPortalInviteRequested', event.target.checked)}
                         className="h-4 w-4 rounded border-[#b8c8da] text-[#1f7d44]"
                       />
-                      <span className="text-sm font-semibold text-[#2d445e]">Send seller portal link</span>
+                      <span className="text-sm font-semibold text-[#2d445e]">Invite seller from workspace</span>
                     </label>
                   </div>
                 </section>
@@ -5219,7 +5894,7 @@ function AgentListings({ initialTab = null } = {}) {
                       <div className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-[#22374d]">Publication status: {readinessLabel}</p>
+                            <p className="text-sm font-semibold text-[#22374d]">Lead routing state: {readinessLabel}</p>
                             <p className="mt-1 text-xs text-[#6b7d93]">
                               {completeness.missingItems.length ? `Missing: ${completeness.missingItems.join(', ')}` : 'No immediate follow-up items.'}
                             </p>
@@ -5256,21 +5931,13 @@ function AgentListings({ initialTab = null } = {}) {
                   />
                 </label>
               </div>
+                </>
+              )}
 
               <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[#e6edf5] pt-4">
                 <Button type="button" variant="secondary" onClick={() => setShowNewListingModal(false)} disabled={isListingSaving}>
                   Cancel
                 </Button>
-                {isManualListingFlow ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => updateForm('quickStep', quickAddMandatePanelOpen ? 'property' : 'mandate')}
-                    disabled={isListingSaving}
-                  >
-                    {quickAddMandatePanelOpen ? 'Hide mandate details' : 'Add mandate details'}
-                  </Button>
-                ) : null}
                 <Button type="submit" disabled={isListingSaving}>
                   {isListingSaving ? <Loader2 size={16} className="animate-spin" /> : null}
                   {isListingSaving ? 'Saving...' : isManualListingFlow ? 'Create Listing' : 'Save Seller Lead & Send Onboarding'}

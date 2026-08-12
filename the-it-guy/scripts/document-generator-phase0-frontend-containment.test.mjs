@@ -102,7 +102,7 @@ assert.match(lifecycle, /CANONICAL_MANDATE_COMPLETION_TARGETS = new Set\(\['mand
 assert.match(lifecycle, /function getCanonicalMandateCompletionBlocker/)
 assert.match(lifecycle, /nonOverridableBlockers/)
 assert.doesNotMatch(lifecycle, /listingHasDocumentSignal/)
-assert.match(lifecycle, /completed canonical mandate packet with a final signed artifact/)
+assert.match(lifecycle, /completed canonical mandate packet or manual signed mandate upload/)
 
 const privateListingService = fs.readFileSync('src/services/privateListingService.js', 'utf8')
 const packetSummary = privateListingService.slice(

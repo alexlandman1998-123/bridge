@@ -4,10 +4,10 @@ export const KINGSTONS_DIGITAL_SIGNING_DECISION = Object.freeze({
   version: KINGSTONS_DIGITAL_SIGNING_DECISION_VERSION,
   status: 'paused',
   livePath: 'manual_seller_pack',
-  label: 'Digital signing paused',
-  reason: 'Digital mandate generation and signing is paused for Kingstons.',
-  agentAction: 'Upload the signed Seller Pack documents instead.',
-  nextDecision: 'Revisit digital signing after the manual Seller Pack rollout is stable.',
+  label: '',
+  reason: '',
+  agentAction: '',
+  nextDecision: '',
 })
 
 export function buildKingstonsDigitalSigningDecision({
@@ -29,7 +29,7 @@ export function buildKingstonsDigitalSigningDecision({
     ...KINGSTONS_DIGITAL_SIGNING_DECISION,
     blocked: true,
     requestedAction,
-    message: `${KINGSTONS_DIGITAL_SIGNING_DECISION.reason} ${KINGSTONS_DIGITAL_SIGNING_DECISION.agentAction}`,
+    message: '',
   }
 }
 

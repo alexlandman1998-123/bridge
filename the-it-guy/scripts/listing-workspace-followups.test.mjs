@@ -19,47 +19,20 @@ assert.match(
 
 assert.match(
   source,
-  /const followUpActions = useMemo/,
-  'Listing workspace should expose a canonical follow-up action model.',
+  /function FollowUpActionCard\(\{ action, loading = false, onAction, onUpload \}\)/,
+  'Listing workspace should expose a reusable follow-up action card.',
 )
-
-for (const label of [
-  'Send seller onboarding',
-  'Generate Mandate',
-  'Upload signed mandate',
-  'Add seller contact',
-  'Add seller ID / registration number',
-  'Add seller FICA',
-  'Complete seller facts',
-  'Confirm commission',
-  'Add photos',
-  'Add external listing link',
-]) {
-  assert.match(source, new RegExp(label), `Missing follow-up action: ${label}`)
-}
-
-for (const label of [
-  'Send seller onboarding',
-  'Upload signed mandate',
-  'Add seller ID / registration number',
-  'Add seller FICA',
-  'Confirm commission',
-  'Add photos',
-  'Add external listing link',
-]) {
-  assert.match(listingsSource, new RegExp(label), `Missing listing-card follow-up preview: ${label}`)
-}
 
 assert.match(
   listingsSource,
   /function buildListingFollowUpQueue\(card = \{\}\)/,
-  'Listing grid should derive a canonical follow-up preview for each card.',
+  'Listing grid should keep deriving follow-up data for handoff/search logic.',
 )
 
-assert.match(
+assert.doesNotMatch(
   listingsSource,
-  /card\.quickAddPrimaryAction/,
-  'Listing cards should show a compact primary handoff preview instead of hiding all skipped work.',
+  /Listing follow-ups/,
+  'Listing grid cards should no longer render the follow-up preview block.',
 )
 
 assert.match(
@@ -70,26 +43,8 @@ assert.match(
 
 assert.match(
   source,
-  /Complete a Quick Add listing here without restarting seller onboarding\./,
-  'Follow-up panel should explain the Quick Add bypass recovery path.',
-)
-
-assert.match(
-  source,
-  /const listingFollowUpsComplete = !followUpActions\.length \|\| followUpActions\.every\(\(action\) => action\.complete\)/,
-  'Follow-up panel should disappear once every action is complete.',
-)
-
-assert.match(
-  source,
-  /const shouldShowListingFollowUps = sellerWorkspaceTab === 'overview' && !listingFollowUpsComplete/,
-  'Follow-up panel should only appear on the seller overview tab while incomplete.',
-)
-
-assert.match(
-  source,
-  /\{shouldShowListingFollowUps \? \([\s\S]*Listing Follow-Ups/,
-  'Follow-up panel render should be guarded by the overview/incomplete condition.',
+  /followUpActionId/,
+  'Listing workspace should track long-running follow-up/action state.',
 )
 
 assert.match(

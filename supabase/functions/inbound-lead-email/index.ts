@@ -70,6 +70,8 @@ const OPTIONAL_INBOUND_EMAIL_COLUMNS = [
   "repaired_at",
   "lead_ingestion_log_id",
 ];
+const BUYER_VIEWING_PLAN_NOTE_START = "[Buyer viewing plan]";
+const BUYER_VIEWING_PLAN_NOTE_END = "[/Buyer viewing plan]";
 
 function jsonResponse(status: number, body: JsonRecord) {
   return new Response(JSON.stringify(body), {
@@ -208,6 +210,112 @@ function safeUrl(value: unknown) {
   } catch {
     return "";
   }
+}
+
+function bytesToBase64Url(bytes: Uint8Array) {
+  return btoa(String.fromCharCode(...bytes))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+}
+
+async function sha256UrlSafe(value: string) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return bytesToBase64Url(new Uint8Array(digest));
+}
+
+function randomToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return bytesToBase64Url(bytes);
+}
+
+function safeAppOrigin() {
+  const raw = pickText(
+    Deno.env.get("PUBLIC_APP_URL"),
+    Deno.env.get("CLIENT_APP_URL"),
+    Deno.env.get("SITE_URL"),
+  ).replace(/\/+$/, "");
+  if (!raw) return "https://app.arch9.co.za";
+  try {
+    const parsed = new URL(raw);
+    return ["http:", "https:"].includes(parsed.protocol)
+      ? parsed.origin
+      : "https://app.arch9.co.za";
+  } catch {
+    return "https://app.arch9.co.za";
+  }
+}
+
+function stripBuyerViewingPlanNoteBlock(notes = "") {
+  const raw = String(notes || "").trim();
+  const startIndex = raw.indexOf(BUYER_VIEWING_PLAN_NOTE_START);
+  if (startIndex === -1) return raw;
+  const endIndex = raw.indexOf(BUYER_VIEWING_PLAN_NOTE_END, startIndex);
+  const before = raw.slice(0, startIndex).trim();
+  const after = endIndex === -1
+    ? ""
+    : raw.slice(endIndex + BUYER_VIEWING_PLAN_NOTE_END.length).trim();
+  return [before, after].filter(Boolean).join("\n\n");
+}
+
+function buildBuyerViewingPlanNoteBlock({
+  status = "buyer_availability",
+  selectedPropertyIds = [],
+  requestedAt = "",
+  recipientEmail = "",
+  deliveryStatus = "",
+  deliveryId = "",
+  providerMessageId = "",
+  updatedAt = "",
+}: {
+  status?: string;
+  selectedPropertyIds?: string[];
+  requestedAt?: string;
+  recipientEmail?: string;
+  deliveryStatus?: string;
+  deliveryId?: string;
+  providerMessageId?: string;
+  updatedAt?: string;
+}) {
+  return [
+    BUYER_VIEWING_PLAN_NOTE_START,
+    `Status: ${status}`,
+    `Selected property ids: ${
+      selectedPropertyIds.map(normalizeText).filter(Boolean).join(", ")
+    }`,
+    "Confirmed property ids: ",
+    "Buyer availability windows: ",
+    "Buyer response notes: ",
+    "Seller recipients: ",
+    "Seller coordination notes: ",
+    "Booked property ids: ",
+    "Booked appointment ids: ",
+    `Buyer availability requested at: ${requestedAt}`,
+    "Buyer responded at: ",
+    "Seller availability requested at: ",
+    "Viewing appointments booked at: ",
+    `Buyer email: ${recipientEmail}`,
+    `Buyer email delivery status: ${deliveryStatus}`,
+    `Buyer email delivery id: ${deliveryId}`,
+    `Buyer email provider message id: ${providerMessageId}`,
+    "Buyer email delivery failure: ",
+    "Seller email delivery status: ",
+    "Seller email delivery ids: ",
+    "Seller email provider message ids: ",
+    "Seller email delivery failure: ",
+    `Updated at: ${updatedAt}`,
+    BUYER_VIEWING_PLAN_NOTE_END,
+  ].join("\n");
+}
+
+function mergeBuyerViewingPlanNotes(notes = "", block = "") {
+  return [stripBuyerViewingPlanNoteBlock(notes), normalizeText(block)]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function jobTitleLabel(value: unknown) {
@@ -1102,6 +1210,7 @@ function buildCanonicalPayload(
     areaInterest: normalizeText(parsedFields.areaInterest),
     propertyInterest,
     propertyAddress,
+    propertyLink: normalizeText(parsedFields.propertyLink),
     enquiredPropertyTitle: propertyTitle,
     enquiredPropertyAddress: propertyAddress,
     enquiredPropertyPrice: propertyPrice,
@@ -1814,6 +1923,95 @@ async function invokeSendEmailFunction({
   return data as JsonRecord;
 }
 
+async function createAutomaticBuyerViewingPreferenceLink({
+  client,
+  organisationId,
+  leadId,
+  recipient,
+  organisationName,
+  canonical,
+  agent,
+}: {
+  client: SupabaseClientLike;
+  organisationId: string;
+  leadId: string;
+  recipient: string;
+  organisationName: string;
+  canonical: JsonRecord;
+  agent: {
+    name: string;
+    email: string;
+  };
+}) {
+  if (!isUuidLike(organisationId) || !isUuidLike(leadId) || !recipient) {
+    return null;
+  }
+  const propertyId = isUuidLike(canonical.listingId)
+    ? normalizeText(canonical.listingId)
+    : `lead-${leadId}`;
+  const price = Number(canonical.enquiredPropertyPrice || 0) || 0;
+  const propertyTitle = pickText(
+    canonical.enquiredPropertyTitle,
+    canonical.propertyInterest,
+    canonical.enquiredPropertyAddress,
+    "Property enquiry",
+  );
+  const property = {
+    id: propertyId,
+    title: propertyTitle,
+    price: price ? `R ${price.toLocaleString("en-ZA")}` : "",
+    area: pickText(canonical.enquiredPropertyAddress, canonical.areaInterest),
+    match: "",
+    imageUrl: "",
+    link: safeUrl(canonical.propertyLink),
+  };
+  const token = randomToken();
+  const tokenHash = await sha256UrlSafe(token);
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
+    .toISOString();
+  const insert = await client
+    .from("buyer_viewing_preference_links")
+    .insert({
+      organisation_id: organisationId,
+      lead_id: leadId,
+      contact_email: recipient,
+      organisation_name: organisationName,
+      buyer_name: normalizeText(canonical.name) || null,
+      agent_name: agent.name || null,
+      agent_email: agent.email || null,
+      token_hash: tokenHash,
+      selected_property_ids: [propertyId],
+      properties: [property],
+      created_by: isUuidLike(canonical.assignedAgentId)
+        ? normalizeText(canonical.assignedAgentId)
+        : null,
+      last_sent_at: now,
+      expires_at: expiresAt,
+    })
+    .select("id, expires_at")
+    .single();
+  if (insert.error) {
+    if (isMissingTableError(insert.error, "buyer_viewing_preference_links")) {
+      console.warn(
+        "[inbound-lead-email] buyer viewing preference links table unavailable; sending passive acknowledgement",
+      );
+      return null;
+    }
+    throw insert.error;
+  }
+  return {
+    linkId: normalizeText(insert.data?.id),
+    preferenceLink: `${safeAppOrigin()}/viewing-preferences/${
+      encodeURIComponent(token)
+    }`,
+    expiresAt: normalizeText(insert.data?.expires_at) || expiresAt,
+    property,
+    selectedPropertyIds: [propertyId],
+    createdAt: now,
+  };
+}
+
 async function dispatchLeadAcknowledgementEmail({
   client,
   supabaseUrl,
@@ -1934,9 +2132,22 @@ async function dispatchLeadAcknowledgementEmail({
     );
   }
 
-  const subject = "Thanks for your property enquiry";
+  const viewingPreference = await createAutomaticBuyerViewingPreferenceLink({
+    client,
+    organisationId,
+    leadId,
+    recipient,
+    organisationName,
+    canonical,
+    agent,
+  });
+  const subject = viewingPreference?.preferenceLink
+    ? "Choose your preferred viewing times"
+    : "Thanks for your property enquiry";
   const emailPayload: JsonRecord = {
-    type: "lead_acknowledgement",
+    type: viewingPreference?.preferenceLink
+      ? "buyer_viewing_availability_request"
+      : "lead_acknowledgement",
     to: recipient,
     subject,
     replyTo,
@@ -1970,6 +2181,10 @@ async function dispatchLeadAcknowledgementEmail({
     timezone: pickText(organisation.timezone, "Africa/Johannesburg"),
     source: normalizeText(canonical.source),
     originalMessage: cleanPublicText(canonical.message, 500),
+    actionLink: viewingPreference?.preferenceLink || "",
+    preferenceLink: viewingPreference?.preferenceLink || "",
+    propertyCount: viewingPreference?.property ? 1 : 0,
+    properties: viewingPreference?.property ? [viewingPreference.property] : [],
     agentName: agent.name,
     agentFirstName: agent.firstName,
     agentEmail: agent.email,
@@ -1993,10 +2208,14 @@ async function dispatchLeadAcknowledgementEmail({
   const metadata = {
     event: "lead.enquiry_received",
     channel: "email",
-    template: "lead_acknowledgement",
+    template: viewingPreference?.preferenceLink
+      ? "buyer_viewing_availability_request"
+      : "lead_acknowledgement",
     inboundEmailId,
     providerMessageId: inbound.providerMessageId,
     replyTo,
+    buyerViewingPreferenceLinkId: viewingPreference?.linkId || null,
+    buyerViewingPreferenceLinkExpiresAt: viewingPreference?.expiresAt || null,
   };
   let outbox: JsonRecord | null = null;
   try {
@@ -2054,6 +2273,31 @@ async function dispatchLeadAcknowledgementEmail({
       sendResult.providerMessageId || sendResult.emailId,
     );
     const sentAt = new Date().toISOString();
+    if (viewingPreference?.preferenceLink) {
+      const viewingNotes = mergeBuyerViewingPlanNotes(
+        normalizeText(lead?.notes),
+        buildBuyerViewingPlanNoteBlock({
+          status: "buyer_availability",
+          selectedPropertyIds: viewingPreference.selectedPropertyIds,
+          requestedAt: sentAt,
+          recipientEmail: recipient,
+          deliveryStatus: "sent",
+          deliveryId: normalizeText(sendResult.deliveryId),
+          providerMessageId,
+          updatedAt: sentAt,
+        }),
+      );
+      const notesUpdate = await client
+        .from("leads")
+        .update({ notes: viewingNotes, updated_at: sentAt })
+        .eq("lead_id", leadId);
+      if (notesUpdate.error) {
+        console.warn(
+          "[inbound-lead-email] viewing planner note update failed",
+          notesUpdate.error,
+        );
+      }
+    }
     await markAcknowledgementOutbox(client, outbox?.id, {
       status: "sent",
       provider_message_id: providerMessageId || null,

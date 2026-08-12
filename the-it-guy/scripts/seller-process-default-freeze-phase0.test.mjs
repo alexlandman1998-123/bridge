@@ -170,11 +170,18 @@ function assertStepStates(journey, currentKey, completedKeys = []) {
 {
   const manualOnly = canTransitionPrivateListing({
     listingStatus: 'mandate_sent',
+    mandateStatus: 'signed_external_pending_upload',
+    documents: [{ document_type: 'manual_mandate_evidence', status: 'uploaded' }],
+  }, 'mandate_signed', { allowOverride: true })
+  assert.equal(manualOnly.allowed, false)
+  assert.match(manualOnly.nonOverridableBlockers.join(' '), /canonical mandate packet or manual signed mandate upload/i)
+
+  const manualUploaded = canTransitionPrivateListing({
+    listingStatus: 'mandate_sent',
     mandateStatus: 'signed_uploaded',
     documents: [{ document_type: 'signed_mandate', status: 'uploaded', storage_path: 'uploads/signed.pdf' }],
   }, 'mandate_signed', { allowOverride: true })
-  assert.equal(manualOnly.allowed, false)
-  assert.match(manualOnly.nonOverridableBlockers.join(' '), /canonical mandate packet/i)
+  assert.equal(manualUploaded.allowed, true)
 
   const canonical = canTransitionPrivateListing({
     listingStatus: 'mandate_sent',

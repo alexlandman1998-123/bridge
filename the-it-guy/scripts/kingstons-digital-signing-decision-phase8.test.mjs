@@ -10,6 +10,8 @@ import {
 const repoRoot = process.cwd()
 const agencyPage = fs.readFileSync(path.join(repoRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
 const listingPage = fs.readFileSync(path.join(repoRoot, 'src/pages/AgentListingDetail.jsx'), 'utf8')
+const removedPauseLabel = ['Digital signing', 'paused'].join(' ')
+const removedSellerPackAction = ['Upload the signed Seller Pack documents', 'instead.'].join(' ')
 
 function assertIncludes(source, snippet, message) {
   assert.ok(source.includes(snippet), message)
@@ -18,7 +20,8 @@ function assertIncludes(source, snippet, message) {
 assert.equal(KINGSTONS_DIGITAL_SIGNING_DECISION_VERSION, 'kingstons_digital_signing_decision_phase8_v1')
 assert.equal(KINGSTONS_DIGITAL_SIGNING_DECISION.status, 'paused')
 assert.equal(KINGSTONS_DIGITAL_SIGNING_DECISION.livePath, 'manual_seller_pack')
-assert.equal(KINGSTONS_DIGITAL_SIGNING_DECISION.agentAction, 'Upload the signed Seller Pack documents instead.')
+assert.equal(KINGSTONS_DIGITAL_SIGNING_DECISION.label, '')
+assert.equal(KINGSTONS_DIGITAL_SIGNING_DECISION.agentAction, '')
 
 const kingstonsDecision = buildKingstonsDigitalSigningDecision({
   isKingstons: true,
@@ -26,8 +29,7 @@ const kingstonsDecision = buildKingstonsDigitalSigningDecision({
 })
 assert.equal(kingstonsDecision.blocked, true)
 assert.equal(kingstonsDecision.status, 'paused')
-assert.match(kingstonsDecision.message, /Digital mandate generation and signing is paused for Kingstons/)
-assert.match(kingstonsDecision.message, /Upload the signed Seller Pack documents instead/)
+assert.equal(kingstonsDecision.message, '')
 
 const ordinaryDecision = buildKingstonsDigitalSigningDecision({
   isKingstons: false,
@@ -53,13 +55,8 @@ assertIncludes(
 )
 assertIncludes(
   agencyPage,
-  'setError(selectedLeadKingstonsDigitalSigningDecision.message)',
-  'Lead digital mandate blockers must use the shared decision message.',
-)
-assertIncludes(
-  agencyPage,
-  'data-testid="kingstons-digital-signing-decision"',
-  'Lead workspace must render a visible digital signing decision point.',
+  "handleLeadWorkspaceTabSelection('documents')",
+  'Lead digital mandate blockers must route agents to documents.',
 )
 
 assertIncludes(
@@ -74,18 +71,18 @@ assertIncludes(
 )
 assertIncludes(
   listingPage,
-  'setDetailError(listingKingstonsDigitalSigningDecision.message)',
-  'Listing digital mandate blockers must use the shared decision message.',
-)
-assertIncludes(
-  listingPage,
-  'data-testid="kingstons-listing-digital-signing-decision"',
-  'Listing workspace must render a visible digital signing decision point.',
+  "openSellerWorkspaceSection('documents')",
+  'Listing digital mandate blockers must route agents to documents.',
 )
 assertIncludes(
   listingPage,
   'open={mandateStartOpen && !listingHasKingstonsSellerProcess}',
   'Kingston listings must still suppress the digital mandate start modal.',
 )
+assert.equal(agencyPage.includes(removedPauseLabel), false)
+assert.equal(listingPage.includes(removedPauseLabel), false)
+assert.equal(agencyPage.includes(removedSellerPackAction), false)
+assert.equal(listingPage.includes(removedSellerPackAction), false)
+assert.equal(listingPage.includes('kingstons-listing-digital-signing-decision'), false)
 
 console.log('Kingstons digital signing decision phase 8 guard passed.')

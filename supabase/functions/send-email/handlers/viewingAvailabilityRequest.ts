@@ -68,21 +68,28 @@ export async function handleBuyerViewingAvailabilityRequestEmail(
     return jsonResponse(400, { error: "Missing required field: to" });
   }
 
-  const buyerName = normalizeText(payload.buyerName || payload.recipientName) ||
-    "there";
-  const agentName = normalizeText(payload.agentName) || "your agent";
-  const agentEmail = normalizeText(payload.agentEmail).toLowerCase();
+  const buyerName = normalizeText(
+    payload.buyerName || payload.recipientName || payload.recipient_name,
+  ) || "there";
+  const agentName = normalizeText(payload.agentName || payload.agent_name) ||
+    "your agent";
+  const agentEmail = normalizeText(payload.agentEmail || payload.agent_email)
+    .toLowerCase();
   const note = normalizeText(payload.note || payload.message);
   const properties = normalizeProperties(payload.properties);
-  const organisationName = normalizeText(payload.organisationName) ||
+  const organisationName = normalizeText(
+    payload.organisationName || payload.organisation_name,
+  ) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
     "Arch9";
-  const supportEmail = normalizeText(payload.supportEmail) ||
+  const supportEmail =
+    normalizeText(payload.supportEmail || payload.support_email) ||
     agentEmail ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
     normalizeText(Deno.env.get("SUPPORT_EMAIL"));
-  const supportPhone = normalizeText(payload.supportPhone) ||
+  const supportPhone =
+    normalizeText(payload.supportPhone || payload.support_phone) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
   const rawPayload = payload as Record<string, unknown>;
@@ -105,8 +112,8 @@ export async function handleBuyerViewingAvailabilityRequestEmail(
   const propertyCount = properties.length || Number(payload.propertyCount || 0);
   const subject = normalizeText(payload.subject) ||
     (propertyCount > 1
-      ? `Viewing options from ${branding.organisationName}`
-      : `Viewing availability request from ${branding.organisationName}`);
+      ? `Choose your preferred viewing times (${propertyCount} options)`
+      : "Choose your preferred viewing times");
   const html = buildBuyerViewingAvailabilityRequestEmailHtml({
     buyerName,
     agentName,

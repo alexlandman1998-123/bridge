@@ -83,7 +83,9 @@ const PRIVATE_LISTING_TRANSITIONS = {
 }
 
 const CANONICAL_MANDATE_COMPLETION_TARGETS = new Set(['mandate_signed', 'active'])
-const CANONICAL_MANDATE_COMPLETION_BLOCKER = 'A completed canonical mandate packet with a final signed artifact is required before this listing can move to a signed or active stage.'
+const MANDATE_COMPLETION_BLOCKER = 'A completed canonical mandate packet or manual signed mandate upload is required before activating this listing.'
+const MANUAL_SIGNED_MANDATE_STATUSES = new Set(['signed_uploaded', 'uploaded_signed'])
+const MANUAL_SIGNED_MANDATE_DOCUMENT_STATUSES = new Set(['uploaded', 'completed', 'approved', 'verified', 'signed', 'signed_uploaded', 'uploaded_signed'])
 
 const PRIVATE_LISTING_STATUS_SIDE_EFFECTS = {
   onboarding_sent: {
@@ -190,10 +192,71 @@ function hasCanonicalFinalMandatePacket(listing = {}) {
   return Boolean(packetId && completed && finalArtifactPath)
 }
 
-function getCanonicalMandateCompletionBlocker(listing = {}, targetStatus = '') {
+function getListingDocumentRows(listing = {}, metadata = {}) {
+  return [
+    ...(Array.isArray(metadata?.documents) ? metadata.documents : []),
+    ...(Array.isArray(listing?.documents) ? listing.documents : []),
+    ...(Array.isArray(listing?.private_listing_documents) ? listing.private_listing_documents : []),
+    ...(Array.isArray(listing?.sellerDocuments) ? listing.sellerDocuments : []),
+    ...(Array.isArray(listing?.seller_documents) ? listing.seller_documents : []),
+  ]
+}
+
+function hasManualSignedMandateDocument(listing = {}, metadata = {}) {
+  const directArtifact = normalizeText(
+    metadata?.mandateSignedDocumentPath ||
+      metadata?.mandate_signed_document_path ||
+      metadata?.mandateSignedDocumentUrl ||
+      metadata?.mandate_signed_document_url ||
+      listing?.mandateSignedDocumentPath ||
+      listing?.mandate_signed_document_path ||
+      listing?.mandateSignedDocumentUrl ||
+      listing?.mandate_signed_document_url,
+  )
+  if (directArtifact) return true
+
+  return getListingDocumentRows(listing, metadata).some((document) => {
+    const searchable = [
+      document?.document_type,
+      document?.documentType,
+      document?.category,
+      document?.document_name,
+      document?.documentName,
+      document?.file_name,
+      document?.fileName,
+      document?.name,
+    ].map((value) => normalizeKey(value)).join(' ')
+    const mandateLike = searchable.includes('mandate')
+    const status = normalizeKey(document?.status || document?.documentStatus || document?.document_status)
+    const uploadArtifact = normalizeText(
+      document?.storage_path ||
+        document?.storagePath ||
+        document?.file_path ||
+        document?.filePath ||
+        document?.file_url ||
+        document?.fileUrl ||
+        document?.url ||
+        document?.documentUrl ||
+        document?.document_url ||
+        document?.id,
+    )
+    return mandateLike && MANUAL_SIGNED_MANDATE_DOCUMENT_STATUSES.has(status) && Boolean(uploadArtifact)
+  })
+}
+
+function hasManualSignedMandateUpload(listing = {}, metadata = {}) {
+  const mandateStatus = normalizeKey(metadata?.mandateStatus || metadata?.mandate_status || listing?.mandateStatus || listing?.mandate_status)
+  return MANUAL_SIGNED_MANDATE_STATUSES.has(mandateStatus) || hasManualSignedMandateDocument(listing, metadata)
+}
+
+function hasMandateCompletionProof(listing = {}, metadata = {}) {
+  return hasCanonicalFinalMandatePacket(listing) || hasManualSignedMandateUpload(listing, metadata)
+}
+
+function getMandateCompletionBlocker(listing = {}, targetStatus = '', metadata = {}) {
   const normalizedTarget = mapLegacyListingStatusToCanonicalStatus(targetStatus)
   if (!CANONICAL_MANDATE_COMPLETION_TARGETS.has(normalizedTarget)) return ''
-  return hasCanonicalFinalMandatePacket(listing) ? '' : CANONICAL_MANDATE_COMPLETION_BLOCKER
+  return hasMandateCompletionProof(listing, metadata) ? '' : MANDATE_COMPLETION_BLOCKER
 }
 
 function isOnboardingCompleted(listing = {}, metadata = {}) {
@@ -325,8 +388,8 @@ export function evaluatePrivateListingTransitionGuards(listing = {}, targetStatu
     }
   }
 
-  const canonicalMandateCompletionBlocker = getCanonicalMandateCompletionBlocker(listing, normalizedTarget)
-  if (canonicalMandateCompletionBlocker) blockers.push(canonicalMandateCompletionBlocker)
+  const mandateCompletionBlocker = getMandateCompletionBlocker(listing, normalizedTarget, metadata)
+  if (mandateCompletionBlocker) blockers.push(mandateCompletionBlocker)
 
   if (normalizedTarget === 'under_offer') {
     const currentStatus = getPrivateListingLifecycleState(listing)
@@ -366,8 +429,8 @@ export function canTransitionPrivateListing(listing = {}, targetStatus, { allowO
   const allowedTargets = getAllowedPrivateListingTransitions(currentStatus)
   const transitionAllowed = allowedTargets.includes(normalizedTarget)
   const blockers = evaluatePrivateListingTransitionGuards(listing, normalizedTarget, metadata)
-  const canonicalMandateCompletionBlocker = getCanonicalMandateCompletionBlocker(listing, normalizedTarget)
-  const nonOverridableBlockers = canonicalMandateCompletionBlocker ? [canonicalMandateCompletionBlocker] : []
+  const mandateCompletionBlocker = getMandateCompletionBlocker(listing, normalizedTarget, metadata)
+  const nonOverridableBlockers = mandateCompletionBlocker ? [mandateCompletionBlocker] : []
   const allowed = transitionAllowed && nonOverridableBlockers.length === 0 && (allowOverride || blockers.length === 0)
 
   return {
