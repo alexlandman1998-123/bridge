@@ -16,6 +16,7 @@ try {
   })
 
   try {
+    const config = await server.ssrLoadModule('/src/config/bondViews.js')
     const page = await server.ssrLoadModule('/src/pages/bond/BondTransactionsPage.jsx')
     const {
       buildHqApplicationRegisterRows,
@@ -26,7 +27,17 @@ try {
       isHqApplicationsScope,
       matchesApplicationWorkspaceTab,
       matchesHqApplicationWorkspaceTab,
+      ReferralCommissionReconciliationPanel,
     } = page
+    const { bondViews, getBondTransactionView } = config
+
+    assert.deepEqual(bondViews.transactions.tabs.map((tab) => tab.label), ['Overview', 'Bond application', 'Documents', 'Quotes & Grant', 'Reconciliation'])
+    assert.equal(getBondTransactionView().key, 'overview')
+    assert.equal(getBondTransactionView('incoming').key, 'documents')
+    assert.equal(getBondTransactionView('processing').key, 'quotes_grant')
+    assert.equal(getBondTransactionView('registered').key, 'reconciliation')
+    assert.equal(getBondTransactionView('declined').key, 'reconciliation')
+    assert.equal(getBondTransactionView('recon').key, 'reconciliation')
 
     assert.equal(isHqApplicationsScope({ reportingScope: { dashboardMode: 'owner_director' } }, {}), true)
     assert.equal(isHqApplicationsScope({}, { currentMembership: { scope_level: 'workspace_hq' } }), true)
@@ -122,9 +133,20 @@ try {
     assert.equal(kpis.instructions_issued, 1)
     assert.equal(Object.keys(kpis).length, 5)
 
-    assert.equal(matchesHqApplicationWorkspaceTab(rows.find((row) => row.key === 'tx-ready'), 'incoming'), true)
-    assert.equal(matchesHqApplicationWorkspaceTab(rows.find((row) => row.key === 'tx-feedback'), 'processing'), true)
+    assert.equal(matchesHqApplicationWorkspaceTab(rows.find((row) => row.key === 'tx-ready'), 'overview'), true)
+    assert.equal(matchesHqApplicationWorkspaceTab(rows.find((row) => row.key === 'tx-unassigned'), 'bond_application'), true)
+    assert.equal(matchesHqApplicationWorkspaceTab(rows.find((row) => row.key === 'tx-ready'), 'documents'), true)
+    assert.equal(matchesHqApplicationWorkspaceTab(rows.find((row) => row.key === 'tx-feedback'), 'quotes_grant'), true)
     assert.equal(matchesHqApplicationWorkspaceTab(rows.find((row) => row.key === 'tx-instruction'), 'registered'), false)
+    assert.equal(matchesHqApplicationWorkspaceTab({ statusKey: 'registered' }, 'reconciliation'), true)
+    assert.equal(matchesHqApplicationWorkspaceTab({ statusKey: 'declined' }, 'reconciliation'), true)
+    assert.equal(matchesHqApplicationWorkspaceTab({ statusKey: 'registered' }, 'recon'), true)
+    assert.equal(matchesApplicationWorkspaceTab({ financeStageKey: 'bond_application_open' }, 'bond_application'), true)
+    assert.equal(matchesApplicationWorkspaceTab({ financeStageKey: 'ready_for_review' }, 'documents'), true)
+    assert.equal(matchesApplicationWorkspaceTab({ financeStageKey: 'submitted_to_banks' }, 'quotes_grant'), true)
+    assert.equal(matchesApplicationWorkspaceTab({ status: 'registered' }, 'reconciliation'), true)
+    assert.equal(matchesApplicationWorkspaceTab({ status: 'cancelled' }, 'reconciliation'), true)
+    assert.equal(matchesApplicationWorkspaceTab({ status: 'registered' }, 'recon'), true)
     assert.equal(matchesApplicationWorkspaceTab({ financeStageKey: 'ready_for_review' }, 'incoming'), true)
     assert.equal(matchesApplicationWorkspaceTab({ financeStageKey: 'submitted_to_banks' }, 'processing'), true)
     assert.equal(matchesApplicationWorkspaceTab({ status: 'registered' }, 'registered'), true)
@@ -141,6 +163,29 @@ try {
     assert.match(rowMarkup, /R 2 400 000/)
     assert.match(rowMarkup, /West|National Road|Pending Street|Lender Lane|Attorney Avenue/)
     assert.doesNotMatch(rowMarkup, /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i)
+
+    const reconciliationMarkup = renderToStaticMarkup(
+      React.createElement(ReferralCommissionReconciliationPanel, {
+        rows: [
+          {
+            transactionId: 'tx-registered',
+            transactionReference: 'APP-900',
+            client: 'Registered Buyer',
+            property: '9 Transfer Road',
+            status: 'registered',
+            bondAmount: 2400000,
+            referralCommissionRate: 0.3,
+            referralAgencyName: 'Summit Realty',
+          },
+        ],
+        onOpenApplication: () => {},
+      }),
+    )
+    assert.match(reconciliationMarkup, /Referral Commission Reconciliation/)
+    assert.match(reconciliationMarkup, /not visible to the client/i)
+    assert.match(reconciliationMarkup, /Summit Realty/)
+    assert.match(reconciliationMarkup, /R 7 200/)
+    assert.match(reconciliationMarkup, /Confirm referral commission/)
 
     console.log('BondTransactionsPage tests passed')
   } finally {

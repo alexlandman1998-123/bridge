@@ -2895,6 +2895,151 @@ function buildManagementPerformanceTables(rows = [], bankPerformance = {}) {
   return { consultants, partners, banks }
 }
 
+function getManagementTargetValue(reportingScope = {}) {
+  const candidates = [
+    reportingScope?.organisationTargets?.bondApplications,
+    reportingScope?.organisationTargets?.applications,
+    reportingScope?.organizationTargets?.bondApplications,
+    reportingScope?.organizationTargets?.applications,
+    reportingScope?.targets?.bondApplications,
+    reportingScope?.targets?.applications,
+    reportingScope?.monthlyApplicationTarget,
+    reportingScope?.applicationTarget,
+  ]
+  return candidates.map((value) => normalizeNumber(value, 0)).find((value) => value > 0) || 0
+}
+
+function buildManagementTargetTracker(activeRows = [], reportingScope = {}) {
+  const actual = activeRows.length
+  const target = getManagementTargetValue(reportingScope) || Math.max(100, Math.ceil(actual / 10) * 10)
+  const progress = target ? Math.round((actual / target) * 100) : 0
+
+  return {
+    key: 'applications_target',
+    label: 'Target Tracker',
+    actual,
+    target,
+    progress,
+    helper: target ? `${Math.max(target - actual, 0)} applications remaining this period` : 'Set monthly targets under organisation targets',
+    href: '/settings/organisation#targets',
+  }
+}
+
+function buildManagementClientRankings(rows = []) {
+  const clients = groupRows(rows, (row) => getBuyerName(row) || 'Client pending')
+    .map((group) => {
+      const value = group.rows.reduce((sum, row) => sum + getPipelineLoanValue(row), 0)
+      return {
+        key: group.key,
+        client: group.key,
+        count: group.rows.length,
+        value,
+        valueLabel: formatCurrency(value),
+      }
+    })
+    .filter((row) => row.count > 0)
+
+  return {
+    byVolume: [...clients]
+      .sort((left, right) => right.count - left.count || right.value - left.value)
+      .slice(0, 5),
+    byValue: [...clients]
+      .sort((left, right) => right.value - left.value || right.count - left.count)
+      .slice(0, 5),
+  }
+}
+
+function buildManagementBankApprovalRanking(bankPerformance = {}) {
+  return (bankPerformance.rows || [])
+    .map((row) => ({
+      key: normalizeText(row.bank || row.name).toLowerCase() || 'bank',
+      bank: normalizeText(row.bank || row.name) || 'Bank pending',
+      submitted: normalizeNumber(row.submitted || row.total, 0),
+      approved: normalizeNumber(row.approved, 0),
+      approvalRate: normalizeNumber(row.approvalRate, 0),
+      averageResponseTime: normalizeNumber(row.averageResponseTime, 0),
+    }))
+    .filter((row) => row.submitted > 0)
+    .sort((left, right) => right.approvalRate - left.approvalRate || right.approved - left.approved || left.averageResponseTime - right.averageResponseTime)
+    .slice(0, 6)
+}
+
+function getCapturedInterestRates(row = {}) {
+  const tx = row?.transaction || {}
+  const offerRows = [
+    row?.offerCaptures,
+    row?.offer_captures,
+    row?.bondOfferCaptures,
+    row?.bond_offer_captures,
+    tx.offerCaptures,
+    tx.offer_captures,
+    tx.bondOfferCaptures,
+    tx.bond_offer_captures,
+  ].find((items) => Array.isArray(items) && items.length) || []
+  const submissionRows = getBankSubmissionRows(row)
+  const directRates = [
+    tx.interest_rate,
+    tx.interestRate,
+    tx.accepted_interest_rate,
+    tx.acceptedInterestRate,
+    tx.approved_interest_rate,
+    tx.approvedInterestRate,
+  ]
+  const rates = [
+    ...directRates,
+    ...offerRows.map((offer) => offer.interestRate ?? offer.interest_rate ?? offer.rate),
+    ...submissionRows.map((submission) => submission.interestRate ?? submission.interest_rate ?? submission.rate),
+  ]
+    .map((value) => normalizeNumber(value, null))
+    .filter((value) => value !== null && value > 0)
+
+  return rates.map((value) => value > 1 ? value : value * 100)
+}
+
+function averageManagementValues(values = []) {
+  const numeric = values.filter((value) => Number.isFinite(value))
+  if (!numeric.length) return null
+  return numeric.reduce((sum, value) => sum + value, 0) / numeric.length
+}
+
+function buildManagementVisualMetrics(rows = []) {
+  const loanAmounts = rows.map(getPipelineLoanValue).filter((value) => value > 0)
+  const interestRates = rows.flatMap(getCapturedInterestRates)
+  const approvalTimes = rows
+    .map((row) => daysBetween(getApplicationCreatedAt(row), getFirstBankDecisionAt(row)))
+    .filter((value) => value !== null)
+  const avgLoanAmount = averageManagementValues(loanAmounts)
+  const avgInterestRate = averageManagementValues(interestRates)
+  const avgApprovalTime = averageManagementValues(approvalTimes)
+
+  return [
+    {
+      key: 'average_loan_amount',
+      label: 'Average Loan Amount',
+      value: avgLoanAmount === null ? 'No data yet' : formatCurrency(avgLoanAmount),
+      detail: `${loanAmounts.length} applications measured`,
+      values: loanAmounts.slice(-12),
+      tone: '#24518a',
+    },
+    {
+      key: 'average_interest_rate',
+      label: 'Average Interest Rate',
+      value: avgInterestRate === null ? 'No data yet' : `${roundTo(avgInterestRate, 2)}%`,
+      detail: `${interestRates.length} captured rates measured`,
+      values: interestRates.slice(-12),
+      tone: '#16875f',
+    },
+    {
+      key: 'average_time_to_approval',
+      label: 'Avg. Time to Approval',
+      value: avgApprovalTime === null ? 'No data yet' : `${roundTo(avgApprovalTime, 1)} days`,
+      detail: `${approvalTimes.length} bank decisions measured`,
+      values: approvalTimes.slice(-12),
+      tone: '#b7791f',
+    },
+  ]
+}
+
 function buildBondManagementOverview({
   allRows = [],
   periodRows = [],
@@ -2974,7 +3119,11 @@ function buildBondManagementOverview({
       },
     ],
     pipeline: buildManagementPipeline(scopedRows, selectedRows),
+    targetTracker: buildManagementTargetTracker(activeRows, reportingScope),
     summaryStrip: buildManagementSummaryStrip(selectedRows),
+    clientRankings: buildManagementClientRankings(scopedRows),
+    bankApprovalRanking: buildManagementBankApprovalRanking(bankPerformance),
+    visualMetrics: buildManagementVisualMetrics(selectedRows.length ? selectedRows : scopedRows),
     sla: buildManagementSla(scopedRows),
     commission,
     performanceTables: buildManagementPerformanceTables(scopedRows, bankPerformance),

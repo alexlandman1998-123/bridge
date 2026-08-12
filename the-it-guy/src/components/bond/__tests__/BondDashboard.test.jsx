@@ -340,11 +340,39 @@ function makeSnapshot(overrides = {}) {
         { key: 'lodged', label: 'Lodged', count: 14, loanValueLabel: 'R 15 700 000', href: '/bond/applications?stage=lodged' },
         { key: 'registered', label: 'Registered', count: 10, loanValueLabel: 'R 11 300 000', href: '/bond/applications?view=registered' },
       ],
+      targetTracker: {
+        key: 'applications_target',
+        label: 'Target Tracker',
+        actual: 118,
+        target: 150,
+        progress: 79,
+        helper: '32 applications remaining this period',
+        href: '/settings/organisation#targets',
+      },
       summaryStrip: [
         { key: 'overall_conversion', label: 'Overall Conversion', value: '31%', detail: '10 of 32 final outcomes', href: '/bond/reports?metric=conversion' },
         { key: 'lost_withdrawn', label: 'Lost / Withdrawn', value: '6 cases', detail: 'R 2 100 000', href: '/bond/applications?view=declined' },
         { key: 'registered_period', label: 'Registered in Period', value: '10 cases', detail: 'R 11 700 000', href: '/bond/applications?view=registered' },
         { key: 'median_registration', label: 'Median Time to Register', value: '32 days', detail: 'Application created to registration', href: '/bond/reports?metric=time-to-register' },
+      ],
+      clientRankings: {
+        byVolume: [
+          { key: 'client-one', client: 'Client One', count: 3, value: 7200000, valueLabel: 'R 7 200 000' },
+          { key: 'client-two', client: 'Client Two', count: 2, value: 5400000, valueLabel: 'R 5 400 000' },
+        ],
+        byValue: [
+          { key: 'client-three', client: 'Client Three', count: 1, value: 8800000, valueLabel: 'R 8 800 000' },
+          { key: 'client-one', client: 'Client One', count: 3, value: 7200000, valueLabel: 'R 7 200 000' },
+        ],
+      },
+      bankApprovalRanking: [
+        { key: 'nedbank', bank: 'Nedbank', submitted: 8, approved: 6, approvalRate: 75, averageResponseTime: 5 },
+        { key: 'fnb', bank: 'FNB', submitted: 6, approved: 3, approvalRate: 58, averageResponseTime: 9 },
+      ],
+      visualMetrics: [
+        { key: 'average_loan_amount', label: 'Average Loan Amount', value: 'R 2 460 000', detail: '42 applications measured', values: [2100000, 2450000, 2600000], tone: '#24518a' },
+        { key: 'average_interest_rate', label: 'Average Interest Rate', value: '11.25%', detail: '18 captured rates measured', values: [10.9, 11.1, 11.25], tone: '#16875f' },
+        { key: 'average_time_to_approval', label: 'Avg. Time to Approval', value: '6.2 days', detail: '36 bank decisions measured', values: [5, 7, 6], tone: '#b7791f' },
       ],
       sla: [
         { key: 'first_contact', label: 'First Contact', value: '0.9 days', target: 'SLA <= 1 day', onTrack: true },
@@ -585,7 +613,7 @@ function makeSnapshot(overrides = {}) {
     assert.match(hqMarkup, /New Buyer Cases/)
     assert.match(hqMarkup, /Active Pipeline/)
     assert.match(hqMarkup, /Approval Rate/)
-    assert.match(hqMarkup, /Registered YTD/)
+    assert.doesNotMatch(hqMarkup, /Registered YTD/)
     assert.match(hqMarkup, /Commission Forecast/)
     assert.match(hqMarkup, /R2\.5m/)
     assert.match(hqMarkup, /R24\.6m/)
@@ -597,6 +625,9 @@ function makeSnapshot(overrides = {}) {
     assert.match(hqMarkup, /Accepted/)
     assert.match(hqMarkup, /Lodged/)
     assert.match(hqMarkup, /Registered/)
+    assert.match(hqMarkup, /Target Tracker/)
+    assert.match(hqMarkup, /Organisation targets/)
+    assert.match(hqMarkup, /79% complete/)
     assert.doesNotMatch(hqMarkup, /Overall Conversion/)
     assert.doesNotMatch(hqMarkup, /Lost \/ Withdrawn/)
     assert.doesNotMatch(hqMarkup, /Registered in Period/)
@@ -606,17 +637,25 @@ function makeSnapshot(overrides = {}) {
     assert.match(hqMarkup, /Client One/)
     assert.match(hqMarkup, /Seller:/)
     assert.match(hqMarkup, /Alex Consultant/)
-    assert.match(hqMarkup, /Application Speed &amp; SLA/)
-    assert.match(hqMarkup, /First Contact/)
-    assert.match(hqMarkup, /Ready to Submit/)
-    assert.match(hqMarkup, /First Bank Decision/)
-    assert.match(hqMarkup, /Cases Within SLA/)
-    assert.match(hqMarkup, /Commission &amp; Reconciliation/)
-    assert.match(hqMarkup, /Forecast \(30 Days\)/)
-    assert.match(hqMarkup, /Pending Payout/)
-    assert.match(hqMarkup, /Paid \(30 Days\)/)
-    assert.match(hqMarkup, /Reconciliation Rate/)
-    assert.match(hqMarkup, /Commission Trend/)
+    assert.doesNotMatch(hqMarkup, /Application Speed &amp; SLA/)
+    assert.doesNotMatch(hqMarkup, /First Contact/)
+    assert.doesNotMatch(hqMarkup, /Ready to Submit/)
+    assert.doesNotMatch(hqMarkup, /First Bank Decision/)
+    assert.doesNotMatch(hqMarkup, /Cases Within SLA/)
+    assert.doesNotMatch(hqMarkup, /Commission &amp; Reconciliation/)
+    assert.doesNotMatch(hqMarkup, /Forecast \(30 Days\)/)
+    assert.doesNotMatch(hqMarkup, /Pending Payout/)
+    assert.doesNotMatch(hqMarkup, /Paid \(30 Days\)/)
+    assert.doesNotMatch(hqMarkup, /Reconciliation Rate/)
+    assert.doesNotMatch(hqMarkup, /Commission Trend/)
+    assert.match(hqMarkup, /Top Clients/)
+    assert.match(hqMarkup, /By Volume/)
+    assert.match(hqMarkup, /By Value/)
+    assert.match(hqMarkup, /Bank Approval Rate Ranking/)
+    assert.match(hqMarkup, /Nedbank/)
+    assert.match(hqMarkup, /Average Loan Amount/)
+    assert.match(hqMarkup, /Average Interest Rate/)
+    assert.match(hqMarkup, /Avg\. Time to Approval/)
     assert.doesNotMatch(hqMarkup, /Prime Realty/)
     assert.doesNotMatch(hqMarkup, /Consultant Performance/)
     assert.doesNotMatch(hqMarkup, /Top Referral Partners/)
@@ -655,9 +694,13 @@ function makeSnapshot(overrides = {}) {
     const hqOrder = [
       'New Buyer Cases',
       'Applications Pipeline',
+      'Target Tracker',
       'Active Applications',
-      'Application Speed',
-      'Commission &amp; Reconciliation',
+      'Top Clients',
+      'Bank Approval Rate Ranking',
+      'Average Loan Amount',
+      'Average Interest Rate',
+      'Avg. Time to Approval',
     ]
     let previousHqIndex = -1
     for (const label of hqOrder) {

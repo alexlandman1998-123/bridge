@@ -189,6 +189,121 @@ function getBondValue(row = {}) {
   return normalizeNumber(row.bondAmount ?? row.requestedFinanceAmount ?? row.financeAmount ?? row.purchasePrice ?? row.salesPrice, 0)
 }
 
+function getFirstNumber(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+function getReferralCommissionRate(row = {}) {
+  return getFirstNumber(
+    row.referralCommissionRate,
+    row.referral_commission_rate,
+    row.referralCommissionPercentage,
+    row.referral_commission_percentage,
+    row.referralLedger?.percentage,
+    row.referralCommission?.percentage,
+    row.referralTerms?.percentage,
+  )
+}
+
+function getReferralCommissionExpectedAmount(row = {}) {
+  const explicitAmount = getFirstNumber(
+    row.referralCommissionAmount,
+    row.referral_commission_amount,
+    row.referralCommissionExpectedAmount,
+    row.referral_commission_expected_amount,
+    row.agencyReferralCommission,
+    row.agency_referral_commission,
+    row.amountExpected,
+    row.amount_expected,
+    row.referralLedger?.amountExpected,
+    row.referralLedger?.amount_expected,
+    row.referralCommission?.amountExpected,
+    row.referralCommission?.amount_expected,
+    row.referralCommission?.amount,
+  )
+  if (explicitAmount !== null) return explicitAmount
+
+  const rate = getReferralCommissionRate(row)
+  const bondValue = getBondValue(row)
+  return rate !== null && bondValue > 0 ? Math.round(bondValue * (rate / 100)) : 0
+}
+
+function getReferralCommissionConfirmedAmount(row = {}) {
+  return getFirstNumber(
+    row.referralCommissionConfirmedAmount,
+    row.referral_commission_confirmed_amount,
+    row.amountConfirmed,
+    row.amount_confirmed,
+    row.referralLedger?.amountConfirmed,
+    row.referralLedger?.amount_confirmed,
+    row.referralCommission?.amountConfirmed,
+    row.referralCommission?.amount_confirmed,
+  ) || 0
+}
+
+function getReferralCommissionStatus(row = {}) {
+  return normalizeKey(
+    row.referralCommissionStatus ||
+      row.referral_commission_status ||
+      row.referralLedger?.status ||
+      row.referralCommission?.status ||
+      row.commissionStatus ||
+      row.commission_status,
+  ) || 'pending'
+}
+
+function isReferralCommissionConfirmed(row = {}) {
+  const status = getReferralCommissionStatus(row)
+  return ['confirmed', 'payable', 'invoiced', 'paid'].includes(status) || getReferralCommissionConfirmedAmount(row) > 0
+}
+
+function getReferralAgencyName(row = {}) {
+  return safeDisplayText(
+    row.referralAgencyName ||
+      row.referral_agency_name ||
+      row.agencyName ||
+      row.agency_name ||
+      row.referringAgency ||
+      row.referring_agency ||
+      row.partner ||
+      row.referralLedger?.beneficiaryName ||
+      row.referralLedger?.beneficiary_name ||
+      row.referralCommission?.beneficiaryName,
+    'Agency pending',
+  )
+}
+
+function buildReferralCommissionRows(rows = []) {
+  return parseRowsForQuery(rows).map((row, index) => {
+    const expectedAmount = getReferralCommissionExpectedAmount(row)
+    const confirmedAmount = getReferralCommissionConfirmedAmount(row)
+    const rate = getReferralCommissionRate(row)
+    const applicationReference = safeDisplayText(row.applicationReferenceDisplay || row.applicationReference || row.transactionReference || row.bondApplicationId, '')
+    const fallbackReference = row.transactionId ? `BND-${normalizeText(row.transactionId).slice(-4).toUpperCase()}` : `APP-${index + 1}`
+    return {
+      key: normalizeText(row.key || row.transactionId || row.bondApplicationId || row.id) || `commission-${index}`,
+      originalRow: row,
+      client: resolvePortalBuyerName(row, { fallback: safeDisplayText(row.client || row.buyerName || row.buyer_name, 'Buyer pending') }),
+      property: resolvePortalPropertyLabel(row, { fallback: safeDisplayText(row.propertyDisplay || row.property || row.propertyAddress, 'Property pending') }),
+      applicationReference: applicationReference || fallbackReference,
+      agencyName: getReferralAgencyName(row),
+      bondValue: getBondValue(row),
+      expectedAmount,
+      confirmedAmount,
+      rate,
+      status: getReferralCommissionStatus(row),
+      confirmed: isReferralCommissionConfirmed(row),
+      invoiceReference: safeDisplayText(row.invoiceReference || row.invoice_reference || row.referralLedger?.invoiceReference || row.referralLedger?.invoice_reference),
+      paymentReference: safeDisplayText(row.paymentReference || row.payment_reference || row.referralLedger?.paymentReference || row.referralLedger?.payment_reference),
+    }
+  })
+}
+
 function truthyFlag(value) {
   return ['true', '1', 'yes', 'on'].includes(normalizeText(value).toLowerCase())
 }
@@ -327,23 +442,31 @@ function resolveHqApplicationStatus(row = {}) {
   return 'intake'
 }
 
-export function matchesApplicationWorkspaceTab(row = {}, tabKey = 'incoming') {
-  const tab = normalizeText(tabKey).toLowerCase() || 'incoming'
+export function matchesApplicationWorkspaceTab(row = {}, tabKey = 'overview') {
+  const tab = normalizeText(tabKey).toLowerCase() || 'overview'
   const stage = resolveBondProgressStage(row)
+  if (tab === 'overview' || tab === 'all') return true
+  if (tab === 'bond_application' || tab === 'bond-app') return stage === 'documents_received'
+  if (tab === 'documents' || tab === 'incoming') return ['documents_reviewed', 'ready_for_review'].includes(stage)
+  if (tab === 'quotes_grant' || tab === 'processing') {
+    return ['applications_submitted', 'quotes_received', 'quote_approved', 'bond_approved', 'grant_received', 'grant_signed', 'grant_submitted', 'instruction_sent'].includes(stage)
+  }
+  if (tab === 'reconciliation' || tab === 'recon') return ['registered', 'declined'].includes(stage)
   if (tab === 'registered') return stage === 'registered'
   if (tab === 'declined') return stage === 'declined'
-  if (tab === 'processing') {
-    return !['documents_received', 'documents_reviewed', 'ready_for_review', 'registered', 'declined'].includes(stage)
-  }
-  return ['documents_received', 'documents_reviewed', 'ready_for_review'].includes(stage)
+  return true
 }
 
-export function matchesHqApplicationWorkspaceTab(row = {}, tabKey = 'incoming') {
-  const tab = normalizeText(tabKey).toLowerCase() || 'incoming'
+export function matchesHqApplicationWorkspaceTab(row = {}, tabKey = 'overview') {
+  const tab = normalizeText(tabKey).toLowerCase() || 'overview'
+  if (tab === 'overview' || tab === 'all') return true
+  if (tab === 'bond_application' || tab === 'bond-app') return row.statusKey === 'intake'
+  if (tab === 'documents' || tab === 'incoming') return row.statusKey === 'docs'
+  if (tab === 'quotes_grant' || tab === 'processing') return ['submitted_to_banks', 'bank_feedback', 'approved', 'instruction_sent'].includes(row.statusKey)
+  if (tab === 'reconciliation' || tab === 'recon') return ['registered', 'declined'].includes(row.statusKey)
   if (tab === 'registered') return row.statusKey === 'registered'
   if (tab === 'declined') return row.statusKey === 'declined'
-  if (tab === 'processing') return ['submitted_to_banks', 'bank_feedback', 'approved', 'instruction_sent'].includes(row.statusKey)
-  return ['intake', 'docs'].includes(row.statusKey)
+  return true
 }
 
 function getFriendlyNextAction(row = {}, statusKey = resolveHqApplicationStatus(row)) {
@@ -738,6 +861,151 @@ export function HqApplicationsTable({ rows = [], onOpen }) {
   )
 }
 
+export function ReferralCommissionReconciliationPanel({ rows = [], onOpenApplication }) {
+  const [confirmedOverrides, setConfirmedOverrides] = useState({})
+  const commissionRows = useMemo(() => buildReferralCommissionRows(rows), [rows])
+  const resolvedRows = useMemo(
+    () => commissionRows.map((row) => {
+      const override = confirmedOverrides[row.key]
+      return override
+        ? { ...row, confirmed: true, confirmedAmount: override.amount, confirmedAt: override.confirmedAt, status: 'confirmed' }
+        : row
+    }),
+    [commissionRows, confirmedOverrides],
+  )
+  const totals = useMemo(() => resolvedRows.reduce((summary, row) => {
+    summary.expected += row.expectedAmount
+    summary.confirmed += row.confirmed ? (row.confirmedAmount || row.expectedAmount) : 0
+    if (!row.confirmed) summary.pending += 1
+    return summary
+  }, { expected: 0, confirmed: 0, pending: 0 }), [resolvedRows])
+
+  const handleConfirm = useCallback((row) => {
+    setConfirmedOverrides((previous) => ({
+      ...previous,
+      [row.key]: {
+        amount: row.expectedAmount,
+        confirmedAt: new Date().toISOString(),
+      },
+    }))
+  }, [])
+
+  if (!resolvedRows.length) {
+    return (
+      <section className="rounded-[18px] border border-[#dbe5f0] bg-white px-5 py-8 text-center shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
+        <p className="text-base font-semibold text-[#142132]">No referral commissions to reconcile.</p>
+        <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#60758d]">
+          Registered or declined applications with agency referral commission terms will appear here for internal confirmation.
+        </p>
+      </section>
+    )
+  }
+
+  return (
+    <section className="space-y-[clamp(0.9rem,1.2vw,1.25rem)]">
+      <div className="rounded-[18px] border border-[#dce6f2] bg-white px-[clamp(1rem,1.25vw,1.5rem)] py-[clamp(1rem,1.25vw,1.35rem)] shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-lg font-semibold text-[#102448]">Referral Commission Reconciliation</p>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758d]">
+              Internal confirmation of referral commission earned by the agency. These commission amounts are not visible to the client.
+            </p>
+          </div>
+          <span className="inline-flex w-fit rounded-full border border-[#d9e6f2] bg-[#f5f9fd] px-3 py-1.5 text-xs font-semibold text-[#3d5873]">
+            Internal only
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-[clamp(0.75rem,1vw,1rem)] [grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr))]">
+          <div className="rounded-[14px] bg-[#f7faff] px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Expected</p>
+            <p className="mt-1 text-2xl font-semibold text-[#102448]">{formatCurrency(totals.expected)}</p>
+          </div>
+          <div className="rounded-[14px] bg-[#f1fbf6] px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#5f9074]">Confirmed</p>
+            <p className="mt-1 text-2xl font-semibold text-[#0f6a3a]">{formatCurrency(totals.confirmed)}</p>
+          </div>
+          <div className="rounded-[14px] bg-[#fff8eb] px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#9a742d]">Pending</p>
+            <p className="mt-1 text-2xl font-semibold text-[#7d5312]">{totals.pending}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-[clamp(0.75rem,1vw,1rem)]">
+        {resolvedRows.map((row) => (
+          <article
+            key={row.key}
+            className="rounded-[16px] border border-[#dbe5f0] bg-white px-[clamp(1rem,1.3vw,1.45rem)] py-[clamp(1rem,1.2vw,1.35rem)] shadow-[0_12px_28px_rgba(15,23,42,0.04)]"
+          >
+            <div className="grid min-w-0 gap-[clamp(0.9rem,1.1vw,1.25rem)] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.9fr)] lg:items-center">
+              <div className="min-w-0">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <p className="truncate text-base font-semibold text-[#102448]">{row.client}</p>
+                  <span className="rounded-full bg-[#edf3f8] px-2 py-1 text-[11px] font-semibold text-[#526b85]">{row.applicationReference}</span>
+                </div>
+                <p className="mt-1 truncate text-sm font-medium text-[#536b83]">{row.property}</p>
+                <p className="mt-2 text-sm font-semibold text-[#17324d]">{row.agencyName}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Bond Amount</p>
+                  <p className="mt-1 font-semibold text-[#102448]">{formatCurrency(row.bondValue)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Referral Rate</p>
+                  <p className="mt-1 font-semibold text-[#102448]">{row.rate === null ? 'Not set' : `${row.rate}%`}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Expected</p>
+                  <p className="mt-1 font-semibold text-[#102448]">{formatCurrency(row.expectedAmount)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Confirmed</p>
+                  <p className="mt-1 font-semibold text-[#102448]">{formatCurrency(row.confirmed ? (row.confirmedAmount || row.expectedAmount) : row.confirmedAmount)}</p>
+                </div>
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-2 lg:items-end">
+                <span className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold ${
+                  row.confirmed ? 'bg-[#eaf8f0] text-[#0f6a3a]' : 'bg-[#fff8eb] text-[#7d5312]'
+                }`}>
+                  {row.confirmed ? 'Confirmed' : 'Pending confirmation'}
+                </span>
+                <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
+                  {onOpenApplication ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenApplication(row.originalRow)}
+                      className="inline-flex h-10 items-center justify-center rounded-[10px] border border-[#dbe5f0] px-3 text-sm font-semibold text-[#24415d] transition hover:bg-[#f7faff]"
+                    >
+                      Open application
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={row.confirmed || row.expectedAmount <= 0}
+                    onClick={() => handleConfirm(row)}
+                    className="inline-flex h-10 items-center justify-center rounded-[10px] bg-[#07183f] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(7,24,63,0.18)] transition hover:bg-[#102a63] disabled:cursor-not-allowed disabled:bg-[#a5b4c3] disabled:shadow-none"
+                  >
+                    {row.confirmed ? 'Commission confirmed' : 'Confirm referral commission'}
+                  </button>
+                </div>
+                {row.invoiceReference || row.paymentReference ? (
+                  <p className="text-xs font-medium text-[#60758d]">
+                    {[row.invoiceReference && `Invoice ${row.invoiceReference}`, row.paymentReference && `Payment ${row.paymentReference}`].filter(Boolean).join(' • ')}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function HqApplicationsPagination({
   totalRows = 0,
   page = 1,
@@ -925,6 +1193,7 @@ export default function BondTransactionsPage({
     () => Object.entries(HQ_FILTER_DEFAULTS).some(([key, value]) => hqFilters[key] !== value),
     [hqFilters],
   )
+  const isReconciliationView = selectedView.key === 'reconciliation'
 
   const handleHqFilterChange = useCallback((key, value) => {
     setHqFilters((previous) => ({ ...previous, [key]: value }))
@@ -955,6 +1224,14 @@ export default function BondTransactionsPage({
   const handleOpenHqApplication = useCallback(
     (row) => {
       navigate(row.openHref || '/bond/pipeline?view=all')
+    },
+    [navigate],
+  )
+
+  const handleOpenApplication = useCallback(
+    (row) => {
+      const transactionId = normalizeText(row.transactionId || row.id)
+      navigate(row.openHref || (transactionId ? `/bond/files/${encodeURIComponent(transactionId)}` : '/bond/pipeline?view=all'))
     },
     [navigate],
   )
@@ -1061,7 +1338,10 @@ export default function BondTransactionsPage({
 
         {!state.loading && hqRegisterRows.length === 0 ? <HqApplicationsEmptyState /> : null}
         {showFilteredEmpty ? <HqApplicationsEmptyState filtered /> : null}
-        {!state.loading && hqFilteredRows.length > 0 ? (
+        {!state.loading && hqFilteredRows.length > 0 && isReconciliationView ? (
+          <ReferralCommissionReconciliationPanel rows={hqFilteredRows} onOpenApplication={handleOpenHqApplication} />
+        ) : null}
+        {!state.loading && hqFilteredRows.length > 0 && !isReconciliationView ? (
           <>
             <HqApplicationsTable rows={hqPagedRows} onOpen={handleOpenHqApplication} />
             <HqApplicationsPagination
@@ -1135,7 +1415,10 @@ export default function BondTransactionsPage({
         </div>
       </div>
 
-      {snapshot ? <BondTransactionTable rows={filteredRows} /> : null}
+      {snapshot && isReconciliationView ? (
+        <ReferralCommissionReconciliationPanel rows={filteredRows} onOpenApplication={handleOpenApplication} />
+      ) : null}
+      {snapshot && !isReconciliationView ? <BondTransactionTable rows={filteredRows} /> : null}
 
       {state.loading ? (
         <BondEmptyState title="Loading linked bond applications..." description="We are assembling the finance and transfer view now." />

@@ -288,6 +288,15 @@ export async function getBondDashboardReportingScope(user = {}, workspaceId = ''
   const scopeLevel = getScopeFromMembership(scope, resolved)
   const workspaceKind = getWorkspaceKind(user, resolved)
   const resolvedUser = makeResolvedMembership(user, scope, resolvedWorkspaceId)
+  const settingsJson =
+    scope?.settingsJson ||
+    scope?.settings_json ||
+    user?.currentWorkspace?.settingsJson ||
+    user?.currentWorkspace?.settings_json ||
+    user?.organisation?.settingsJson ||
+    user?.organisation?.settings_json ||
+    {}
+  const organisationTargets = settingsJson?.targets && typeof settingsJson.targets === 'object' ? settingsJson.targets : {}
 
   return {
     workspaceId: resolvedWorkspaceId,
@@ -310,6 +319,8 @@ export async function getBondDashboardReportingScope(user = {}, workspaceId = ''
       normalizeText(scope?.workspaceUnitId || resolved.workspaceUnitId),
     ),
     isAssignedOnly: isAssignedOnlyBondUser(resolvedUser, resolvedWorkspaceId),
+    settingsJson,
+    organisationTargets,
     dashboardMode: getDashboardMode({ workspaceKind, workspaceRole }),
   }
 }

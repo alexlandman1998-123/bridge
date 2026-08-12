@@ -801,21 +801,24 @@ function ManagementDashboardHeader({
 }
 
 function ManagementOverviewDashboard({ overview = {}, applications = [], onOpenApplication = () => {} }) {
-  const kpis = Array.isArray(overview.kpis) ? overview.kpis : []
+  const kpis = (Array.isArray(overview.kpis) ? overview.kpis : []).filter((item) => item?.key !== 'registered_ytd')
   const pipeline = Array.isArray(overview.pipeline) ? overview.pipeline : []
-  const sla = Array.isArray(overview.sla) ? overview.sla : []
-  const commission = overview.commission || {}
+  const targetTracker = overview.targetTracker || overview.targets || {}
+  const clientRankings = overview.clientRankings || overview.topClients || {}
+  const bankApprovalRanking = Array.isArray(overview.bankApprovalRanking) ? overview.bankApprovalRanking : []
+  const visualMetrics = Array.isArray(overview.visualMetrics) ? overview.visualMetrics : []
 
   return (
     <div className="space-y-5">
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((item) => <ManagementKpiCard key={item.key} item={item} source={overview.metricSources?.[toMetricSourceKey(item.key)]} />)}
       </section>
 
       <ManagementPipelineSection stages={pipeline} />
+      <ManagementTargetTracker target={targetTracker} />
       <ManagementActiveApplicationsSection applications={applications} onOpenApplication={onOpenApplication} />
-      <ManagementSlaSection items={sla} />
-      <ManagementCommissionSection commission={commission} />
+      <ManagementRankingSection clientRankings={clientRankings} bankApprovalRanking={bankApprovalRanking} />
+      <ManagementVisualMetricGrid metrics={visualMetrics} />
     </div>
   )
 }
@@ -1047,6 +1050,189 @@ function ManagementPipelineSection({ stages = [] }) {
           />
         ))}
       </div>
+    </section>
+  )
+}
+
+function ManagementTargetTracker({ target = {} }) {
+  const actual = normalizeNumber(target.actual ?? target.current ?? target.value)
+  const goal = normalizeNumber(target.target ?? target.goal)
+  const progress = goal ? Math.round((actual / goal) * 100) : normalizeNumber(target.progress)
+  const clampedProgress = Math.max(0, Math.min(100, progress))
+  const remaining = Math.max(goal - actual, 0)
+  const title = normalizeText(target.title || target.label) || 'Target Tracker'
+  const helper = normalizeText(target.helper || target.detail) || (goal ? `${formatNumber(remaining)} applications remaining` : 'Set monthly targets under organisation targets')
+  const goalLabel = goal ? `${formatNumber(actual)} of ${formatNumber(goal)} applications` : `${formatNumber(actual)} applications tracked`
+
+  return (
+    <section className={`${MANAGEMENT_PANEL_BASE} overflow-hidden`}>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-[1.5rem] font-semibold tracking-normal text-[#142132]">{title}</h2>
+            <span className="rounded-full bg-[#eef8f4] px-2.5 py-1 text-[11px] font-bold text-[#16875f] ring-1 ring-[#d2f4e3]">
+              {clampedProgress}% complete
+            </span>
+          </div>
+          <p className="mt-1 text-sm font-medium text-[#60758d]">{goalLabel}</p>
+        </div>
+        <Link to={target.href || '/settings/organisation#targets'} className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-[12px] border border-[#dfe7f0] bg-white px-4 text-xs font-bold text-[#17324d] shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:border-[#b9cadc] sm:w-auto">
+          Organisation targets
+          <ArrowRight size={13} />
+        </Link>
+      </div>
+      <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#e8eef6]" aria-label={`${title}: ${clampedProgress}% complete`}>
+        <span className="block h-full rounded-full bg-[#0b8a5b] transition-all duration-300" style={{ width: `${clampedProgress}%` }} />
+      </div>
+      <div className="mt-3 flex flex-col gap-1 text-xs font-semibold text-[#60758d] sm:flex-row sm:items-center sm:justify-between">
+        <span>{helper}</span>
+        <span>{goal ? `Target ${formatNumber(goal)}` : 'No target set'}</span>
+      </div>
+    </section>
+  )
+}
+
+function ManagementClientRankingList({ title = '', rows = [], metric = 'value' }) {
+  const safeRows = Array.isArray(rows) ? rows.slice(0, 5) : []
+  const maxValue = Math.max(...safeRows.map((row) => metric === 'volume' ? normalizeNumber(row.count || row.applications) : getMoneyValueFromLabel(row.valueLabel || row.value)), 1)
+
+  return (
+    <div className="min-w-0 rounded-[16px] border border-[#e7edf4] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.035)]">
+      <h3 className="text-sm font-semibold text-[#17324d]">{title}</h3>
+      <div className="mt-4 space-y-3">
+        {safeRows.length ? safeRows.map((row, index) => {
+          const value = metric === 'volume' ? normalizeNumber(row.count || row.applications) : getMoneyValueFromLabel(row.valueLabel || row.value)
+          const share = Math.max(6, Math.min(100, Math.round((value / maxValue) * 100)))
+          return (
+            <div key={row.key || `${title}-${index}`} className="min-w-0">
+              <div className="flex min-w-0 items-center justify-between gap-3">
+                <p className="truncate text-sm font-semibold text-[#142132]">{row.client || row.name || 'Client pending'}</p>
+                <p className="shrink-0 text-xs font-bold text-[#204b84]">{metric === 'volume' ? formatNumber(value) : row.valueLabel || formatCompactMoney(value, 'R0')}</p>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e8eef6]">
+                <span className="block h-full rounded-full bg-[#24518a]" style={{ width: `${share}%` }} />
+              </div>
+            </div>
+          )
+        }) : (
+          <p className="rounded-[12px] bg-[#f8fbfd] px-3 py-4 text-center text-xs font-semibold text-[#60758d]">No client data yet</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ManagementTopClientsCard({ rankings = {} }) {
+  const byVolume = Array.isArray(rankings.byVolume) ? rankings.byVolume : []
+  const byValue = Array.isArray(rankings.byValue) ? rankings.byValue : []
+
+  return (
+    <section className={`${MANAGEMENT_PANEL_BASE} min-w-0 overflow-hidden`}>
+      <div className="flex items-start gap-3">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eef6ff] text-[#24518a] ring-1 ring-[#dcecff]">
+          <UsersRound size={17} />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-[1.35rem] font-semibold tracking-normal text-[#142132]">Top Clients</h2>
+          <p className="mt-1 text-sm font-medium text-[#60758d]">By volume and value</p>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-4 2xl:grid-cols-2">
+        <ManagementClientRankingList title="By Volume" rows={byVolume} metric="volume" />
+        <ManagementClientRankingList title="By Value" rows={byValue} metric="value" />
+      </div>
+    </section>
+  )
+}
+
+function ManagementBankApprovalRankingCard({ rows = [] }) {
+  const safeRows = Array.isArray(rows) ? rows.slice(0, 6) : []
+
+  return (
+    <section className={`${MANAGEMENT_PANEL_BASE} min-w-0 overflow-hidden`}>
+      <div className="flex items-start gap-3">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#edfdf6] text-[#16875f] ring-1 ring-[#d2f4e3]">
+          <Landmark size={17} />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-[1.35rem] font-semibold tracking-normal text-[#142132]">Bank Approval Rate Ranking</h2>
+          <p className="mt-1 text-sm font-medium text-[#60758d]">Approval rate by submitted bank</p>
+        </div>
+      </div>
+      <div className="mt-5 space-y-3">
+        {safeRows.length ? safeRows.map((row, index) => {
+          const approvalRate = normalizeNumber(row.approvalRate)
+          return (
+            <div key={row.key || row.bank || index} className="rounded-[14px] border border-[#e7edf4] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.03)]">
+              <div className="flex min-w-0 items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f4f8fb] text-xs font-bold text-[#24518a] ring-1 ring-[#e1e9f2]">{index + 1}</span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-[#142132]">{row.bank || row.name || 'Bank pending'}</p>
+                    <p className="mt-0.5 truncate text-xs font-medium text-[#60758d]">{formatNumber(row.approved)} of {formatNumber(row.submitted || row.total)} approved</p>
+                  </div>
+                </div>
+                <p className="shrink-0 text-sm font-bold text-[#16875f]">{formatPercent(approvalRate)}</p>
+              </div>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e8eef6]">
+                <span className="block h-full rounded-full bg-[#16875f]" style={{ width: `${Math.max(4, Math.min(100, approvalRate))}%` }} />
+              </div>
+            </div>
+          )
+        }) : (
+          <p className="rounded-[12px] bg-[#f8fbfd] px-3 py-4 text-center text-xs font-semibold text-[#60758d]">No bank approval data yet</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function ManagementRankingSection({ clientRankings = {}, bankApprovalRanking = [] }) {
+  return (
+    <section className="grid gap-5 xl:grid-cols-2">
+      <ManagementTopClientsCard rankings={clientRankings} />
+      <ManagementBankApprovalRankingCard rows={bankApprovalRanking} />
+    </section>
+  )
+}
+
+function ManagementVisualMetricCard({ metric = {} }) {
+  const values = (Array.isArray(metric.values) && metric.values.length ? metric.values : [0]).map((value) => normalizeNumber(value))
+  const max = Math.max(...values, 1)
+  const tone = metric.tone || '#24518a'
+
+  return (
+    <section className={`${MANAGEMENT_CARD_BASE} min-w-0 overflow-hidden p-5`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[#17324d]">{metric.label || 'Metric'}</p>
+          <p className="mt-3 truncate text-[clamp(2rem,2.2vw,2.35rem)] font-semibold leading-none text-[#101828]">{metric.value || 'No data yet'}</p>
+          <p className="mt-2 truncate text-xs font-semibold text-[#60758d]">{metric.detail || 'Tracking current portfolio'}</p>
+        </div>
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f4f8fb] text-[#24518a] ring-1 ring-[#e1e9f2]">
+          <LineChart size={17} />
+        </span>
+      </div>
+      <div className="mt-6 flex h-[104px] items-end gap-2 border-b border-[#e8eef5] pb-1" aria-label={`${metric.label || 'Metric'} visualisation`}>
+        {values.slice(-12).map((value, index) => (
+          <span
+            key={`${metric.key || 'metric'}-${index}`}
+            className="block flex-1 rounded-t-[5px] transition-all duration-300"
+            style={{ height: `${Math.max(8, Math.round((value / max) * 96))}px`, backgroundColor: tone }}
+            title={String(value)}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function ManagementVisualMetricGrid({ metrics = [] }) {
+  const safeMetrics = Array.isArray(metrics) ? metrics : []
+
+  return (
+    <section className="grid gap-5 lg:grid-cols-3">
+      {safeMetrics.map((metric) => <ManagementVisualMetricCard key={metric.key || metric.label} metric={metric} />)}
     </section>
   )
 }

@@ -29,10 +29,11 @@ export const bondViews = {
     basePath: '/bond/applications',
     legacyPath: '/bond/transactions',
     tabs: [
-      { key: 'incoming', label: 'Incoming', status: 'all', aliases: ['all', 'new'] },
-      { key: 'processing', label: 'Processing', status: 'all', aliases: ['active', 'bond-approved', 'grant-signed', 'instruction-sent', 'attorney-stage', 'at-risk'] },
-      { key: 'registered', label: 'Registered', status: 'registered' },
-      { key: 'declined', label: 'Declined', status: 'cancelled', aliases: ['cancelled', 'declined'] },
+      { key: 'overview', label: 'Overview', status: 'all', aliases: ['all'] },
+      { key: 'bond_application', label: 'Bond application', status: 'all', aliases: ['new', 'bond-app', 'bond_application'] },
+      { key: 'documents', label: 'Documents', status: 'all', aliases: ['incoming', 'docs'] },
+      { key: 'quotes_grant', label: 'Quotes & Grant', status: 'all', aliases: ['processing', 'active', 'bond-approved', 'grant-received', 'grant-signed', 'grant-submitted', 'instruction-sent', 'attorney-stage', 'at-risk'] },
+      { key: 'reconciliation', label: 'Reconciliation', status: 'registered', aliases: ['recon', 'registered', 'declined', 'cancelled'] },
     ],
   },
 }
@@ -54,8 +55,8 @@ export function getBondPipelineViewFromFilters(filters = {}) {
   )
 }
 
-export function getBondTransactionView(viewKey = 'incoming') {
-  const normalized = String(viewKey || 'incoming')
+export function getBondTransactionView(viewKey = 'overview') {
+  const normalized = String(viewKey || 'overview')
   return bondViews.transactions.tabs.find((tab) => tab.key === normalized || tab.aliases?.includes(normalized)) || bondViews.transactions.tabs[0]
 }
 

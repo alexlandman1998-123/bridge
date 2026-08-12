@@ -342,6 +342,11 @@ function getOrganisationDefaults(organisation = {}) {
   }
 }
 
+function getOrganisationTargets(organisation = {}) {
+  const targets = organisation?.settingsJson?.targets
+  return targets && typeof targets === 'object' ? targets : {}
+}
+
 function getBranchRows(onboarding = {}) {
   const rows = onboarding?.branchStructure?.branches
   return Array.isArray(rows) ? rows : []
@@ -2479,6 +2484,27 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     })
   }
 
+  function updateOrganisationTarget(key, value) {
+    setMessage('')
+    setState((previous) => {
+      const settingsJson = previous.organisation?.settingsJson || {}
+      const targets = settingsJson.targets && typeof settingsJson.targets === 'object' ? settingsJson.targets : {}
+      return {
+        ...previous,
+        organisation: {
+          ...previous.organisation,
+          settingsJson: {
+            ...settingsJson,
+            targets: {
+              ...targets,
+              [key]: value,
+            },
+          },
+        },
+      }
+    })
+  }
+
   async function handleLogoUpload(file, targetKey) {
     if (!file || !canEdit || !state || uploadingLogoTarget) return
     const validationError = validateBrandAssetFile(file)
@@ -2647,6 +2673,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const organisationTypeLabel = getOrganisationTypeLabel(onboarding)
   const primaryLogo = getPrimaryLogo(form, onboarding)
   const defaults = getOrganisationDefaults(form)
+  const targets = getOrganisationTargets(form)
   const isPpraVerified = Boolean(normalizeText(agencyInfo.eaabPpraNumber))
   const isRegistrationVerified = Boolean(normalizeText(agencyInfo.companyRegistrationNumber))
   const isBrandingConfigured = Boolean(primaryLogo || branding.logoIcon || branding.logoDark)
@@ -3381,6 +3408,51 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                     </OrganisationField>
                   </div>
                 </OrganisationCard>
+
+                {isBondOriginator ? (
+                  <section id="targets" className="scroll-mt-24">
+                    <OrganisationCard title="Targets" description="Dashboard targets for the bond originator command centre.">
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <OrganisationField label="Monthly Applications" id="organisation-target-applications">
+                          <Field
+                            id="organisation-target-applications"
+                            type="number"
+                            min="0"
+                            className={INPUT_CLASS}
+                            value={targets.applications || ''}
+                            disabled={!canEdit}
+                            onChange={(event) => updateOrganisationTarget('applications', event.target.value)}
+                          />
+                        </OrganisationField>
+                        <OrganisationField label="Monthly Loan Value" id="organisation-target-loan-value">
+                          <Field
+                            id="organisation-target-loan-value"
+                            type="number"
+                            min="0"
+                            step="10000"
+                            className={INPUT_CLASS}
+                            value={targets.loanValue || ''}
+                            disabled={!canEdit}
+                            onChange={(event) => updateOrganisationTarget('loanValue', event.target.value)}
+                          />
+                        </OrganisationField>
+                        <OrganisationField label="Approval Rate Target" id="organisation-target-approval-rate">
+                          <Field
+                            id="organisation-target-approval-rate"
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="1"
+                            className={INPUT_CLASS}
+                            value={targets.approvalRate || ''}
+                            disabled={!canEdit}
+                            onChange={(event) => updateOrganisationTarget('approvalRate', event.target.value)}
+                          />
+                        </OrganisationField>
+                      </div>
+                    </OrganisationCard>
+                  </section>
+                ) : null}
 
                 <OrganisationCard
                   title={copy.branchLabel}
