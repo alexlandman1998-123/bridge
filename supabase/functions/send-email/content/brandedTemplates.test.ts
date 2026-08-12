@@ -1,6 +1,7 @@
 import {
   buildAppointmentEmailHtml,
   buildAppointmentEmailText,
+  buildAppointmentSubject,
 } from "./appointment.ts";
 import {
   buildBuyerViewingAvailabilityRequestEmailHtml,
@@ -141,6 +142,7 @@ Deno.test("appointment template renders branded host guidance and RSVP buttons",
     appointmentType: "Viewing",
     appointmentDate: "2026-07-28",
     appointmentTime: "10:00",
+    location: "19 Aspen Creek, 18 Kirschner Road - Benoni North AH - R 765 000",
     participantRole: "seller",
     agentName: "Alex Landman",
     agentRole: "Property Consultant",
@@ -168,6 +170,7 @@ Deno.test("appointment template renders the Kingstons valuation invite experienc
     appointmentTitle: "Valuation Appointment - Seller One",
     appointmentDate: "2026-07-28",
     appointmentTime: "10:00",
+    location: "19 Aspen Creek, 18 Kirschner Road - Benoni North AH - R 765 000",
     participantRole: "seller",
     agentName: "Alex Landman",
     agentRole: "Property Consultant",
@@ -206,9 +209,11 @@ Deno.test("appointment template renders the Kingstons valuation invite experienc
   assertIncludes(html, "Valuation prepared");
   assertIncludes(html, "Before we meet");
   assertIncludes(html, "Your property professional");
-  assertIncludes(html, "📅");
-  assertIncludes(html, "◷");
-  assertIncludes(html, "⌖");
+  assertIncludes(html, "Property");
+  assertIncludes(html, "19 Aspen Creek, 18 Kirschner Road - Benoni North AH");
+  assertNotIncludes(html, "R 765 000");
+  assertNotIncludes(html, ">NOTE<");
+  assertNotIncludes(html, ">?</div>");
   assertNotIncludes(html, ">CAL<");
   assertNotIncludes(html, ">TIME<");
   assertNotIncludes(html, ">PIN<");
@@ -279,6 +284,49 @@ Deno.test("appointment template renders the Kingstons valuation presentation inv
   );
 });
 
+Deno.test("Kingstons valuation appointment honors explicit template key without old header badges", () => {
+  const subject = buildAppointmentSubject(
+    "appointment_confirmation_required",
+    "seller_valuation",
+    {
+      appointmentTitle: "Valuation Appointment - Seller One",
+      organisationName: "Kingstons Real Estate",
+      emailTemplateKey: "kingstons_valuation_appointment",
+    },
+  );
+  const html = buildAppointmentEmailHtml({
+    eventType: "appointment_confirmation_required",
+    recipientName: "Seller One",
+    appointmentType: "seller_valuation",
+    appointmentTitle: "Valuation Appointment - Seller One",
+    appointmentDate: "2026-07-28",
+    appointmentTime: "10:00",
+    agentName: "Alex Landman",
+    agentRole: "Property Consultant",
+    organisationName: "Kingstons Real Estate",
+    actionLink: "https://app.example.test/appointment-rsvp/token-123",
+    emailTemplateKey: "kingstons_valuation_appointment",
+    branding: {
+      organisationName: "Kingstons Real Estate",
+      primaryColor: "#052b2b",
+      secondaryColor: "#d49a18",
+    },
+  });
+
+  assertIncludes(
+    subject,
+    "Kingstons valuation request: Valuation Appointment - Seller One",
+  );
+  assertIncludes(html, "Kingstons Valuation Request");
+  assertIncludes(
+    html,
+    "https://app.arch9.co.za/brand/kingstons-logo-cover.png",
+  );
+  assertNotIncludes(html, ">CAL<");
+  assertNotIncludes(html, ">TIME<");
+  assertNotIncludes(html, ">PIN<");
+});
+
 Deno.test("Kingstons valuation download email renders direct-download experience", () => {
   const html = buildKingstonsValuationDownloadEmailHtml({
     recipientName: "Alexander Landman",
@@ -313,6 +361,8 @@ Deno.test("Kingstons valuation download email renders direct-download experience
   assertIncludes(html, "Smart process");
   assertIncludes(html, "Human guidance");
   assertIncludes(html, "What to do next");
+  assertNotIncludes(html, ">PDF</div>");
+  assertNotIncludes(html, "&rarr;</div>");
   assertNotIncludes(html, "sign in");
   assertNotIncludes(html, "portal");
   assertIncludes(

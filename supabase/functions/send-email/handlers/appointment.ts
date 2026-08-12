@@ -61,7 +61,11 @@ export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
   );
   const description = [
     normalizeText(payload.agentName)
-      ? `Host: ${normalizeText(payload.agentName)}${normalizeText(payload.agentRole) ? `, ${normalizeText(payload.agentRole)}` : ""}`
+      ? `Host: ${normalizeText(payload.agentName)}${
+        normalizeText(payload.agentRole)
+          ? `, ${normalizeText(payload.agentRole)}`
+          : ""
+      }`
       : "",
     normalizeText(payload.organisationName)
       ? `Agency: ${normalizeText(payload.organisationName)}`
@@ -76,9 +80,13 @@ export function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
     "Please reply to the email if you need to reschedule.",
   ].filter(Boolean).join("\n\n");
   const organizerEmail = normalizeText(
-    payload.organizerEmail || payload.agentEmail || payload.replyTo || "appointments@bridge.co.za",
+    payload.organizerEmail || payload.agentEmail || payload.replyTo ||
+      "appointments@bridge.co.za",
   );
-  const organizerName = normalizeText(payload.organizerName || payload.agentName || payload.organisationName || "Arch9");
+  const organizerName = normalizeText(
+    payload.organizerName || payload.agentName || payload.organisationName ||
+      "Arch9",
+  );
   const attendeeEmail = normalizeText(payload.to);
   const attendeeName = normalizeText(
     payload.recipientName || payload.to || "Participant",
@@ -168,8 +176,7 @@ export async function handleAppointmentEmail(
     ),
     defaults: { organisationName, supportEmail, supportPhone },
   });
-  const baseSender =
-    normalizeText(branding.fromEmail) ||
+  const baseSender = normalizeText(branding.fromEmail) ||
     normalizeText(rawPayload.fromEmail || rawPayload.from_email) ||
     normalizeText(Deno.env.get("RESEND_APPOINTMENTS_FROM_EMAIL")) ||
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
@@ -186,6 +193,13 @@ export async function handleAppointmentEmail(
       participantRole: normalizeText(payload.participantRole),
       appointmentTitle: normalizeText(payload.appointmentTitle),
       organisationName: branding.organisationName,
+      emailTheme: normalizeText(
+        rawPayload.emailTheme || rawPayload.email_theme,
+      ),
+      emailTemplateKey: normalizeText(
+        rawPayload.emailTemplateKey || rawPayload.email_template_key ||
+          rawPayload.templateKey || rawPayload.template_key,
+      ),
     },
   );
   const html = buildAppointmentEmailHtml({
@@ -264,7 +278,10 @@ export async function handleAppointmentEmail(
     html,
     text,
     attachments: icsAttachment ? [icsAttachment] : undefined,
-    replyTo: normalizeText(payload.replyTo || payload.organizerEmail || payload.agentEmail || branding.replyTo) || undefined,
+    replyTo: normalizeText(
+      payload.replyTo || payload.organizerEmail || payload.agentEmail ||
+        branding.replyTo,
+    ) || undefined,
   });
 
   if (!emailResult.ok) {

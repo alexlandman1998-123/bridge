@@ -63,6 +63,12 @@ try {
     expiresInSeconds: 60 * 60 * 24 * 14,
     options: { download: 'formal-valuation.pdf' },
   })
+  const snakeCaseDirectUrl = await resolveKingstonsValuationDirectDownloadUrl({
+    storage_bucket: 'documents',
+    storage_path: 'formal-valuations/lead-1/snake.pdf',
+    uploaded_file_name: 'snake-valuation.pdf',
+  }, { storageClient })
+  assert.equal(snakeCaseDirectUrl, 'https://storage.example.test/documents/formal-valuations/lead-1/snake.pdf?download=snake-valuation.pdf')
 
   const payload = buildKingstonsValuationDownloadEmailPayload({
     to: 'seller@example.test',

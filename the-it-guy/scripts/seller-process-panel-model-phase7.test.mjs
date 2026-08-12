@@ -30,6 +30,7 @@ const internalKingstonsKeys = [
   'valuation_appointment_scheduled',
   'formal_valuation_completed',
   'valuation_presentation_scheduled',
+  'valuation_presented',
   'seller_pack_signed',
   'listing_terms_confirmed',
   'defects_form_signed',
@@ -91,11 +92,12 @@ function assertPartnerReadinessHidesInternalKeys(model) {
   assert.equal(model.readOnly, false)
   assert.equal(model.shadowOnly, false)
   assert.equal(model.title, 'Kingstons Seller Process')
-  assert.equal(model.currentStageLabel, 'Seller Pack')
+  assert.equal(model.currentStageLabel, 'Valuation Presented')
   assert.equal(model.sections.find((section) => section.key === 'progress').items.length, 5)
-  assert.equal(model.sections.find((section) => section.key === 'missing_evidence').items.some((item) => item.key === 'mandate_signed'), true)
+  assert.equal(model.sections.find((section) => section.key === 'missing_evidence').items.some((item) => item.key === 'valuation_presented'), true)
   assert.equal(model.actionCards.every((card) => card.disabled === false && card.readOnly === false), true)
-  assert.equal(model.actionCards.some((card) => card.key === 'complete_seller_pack' && card.pending === true), true)
+  assert.equal(model.actionCards.some((card) => card.key === 'complete_valuation_presentation' && card.pending === true), true)
+  assert.equal(model.actionCards.some((card) => card.key === 'mark_seller_lead_lost'), true)
   assert.equal(model.actionCards.some((card) => card.key === 'confirm_listing_terms'), true)
   assertPartnerReadinessHidesInternalKeys(model)
 }
@@ -140,6 +142,32 @@ function assertPartnerReadinessHidesInternalKeys(model) {
   assert.equal(model.profile, KINGSTONS_SELLER_PROCESS_PROFILE)
   assert.equal(model.title, 'Kingstons Seller Process')
   assert.equal(model.currentStageLabel, 'Valuation Appointment')
+  assert.equal(model.actionCards.find((card) => card.key === 'schedule_valuation_appointment').pending, true)
+}
+
+{
+  const model = buildSellerProcessWorkspacePanelModel({
+    row: {
+      leadId: 'lead-kingstons-activity-alias',
+      organisationId: 'ec19d0a6-bcba-4eef-aa72-9972de88204d',
+      stage: 'New Lead',
+      status: 'New',
+    },
+    activities: [
+      {
+        activityId: 'activity-contacted',
+        leadId: 'lead-kingstons-activity-alias',
+        activityType: 'Seller Contact - Call',
+        status: 'completed',
+      },
+    ],
+    appointments: [],
+    listings: [],
+    documentPackets: [],
+  })
+  assert.equal(model.visible, true)
+  assert.equal(model.currentStageLabel, 'Valuation Appointment')
+  assert.equal(model.actionCards.find((card) => card.key === 'contact_seller'), undefined)
   assert.equal(model.actionCards.find((card) => card.key === 'schedule_valuation_appointment').pending, true)
 }
 

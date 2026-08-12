@@ -15,45 +15,30 @@ function getHeaderBrandLogoUrl(branding?: BridgeEmailLayoutBranding) {
       branding?.logoUrl ||
       branding?.logoLightUrl ||
       branding?.logoIconUrl,
+    "https://app.arch9.co.za/brand/kingstons-logo-cover.png",
   );
 }
 
-function getInitials(value: unknown) {
-  return pickText(value, "A")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("") || "A";
-}
-
 function renderValueRow({
-  icon,
   title,
   body,
   accentColor,
 }: {
-  icon: string;
   title: string;
   body: string;
   accentColor: string;
 }) {
   return `<tr>
-    <td width="58" valign="top" style="padding: 0 18px 18px 0;">
-      <div style="width: 42px; height: 42px; border-radius: 15px; border: 1px solid #d8e4df; color: #06433c; font-size: 20px; line-height: 42px; text-align: center; font-weight: 700;">${
-    escapeHtml(icon)
-  }</div>
+    <td width="4" valign="top" style="padding: 3px 16px 18px 0;">
+      <div style="width: 3px; min-height: 46px; background: ${accentColor}; border-radius: 999px;"></div>
     </td>
     <td valign="top" style="padding: 0 0 18px; border-bottom: 1px solid #dfe6e3;">
-      <p style="margin: 0 0 5px; color: #111827; font-size: 15px; line-height: 1.35; font-weight: 750;">${
+      <p style="margin: 0 0 5px; color: #111827; font-size: 14px; line-height: 1.35; font-weight: 700;">${
     escapeHtml(title)
   }</p>
       <p style="margin: 0; color: #394555; font-size: 14px; line-height: 1.55; font-weight: 400;">${
     escapeHtml(body)
   }</p>
-    </td>
-    <td width="1" style="padding: 0 0 18px 0;">
-      <div style="width: 1px; height: 42px; background: ${accentColor}; opacity: 0.55;"></div>
     </td>
   </tr>`;
 }
@@ -119,27 +104,19 @@ export function buildKingstonsValuationDownloadEmailHtml(
       </div>
 
       <div style="background: #ffffff; padding: 0 28px 28px;">
-        <div style="margin: -42px 0 22px; padding: 30px 34px 28px; background: #ffffff; border: 1px solid #e9e2d8; border-radius: 14px; box-shadow: 0 18px 38px rgba(15, 23, 42, 0.14);">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
-            <tr>
-              <td width="128" valign="middle" style="padding: 0 28px 0 0; border-right: 1px solid #e1e5e8;">
-                <div style="width: 104px; height: 104px; border-radius: 50%; background: #f2f6f3; color: #06433c; font-size: 36px; line-height: 104px; text-align: center; font-weight: 750;">PDF</div>
-              </td>
-              <td valign="middle" style="padding: 0 0 0 28px;">
-                <p style="margin: 0 0 8px; color: #060915; font-size: 22px; line-height: 1.25; font-weight: 750;">Property Valuation Report</p>
-                <p style="margin: 0 0 10px; color: #263241; font-size: 15px; line-height: 1.45;">${
+        <div style="margin: -42px 0 22px; padding: 30px 32px 28px; background: #ffffff; border: 1px solid #e9e2d8; border-radius: 14px; box-shadow: 0 18px 38px rgba(15, 23, 42, 0.12);">
+          <p style="margin: 0 0 7px; color: #657180; font-size: 11px; line-height: 1.2; font-weight: 750; letter-spacing: 0.10em; text-transform: uppercase;">Valuation report</p>
+          <p style="margin: 0 0 8px; color: #060915; font-size: 21px; line-height: 1.28; font-weight: 650;">Property Valuation Report</p>
+          <p style="margin: 0 0 10px; color: #263241; font-size: 14px; line-height: 1.5;">${
     escapeHtml(propertyLabel)
   }</p>
-                <p style="margin: 0 0 6px; color: #394555; font-size: 14px; line-height: 1.45;">Prepared by <strong style="color: #111827;">${
+          <p style="margin: 0 0 6px; color: #394555; font-size: 13px; line-height: 1.5;">Prepared by <strong style="color: #111827;">${
     escapeHtml(agentName)
   }</strong>${agentRole ? `, ${escapeHtml(agentRole)}` : ""}</p>
-                <p style="margin: 0 0 14px; color: #5f6b78; font-size: 13px; line-height: 1.45;">${
+          <p style="margin: 0 0 14px; color: #5f6b78; font-size: 13px; line-height: 1.45;">${
     escapeHtml(fileName)
   }</p>
-                <span style="display: inline-block; padding: 7px 12px; border-radius: 999px; background: #eef0ee; color: #2f3741; font-size: 12px; line-height: 1.2; font-weight: 650;">PDF valuation</span>
-              </td>
-            </tr>
-          </table>
+          <span style="display: inline-block; padding: 7px 12px; border-radius: 999px; background: #eef0ee; color: #2f3741; font-size: 12px; line-height: 1.2; font-weight: 650;">PDF valuation</span>
           <a href="${safeDownloadUrl}" style="display: block; margin: 26px 0 12px; padding: 16px 24px; border-radius: 8px; background: linear-gradient(135deg, ${goldColor} 0%, #e2a821 50%, #c9840f 100%); color: #ffffff; font-size: 18px; line-height: 1.2; font-weight: 750; text-align: center; text-decoration: none;">Download valuation</a>
           <p style="margin: 0; color: #5f6b78; font-size: 13px; line-height: 1.45; text-align: center;">Public download link &middot; no sign-in needed</p>
         </div>
@@ -152,19 +129,16 @@ export function buildKingstonsValuationDownloadEmailHtml(
             ${
     [
       {
-        icon: "M",
         title: "Market exposure",
         body:
           "We position your property across leading external platforms and our internal buyer database.",
       },
       {
-        icon: "S",
         title: "Smart process",
         body:
           "Our technology keeps documents, updates, and next steps smooth and secure.",
       },
       {
-        icon: getInitials(agentName),
         title: "Human guidance",
         body:
           "Your agent stays close from valuation through launch, offers, and transfer.",
@@ -175,15 +149,8 @@ export function buildKingstonsValuationDownloadEmailHtml(
         </div>
 
         <div style="margin: 0 0 22px; padding: 22px 24px; background: linear-gradient(90deg, #fff9ef 0%, #fbf0dc 100%); border-radius: 12px; border: 1px solid #f4e4c5;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
-            <tr>
-              <td width="68" valign="top"><div style="width: 48px; height: 48px; border-radius: 50%; background: #fff3d6; color: ${goldColor}; font-size: 18px; line-height: 48px; text-align: center; font-weight: 750;">&rarr;</div></td>
-              <td valign="top">
-                <p style="margin: 0 0 8px; color: ${goldColor}; font-size: 17px; line-height: 1.2; font-weight: 750; text-transform: uppercase;">What to do next</p>
-                <p style="margin: 0; color: #141922; font-size: 15px; line-height: 1.55;">Download your valuation, review the recommendation, and reply with any questions. We will guide the next step when you are ready.</p>
-              </td>
-            </tr>
-          </table>
+          <p style="margin: 0 0 8px; color: ${goldColor}; font-size: 15px; line-height: 1.2; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;">What to do next</p>
+          <p style="margin: 0; color: #141922; font-size: 14px; line-height: 1.58;">Download your valuation, review the recommendation, and reply with any questions. We will guide the next step when you are ready.</p>
         </div>
 
         <div style="border-top: 1px solid #cfd4d9; padding: 18px 0 0;">

@@ -79,7 +79,7 @@ function buildShadowIntegrationFallback(workspace = {}) {
     appointments: workspace?.appointments || row?.appointments || [],
     listings: workspace?.listings || row?.listings || [],
     documentPackets: workspace?.documentPackets || row?.documentPackets || [],
-    leadActivities: workspace?.leadActivities || workspace?.timeline || row?.leadActivities || [],
+    leadActivities: workspace?.leadActivities || workspace?.activities || workspace?.timeline || row?.leadActivities || row?.activities || [],
     organisationSettings: workspace?.organisationSettings || workspace?.organizationSettings || null,
     sellerProcessProfile: resolution.profile,
   })
@@ -119,6 +119,12 @@ function buildActionCards(payload = {}) {
   const missingEvidenceKeys = asArray(sellerLeadWorkspace.missingEvidenceKeys)
   const processNeedsEvidence = (key = '') => missingEvidenceKeys.includes(key)
   const needsFirstContact = currentStageKey === 'first_contact' || missingEvidenceKeys.includes('seller_contacted')
+  const canChoosePostPresentationOutcome = [
+    'valuation_presented',
+    'seller_pack_signed',
+    'listing_terms_confirmed',
+    'listing_ready',
+  ].includes(currentStageKey) || missingEvidenceKeys.includes('valuation_presented')
   return [
     ...(needsFirstContact ? [
       {
@@ -155,6 +161,14 @@ function buildActionCards(payload = {}) {
       readOnly: false,
     },
     {
+      key: 'complete_valuation_presentation',
+      label: 'Complete Valuation Presentation',
+      surface: 'appointments',
+      pending: processNeedsEvidence('valuation_presented'),
+      disabled: false,
+      readOnly: false,
+    },
+    {
       key: 'complete_seller_pack',
       label: 'Complete Seller Pack',
       surface: 'mandateFlow',
@@ -162,6 +176,16 @@ function buildActionCards(payload = {}) {
       disabled: false,
       readOnly: false,
     },
+    ...(canChoosePostPresentationOutcome ? [
+      {
+        key: 'mark_seller_lead_lost',
+        label: 'Mark as Lost',
+        surface: 'leadLifecycle',
+        pending: false,
+        disabled: false,
+        readOnly: false,
+      },
+    ] : []),
     {
       key: 'confirm_listing_terms',
       label: 'Confirm Listing Terms',

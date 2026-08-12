@@ -542,8 +542,10 @@ const KINGSTONS_PIPELINE_ACTION_COPY = Object.freeze({
   schedule_valuation_appointment: 'Book the valuation appointment with the seller and any required roleplayers.',
   upload_valuation_document: 'Upload the completed formal valuation document before presenting the valuation to the seller.',
   schedule_valuation_presentation: 'Book the valuation presentation appointment with the seller.',
+  complete_valuation_presentation: 'Mark the valuation presentation as completed before moving the seller into the Seller Pack step.',
   complete_seller_pack: 'Capture the seller type and legal-path details, then upload the signed mandate, defect form, and FICA form.',
   seller_pack_signed: 'Capture the seller type and legal-path details, then upload the signed mandate, defect form, and FICA form.',
+  mark_seller_lead_lost: 'Capture why the seller did not convert after the valuation presentation and move the lead to Lost.',
   confirm_listing_terms: 'Confirm the commission and nominated transfer attorney before the listing is created.',
   listing_terms_confirmed: 'Confirm the commission and nominated transfer attorney before the listing is created.',
   prepare_listing: 'Create the listing once the Kingston seller pack and listing terms are complete.',
@@ -1282,7 +1284,6 @@ function buildKingstonsPipelineRailSteps(model = {}) {
     (model.sections?.find((section) => section.key === 'progress')?.items || []).map((item) => [item.key, item]),
   )
   return definition.stages
-    .filter((stage) => stage.key !== 'valuation_presented')
     .map((stage, index) => {
       const progress = modelProgress.get(stage.key) || {}
       const isCurrent = progress.state === 'current' || stage.label === model.currentStageLabel
@@ -2356,7 +2357,18 @@ function buildKingstonsFormalValuationDocumentRow(lead = {}) {
   const uploadedFileName = firstWorkspaceText(uploaded.uploadedFileName, uploaded.uploaded_file_name, uploaded.fileName, uploaded.file_name, valuation.uploadedFileName, valuation.fileName)
   const storagePath = firstWorkspaceText(uploaded.storagePath, uploaded.storage_path, valuation.storagePath, valuation.storage_path)
   const storageBucket = firstWorkspaceText(uploaded.storageBucket, uploaded.storage_bucket, valuation.storageBucket, valuation.storage_bucket)
-  const url = firstWorkspaceText(uploaded.url, uploaded.fileUrl, uploaded.file_url, uploaded.downloadUrl, uploaded.download_url, valuation.url, valuation.fileUrl, valuation.downloadUrl)
+  const url = firstWorkspaceText(
+    uploaded.url,
+    uploaded.fileUrl,
+    uploaded.file_url,
+    uploaded.downloadUrl,
+    uploaded.download_url,
+    valuation.url,
+    valuation.fileUrl,
+    valuation.file_url,
+    valuation.downloadUrl,
+    valuation.download_url,
+  )
   const hasUpload = isKingstonsSellerPackDocumentUploaded({
     ...uploaded,
     uploadedAt,
@@ -19784,7 +19796,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       appointmentPayload.organisationName = normalizeText(appointmentPayload.organisationName) || 'Kingstons Real Estate'
     }
     setAppointmentSchedulingSubmitting(true)
-    let valuationDownloadEmailResult = null
+    let valuationDownloadEmailQueued = false
     try {
       if (linkedLead && resolveLeadCategoryView(linkedLead) !== 'seller') {
         const linkedContact =
@@ -19874,7 +19886,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             }
           : isKingstonsValuationPresentation
             ? {
-                stage: 'Seller Pack',
+                stage: 'Valuation Presentation',
                 status: 'Valuation Presentation Scheduled',
               }
           : {
@@ -19889,8 +19901,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             : 'Valuation Presentation Scheduled'
           const activityNote = isKingstonsValuationAppointment
             ? 'Valuation appointment scheduled. Seller process moved to Formal Valuation.'
-            : 'Valuation presentation meeting scheduled. Seller process moved to Seller Pack.'
-          const activityOutcome = isKingstonsValuationAppointment ? 'Formal Valuation' : 'Seller Pack'
+            : 'Valuation presentation meeting scheduled. Seller process moved to Valuation Presentation.'
+          const activityOutcome = isKingstonsValuationAppointment ? 'Formal Valuation' : 'Valuation Presentation'
           void createAgencyCrmLeadActivity(organisationId, linkedLead.leadId, {
             agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
             activityType,
@@ -19902,32 +19914,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	          })
 	        }
         if (isKingstonsValuationPresentation) {
-          try {
-            const valuationPresentationLead = selectedLead || linkedLead
-            valuationDownloadEmailResult = await sendKingstonsValuationDownloadEmailForPresentation({
-              appointment: {
-                ...created,
-                ...appointmentPayload,
-                appointmentId: createdAppointmentId,
-              },
-              documentRow: buildKingstonsFormalValuationDocumentRow(valuationPresentationLead),
-              participants: participantSeed,
-              lead: valuationPresentationLead,
-              recipientEmail: explicitRecipientEmail || linkedLeadEmail,
-              recipientName: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || valuationPresentationLead?.name,
-              propertyLabel: appointmentPayload.location || selectedLeadPropertyLabel || resolveAppointmentListingLabel(appointmentPayload.listingId),
-              agent: currentAgent,
-              organisationId,
-              organisationName,
-              branding: appointmentEmailBranding,
-            })
-          } catch (downloadEmailError) {
-            valuationDownloadEmailResult = {
-              status: 'failed',
-              reason: downloadEmailError?.message || 'valuation_download_email_failed',
+          const valuationPresentationLead = selectedLead || linkedLead
+          valuationDownloadEmailQueued = true
+          void sendKingstonsValuationDownloadEmailForPresentation({
+            appointment: {
+              ...created,
+              ...appointmentPayload,
+              appointmentId: createdAppointmentId,
+            },
+            documentRow: buildKingstonsFormalValuationDocumentRow(valuationPresentationLead),
+            participants: participantSeed,
+            lead: valuationPresentationLead,
+            recipientEmail: explicitRecipientEmail || linkedLeadEmail,
+            recipientName: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || valuationPresentationLead?.name,
+            propertyLabel: appointmentPayload.location || selectedLeadPropertyLabel || resolveAppointmentListingLabel(appointmentPayload.listingId),
+            agent: currentAgent,
+            organisationId,
+            organisationName,
+            branding: appointmentEmailBranding,
+          }).then((valuationDownloadEmailResult) => {
+            if (valuationDownloadEmailResult?.status === 'failed') {
+              console.warn('[AgencyPipelinePage] Kingstons valuation download email could not be sent.', valuationDownloadEmailResult)
             }
+            if (
+              valuationDownloadEmailResult?.status === 'skipped' &&
+              valuationDownloadEmailResult?.reason !== 'not_valuation_presentation'
+            ) {
+              console.info('[AgencyPipelinePage] Kingstons valuation download email skipped.', valuationDownloadEmailResult)
+            }
+          }).catch((downloadEmailError) => {
             console.warn('[AgencyPipelinePage] Kingstons valuation download email could not be sent.', downloadEmailError)
-          }
+          })
         }
 	      }
 	      if (
@@ -20044,13 +20061,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         participants: participantSeed,
         recipientEmail: explicitRecipientEmail,
       })
-      const valuationDownloadMessage = valuationDownloadEmailResult?.status === 'sent'
-        ? ' Valuation download email sent.'
-        : valuationDownloadEmailResult?.status === 'skipped' && valuationDownloadEmailResult?.reason === 'missing_valuation_download_url'
-          ? ' Valuation download email skipped because the formal valuation has not been uploaded yet.'
-          : valuationDownloadEmailResult?.status === 'failed'
-            ? ' Valuation presentation saved, but the valuation download email could not be sent.'
-            : ''
+      const valuationDownloadMessage = valuationDownloadEmailQueued
+        ? ' Valuation download email is sending in the background.'
+        : ''
       setMessage(`${appointmentSaveMessage}${valuationDownloadMessage}`)
       setAppointmentModalOpen(false)
       if (createdAppointmentId) {
@@ -22058,16 +22071,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const contactedAt = new Date().toISOString()
     const activityType = method === 'Other' ? 'Seller Contact' : `Seller Contact - ${method}`
     const activityNote = notes || `${selectedLeadDisplayName || 'Seller'} contacted via ${method}. Outcome: ${outcome}.`
+    const leadPatch = {
+      stage: 'Contacted',
+      status: 'Active',
+      firstContactedAt: selectedLead?.firstContactedAt || selectedLead?.first_contacted_at || contactedAt,
+      ownershipStatus: 'contacted',
+      updatedAt: contactedAt,
+    }
 
     setSellerContactFeedbackModal((previous) => ({ ...previous, saving: true, error: '' }))
     try {
-      await updateAgencyCrmLeadRecord(organisationId, leadId, {
-        stage: 'Contacted',
-        status: 'Active',
-        firstContactedAt: selectedLead?.firstContactedAt || selectedLead?.first_contacted_at || contactedAt,
-        ownershipStatus: 'contacted',
-      })
-      await createAgencyCrmLeadActivity(organisationId, leadId, {
+      const updatedLead = await updateAgencyCrmLeadRecord(organisationId, leadId, leadPatch)
+      const createdActivity = await createAgencyCrmLeadActivity(organisationId, leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType,
         activityNote,
@@ -22075,20 +22090,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         activityDate: contactedAt,
       }, { actor: currentAgent })
 
+      const committedLeadPatch = {
+        ...leadPatch,
+        updatedAt: updatedLead?.updatedAt || leadPatch.updatedAt,
+      }
+      patchSelectedLeadRecord(committedLeadPatch, leadId)
+      const activityRow = createdActivity || {
+        activityId: `seller-contact:${leadId}:${contactedAt}`,
+        leadId,
+        organisationId,
+        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        activityType,
+        activityNote,
+        outcome,
+        activityDate: contactedAt,
+        createdAt: contactedAt,
+      }
+      const routeSnapshot = routeLeadWorkspaceSnapshotRef.current
+      if (routeSnapshot) {
+        routeLeadWorkspaceSnapshotRef.current = {
+          ...routeSnapshot,
+          leadActivities: dedupeByKey([activityRow, ...(Array.isArray(routeSnapshot.leadActivities) ? routeSnapshot.leadActivities : [])], (row) => row?.activityId),
+        }
+      }
       setRecords((previous) => ({
         ...previous,
-        leads: (Array.isArray(previous.leads) ? previous.leads : []).map((lead) => (
-          normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(leadId)
-            ? {
-                ...lead,
-                stage: 'Contacted',
-                status: 'Active',
-                firstContactedAt: lead?.firstContactedAt || lead?.first_contacted_at || contactedAt,
-                ownershipStatus: 'contacted',
-                updatedAt: contactedAt,
-              }
-            : lead
-        )),
+        leadActivities: dedupeByKey([activityRow, ...(Array.isArray(previous.leadActivities) ? previous.leadActivities : [])], (row) => row?.activityId),
       }))
       setSellerContactFeedbackModal(SELLER_CONTACT_FEEDBACK_DEFAULTS)
       setError('')
@@ -22232,6 +22259,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setAppointmentSchedulingIntegrity(null)
       setAppointmentSchedulingError('')
       setAppointmentModalOpen(true)
+      return
+    }
+    if (id === 'complete_valuation_presentation') {
+      const valuationPresentation = selectedLeadAppointments
+        .slice()
+        .reverse()
+        .find((appointment) => {
+          const appointmentType = normalizeKey(appointment?.appointmentType || appointment?.appointment_type || appointment?.type || appointment?.title)
+          const workflowStage = normalizeKey(appointment?.linkedWorkflowStage || appointment?.linked_workflow_stage)
+          return appointmentType.includes('valuation_presentation') || workflowStage === 'valuation_presentation'
+        })
+      handleLeadWorkspaceTabSelection('appointments')
+      if (valuationPresentation) {
+        handleOpenAppointmentModal(valuationPresentation)
+        setAppointmentForm((previous) => ({ ...previous, status: 'completed' }))
+        setAppointmentOutcomeForm((previous) => ({
+          ...previous,
+          outcomeSummary: normalizeText(previous.outcomeSummary) || 'Valuation presentation completed.',
+          nextStep: normalizeText(previous.nextStep) || 'Seller Pack',
+        }))
+        return
+      }
+      setError('Schedule the valuation presentation before completing it.')
+      handleSellerJourneyAction('schedule_valuation_presentation')
+      return
+    }
+    if (id === 'mark_seller_lead_lost') {
+      if (selectedLead?.leadId) openArchiveLeadModal(selectedLead.leadId)
       return
     }
     if (id === 'upload_valuation_document') {
@@ -22431,15 +22486,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       )
       if (selectedLeadIsSeller && selectedLead?.leadId && normalizeKey(updatePayload.status).includes('complete')) {
-        await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
-          stage: 'Appointment Completed',
-          status: 'Valuation Completed',
-        })
+        const completedAppointmentType = normalizeKey(updatePayload.appointmentType || updatePayload.appointment_type || updatePayload.title)
+        const completedWorkflowStage = normalizeKey(updatePayload.linkedWorkflowStage || updatePayload.linked_workflow_stage)
+        const completedKingstonsPresentation = selectedLeadHasKingstonsPipelineSignal && (
+          completedAppointmentType.includes('valuation_presentation') ||
+          completedWorkflowStage === 'valuation_presentation'
+        )
+        const completedLeadPatch = completedKingstonsPresentation
+          ? {
+              stage: 'Seller Pack',
+              status: 'Valuation Presented',
+            }
+          : {
+              stage: 'Appointment Completed',
+              status: 'Valuation Completed',
+            }
+        await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, completedLeadPatch)
         await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
           agent: currentAgent,
-          activityType: 'Valuation Completed',
-          activityNote: normalizeText(updatePayload.notes || updatePayload.title) || 'Seller valuation completed.',
-          outcome: 'completed',
+          activityType: completedKingstonsPresentation ? 'Valuation Presented' : 'Valuation Completed',
+          activityNote: completedKingstonsPresentation
+            ? 'Valuation presentation completed. Seller process moved to Seller Pack.'
+            : normalizeText(updatePayload.notes || updatePayload.title) || 'Seller valuation completed.',
+          outcome: completedKingstonsPresentation ? 'Seller Pack' : 'completed',
           activityDate: new Date().toISOString(),
         }, { actor: currentAgent })
       }
@@ -25817,15 +25886,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
       )
       if (selectedLeadIsSeller && selectedLead?.leadId) {
-        await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
-          stage: 'Appointment Completed',
-          status: 'Valuation Completed',
-        })
+        const appointmentSource = appointment || selectedAppointment || appointmentForm || {}
+        const completedAppointmentType = normalizeKey(appointmentSource?.appointmentType || appointmentSource?.appointment_type || appointmentSource?.type || appointmentSource?.title)
+        const completedWorkflowStage = normalizeKey(appointmentSource?.linkedWorkflowStage || appointmentSource?.linked_workflow_stage)
+        const completedKingstonsPresentation = selectedLeadHasKingstonsPipelineSignal && (
+          completedAppointmentType.includes('valuation_presentation') ||
+          completedWorkflowStage === 'valuation_presentation'
+        )
+        const completedLeadPatch = completedKingstonsPresentation
+          ? {
+              stage: 'Seller Pack',
+              status: 'Valuation Presented',
+            }
+          : {
+              stage: 'Appointment Completed',
+              status: 'Valuation Completed',
+            }
+        await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, completedLeadPatch)
         await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
           agent: currentAgent,
-          activityType: 'Valuation Completed',
-          activityNote: normalizeText(updated?.outcomeSummary || completionSummary) || 'Seller appointment completed.',
-          outcome: 'completed',
+          activityType: completedKingstonsPresentation ? 'Valuation Presented' : 'Valuation Completed',
+          activityNote: completedKingstonsPresentation
+            ? 'Valuation presentation completed. Seller process moved to Seller Pack.'
+            : normalizeText(updated?.outcomeSummary || completionSummary) || 'Seller appointment completed.',
+          outcome: completedKingstonsPresentation ? 'Seller Pack' : 'completed',
           activityDate: new Date().toISOString(),
         }, { actor: currentAgent })
       }
@@ -26027,17 +26111,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       stage: 'Lost',
       status: 'Lost',
       lostReason: reason,
-      notes: [normalizeText(existingLead?.notes), `Archive reason: ${reason}`, notes].filter(Boolean).join(' | '),
+      notes: [normalizeText(existingLead?.notes), `Lost reason: ${reason}`, notes].filter(Boolean).join(' | '),
     })
     await createAgencyCrmLeadActivity(organisationId, leadId, {
       agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
       activityType: 'Stage Change',
-      activityNote: `lead_archived:${reason}`,
+      activityNote: `lead_marked_lost:${reason}`,
       outcome: notes || reason,
     }, { actor: currentAgent })
     setLeadArchiveModal((previous) => ({ ...previous, open: false }))
     setError('')
-    setMessage('Lead archived in Lost status. History has been preserved.')
+    setMessage('Lead marked as Lost. History has been preserved.')
     await reloadRecords(organisationId)
   }
 
@@ -33672,8 +33756,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	      <Modal
 	        open={leadArchiveModal.open}
 	        onClose={() => setLeadArchiveModal((previous) => ({ ...previous, open: false }))}
-        title="Archive Lead"
-        subtitle="Move this lead out of the active pipeline while keeping the full activity history."
+        title="Mark Lead Lost"
+        subtitle="Move this lead to Lost while keeping the full activity history."
         className="max-w-lg"
       >
         <div className="grid gap-3">
@@ -33700,7 +33784,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               Cancel
             </Button>
             <Button type="button" onClick={() => void handleArchiveLead()}>
-              Archive Lead
+              Mark Lead Lost
             </Button>
           </div>
         </div>
