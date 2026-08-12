@@ -34,6 +34,13 @@ import {
 import { getEdgeFunctionInvokeError, invokeEdgeFunction } from '../lib/supabaseClient'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
+  CANONICAL_SELLER_FACTS_FLAG,
+  buildSellerEntityProfileAliases,
+  buildSellerProfileCanonicalPayload,
+  createBlankSellerProfilePersonRecord as createBlankPersonRecord,
+  normalizePersonCollectionForSellerProfile as normalizePersonCollectionForForm,
+} from '../lib/sellerProfileCaptureModel'
+import {
   createListingDraftFromSellerLead,
   findSellerWorkflowRecordByToken,
   LISTING_STATUS,
@@ -47,7 +54,6 @@ import {
   updateSellerOnboardingProgress,
 } from '../services/privateListingService'
 import {
-  buildCanonicalSellerOnboardingPayload,
   normalizeCanonicalPropertyType,
   validateSellerOnboardingFacts,
 } from '../services/documents/sellerOnboardingFactTransformer'
@@ -293,7 +299,6 @@ const DATE_INPUT_CLASS = `${DETAIL_INPUT_CLASS} seller-date-input text-sm sm:tex
 const BRAND_ACTION_BUTTON_CLASS =
   'bg-[var(--seller-brand-action)] text-[var(--seller-brand-action-text)] shadow-[0_14px_28px_rgba(15,23,42,0.18)] hover:bg-[var(--seller-brand-action)] hover:text-[var(--seller-brand-action-text)] hover:brightness-105 focus-visible:ring-[var(--seller-brand-action-border)]'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
-const CANONICAL_SELLER_FACTS_FLAG = 'VITE_CANONICAL_SELLER_FACTS_ENABLED'
 const STEP_META = [
   {
     label: 'Seller Information',
@@ -1340,232 +1345,6 @@ function getTransferAttorneyMissingItems(form = {}) {
     !hasPreferredTransferAttorney(form.preferredTransferAttorney) && 'Preferred transferring attorney is not configured',
     hasPreferredTransferAttorney(form.preferredTransferAttorney) && !hasTransferAttorneyAcceptance(form) && 'Seller acceptance',
   ].filter(Boolean)
-}
-
-function normalizePersonRecordForForm(entry = {}, index = 0, roleTitle = 'Person') {
-  const fullName = String(entry.fullName || entry.full_name || entry.name || entry.contact_name || '').trim()
-  const split = splitName(fullName)
-  const normalizedRole = String(roleTitle || 'Person').toLowerCase().replace(/[^a-z0-9]+/g, '-')
-  return {
-    id: String(entry.id || `${normalizedRole || 'person'}-${index + 1}`),
-    name: String(entry.name || entry.first_name || split.firstName || '').trim(),
-    surname: String(entry.surname || entry.last_name || split.surname || '').trim(),
-    email: String(entry.email || '').trim(),
-    phone: String(entry.phone || '').trim(),
-    residentialAddress: String(entry.residentialAddress || entry.residential_address || entry.address || '').trim(),
-    idNumber: String(entry.idNumber || entry.id_number || entry.identityNumber || entry.identity_number || '').trim(),
-    ownershipShare: String(entry.ownershipShare || entry.ownership_share || '').trim(),
-    consentToSell: Boolean(entry.consentToSell ?? entry.consent_to_sell),
-    signingAuthority: Boolean(entry.signingAuthority ?? entry.signing_authority),
-    roleTitle: String(entry.roleTitle || entry.role_title || roleTitle || '').trim(),
-  }
-}
-
-function normalizePersonCollectionForForm(entries = [], fallback = null, roleTitle = 'Person') {
-  const source = Array.isArray(entries) ? entries : []
-  const mapped = source
-    .map((entry, index) => normalizePersonRecordForForm(entry, index, roleTitle))
-    .filter((entry) => Boolean(entry.name || entry.surname || entry.email || entry.phone || entry.idNumber))
-
-  if (mapped.length) return mapped
-
-  if (fallback && typeof fallback === 'object') {
-    const record = normalizePersonRecordForForm(fallback, 0, roleTitle)
-    if (record.name || record.surname || record.email || record.phone || record.idNumber) {
-      return [record]
-    }
-  }
-
-  return []
-}
-
-function createBlankPersonRecord(roleTitle = 'Person', index = 0) {
-  const normalizedRole = String(roleTitle || 'person').toLowerCase().replace(/[^a-z0-9]+/g, '-')
-  return {
-    id: `${normalizedRole || 'person'}-${Date.now()}-${index + 1}`,
-    name: '',
-    surname: '',
-    email: '',
-    phone: '',
-    residentialAddress: '',
-    idNumber: '',
-    ownershipShare: '',
-    consentToSell: false,
-    signingAuthority: false,
-    roleTitle,
-  }
-}
-
-function normalizeEntityPersonAliases(entry = {}, index = 0, roleTitle = 'Person') {
-  const record = normalizePersonRecordForForm(entry, index, roleTitle)
-  const firstName = String(record.name || '').trim()
-  const surname = String(record.surname || '').trim()
-  const fullName = [firstName, surname].filter(Boolean).join(' ').trim() || String(entry.fullName || entry.full_name || entry.name || '').trim()
-  const capacity = String(entry.capacity || entry.roleCapacity || entry.role_capacity || '').trim()
-  return {
-    ...record,
-    name: fullName || firstName,
-    fullName,
-    full_name: fullName,
-    firstName,
-    first_name: firstName,
-    lastName: surname,
-    last_name: surname,
-    residential_address: record.residentialAddress,
-    capacity,
-    roleCapacity: capacity,
-    role_capacity: capacity,
-    id_number: record.idNumber,
-    ownership_share: record.ownershipShare,
-    consent_to_sell: record.consentToSell,
-    signing_authority: record.signingAuthority,
-    role_title: record.roleTitle,
-  }
-}
-
-function normalizeEntityPersonAliasCollection(entries = [], roleTitle = 'Person') {
-  return (Array.isArray(entries) ? entries : [])
-    .map((entry, index) => normalizeEntityPersonAliases(entry, index, roleTitle))
-    .filter((entry) => Boolean(entry.fullName || entry.firstName || entry.lastName || entry.email || entry.phone || entry.idNumber))
-}
-
-function buildSellerEntityProfileAliases(form = {}) {
-  const ownerEntityType = String(form.ownerEntityType || form.owner_entity_type || '').trim()
-  const ownerStructureType = String(form.ownerStructureType || form.owner_structure_type || form.ownershipType || '').trim()
-  const sellerLegalType = String(form.sellerLegalType || form.seller_legal_type || form.ownershipType || '').trim()
-  const foreignOwner = isForeignOwnerModel(ownerEntityType, ownerStructureType)
-  const companyDirectors = normalizeEntityPersonAliasCollection(form.companyDirectors || form.company_directors || form.directors || [], 'Director')
-  const trustees = normalizeEntityPersonAliasCollection(form.trustees || form.trust_trustees || [], 'Trustee')
-  const authorisedSignatory = normalizeEntityPersonAliases({
-    name: form.authorisedSignatoryName || form.authorised_signatory_name,
-    capacity: form.authorisedSignatoryCapacity || form.authorised_signatory_capacity,
-    email: form.authorisedSignatoryEmail || form.authorised_signatory_email,
-    phone: form.authorisedSignatoryPhone || form.authorised_signatory_phone,
-    residentialAddress: form.authorisedSignatoryAddress || form.authorised_signatory_address,
-    signingAuthority: true,
-  }, 0, 'Authorised Signatory')
-  const authorisedTrustee = normalizeEntityPersonAliases({
-    name: form.authorisedTrusteeName || form.authorised_trustee_name,
-    capacity: form.authorisedTrusteeCapacity || form.authorised_trustee_capacity,
-    email: form.authorisedTrusteeEmail || form.authorised_trustee_email,
-    phone: form.authorisedTrusteePhone || form.authorised_trustee_phone,
-    residentialAddress: form.authorisedTrusteeAddress || form.authorised_trustee_address,
-    signingAuthority: true,
-  }, 0, 'Authorised Trustee')
-  const companyName = String(form.companyName || form.company_name || '').trim()
-  const companyRegistrationNumber = String(form.companyRegistrationNumber || form.company_registration_number || '').trim()
-  const companyRegisteredAddress = String(form.companyRegisteredAddress || form.company_registered_address || '').trim()
-  const trustName = String(form.trustName || form.trust_name || '').trim()
-  const trustRegistrationNumber = String(form.trustRegistrationNumber || form.trust_registration_number || '').trim()
-  const trustRegisteredAddress = String(form.trustRegisteredAddress || form.trust_registered_address || '').trim()
-  const foreignOwnerCountry = String(form.foreignOwnerCountry || form.foreign_owner_country || '').trim()
-  const foreignPassportNumber = String(form.foreignPassportNumber || form.foreign_passport_number || form.passportNumber || '').trim()
-  const foreignRegistrationNumber = String(form.foreignRegistrationNumber || form.foreign_registration_number || '').trim()
-  const foreignResidencyStatus = String(form.foreignResidencyStatus || form.foreign_residency_status || form.residencyStatus || '').trim()
-
-  return {
-    ownerEntityType,
-    owner_entity_type: ownerEntityType,
-    ownerStructureType,
-    owner_structure_type: ownerStructureType,
-    sellerLegalType,
-    seller_legal_type: sellerLegalType,
-    ownershipType: String(form.ownershipType || '').trim(),
-    ownership_type: String(form.ownershipType || '').trim(),
-    foreignOwner,
-    foreign_owner: foreignOwner,
-    foreignOwnerCountry,
-    foreign_owner_country: foreignOwnerCountry,
-    foreignPassportNumber,
-    foreign_passport_number: foreignPassportNumber,
-    foreignRegistrationNumber,
-    foreign_registration_number: foreignRegistrationNumber,
-    foreignResidencyStatus,
-    foreign_residency_status: foreignResidencyStatus,
-    foreign: {
-      country: foreignOwnerCountry,
-      jurisdiction: foreignOwnerCountry,
-      passportNumber: foreignPassportNumber,
-      passport_number: foreignPassportNumber,
-      registrationNumber: foreignRegistrationNumber,
-      registration_number: foreignRegistrationNumber,
-      residencyStatus: foreignResidencyStatus,
-      residency_status: foreignResidencyStatus,
-    },
-    companyName,
-    company_name: companyName,
-    companyRegistrationNumber,
-    company_registration_number: companyRegistrationNumber,
-    companyRegisteredAddress,
-    company_registered_address: companyRegisteredAddress,
-    companyDirectors,
-    company_directors: companyDirectors,
-    directors: companyDirectors,
-    authorisedSignatoryName: authorisedSignatory.fullName,
-    authorised_signatory_name: authorisedSignatory.fullName,
-    authorisedSignatoryCapacity: authorisedSignatory.capacity,
-    authorised_signatory_capacity: authorisedSignatory.capacity,
-    authorisedSignatoryEmail: authorisedSignatory.email,
-    authorised_signatory_email: authorisedSignatory.email,
-    authorisedSignatoryPhone: authorisedSignatory.phone,
-    authorised_signatory_phone: authorisedSignatory.phone,
-    authorisedSignatoryAddress: authorisedSignatory.residentialAddress,
-    authorised_signatory_address: authorisedSignatory.residentialAddress,
-    companyResolutionDate: String(form.companyResolutionDate || form.company_resolution_date || '').trim(),
-    company_resolution_date: String(form.companyResolutionDate || form.company_resolution_date || '').trim(),
-    companyAuthorityBasis: String(form.companyAuthorityBasis || form.company_authority_basis || '').trim(),
-    company_authority_basis: String(form.companyAuthorityBasis || form.company_authority_basis || '').trim(),
-    company: {
-      name: companyName,
-      companyName,
-      company_name: companyName,
-      registrationNumber: companyRegistrationNumber,
-      registration_number: companyRegistrationNumber,
-      registeredAddress: companyRegisteredAddress,
-      registered_address: companyRegisteredAddress,
-      directors: companyDirectors,
-      authorisedSignatory,
-      authorised_signatory: authorisedSignatory,
-      resolutionDate: String(form.companyResolutionDate || form.company_resolution_date || '').trim(),
-      resolution_date: String(form.companyResolutionDate || form.company_resolution_date || '').trim(),
-      authorityBasis: String(form.companyAuthorityBasis || form.company_authority_basis || '').trim(),
-      authority_basis: String(form.companyAuthorityBasis || form.company_authority_basis || '').trim(),
-    },
-    trustName,
-    trust_name: trustName,
-    trustRegistrationNumber,
-    trust_registration_number: trustRegistrationNumber,
-    trustRegisteredAddress,
-    trust_registered_address: trustRegisteredAddress,
-    trustees,
-    trust_trustees: trustees,
-    authorisedTrusteeName: authorisedTrustee.fullName,
-    authorised_trustee_name: authorisedTrustee.fullName,
-    authorisedTrusteeCapacity: authorisedTrustee.capacity,
-    authorised_trustee_capacity: authorisedTrustee.capacity,
-    authorisedTrusteeEmail: authorisedTrustee.email,
-    authorised_trustee_email: authorisedTrustee.email,
-    authorisedTrusteePhone: authorisedTrustee.phone,
-    authorised_trustee_phone: authorisedTrustee.phone,
-    authorisedTrusteeAddress: authorisedTrustee.residentialAddress,
-    authorised_trustee_address: authorisedTrustee.residentialAddress,
-    trustAuthorityBasis: String(form.trustAuthorityBasis || form.trust_authority_basis || '').trim(),
-    trust_authority_basis: String(form.trustAuthorityBasis || form.trust_authority_basis || '').trim(),
-    trust: {
-      name: trustName,
-      trustName,
-      trust_name: trustName,
-      registrationNumber: trustRegistrationNumber,
-      registration_number: trustRegistrationNumber,
-      registeredAddress: trustRegisteredAddress,
-      registered_address: trustRegisteredAddress,
-      trustees,
-      authorisedTrustee,
-      authorised_trustee: authorisedTrustee,
-      authorityBasis: String(form.trustAuthorityBasis || form.trust_authority_basis || '').trim(),
-      authority_basis: String(form.trustAuthorityBasis || form.trust_authority_basis || '').trim(),
-    },
-  }
 }
 
 function getOwnershipFieldLabels(value = '') {
@@ -3281,7 +3060,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   function buildCanonicalPayload(nextForm = form, options = {}) {
     if (!areCanonicalSellerFactsEnabled()) return {}
-    return buildCanonicalSellerOnboardingPayload(nextForm || {}, listing || {}, {
+    return buildSellerProfileCanonicalPayload(nextForm || {}, listing || {}, {
       contextType: 'private_listing',
       contextId: listing?.id || '',
       listingId: listing?.id || '',

@@ -2,6 +2,7 @@ export {
   ACTIVE_REQUIREMENT_STATUSES,
   COMPLETED_REQUIREMENT_STATUSES,
   DOCUMENT_STATUSES,
+  LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION,
   buildSellerRequirementProfile,
   generateSellerDocumentRequirements,
   getListingActivationReadiness,

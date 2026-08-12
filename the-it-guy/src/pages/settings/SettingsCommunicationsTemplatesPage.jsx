@@ -5,8 +5,10 @@ import { EMAIL_TEMPLATE_KEYS, getDefaultEmailTemplateSettings, sanitizeEmailTemp
 import { canManageOrganisationSettings, getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchEmailTemplateSettings, updateEmailTemplateSettings } from '../../lib/settingsApi'
 import {
+  CLIENT_COMMUNICATION_CANONICAL_DECISION,
   CLIENT_COMMUNICATION_EMAIL_POLICY,
   CLIENT_COMMUNICATION_IMPLEMENTATION_STATUS,
+  CLIENT_COMMUNICATION_TRIGGER_OWNER,
   CLIENT_COMMUNICATION_TRIGGER_SOURCE,
   getClientCommunicationCoverageSummary,
   listClientCommunicationJourney,
@@ -69,6 +71,27 @@ const TRIGGER_SOURCE_LABELS = {
   [CLIENT_COMMUNICATION_TRIGGER_SOURCE.DATABASE_EVENT]: 'Database event',
   [CLIENT_COMMUNICATION_TRIGGER_SOURCE.MIXED]: 'Mixed',
   [CLIENT_COMMUNICATION_TRIGGER_SOURCE.NOT_WIRED]: 'Not wired',
+}
+
+const CANONICAL_DECISION_LABELS = {
+  [CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL]: 'Canonical',
+  [CLIENT_COMMUNICATION_CANONICAL_DECISION.MERGE_INTO]: 'Merge into',
+  [CLIENT_COMMUNICATION_CANONICAL_DECISION.REPLACE_WITH]: 'Replace with',
+  [CLIENT_COMMUNICATION_CANONICAL_DECISION.ACTIVITY_ONLY]: 'Activity only',
+  [CLIENT_COMMUNICATION_CANONICAL_DECISION.BLOCKED_PENDING_TRIGGER]: 'Blocked pending trigger',
+}
+
+const TRIGGER_OWNER_LABELS = {
+  [CLIENT_COMMUNICATION_TRIGGER_OWNER.LEAD_WORKFLOW]: 'Lead workflow',
+  [CLIENT_COMMUNICATION_TRIGGER_OWNER.VIEWING_APPOINTMENT_WORKFLOW]: 'Viewing / appointment',
+  [CLIENT_COMMUNICATION_TRIGGER_OWNER.OFFER_OTP_WORKFLOW]: 'Offer / OTP',
+  [CLIENT_COMMUNICATION_TRIGGER_OWNER.FINANCE_WORKFLOW]: 'Finance',
+  [CLIENT_COMMUNICATION_TRIGGER_OWNER.ATTORNEY_TRANSFER_WORKFLOW]: 'Attorney / transfer',
+  [CLIENT_COMMUNICATION_TRIGGER_OWNER.TRANSACTION_PROGRESS_WORKFLOW]: 'Transaction progress',
+  [CLIENT_COMMUNICATION_TRIGGER_OWNER.SELLER_ONBOARDING_WORKFLOW]: 'Seller onboarding',
+  [CLIENT_COMMUNICATION_TRIGGER_OWNER.LISTING_WORKFLOW]: 'Listing',
+  [CLIENT_COMMUNICATION_TRIGGER_OWNER.PORTAL_ACTIVITY]: 'Portal activity',
+  [CLIENT_COMMUNICATION_TRIGGER_OWNER.TO_BE_CONFIRMED]: 'To be confirmed',
 }
 
 function formatCatalogLabel(value = '') {
@@ -165,7 +188,7 @@ function JourneyCoveragePanel() {
         <div className="hidden gap-3 border-b border-[#e1e9f2] bg-[#f6f9fc] px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-[#60758d] md:grid md:grid-cols-[1.1fr_0.75fr_1fr_0.8fr]">
           <span>Communication</span>
           <span>Policy</span>
-          <span>Source & CTA</span>
+          <span>Trigger Model</span>
           <span>Status</span>
         </div>
         <div className="divide-y divide-[#edf2f7]">
@@ -188,10 +211,17 @@ function JourneyCoveragePanel() {
                   <p><span className="font-semibold text-[#40566d]">Audience:</span> {formatCatalogLabel(entry.audience)}</p>
                   <p><span className="font-semibold text-[#40566d]">Category:</span> {formatCatalogLabel(entry.category)}</p>
                   <p><span className="font-semibold text-[#40566d]">Email:</span> {EMAIL_POLICY_LABELS[entry.emailPolicy] || formatCatalogLabel(entry.emailPolicy)}</p>
+                  <p><span className="font-semibold text-[#40566d]">Decision:</span> {CANONICAL_DECISION_LABELS[entry.canonicalDecision] || formatCatalogLabel(entry.canonicalDecision)}</p>
                 </div>
                 <div className="space-y-2 text-xs leading-5 text-[#60758d]">
                   <p><span className="font-semibold text-[#40566d]">Trigger:</span> {entry.trigger}</p>
                   <p><span className="font-semibold text-[#40566d]">Source:</span> {TRIGGER_SOURCE_LABELS[entry.triggerSource] || formatCatalogLabel(entry.triggerSource)}</p>
+                  <p><span className="font-semibold text-[#40566d]">Owner:</span> {TRIGGER_OWNER_LABELS[entry.triggerOwner] || formatCatalogLabel(entry.triggerOwner)}</p>
+                  <p><span className="font-semibold text-[#40566d]">Event:</span> {entry.canonicalEventKey}</p>
+                  {entry.mergeTarget ? (
+                    <p><span className="font-semibold text-[#40566d]">Merge:</span> {entry.mergeTarget}</p>
+                  ) : null}
+                  <p><span className="font-semibold text-[#40566d]">Slice:</span> {formatCatalogLabel(entry.implementationSlice)}</p>
                   <p><span className="font-semibold text-[#40566d]">CTA:</span> {entry.ctaDestination}</p>
                   {entry.sourceFiles?.length ? (
                     <p><span className="font-semibold text-[#40566d]">Files:</span> {entry.sourceFiles.slice(0, 2).join(', ')}{entry.sourceFiles.length > 2 ? ` +${entry.sourceFiles.length - 2}` : ''}</p>

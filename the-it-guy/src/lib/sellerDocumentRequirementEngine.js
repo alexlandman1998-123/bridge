@@ -22,6 +22,7 @@ import { withCanonicalDocumentRequestMetadata } from '../core/documents/document
 
 const COMPLETED_REQUIREMENT_STATUSES = new Set(['approved', 'completed'])
 const ACTIVE_REQUIREMENT_STATUSES = new Set(['required', 'requested', 'uploaded', 'under_review', 'rejected'])
+export const LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION = 'listing_seller_requirement_retirement_phase4_v1'
 
 const MANDATE_SIGNED_STATUSES = new Set(['signed', 'signed_uploaded'])
 const DOCUMENT_STATUSES = ['required', 'requested', 'uploaded', 'under_review', 'rejected', 'approved', 'completed', 'not_applicable']
@@ -1543,9 +1544,16 @@ export function syncSellerDocumentRequirements(listing = {}, existingRequirement
       applies_to: row?.applies_to || 'seller',
       status: 'not_applicable',
       is_required: false,
+      retired: true,
+      retiredBySellerRequirementSync: true,
+      retirementVersion: LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION,
+      retirementReason: 'seller_requirement_model_changed',
       generated_from: {
         ...(row?.generated_from && typeof row.generated_from === 'object' ? row.generated_from : {}),
         archived: true,
+        retirement_version: LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION,
+        retirement_reason: 'seller_requirement_model_changed',
+        retired_by: 'seller_requirement_sync',
       },
     }))
 

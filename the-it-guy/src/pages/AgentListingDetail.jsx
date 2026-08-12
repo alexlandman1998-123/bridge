@@ -82,6 +82,15 @@ import {
 } from '../lib/agencyLeadSelection'
 import { assessBuyerOfferEligibility, assessBuyerOfferIntegrity, assessSellerOnboardingIntegrity } from '../lib/listingDataIntegrity'
 import { buildAgentAssistedOfferEntry } from '../lib/agentAssistedOfferEntry'
+import {
+  LISTING_SELLER_PROFILE_BRANCHES,
+  addListingSellerProfileDraftPerson,
+  buildListingSellerProfileRequirementProjection,
+  createListingSellerProfileBuilderDraft,
+  removeListingSellerProfileDraftPerson,
+  updateListingSellerProfileDraftPerson,
+  validateListingSellerProfileBuilderDraft,
+} from '../lib/listingSellerProfileBuilderModel'
 import { resolveOfferLinkDeliveryPlan } from '../lib/offerLinkDeliveryPlan'
 import {
   buildSellerOnboardingLink,
@@ -1811,6 +1820,75 @@ function FieldDisplay({ label, value }) {
   )
 }
 
+function SellerProfilePeopleEditor({ title, rows = [], roleTitle = 'Person', onAdd, onUpdate, onRemove }) {
+  return (
+    <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4 sm:col-span-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="text-sm font-semibold text-[#142132]">{title}</h4>
+          <p className="mt-1 text-xs text-[#607387]">{rows.length ? `${rows.length} captured` : `Add ${roleTitle.toLowerCase()} details when available.`}</p>
+        </div>
+        <Button type="button" size="sm" variant="secondary" onClick={onAdd}>
+          <Plus size={14} />
+          Add
+        </Button>
+      </div>
+      <div className="mt-4 space-y-3">
+        {rows.length ? rows.map((row, index) => (
+          <div key={row.id || `${roleTitle}-${index}`} className="rounded-[16px] border border-[#dce6f2] bg-white p-3">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839a]">{roleTitle} {index + 1}</p>
+              <button
+                type="button"
+                onClick={() => onRemove(index)}
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-[#e3c7c2] bg-[#fff7f6] text-[#a83b32] transition hover:bg-[#ffefed]"
+                aria-label={`Remove ${roleTitle.toLowerCase()} ${index + 1}`}
+                title={`Remove ${roleTitle.toLowerCase()}`}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Name
+                <Field value={row.name || ''} onChange={(event) => onUpdate(index, 'name', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Surname
+                <Field value={row.surname || ''} onChange={(event) => onUpdate(index, 'surname', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Email
+                <Field type="email" value={row.email || ''} onChange={(event) => onUpdate(index, 'email', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                ID / Passport
+                <Field value={row.idNumber || ''} onChange={(event) => onUpdate(index, 'idNumber', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Capacity
+                <Field value={row.capacity || row.roleCapacity || ''} onChange={(event) => onUpdate(index, 'capacity', event.target.value)} placeholder={roleTitle} />
+              </label>
+              <label className="inline-flex min-h-[42px] items-center gap-2 self-end rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 text-sm font-semibold text-[#2d445e]">
+                <input
+                  type="checkbox"
+                  checked={Boolean(row.signingAuthority)}
+                  onChange={(event) => onUpdate(index, 'signingAuthority', event.target.checked)}
+                />
+                Signing authority
+              </label>
+            </div>
+          </div>
+        )) : (
+          <div className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-white px-4 py-5 text-sm text-[#607387]">
+            No {title.toLowerCase()} captured yet.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function formatLongDate(value) {
   if (!value) return '—'
   const parsed = new Date(value)
@@ -2631,6 +2709,9 @@ function AgentListingDetail() {
   const [sellerContactEditorOpen, setSellerContactEditorOpen] = useState(false)
   const [sellerContactSaving, setSellerContactSaving] = useState(false)
   const [sellerContactDraft, setSellerContactDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' })
+  const [sellerProfileBuilderOpen, setSellerProfileBuilderOpen] = useState(false)
+  const [sellerProfileBuilderSaving, setSellerProfileBuilderSaving] = useState(false)
+  const [sellerProfileBuilderDraft, setSellerProfileBuilderDraft] = useState(() => createListingSellerProfileBuilderDraft())
   const [sellerSectionEditorKey, setSellerSectionEditorKey] = useState('')
   const [sellerSectionDraft, setSellerSectionDraft] = useState({})
   const [sellerSectionSaving, setSellerSectionSaving] = useState(false)
@@ -5121,6 +5202,46 @@ function AgentListingDetail() {
     })
   }, [listingRecord])
 
+  const sellerDocumentRequirementModel = useMemo(() => {
+    if (!listingRecord) return null
+    const profile = getSellerRequirementProfile({
+      ...listingRecord,
+      documentRequirements: dynamicSellerRequirements,
+    })
+    const rows = dynamicSellerRequirements.map((row) => ({
+      ...row,
+      key: row.requirement_key || row.key,
+      label: row.requirement_name || row.label,
+      group: row.requirement_group || row.group,
+    }))
+    const retiredRows = rows.filter((row) => (
+      normalizeKey(row.status) === 'not_applicable' ||
+      row.retired === true ||
+      row.retiredBySellerProfileBuilder === true ||
+      row.generated_from?.archived === true
+    ))
+    const activeRows = rows.filter((row) => !retiredRows.includes(row))
+    const groups = LISTING_DOCUMENT_GROUP_CONFIG.map((group) => ({
+      key: group.key,
+      label: group.label,
+      count: activeRows.filter((row) => getListingDocumentGroupingKey(row) === group.key).length,
+    }))
+    const branchOption = LISTING_SELLER_PROFILE_BRANCHES.find((branch) => branch.value === normalizeKey(profile?.sellerBranch || profile?.sellerType))
+    return {
+      sellerBranch: profile?.sellerBranch || profile?.sellerType || 'individual',
+      branchLabel: branchOption?.label || formatStatusLabel(profile?.sellerBranch || profile?.sellerType || 'individual'),
+      propertyStructureLabel: formatStatusLabel(profile?.propertyStructureType || profile?.propertyBranch || 'property'),
+      lifecycleLabel: profile?.lifecycleLabel || formatStatusLabel(profile?.lifecycleStatus || ''),
+      ownerCount: profile?.ownerCount || 1,
+      total: activeRows.length,
+      sellerVisible: activeRows.filter((row) => normalizeKey(row.visibility || row.document_visibility) !== 'internal').length,
+      internal: activeRows.filter((row) => normalizeKey(row.visibility || row.document_visibility) === 'internal').length,
+      retired: retiredRows.length,
+      retiredRows,
+      groups,
+    }
+  }, [dynamicSellerRequirements, listingRecord])
+
   const sellerReadinessSummary = useMemo(() => {
     if (!listingRecord) return null
     const legacyDocuments = Array.isArray(listingRecord?.requiredDocuments)
@@ -5547,6 +5668,12 @@ function AgentListingDetail() {
     [listingRecord],
   )
   const activeSellerSectionEditor = SELLER_PROFILE_SECTION_BY_KEY.get(sellerSectionEditorKey) || null
+  const sellerProfileRequirementPreview = useMemo(
+    () => listingRecord
+      ? buildListingSellerProfileRequirementProjection(sellerProfileBuilderDraft, listingRecord, { draft: true })
+      : null,
+    [listingRecord, sellerProfileBuilderDraft],
+  )
 
   const sellerProfile = useMemo(() => {
     const raw = (...values) => firstDraftValue(...values)
@@ -5872,7 +5999,11 @@ function AgentListingDetail() {
       openSellerWorkspaceSection('documents')
       return
     }
-    if (key === 'add_seller_contact' || key === 'add_seller_identity' || key === 'complete_seller_facts') {
+    if (key === 'complete_seller_facts') {
+      openSellerProfileBuilder('Complete the internal seller profile below. Saving will refresh document requirements.')
+      return
+    }
+    if (key === 'add_seller_contact' || key === 'add_seller_identity') {
       openSellerWorkspaceSection('seller')
       return
     }
@@ -6489,6 +6620,139 @@ function AgentListingDetail() {
     setSellerContactEditorOpen(true)
     setDetailError('')
     setDetailMessage('Edit the seller contact below. Saving does not require a portal link.')
+  }
+
+  function openSellerProfileBuilder(message = '') {
+    setSellerProfileBuilderDraft(createListingSellerProfileBuilderDraft(listingRecord || {}))
+    setSellerProfileBuilderOpen(true)
+    setSellerContactEditorOpen(false)
+    setDetailError('')
+    setDetailMessage(message)
+  }
+
+  function updateSellerProfileBuilderDraft(key, value) {
+    setSellerProfileBuilderDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  function addSellerProfileBuilderPerson(key, roleTitle) {
+    setSellerProfileBuilderDraft((previous) => addListingSellerProfileDraftPerson(previous, key, roleTitle))
+  }
+
+  function updateSellerProfileBuilderPerson(key, index, field, value) {
+    setSellerProfileBuilderDraft((previous) => updateListingSellerProfileDraftPerson(previous, key, index, field, value))
+  }
+
+  function removeSellerProfileBuilderPerson(key, index) {
+    setSellerProfileBuilderDraft((previous) => removeListingSellerProfileDraftPerson(previous, key, index))
+  }
+
+  async function handleSaveSellerProfileBuilder(event) {
+    event.preventDefault()
+    if (!listingRecord?.id) return
+    const validationErrors = validateListingSellerProfileBuilderDraft(sellerProfileBuilderDraft)
+    if (validationErrors.length) {
+      setDetailError(validationErrors[0])
+      return
+    }
+
+    const now = new Date().toISOString()
+    const existingFormData = getListingSellerFormData(listingRecord)
+    const requirementProjection = buildListingSellerProfileRequirementProjection(sellerProfileBuilderDraft, listingRecord, {
+      draft: true,
+    })
+    const { formPatch, canonicalSellerFacts } = requirementProjection
+    const nextFormData = {
+      ...existingFormData,
+      ...formPatch,
+      sellerProfileCapturedAt: now,
+    }
+    const fullName = toCleanText(formPatch.fullName || formPatch.sellerName || resolveSellerNameFromListing(listingRecord))
+    const email = toCleanText(formPatch.email || formPatch.sellerEmail || resolveSellerEmailFromListing(listingRecord)).toLowerCase()
+    const phone = toCleanText(formPatch.phone || formPatch.sellerPhone || resolveSellerPhoneFromListing(listingRecord))
+    const currentFacts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
+    const sellerCanonicalFacts = Object.keys(canonicalSellerFacts || {}).length
+      ? canonicalSellerFacts
+      : {
+          ...currentFacts,
+          ...formPatch,
+        }
+    const sellerCanonicalFactReadiness = {
+      ...(listingRecord?.sellerCanonicalFactReadiness || listingRecord?.seller_canonical_fact_readiness_json || {}),
+      sellerName: Boolean(fullName || formPatch.companyName || formPatch.trustName),
+      sellerEmail: Boolean(email),
+      sellerPhone: Boolean(phone),
+      idNumber: Boolean(formPatch.idNumber || formPatch.sellerIdNumber || formPatch.companyRegistrationNumber || formPatch.trustRegistrationNumber),
+      propertyAddress: Boolean(formPatch.propertyAddress || formPatch.addressLine1),
+      ownerStructureType: Boolean(formPatch.ownerStructureType),
+    }
+    const listingPatch = {
+      sellerName: fullName || formPatch.companyName || formPatch.trustName || listingRecord?.sellerName,
+      sellerEmail: email,
+      sellerPhone: phone,
+      sellerType: formPatch.sellerType || listingRecord?.sellerType || 'individual',
+      sellerCanonicalFacts,
+      sellerCanonicalFactReadiness,
+      sellerCanonicalFactsUpdatedAt: now,
+      propertyAddress: formPatch.propertyAddress || listingRecord?.propertyAddress,
+      addressLine1: formPatch.propertyAddress || listingRecord?.addressLine1,
+      askingPrice: formPatch.askingPrice || listingRecord?.askingPrice,
+      mandateType: formPatch.mandateType || listingRecord?.mandateType,
+      mandateStartDate: formPatch.mandateStartDate || listingRecord?.mandateStartDate,
+      expiryDate: formPatch.expiryDate || listingRecord?.expiryDate,
+    }
+    const nextOnboardingStatus = listingRecord?.sellerOnboardingStatus || listingRecord?.seller_onboarding_status || listingRecord?.sellerOnboarding?.status || 'in_progress'
+
+    setSellerProfileBuilderSaving(true)
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+        await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
+        await updatePrivateListingOnboardingFormData(listingRecord.id, nextFormData, {
+          status: nextOnboardingStatus === 'not_started' ? 'in_progress' : nextOnboardingStatus,
+          sellerType: formPatch.sellerType || 'individual',
+          ownershipStructure: formPatch.ownershipType || formPatch.ownerStructureType,
+          maritalRegime: formPatch.maritalStatus || formPatch.maritalRegime,
+          syncRequirements: true,
+          requirementSyncReason: 'listing_seller_profile_capture',
+        })
+      }
+
+      patchListing((row) => ({
+        ...row,
+        ...listingPatch,
+        seller: {
+          ...(row?.seller || {}),
+          ...formPatch,
+          name: listingPatch.sellerName,
+          email,
+          phone,
+        },
+        sellerOnboardingStatus: nextOnboardingStatus === 'not_started' ? 'in_progress' : nextOnboardingStatus,
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          status: nextOnboardingStatus === 'not_started' ? 'in_progress' : nextOnboardingStatus,
+          formData: nextFormData,
+          updatedAt: now,
+        },
+        documentRequirements: requirementProjection.allRequirementRows.map((requirement) => ({
+          ...requirement,
+          key: requirement.requirement_key,
+          label: requirement.requirement_name,
+          required: requirement.is_required !== false,
+        })),
+        updatedAt: now,
+      }))
+      setSellerProfileBuilderOpen(false)
+      setDetailMessage('Seller profile captured. Document requirements have been recalculated from the saved seller model.')
+      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+        await loadListingData()
+      }
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to save the seller profile.')
+    } finally {
+      setSellerProfileBuilderSaving(false)
+    }
   }
 
   async function handleSaveSellerContact(event) {
@@ -7622,6 +7886,13 @@ function AgentListingDetail() {
     }
   }
 
+  const sellerProfileBuilderBranch = sellerProfileBuilderDraft.branch || 'individual'
+  const sellerProfileBuilderShowsCompany = ['company', 'foreign_company'].includes(sellerProfileBuilderBranch)
+  const sellerProfileBuilderShowsTrust = ['trust', 'foreign_trust'].includes(sellerProfileBuilderBranch)
+  const sellerProfileBuilderShowsForeign = sellerProfileBuilderBranch.startsWith('foreign_')
+  const sellerProfileBuilderShowsMultipleOwners = sellerProfileBuilderBranch === 'multiple_owners'
+  const sellerProfileBuilderShowsSpouse = sellerProfileBuilderBranch === 'married'
+
   if (loading || listingId.startsWith('development-')) {
     return (
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
@@ -7690,6 +7961,339 @@ function AgentListingDetail() {
       {detailMessage ? (
         <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-4 py-3 text-sm font-medium text-[#1f7d44]">{detailMessage}</div>
       ) : null}
+      <Modal
+        open={sellerProfileBuilderOpen}
+        onClose={sellerProfileBuilderSaving ? undefined : () => setSellerProfileBuilderOpen(false)}
+        title="Complete Seller Profile"
+        subtitle="Capture the seller ownership model and mandate facts for this listing."
+        className="max-w-5xl"
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setSellerProfileBuilderOpen(false)} disabled={sellerProfileBuilderSaving}>
+              Cancel
+            </Button>
+            <Button type="submit" form="listing-seller-profile-builder-form" disabled={sellerProfileBuilderSaving}>
+              {sellerProfileBuilderSaving ? 'Saving...' : 'Save Seller Profile'}
+            </Button>
+          </div>
+        }
+      >
+        <form id="listing-seller-profile-builder-form" className="space-y-5" onSubmit={handleSaveSellerProfileBuilder}>
+          <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Seller model
+              <Field as="select" value={sellerProfileBuilderDraft.branch || 'individual'} onChange={(event) => updateSellerProfileBuilderDraft('branch', event.target.value)}>
+                {LISTING_SELLER_PROFILE_BRANCHES.map((branch) => (
+                  <option key={branch.value} value={branch.value}>{branch.label}</option>
+                ))}
+              </Field>
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Mandate type
+              <Field as="select" value={sellerProfileBuilderDraft.mandateType || 'sole'} onChange={(event) => updateSellerProfileBuilderDraft('mandateType', event.target.value)}>
+                <option value="sole">Sole</option>
+                <option value="dual">Dual</option>
+                <option value="tri">Tri</option>
+                <option value="open">Open</option>
+              </Field>
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Contact first name
+              <Field value={sellerProfileBuilderDraft.sellerFirstName || ''} onChange={(event) => updateSellerProfileBuilderDraft('sellerFirstName', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Contact surname
+              <Field value={sellerProfileBuilderDraft.sellerSurname || ''} onChange={(event) => updateSellerProfileBuilderDraft('sellerSurname', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Email
+              <Field type="email" value={sellerProfileBuilderDraft.email || ''} onChange={(event) => updateSellerProfileBuilderDraft('email', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Phone
+              <Field type="tel" value={sellerProfileBuilderDraft.phone || ''} onChange={(event) => updateSellerProfileBuilderDraft('phone', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              ID / Passport
+              <Field value={sellerProfileBuilderDraft.idNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('idNumber', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Marital status
+              <Field as="select" value={sellerProfileBuilderDraft.maritalStatus || ''} onChange={(event) => updateSellerProfileBuilderDraft('maritalStatus', event.target.value)}>
+                <option value="">Not captured</option>
+                <option value="single">Single</option>
+                <option value="married_in_community">Married in community</option>
+                <option value="married_out_of_community">Married out of community</option>
+                <option value="divorced">Divorced</option>
+                <option value="widowed">Widowed</option>
+              </Field>
+            </label>
+            {sellerProfileBuilderShowsSpouse ? (
+              <>
+                <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                  Spouse full name
+                  <Field value={sellerProfileBuilderDraft.spouseName || ''} onChange={(event) => updateSellerProfileBuilderDraft('spouseName', event.target.value)} />
+                </label>
+                <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                  Spouse email
+                  <Field type="email" value={sellerProfileBuilderDraft.spouseEmail || ''} onChange={(event) => updateSellerProfileBuilderDraft('spouseEmail', event.target.value)} />
+                </label>
+                <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                  Spouse ID number
+                  <Field value={sellerProfileBuilderDraft.spouseIdNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('spouseIdNumber', event.target.value)} />
+                </label>
+              </>
+            ) : null}
+          </section>
+
+          {sellerProfileBuilderShowsMultipleOwners ? (
+            <SellerProfilePeopleEditor
+              title="Owners"
+              roleTitle="Owner"
+              rows={sellerProfileBuilderDraft.multipleOwners || []}
+              onAdd={() => addSellerProfileBuilderPerson('multipleOwners', 'Owner')}
+              onUpdate={(index, field, value) => updateSellerProfileBuilderPerson('multipleOwners', index, field, value)}
+              onRemove={(index) => removeSellerProfileBuilderPerson('multipleOwners', index)}
+            />
+          ) : null}
+
+          {sellerProfileBuilderShowsCompany ? (
+            <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Company / CC name
+                <Field value={sellerProfileBuilderDraft.companyName || ''} onChange={(event) => updateSellerProfileBuilderDraft('companyName', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Registration number
+                <Field value={sellerProfileBuilderDraft.companyRegistrationNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('companyRegistrationNumber', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
+                Registered address
+                <Field value={sellerProfileBuilderDraft.companyRegisteredAddress || ''} onChange={(event) => updateSellerProfileBuilderDraft('companyRegisteredAddress', event.target.value)} />
+              </label>
+              <SellerProfilePeopleEditor
+                title="Directors / Members"
+                roleTitle="Director"
+                rows={sellerProfileBuilderDraft.companyDirectors || []}
+                onAdd={() => addSellerProfileBuilderPerson('companyDirectors', 'Director')}
+                onUpdate={(index, field, value) => updateSellerProfileBuilderPerson('companyDirectors', index, field, value)}
+                onRemove={(index) => removeSellerProfileBuilderPerson('companyDirectors', index)}
+              />
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Authorised signatory
+                <Field value={sellerProfileBuilderDraft.authorisedSignatoryName || ''} onChange={(event) => updateSellerProfileBuilderDraft('authorisedSignatoryName', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Signatory capacity
+                <Field value={sellerProfileBuilderDraft.authorisedSignatoryCapacity || ''} onChange={(event) => updateSellerProfileBuilderDraft('authorisedSignatoryCapacity', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Signatory email
+                <Field type="email" value={sellerProfileBuilderDraft.authorisedSignatoryEmail || ''} onChange={(event) => updateSellerProfileBuilderDraft('authorisedSignatoryEmail', event.target.value)} />
+              </label>
+            </section>
+          ) : null}
+
+          {sellerProfileBuilderShowsTrust ? (
+            <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Trust name
+                <Field value={sellerProfileBuilderDraft.trustName || ''} onChange={(event) => updateSellerProfileBuilderDraft('trustName', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Trust registration number
+                <Field value={sellerProfileBuilderDraft.trustRegistrationNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('trustRegistrationNumber', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
+                Registered address
+                <Field value={sellerProfileBuilderDraft.trustRegisteredAddress || ''} onChange={(event) => updateSellerProfileBuilderDraft('trustRegisteredAddress', event.target.value)} />
+              </label>
+              <SellerProfilePeopleEditor
+                title="Trustees"
+                roleTitle="Trustee"
+                rows={sellerProfileBuilderDraft.trustees || []}
+                onAdd={() => addSellerProfileBuilderPerson('trustees', 'Trustee')}
+                onUpdate={(index, field, value) => updateSellerProfileBuilderPerson('trustees', index, field, value)}
+                onRemove={(index) => removeSellerProfileBuilderPerson('trustees', index)}
+              />
+              <SellerProfilePeopleEditor
+                title="Beneficiaries"
+                roleTitle="Beneficiary"
+                rows={sellerProfileBuilderDraft.trustBeneficiaries || []}
+                onAdd={() => addSellerProfileBuilderPerson('trustBeneficiaries', 'Beneficiary')}
+                onUpdate={(index, field, value) => updateSellerProfileBuilderPerson('trustBeneficiaries', index, field, value)}
+                onRemove={(index) => removeSellerProfileBuilderPerson('trustBeneficiaries', index)}
+              />
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Authorised trustee
+                <Field value={sellerProfileBuilderDraft.authorisedTrusteeName || ''} onChange={(event) => updateSellerProfileBuilderDraft('authorisedTrusteeName', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Trustee capacity
+                <Field value={sellerProfileBuilderDraft.authorisedTrusteeCapacity || ''} onChange={(event) => updateSellerProfileBuilderDraft('authorisedTrusteeCapacity', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Trustee email
+                <Field type="email" value={sellerProfileBuilderDraft.authorisedTrusteeEmail || ''} onChange={(event) => updateSellerProfileBuilderDraft('authorisedTrusteeEmail', event.target.value)} />
+              </label>
+            </section>
+          ) : null}
+
+          {sellerProfileBuilderShowsForeign ? (
+            <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Country / jurisdiction
+                <Field value={sellerProfileBuilderDraft.foreignOwnerCountry || ''} onChange={(event) => updateSellerProfileBuilderDraft('foreignOwnerCountry', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Passport number
+                <Field value={sellerProfileBuilderDraft.foreignPassportNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('foreignPassportNumber', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Foreign registration number
+                <Field value={sellerProfileBuilderDraft.foreignRegistrationNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('foreignRegistrationNumber', event.target.value)} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                Residency / signing status
+                <Field value={sellerProfileBuilderDraft.foreignResidencyStatus || ''} onChange={(event) => updateSellerProfileBuilderDraft('foreignResidencyStatus', event.target.value)} />
+              </label>
+            </section>
+          ) : null}
+
+          <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
+              Property address
+              <Field value={sellerProfileBuilderDraft.propertyAddress || ''} onChange={(event) => updateSellerProfileBuilderDraft('propertyAddress', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Property title type
+              <Field as="select" value={sellerProfileBuilderDraft.propertyStructureType || 'full_title'} onChange={(event) => updateSellerProfileBuilderDraft('propertyStructureType', event.target.value)}>
+                <option value="full_title">Full title</option>
+                <option value="sectional_title">Sectional title</option>
+                <option value="estate">Estate</option>
+                <option value="agricultural_holding">Agricultural holding</option>
+              </Field>
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Asking price
+              <Field type="number" min="0" step="1000" value={sellerProfileBuilderDraft.askingPrice || ''} onChange={(event) => updateSellerProfileBuilderDraft('askingPrice', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Rates and taxes
+              <Field value={sellerProfileBuilderDraft.ratesTaxes || ''} onChange={(event) => updateSellerProfileBuilderDraft('ratesTaxes', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Levies
+              <Field value={sellerProfileBuilderDraft.levies || ''} onChange={(event) => updateSellerProfileBuilderDraft('levies', event.target.value)} disabled={Boolean(sellerProfileBuilderDraft.leviesNotApplicable)} />
+            </label>
+            <label className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 text-sm font-semibold text-[#2d445e]">
+              <input
+                type="checkbox"
+                checked={Boolean(sellerProfileBuilderDraft.leviesNotApplicable)}
+                onChange={(event) => updateSellerProfileBuilderDraft('leviesNotApplicable', event.target.checked)}
+              />
+              No levies
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Water billing
+              <Field as="select" value={sellerProfileBuilderDraft.waterBillingType || 'municipal'} onChange={(event) => updateSellerProfileBuilderDraft('waterBillingType', event.target.value)}>
+                <option value="municipal">Municipal</option>
+                <option value="body_corporate">Body corporate</option>
+                <option value="prepaid">Prepaid</option>
+                <option value="not_applicable">Not applicable</option>
+              </Field>
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Mandate start date
+              <Field type="date" value={sellerProfileBuilderDraft.mandateStartDate || ''} onChange={(event) => updateSellerProfileBuilderDraft('mandateStartDate', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Mandate expiry date
+              <Field type="date" value={sellerProfileBuilderDraft.expiryDate || ''} onChange={(event) => updateSellerProfileBuilderDraft('expiryDate', event.target.value)} />
+            </label>
+          </section>
+
+          {sellerProfileRequirementPreview ? (
+            <section data-testid="listing-seller-profile-requirement-preview" className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Document impact</p>
+                  <h4 className="mt-1 text-sm font-semibold text-[#142132]">
+                    {sellerProfileRequirementPreview.summary.total} requirements generated from this seller model
+                  </h4>
+                  <p className="mt-1 text-xs leading-5 text-[#607387]">
+                    {sellerProfileRequirementPreview.summary.sellerVisible} seller-visible, {sellerProfileRequirementPreview.summary.internal} internal
+                    {sellerProfileRequirementPreview.summary.retired ? `, ${sellerProfileRequirementPreview.summary.retired} no longer applicable` : ''}
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2">
+                    <p className="text-lg font-semibold text-[#142132]">{sellerProfileRequirementPreview.summary.required}</p>
+                    <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Required</p>
+                  </div>
+                  <div className="rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2">
+                    <p className="text-lg font-semibold text-[#142132]">{sellerProfileRequirementPreview.summary.ownerCount}</p>
+                    <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Owners</p>
+                  </div>
+                  <div className="rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2">
+                    <p className="text-lg font-semibold text-[#142132]">{sellerProfileRequirementPreview.summary.retired}</p>
+                    <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Retired</p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {sellerProfileRequirementPreview.groups.filter((group) => group.rows.length).map((group) => (
+                  <div key={group.key} className="rounded-[14px] border border-[#e1e9f2] bg-white p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-[#243d56]">{group.label}</p>
+                      <span className="rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
+                        {group.rows.length}
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {group.rows.slice(0, 4).map((row) => (
+                        <div key={row.requirement_key} className="flex items-start justify-between gap-3 text-xs leading-5">
+                          <span className="font-semibold text-[#425970]">{row.requirement_name}</span>
+                          <span className="shrink-0 text-[#7b8ca2]">{row.is_required === false ? 'Optional' : 'Required'}</span>
+                        </div>
+                      ))}
+                      {group.rows.length > 4 ? (
+                        <p className="text-xs font-semibold text-[#7b8ca2]">+{group.rows.length - 4} more</p>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {sellerProfileRequirementPreview.retiredRows?.length ? (
+                <div data-testid="listing-seller-profile-retired-requirements-preview" className="mt-4 rounded-[14px] border border-[#f0ddbf] bg-[#fffaf1] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[#6f4b16]">No longer applicable after save</p>
+                      <p className="mt-1 text-xs leading-5 text-[#8a6a35]">
+                        These requirements will be kept on the listing as retired records instead of disappearing from the document history.
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-[#efd9b0] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#8a6a35]">
+                      {sellerProfileRequirementPreview.retiredRows.length}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    {sellerProfileRequirementPreview.retiredRows.slice(0, 6).map((row) => (
+                      <div key={row.requirement_key} className="flex items-start justify-between gap-3 rounded-[10px] border border-[#f0ddbf] bg-white px-3 py-2 text-xs leading-5">
+                        <span className="font-semibold text-[#6f4b16]">{row.requirement_name}</span>
+                        <span className="shrink-0 text-[#9a7a45]">Not applicable</span>
+                      </div>
+                    ))}
+                  </div>
+                  {sellerProfileRequirementPreview.retiredRows.length > 6 ? (
+                    <p className="mt-2 text-xs font-semibold text-[#9a7a45]">+{sellerProfileRequirementPreview.retiredRows.length - 6} more retired requirements</p>
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+        </form>
+      </Modal>
       <Modal
         open={Boolean(activeSellerSectionEditor)}
         onClose={sellerSectionSaving ? undefined : () => setSellerSectionEditorKey('')}
@@ -10440,9 +11044,13 @@ function AgentListingDetail() {
                   <h2 className="mt-3 text-2xl font-semibold text-[#142132]">Seller Profile</h2>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-4 lg:flex lg:flex-wrap lg:justify-end">
+                  <Button size="sm" onClick={() => openSellerProfileBuilder('Complete the seller profile from the listing workspace.')}>
+                    <UserRound size={15} />
+                    Complete Profile
+                  </Button>
                   <Button size="sm" variant="secondary" onClick={handleEditSellerProfile}>
                     <FileText size={15} />
-                    Edit Seller
+                    Edit Contact
                   </Button>
                   <Button size="sm" variant="secondary" onClick={handleDownloadSellerProfilePdf}>
                     <FileText size={15} />
@@ -10468,6 +11076,24 @@ function AgentListingDetail() {
                 <div className="rounded-[18px] border border-[#f2dfbd] bg-[#fff9ec] px-4 py-3 text-sm font-semibold text-[#7a5a17]" data-testid="kingstons-listing-digital-signing-decision">
                   {listingKingstonsDigitalSigningDecision.label}: {listingKingstonsDigitalSigningDecision.agentAction}
                 </div>
+              ) : null}
+
+              {sellerProfile.completionPercent < 60 ? (
+                <article data-testid="listing-seller-profile-builder-prompt" className="rounded-[24px] border border-[#cfe0ee] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Seller profile builder</p>
+                      <h3 className="mt-1 text-base font-semibold text-[#142132]">Capture the seller model for this listing</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#607387]">
+                        Profile facts are {sellerProfile.completionPercent}% complete. Save the internal profile to refresh mandate and document requirements.
+                      </p>
+                    </div>
+                    <Button type="button" size="sm" onClick={() => openSellerProfileBuilder('Complete the seller profile from the listing workspace.')}>
+                      <UserRound size={15} />
+                      Complete Profile
+                    </Button>
+                  </div>
+                </article>
               ) : null}
 
               {directListingOperationalSummary.hasIntake ? (
@@ -11350,6 +11976,60 @@ function AgentListingDetail() {
 
       {activeTab === 'documents' ? (
         <section className="space-y-5">
+          {sellerDocumentRequirementModel ? (
+            <section data-testid="listing-seller-document-model-summary" className="rounded-[24px] border border-[#dbe6f2] bg-[#f7fbff] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Seller requirement model</p>
+                  <h3 className="mt-1 text-base font-semibold text-[#142132]">{sellerDocumentRequirementModel.branchLabel}</h3>
+                  <p className="mt-1 text-sm leading-6 text-[#607387]">
+                    {sellerDocumentRequirementModel.total} active seller requirements for {sellerDocumentRequirementModel.propertyStructureLabel}.
+                    {' '}{sellerDocumentRequirementModel.sellerVisible} seller-visible and {sellerDocumentRequirementModel.internal} internal.
+                    {sellerDocumentRequirementModel.retired ? ` ${sellerDocumentRequirementModel.retired} retired requirement${sellerDocumentRequirementModel.retired === 1 ? '' : 's'} kept for history.` : ''}
+                  </p>
+                </div>
+                <Button type="button" size="sm" onClick={() => openSellerProfileBuilder('Update the seller model and preview the document impact before saving.')}>
+                  <UserRound size={15} />
+                  Update Seller Model
+                </Button>
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {sellerDocumentRequirementModel.groups.map((group) => (
+                  <div key={group.key} className="rounded-[16px] border border-[#dce6f2] bg-white px-4 py-3">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">{group.label}</p>
+                    <p className="mt-1 text-2xl font-semibold text-[#142132]">{group.count}</p>
+                  </div>
+                ))}
+              </div>
+              {sellerDocumentRequirementModel.retiredRows.length ? (
+                <div data-testid="listing-seller-retired-requirements" className="mt-5 rounded-[16px] border border-[#f0ddbf] bg-[#fffaf1] p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-[#6f4b16]">Retired requirements</p>
+                      <p className="mt-1 text-xs leading-5 text-[#8a6a35]">
+                        Kept as not applicable because the saved seller model changed.
+                      </p>
+                    </div>
+                    <span className="w-fit rounded-full border border-[#efd9b0] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#8a6a35]">
+                      {sellerDocumentRequirementModel.retiredRows.length}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    {sellerDocumentRequirementModel.retiredRows.slice(0, 6).map((row) => (
+                      <div key={row.requirement_key || row.key} className="flex items-start justify-between gap-3 rounded-[10px] border border-[#f0ddbf] bg-white px-3 py-2 text-xs leading-5">
+                        <span className="font-semibold text-[#6f4b16]">{row.requirement_name || row.label}</span>
+                        <span className="shrink-0 text-[#9a7a45]">Not applicable</span>
+                      </div>
+                    ))}
+                  </div>
+                  {sellerDocumentRequirementModel.retiredRows.length > 6 ? (
+                    <p className="mt-2 text-xs font-semibold text-[#9a7a45]">+{sellerDocumentRequirementModel.retiredRows.length - 6} more retired requirements</p>
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
           {sellerReadinessSummary ? (
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
               <h3 className="text-[1rem] font-semibold text-[#142132]">Seller Requirement Summary</h3>

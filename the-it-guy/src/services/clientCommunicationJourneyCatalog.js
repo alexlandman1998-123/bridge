@@ -33,6 +33,27 @@ export const CLIENT_COMMUNICATION_TRIGGER_SOURCE = Object.freeze({
   NOT_WIRED: 'not_wired',
 })
 
+export const CLIENT_COMMUNICATION_CANONICAL_DECISION = Object.freeze({
+  CANONICAL: 'canonical',
+  MERGE_INTO: 'merge_into',
+  REPLACE_WITH: 'replace_with',
+  ACTIVITY_ONLY: 'activity_only',
+  BLOCKED_PENDING_TRIGGER: 'blocked_pending_trigger',
+})
+
+export const CLIENT_COMMUNICATION_TRIGGER_OWNER = Object.freeze({
+  LEAD_WORKFLOW: 'lead_workflow',
+  VIEWING_APPOINTMENT_WORKFLOW: 'viewing_appointment_workflow',
+  OFFER_OTP_WORKFLOW: 'offer_otp_workflow',
+  FINANCE_WORKFLOW: 'finance_workflow',
+  ATTORNEY_TRANSFER_WORKFLOW: 'attorney_transfer_workflow',
+  TRANSACTION_PROGRESS_WORKFLOW: 'transaction_progress_workflow',
+  SELLER_ONBOARDING_WORKFLOW: 'seller_onboarding_workflow',
+  LISTING_WORKFLOW: 'listing_workflow',
+  PORTAL_ACTIVITY: 'portal_activity',
+  TO_BE_CONFIRMED: 'to_be_confirmed',
+})
+
 function item({
   key,
   journey,
@@ -51,6 +72,11 @@ function item({
   sourceFiles = [],
   duplicateRisk = '',
   nextAction = '',
+  canonicalDecision = '',
+  triggerOwner = '',
+  canonicalEventKey = '',
+  mergeTarget = '',
+  implementationSlice = '',
 }) {
   return Object.freeze({
     key,
@@ -70,6 +96,11 @@ function item({
     sourceFiles: Object.freeze([...sourceFiles]),
     duplicateRisk,
     nextAction,
+    canonicalDecision,
+    triggerOwner,
+    canonicalEventKey,
+    mergeTarget,
+    implementationSlice,
   })
 }
 
@@ -84,6 +115,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Can overlap with internal lead operations assignment emails if audience boundaries are unclear.',
     nextAction: 'Split client acknowledgement from internal assignment notifications in the canonical automation contract.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.LEAD_WORKFLOW,
+    canonicalEventKey: 'buyer_lead_acknowledgement',
+    implementationSlice: 'lead_interest',
   },
   buyer_viewing_request: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -97,6 +132,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Appointment emails and viewing availability emails can describe the same viewing step.',
     nextAction: 'Decide which appointment events should be client email versus activity/portal state only.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.VIEWING_APPOINTMENT_WORKFLOW,
+    canonicalEventKey: 'buyer_viewing_request',
+    implementationSlice: 'viewing',
   },
   buyer_onboarding_invitation: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -109,6 +148,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Manual buyer portal sends can overlap with onboarding invites if both are triggered during conversion.',
     nextAction: 'Keep as first buyer vertical slice and standardise CTA text/source-of-truth portal destination.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.OFFER_OTP_WORKFLOW,
+    canonicalEventKey: 'buyer_onboarding_required',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   otp_ready: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -121,6 +164,11 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Retired offer routes and current portal routes can create confusing CTA destinations.',
     nextAction: 'Confirm the current OTP review URL and retire/migrate legacy offer-link language.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.REPLACE_WITH,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.OFFER_OTP_WORKFLOW,
+    canonicalEventKey: 'otp_ready',
+    mergeTarget: 'current_buyer_portal_otp_review',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   otp_submitted: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -132,6 +180,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Current notification is agent-facing, so adding buyer confirmation must not double-send to the agent.',
     nextAction: 'Add a buyer-facing confirmation event after identifying the authoritative signed/submitted OTP state.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.OFFER_OTP_WORKFLOW,
+    canonicalEventKey: 'otp_submitted_confirmation',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   offer_accepted_buyer: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -144,6 +196,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Offer decision, transaction creation, finance kickoff, and portal-link sends can all fire near acceptance.',
     nextAction: 'Choose one canonical accepted-offer trigger and branch next-step copy by finance type.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.OFFER_OTP_WORKFLOW,
+    canonicalEventKey: 'offer_accepted_buyer',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   bond_originator_intro: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -155,6 +211,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Partner invite/originator assignment emails can overlap with the buyer-facing introduction.',
     nextAction: 'Preserve the existing handler, then add explicit dedupe against originator assignment and bond intake events.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.FINANCE_WORKFLOW,
+    canonicalEventKey: 'bond_originator_introduced_to_buyer',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   bond_documents_required: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.CONDITIONAL_EMAIL,
@@ -166,6 +226,11 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Per-document requests can create email noise and duplicate broader finance requirements.',
     nextAction: 'Consolidate outstanding bond requirements into one portal-first action email per request batch.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.MERGE_INTO,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.FINANCE_WORKFLOW,
+    canonicalEventKey: 'finance_requirements_required',
+    mergeTarget: 'finance_requirements_required',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   bond_application_submitted: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.CONDITIONAL_EMAIL,
@@ -177,6 +242,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Bond status changes may be internal notifications unless audience filtering is client-safe.',
     nextAction: 'Mark which bond statuses are client milestones versus internal pipeline updates.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.FINANCE_WORKFLOW,
+    canonicalEventKey: 'bond_application_submitted',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   bond_approved: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -188,6 +257,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Bond grant received and bond grant published are close concepts and need one client-facing milestone.',
     nextAction: 'Use one buyer milestone, preferably published/approved, and keep received as internal where appropriate.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.FINANCE_WORKFLOW,
+    canonicalEventKey: 'bond_approved',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   proof_of_funds_required: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -196,6 +269,11 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     sourceFiles: [],
     duplicateRisk: 'Could be incorrectly represented as generic document request without cash-purchase context.',
     nextAction: 'Add a cash finance requirement event after identifying existing proof-of-funds document models.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.MERGE_INTO,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.FINANCE_WORKFLOW,
+    canonicalEventKey: 'finance_requirements_required',
+    mergeTarget: 'finance_requirements_required',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   hybrid_finance_required: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -204,6 +282,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     sourceFiles: [],
     duplicateRisk: 'Separate bond and cash emails would fragment the client experience.',
     nextAction: 'Create one consolidated finance requirement event that renders bond and cash sections together.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.FINANCE_WORKFLOW,
+    canonicalEventKey: 'finance_requirements_required',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   buyer_transfer_attorney_intro: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -215,6 +297,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Attorney invite, role-player intro, and handoff emails can overlap.',
     nextAction: 'Split professional invitation from buyer-facing transfer attorney introduction.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.ATTORNEY_TRANSFER_WORKFLOW,
+    canonicalEventKey: 'transfer_attorney_introduced_to_buyer',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   transfer_documents_required: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.CONDITIONAL_EMAIL,
@@ -227,6 +313,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Legal packet signing and document request notifications can both ask for documents/signatures.',
     nextAction: 'Define one action-required client email per transfer document batch.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.ATTORNEY_TRANSFER_WORKFLOW,
+    canonicalEventKey: 'transfer_documents_required',
+    implementationSlice: 'transfer_milestones',
   },
   matter_lodged: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -238,6 +328,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Every transaction stage change should not automatically email clients.',
     nextAction: 'Add milestone allow-list for lodged/prep/registered before enabling broad stage emails.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.TRANSACTION_PROGRESS_WORKFLOW,
+    canonicalEventKey: 'matter_lodged',
+    implementationSlice: 'transfer_milestones',
   },
   matter_on_prep: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -249,6 +343,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Can be noisy if mapped from every attorney workflow status.',
     nextAction: 'Allow only client-safe Deeds Office prep milestone copy.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.TRANSACTION_PROGRESS_WORKFLOW,
+    canonicalEventKey: 'matter_on_prep',
+    implementationSlice: 'transfer_milestones',
   },
   registered: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -260,6 +358,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Registration can also trigger closeout, document, commission, and handover activity.',
     nextAction: 'Make registration the final client milestone and keep closeout operations internal.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.TRANSACTION_PROGRESS_WORKFLOW,
+    canonicalEventKey: 'registered',
+    implementationSlice: 'transfer_milestones',
   },
   seller_enquiry_received: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.CONDITIONAL_EMAIL,
@@ -271,6 +373,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Seller enquiry acknowledgement may reuse buyer/property enquiry language.',
     nextAction: 'Create seller-specific lead acknowledgement copy and trigger classification.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.LEAD_WORKFLOW,
+    canonicalEventKey: 'seller_enquiry_received',
+    implementationSlice: 'seller_lead',
   },
   valuation_confirmed: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -282,6 +388,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Valuation and viewing appointment copy can be conflated.',
     nextAction: 'Separate valuation appointment intent from viewing coordination in appointment metadata.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.VIEWING_APPOINTMENT_WORKFLOW,
+    canonicalEventKey: 'valuation_confirmed',
+    implementationSlice: 'seller_lead',
   },
   seller_onboarding_invitation: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -294,6 +404,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Seller portal link and seller onboarding link are adjacent and should not both send for the same action.',
     nextAction: 'Keep seller onboarding as canonical for seller details; reserve portal link for post-onboarding access.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.SELLER_ONBOARDING_WORKFLOW,
+    canonicalEventKey: 'seller_onboarding_required',
+    implementationSlice: 'seller_onboarding',
   },
   listing_live: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.CONDITIONAL_EMAIL,
@@ -305,6 +419,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Listing status may not be reliable enough across private/public listing paths.',
     nextAction: 'Do not implement until there is one reliable listing-live state.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.BLOCKED_PENDING_TRIGGER,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.LISTING_WORKFLOW,
+    canonicalEventKey: 'listing_live',
+    implementationSlice: 'seller_listing',
   },
   seller_offer_received: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -316,6 +434,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Offer review reminders can overlap with the initial offer-received notification.',
     nextAction: 'Keep initial offer received separate from reminder/escalation events.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.OFFER_OTP_WORKFLOW,
+    canonicalEventKey: 'seller_offer_received',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   property_sold: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -328,6 +450,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Accepted offer, signed OTP, and transaction creation can all look like sold milestones.',
     nextAction: 'Pick the legally correct sold trigger and create a seller-specific milestone template.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.OFFER_OTP_WORKFLOW,
+    canonicalEventKey: 'property_sold',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   seller_transfer_attorney_intro: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.SEND_EMAIL,
@@ -339,6 +465,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Generic handoff emails can duplicate transfer attorney introduction.',
     nextAction: 'Create seller copy variant and dedupe against professional assignment/invite events.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.CANONICAL,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.ATTORNEY_TRANSFER_WORKFLOW,
+    canonicalEventKey: 'transfer_attorney_introduced_to_seller',
+    implementationSlice: 'offer_acceptance_finance_transfer',
   },
   document_uploaded_internal: {
     emailPolicy: CLIENT_COMMUNICATION_EMAIL_POLICY.DO_NOT_EMAIL,
@@ -350,6 +480,10 @@ const CLIENT_COMMUNICATION_PHASE1_AUDIT = Object.freeze({
     ],
     duplicateRisk: 'Low-level operational updates become noisy if promoted to email.',
     nextAction: 'Keep as explicit activity-only guardrail in the workspace.',
+    canonicalDecision: CLIENT_COMMUNICATION_CANONICAL_DECISION.ACTIVITY_ONLY,
+    triggerOwner: CLIENT_COMMUNICATION_TRIGGER_OWNER.PORTAL_ACTIVITY,
+    canonicalEventKey: 'activity_document_uploaded',
+    implementationSlice: 'activity_feed_guardrails',
   },
 })
 
@@ -367,6 +501,11 @@ function withPhase1AuditMetadata(entry) {
     sourceFiles: audit.sourceFiles || [],
     duplicateRisk: audit.duplicateRisk || 'No duplicate risk documented yet.',
     nextAction: audit.nextAction || 'Confirm trigger ownership and audience before implementation.',
+    canonicalDecision: audit.canonicalDecision || CLIENT_COMMUNICATION_CANONICAL_DECISION.BLOCKED_PENDING_TRIGGER,
+    triggerOwner: audit.triggerOwner || CLIENT_COMMUNICATION_TRIGGER_OWNER.TO_BE_CONFIRMED,
+    canonicalEventKey: audit.canonicalEventKey || entry.key,
+    mergeTarget: audit.mergeTarget || '',
+    implementationSlice: audit.implementationSlice || 'unassigned',
   })
 }
 

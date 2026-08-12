@@ -16,6 +16,8 @@ Those settings are stored under `organisation_settings.settings_json.emailTempla
 
 Phase 1 now adds a read-only Client Journey Coverage panel backed by `src/services/clientCommunicationJourneyCatalog.js`. It maps canonical buyer/seller communications by audience, category, status, email policy, trigger source, CTA destination, likely source files, duplicate-risk notes, and next action.
 
+Phase 1.5 adds the decision layer for each row: canonical decision, trigger owner, canonical event key, merge target, and implementation slice. This turns the audit into an implementation blueprint while still avoiding new outbound email behavior.
+
 The workspace is still not a full notification control plane: it does not persist trigger ownership, active/draft/disabled status, reminder policy, previews, or send logs. It is now an audit/control-surface foundation for those later phases.
 
 ## 2. Where Triggers Originate
@@ -167,18 +169,25 @@ Workflow event -> canonical client communication event -> audience resolver -> e
 
 Do not create a parallel queue. Add a journey catalog first, then progressively migrate current direct invokes and DB triggers to reference the canonical event keys.
 
+Operating decisions now encoded in the catalog:
+
+- Support buyer and seller together, using role-specific variants where the same milestone serves both sides.
+- Start implementation with the offer accepted / property sold -> finance -> transfer-attorney handoff slice.
+- Keep email volume conservative: action-required and major milestones get email; low-level operational events remain activity-only or portal-first.
+- Use agency/partner branding first, with ARCH9 as the subtle platform footer.
+- Treat the client portal as the source of truth; email should point clients to the current portal state rather than duplicate the full workflow.
+
 ## 11. Phased Plan
 
 1. Add a canonical client communication catalog and show coverage in the existing workspace. Completed as a read-only Phase 1 foundation.
-2. Extend the catalog into persisted workspace controls only after event names and trigger ownership are stable.
-3. Expand the shared branded email content primitives for property card, action card, next steps, role-player card, and CTA destinations.
-4. Implement buyer communications in small vertical slices: onboarding, OTP ready, OTP submitted, offer accepted.
-5. Implement seller communications: onboarding, offer review, sold milestone.
-6. Wire finance branching for bond/cash/hybrid.
-7. Tighten originator and transfer attorney introductions with dedupe.
-8. Map transaction progress to deliberate client milestones only.
-9. Upgrade Notification Workspace with previews, status, controls, history, and logs.
-10. Run end-to-end buyer/seller transaction tests.
+2. Lock catalog decisions: canonical event, trigger owner, merge/replace/activity-only policy, and first implementation slice. Completed as Phase 1.5.
+3. Extend the catalog into persisted workspace controls only after event names and trigger ownership are stable.
+4. Expand the shared branded email content primitives for property card, action card, next steps, role-player card, and CTA destinations.
+5. Implement buyer/seller communications in the first vertical slice: onboarding, OTP ready/submitted, offer accepted/property sold, finance requirements, originator intro, transfer attorney intro.
+6. Implement seller lead/listing communications once listing-live trigger ownership is reliable.
+7. Map transaction progress to deliberate client milestones only.
+8. Upgrade Notification Workspace with previews, status, controls, history, and logs.
+9. Run end-to-end buyer/seller transaction tests.
 
 ## 12. Files Likely To Be Affected
 

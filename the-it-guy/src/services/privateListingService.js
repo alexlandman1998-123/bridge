@@ -15,6 +15,7 @@ import {
   PRIVATE_LISTING_LIFECYCLE,
 } from '../lib/privateListingLifecycle'
 import {
+  LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION,
   buildSellerRequirementProfile,
   generateSellerDocumentRequirements as generateSellerDocumentRequirementsFromEngine,
   getListingActivationReadiness as getSellerListingActivationReadiness,
@@ -7044,9 +7045,15 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
     ...row,
     private_listing_id: listing.id,
     document_visibility: row.document_visibility || row.visibility || 'seller_visible',
+    status: 'not_applicable',
+    is_required: false,
     generated_from: {
       ...(row.generated_from && typeof row.generated_from === 'object' ? row.generated_from : {}),
       archivedByReason: reason,
+      archived_by_reason: reason,
+      retirement_version: row?.generated_from?.retirement_version || row?.retirementVersion || LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION,
+      retirement_reason: row?.generated_from?.retirement_reason || row?.retirementReason || 'seller_requirement_model_changed',
+      retired_by: row?.generated_from?.retired_by || 'private_listing_requirement_sync',
     },
   }))
 
@@ -7122,6 +7129,7 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
   if (emitActivity) {
     const createdCount = upsertRows.filter((row) => !row.id).length
     const archivedCount = markNotApplicableRows.length
+    const retiredRequirementKeys = markNotApplicableRows.map((row) => row.requirement_key).filter(Boolean)
     const activityType = existingRequirements.length ? 'requirements_updated' : 'requirements_generated'
     const activityTitle = existingRequirements.length ? 'Seller requirements updated' : 'Seller requirements generated'
     const activityDescription = existingRequirements.length
@@ -7140,6 +7148,9 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
         lifecycleStatus: profile.lifecycleStatus,
         createdCount,
         archivedCount,
+        retiredCount: archivedCount,
+        retiredRequirementKeys,
+        retirementVersion: archivedCount ? LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION : null,
         totalRequirements: requirements.length,
         missingRequirements: hydrated?.readinessSummary?.missingRequirementsCount || 0,
         automaticallyIssuedRequests: requestIssuance?.counts?.applied || 0,

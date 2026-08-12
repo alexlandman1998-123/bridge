@@ -13,8 +13,10 @@ const server = await createServer({
 
 try {
   const {
+    CLIENT_COMMUNICATION_CANONICAL_DECISION,
     CLIENT_COMMUNICATION_EMAIL_POLICY,
     CLIENT_COMMUNICATION_IMPLEMENTATION_STATUS,
+    CLIENT_COMMUNICATION_TRIGGER_OWNER,
     CLIENT_COMMUNICATION_TRIGGER_SOURCE,
     getClientCommunicationCoverageSummary,
     listClientCommunicationJourney,
@@ -39,6 +41,10 @@ try {
     assert.ok(entry.duplicateRisk, `${entry.key} should document duplicate risk`)
     assert.ok(entry.nextAction, `${entry.key} should document the Phase 1 next action`)
     assert.ok(Array.isArray(entry.sourceFiles), `${entry.key} should expose source files`)
+    assert.ok(entry.canonicalDecision, `${entry.key} should declare the canonical decision`)
+    assert.ok(entry.triggerOwner, `${entry.key} should declare the trigger owner`)
+    assert.ok(entry.canonicalEventKey, `${entry.key} should declare the canonical event key`)
+    assert.ok(entry.implementationSlice, `${entry.key} should declare the implementation slice`)
   }
 
   const summary = getClientCommunicationCoverageSummary(journey)
@@ -68,6 +74,22 @@ try {
 
   const activityOnly = journey.find((entry) => entry.key === 'document_uploaded_internal')
   assert.equal(activityOnly.emailPolicy, CLIENT_COMMUNICATION_EMAIL_POLICY.DO_NOT_EMAIL)
+  assert.equal(activityOnly.canonicalDecision, CLIENT_COMMUNICATION_CANONICAL_DECISION.ACTIVITY_ONLY)
+
+  const phaseTwoSlice = journey.filter((entry) => entry.implementationSlice === 'offer_acceptance_finance_transfer')
+  assert.ok(phaseTwoSlice.length >= 10, 'recommended first implementation slice should cover offer, finance, and transfer handoff')
+  assert.ok(
+    phaseTwoSlice.every((entry) => entry.triggerOwner !== CLIENT_COMMUNICATION_TRIGGER_OWNER.TO_BE_CONFIRMED),
+    'recommended first slice should have explicit trigger owners',
+  )
+
+  const listingLive = journey.find((entry) => entry.key === 'listing_live')
+  assert.equal(listingLive.canonicalDecision, CLIENT_COMMUNICATION_CANONICAL_DECISION.BLOCKED_PENDING_TRIGGER)
+  assert.equal(listingLive.triggerOwner, CLIENT_COMMUNICATION_TRIGGER_OWNER.LISTING_WORKFLOW)
+
+  const bondDocumentsRequired = journey.find((entry) => entry.key === 'bond_documents_required')
+  assert.equal(bondDocumentsRequired.canonicalDecision, CLIENT_COMMUNICATION_CANONICAL_DECISION.MERGE_INTO)
+  assert.equal(bondDocumentsRequired.mergeTarget, 'finance_requirements_required')
 
   console.log('client communication journey catalog tests passed')
 } finally {

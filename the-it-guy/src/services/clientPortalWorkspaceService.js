@@ -1434,6 +1434,28 @@ function normalizeDocumentStatus(value = '') {
   return 'required'
 }
 
+function getRequirementGeneratedFrom(requirement = {}) {
+  const generatedFrom = requirement?.generated_from || requirement?.generatedFrom
+  return generatedFrom && typeof generatedFrom === 'object' && !Array.isArray(generatedFrom)
+    ? generatedFrom
+    : {}
+}
+
+function isRetiredSellerPortalRequirement(requirement = {}) {
+  const status = normalizeDocumentStatus(requirement?.status || requirement?.requiredDocumentStatus || requirement?.required_document_status || '')
+  const generatedFrom = getRequirementGeneratedFrom(requirement)
+  return (
+    ['not_applicable', 'cancelled'].includes(status) ||
+    requirement?.applicable === false ||
+    requirement?.retired === true ||
+    requirement?.retiredBySellerProfileBuilder === true ||
+    requirement?.retiredBySellerRequirementSync === true ||
+    generatedFrom.archived === true ||
+    generatedFrom.retired_by ||
+    generatedFrom.retirement_version
+  )
+}
+
 function normalizeAdditionalRequestAudience(request = {}) {
   const requestedFrom = String(request?.requestedFrom || request?.requested_from || '').trim().toLowerCase()
   if (!requestedFrom) {
@@ -2789,6 +2811,8 @@ function resolveSellerPortalRawDocuments(portalData = {}) {
 
 export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspaceMode = 'selling') {
   const rawRequirements = resolveSellerPortalRawRequirements(portalData)
+  const retiredRequirements = rawRequirements.filter(isRetiredSellerPortalRequirement)
+  const activeRequirements = rawRequirements.filter((requirement) => !isRetiredSellerPortalRequirement(requirement))
   if (workspaceMode !== 'selling') {
     return {
       source: 'portal_payload',
@@ -2796,6 +2820,7 @@ export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspa
       requirementKeys: rawRequirements.map((requirement) => normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)).filter(Boolean),
       documentPackFingerprint: '',
       requiredDocuments: rawRequirements,
+      retiredRequirements,
     }
   }
 
@@ -2811,8 +2836,8 @@ export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspa
     null
   const listingForPack = {
     ...listing,
-    documentRequirements: rawRequirements,
-    document_requirements: rawRequirements,
+    documentRequirements: activeRequirements,
+    document_requirements: activeRequirements,
     documents: resolveSellerPortalRawDocuments(portalData),
     mandatePacket,
     mandate_packet: mandatePacket,
@@ -2837,18 +2862,20 @@ export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspa
     ...portalData,
     listing: listingForPack,
     formData,
-    requirements: rawRequirements,
+    requirements: activeRequirements,
     documents: listingForPack.documents,
     mandatePacket,
     mandateSigned,
   })
-  const requiredDocuments = (Array.isArray(pack.requirements) ? pack.requirements : rawRequirements)
+  const requiredDocuments = (Array.isArray(pack.requirements) ? pack.requirements : activeRequirements)
+    .filter((requirement) => !isRetiredSellerPortalRequirement(requirement))
     .filter((requirement) => !(mandateSigned && isSignedMandateRequirement(requirement)))
     .map((requirement) => mapSellerRequiredDocument(requirement))
 
   return {
     ...pack,
     requiredDocuments,
+    retiredRequirements,
     requirementKeys: requiredDocuments
       .map((requirement) => normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key))
       .filter(Boolean),
@@ -2882,6 +2909,7 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     mergeCanonicalRequiredDocuments(requiredDocumentsRaw, canonicalDocumentRequestPlan?.requiredDocuments || []),
     workspaceMode,
   )
+    .filter((requirement) => !isRetiredSellerPortalRequirement(requirement))
     .map((requirement) => {
       const uploadedDocument = findUploadedDocumentForRequirement(uploadedDocuments, requirement)
       if (!uploadedDocument) return requirement
@@ -2989,6 +3017,7 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     summary,
     canonicalRequirements: Array.isArray(portalData?.canonicalRequirements) ? portalData.canonicalRequirements : [],
     canonicalDocumentRequestPlan,
+    retiredRequirements: sellerDocumentPack?.retiredRequirements || [],
     sellerStructure: sellerDocumentPack?.sellerStructure || null,
     documentPackSource: sellerDocumentPack?.source || '',
     documentPackRequirementKeys: sellerDocumentPack?.requirementKeys || [],
