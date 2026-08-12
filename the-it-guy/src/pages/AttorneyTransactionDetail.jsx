@@ -5799,14 +5799,21 @@ function ArchlineMatterHeader({
 }) {
   const propertyDisplay = property || 'Property pending'
   const propertyParts = String(propertyDisplay).split(',').map((item) => item.trim()).filter(Boolean)
-  const propertyPrimary = propertyParts.slice(0, 2).join(', ') || propertyDisplay
-  const propertySecondary = propertyParts.slice(2, 4).join(', ')
-  const propertyTertiary = propertyParts.slice(4).join(', ')
+  const propertyPrimary = propertyParts[0] || propertyDisplay
+  const propertySecondary = propertyParts.slice(1, 3).join(', ')
+  const propertyTertiary = propertyParts.slice(3).join(', ')
+  const cleanMetricValue = (value) => {
+    const label = String(value || '').trim()
+    if (!label || ['not captured', 'not set', 'tbd', 'undefined', 'null'].includes(label.toLowerCase())) {
+      return '—'
+    }
+    return label
+  }
   const metricRows = [
-    { key: 'price', label: 'Purchase Price', value: purchasePrice || 'Not captured' },
-    { key: 'property-type', label: 'Property Type', value: propertyType || 'Not captured' },
-    { key: 'days-open', label: 'Days Open', value: daysOpenLabel || 'TBD' },
-    { key: 'instruction-date', label: 'Instruction Date', value: instructionDate || 'TBD' },
+    { key: 'price', label: 'Purchase Price', value: cleanMetricValue(purchasePrice), icon: CircleDollarSign },
+    { key: 'property-type', label: 'Property Type', value: cleanMetricValue(propertyType), icon: Building2 },
+    { key: 'days-open', label: 'Days Open', value: cleanMetricValue(daysOpenLabel), icon: Clock3 },
+    { key: 'instruction-date', label: 'Instruction Date', value: cleanMetricValue(instructionDate), icon: CalendarDays },
   ]
   const chips = matterChips.filter((item) => item?.label)
   const workflowKey = workflow?.detailKey === 'bond-cancellation'
@@ -5830,32 +5837,32 @@ function ArchlineMatterHeader({
   return (
     <header className="no-print -mx-3 border-b border-slate-200/70 bg-white px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
       <div className="mx-auto max-w-[1680px] space-y-5">
-        <section className="rounded-[24px] border border-[#0f2d37] bg-[linear-gradient(135deg,#102f3a_0%,#1f4d52_54%,#35546c_100%)] px-4 py-4 text-white shadow-[0_22px_44px_rgba(15,47,58,0.22)] md:px-6 md:py-5">
+        <section className="rounded-[28px] border border-[#dfe8f2] bg-white px-4 py-4 text-[#142132] shadow-[0_24px_60px_rgba(15,35,52,0.09)] md:px-6 md:py-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 flex-wrap items-center gap-3">
               <Link
                 to={backPath}
-                className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-white/20 bg-white/12 px-3.5 text-sm font-semibold text-white transition hover:bg-white/18"
+                className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#dfe8f2] bg-white px-3.5 text-sm font-semibold text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]"
               >
                 <ChevronRight size={15} className="rotate-180" />
                 {backLabel || 'Back to Matters'}
               </Link>
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#d9f0ec]">{workspaceLabel}</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{workspaceLabel}</span>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <button type="button" className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-white/20 bg-white/12 px-3.5 text-sm font-semibold text-white transition hover:bg-white/18" onClick={onSharePortal}>
+              <button type="button" className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#dfe8f2] bg-white px-3.5 text-sm font-semibold text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]" onClick={onSharePortal}>
                 <Link2 size={15} />
                 {shareLabel}
               </button>
-              <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-white/20 bg-white/12 text-white transition hover:bg-white/18" onClick={onCall} aria-label="Call primary contact" title="Call primary contact">
+              <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dfe8f2] bg-white text-[#526982] shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd] hover:text-[#142132]" onClick={onCall} aria-label="Call primary contact" title="Call primary contact">
                 <Phone size={16} />
               </button>
-              <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-white/20 bg-white/12 text-white transition hover:bg-white/18" onClick={onEmail} aria-label="Email primary contact" title="Email primary contact">
+              <button type="button" className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dfe8f2] bg-white text-[#526982] shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd] hover:text-[#142132]" onClick={onEmail} aria-label="Email primary contact" title="Email primary contact">
                 <Mail size={16} />
               </button>
               <button
                 type="button"
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-white/20 bg-white/12 px-4 text-sm font-semibold text-white transition hover:bg-white/18"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#dfe8f2] bg-white px-4 text-sm font-semibold text-[#142132] shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:border-[#cbd8e6] hover:bg-[#f8fbfd]"
                 onClick={onMoreActions}
               >
                 {moreActionsLabel}
@@ -5864,68 +5871,77 @@ function ArchlineMatterHeader({
             </div>
           </div>
 
-          <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,0.72fr)_minmax(540px,0.52fr)] xl:items-start">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="break-words text-[2.35rem] font-semibold leading-none tracking-[-0.04em] text-white md:text-[3rem]">
-                  {reference || 'Matter'}
-                </h1>
-                <button type="button" className="inline-flex size-9 items-center justify-center rounded-full text-amber-500 transition hover:bg-amber-50" aria-label="Favourite matter" title="Favourite matter">
-                  <Star size={20} />
-                </button>
-                <ArchlineStatusPill>{statusLabel || 'In Progress'}</ArchlineStatusPill>
-              </div>
-              {chips.length ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {chips.map((chip) => {
-                    const Icon = chip.icon || FileText
-                    return (
-                      <span key={chip.key || chip.label} className="inline-flex h-8 items-center gap-2 rounded-[10px] border border-white/20 bg-white/12 px-3 text-xs font-semibold text-white">
-                        <Icon size={14} />
-                        {chip.label}
-                      </span>
-                    )
-                  })}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {metricRows.map((item) => (
-                <article key={item.key} className="min-w-0 border-white/20 py-1 sm:border-l sm:pl-5">
-                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#d8e7ed]">{item.label}</span>
-                  <strong className="mt-1 block truncate text-base font-semibold text-white" title={item.value}>{item.value}</strong>
-                </article>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-5 flex flex-col gap-5 lg:flex-row lg:items-center">
-            <div className="h-[132px] w-full overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:w-[260px]">
+          <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(300px,0.38fr)_minmax(0,0.62fr)] xl:items-stretch">
+            <div className="min-h-[220px] overflow-hidden rounded-[20px] border border-[#dfe8f2] bg-[#f4f8fb] shadow-[0_16px_34px_rgba(15,23,42,0.05)] xl:min-h-[300px]">
               {propertyImageUrl ? (
                 <img src={propertyImageUrl} alt={propertyPrimary} className="h-full w-full object-cover" />
               ) : (
-                <div className="grid h-full place-items-center bg-[radial-gradient(circle_at_22%_18%,rgba(8,123,75,0.22),transparent_30%),linear-gradient(135deg,#f6faf8,#e8eef5)] p-4 text-center">
+                <div className="grid h-full min-h-[220px] place-items-center bg-[radial-gradient(circle_at_20%_15%,rgba(8,123,75,0.12),transparent_34%),linear-gradient(135deg,#f8fbfd,#eef4f7)] p-6 text-center xl:min-h-[300px]">
                   <div>
-                    <Building2 size={28} className="mx-auto text-emerald-800" />
-                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Property image pending</p>
+                    <Building2 size={34} className="mx-auto text-emerald-800" />
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#71839a]">Property image pending</p>
                   </div>
                 </div>
               )}
             </div>
-            <div className="flex min-w-0 flex-1 items-start gap-4">
-              <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-[#eef8f1] text-emerald-800">
-                <MapPin size={23} />
-              </span>
+
+            <div className="flex min-w-0 flex-col justify-between gap-6 py-1">
               <div className="min-w-0">
-                <h2 className="line-clamp-2 text-balance text-[1.35rem] font-semibold leading-[1.25] tracking-[-0.03em] text-[#142132] md:text-[1.65rem]">
-                  {propertyPrimary}
-                </h2>
-                {propertySecondary ? <p className="mt-1 text-base font-medium text-[#243b5a]">{propertySecondary}</p> : null}
-                {propertyTertiary ? <p className="mt-1 text-sm text-[#60758d]">{propertyTertiary}</p> : null}
-                <button type="button" className="mt-4 inline-flex h-10 items-center gap-2 rounded-[12px] border border-white/20 bg-white/12 px-3.5 text-sm font-semibold text-white transition hover:bg-white/18" onClick={onViewProperty}>
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">{reference || 'Matter reference pending'}</span>
+                <div className="mt-4 flex min-w-0 items-start gap-4">
+                  <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-[18px] bg-[#eef8f1] text-emerald-800">
+                    <MapPin size={24} />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+                      <h1 className="line-clamp-2 text-balance text-[2rem] font-semibold leading-[1.08] text-[#070b14] md:text-[2.25rem]">
+                        {propertyPrimary}
+                      </h1>
+                      <button type="button" className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-amber-500 transition hover:bg-amber-50" aria-label="Favourite matter" title="Favourite matter">
+                        <Star size={21} />
+                      </button>
+                    </div>
+                    {propertySecondary ? <p className="mt-2 text-base font-medium text-[#526982]">{propertySecondary}</p> : null}
+                    {propertyTertiary ? <p className="mt-1 text-sm text-[#71839a]">{propertyTertiary}</p> : null}
+                  </div>
+                </div>
+
+                <div className="mt-7 grid min-w-0 gap-y-4 rounded-[18px] border border-[#e8eef5] bg-[#fbfdff] px-4 py-4 sm:grid-cols-2 xl:grid-cols-4">
+                  {metricRows.map((item, index) => {
+                    const Icon = item.icon
+                    return (
+                      <article key={item.key} className={`min-w-0 ${index > 0 ? 'xl:border-l xl:border-[#dce6f0] xl:pl-5' : ''}`}>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-[14px] bg-[#eef8f1] text-emerald-800">
+                            <Icon size={17} />
+                          </span>
+                          <div className="min-w-0">
+                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#71839a]">{item.label}</span>
+                            <strong className="mt-1 block truncate text-[1rem] font-semibold text-[#142132]" title={item.value}>{item.value}</strong>
+                          </div>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+                  <ArchlineStatusPill>{statusLabel || 'Active'}</ArchlineStatusPill>
+                  {chips.length ? chips.map((chip) => {
+                    const Icon = chip.icon || FileText
+                    return (
+                      <span key={chip.key || chip.label} className="inline-flex h-8 items-center gap-2 rounded-lg bg-[#f1f5f9] px-3 text-xs font-semibold text-[#526982]">
+                        <Icon size={14} />
+                        {chip.label}
+                      </span>
+                    )
+                  }) : null}
+                </div>
+                <button type="button" className="inline-flex h-12 items-center justify-center gap-2 rounded-[14px] bg-emerald-700 px-5 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(4,120,87,0.22)] transition hover:bg-emerald-800 sm:self-end" onClick={onViewProperty}>
                   View Property
-                  <ExternalLink size={14} />
+                  <ExternalLink size={15} />
                 </button>
               </div>
             </div>
@@ -11849,6 +11865,23 @@ function AttorneyTransactionDetail() {
   const displayPurchasePriceValue = hasCapturedFinancials ? Number(transaction?.purchase_price || transaction?.sales_price || 0) : 0
   const bondAmountFallback = hasCapturedFinanceType ? (financeRequiresBondSupport ? 'Pending' : 'N/A') : 'Not captured'
   const propertyAddress = buildPropertyAddress(transaction, data?.onboardingFormData)
+  const propertyImageUrl = [
+    transaction?.propertyImageUrl,
+    transaction?.property_image_url,
+    transaction?.thumbnail_url,
+    transaction?.cover_image_url,
+    transaction?.hero_image_url,
+    transaction?.image_url,
+    unit?.imageUrl,
+    unit?.image_url,
+    unit?.thumbnail_url,
+    unit?.cover_image_url,
+    development?.heroImageUrl,
+    development?.hero_image_url,
+    development?.cover_image_url,
+    development?.image_url,
+    data?.propertyImageUrl,
+  ].find((value) => String(value || '').trim()) || ''
   const matterHeadline = !isPrivateMatter
     ? `${development?.name || 'Development'}${unit?.unit_number ? ` • Unit ${unit.unit_number}` : ''}`
     : transaction?.property_description || transaction?.property_address_line_1 || 'Private Property Transaction'
@@ -15826,10 +15859,13 @@ function AttorneyTransactionDetail() {
             reference={workspaceReference}
             statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
             property={propertyAddress || matterHeadline}
-            propertyType={toTitle(transaction?.property_type || transaction?.propertyType || routingDiagnostics?.facts?.propertyTenure || 'Not captured')}
-            purchasePrice={formatCurrencyValue(displayPurchasePriceValue, 'Not captured')}
+            propertyType={transaction?.property_type || transaction?.propertyType || routingDiagnostics?.facts?.propertyTenure
+              ? toTitle(transaction?.property_type || transaction?.propertyType || routingDiagnostics?.facts?.propertyTenure)
+              : '—'}
+            propertyImageUrl={propertyImageUrl}
+            purchasePrice={formatCurrencyValue(displayPurchasePriceValue, '—')}
             daysOpenLabel={daysBetween(transaction?.instruction_date || transaction?.created_at)}
-            instructionDate={formatDate(transaction?.instruction_date || transaction?.created_at, 'TBD')}
+            instructionDate={formatDate(transaction?.instruction_date || transaction?.created_at, '—')}
             matterChips={archlineMatterChips}
             workflow={archlineTransferWorkflow}
             tabs={isAgentTransactionView

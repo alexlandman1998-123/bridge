@@ -50,6 +50,14 @@ import {
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
 import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
+import {
+  buildAcceptedOfferConversionPreflight,
+  formatAcceptedOfferConversionPreflightMessage,
+} from '../core/transactions/acceptedOfferConversionPreflight'
+import {
+  OFFER_WORKFLOW_RETIRED,
+  OFFER_WORKFLOW_RETIRED_MESSAGE,
+} from '../core/offers/offerWorkflowRetirement'
 import { requestPersistedPdfAccess } from '../lib/documentPacketsApi'
 import {
   getListingReadinessSummary,
@@ -120,6 +128,7 @@ import {
 } from '../lib/buyerLifecycleService'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
+import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
 import {
   getPrivateListing,
   createPrivateListingDocumentDownloadUrl,
@@ -3547,6 +3556,11 @@ function AgentListingDetail() {
     if (!listingRecord) return
     setOfferActionError('')
     setOfferActionMessage('')
+    if (OFFER_WORKFLOW_RETIRED) {
+      setOfferActionError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+      setShowSendOfferLinkForm(false)
+      return
+    }
     const selectedLead = buyerOfferLeads.find((lead) => String(lead?.id || '') === String(offerInviteDraft.buyerLeadId || ''))
     if (!selectedLead) {
       setOfferActionError('Select a buyer lead before generating an offer link.')
@@ -3766,6 +3780,10 @@ function AgentListingDetail() {
 
   function handleCopyOfferLink(token) {
     if (!token) return
+    if (OFFER_WORKFLOW_RETIRED) {
+      setOfferActionError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+      return
+    }
     const link = `${window.location.origin}/client/offer/${token}`
     navigator.clipboard.writeText(link).then(
       () => {
@@ -3781,6 +3799,10 @@ function AgentListingDetail() {
   function handleOfferAction(offerId, action) {
     setOfferActionError('')
     setOfferActionMessage('')
+    if (OFFER_WORKFLOW_RETIRED) {
+      setOfferActionError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+      return
+    }
     try {
       const notes = String(offerNotesDraftById?.[offerId] || '').trim()
       markOfferAgentAction(offerId, action, notes)
@@ -4443,6 +4465,10 @@ function AgentListingDetail() {
     const note = offerNotesDraftById?.[offerRow.id] || ''
     setOfferActionError('')
     setOfferActionMessage('')
+    if (OFFER_WORKFLOW_RETIRED) {
+      setOfferActionError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+      return
+    }
     try {
       setCanonicalOfferActionId(`${offerRow.id}:${nextStatus}`)
       await updateCanonicalOfferStatus(offerRow.canonicalOfferId, nextStatus, {
@@ -4467,6 +4493,10 @@ function AgentListingDetail() {
     let createdReviewSession = null
     setOfferActionError('')
     setOfferActionMessage('')
+    if (OFFER_WORKFLOW_RETIRED) {
+      setOfferActionError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+      return
+    }
     try {
       setCanonicalOfferActionId(`${offerRow.id}:sent_to_seller`)
       const reviewPreparation = buildListingSellerReviewPreparation(offerRow, canonicalOffer)
@@ -4573,6 +4603,10 @@ function AgentListingDetail() {
     const note = offerNotesDraftById?.[offerRow.id] || ''
     setOfferActionError('')
     setOfferActionMessage('')
+    if (OFFER_WORKFLOW_RETIRED) {
+      setOfferActionError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+      return
+    }
     try {
       setCanonicalOfferActionId(`${offerRow.id}:convert`)
       const currentStatus = normalizeOfferWorkflowStatus(canonicalOffer?.status || offerRow.status)
@@ -4595,26 +4629,82 @@ function AgentListingDetail() {
             actor: getCanonicalOfferActor(),
             patch: buildCanonicalListingOfferPatch(offerRow, 'Accepted for transaction conversion', note),
           })
+      const conversionLead = {
+        ...(linkedLead || {}),
+        leadId: linkedLead?.leadId || acceptedOffer?.buyerLeadId || canonicalOffer?.buyerLeadId,
+        contactId: linkedLead?.contactId || acceptedOffer?.buyerContactId || canonicalOffer?.buyerContactId,
+        email: linkedLead?.email || acceptedOffer?.conditions?.buyerEmail || canonicalOffer?.conditions?.buyerEmail,
+        phone: linkedLead?.phone || acceptedOffer?.conditions?.buyerPhone || canonicalOffer?.conditions?.buyerPhone,
+        firstName: linkedLead?.firstName || acceptedOffer?.conditions?.buyerName || canonicalOffer?.conditions?.buyerName,
+        budget: acceptedOffer?.offerAmount || canonicalOffer?.offerAmount,
+        assignedAgentId: getCanonicalOfferActor().id,
+        assignedAgentName: getCanonicalOfferActor().name,
+        assignedAgentEmail: getCanonicalOfferActor().email,
+      }
+      const conversionRoutingProfile = resolveTransactionRoutingProfile({
+        transaction: {
+          financeType: normalizeText(
+            acceptedOffer?.financeType ||
+              acceptedOffer?.finance_type ||
+              acceptedOffer?.conditions?.financeType ||
+              canonicalOffer?.financeType ||
+              canonicalOffer?.finance_type ||
+              canonicalOffer?.conditions?.financeType ||
+              linkedLead?.financeType ||
+              linkedLead?.preferredFinanceType ||
+              linkedLead?.finance_type,
+          ),
+          purchaserType: normalizeText(
+            acceptedOffer?.conditions?.buyerType ||
+              acceptedOffer?.conditions?.purchaserType ||
+              canonicalOffer?.conditions?.buyerType ||
+              canonicalOffer?.conditions?.purchaserType ||
+              linkedLead?.buyerType ||
+              linkedLead?.purchaserType ||
+              'individual',
+          ),
+          buyerEntityType: normalizeText(
+            acceptedOffer?.conditions?.buyerType ||
+              acceptedOffer?.conditions?.purchaserType ||
+              canonicalOffer?.conditions?.buyerType ||
+              canonicalOffer?.conditions?.purchaserType ||
+              linkedLead?.buyerType ||
+              linkedLead?.purchaserType ||
+              'individual',
+          ),
+          purchasePrice: acceptedOffer?.offerAmount || canonicalOffer?.offerAmount,
+        },
+        listing: listingRecord || {},
+        offer: acceptedOffer || canonicalOffer,
+        buyerLead: conversionLead,
+        sellerOnboarding: listingRecord?.sellerOnboarding || listingRecord?.seller_onboarding,
+      })
+      const conversionPreflight = buildAcceptedOfferConversionPreflight({
+        organisationId: listingOrganisationId,
+        offer: acceptedOffer || canonicalOffer,
+        lead: conversionLead,
+        listing: listingRecord || {},
+        actor: { id: getCanonicalOfferActor().id, email: getCanonicalOfferActor().email },
+        routingProfile: conversionRoutingProfile,
+        allowIncompleteRoutingFacts: true,
+      })
+      if (!conversionPreflight.canConvert) {
+        const error = new Error(formatAcceptedOfferConversionPreflightMessage(conversionPreflight))
+        error.code = 'ACCEPTED_OFFER_CONVERSION_PREFLIGHT_BLOCKED'
+        error.details = conversionPreflight
+        throw error
+      }
       const createdTransaction = await createTransactionFromAcceptedCanonicalOffer({
         organisationId: listingOrganisationId,
         offerId: offerRow.canonicalOfferId,
         offer: acceptedOffer || canonicalOffer,
-        lead: {
-          ...(linkedLead || {}),
-          leadId: linkedLead?.leadId || acceptedOffer?.buyerLeadId || canonicalOffer?.buyerLeadId,
-          contactId: linkedLead?.contactId || acceptedOffer?.buyerContactId || canonicalOffer?.buyerContactId,
-          email: linkedLead?.email || acceptedOffer?.conditions?.buyerEmail || canonicalOffer?.conditions?.buyerEmail,
-          phone: linkedLead?.phone || acceptedOffer?.conditions?.buyerPhone || canonicalOffer?.conditions?.buyerPhone,
-          firstName: linkedLead?.firstName || acceptedOffer?.conditions?.buyerName || canonicalOffer?.conditions?.buyerName,
-          budget: acceptedOffer?.offerAmount || canonicalOffer?.offerAmount,
-          assignedAgentId: getCanonicalOfferActor().id,
-          assignedAgentName: getCanonicalOfferActor().name,
-          assignedAgentEmail: getCanonicalOfferActor().email,
-        },
+        lead: conversionLead,
         listing: listingRecord,
         actor: getCanonicalOfferActor(),
         payload: {
           listingId: listingRecord.id,
+          creationMode: 'onboarding_capture',
+          allowIncompleteRoutingFacts: true,
           buyerName: offerRow.buyerName,
           buyerEmail: linkedLead?.email || acceptedOffer?.conditions?.buyerEmail || canonicalOffer?.conditions?.buyerEmail,
           buyerPhone: linkedLead?.phone || acceptedOffer?.conditions?.buyerPhone || canonicalOffer?.conditions?.buyerPhone,
@@ -7717,13 +7807,15 @@ function AgentListingDetail() {
                     Edit Listing
                   </Button>
                   <Button
+                    variant="secondary"
                     onClick={() => {
+                      setOfferActionError(OFFER_WORKFLOW_RETIRED_MESSAGE)
                       setActiveTab('offers')
-                      setShowSendOfferLinkForm(true)
+                      setShowSendOfferLinkForm(false)
                     }}
                   >
                     <Link2 size={15} />
-                    Send Offer Link
+                    Offer Workflow Retired
                   </Button>
                 </div>
               </div>
@@ -9128,11 +9220,19 @@ function AgentListingDetail() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h3 className="text-[1.05rem] font-semibold text-[#142132]">Offer Management</h3>
-                <p className="mt-1 text-sm text-[#607387]">Send secure buyer offer links, review submissions, and route valid offers to seller review.</p>
+                <p className="mt-1 text-sm text-[#607387]">
+                  Offer workflow is retired. Use buyer onboarding to capture purchase, finance, party, and OTP details.
+                </p>
               </div>
-              <Button onClick={() => setShowSendOfferLinkForm((current) => !current)}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setOfferActionError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+                  setShowSendOfferLinkForm(false)
+                }}
+              >
                 <Link2 size={15} />
-                {showSendOfferLinkForm ? 'Hide Offer Link Setup' : 'Send Offer Link'}
+                Offer Workflow Retired
               </Button>
             </div>
 
@@ -9146,7 +9246,11 @@ function AgentListingDetail() {
               <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{canonicalOffersError}</div>
             ) : null}
 
-            {showSendOfferLinkForm ? (
+            {OFFER_WORKFLOW_RETIRED ? (
+              <div className="mt-5 rounded-[16px] border border-[#f3d7a5] bg-[#fff8ed] px-4 py-3 text-sm text-[#8a5a16]">
+                Buyer onboarding is now the intake path for OTP preparation. Historical offer rows remain visible for audit only.
+              </div>
+            ) : showSendOfferLinkForm ? (
               <form className="mt-5 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4" onSubmit={handleCreateOfferLink}>
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="grid gap-2">
@@ -9408,14 +9512,14 @@ function AgentListingDetail() {
                     {[
                       OFFER_WORKFLOW_STATUS.SUBMITTED,
                       OFFER_WORKFLOW_STATUS.AGENT_REVIEW,
-                    ].includes(normalizeOfferWorkflowStatus(offer.status)) && offer.sourceSystem !== 'canonical_offer' ? (
+                    ].includes(normalizeOfferWorkflowStatus(offer.status)) && offer.sourceSystem !== 'canonical_offer' && !OFFER_WORKFLOW_RETIRED ? (
                       <div className="mt-4 flex flex-wrap gap-2">
                         <Button size="sm" type="button" onClick={() => handleOfferAction(offer.id, 'forward_to_seller')}>Forward to Seller</Button>
                         <Button size="sm" variant="secondary" type="button" onClick={() => handleOfferAction(offer.id, 'request_clarification')}>Request Clarification</Button>
                         <Button size="sm" variant="secondary" type="button" onClick={() => handleOfferAction(offer.id, 'reject_invalid')}>Reject Invalid</Button>
                       </div>
                     ) : null}
-                    {offer.sourceSystem === 'canonical_offer' ? (
+                    {offer.sourceSystem === 'canonical_offer' && !OFFER_WORKFLOW_RETIRED ? (
                       <div className="mt-4 flex flex-wrap gap-2">
                         {[
                           OFFER_WORKFLOW_STATUS.SUBMITTED,
@@ -9505,6 +9609,22 @@ function AgentListingDetail() {
                             </Button>
                           </>
                         ) : null}
+                      </div>
+                    ) : OFFER_WORKFLOW_RETIRED ? (
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        {offer.buyerLeadId ? (
+                          <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/pipeline/leads/${offer.buyerLeadId}`)}>Open Buyer Lead</Button>
+                        ) : null}
+                        {offer.transactionId ? (
+                          <>
+                            <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>Open Transaction</Button>
+                            <Button size="sm" type="button" variant="secondary" onClick={() => handleAcceptedOfferPrepareOtpClick(offer)}>
+                              {listingKingstonsBuyerOtpDigitalDecision.blocked ? 'Manual OTP Only' : 'Prepare OTP'}
+                            </Button>
+                          </>
+                        ) : (
+                          <span className="text-xs font-semibold text-[#9a5b11]">Use buyer onboarding for OTP intake.</span>
+                        )}
                       </div>
                     ) : null}
                     {offer.sourceSystem === 'canonical_offer' && sellerReviewPreparationSummary.blockers.length ? (
@@ -10024,18 +10144,19 @@ function AgentListingDetail() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <h2 className="text-2xl font-semibold text-[#142132]">Offers</h2>
-                    <p className="mt-1 text-sm text-[#607387]">All offers made on this listing across the platform, buyer offer links, and seller review flow.</p>
+                    <p className="mt-1 text-sm text-[#607387]">Historical offer records are retained for audit. New buyer intake starts from buyer onboarding.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="secondary" onClick={() => setActiveTab('offers')}>
                       Open Full Offer Workspace
                     </Button>
-                    <Button size="sm" onClick={() => {
+                    <Button size="sm" variant="secondary" onClick={() => {
+                      setOfferActionError(OFFER_WORKFLOW_RETIRED_MESSAGE)
                       setActiveTab('offers')
-                      setShowSendOfferLinkForm(true)
+                      setShowSendOfferLinkForm(false)
                     }}>
                       <Link2 size={15} />
-                      Send Offer Link
+                      Offer Workflow Retired
                     </Button>
                   </div>
                 </div>
@@ -10201,7 +10322,7 @@ function AgentListingDetail() {
                                     </label>
                                   </div>
                                 ) : null}
-                                {canSendToSeller ? (
+                                {canSendToSeller && !OFFER_WORKFLOW_RETIRED ? (
                                   <>
                                     <Field
                                       as="select"
@@ -10223,7 +10344,7 @@ function AgentListingDetail() {
                                     </Button>
                                   </>
                                 ) : null}
-                                {canConvert ? (
+                                {canConvert && !OFFER_WORKFLOW_RETIRED ? (
                                   <Button
                                     size="sm"
                                     type="button"
@@ -10244,7 +10365,9 @@ function AgentListingDetail() {
                                     </Button>
                                   </>
                                 ) : null}
-                                {!canSendToSeller && !canConvert && !offer.transactionId ? (
+                                {OFFER_WORKFLOW_RETIRED && !offer.transactionId ? (
+                                  <span className="text-right text-xs font-semibold text-[#9a5b11]">Use buyer onboarding</span>
+                                ) : !canSendToSeller && !canConvert && !offer.transactionId ? (
                                   <span className="text-xs text-[#9aa9b8]">—</span>
                                 ) : null}
                               </div>
@@ -10254,7 +10377,7 @@ function AgentListingDetail() {
                       }) : (
                         <tr>
                           <td colSpan={8} className="px-5 py-10 text-center text-sm text-[#607387]">
-                            No offers captured for this listing yet. Send an offer link or wait for buyer submissions to appear here.
+                            No offer audit rows for this listing yet. Use buyer onboarding for new buyer intake.
                           </td>
                         </tr>
                       )}

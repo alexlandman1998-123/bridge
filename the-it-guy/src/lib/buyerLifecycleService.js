@@ -7,6 +7,7 @@ import { updatePrivateListing } from '../services/privateListingService.js'
 import { assertMvpAcceptedOfferConversionReceipt } from '../core/transactions/mvpAcceptedOfferConversionReceipt.js'
 import { mergeResidentialOfferTermsIntoConditions } from '../core/offers/residentialOfferTerms.js'
 import { buildResidentialOfferConditionReviewPatch } from '../core/offers/residentialOfferConditionReview.js'
+import { assertOfferWorkflowAvailable } from '../core/offers/offerWorkflowRetirement.js'
 import { deriveFinanceManagedBy } from '../core/transactions/financeType.js'
 import { mapOfferFormToBuyerOnboardingForm } from './offerBuyerOnboardingBridge.js'
 
@@ -1672,6 +1673,7 @@ export async function submitCanonicalBuyerOnboarding({ token = '', submission = 
 }
 
 export async function submitCanonicalBuyerOffer({ token = '', submission = {} } = {}) {
+  assertOfferWorkflowAvailable()
   const context = await getCanonicalOfferInviteContext(token)
   if (!context.ok || !context.canonicalOffer?.id) {
     throw new Error(context.reason === 'expired' ? 'Offer link has expired.' : 'Offer link is not valid.')
@@ -1752,6 +1754,7 @@ function statusToEvent(status) {
 }
 
 export async function createCanonicalOffer(payload = {}, { actor = null, waitForLifecycle = true } = {}) {
+  assertOfferWorkflowAvailable()
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Offer creation requires the canonical Supabase offers table.')
   }
@@ -2050,6 +2053,7 @@ export async function reviewCanonicalOfferConditions({
 }
 
 export async function createOfferSellerReviewSession(payload = {}, { actor = null } = {}) {
+  assertOfferWorkflowAvailable()
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Seller offer review requires Supabase.')
   }
@@ -2211,6 +2215,7 @@ export async function getSellerOfferReviewContext(token = '') {
 }
 
 export async function submitSellerOfferDecision({ token = '', decision = '', notes = '', counterTerms = null } = {}) {
+  assertOfferWorkflowAvailable()
   const normalizedToken = normalizeText(token)
   const normalizedDecision = normalizeLower(decision)
   if (!normalizedToken || !['accepted', 'rejected', 'countered'].includes(normalizedDecision) || !isSupabaseConfigured || !supabase) {
@@ -2746,6 +2751,7 @@ export async function upsertAppointmentViewedListings({
 }
 
 export async function createOfferPortalSession(payload = {}, { actor = null } = {}) {
+  assertOfferWorkflowAvailable()
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Offer portal sessions require Supabase.')
   }
@@ -2977,6 +2983,7 @@ export async function createTransactionFromAcceptedCanonicalOffer({
   actor = null,
   payload = {},
 } = {}) {
+  assertOfferWorkflowAvailable()
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Transaction conversion requires the canonical Supabase offer and transaction tables.')
   }
@@ -3108,6 +3115,8 @@ export async function createTransactionFromAcceptedCanonicalOffer({
   const conversionPayload = {
     ...payload,
     organisationId: scopedOrganisationId,
+    creationMode: payload?.creationMode || payload?.creation_mode || 'onboarding_capture',
+    allowIncompleteRoutingFacts: true,
     originatingBuyerLeadId: canonicalOffer.buyerLeadId,
     originatingLeadId: canonicalOffer.buyerLeadId,
     buyerContactId: canonicalOffer.buyerContactId,

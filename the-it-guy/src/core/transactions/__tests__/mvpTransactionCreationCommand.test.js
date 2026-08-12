@@ -50,4 +50,26 @@ assert.throws(
   (error) => error?.code === 'mvp_transaction_out_of_scope',
 )
 
+{
+  const command = prepareMvpTransactionCreationCommand({
+    routingProfile: {
+      ...routingProfile,
+      financeType: 'unknown',
+      propertyTenure: 'unknown',
+      buyerEntityType: '',
+      sellerEntityType: '',
+    },
+    organisationId: 'org-1',
+    listingId: 'listing-1',
+    leadId: 'lead-1',
+    acceptedOfferId: 'offer-1',
+    assignedAgentEmail: 'agent@arch9.test',
+    allowIncompleteRoutingFacts: true,
+    creationMode: 'onboarding_capture',
+  })
+  assert.equal(command.launchScope.status, 'incomplete')
+  assert.equal(command.routingFactsComplete, false)
+  assert.equal(command.creationMode, 'onboarding_capture')
+}
+
 console.log('mvp transaction creation command tests passed')

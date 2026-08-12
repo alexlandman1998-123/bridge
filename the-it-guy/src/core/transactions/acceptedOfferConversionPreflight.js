@@ -46,7 +46,7 @@ function routingAction(issue = {}) {
   return 'Complete the missing transaction routing fact.'
 }
 
-function routingChecks(routingProfile = {}) {
+function routingChecks(routingProfile = {}, { allowIncompleteRoutingFacts = false } = {}) {
   const launchScope = routingProfile.launchScope || evaluateMvpLaunchScope(routingProfile)
   if (launchScope.supported) {
     return [
@@ -67,7 +67,7 @@ function routingChecks(routingProfile = {}) {
   return launchScope.issues.map((issue) => check(
     `routing_${issue.field}`,
     issue.label || issue.field,
-    issue.code === 'missing_required_routing_fact' ? 'blocked' : 'out_of_scope',
+    issue.code === 'missing_required_routing_fact' && allowIncompleteRoutingFacts ? 'warning' : issue.code === 'missing_required_routing_fact' ? 'blocked' : 'out_of_scope',
     formatMvpLaunchScopeIssue(issue),
     routingAction(issue),
   ))
@@ -80,6 +80,7 @@ export function buildAcceptedOfferConversionPreflight({
   listing = {},
   actor = {},
   routingProfile = {},
+  allowIncompleteRoutingFacts = false,
 } = {}) {
   const offerId = firstText(offer.id, offer.offerId, offer.offer_id)
   const listingId = firstText(offer.listingId, offer.listing_id, listing.id, listing.listingId, lead.listingId, lead.listing_id)
@@ -154,7 +155,7 @@ export function buildAcceptedOfferConversionPreflight({
     : accepted && offerId
       ? [
         ...baseChecks,
-        ...routingChecks(routingProfile),
+        ...routingChecks(routingProfile, { allowIncompleteRoutingFacts }),
       ]
       : baseChecks
   const blockers = checks.filter((item) => item.status === 'blocked' || item.status === 'out_of_scope')

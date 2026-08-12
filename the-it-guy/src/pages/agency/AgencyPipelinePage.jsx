@@ -78,7 +78,7 @@ import {
 import { createTransactionFromLeadOverride } from '../../lib/transactionLifecycleService'
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { DOCUMENTS_BUCKET_CANDIDATES, assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, ensurePrivateListingDocumentRequirements, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, linkPrivateListingDocument, markPrivateListingDocumentsPendingTransactionPromotion, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
+import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, ensurePrivateListingDocumentRequirements, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, linkPrivateListingDocument, markPrivateListingDocumentsPendingTransactionPromotion, persistSellerProfileOnboardingFormData, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { allocatePrivateListingTransferAttorneyPreInstruction, getPrivateListingTransferAttorneyAllocation, listPrivateListingTransferAttorneyAllocations } from '../../services/privateListingAttorneyAllocationService'
 import { repairSellerDocumentTransactionContinuity } from '../../services/sellerDocumentTransactionContinuityService'
 import { activateSellerPortalForListing, SELLER_PORTAL_ACTIVATION_SOURCES } from '../../services/sellerPortalActivationService'
@@ -179,6 +179,10 @@ import {
   buildAcceptedOfferConversionPreflight,
   formatAcceptedOfferConversionPreflightMessage,
 } from '../../core/transactions/acceptedOfferConversionPreflight'
+import {
+  OFFER_WORKFLOW_RETIRED,
+  OFFER_WORKFLOW_RETIRED_MESSAGE,
+} from '../../core/offers/offerWorkflowRetirement'
 import { buildTransactionHandoffHealth } from '../../core/transactions/transactionHandoffHealth'
 import { resolveTransactionRoutingProfile } from '../../services/transactionRoutingProfileService'
 import {
@@ -4259,6 +4263,104 @@ function getMigrationGuardedBuyerOnboardingSnapshot(candidate = {}) {
   return isOfferFlowBuyerOnboardingMigrationArtifact(candidate) ? {} : candidate
 }
 
+function unwrapSellerOnboardingFormDataCandidate(candidate = {}) {
+  if (!isPlainObject(candidate)) return {}
+  if (isPlainObject(candidate.formData)) return candidate.formData
+  if (isPlainObject(candidate.form_data)) return candidate.form_data
+  return {}
+}
+
+function getSellerOnboardingMigrationGuardrailSignal(candidate = {}) {
+  if (!isPlainObject(candidate)) return ''
+  const formData = unwrapSellerOnboardingFormDataCandidate(candidate)
+  return [
+    candidate.source,
+    candidate.source_type,
+    candidate.sourceType,
+    candidate.emailType,
+    candidate.email_type,
+    candidate.type,
+    candidate.kind,
+    candidate.intent,
+    candidate.flow,
+    candidate.workflow,
+    candidate.mode,
+    candidate.status,
+    candidate.link,
+    candidate.url,
+    candidate.sellerOnboardingLink,
+    candidate.seller_onboarding_link,
+    candidate.onboardingLink,
+    candidate.onboarding_link,
+    candidate.onboardingUrl,
+    candidate.onboarding_url,
+    candidate.portalUrl,
+    candidate.portal_url,
+    candidate.sellerPortalLink,
+    candidate.seller_portal_link,
+    formData.source,
+    formData.source_type,
+    formData.sourceType,
+    formData.emailType,
+    formData.email_type,
+    formData.type,
+    formData.kind,
+    formData.flow,
+    formData.workflow,
+  ].map(normalizeText).filter(Boolean).join(' ').toLowerCase()
+}
+
+function hasSellerOnboardingMigrationGuardrailKey(candidate = {}, keys = []) {
+  if (!isPlainObject(candidate)) return false
+  const formData = unwrapSellerOnboardingFormDataCandidate(candidate)
+  return keys.some((key) =>
+    Object.prototype.hasOwnProperty.call(candidate, key) ||
+    Object.prototype.hasOwnProperty.call(formData, key),
+  )
+}
+
+function hasSellerOnboardingMigrationPayload(candidate = {}) {
+  if (!isPlainObject(candidate)) return false
+  const formData = unwrapSellerOnboardingFormDataCandidate(candidate)
+  if (isPlainObject(formData) && Object.keys(formData).length > 0) return true
+  const status = normalizeText(candidate.status || candidate.sellerOnboardingStatus || candidate.seller_onboarding_status).toLowerCase()
+  return ['completed', 'complete', 'submitted', 'in_progress', 'in progress'].includes(status) ||
+    Boolean(candidate.submittedAt || candidate.submitted_at || candidate.completedAt || candidate.completed_at)
+}
+
+function isSellerOnboardingLinkOnlyMigrationArtifact(candidate = {}) {
+  const signal = getSellerOnboardingMigrationGuardrailSignal(candidate)
+  const hasLinkArtifactSignal = signal.includes('seller_onboarding_link') ||
+    signal.includes('seller onboarding link') ||
+    signal.includes('seller_portal') ||
+    signal.includes('seller portal') ||
+    signal.includes('portal_invite') ||
+    signal.includes('invite_token') ||
+    signal.includes('/seller/onboarding/')
+  const hasLinkArtifactKey = hasSellerOnboardingMigrationGuardrailKey(candidate, [
+    'sellerOnboardingLink',
+    'seller_onboarding_link',
+    'lastSellerOnboardingLink',
+    'last_seller_onboarding_link',
+    'sellerPortalLink',
+    'seller_portal_link',
+    'sellerPortalToken',
+    'seller_portal_token',
+    'sellerPortalInviteToken',
+    'seller_portal_invite_token',
+    'sellerPortalInviteTokenHash',
+    'seller_portal_invite_token_hash',
+    'sellerPortalSessionId',
+    'seller_portal_session_id',
+  ])
+  return (hasLinkArtifactSignal || hasLinkArtifactKey) && !hasSellerOnboardingMigrationPayload(candidate)
+}
+
+function getMigrationGuardedSellerOnboardingSnapshot(candidate = {}) {
+  if (!isPlainObject(candidate)) return {}
+  return isSellerOnboardingLinkOnlyMigrationArtifact(candidate) ? {} : candidate
+}
+
 function buildBuyerProfileHydrationFormData({ lead = {}, diagnostic = {} } = {}) {
   const rawPayload = parseLeadRawEnquiryPayload(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
   return mergeBuyerOnboardingFormDataSources([
@@ -7911,17 +8013,19 @@ function findLeadBySellerOnboardingEvent(leads = [], event = {}) {
 }
 
 function getLeadSellerOnboardingFormData(lead = {}) {
-  const onboarding = lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object'
+  const onboardingCandidate = lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object'
     ? lead.sellerOnboarding
     : lead?.seller_onboarding && typeof lead.seller_onboarding === 'object'
       ? lead.seller_onboarding
       : {}
   const rawPayload = parseLeadRawEnquiryPayload(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
-  const rawOnboarding = rawPayload?.sellerOnboarding && typeof rawPayload.sellerOnboarding === 'object'
+  const rawOnboardingCandidate = rawPayload?.sellerOnboarding && typeof rawPayload.sellerOnboarding === 'object'
     ? rawPayload.sellerOnboarding
     : rawPayload?.seller_onboarding && typeof rawPayload.seller_onboarding === 'object'
       ? rawPayload.seller_onboarding
       : {}
+  const onboarding = getMigrationGuardedSellerOnboardingSnapshot(onboardingCandidate)
+  const rawOnboarding = getMigrationGuardedSellerOnboardingSnapshot(rawOnboardingCandidate)
   const rawProfile = rawPayload?.kingstonsSellerProfile && typeof rawPayload.kingstonsSellerProfile === 'object'
     ? rawPayload.kingstonsSellerProfile
     : rawPayload?.kingstons_seller_profile && typeof rawPayload.kingstons_seller_profile === 'object'
@@ -10072,6 +10176,7 @@ function AcceptedOfferConversionPreflightPanel({ preflight = null, loading = fal
     complete: { label: 'OK', icon: CheckCircle2, className: 'bg-[#eaf7ef] text-[#1e7a46]', iconClassName: 'text-[#17643a]' },
     blocked: { label: 'Fix', icon: AlertTriangle, className: 'bg-[#ffe3e3] text-[#b42318]', iconClassName: 'text-[#b42318]' },
     out_of_scope: { label: 'Manual', icon: AlertTriangle, className: 'bg-[#ffe3e3] text-[#b42318]', iconClassName: 'text-[#b42318]' },
+    warning: { label: 'Later', icon: AlertTriangle, className: 'bg-[#fff0cf] text-[#8a641d]', iconClassName: 'text-[#8a641d]' },
     pending: { label: 'Open', icon: Clock3, className: 'bg-[#eef3f7] text-[#607891]', iconClassName: 'text-[#607891]' },
   }
   const nextFix = preflight?.nextFix
@@ -15737,6 +15842,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       listing,
       actor: { id: currentAgent.id, email: currentAgent.email },
       routingProfile,
+      allowIncompleteRoutingFacts: true,
     })
   }, [
     appointmentListingById,
@@ -18927,29 +19033,73 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       const savedAt = new Date().toISOString()
       const formData = buildKingstonsSellerProfileFormData(sellerProfileEditForm)
-      const existingOnboarding = isPlainObject(selectedLead?.sellerOnboarding)
+      const existingOnboardingCandidate = isPlainObject(selectedLead?.sellerOnboarding)
         ? selectedLead.sellerOnboarding
         : isPlainObject(selectedLead?.seller_onboarding)
           ? selectedLead.seller_onboarding
           : {}
       const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
-      const rawOnboarding = isPlainObject(rawPayload.sellerOnboarding)
+      const rawOnboardingCandidate = isPlainObject(rawPayload.sellerOnboarding)
         ? rawPayload.sellerOnboarding
         : isPlainObject(rawPayload.seller_onboarding)
           ? rawPayload.seller_onboarding
           : {}
+      const existingOnboarding = getMigrationGuardedSellerOnboardingSnapshot(existingOnboardingCandidate)
+      const rawOnboarding = getMigrationGuardedSellerOnboardingSnapshot(rawOnboardingCandidate)
+      const sellerProfileListingId = normalizeText(
+        selectedLeadLinkedListing?.id ||
+          selectedLeadLinkedListing?.listingId ||
+          selectedLeadLinkedListing?.listing_id ||
+          selectedLead?.listingId ||
+          selectedLead?.listing_id,
+      )
+      const sellerProfileOnboardingToken = normalizeText(
+        selectedLead?.sellerOnboardingToken ||
+          selectedLead?.seller_onboarding_token ||
+          existingOnboarding.token ||
+          existingOnboardingCandidate.token ||
+          existingOnboarding.sellerOnboardingToken ||
+          existingOnboardingCandidate.sellerOnboardingToken ||
+          rawOnboarding.token ||
+          rawOnboardingCandidate.token ||
+          rawOnboarding.sellerOnboardingToken ||
+          rawOnboardingCandidate.sellerOnboardingToken ||
+          selectedLeadLinkedListing?.sellerOnboarding?.token ||
+          selectedLeadLinkedListing?.seller_onboarding?.token,
+      )
+      const persistedSellerProfileOnboarding = isSupabaseConfigured && (sellerProfileListingId || sellerProfileOnboardingToken)
+        ? await persistSellerProfileOnboardingFormData({
+            listingId: sellerProfileListingId,
+            token: sellerProfileOnboardingToken,
+            formData,
+            status: normalizeText(existingOnboarding.status || rawOnboarding.status || selectedLead?.sellerOnboardingStatus || 'in_progress'),
+            sellerType: normalizeText(formData.sellerLegalType || formData.seller_legal_type || formData.ownershipType),
+            ownershipStructure: normalizeText(formData.ownerStructureType || formData.owner_structure_type || formData.ownershipType),
+            maritalRegime: normalizeText(formData.maritalRegime || formData.marriageRegime || formData.maritalStatus),
+          })
+        : null
+      const canonicalSellerProfileFormData = isPlainObject(persistedSellerProfileOnboarding?.form_data)
+        ? persistedSellerProfileOnboarding.form_data
+        : {
+            ...(isPlainObject(rawOnboarding.formData) ? rawOnboarding.formData : {}),
+            ...(isPlainObject(rawOnboarding.form_data) ? rawOnboarding.form_data : {}),
+            ...(isPlainObject(existingOnboarding.formData) ? existingOnboarding.formData : {}),
+            ...(isPlainObject(existingOnboarding.form_data) ? existingOnboarding.form_data : {}),
+            ...formData,
+          }
       const sellerOnboarding = {
         ...existingOnboarding,
         ...rawOnboarding,
-        status: normalizeText(existingOnboarding.status || rawOnboarding.status || selectedLead?.sellerOnboardingStatus),
-        formData: {
-          ...(isPlainObject(rawOnboarding.formData) ? rawOnboarding.formData : {}),
-          ...(isPlainObject(rawOnboarding.form_data) ? rawOnboarding.form_data : {}),
-          ...(isPlainObject(existingOnboarding.formData) ? existingOnboarding.formData : {}),
-          ...(isPlainObject(existingOnboarding.form_data) ? existingOnboarding.form_data : {}),
-          ...formData,
-        },
-        updatedAt: savedAt,
+        id: normalizeText(persistedSellerProfileOnboarding?.id || existingOnboarding.id || rawOnboarding.id),
+        privateListingId: normalizeText(persistedSellerProfileOnboarding?.private_listing_id || sellerProfileListingId || existingOnboarding.privateListingId || rawOnboarding.privateListingId),
+        private_listing_id: normalizeText(persistedSellerProfileOnboarding?.private_listing_id || sellerProfileListingId || existingOnboarding.private_listing_id || rawOnboarding.private_listing_id),
+        token: normalizeText(persistedSellerProfileOnboarding?.token || sellerProfileOnboardingToken || existingOnboarding.token || rawOnboarding.token),
+        status: normalizeText(persistedSellerProfileOnboarding?.status || existingOnboarding.status || rawOnboarding.status || selectedLead?.sellerOnboardingStatus),
+        submittedAt: persistedSellerProfileOnboarding?.submitted_at || existingOnboarding.submittedAt || rawOnboarding.submittedAt || null,
+        submitted_at: persistedSellerProfileOnboarding?.submitted_at || existingOnboarding.submitted_at || rawOnboarding.submitted_at || null,
+        formData: canonicalSellerProfileFormData,
+        updatedAt: persistedSellerProfileOnboarding?.updated_at || savedAt,
+        updated_at: persistedSellerProfileOnboarding?.updated_at || savedAt,
         updatedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
       }
       sellerOnboarding.form_data = sellerOnboarding.formData
@@ -24122,6 +24272,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     successPrefix = '',
   } = {}) {
     if (!organisationId || !selectedLead) return null
+    if (OFFER_WORKFLOW_RETIRED) {
+      throw new Error(OFFER_WORKFLOW_RETIRED_MESSAGE)
+    }
     const selectedListingId = normalizeText(listingId || offerLinkForm.listingId)
     const resolvedIntakePreference = normalizeClientIntakePreference(clientIntakePreference || offerLinkForm.clientIntakePreference)
     const resolvedBuyerName = normalizeText(buyerName || offerLinkForm.buyerName) || selectedLeadContactName
@@ -24952,6 +25105,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleLeadCanonicalOfferStatus(offer, nextStatus, actionLabel) {
     if (!organisationId || !offer?.id) return
     const note = canonicalOfferNotesById[offer.id] || ''
+    if (OFFER_WORKFLOW_RETIRED) {
+      setError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+      return
+    }
     try {
       setCanonicalOfferActionId(`${offer.id}:${nextStatus}`)
       await updateCanonicalOfferStatus(offer.id, nextStatus, {
@@ -24973,6 +25130,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleLeadCanonicalOfferAccept(offer) {
     if (!organisationId || !offer?.id) return
+    if (OFFER_WORKFLOW_RETIRED) {
+      setError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+      return
+    }
     const confirmed = typeof window === 'undefined'
       ? true
       : window.confirm('Accept this offer and prepare it for transaction conversion?')
@@ -25089,6 +25250,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleLeadCanonicalOfferSendToSeller(offer) {
     if (!organisationId || !offer?.id) return
+    if (OFFER_WORKFLOW_RETIRED) {
+      setError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+      return
+    }
     const note = canonicalOfferNotesById[offer.id] || ''
     let createdReviewSession = null
     try {
@@ -25178,6 +25343,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleLeadCanonicalOfferConversion(offer) {
     if (!organisationId || !offer?.id || !selectedLead) return
+    if (OFFER_WORKFLOW_RETIRED) {
+      setError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+      return
+    }
     try {
       setCanonicalOfferActionId(`${offer.id}:convert`)
       const currentStatus = normalizeText(offer.status).toLowerCase()
@@ -25221,6 +25390,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         listing: conversionListing || {},
         actor: { id: currentAgent.id, email: currentAgent.email },
         routingProfile: conversionRoutingProfile,
+        allowIncompleteRoutingFacts: true,
       })
       if (!conversionPreflight.canConvert) {
         const error = new Error(formatAcceptedOfferConversionPreflightMessage(conversionPreflight))
@@ -25562,6 +25732,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleCreateBuyerOfferDraft() {
     if (!selectedLead || !organisationId) return
+    if (OFFER_WORKFLOW_RETIRED) {
+      setError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+      setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+      return false
+    }
     try {
       const persistedLead = await ensureBuyerLeadPersistedForLifecycle(selectedLead, selectedLeadContact)
       await createCanonicalOffer({
@@ -25610,12 +25785,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   function handleBuyerCommandConvertToTransaction() {
-    if (selectedLeadAcceptedOffer) {
+    if (selectedLeadAcceptedOffer && !OFFER_WORKFLOW_RETIRED) {
       void handleLeadCanonicalOfferConversion(selectedLeadAcceptedOffer)
       return
     }
     setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
-    setMessage('An accepted offer is required before converting this buyer to a transaction.')
+    setMessage('Use buyer onboarding to capture OTP details and open the transaction context.')
   }
 
   function handleBuyerJourneyQuickActivity(activityType) {

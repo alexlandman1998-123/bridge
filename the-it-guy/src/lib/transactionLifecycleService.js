@@ -177,6 +177,19 @@ function toPersistedFinanceType(value) {
   return normalizeFinanceType(value)
 }
 
+function shouldAllowIncompleteRoutingFacts(payload = {}, options = {}) {
+  const mode = normalizeLower(payload?.creationMode || payload?.creation_mode || options?.creationMode || options?.creation_mode)
+  return (
+    payload?.allowIncompleteRoutingFacts === true ||
+    payload?.allow_incomplete_routing_facts === true ||
+    options?.allowIncompleteRoutingFacts === true ||
+    options?.allow_incomplete_routing_facts === true ||
+    payload?.mockMode === true ||
+    payload?.mock_mode === true ||
+    ['onboarding_capture', 'manual_intake', 'manual_capture', 'mock_transaction'].includes(mode)
+  )
+}
+
 function buildTransactionRoutingProfileContext({ listing = null, offerRecord = null, lead = null, payload = {} } = {}) {
   return {
     transaction: payload?.transaction || {},
@@ -209,7 +222,7 @@ function resolveRoutingProfileForTransaction({ listing = null, offerRecord = nul
 function buildRoutingProfileTransactionFields(profile = {}) {
   const financeType = toPersistedFinanceType(profile.financeType)
   return compactObject({
-    finance_type: financeType || null,
+    finance_type: financeType && financeType !== 'unknown' ? financeType : undefined,
     transaction_type: profile.transactionType && profile.transactionType !== 'unknown' ? profile.transactionType : undefined,
     property_type: profile.propertyTenure && profile.propertyTenure !== 'unknown' ? profile.propertyTenure : undefined,
     property_tenure: profile.propertyTenure && profile.propertyTenure !== 'unknown' ? profile.propertyTenure : undefined,
@@ -419,7 +432,7 @@ function buildTransactionRow({
       property_description: listing?.listingTitle || payload?.propertyDescription || null,
       sales_price: offerAmount,
       purchase_price: offerAmount,
-      finance_type: routingFields.finance_type || normalizeFinanceType(payload?.financeType || offerRecord?.offer?.financeType || null),
+      finance_type: routingFields.finance_type || normalizeFinanceType(payload?.financeType || offerRecord?.offer?.financeType || 'cash'),
       purchaser_type: routingFields.purchaser_type || 'individual',
       property_type: routingFields.property_type || listing?.propertyType || payload?.propertyType || null,
       property_tenure: routingFields.property_tenure || null,
@@ -521,6 +534,8 @@ export function createTransactionFromAcceptedOffer({
     assignedAgentId: payload?.assignedAgentId || listing?.assignedAgentId || offerRecord?.agentId || actor?.id,
     assignedAgentEmail: payload?.assignedAgentEmail || listing?.assignedAgentEmail || actor?.email,
     idempotencyKey: payload?.idempotencyKey,
+    allowIncompleteRoutingFacts: shouldAllowIncompleteRoutingFacts(payload),
+    creationMode: payload?.creationMode || payload?.creation_mode || 'mvp_workflow',
   })
 
   const created = buildTransactionRow({
@@ -887,6 +902,8 @@ export async function createTransactionFromLeadOverride({
     assignedAgentEmail: nextAssignedAgentEmail,
     idempotencyKey: payload?.idempotencyKey || payload?.idempotency_key,
     requireAcceptedOffer: !allowDirectLeadConversion,
+    allowIncompleteRoutingFacts: shouldAllowIncompleteRoutingFacts(payload, options),
+    creationMode: payload?.creationMode || payload?.creation_mode || options?.creationMode || 'mvp_workflow',
   })
 
   if (!canPersistToSupabase) {

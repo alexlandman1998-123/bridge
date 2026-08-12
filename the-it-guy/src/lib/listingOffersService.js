@@ -4,6 +4,7 @@ import { isUnsafeFallbackAllowed } from './envValidation'
 import { createTransactionFromAcceptedOffer } from './transactionLifecycleService'
 import { buildResidentialOfferTermsSnapshot, mergeResidentialOfferTermsIntoConditions } from '../core/offers/residentialOfferTerms.js'
 import { buildResidentialOfferConditionReviewPatch } from '../core/offers/residentialOfferConditionReview.js'
+import { assertOfferWorkflowAvailable } from '../core/offers/offerWorkflowRetirement.js'
 import { resolveOtpDocumentVariant } from '../core/documents/otpRouteUniverse.js'
 import { mapOfferFormToBuyerOnboardingForm } from './offerBuyerOnboardingBridge.js'
 
@@ -273,6 +274,7 @@ export function createOfferInvite({
   transactionType = '',
   expiresInDays = 7,
 } = {}) {
+  assertOfferWorkflowAvailable()
   if (!String(listingId || '').trim()) {
     throw new Error('Listing is required to send an offer link.')
   }
@@ -549,6 +551,7 @@ export async function submitBuyerOnboarding({ token, submission } = {}) {
 }
 
 export async function submitBuyerOffer({ token, submission, mode = 'new' } = {}) {
+  assertOfferWorkflowAvailable()
   const context = getOfferInviteContext(token)
   if (!context.ok) {
     throw new Error(context.reason === 'expired' ? 'Offer link has expired.' : 'Offer link is not valid.')
@@ -698,6 +701,7 @@ export async function submitBuyerOffer({ token, submission, mode = 'new' } = {})
 }
 
 export function markOfferAgentAction(offerId, action, notes = '', options = {}) {
+  assertOfferWorkflowAvailable()
   const records = getOfferRecords()
   let target = null
   const nowIso = new Date().toISOString()
@@ -764,6 +768,7 @@ export function markOfferAgentAction(offerId, action, notes = '', options = {}) 
 }
 
 export function sellerOfferDecision({ offerId, decision, comment = '', counterPayload = null } = {}) {
+  assertOfferWorkflowAvailable()
   const records = getOfferRecords()
   const offer = records.find((row) => String(row?.id || '') === String(offerId || ''))
   if (!offer) throw new Error('Offer not found.')
@@ -836,6 +841,10 @@ export function sellerOfferDecision({ offerId, decision, comment = '', counterPa
           id: listing?.assignedAgentId || offer?.agentId || '',
           name: listing?.assignedAgentName || listing?.assignedAgent || offer?.agentName || '',
           email: listing?.assignedAgentEmail || offer?.agentEmail || '',
+        },
+        payload: {
+          creationMode: 'onboarding_capture',
+          allowIncompleteRoutingFacts: true,
         },
       })
       createdTransaction = {

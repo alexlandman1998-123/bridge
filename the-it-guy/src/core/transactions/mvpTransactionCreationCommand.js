@@ -1,4 +1,4 @@
-import { assertMvpLaunchScope } from './mvpLaunchScope.js'
+import { evaluateMvpLaunchScope, formatMvpLaunchScopeIssue } from './mvpLaunchScope.js'
 
 export const MVP_TRANSACTION_CREATION_COMMAND_VERSION = 'arch9_mvp_transaction_creation_command_v1'
 
@@ -20,6 +20,14 @@ function requireValue(value, message) {
   throw error
 }
 
+function throwLaunchScopeError(launchScope = {}, issues = []) {
+  const scopedIssues = issues.length ? issues : launchScope.issues || []
+  const error = new Error(scopedIssues.map(formatMvpLaunchScopeIssue).join(' '))
+  error.code = 'mvp_transaction_out_of_scope'
+  error.launchScope = launchScope
+  throw error
+}
+
 /**
  * Builds the immutable creation identity used by every MVP transaction entry
  * point. It intentionally contains only facts known at creation time; later
@@ -35,8 +43,21 @@ export function prepareMvpTransactionCreationCommand({
   assignedAgentEmail = '',
   idempotencyKey = '',
   requireAcceptedOffer = true,
+  allowIncompleteRoutingFacts = false,
+  allowUnsupportedRoutingFacts = false,
+  creationMode = 'mvp_workflow',
 } = {}) {
-  const launchScope = assertMvpLaunchScope(routingProfile)
+  const launchScope = evaluateMvpLaunchScope(routingProfile)
+  if (!launchScope.supported) {
+    const missingIssues = (launchScope.issues || []).filter((item) => item.code === 'missing_required_routing_fact')
+    const unsupportedIssues = (launchScope.issues || []).filter((item) => item.code !== 'missing_required_routing_fact')
+    if (unsupportedIssues.length && !allowUnsupportedRoutingFacts) {
+      throwLaunchScopeError(launchScope, unsupportedIssues)
+    }
+    if (missingIssues.length && !allowIncompleteRoutingFacts) {
+      throwLaunchScopeError(launchScope, missingIssues)
+    }
+  }
   const scopedOrganisationId = requireValue(organisationId, 'Organisation id is required before creating an MVP transaction.')
   const scopedListingId = requireValue(listingId, 'A listing or property context is required before creating an MVP transaction.')
   const scopedLeadId = requireValue(leadId, 'A buyer lead is required before creating an MVP transaction.')
@@ -65,6 +86,8 @@ export function prepareMvpTransactionCreationCommand({
     acceptedOfferId: scopedOfferId || null,
     idempotencyKey: stableIdempotencyKey,
     launchScope,
+    creationMode: normalize(creationMode) || 'mvp_workflow',
+    routingFactsComplete: launchScope.supported,
     routingProfile,
   })
 }

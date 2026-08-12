@@ -54,6 +54,35 @@ assert.deepEqual(
 )
 assert.match(formatAcceptedOfferConversionPreflightMessage(missingRoutingFacts), /Property tenure/i)
 
+const relaxedMissingRoutingFacts = buildAcceptedOfferConversionPreflight({
+  organisationId: 'org-1',
+  offer: {
+    id: 'offer-2',
+    status: 'accepted',
+    listingId: 'listing-2',
+    buyerLeadId: 'lead-2',
+    offerAmount: 1_850_000,
+    agentId: 'agent-2',
+  },
+  routingProfile: {
+    transactionType: 'private_sale',
+    financeType: 'unknown',
+    propertyTenure: 'unknown',
+    buyerEntityType: '',
+    sellerEntityType: 'unknown',
+  },
+  allowIncompleteRoutingFacts: true,
+})
+
+assert.equal(relaxedMissingRoutingFacts.status, 'ready')
+assert.equal(relaxedMissingRoutingFacts.canConvert, true)
+assert.deepEqual(
+  relaxedMissingRoutingFacts.checks
+    .filter((item) => item.status === 'warning')
+    .map((item) => item.key),
+  ['routing_financeType', 'routing_propertyTenure', 'routing_buyerEntityType', 'routing_sellerEntityType'],
+)
+
 const reusable = buildAcceptedOfferConversionPreflight({
   organisationId: 'org-1',
   offer: {

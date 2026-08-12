@@ -113,6 +113,24 @@ const SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS = new Set([
   'under_offer',
   'uploaded_signed',
 ])
+const SELLER_PROFILE_CANONICAL_PROTECTED_FORM_DATA_KEYS = new Set([
+  'canonical_facts',
+  'canonical_seller_facts',
+  'document_requirements',
+  'documents',
+  'generated_disclosure',
+  'generated_disclosures',
+  'mandatory_disclosure',
+  'property_condition_disclosure',
+  'property_disclosure',
+  'required_documents',
+  'seller_canonical_facts',
+  'seller_disclosure',
+  'seller_documents',
+  'signed_disclosure',
+  'signed_disclosures',
+  'uploaded_documents',
+])
 
 function requireClient() {
   if (!isSupabaseConfigured || !supabase) {
@@ -3214,9 +3232,9 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
       : {}
     const resolvedBranding = resolveOnboardingBranding(
       branding,
-      organisationBranding,
       settingsBranding,
       settings,
+      organisationBranding,
       {
         organisationName: pickFirstText(
           agencyInformation.tradingName,
@@ -3643,6 +3661,53 @@ function getSellerOnboardingFormData(onboarding = {}) {
   return {}
 }
 
+function normalizeSellerProfileMergePath(path = []) {
+  return (Array.isArray(path) ? path : [path])
+    .map((part) => normalizeCompatibilityKey(part))
+    .filter(Boolean)
+}
+
+function isSellerProfileExplicitClearPath(path = [], explicitClearFields = []) {
+  const normalizedPath = normalizeSellerProfileMergePath(path).join('.')
+  if (!normalizedPath) return false
+  return (Array.isArray(explicitClearFields) ? explicitClearFields : [])
+    .map((field) => normalizeSellerProfileMergePath(String(field || '').split('.')).join('.'))
+    .some((field) => field === normalizedPath)
+}
+
+function isProtectedSellerProfileCanonicalPath(path = [], { allowProtectedSectionOverride = false } = {}) {
+  if (allowProtectedSectionOverride) return false
+  const normalizedPath = normalizeSellerProfileMergePath(path)
+  return normalizedPath.some((part) => SELLER_PROFILE_CANONICAL_PROTECTED_FORM_DATA_KEYS.has(part))
+}
+
+function shouldApplySellerProfileFormDataValue(value, options = {}, path = []) {
+  const allowEmpty = Boolean(options.allowEmptyOverride || isSellerProfileExplicitClearPath(path, options.explicitClearFields))
+  if (value === undefined || value === null) return allowEmpty
+  if (typeof value === 'string') return allowEmpty || value.trim() !== ''
+  if (Array.isArray(value)) return allowEmpty || value.length > 0
+  if (isPlainObject(value)) return allowEmpty || Object.keys(value).length > 0
+  return true
+}
+
+function mergeSellerProfileCanonicalFormData(existing = {}, patch = {}, options = {}, path = []) {
+  const base = isPlainObject(existing) ? { ...existing } : {}
+  if (!isPlainObject(patch)) return base
+
+  for (const [key, value] of Object.entries(patch)) {
+    const nextPath = [...path, key]
+    if (isProtectedSellerProfileCanonicalPath(nextPath, options)) continue
+    if (!shouldApplySellerProfileFormDataValue(value, options, nextPath)) continue
+    if (isPlainObject(value) && isPlainObject(base[key])) {
+      base[key] = mergeSellerProfileCanonicalFormData(base[key], value, options, nextPath)
+    } else {
+      base[key] = value
+    }
+  }
+
+  return base
+}
+
 async function fetchSellerPortalOnboardingRowByToken(client, token = '', listingId = '') {
   const normalizedToken = normalizeText(token)
   const normalizedListingId = normalizeUuid(listingId)
@@ -3678,6 +3743,74 @@ async function fetchSellerPortalOnboardingRowByToken(client, token = '', listing
   }
 
   return null
+}
+
+export async function persistSellerProfileOnboardingFormData({
+  listingId = '',
+  token = '',
+  formData = {},
+  status = '',
+  sellerType = '',
+  ownershipStructure = '',
+  maritalRegime = '',
+  allowEmptyOverride = false,
+  allowProtectedSectionOverride = false,
+  explicitClearFields = [],
+  client: providedClient = null,
+} = {}) {
+  const client = providedClient || requireClient()
+  const normalizedListingId = normalizeUuid(listingId)
+  const normalizedToken = normalizeText(token)
+  if (!normalizedListingId && !normalizedToken) return null
+  if (!isPlainObject(formData)) return null
+
+  const existing = await fetchSellerPortalOnboardingRowByToken(client, normalizedToken, normalizedListingId)
+  const existingFormData = getSellerOnboardingFormData(existing)
+  const nextFormData = mergeSellerProfileCanonicalFormData(existingFormData, formData, {
+    allowEmptyOverride,
+    allowProtectedSectionOverride,
+    explicitClearFields,
+  })
+  const nowIso = new Date().toISOString()
+  const nextStatus = normalizeStatus(status || existing?.status || 'in_progress', SELLER_ONBOARDING_STATUSES, 'in_progress')
+  const scopedListingId = normalizeUuid(existing?.private_listing_id || normalizedListingId)
+  if (!scopedListingId) return null
+
+  const payload = {
+    private_listing_id: scopedListingId,
+    token: normalizeText(existing?.token || normalizedToken) || generateSellerOnboardingToken(),
+    status: nextStatus,
+    form_data: nextFormData,
+    seller_type: normalizeNullableText(sellerType || existing?.seller_type || nextFormData.sellerType || nextFormData.ownershipType),
+    ownership_structure: normalizeNullableText(ownershipStructure || existing?.ownership_structure || nextFormData.ownershipType),
+    marital_regime: normalizeNullableText(maritalRegime || existing?.marital_regime || nextFormData.maritalRegime || nextFormData.marriageRegime),
+    submitted_at: existing?.submitted_at || (nextStatus === 'completed' ? nowIso : null),
+    updated_at: nowIso,
+  }
+
+  const query = existing?.id
+    ? client
+      .from('private_listing_seller_onboarding')
+      .update(payload)
+      .eq('id', existing.id)
+    : client
+      .from('private_listing_seller_onboarding')
+      .insert(payload)
+
+  const result = await query
+    .select('id, private_listing_id, token, status, seller_type, ownership_structure, marital_regime, form_data, submitted_at, created_at, updated_at')
+    .single()
+
+  if (result.error) {
+    if (isMissingTableError(result.error, 'private_listing_seller_onboarding')) return null
+    throw result.error
+  }
+
+  return result.data || {
+    ...payload,
+    id: existing?.id || null,
+    created_at: existing?.created_at || null,
+  }
 }
 
 function mergeSellerPortalOnboardingFormData(context = null, persistedOnboarding = null) {
@@ -7439,7 +7572,7 @@ export async function getSellerOnboardingByToken(token, options = {}) {
       : await fetchSellerPortalOnboardingRowByToken(client, normalizedToken, portalPayload.listing.id)
     const hydratedPortalPayload = mergeSellerPortalOnboardingFormData(portalPayload, persistedOnboarding)
     const [branding, mediaByListingId] = await Promise.all([
-      resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, hydratedPortalPayload.listing),
+      resolveSellerOnboardingBrandingSnapshot(client, normalizedToken, portalPayload.listing),
       fetchMediaRowsForListings(client, [hydratedPortalPayload.listing.id]),
     ])
     const listingWithMedia = attachDistributionMediaToListing(
