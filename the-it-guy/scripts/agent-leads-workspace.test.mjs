@@ -212,14 +212,17 @@ try {
   const buyerTabKeys = [...buyerTabsSource.matchAll(/\{ key: (?:'([^']+)'|BUYER_ONBOARDING_OTP_TAB_KEY)/g)].map((match) => match[1] || 'onboarding_otp')
   assert.deepEqual(buyerTabKeys, [
     'overview',
+    'buyer_profile',
     'onboarding_otp',
-    'appointments',
     'property_match',
-    'timeline',
+    'appointments',
+    'activity',
   ], 'buyer lead workspace should expose the requested visible tab order')
+  assert.ok(buyerTabsSource.includes("{ key: 'buyer_profile', label: 'Buyer Profile' }"), 'buyer workspace should expose the buyer profile tab')
+  assert.ok(!buyerTabsSource.includes("{ key: 'documents', label: 'Documents' }"), 'buyer workspace should not expose documents as a visible top-level tab')
   assert.ok(buyerTabsSource.includes("{ key: 'property_match', label: 'Properties' }"), 'buyer property match tab should be labelled Properties')
-  assert.ok(buyerTabsSource.includes("{ key: 'timeline', label: 'Activity' }"), 'buyer timeline tab should be labelled Activity')
-  assert.match(workspaceSource, /const visibleBuyerTabs = useMemo\(\s*\(\) => tabs\.filter\(\(tab\) => !\['requirements', 'tasks', 'documents'\]\.includes\(tab\.key\)\)/, 'buyer menu should hide internal requirements, tasks, and documents tabs')
+  assert.ok(buyerTabsSource.includes("{ key: 'activity', label: 'Activity' }"), 'buyer workspace should expose the activity tab')
+  assert.match(workspaceSource, /const visibleBuyerTabs = useMemo\(\s*\(\) => tabs\.filter\(\(tab\) => !\['requirements', 'tasks'\]\.includes\(tab\.key\)\)/, 'buyer menu should hide internal requirements and tasks tabs')
   for (const retiredTab of ['requirements', 'tasks', 'documents', 'suggestions', 'listings', 'recommendations', 'saved_searches']) {
     assert.ok(!buyerTabKeys.includes(retiredTab), `${retiredTab} should be merged into Property Match`)
   }
@@ -232,7 +235,7 @@ try {
   const buyerPropertyMatchPanelSource = workspaceSource.match(/function BuyerPropertyMatchPanel[\s\S]*?\nfunction AppointmentStatusBadge/)?.[0] || ''
   assert.ok(buyerPropertyMatchPanelSource.includes('liveListingMatches'), 'Property Match should hydrate recommendations from live listing matches')
   assert.ok(buyerPropertyMatchPanelSource.includes('findListingsForRequirement({ organisationId, requirementId: primaryRequirementId'), 'Property Match should load scored matches from the real listing matcher')
-  assert.ok(buyerPropertyMatchPanelSource.includes('listSearchablePrivateListings({ organisationId })'), 'Property Match should fall back to current organisation listings when no saved requirement exists')
+  assert.ok(buyerPropertyMatchPanelSource.includes("listSearchablePrivateListings({ organisationId, status: 'active' })"), 'Property Match should fall back to current active organisation listings when no saved requirement exists')
   assert.ok(workspaceSource.includes('function getBuyerLiveListingMatchMeta'), 'live listing matches should be converted into buyer collection cards')
   assert.ok(workspaceSource.includes("source: 'Live listing match'"), 'live listing recommendations should be labelled as live listing matches')
   assert.ok(workspaceSource.includes('function LeadAppointmentsPanel'), 'appointments tab should expose a lead appointment creation panel')

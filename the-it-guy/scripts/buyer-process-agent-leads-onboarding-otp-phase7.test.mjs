@@ -8,6 +8,10 @@ assert.match(agentLeadsPageSource, /BUYER_ONBOARDING_OTP_TAB_KEY = 'onboarding_o
 assert.match(agentLeadsPageSource, /function normalizeBuyerLeadWorkspaceTabKey/)
 assert.match(agentLeadsPageSource, /'offers'[\s\S]*return BUYER_ONBOARDING_OTP_TAB_KEY/)
 assert.match(agentLeadsPageSource, /\{ key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Onboarding \/ OTP' \}/)
+assert.match(
+  agentLeadsPageSource,
+  /\{ key: 'overview', label: 'Overview' \},\s*\{ key: 'buyer_profile', label: 'Buyer Profile' \},\s*\{ key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Onboarding \/ OTP' \},\s*\{ key: 'property_match', label: 'Properties' \},\s*\{ key: 'appointments', label: 'Appointments' \},\s*\{ key: 'activity', label: 'Activity' \}/,
+)
 assert.match(agentLeadsPageSource, /activeTab === BUYER_ONBOARDING_OTP_TAB_KEY/)
 assert.match(agentLeadsPageSource, /Open Onboarding \/ OTP/)
 assert.match(agentLeadsPageSource, /returnTo: `\/pipeline\/leads\/\$\{encodeURIComponent\(normalizeText\(lead\?\.leadId\)\)\}\?tab=onboarding_otp`/)
