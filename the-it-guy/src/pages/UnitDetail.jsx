@@ -4882,7 +4882,7 @@ function UnitDetail() {
   function openOtpLegalWorkspace(mode = 'view') {
     const workspaceMode = resolveWorkspaceModeFromAction(mode)
     if (kingstonsBuyerOtpDigitalDecision.blocked && ['generate', 'send'].includes(workspaceMode)) {
-      setError(kingstonsBuyerOtpDigitalDecision.message)
+      setError('')
       return
     }
 
@@ -4984,7 +4984,7 @@ function UnitDetail() {
   function handleOtpPrimaryAction() {
     if (kingstonsBuyerOtpDigitalDecision.blocked) {
       setOtpStartOpen(false)
-      setError(kingstonsBuyerOtpDigitalDecision.message)
+      setError('')
       return
     }
 
@@ -5007,7 +5007,7 @@ function UnitDetail() {
     }
     if (kingstonsBuyerOtpDigitalDecision.blocked) {
       setOtpStartOpen(false)
-      setError(kingstonsBuyerOtpDigitalDecision.message)
+      setError('')
       return
     }
     const sourceMode = selection?.sourceMode || DOCUMENT_START_SOURCE_MODES.saved
@@ -5033,7 +5033,7 @@ function UnitDetail() {
 
   async function handleApproveOtpDraft() {
     if (kingstonsBuyerOtpDigitalDecision.blocked) {
-      setError(kingstonsBuyerOtpDigitalDecision.message)
+      setError('')
       return
     }
 

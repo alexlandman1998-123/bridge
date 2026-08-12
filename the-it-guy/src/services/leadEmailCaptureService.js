@@ -1031,7 +1031,25 @@ function extractFirstUrl(text = '') {
 }
 
 function extractPropertyAddress(text = '') {
-  return readLabelValue(text, ['property address', 'address'])
+  return readLabelValue(text, ['property address', 'listing address', 'address'])
+}
+
+function extractPropertyTitle(text = '') {
+  const labelled = readLabelValue(text, [
+    'property',
+    'property title',
+    'listing',
+    'listing title',
+    'development',
+  ])
+  if (labelled) return labelled
+  const subject = normalizeText(text).split('\n')[0] || ''
+  const cleanedSubject = subject
+    .replace(/^(new\s+)?(?:property24|private property|website)\s+enquiry\s*[:-]?\s*/i, '')
+    .replace(/\b(?:listing|web|property)\s+(?:ref|reference|id|number)\s*[:#-]\s*[a-z0-9/_-]+/ig, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[-:|\s]+|[-:|\s]+$/g, '')
+  return cleanedSubject !== subject ? cleanedSubject : ''
 }
 
 function extractPropertyPrice(text = '') {
@@ -1067,7 +1085,7 @@ function calculateParseConfidence(fields = {}, warnings = []) {
   if (fields.name) score += 0.15
   if (fields.email) score += 0.2
   if (fields.phone) score += 0.2
-  if (fields.listingReference || fields.listingId) score += 0.15
+  if (fields.listingReference || fields.listingId || fields.propertyTitle || fields.propertyAddress) score += 0.15
   if (fields.message) score += 0.1
   if (fields.parserName && fields.parserName !== 'generic_email') score += 0.05
   score -= Math.min(warnings.length * 0.08, 0.24)
@@ -1104,6 +1122,7 @@ function buildParseResult({
     budget: extractBudget(body),
     areaInterest: readLabelValue(body, ['area', 'suburb', 'location']),
     propertyInterest: readLabelValue(body, ['property type', 'property interest']),
+    propertyTitle: extractPropertyTitle(`${subject}\n${body}`),
     propertyAddress: extractPropertyAddress(body),
     propertyLink: extractFirstUrl(`${subject}\n${body}`),
     propertyPrice: extractPropertyPrice(body),
@@ -1121,7 +1140,7 @@ function buildParseResult({
   const warnings = []
   if (!matchedFields.email && !matchedFields.phone) warnings.push('missing_contact_details')
   if (!matchedFields.name) warnings.push('missing_contact_name')
-  if (!matchedFields.listingReference && !alias.listingId && !alias.listing_id) warnings.push('missing_listing_reference')
+  if (!matchedFields.listingReference && !matchedFields.propertyTitle && !matchedFields.propertyAddress && !alias.listingId && !alias.listing_id) warnings.push('missing_listing_reference')
   return {
     parserName,
     source,
@@ -1146,6 +1165,7 @@ function parseProperty24Email(context = {}) {
       message: readLabelValue(body, ['message', 'comments', 'enquiry']) || extractMessage(body),
       areaInterest: readLabelValue(body, ['suburb', 'area']),
       propertyInterest: readLabelValue(body, ['property type', 'development']),
+      propertyTitle: extractPropertyTitle(`${context.subject}\n${body}`),
       propertyAddress: extractPropertyAddress(body),
       propertyLink: extractFirstUrl(`${context.subject}\n${body}`),
       propertyPrice: extractPropertyPrice(body),
@@ -1168,6 +1188,7 @@ function parsePrivatePropertyEmail(context = {}) {
       message: readLabelValue(body, ['message', 'enquiry', 'comment']) || extractMessage(body),
       areaInterest: readLabelValue(body, ['suburb', 'area']),
       propertyInterest: readLabelValue(body, ['property type']),
+      propertyTitle: extractPropertyTitle(`${context.subject}\n${body}`),
       propertyAddress: extractPropertyAddress(body),
       propertyLink: extractFirstUrl(`${context.subject}\n${body}`),
       propertyPrice: extractPropertyPrice(body),
@@ -1192,6 +1213,7 @@ function parseWebsiteEmail(context = {}) {
       message: readLabelValue(body, ['message', 'comments', 'enquiry', 'notes']) || extractMessage(body),
       areaInterest: readLabelValue(body, ['area', 'suburb', 'location']),
       propertyInterest: readLabelValue(body, ['property type', 'property interest']),
+      propertyTitle: extractPropertyTitle(`${context.subject}\n${body}`),
       propertyAddress: extractPropertyAddress(body),
       propertyLink: extractFirstUrl(`${context.subject}\n${body}`),
       propertyPrice: extractPropertyPrice(body),

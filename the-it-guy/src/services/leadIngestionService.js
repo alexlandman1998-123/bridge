@@ -46,6 +46,47 @@ function normalizePhone(value) {
   return `${plus}${text.replace(/[^\d]/g, '')}`
 }
 
+function normalizeListingMatchText(value = '') {
+  return normalizeLower(value)
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\b(?:for|sale|rent|to|let|property|listing|enquiry|new)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function scoreListingTextMatch(listing = {}, enquiry = {}) {
+  const enquirySignals = [
+    enquiry.lead?.enquiredPropertyTitle,
+    enquiry.lead?.enquiredPropertyAddress,
+    enquiry.lead?.propertyInterest,
+    enquiry.raw?.propertyTitle,
+    enquiry.raw?.propertyAddress,
+  ].map(normalizeListingMatchText).filter((value) => value.length >= 6)
+  if (!enquirySignals.length) return 0
+  const listingSignals = [
+    listing.title,
+    listing.property_address,
+    listing.address_line_1,
+    [listing.address_line_1, listing.suburb, listing.city].filter(Boolean).join(' '),
+  ].map(normalizeListingMatchText).filter((value) => value.length >= 6)
+  if (!listingSignals.length) return 0
+
+  let bestScore = 0
+  for (const enquirySignal of enquirySignals) {
+    const enquiryTokens = new Set(enquirySignal.split(' ').filter((token) => token.length > 2))
+    for (const listingSignal of listingSignals) {
+      if (enquirySignal === listingSignal) bestScore = Math.max(bestScore, 1)
+      if (enquirySignal.includes(listingSignal) || listingSignal.includes(enquirySignal)) bestScore = Math.max(bestScore, 0.92)
+      const listingTokens = new Set(listingSignal.split(' ').filter((token) => token.length > 2))
+      const overlap = [...enquiryTokens].filter((token) => listingTokens.has(token)).length
+      const denominator = Math.max(1, Math.min(enquiryTokens.size, listingTokens.size))
+      bestScore = Math.max(bestScore, overlap / denominator)
+    }
+  }
+  return Number(bestScore.toFixed(2))
+}
+
 function isUuidLike(value) {
   return UUID_PATTERN.test(normalizeText(value))
 }
@@ -323,6 +364,29 @@ async function resolveListing(client, enquiry) {
         .maybeSingle()
       if (!error && data) return data
       if (error && !isRecoverableReadError(error, 'private_listings')) throw error
+    }
+  }
+  const hasTextMatchSignal = [
+    enquiry.lead.enquiredPropertyTitle,
+    enquiry.lead.enquiredPropertyAddress,
+    enquiry.lead.propertyInterest,
+  ].some((value) => normalizeListingMatchText(value).length >= 6)
+  if (hasTextMatchSignal) {
+    for (const fields of selectVariants) {
+      const { data, error } = await client
+        .from('private_listings')
+        .select(fields)
+        .eq('organisation_id', enquiry.organisationId)
+        .limit(250)
+      if (error) {
+        if (!isRecoverableReadError(error, 'private_listings')) throw error
+        continue
+      }
+      const candidates = (Array.isArray(data) ? data : [])
+        .map((listing) => ({ listing, score: scoreListingTextMatch(listing, enquiry) }))
+        .filter((candidate) => candidate.score >= 0.72)
+        .sort((left, right) => right.score - left.score)
+      if (candidates[0]?.listing) return candidates[0].listing
     }
   }
   return null
@@ -635,6 +699,8 @@ export const __leadIngestionServiceTestUtils = {
   buildRequirementPayload,
   isActiveLead,
   normalizeEnquiryPayload,
+  normalizeListingMatchText,
   normalizeLeadSource,
   normalizePhone,
+  scoreListingTextMatch,
 }

@@ -92,6 +92,7 @@ import {
   readAgentPrivateListings,
   writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
+import { buildDirectListingOperationalSummary } from '../lib/directListingOperationalSummary'
 import { findPrivateListingById, getPrivateListingRecordId, sanitizePrivateListingRows } from '../lib/privateListingRecordIntegrity'
 import {
   completeViewingRequest,
@@ -4921,7 +4922,6 @@ function AgentListingDetail() {
     setOfferActionMessage('')
 
     if (listingKingstonsBuyerOtpDigitalDecision.blocked) {
-      setOfferActionError(listingKingstonsBuyerOtpDigitalDecision.message)
       return
     }
 
@@ -4979,7 +4979,7 @@ function AgentListingDetail() {
     if (listingKingstonsBuyerOtpDigitalDecision.blocked) {
       setAcceptedOfferOtpStartOffer(null)
       setOfferActionMessage('')
-      setOfferActionError(listingKingstonsBuyerOtpDigitalDecision.message)
+      setOfferActionError('')
       return
     }
     setAcceptedOfferOtpStartOffer(offer)
@@ -5542,6 +5542,10 @@ function AgentListingDetail() {
     ? Math.round((listingReadinessCompleted / listingReadinessItems.length) * 100)
     : 0
   const sellerFormData = useMemo(() => getListingSellerFormData(listingRecord), [listingRecord])
+  const directListingOperationalSummary = useMemo(
+    () => buildDirectListingOperationalSummary(listingRecord),
+    [listingRecord],
+  )
   const activeSellerSectionEditor = SELLER_PROFILE_SECTION_BY_KEY.get(sellerSectionEditorKey) || null
 
   const sellerProfile = useMemo(() => {
@@ -7686,11 +7690,6 @@ function AgentListingDetail() {
       {detailMessage ? (
         <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-4 py-3 text-sm font-medium text-[#1f7d44]">{detailMessage}</div>
       ) : null}
-      {listingKingstonsBuyerOtpDigitalDecision.blocked ? (
-        <div className="rounded-[14px] border border-[#f2dfbd] bg-[#fff9ec] px-4 py-3 text-sm font-semibold text-[#7a5a17]" data-testid="kingstons-buyer-otp-digital-decision">
-          {listingKingstonsBuyerOtpDigitalDecision.label}: {listingKingstonsBuyerOtpDigitalDecision.agentAction}
-        </div>
-      ) : null}
       <Modal
         open={Boolean(activeSellerSectionEditor)}
         onClose={sellerSectionSaving ? undefined : () => setSellerSectionEditorKey('')}
@@ -9604,9 +9603,11 @@ function AgentListingDetail() {
                         {offer.transactionId ? (
                           <>
                             <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>Open Transaction</Button>
-                            <Button size="sm" type="button" variant="secondary" onClick={() => handleAcceptedOfferPrepareOtpClick(offer)}>
-                              {listingKingstonsBuyerOtpDigitalDecision.blocked ? 'Manual OTP Only' : 'Prepare OTP'}
-                            </Button>
+                            {!listingKingstonsBuyerOtpDigitalDecision.blocked ? (
+                              <Button size="sm" type="button" variant="secondary" onClick={() => handleAcceptedOfferPrepareOtpClick(offer)}>
+                                Prepare OTP
+                              </Button>
+                            ) : null}
                           </>
                         ) : null}
                       </div>
@@ -9618,9 +9619,11 @@ function AgentListingDetail() {
                         {offer.transactionId ? (
                           <>
                             <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>Open Transaction</Button>
-                            <Button size="sm" type="button" variant="secondary" onClick={() => handleAcceptedOfferPrepareOtpClick(offer)}>
-                              {listingKingstonsBuyerOtpDigitalDecision.blocked ? 'Manual OTP Only' : 'Prepare OTP'}
-                            </Button>
+                            {!listingKingstonsBuyerOtpDigitalDecision.blocked ? (
+                              <Button size="sm" type="button" variant="secondary" onClick={() => handleAcceptedOfferPrepareOtpClick(offer)}>
+                                Prepare OTP
+                              </Button>
+                            ) : null}
                           </>
                         ) : (
                           <span className="text-xs font-semibold text-[#9a5b11]">Use buyer onboarding for OTP intake.</span>
@@ -10360,9 +10363,11 @@ function AgentListingDetail() {
                                     <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>
                                       Transaction
                                     </Button>
-                                    <Button size="sm" type="button" variant="secondary" onClick={() => handleAcceptedOfferPrepareOtpClick(offer)}>
-                                      {listingKingstonsBuyerOtpDigitalDecision.blocked ? 'Manual OTP Only' : 'Prepare OTP'}
-                                    </Button>
+                                    {!listingKingstonsBuyerOtpDigitalDecision.blocked ? (
+                                      <Button size="sm" type="button" variant="secondary" onClick={() => handleAcceptedOfferPrepareOtpClick(offer)}>
+                                        Prepare OTP
+                                      </Button>
+                                    ) : null}
                                   </>
                                 ) : null}
                                 {OFFER_WORKFLOW_RETIRED && !offer.transactionId ? (
@@ -10463,6 +10468,82 @@ function AgentListingDetail() {
                 <div className="rounded-[18px] border border-[#f2dfbd] bg-[#fff9ec] px-4 py-3 text-sm font-semibold text-[#7a5a17]" data-testid="kingstons-listing-digital-signing-decision">
                   {listingKingstonsDigitalSigningDecision.label}: {listingKingstonsDigitalSigningDecision.agentAction}
                 </div>
+              ) : null}
+
+              {directListingOperationalSummary.hasIntake ? (
+                <article data-testid="direct-listing-operational-audit" className="rounded-[24px] border border-[#dbe6f2] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Direct Listing Intake</p>
+                      <h3 className="mt-1 text-base font-semibold text-[#142132]">Agent-captured listing facts</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#607387]">
+                        This record was added without the lead process. Declarations are audit flags only and do not require uploads.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="inline-flex rounded-full border border-[#d8eddf] bg-[#ecfaf1] px-3 py-1 text-xs font-semibold text-[#1f7d44]">
+                        Declaration-only
+                      </span>
+                      <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">
+                        {directListingOperationalSummary.portalInvite.label}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <MetricCard label="Seller Type" value={directListingOperationalSummary.sellerTypeLabel} meta={directListingOperationalSummary.ownerModelLabel || 'Ownership model'} />
+                    <MetricCard label="Title Type" value={directListingOperationalSummary.propertyStructureLabel} meta={directListingOperationalSummary.propertyAddress || 'Address pending'} />
+                    <MetricCard label="Fact Readiness" value={`${directListingOperationalSummary.readiness.percent}%`} meta={`${directListingOperationalSummary.readiness.complete}/${directListingOperationalSummary.readiness.total || 0} captured`} />
+                    <MetricCard label="Portal Invite" value={directListingOperationalSummary.portalInvite.label} meta={directListingOperationalSummary.portalInvite.error || 'Seller portal lifecycle'} />
+                  </div>
+
+                  <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                    <div className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h4 className="text-sm font-semibold text-[#142132]">Declaration Summary</h4>
+                          <p className="mt-1 text-xs text-[#607387]">These are yes/no declarations from Quick Add, not uploaded evidence.</p>
+                        </div>
+                        <span className="rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c]">
+                          Uploads not required
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                        {directListingOperationalSummary.declarations.map((row) => (
+                          <div key={row.key} className="rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-3">
+                            <p className="text-xs font-semibold text-[#2d445e]">{row.label}</p>
+                            <p className={`mt-1 text-xs font-semibold ${
+                              row.held === true
+                                ? 'text-[#1f7d44]'
+                                : row.held === false
+                                  ? 'text-[#9a5b13]'
+                                  : 'text-[#607387]'
+                            }`}>
+                              {row.statusLabel}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <aside className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
+                      <h4 className="text-sm font-semibold text-[#142132]">Attention Items</h4>
+                      <div className="mt-3 space-y-2">
+                        {directListingOperationalSummary.attentionItems.length ? directListingOperationalSummary.attentionItems.slice(0, 5).map((item) => (
+                          <div key={item} className="flex items-start gap-2 rounded-[12px] border border-[#f2dfbd] bg-[#fff9ec] px-3 py-2">
+                            <CircleAlert size={14} className="mt-0.5 shrink-0 text-[#9a5b13]" />
+                            <p className="text-xs font-semibold leading-5 text-[#7a5a17]">{item}</p>
+                          </div>
+                        )) : (
+                          <div className="flex items-start gap-2 rounded-[12px] border border-[#d8eddf] bg-[#ecfaf1] px-3 py-2">
+                            <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-[#1f7d44]" />
+                            <p className="text-xs font-semibold leading-5 text-[#1f7d44]">Direct listing intake has no outstanding audit flags.</p>
+                          </div>
+                        )}
+                      </div>
+                    </aside>
+                  </div>
+                </article>
               ) : null}
 
               {sellerContactEditorOpen ? (

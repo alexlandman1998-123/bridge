@@ -51,6 +51,10 @@ import {
   normalizeCanonicalPropertyType,
   validateSellerOnboardingFacts,
 } from '../services/documents/sellerOnboardingFactTransformer'
+import {
+  buildSellerPortalFormDataFromDirectListing,
+  hasDirectListingPortalIntake,
+} from '../lib/directListingSellerPortalBridge'
 import { getDemoSellerOnboardingListing, isSellerOnboardingDemoToken } from '../lib/onboardingDemoLinks'
 import { resolveSellerOnboardingFlow } from '../lib/sellerOnboardingFlow'
 import {
@@ -1603,7 +1607,10 @@ function getFlowContract(existing = {}, listing = {}, canonicalFacts = {}) {
 
 function normalizeFormData(listing) {
   const seller = listing?.seller || {}
-  const existing = listing?.sellerOnboarding?.formData || {}
+  const existing = {
+    ...(listing?.sellerOnboarding?.formData || {}),
+    ...buildSellerPortalFormDataFromDirectListing(listing),
+  }
   const preferredTransferAttorney = existing.preferredTransferAttorney && typeof existing.preferredTransferAttorney === 'object'
     ? {
       ...existing.preferredTransferAttorney,
@@ -4870,6 +4877,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     ...(bondComplianceSummary ? [{ label: 'Bond follow-up', missing: bondComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
     ...(tenantComplianceSummary ? [{ label: 'Tenant follow-up', missing: tenantComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
   ]
+  const directListingPortalIntake = hasDirectListingPortalIntake(listing)
+  const directListingComplianceSummary = Array.isArray(form.directListingComplianceSummary)
+    ? form.directListingComplianceSummary
+    : []
 
   const shouldShowWelcome = !embedded && !isCompleted && showWelcome
   const onboardingActions = !embedded && !isCompleted ? (
@@ -4979,6 +4990,33 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           >
             {success}
           </p>
+        ) : null}
+        {directListingPortalIntake && !isCompleted ? (
+          <div className="mt-4 rounded-[18px] border border-[#dbe6f2] bg-[#f7fbff] p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-3">
+                <ClipboardCheck size={18} className="mt-0.5 text-[#35546c]" />
+                <div>
+                  <p className="text-sm font-semibold text-[#243b53]">Your agent has already captured the listing basics.</p>
+                  <p className="mt-1 text-xs leading-5 text-[#60748b]">
+                    Confirm or complete the details below. Document uploads are not required from this declaration summary.
+                  </p>
+                </div>
+              </div>
+              {directListingComplianceSummary.length ? (
+                <div className="grid gap-2 text-xs sm:grid-cols-3 lg:min-w-[460px]">
+                  {directListingComplianceSummary.map((item) => (
+                    <div key={item.key} className="rounded-[12px] border border-[#dce7f2] bg-white px-3 py-2">
+                      <p className="font-semibold text-[#2a4057]">{item.label}</p>
+                      <p className={item.held === true ? 'mt-1 text-[#1f7d44]' : item.held === false ? 'mt-1 text-[#9a5b13]' : 'mt-1 text-[#60748b]'}>
+                        {item.statusLabel}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
         ) : null}
 
         <MobileQuestionFlow activeIndex={activeMobilePaneIndex}>

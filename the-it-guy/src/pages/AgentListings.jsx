@@ -48,9 +48,20 @@ import {
   getPrivateListingLifecycleState,
   getPrivateListingStatusGroup,
 } from '../lib/privateListingLifecycle'
-import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListings, updatePrivateListing, uploadPrivateListingDocument } from '../services/privateListingService'
+import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListings, persistSellerProfileOnboardingFormData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument } from '../services/privateListingService'
+import {
+  activateSellerPortalForListing,
+  SELLER_PORTAL_ACTIVATION_SOURCES,
+} from '../services/sellerPortalActivationService'
 import { getListingPartnerShareOptions, shareListingWithPartner, unshareListingWithPartner } from '../services/partnerListingSharingService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
+import {
+  buildDirectListingIntakePayload,
+  buildDirectListingPartyFacts,
+} from '../lib/directListingIntakeModel'
+import {
+  syncSellerDocumentRequirements as syncLocalSellerDocumentRequirements,
+} from '../lib/sellerDocumentRequirementEngine'
 import {
   getPropertyCategoryLabel,
   getPropertyStructureTypeLabel,
@@ -96,6 +107,27 @@ const QUICK_ADD_MANDATE_STATUS_OPTIONS = [
   { value: 'signed_external_pending_upload', label: 'Signed manually, upload later' },
   { value: 'expired', label: 'Expired' },
 ]
+const DIRECT_LISTING_SELLER_TYPE_OPTIONS = [
+  { value: 'individual', label: 'Individual' },
+  { value: 'multiple_owners', label: 'Multiple owners' },
+  { value: 'company', label: 'Company' },
+  { value: 'trust', label: 'Trust' },
+  { value: 'foreign_individual', label: 'Foreign individual' },
+]
+const DIRECT_LISTING_MARITAL_STATUS_OPTIONS = [
+  { value: '', label: 'Not captured' },
+  { value: 'single', label: 'Single' },
+  { value: 'married_cop', label: 'Married in community' },
+  { value: 'married_anc', label: 'Married out of community' },
+  { value: 'divorced', label: 'Divorced' },
+  { value: 'widowed', label: 'Widowed' },
+]
+const DIRECT_LISTING_MANDATE_TYPE_OPTIONS = [
+  { value: 'sole', label: 'Sole' },
+  { value: 'dual', label: 'Dual' },
+  { value: 'tri', label: 'Tri' },
+  { value: 'open', label: 'Open' },
+]
 const QUICK_ADD_INTENT_OPTIONS = [
   {
     value: 'draft',
@@ -109,7 +141,7 @@ const QUICK_ADD_INTENT_OPTIONS = [
   {
     value: 'signed_mandate',
     label: 'Manual mandate evidence exists',
-    description: 'Store internal supporting evidence, then generate and complete the canonical signing packet.',
+    description: 'Upload the signed hard-copy mandate and keep the listing workflow moving.',
     listingStatus: 'active',
     mandateStatus: 'signed_external_pending_upload',
     nextStep: 'mandate',
@@ -167,6 +199,7 @@ function getQuickListingMandateDateState(form = {}) {
 
 function buildQuickListingMandatePack(form = {}, mandateStatusValue = '') {
   const mandateStatus = mandateStatusValue || getQuickListingMandateStatus(form)
+  const manualMandateFileSelected = Boolean(normalizeText(form.manualMandateFileName))
   const dateState = getQuickListingMandateDateState(form)
   const supportingDocumentNames = Array.isArray(form.supportingDocumentNames)
     ? form.supportingDocumentNames.map(normalizeText).filter(Boolean)
@@ -184,10 +217,8 @@ function buildQuickListingMandatePack(form = {}, mandateStatusValue = '') {
     dateState: dateState.key,
     dateStateLabel: dateState.label,
     daysRemaining: dateState.daysRemaining,
-    // A Quick Add file is supporting evidence only.  A canonical packet is the
-    // sole source of a signed/final mandate state.
-    signed: false,
-    uploadStatus: normalizeText(form.manualMandateFileName)
+    signed: manualMandateFileSelected,
+    uploadStatus: manualMandateFileSelected
       ? 'evidence_selected'
       : isQuickListingManualMandateReportedStatus(mandateStatus)
         ? 'evidence_missing'
@@ -215,9 +246,6 @@ function getQuickListingMandateCaptureWarnings(form = {}, mandateStatusValue = '
   if (!mandatePack.expected) return []
   const warnings = []
   if (mandatePack.uploadStatus === 'evidence_missing') warnings.push('Manual mandate evidence upload outstanding')
-  if (isQuickListingManualMandateReportedStatus(mandatePack.status)) {
-    warnings.push('Manual evidence cannot finalize a mandate or activate this listing. Complete the canonical signing packet.')
-  }
   if (!mandatePack.startDate || !mandatePack.endDate) warnings.push('Mandate dates missing')
   if (mandatePack.dateState === 'expired') warnings.push('Mandate expired')
   if (mandatePack.commission.status === 'missing') warnings.push('Commission missing')
@@ -296,6 +324,253 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function normalizeDirectListingKey(value) {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function splitDirectListingPersonName(value) {
+  const text = normalizeText(value)
+  if (!text) return { name: '', surname: '', fullName: '' }
+  const parts = text.split(/\s+/).filter(Boolean)
+  if (parts.length <= 1) return { name: text, surname: '', fullName: text }
+  return {
+    name: parts.slice(0, -1).join(' '),
+    surname: parts.at(-1),
+    fullName: text,
+  }
+}
+
+function parseDirectListingPeopleText(value = '', role = 'Person') {
+  return normalizeText(value)
+    .split(/\n+/)
+    .map((line) => normalizeText(line))
+    .filter(Boolean)
+    .map((line, index) => {
+      const parts = line.split(/[|,;]/).map((part) => normalizeText(part)).filter(Boolean)
+      const nameParts = splitDirectListingPersonName(parts[0] || line)
+      return {
+        id: `${normalizeDirectListingKey(role) || 'person'}_${index + 1}`,
+        role,
+        name: nameParts.name,
+        surname: nameParts.surname,
+        fullName: nameParts.fullName,
+        email: parts.find((part) => part.includes('@')) || '',
+        phone: parts.find((part) => /\d{6,}/.test(part.replace(/\D/g, '')) && !part.includes('@')) || '',
+      }
+    })
+}
+
+function buildDirectListingMapperForm(form = {}) {
+  return {
+    ...form,
+    companyDirectors: parseDirectListingPeopleText(form.companyDirectorsText, 'Director'),
+    trustees: parseDirectListingPeopleText(form.trusteesText, 'Trustee'),
+    multipleOwners: parseDirectListingPeopleText(form.multipleOwnersText, 'Owner'),
+  }
+}
+
+function buildDirectListingCanonicalFactReadiness(canonicalFacts = {}) {
+  const seller = canonicalFacts?.seller && typeof canonicalFacts.seller === 'object' ? canonicalFacts.seller : {}
+  const property = canonicalFacts?.property && typeof canonicalFacts.property === 'object' ? canonicalFacts.property : canonicalFacts
+  const legalType = normalizeDirectListingKey(seller.sellerLegalType || seller.legal_type || canonicalFacts.sellerLegalType)
+  return {
+    sellerName: Boolean(canonicalFacts.sellerName || canonicalFacts.name || seller.fullName || seller.companyName || seller.trustName),
+    sellerEmail: Boolean(canonicalFacts.sellerEmail || canonicalFacts.email || seller.sellerEmail || seller.email),
+    sellerPhone: Boolean(canonicalFacts.sellerPhone || canonicalFacts.phone || canonicalFacts.mobile || seller.sellerPhone || seller.phone),
+    sellerLegalType: Boolean(legalType),
+    companyDirectors: legalType !== 'company' || Boolean(seller.company?.directors?.length || seller.companyDirectors?.length),
+    trustTrustees: legalType !== 'trust' || Boolean(seller.trust?.trustees?.length || seller.trustees?.length),
+    multipleOwners: legalType !== 'multiple_owners' || Boolean(seller.owners?.length || seller.multipleOwners?.length),
+    foreignOwnerCountry: legalType !== 'foreign_individual' || Boolean(seller.foreignOwnerCountry || seller.foreign?.country),
+    propertyAddress: Boolean(property.propertyAddress || property.formattedAddress || property.address),
+    propertyStructureType: Boolean(property.propertyStructureType || property.property_structure_type),
+    propertyUnitNumber: Boolean(property.unitNumber || property.unit_number),
+    propertyComplexName: Boolean(property.complexName || property.complex_name),
+    complianceDeclarations: Boolean(canonicalFacts.complianceDeclarations || canonicalFacts.compliance_declarations),
+  }
+}
+
+function buildQuickAddDirectListingPersistencePayload(form = {}, context = {}) {
+  const capturedAt = normalizeText(context.capturedAt) || new Date().toISOString()
+  const directListingIntake = buildDirectListingIntakePayload(buildDirectListingMapperForm(form), {
+    capturedBy: context.capturedBy || '',
+    capturedAt,
+  })
+  const sellerOnboardingFormData = {
+    ...directListingIntake.sellerOnboardingFormData,
+    directListingIntake: {
+      ...(directListingIntake.sellerOnboardingFormData?.directListingIntake || {}),
+      capturedAt,
+      capturedBy: normalizeText(context.capturedBy),
+      listingStatus: normalizeText(context.listingStatus),
+      mandateStatus: normalizeText(context.mandateStatus),
+      declarationsOnly: true,
+      uploadsRequired: false,
+    },
+  }
+
+  return {
+    ...directListingIntake,
+    sellerOnboardingFormData,
+    sellerCanonicalFactReadiness: buildDirectListingCanonicalFactReadiness(directListingIntake.sellerCanonicalFacts),
+  }
+}
+
+function summarizeQuickAddRequirementSync(result = null) {
+  const requirements = Array.isArray(result?.requirements) ? result.requirements : []
+  const readinessSummary = result?.readinessSummary && typeof result.readinessSummary === 'object' ? result.readinessSummary : {}
+  return {
+    synced: Boolean(result),
+    totalRequirements: requirements.length,
+    missingRequirements: Number(readinessSummary.missingRequirementsCount || 0),
+    automaticallyIssuedRequests: Number(result?.requestIssuance?.counts?.applied || 0),
+    requestIssuanceFailures: Number(result?.requestIssuance?.counts?.failed || 0),
+  }
+}
+
+async function syncQuickAddDirectListingRequirements(listingId = '', reason = 'direct_listing_intake_saved') {
+  const normalizedListingId = normalizeText(listingId)
+  if (!normalizedListingId) return { synced: false, error: 'listing_id_missing' }
+  try {
+    const result = await syncPrivateListingRequirements(normalizedListingId, {
+      emitActivity: true,
+      reason,
+    })
+    return summarizeQuickAddRequirementSync(result)
+  } catch (syncError) {
+    console.warn('[Listings] direct listing requirement sync skipped', syncError)
+    return {
+      synced: false,
+      error: syncError?.message || 'requirement_sync_failed',
+    }
+  }
+}
+
+function buildLocalQuickAddRequirementSync(listing = {}, existingRequirements = []) {
+  const sync = syncLocalSellerDocumentRequirements(listing, existingRequirements)
+  const requirements = (sync?.upsertRows || []).map((row) => ({
+    ...row,
+    id: row.id || generateId('requirement'),
+    status: row.status || 'required',
+  }))
+  return {
+    requirements,
+    summary: {
+      synced: true,
+      totalRequirements: requirements.filter((row) => row.status !== 'not_applicable').length,
+      missingRequirements: requirements.filter((row) => row.is_required !== false && row.status !== 'not_applicable').length,
+      automaticallyIssuedRequests: 0,
+      requestIssuanceFailures: 0,
+    },
+  }
+}
+
+function summarizeQuickAddSellerPortalInvite(result = null, requested = false) {
+  if (!requested) return { requested: false, status: 'not_requested', sent: false }
+  const payload = result && typeof result === 'object' ? result : {}
+  return {
+    requested: true,
+    sent: Boolean(payload.sent || payload.ok),
+    status: normalizeText(payload.status) || (payload.ok || payload.sent ? 'invitation_sent' : 'not_sent'),
+    activationSource: normalizeText(payload.activationSource) || SELLER_PORTAL_ACTIVATION_SOURCES.manualListing,
+    sellerEmail: normalizeText(payload.sellerEmail),
+    sellerPhonePresent: Boolean(payload.sellerPhone || payload.sellerPhonePresent),
+    inviteExpiresAt: payload.inviteExpiresAt || payload.invitation?.inviteExpiresAt || null,
+    deliveryId: payload.deliveryId || payload.email?.deliveryId || null,
+    portalLinkPresent: Boolean(payload.portalLink || payload.link || payload.clientPortalLink),
+    token: normalizeText(payload.token),
+    link: normalizeText(payload.link || payload.portalLink || payload.clientPortalLink),
+    preparedAt: payload.preparedAt || null,
+    localOnly: Boolean(payload.localOnly),
+    error: normalizeText(payload.error),
+  }
+}
+
+async function sendQuickAddSellerPortalInvite({
+  listingId = '',
+  form = {},
+  directListingPersistence = {},
+  profile = null,
+  organisationId = '',
+  agencyName = '',
+  propertyAddress = '',
+} = {}) {
+  const requested = directListingPersistence.sellerPortalInvite?.requested === true
+  if (!requested) return summarizeQuickAddSellerPortalInvite(null, false)
+
+  const sellerEmail = normalizeText(directListingPersistence.sellerPortalInvite?.destinationEmail || form.sellerEmail).toLowerCase()
+  if (!sellerEmail) {
+    return summarizeQuickAddSellerPortalInvite({
+      status: 'blocked',
+      error: 'seller_email_missing',
+      activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.manualListing,
+    }, true)
+  }
+
+  try {
+    const result = await activateSellerPortalForListing({
+      listingId,
+      activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.manualListing,
+      sellerContactEmail: sellerEmail,
+      sellerContactPhone: directListingPersistence.sellerPortalInvite?.destinationPhone || form.sellerPhone,
+      sellerFirstName: form.sellerName,
+      sellerSurname: form.sellerSurname,
+      performedBy: profile?.id || '',
+      agentName: profile?.fullName || profile?.name || profile?.email || '',
+      agentEmail: profile?.email || '',
+      organisationId,
+      agencyName,
+      propertyAddress,
+    })
+    return summarizeQuickAddSellerPortalInvite(result, true)
+  } catch (inviteError) {
+    console.warn('[Listings] direct listing seller portal invite skipped', inviteError)
+    return summarizeQuickAddSellerPortalInvite({
+      status: 'failed',
+      error: inviteError?.message || 'seller_portal_invite_failed',
+      activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.manualListing,
+      sellerEmail,
+      sellerPhonePresent: Boolean(directListingPersistence.sellerPortalInvite?.destinationPhone || form.sellerPhone),
+    }, true)
+  }
+}
+
+function buildLocalQuickAddSellerPortalInvite({
+  listingId = '',
+  form = {},
+  directListingPersistence = {},
+  existingOnboarding = {},
+} = {}) {
+  const requested = directListingPersistence.sellerPortalInvite?.requested === true
+  if (!requested) return summarizeQuickAddSellerPortalInvite(null, false)
+  const token = normalizeText(existingOnboarding?.token) || generateSellerOnboardingToken()
+  const link = buildSellerOnboardingLink(token)
+  return summarizeQuickAddSellerPortalInvite({
+    sent: false,
+    status: 'prepared_local',
+    activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.manualListing,
+    sellerEmail: directListingPersistence.sellerPortalInvite?.destinationEmail || form.sellerEmail,
+    sellerPhonePresent: Boolean(directListingPersistence.sellerPortalInvite?.destinationPhone || form.sellerPhone),
+    link,
+    localOnly: true,
+    preparedAt: new Date().toISOString(),
+    listingId,
+    token,
+  }, true)
+}
+
+function buildQuickAddSellerPortalInviteMessage(inviteSummary = null) {
+  if (inviteSummary?.requested !== true) return ''
+  if (inviteSummary.sent) return ' Seller portal link sent.'
+  if (inviteSummary.status === 'prepared_local') return ' Seller portal link prepared locally.'
+  if (inviteSummary.error) return ' Seller portal invite needs a retry.'
+  return ' Seller portal invite recorded.'
 }
 
 function resolveMembershipListingScopeRole({ currentMembership = null, workspaceRole = '' } = {}) {
@@ -724,7 +999,7 @@ function getListingComplianceWarnings(listing = {}, completeness = null) {
   const mandateSignedExternally = mandateStatus === 'signed_external_pending_upload'
   const hasMandate = hasCanonicalFinalMandatePacket(listing)
   const warnings = []
-  if (!hasMandate && mandateSignedExternally) warnings.push('Canonical signed mandate packet outstanding')
+  if (!hasMandate && mandateSignedExternally) warnings.push('Signed hard-copy mandate upload outstanding')
   else if (!hasMandate || missingItems.has('signed mandate')) warnings.push('Mandate missing')
   if (!seller.registrationNumber || missingItems.has('seller id / registration number')) warnings.push('Seller ID / registration number missing')
   if (!listingHasFicaDocuments(listing) || missingItems.has('seller fica')) warnings.push('Seller FICA missing')
@@ -1182,6 +1457,23 @@ function buildInitialListingLeadForm(profile, workspace) {
     sellerPhone: '',
     sellerType: 'individual',
     sellerRegistrationNumber: '',
+    companyName: '',
+    companyRegistrationNumber: '',
+    companyDirectorsText: '',
+    trustName: '',
+    trustRegistrationNumber: '',
+    trusteesText: '',
+    multipleOwnersText: '',
+    maritalStatus: '',
+    spouseName: '',
+    spouseEmail: '',
+    spousePhone: '',
+    foreignOwnerCountry: '',
+    foreignPassportNumber: '',
+    hasSignedMandate: false,
+    hasSignedPropertyConditionDisclosure: false,
+    hasSignedFicaForm: false,
+    sellerPortalInviteRequested: false,
     propertyAddress: '',
     propertyAddressValue: null,
     formattedAddress: '',
@@ -1285,9 +1577,7 @@ function mergeQuickListingMetadataInNotes(value = '', patch = {}) {
 function buildListingCompleteness({ form } = {}) {
   const mandateStatus = getQuickListingMandateStatus(form)
   const mandatePackExpected = isQuickListingMandatePackExpected(form, mandateStatus)
-  // Quick Add can only retain internal evidence. It cannot certify a signed
-  // mandate; that is derived from the server-attested canonical packet.
-  const mandateSigned = false
+  const mandateSigned = Boolean(mandatePackExpected && normalizeText(form?.manualMandateFileName))
   const sellerHasContact = Boolean(normalizeText(form?.sellerEmail) || normalizeText(form?.sellerPhone))
   const commissionCaptured = Boolean(
     normalizeText(form?.commissionValue) ||
@@ -1396,9 +1686,11 @@ function isQuickListingManualMandateReportedStatus(value) {
   return normalizeKey(value) === 'signed_external_pending_upload'
 }
 
-function canQuickListingActivateWithMandateStatus() {
-  // A Quick Add form has no server-attested canonical completion proof.
-  return false
+function canQuickListingActivateWithMandateStatus(mandateStatus = '', form = {}) {
+  return (
+    ['signed_uploaded', 'uploaded_signed'].includes(normalizeKey(mandateStatus)) ||
+    (isQuickListingManualMandateReportedStatus(mandateStatus) && Boolean(normalizeText(form?.manualMandateFileName)))
+  )
 }
 
 function getQuickListingActivationTier({ listingStatus = '' } = {}) {
@@ -1447,13 +1739,16 @@ function getQuickListingActivationTier({ listingStatus = '' } = {}) {
   }
 }
 
-function resolveQuickListingStatus(form) {
+function resolveQuickListingStatus(form, { activationWarnings = [] } = {}) {
   const normalized = normalizeKey(form.listingStatus)
-  // Manual capture and evidence upload must never publish or finalize a
-  // listing, including a back-captured historical/offer state. Preserve that
-  // context in the intake metadata, then move only after the canonical packet
-  // has completed.
-  if (['active', 'mandate_signed', 'under_offer', 'transaction_created', 'sold'].includes(normalized)) return 'listing_review'
+  const mandateStatus = getQuickListingMandateStatus(form)
+  if (
+    !activationWarnings.length &&
+    ['active', 'mandate_signed', 'under_offer', 'transaction_created', 'sold'].includes(normalized) &&
+    canQuickListingActivateWithMandateStatus(mandateStatus, form)
+  ) {
+    return normalized === 'mandate_signed' ? 'mandate_signed' : normalized
+  }
   return 'listing_review'
 }
 
@@ -1580,8 +1875,8 @@ function validateQuickListingActiveRules({ form, assignedAgentKey }) {
   if (normalizeKey(form.listingStatus) !== 'active') return []
   const errors = validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent: true })
   const mandateStatus = getQuickListingMandateStatus(form)
-  if (!canQuickListingActivateWithMandateStatus(mandateStatus)) {
-    errors.push('Capture a signed mandate status before marking the listing Active.')
+  if (!canQuickListingActivateWithMandateStatus(mandateStatus, form)) {
+    errors.push('Upload the signed hard-copy mandate before marking the listing Active.')
   }
   return [...new Set(errors)]
 }
@@ -1877,6 +2172,19 @@ function AgentListings({ initialTab = null } = {}) {
   const quickAddMandatePanelOpen =
     isManualListingFlow &&
     (form.quickStep === 'mandate' || isQuickListingMandatePackExpected(form, form.manualMandateStatus))
+  const directListingMapperForm = useMemo(() => buildDirectListingMapperForm(form), [form])
+  const directListingIntakePreview = useMemo(() => (
+    isManualListingFlow
+      ? buildDirectListingIntakePayload(directListingMapperForm, {
+          capturedBy: profile?.id || profile?.email || '',
+        })
+      : null
+  ), [directListingMapperForm, isManualListingFlow, profile?.email, profile?.id])
+  const directListingPartyPreview = useMemo(() => (
+    isManualListingFlow ? buildDirectListingPartyFacts(directListingMapperForm) : null
+  ), [directListingMapperForm, isManualListingFlow])
+  const directListingSellerType = normalizeDirectListingKey(directListingPartyPreview?.sellerLegalType || form.sellerType || 'individual')
+  const directListingCompliancePreview = directListingIntakePreview?.complianceDeclarations || null
 
   const currentBranchId = normalizeText(currentMembership?.branchId || currentMembership?.branch_id)
   const currentMembershipRole = resolveMembershipListingScopeRole({ currentMembership, workspaceRole })
@@ -2089,8 +2397,14 @@ function AgentListings({ initialTab = null } = {}) {
         mandateStatus,
       )
       const mergedNotes = [quickNotes, existingNotes ? `Previous listing notes:\n${existingNotes}` : ''].filter(Boolean).join('\n\n')
+      const directListingPersistence = buildQuickAddDirectListingPersistencePayload(form, {
+        capturedBy: profile?.id || profile?.email || '',
+        listingStatus: mergedListingStatus,
+        mandateStatus,
+      })
       const sellerCanonicalFacts = {
         ...(existingListing.sellerCanonicalFacts || existingListing.seller_canonical_facts_json || {}),
+        ...directListingPersistence.sellerCanonicalFacts,
         sellerName: sellerDisplayName || undefined,
         name: sellerDisplayName || undefined,
         fullName: sellerDisplayName || undefined,
@@ -2107,6 +2421,7 @@ function AgentListings({ initialTab = null } = {}) {
       })
       const sellerCanonicalFactReadiness = {
         ...(existingListing.sellerCanonicalFactReadiness || existingListing.seller_canonical_fact_readiness_json || {}),
+        ...directListingPersistence.sellerCanonicalFactReadiness,
         sellerName: Boolean(sellerCanonicalFacts.sellerName || sellerCanonicalFacts.name),
         sellerEmail: Boolean(sellerCanonicalFacts.sellerEmail || sellerCanonicalFacts.email),
         sellerPhone: Boolean(sellerCanonicalFacts.sellerPhone || sellerCanonicalFacts.phone),
@@ -2117,6 +2432,8 @@ function AgentListings({ initialTab = null } = {}) {
       let uploadedDocuments = []
       let failedDocumentUploads = []
       let handoffPlan = null
+      let directListingRequirementSync = null
+      let directListingSellerPortalInvite = null
       if (isSupabaseConfigured && !MOCK_DATA_ENABLED) {
         const uploadResult = documentUploadQueue.length
           ? await uploadQuickAddDocumentsForListing(listingMatch.id, documentUploadQueue)
@@ -2178,6 +2495,26 @@ function AgentListings({ initialTab = null } = {}) {
         })
         patch.internalListingNotes = mergeQuickListingMetadataInNotes(mergedNotes, { handoffPlan })
         await updatePrivateListing(listingMatch.id, patch, { includeRequirementsAndDocuments: false })
+        await persistSellerProfileOnboardingFormData({
+          listingId: listingMatch.id,
+          formData: directListingPersistence.sellerOnboardingFormData,
+          status: 'not_started',
+          sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
+          ownershipStructure: directListingPersistence.seller?.ownerStructureType || directListingPersistence.seller?.ownershipType || form.sellerType,
+        }).catch((persistenceError) => {
+          console.warn('[Listings] direct listing intake form data persistence skipped during merge', persistenceError)
+          return null
+        })
+        directListingRequirementSync = await syncQuickAddDirectListingRequirements(listingMatch.id, 'direct_listing_intake_merged')
+        directListingSellerPortalInvite = await sendQuickAddSellerPortalInvite({
+          listingId: listingMatch.id,
+          form,
+          directListingPersistence,
+          profile,
+          organisationId: selectedWorkspaceOrganisationId || organisationId,
+          agencyName: profile?.agencyName || profile?.company || workspace?.name || '',
+          propertyAddress: formattedAddress || propertyAddress,
+        })
         await createPrivateListingActivity({
           privateListingId: listingMatch.id,
           activityType: 'quick_add_merged_into_existing_listing',
@@ -2197,6 +2534,16 @@ function AgentListings({ initialTab = null } = {}) {
             documentUploadFailures: failedDocumentUploads,
             missingComplianceItems: complianceWarnings,
             missingFollowUpItems: completeness.missingItems,
+            directListingIntake: {
+              version: directListingPersistence.version,
+              source: directListingPersistence.source,
+              sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
+              sellerPortalInviteRequested: directListingPersistence.sellerPortalInvite?.requested === true,
+              complianceDeclarations: directListingPersistence.complianceDeclarations,
+              uploadsRequired: false,
+            },
+            requirementSync: directListingRequirementSync,
+            sellerPortalInvite: directListingSellerPortalInvite,
             handoffPlan,
             mergedAt: new Date().toISOString(),
           },
@@ -2228,6 +2575,36 @@ function AgentListings({ initialTab = null } = {}) {
         const localIndex = localListings.findIndex((listing) => normalizeText(listing.id || listing.listingId || listing.listing_id) === normalizeText(listingMatch.id))
         if (localIndex >= 0) {
           const existingLocal = localListings[localIndex]
+          directListingSellerPortalInvite = buildLocalQuickAddSellerPortalInvite({
+            listingId: listingMatch.id,
+            form,
+            directListingPersistence,
+            existingOnboarding: existingLocal.sellerOnboarding || {},
+          })
+          const localSellerOnboarding = {
+            ...(existingLocal.sellerOnboarding || {}),
+            status: existingLocal.sellerOnboarding?.status || SELLER_ONBOARDING_STATUS.NOT_STARTED,
+            formData: {
+              ...(existingLocal.sellerOnboarding?.formData || {}),
+              ...directListingPersistence.sellerOnboardingFormData,
+            },
+            ...(directListingSellerPortalInvite?.requested
+              ? {
+                  token: directListingSellerPortalInvite.token || existingLocal.sellerOnboarding?.token,
+                  link: directListingSellerPortalInvite.link || existingLocal.sellerOnboarding?.link,
+                  sellerPortalInvite: directListingSellerPortalInvite,
+                  sellerPortalStatus: directListingSellerPortalInvite.status,
+                  sellerPortalActivationSource: directListingSellerPortalInvite.activationSource,
+                  sellerPortalInvitationPreparedAt: directListingSellerPortalInvite.preparedAt,
+                }
+              : {}),
+          }
+          const localRequirementSync = buildLocalQuickAddRequirementSync({
+            ...existingLocal,
+            sellerCanonicalFacts,
+            sellerOnboarding: localSellerOnboarding,
+          }, existingLocal.documentRequirements || existingLocal.requiredDocuments || [])
+          directListingRequirementSync = localRequirementSync.summary
           localListings[localIndex] = {
             ...existingLocal,
             updatedAt: new Date().toISOString(),
@@ -2238,6 +2615,11 @@ function AgentListings({ initialTab = null } = {}) {
             notes: localMergedNotes,
             sellerCanonicalFacts,
             sellerCanonicalFactReadiness,
+            directListingIntake: directListingPersistence,
+            complianceDeclarations: directListingPersistence.complianceDeclarations,
+            sellerOnboarding: localSellerOnboarding,
+            requiredDocuments: localRequirementSync.requirements,
+            documentRequirements: localRequirementSync.requirements,
             documents: [
               ...(Array.isArray(existingLocal.documents) ? existingLocal.documents : []),
               ...uploadedDocuments.map((documentUpload) => ({
@@ -2263,6 +2645,16 @@ function AgentListings({ initialTab = null } = {}) {
                 documentsUploaded: uploadedDocuments,
                 missingComplianceItems: complianceWarnings,
                 missingFollowUpItems: completeness.missingItems,
+                directListingIntake: {
+                  version: directListingPersistence.version,
+                  source: directListingPersistence.source,
+                  sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
+                  sellerPortalInviteRequested: directListingPersistence.sellerPortalInvite?.requested === true,
+                  complianceDeclarations: directListingPersistence.complianceDeclarations,
+                  uploadsRequired: false,
+                },
+                requirementSync: directListingRequirementSync,
+                sellerPortalInvite: directListingSellerPortalInvite,
                 handoffPlan,
                 createdAt: new Date().toISOString(),
               },
@@ -2285,10 +2677,12 @@ function AgentListings({ initialTab = null } = {}) {
         complianceWarnings,
         documentsUploaded: uploadedDocuments.length,
         documentUploadFailures: failedDocumentUploads,
+        requirementSync: directListingRequirementSync,
+        sellerPortalInvite: directListingSellerPortalInvite,
         handoffPlan,
       })
       setWorkflowMessage(
-        `Quick Add details merged into existing listing.${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
+        `Quick Add details merged into existing listing.${buildQuickAddSellerPortalInviteMessage(directListingSellerPortalInvite)}${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
       )
       window.dispatchEvent(new Event('itg:listings-updated'))
       await loadData({ showLoading: false }).catch(() => null)
@@ -2407,8 +2801,16 @@ function AgentListings({ initialTab = null } = {}) {
       let createdListingId = ''
       let createdListingTitle = listingTitle
       let handoffPlan = null
+      let directListingRequirementSync = null
+      let directListingSellerPortalInvite = null
       const sellerDisplayName = [sellerName, sellerSurname].filter(Boolean).join(' ').trim()
+      const directListingPersistence = buildQuickAddDirectListingPersistencePayload(form, {
+        capturedBy: profile?.id || profile?.email || '',
+        listingStatus: resolvedListingStatus,
+        mandateStatus,
+      })
       const sellerCanonicalFacts = {
+        ...directListingPersistence.sellerCanonicalFacts,
         sellerName: sellerDisplayName,
         name: sellerDisplayName,
         fullName: sellerDisplayName,
@@ -2421,6 +2823,7 @@ function AgentListings({ initialTab = null } = {}) {
         ...listingPropertyCanonicalFacts,
       }
       const sellerCanonicalFactReadiness = {
+        ...directListingPersistence.sellerCanonicalFactReadiness,
         sellerName: Boolean(sellerDisplayName),
         sellerEmail: Boolean(sellerEmail),
         sellerPhone: Boolean(sellerPhone),
@@ -2471,7 +2874,7 @@ function AgentListings({ initialTab = null } = {}) {
           description: quickNotes,
           internalListingNotes: quickNotes,
           listingPreviewDescription: form.notes.trim(),
-          sellerType: form.sellerType,
+          sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
           mandateType: form.mandateType.trim() || 'sole',
           property24ListingUrl: form.externalListingLink,
           source: 'quick_add',
@@ -2488,6 +2891,16 @@ function AgentListings({ initialTab = null } = {}) {
         }
         createdListingId = created.listing.id
         createdListingTitle = created.listing.listingTitle || created.listing.title || listingTitle
+        await persistSellerProfileOnboardingFormData({
+          listingId: created.listing.id,
+          formData: directListingPersistence.sellerOnboardingFormData,
+          status: 'not_started',
+          sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
+          ownershipStructure: directListingPersistence.seller?.ownerStructureType || directListingPersistence.seller?.ownershipType || form.sellerType,
+        }).catch((persistenceError) => {
+          console.warn('[Listings] direct listing intake form data persistence skipped after quick add create', persistenceError)
+          return null
+        })
         if (documentUploadQueue.length) {
           for (const documentUpload of documentUploadQueue) {
             const uploadedDocument = await uploadPrivateListingDocument(created.listing.id, documentUpload.file, {
@@ -2519,6 +2932,16 @@ function AgentListings({ initialTab = null } = {}) {
             }
           }
         }
+        directListingRequirementSync = await syncQuickAddDirectListingRequirements(created.listing.id, 'direct_listing_intake_created')
+        directListingSellerPortalInvite = await sendQuickAddSellerPortalInvite({
+          listingId: created.listing.id,
+          form,
+          directListingPersistence,
+          profile,
+          organisationId: listingOrganisationId,
+          agencyName: profile?.agencyName || profile?.company || workspace?.name || '',
+          propertyAddress: formattedAddress || propertyAddress,
+        })
         handoffPlan = buildQuickAddHandoffPlan({
           listingId: created.listing.id,
           listingTitle: createdListingTitle,
@@ -2559,6 +2982,16 @@ function AgentListings({ initialTab = null } = {}) {
             documentUploadFailures: failedDocumentUploads,
             missingComplianceItems: complianceWarnings,
             missingFollowUpItems: completeness.missingItems,
+            directListingIntake: {
+              version: directListingPersistence.version,
+              source: directListingPersistence.source,
+              sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
+              sellerPortalInviteRequested: directListingPersistence.sellerPortalInvite?.requested === true,
+              complianceDeclarations: directListingPersistence.complianceDeclarations,
+              uploadsRequired: false,
+            },
+            requirementSync: directListingRequirementSync,
+            sellerPortalInvite: directListingSellerPortalInvite,
             mandate: mandatePack,
             handoffPlan,
             canonicalStructure: CANONICAL_LISTING_STRUCTURE,
@@ -2576,6 +3009,11 @@ function AgentListings({ initialTab = null } = {}) {
           visibility: 'internal',
         }))
         const quickListingId = generateId('listing')
+        directListingSellerPortalInvite = buildLocalQuickAddSellerPortalInvite({
+          listingId: quickListingId,
+          form,
+          directListingPersistence,
+        })
         handoffPlan = buildQuickAddHandoffPlan({
           listingId: quickListingId,
           listingTitle,
@@ -2588,7 +3026,7 @@ function AgentListings({ initialTab = null } = {}) {
           failedDocumentUploads,
         })
         const quickListingNotesWithHandoff = mergeQuickListingMetadataInNotes(quickNotes, { handoffPlan })
-        const quickListing = {
+        let quickListing = {
           id: quickListingId,
           listingCode: `QL-${Date.now().toString().slice(-6)}`,
           origin: 'quick_add',
@@ -2636,7 +3074,9 @@ function AgentListings({ initialTab = null } = {}) {
           sectionalTitleNumber: listingPropertyCanonicalFacts.sectionalTitleNumber,
           sellerCanonicalFacts,
           sellerCanonicalFactReadiness,
-          sellerType: form.sellerType,
+          sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
+          directListingIntake: directListingPersistence,
+          complianceDeclarations: directListingPersistence.complianceDeclarations,
           seller: {
             name: [sellerName, sellerSurname].filter(Boolean).join(' ').trim() || sellerName,
             email: sellerEmail,
@@ -2651,6 +3091,17 @@ function AgentListings({ initialTab = null } = {}) {
             status: SELLER_ONBOARDING_STATUS.NOT_STARTED,
             completedAt: null,
             captureMethod: 'agent_captured',
+            formData: directListingPersistence.sellerOnboardingFormData,
+            ...(directListingSellerPortalInvite?.requested
+              ? {
+                  token: directListingSellerPortalInvite.token,
+                  link: directListingSellerPortalInvite.link,
+                  sellerPortalInvite: directListingSellerPortalInvite,
+                  sellerPortalStatus: directListingSellerPortalInvite.status,
+                  sellerPortalActivationSource: directListingSellerPortalInvite.activationSource,
+                  sellerPortalInvitationPreparedAt: directListingSellerPortalInvite.preparedAt,
+                }
+              : {}),
           },
           documents: uploadedDocuments.map((documentUpload) => ({
             id: documentUpload.id,
@@ -2693,6 +3144,15 @@ function AgentListings({ initialTab = null } = {}) {
               documentUploadFailures: failedDocumentUploads,
               missingComplianceItems: complianceWarnings,
               missingFollowUpItems: completeness.missingItems,
+              directListingIntake: {
+                version: directListingPersistence.version,
+                source: directListingPersistence.source,
+                sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
+                sellerPortalInviteRequested: directListingPersistence.sellerPortalInvite?.requested === true,
+                complianceDeclarations: directListingPersistence.complianceDeclarations,
+                uploadsRequired: false,
+              },
+              sellerPortalInvite: directListingSellerPortalInvite,
               mandate: mandatePack,
               handoffPlan,
               createdAt: new Date().toISOString(),
@@ -2700,6 +3160,17 @@ function AgentListings({ initialTab = null } = {}) {
           ],
           status: resolvedListingStatus,
           listingStatus: resolvedListingStatus,
+        }
+        const localRequirementSync = buildLocalQuickAddRequirementSync(quickListing, [])
+        directListingRequirementSync = localRequirementSync.summary
+        quickListing = {
+          ...quickListing,
+          requiredDocuments: localRequirementSync.requirements,
+          documentRequirements: localRequirementSync.requirements,
+          activityLog: (quickListing.activityLog || []).map((activity) => ({
+            ...activity,
+            requirementSync: directListingRequirementSync,
+          })),
         }
         createdListingId = quickListing.id
         createdListingTitle = quickListing.listingTitle
@@ -2719,10 +3190,12 @@ function AgentListings({ initialTab = null } = {}) {
         complianceWarnings,
         documentsUploaded: uploadedDocuments.length,
         documentUploadFailures: failedDocumentUploads,
+        requirementSync: directListingRequirementSync,
+        sellerPortalInvite: directListingSellerPortalInvite,
         handoffPlan,
       })
       setWorkflowMessage(
-        `Quick Add Listing created as ${activationTier.workflowLabel}. Mandate follow-up still requires canonical signing before activation.${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} supporting document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
+        `Quick Add Listing created as ${activationTier.workflowLabel}. Mandate follow-up still requires canonical signing before activation.${buildQuickAddSellerPortalInviteMessage(directListingSellerPortalInvite)}${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} supporting document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
       )
       window.dispatchEvent(new Event('itg:listings-updated'))
       return
@@ -3528,6 +4001,15 @@ function AgentListings({ initialTab = null } = {}) {
                 {quickAddSuccess.documentUploadFailures?.length ? (
                   <p className="mt-1 text-xs font-semibold text-[#9a5b13]">{quickAddSuccess.documentUploadFailures.length} supporting document upload{quickAddSuccess.documentUploadFailures.length === 1 ? '' : 's'} need to be retried.</p>
                 ) : null}
+                {quickAddSuccess.sellerPortalInvite?.requested ? (
+                  <p className={`mt-1 text-xs font-semibold ${quickAddSuccess.sellerPortalInvite.error ? 'text-[#9a5b13]' : 'text-[#4d6a59]'}`}>
+                    {quickAddSuccess.sellerPortalInvite.sent
+                      ? 'Seller portal link sent.'
+                      : quickAddSuccess.sellerPortalInvite.status === 'prepared_local'
+                        ? 'Seller portal link prepared locally.'
+                        : 'Seller portal invite needs a retry.'}
+                  </p>
+                ) : null}
               </div>
               <div className="flex flex-wrap gap-2">
                 {quickAddSuccess.handoffPlan?.primaryAction ? (
@@ -4097,25 +4579,113 @@ function AgentListings({ initialTab = null } = {}) {
                     <span className="text-sm font-semibold text-[#2d445e]">Seller phone</span>
                     <Field value={form.sellerPhone} onChange={(event) => updateForm('sellerPhone', event.target.value)} placeholder="082..." />
                   </label>
-                  {isManualListingFlow ? (
-                    <>
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Seller type</span>
-                        <Field as="select" value={form.sellerType} onChange={(event) => updateForm('sellerType', event.target.value)}>
-                          <option value="individual">Individual</option>
-                          <option value="company">Company</option>
-                          <option value="trust">Trust</option>
-                          <option value="deceased_estate">Deceased Estate</option>
-                        </Field>
-                      </label>
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">ID / registration number</span>
-                        <Field value={form.sellerRegistrationNumber} onChange={(event) => updateForm('sellerRegistrationNumber', event.target.value)} placeholder="Optional" />
-                      </label>
-                    </>
-                  ) : null}
                 </div>
               </section>
+
+              {isManualListingFlow ? (
+                <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Ownership & FICA Profile</h4>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Seller ownership type</span>
+                      <Field as="select" value={form.sellerType} onChange={(event) => updateForm('sellerType', event.target.value)}>
+                        {DIRECT_LISTING_SELLER_TYPE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </Field>
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">
+                        {directListingSellerType === 'company' || directListingSellerType === 'trust' ? 'Registration number' : directListingSellerType === 'foreign_individual' ? 'Passport / registration number' : 'ID number'}
+                      </span>
+                      <Field value={form.sellerRegistrationNumber} onChange={(event) => updateForm('sellerRegistrationNumber', event.target.value)} placeholder="Optional" />
+                    </label>
+
+                    {directListingSellerType === 'individual' ? (
+                      <>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Marital status</span>
+                          <Field as="select" value={form.maritalStatus} onChange={(event) => updateForm('maritalStatus', event.target.value)}>
+                            {DIRECT_LISTING_MARITAL_STATUS_OPTIONS.map((option) => (
+                              <option key={option.value || 'not_captured'} value={option.value}>{option.label}</option>
+                            ))}
+                          </Field>
+                        </label>
+                        {['married_cop', 'married_anc'].includes(normalizeDirectListingKey(form.maritalStatus)) ? (
+                          <>
+                            <label className="grid gap-2">
+                              <span className="text-sm font-semibold text-[#2d445e]">Spouse name</span>
+                              <Field value={form.spouseName} onChange={(event) => updateForm('spouseName', event.target.value)} placeholder="Optional" />
+                            </label>
+                            <label className="grid gap-2">
+                              <span className="text-sm font-semibold text-[#2d445e]">Spouse email</span>
+                              <Field type="email" value={form.spouseEmail} onChange={(event) => updateForm('spouseEmail', event.target.value)} placeholder="Optional" />
+                            </label>
+                            <label className="grid gap-2">
+                              <span className="text-sm font-semibold text-[#2d445e]">Spouse phone</span>
+                              <Field value={form.spousePhone} onChange={(event) => updateForm('spousePhone', event.target.value)} placeholder="Optional" />
+                            </label>
+                          </>
+                        ) : null}
+                      </>
+                    ) : null}
+
+                    {directListingSellerType === 'company' ? (
+                      <>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Company name</span>
+                          <Field value={form.companyName} onChange={(event) => updateForm('companyName', event.target.value)} placeholder="Registered company name" />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Company registration</span>
+                          <Field value={form.companyRegistrationNumber} onChange={(event) => updateForm('companyRegistrationNumber', event.target.value)} placeholder="Optional" />
+                        </label>
+                        <label className="grid gap-2 xl:col-span-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Directors</span>
+                          <Field as="textarea" value={form.companyDirectorsText} onChange={(event) => updateForm('companyDirectorsText', event.target.value)} placeholder="One director per line" />
+                        </label>
+                      </>
+                    ) : null}
+
+                    {directListingSellerType === 'trust' ? (
+                      <>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Trust name</span>
+                          <Field value={form.trustName} onChange={(event) => updateForm('trustName', event.target.value)} placeholder="Trust name" />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Trust registration</span>
+                          <Field value={form.trustRegistrationNumber} onChange={(event) => updateForm('trustRegistrationNumber', event.target.value)} placeholder="Optional" />
+                        </label>
+                        <label className="grid gap-2 xl:col-span-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Trustees</span>
+                          <Field as="textarea" value={form.trusteesText} onChange={(event) => updateForm('trusteesText', event.target.value)} placeholder="One trustee per line" />
+                        </label>
+                      </>
+                    ) : null}
+
+                    {directListingSellerType === 'multiple_owners' ? (
+                      <label className="grid gap-2 xl:col-span-4">
+                        <span className="text-sm font-semibold text-[#2d445e]">Owners</span>
+                        <Field as="textarea" value={form.multipleOwnersText} onChange={(event) => updateForm('multipleOwnersText', event.target.value)} placeholder="One owner per line" />
+                      </label>
+                    ) : null}
+
+                    {directListingSellerType === 'foreign_individual' ? (
+                      <>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Country / jurisdiction</span>
+                          <Field value={form.foreignOwnerCountry} onChange={(event) => updateForm('foreignOwnerCountry', event.target.value)} placeholder="Country" />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Foreign passport number</span>
+                          <Field value={form.foreignPassportNumber} onChange={(event) => updateForm('foreignPassportNumber', event.target.value)} placeholder="Optional" />
+                        </label>
+                      </>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
 
               <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                 <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Property</h4>
@@ -4246,6 +4816,75 @@ function AgentListings({ initialTab = null } = {}) {
                 </div>
               </section>
 
+              {isManualListingFlow ? (
+                <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Compliance Declarations</h4>
+                      <p className="mt-1 text-xs text-[#60758c]">Declarations only. No uploads are required for these answers.</p>
+                    </div>
+                    {directListingCompliancePreview ? (
+                      <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                        <span className="rounded-full bg-[#eef4fb] px-2.5 py-1 text-[#2d567d]">
+                          Mandate: {directListingCompliancePreview.mandate.status.replace(/_/g, ' ')}
+                        </span>
+                        <span className="rounded-full bg-[#eef4fb] px-2.5 py-1 text-[#2d567d]">
+                          FICA: {directListingCompliancePreview.ficaForm.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <label className="flex min-h-[44px] items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.hasSignedMandate)}
+                        onChange={(event) => updateForm('hasSignedMandate', event.target.checked)}
+                        className="h-4 w-4 rounded border-[#b8c8da] text-[#1f7d44]"
+                      />
+                      <span className="text-sm font-semibold text-[#2d445e]">Signed mandate held</span>
+                    </label>
+                    {form.hasSignedMandate ? (
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Mandate type</span>
+                        <Field as="select" value={form.mandateType} onChange={(event) => updateForm('mandateType', event.target.value)}>
+                          {DIRECT_LISTING_MANDATE_TYPE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </Field>
+                      </label>
+                    ) : null}
+                    <label className="flex min-h-[44px] items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.hasSignedPropertyConditionDisclosure)}
+                        onChange={(event) => updateForm('hasSignedPropertyConditionDisclosure', event.target.checked)}
+                        className="h-4 w-4 rounded border-[#b8c8da] text-[#1f7d44]"
+                      />
+                      <span className="text-sm font-semibold text-[#2d445e]">Signed property disclosure</span>
+                    </label>
+                    <label className="flex min-h-[44px] items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.hasSignedFicaForm)}
+                        onChange={(event) => updateForm('hasSignedFicaForm', event.target.checked)}
+                        className="h-4 w-4 rounded border-[#b8c8da] text-[#1f7d44]"
+                      />
+                      <span className="text-sm font-semibold text-[#2d445e]">Signed FICA form held</span>
+                    </label>
+                    <label className="flex min-h-[44px] items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2 xl:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.sellerPortalInviteRequested)}
+                        onChange={(event) => updateForm('sellerPortalInviteRequested', event.target.checked)}
+                        className="h-4 w-4 rounded border-[#b8c8da] text-[#1f7d44]"
+                      />
+                      <span className="text-sm font-semibold text-[#2d445e]">Send seller portal link</span>
+                    </label>
+                  </div>
+                </section>
+              ) : null}
+
               <section className={`${isManualListingFlow && !quickAddMandatePanelOpen ? 'hidden' : ''} space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4`}>
                 <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">
                   {isManualListingFlow ? 'Mandate & Commission' : 'Lead Routing'}
@@ -4325,9 +4964,9 @@ function AgentListings({ initialTab = null } = {}) {
                       <label className="grid gap-2">
                         <span className="text-sm font-semibold text-[#2d445e]">Mandate type</span>
                         <Field as="select" value={form.mandateType} onChange={(event) => updateForm('mandateType', event.target.value)}>
-                          <option value="sole">Sole</option>
-                          <option value="exclusive">Exclusive</option>
-                          <option value="open">Open</option>
+                          {DIRECT_LISTING_MANDATE_TYPE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
                         </Field>
                       </label>
                       <label className="grid gap-2">
@@ -4457,8 +5096,8 @@ function AgentListings({ initialTab = null } = {}) {
                             {form.manualMandateFileName
                               ? `Selected: ${form.manualMandateFileName}. It will be stored as internal evidence when you save.`
                               : normalizeKey(form.manualMandateStatus) === 'signed_external_pending_upload'
-                                ? 'A manual signature report requires canonical packet completion before the listing can activate.'
-                                : 'Add internal evidence if useful, then complete the canonical signing packet.'}
+                                ? 'Upload the signed hard-copy mandate to activate the listing from this capture.'
+                                : 'Add internal evidence if useful, or generate the mandate later from the listing workspace.'}
                           </span>
                         </label>
                       </>

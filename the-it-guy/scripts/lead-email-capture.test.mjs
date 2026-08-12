@@ -147,13 +147,13 @@ const appSource = await fs.readFile(new URL('../src/App.jsx', import.meta.url), 
 assert.match(appSource, /SettingsLeadCapturePage/)
 assert.match(appSource, /path="lead-capture"/)
 
-const settingsLayoutSource = await fs.readFile(new URL('../src/pages/settings/SettingsLayout.jsx', import.meta.url), 'utf8')
-assert.match(settingsLayoutSource, /\/settings\/lead-capture/)
-assert.match(settingsLayoutSource, /Lead Capture/)
+const settingsNavigationSource = await fs.readFile(new URL('../src/pages/settings/settingsNavigation.js', import.meta.url), 'utf8')
+assert.match(settingsNavigationSource, /\/settings\/lead-capture/)
+assert.match(settingsNavigationSource, /Lead Capture/)
 
 const settingsLandingSource = await fs.readFile(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url), 'utf8')
-assert.match(settingsLandingSource, /\/settings\/lead-capture/)
-assert.match(settingsLandingSource, /Manage forwarding addresses, agent activation, and inbound enquiry health/)
+assert.match(settingsLandingSource, /buildVisibleSettingsGroups/)
+assert.match(settingsLandingSource, /item\.description/)
 
 const leadCapturePageSource = await fs.readFile(new URL('../src/pages/settings/SettingsLeadCapturePage.jsx', import.meta.url), 'utf8')
 for (const copy of [
@@ -275,6 +275,30 @@ try {
   assert.equal(parsed.assignedAgent.userId, agentUserId)
   assert.equal(parsed.rawPayload.parser.name, 'property24_email')
   assert.ok(parsed.rawPayload.parser.confidence >= 0.8)
+
+  const mailgunForwardedParsed = parseInboundLeadEmail({
+    provider: 'mailgun',
+    providerMessageId: 'mg-msg-1',
+    from: 'Property24 <noreply@property24.com>',
+    subject: 'New Property24 enquiry - 12 Oak Avenue, Bedfordview',
+    textBody: `
+      Name: Mia Buyer
+      Email: mia@example.test
+      Phone: 082 555 0101
+      Property: 12 Oak Avenue
+      Property Address: 12 Oak Avenue, Bedfordview
+      Message: I would like to view this home.
+    `,
+  }, {
+    organisationId,
+    agentUserId,
+    source: 'General',
+  })
+  assert.equal(mailgunForwardedParsed.source, 'Property24')
+  assert.equal(mailgunForwardedParsed.enquiredPropertyTitle, '12 Oak Avenue')
+  assert.equal(mailgunForwardedParsed.enquiredPropertyAddress, '12 Oak Avenue, Bedfordview')
+  assert.equal(mailgunForwardedParsed.rawPayload.parser.name, 'property24_email')
+  assert.ok(!mailgunForwardedParsed.rawPayload.parser.warnings.includes('missing_listing_reference'))
 
   const privatePropertyParsed = parseInboundLeadEmail({
     providerMessageId: 'pp-msg-1',

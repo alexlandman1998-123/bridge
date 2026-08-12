@@ -8,9 +8,9 @@ export const KINGSTONS_BUYER_OTP_DIGITAL_DECISION = Object.freeze({
   version: KINGSTONS_BUYER_OTP_DIGITAL_DECISION_VERSION,
   status: 'paused',
   livePath: 'manual_buyer_otp_upload',
-  label: 'Digital OTP paused',
-  reason: 'Digital OTP generation and signing is paused for Kingstons.',
-  agentAction: 'Upload the manually signed OTP from the buyer offer workspace instead.',
+  label: 'Signed OTP upload',
+  reason: '',
+  agentAction: '',
   nextDecision: 'Revisit digital OTP only after the manual buyer OTP rollout is stable.',
 })
 
@@ -317,7 +317,7 @@ export function buildKingstonsBuyerOtpDigitalDecision({
     blocked: true,
     requestedAction,
     digitalOtpEnabled: false,
-    message: `${KINGSTONS_BUYER_OTP_DIGITAL_DECISION.reason} ${KINGSTONS_BUYER_OTP_DIGITAL_DECISION.agentAction}`,
+    message: '',
   }
 }
 

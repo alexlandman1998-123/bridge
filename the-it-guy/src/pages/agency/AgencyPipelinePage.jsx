@@ -15512,6 +15512,46 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadViewingAppointments,
   ])
 
+  const selectedLeadEnquiryPropertyContext = useMemo(() => {
+    const linkedListingId = normalizeText(offerLinkForm.listingId || selectedLead?.listingId || selectedLead?.listing_id)
+    const linkedListing = (
+      (linkedListingId && appointmentListingById.get(linkedListingId)) ||
+      selectedLeadLinkedListing ||
+      null
+    )
+    const rawPrice = selectedLead?.enquiredPropertyPrice ?? selectedLead?.enquired_property_price
+    const priceAmount = Number(rawPrice || 0) || 0
+    const enquiryTitle = normalizeText(
+      selectedLead?.enquiredPropertyTitle ||
+        selectedLead?.enquired_property_title ||
+        selectedLead?.propertyInterest ||
+        selectedLead?.property_interest,
+    )
+    const enquiryAddress = normalizeText(
+      selectedLead?.enquiredPropertyAddress ||
+        selectedLead?.enquired_property_address ||
+        selectedLead?.sellerPropertyAddress ||
+        selectedLead?.seller_property_address,
+    )
+    const listingTitle = normalizeText(linkedListing?.label || linkedListing?.title || linkedListing?.address)
+    const listingAddress = normalizeText(linkedListing?.address || linkedListing?.property_address || linkedListing?.address_line_1)
+    return {
+      linkedListingId,
+      linkedListing,
+      title: enquiryTitle || listingTitle || 'Property context needed',
+      address: enquiryAddress || listingAddress,
+      priceLabel: priceAmount > 0 ? formatCurrency(priceAmount) : '',
+      reference: normalizeText(selectedLead?.sourceReferenceId || selectedLead?.source_reference_id || selectedLead?.listingReference || selectedLead?.listing_reference),
+      hasOriginalEnquiry: Boolean(enquiryTitle || enquiryAddress || priceAmount > 0),
+      hasLinkedListing: Boolean(linkedListingId),
+    }
+  }, [
+    appointmentListingById,
+    offerLinkForm.listingId,
+    selectedLead,
+    selectedLeadLinkedListing,
+  ])
+
   const selectedLeadOtpReadiness = useMemo(() => {
     const deliveryMode = normalizeClientIntakePreference(offerLinkForm.clientIntakePreference)
     const requiresDigitalContact = deliveryMode === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL
@@ -18798,6 +18838,69 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       scheduleRecordsReload(organisationId, 250)
     } catch (saveError) {
       setError(saveError?.message || 'Unable to save buyer qualification right now.')
+    } finally {
+      setIsLeadDetailSaving(false)
+    }
+  }
+
+  async function handleLinkBuyerEnquiryListing(nextListingId = '') {
+    if (!organisationId || !selectedLeadRecordId || !selectedLead || selectedLeadIsSeller) return
+    const listingId = normalizeText(nextListingId)
+    const linkedListing = listingId ? appointmentListingById.get(listingId) : null
+    const leadPatch = {
+      listingId,
+    }
+    if (linkedListing) {
+      const listingTitle = normalizeText(linkedListing?.title || linkedListing?.label)
+      const listingAddress = normalizeText(linkedListing?.address || linkedListing?.property_address || linkedListing?.address_line_1)
+      if (listingTitle && !normalizeText(selectedLead?.propertyInterest || selectedLead?.property_interest)) {
+        leadPatch.propertyInterest = listingTitle
+      }
+      if (listingAddress && !normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.seller_property_address)) {
+        leadPatch.sellerPropertyAddress = listingAddress
+      }
+    }
+
+    setIsLeadDetailSaving(true)
+    try {
+      await updateAgencyCrmLeadRecord(organisationId, selectedLeadRecordId, leadPatch)
+      patchSelectedLeadRecord(leadPatch, selectedLeadRecordId)
+      setOfferLinkForm((previous) => ({
+        ...previous,
+        listingId,
+        lastOfferLink: '',
+        lastBuyerOnboardingLink: '',
+      }))
+      setBuyerOfferUploadForm((previous) => ({
+        ...previous,
+        listingId,
+      }))
+      if (listingId) {
+        setViewingPlanSelectedPropertyIds((previous) => {
+          const existing = (Array.isArray(previous) ? previous : []).map(normalizeText).filter(Boolean)
+          return [listingId, ...existing.filter((id) => id !== listingId)]
+        })
+        setViewingPlanBookingPropertyId((previous) => normalizeText(previous) || listingId)
+      }
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        selectedLeadRecordId,
+        {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Listing Linked',
+          activityNote: listingId
+            ? `Buyer enquiry linked to ${resolveAppointmentListingLabel(listingId)}.`
+            : 'Buyer enquiry listing link cleared.',
+          outcome: listingId ? 'Listing linked' : 'Listing cleared',
+          activityDate: new Date().toISOString(),
+        },
+        { actor: currentAgent },
+      ).catch(() => null)
+      setError('')
+      setMessage(listingId ? 'Buyer enquiry linked to listing.' : 'Buyer enquiry listing cleared.')
+      scheduleRecordsReload(organisationId, 500)
+    } catch (linkError) {
+      setError(linkError?.message || 'Unable to link this buyer enquiry to a listing right now.')
     } finally {
       setIsLeadDetailSaving(false)
     }
@@ -24656,7 +24759,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const selectedListingId = normalizeText(
       listingId ||
         offerLinkForm.listingId ||
-        selectedLeadOfferCentreProperty?.id ||
         selectedLeadActiveViewing?.listingId ||
         selectedLead?.listingId,
     )
@@ -24669,9 +24771,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ? selectedLeadLinkedListing
       : null
     const appointmentListing = appointmentListingById.get(selectedListingId)
+    const selectedOfferProperty = normalizeText(selectedLeadOfferCentreProperty?.id) === selectedListingId
+      ? selectedLeadOfferCentreProperty
+      : null
     return {
       listingId: selectedListingId,
-      listing: storedListing || linkedListing || appointmentListing || selectedLeadOfferCentreProperty || { id: selectedListingId, listingId: selectedListingId },
+      listing: storedListing || linkedListing || appointmentListing || selectedOfferProperty || { id: selectedListingId, listingId: selectedListingId },
     }
   }
 
@@ -24690,6 +24795,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     const listingContext = resolveBuyerOnboardingListingContext(listingId)
     if (!listingContext.listingId) {
+      setOfferPropertySelectorOpen(true)
       throw new Error('Select the property before sending buyer onboarding.')
     }
 
@@ -24729,12 +24835,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         assignedAgentName: currentAgent.fullName,
         assignedAgentEmail: currentAgent.email,
         clientIntakePreference: resolvedIntakePreference,
+        creationMode: 'onboarding_capture',
+        allowIncompleteRoutingFacts: true,
         stage: 'Buyer Onboarding Pending',
         idempotencyKey: `buyer-onboarding:${organisationId}:${canonicalBuyerLeadId || selectedLead.leadId}:${listingContext.listingId}`,
         source,
       },
       options: {
         allowDirectLeadConversion: true,
+        allowIncompleteRoutingFacts: true,
+        creationMode: 'onboarding_capture',
         allowRuntimeFallback: !isSupabaseConfigured,
       },
     })
@@ -24852,7 +24962,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setIsOfferLinkSending(true)
       setError('')
       const result = await createAndSendBuyerOnboardingForLead({
-        listingId: offerLinkForm.listingId || selectedLeadOfferCentreProperty?.id,
+        listingId: offerLinkForm.listingId || selectedLeadActiveViewing?.listingId || selectedLead?.listingId,
         buyerName: offerLinkForm.buyerName,
         buyerEmail: offerLinkForm.buyerEmail,
         buyerPhone: offerLinkForm.buyerPhone,
@@ -24876,10 +24986,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const selectedListingId = normalizeText(
       buyerOfferUploadForm.listingId ||
         offerLinkForm.listingId ||
-        selectedLeadOfferCentreProperty?.id ||
+        selectedLeadActiveViewing?.listingId ||
         selectedLead?.listingId,
     )
     if (!selectedListingId) {
+      setOfferPropertySelectorOpen(true)
       setError('Select the property before uploading the OTP.')
       return
     }
@@ -24893,10 +25004,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const selectedListingId = normalizeText(
       buyerOfferUploadForm.listingId ||
         offerLinkForm.listingId ||
-        selectedLeadOfferCentreProperty?.id ||
+        selectedLeadActiveViewing?.listingId ||
         selectedLead?.listingId,
     )
     if (!selectedListingId) {
+      setOfferPropertySelectorOpen(true)
       setError('Select the property before uploading the OTP.')
       return
     }
@@ -24968,12 +25080,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               assignedAgentName: currentAgent.fullName,
               assignedAgentEmail: currentAgent.email,
               clientIntakePreference: offerLinkForm.clientIntakePreference,
+              creationMode: 'onboarding_capture',
+              allowIncompleteRoutingFacts: true,
               stage: 'OTP Uploaded',
               idempotencyKey: `otp-upload:${organisationId}:${canonicalBuyerLeadId || selectedLead.leadId}:${selectedListingId}`,
               otpDocumentUploadedAt: uploadedAt,
             },
             options: {
               allowDirectLeadConversion: true,
+              allowIncompleteRoutingFacts: true,
+              creationMode: 'onboarding_capture',
               allowRuntimeFallback: true,
             },
           })
@@ -25541,7 +25657,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setCanonicalOfferActionId(leadActionId)
       setError('')
       const result = await createAndSendBuyerOnboardingForLead({
-        listingId: offerLinkForm.listingId || selectedLeadOfferCentreProperty?.id,
+        listingId: offerLinkForm.listingId || selectedLeadActiveViewing?.listingId || selectedLead?.listingId,
         buyerName: offerLinkForm.buyerName,
         buyerEmail: offerLinkForm.buyerEmail,
         buyerPhone: offerLinkForm.buyerPhone,
@@ -29758,6 +29874,64 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             </div>
 
+                            <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                              <div className="flex flex-wrap items-start justify-between gap-4">
+                                <div className="flex min-w-0 items-start gap-3">
+                                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[14px] ${selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'bg-[#eaf7f0] text-[#157a4d]' : 'bg-[#fff7ed] text-[#b45309]'}`}>
+                                    <Home className="h-5 w-5" />
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Property enquiry</p>
+                                    <h3 className="mt-1 truncate text-lg font-semibold tracking-[-0.02em] text-[#102033]">{selectedLeadEnquiryPropertyContext.title}</h3>
+                                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#60758b]">
+                                      {selectedLeadEnquiryPropertyContext.address ? (
+                                        <span className="inline-flex min-w-0 items-center gap-1.5">
+                                          <MapPin className="h-4 w-4 shrink-0 text-[#2f7b9e]" />
+                                          <span className="truncate">{selectedLeadEnquiryPropertyContext.address}</span>
+                                        </span>
+                                      ) : null}
+                                      {selectedLeadEnquiryPropertyContext.priceLabel ? (
+                                        <span className="inline-flex items-center gap-1.5">
+                                          <Tag className="h-4 w-4 text-[#2f7b9e]" />
+                                          {selectedLeadEnquiryPropertyContext.priceLabel}
+                                        </span>
+                                      ) : null}
+                                      {selectedLeadEnquiryPropertyContext.reference ? (
+                                        <span className="inline-flex items-center gap-1.5">
+                                          <Link2 className="h-4 w-4 text-[#2f7b9e]" />
+                                          {selectedLeadEnquiryPropertyContext.reference}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </div>
+                                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'border-[#bfe5cf] bg-[#f1fbf5] text-[#157a4d]' : 'border-[#fed7aa] bg-[#fff7ed] text-[#b45309]'}`}>
+                                  {selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'Linked listing' : 'Needs listing link'}
+                                </span>
+                              </div>
+
+                              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.75fr)_minmax(300px,0.25fr)] lg:items-end">
+                                <div className="rounded-[14px] border border-[#edf3f8] bg-[#fbfdff] px-4 py-3">
+                                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.11em] text-[#7c91a8]">Original enquiry</p>
+                                  <p className="mt-1 text-sm font-semibold leading-5 text-[#102033]">
+                                    {selectedLeadEnquiryPropertyContext.hasOriginalEnquiry
+                                      ? selectedLeadEnquiryPropertyContext.title
+                                      : 'No original property text was captured.'}
+                                  </p>
+                                  {selectedLeadEnquiryPropertyContext.address ? (
+                                    <p className="mt-1 text-sm leading-5 text-[#60758b]">{selectedLeadEnquiryPropertyContext.address}</p>
+                                  ) : null}
+                                </div>
+                                <ListingPicker
+                                  listings={leadAppointmentOfferListingOptions}
+                                  value={selectedLeadEnquiryPropertyContext.linkedListingId}
+                                  onChange={(listingId) => void handleLinkBuyerEnquiryListing(listingId)}
+                                  label="Link to listing"
+                                  className="min-w-0"
+                                />
+                              </div>
+                            </section>
+
                             <section className="overflow-hidden rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="simplified-viewing-planner">
                               <div className="grid gap-6 border-b border-[#edf3f8] p-5 lg:grid-cols-[minmax(220px,0.45fr)_minmax(520px,1.55fr)] lg:items-start">
                                 <div>
@@ -32426,7 +32600,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                              <span className="text-xs font-semibold text-[#6f849b]">Property/listing</span>
 	                              <Field
 	                                as="select"
-	                                value={buyerOfferUploadForm.listingId || offerLinkForm.listingId || selectedLeadOfferCentreProperty?.id || ''}
+	                                value={buyerOfferUploadForm.listingId || offerLinkForm.listingId || selectedLeadActiveViewing?.listingId || selectedLead?.listingId || ''}
 	                                onChange={(event) => setBuyerOfferUploadForm((previous) => ({ ...previous, listingId: event.target.value }))}
 	                              >
 	                                <option value="">Select property/listing</option>

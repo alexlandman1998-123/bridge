@@ -65,77 +65,25 @@ assert.match(serviceSource, /Unknown listing/)
 assert.match(serviceSource, /assigned_agent_email/, 'buyer enquiry ingestion should read listing agent email for ownership display')
 assert.match(serviceSource, /email: listingAgentEmail/, 'buyer enquiry ingestion should carry listing agent email into assignment payload')
 
-const pageSource = await fs.readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
-assert.match(pageSource, /Enquiry History/)
-assert.match(pageSource, /Original Source/)
-assert.match(pageSource, /Latest Source/)
-assert.match(pageSource, /Original Enquiry Listing/)
-for (const copy of ['Create Lead', 'Buyer Lead', 'Seller Lead', 'Other Lead', 'Import Leads', 'Buyer Leads', 'Seller Leads', 'Quick filters']) {
-  assert.match(pageSource, new RegExp(copy), `leads page should render ${copy}`)
+const agentLeadsPageSource = await fs.readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
+assert.match(agentLeadsPageSource, /AgencyPipelinePage/)
+assert.match(agentLeadsPageSource, /initialViewMode="leads"/)
+
+const pageSource = await fs.readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+for (const copy of ['Buyer Lead', 'Buyer Leads', 'Seller Leads', 'Buyer Qualification', 'What’s next', 'Viewing Planner']) {
+  assert.match(pageSource, new RegExp(copy), `shared leads workspace should render ${copy}`)
 }
-assert.match(pageSource, /buyer-lead-workspace/, 'buyer leads should keep the residential buyer workspace shell')
-assert.match(pageSource, /\{ key: 'requirements', label: 'Requirements' \}/, 'buyer workspace should retain internal requirement state for commands and qualification')
-assert.match(pageSource, /\{ key: 'property_match', label: 'Property Match' \}/, 'buyer workspace should expose Property Match as the residential matching surface')
-assert.match(pageSource, /BUYER_ONBOARDING_OTP_TAB_KEY = 'onboarding_otp'/, 'buyer workspace should define the canonical onboarding / OTP tab key')
-assert.match(pageSource, /\{ key: BUYER_ONBOARDING_OTP_TAB_KEY, label: 'Onboarding \/ OTP' \}/, 'buyer workspace should expose Onboarding / OTP as the residential deal progression surface')
-assert.match(pageSource, /normalizeBuyerLeadWorkspaceTabKey/, 'buyer workspace should keep old offer tab aliases routed into Onboarding / OTP')
-assert.match(pageSource, /tabs\.filter\(\(tab\) => !\['requirements', 'tasks'\]\.includes\(tab\.key\)\)/, 'visible buyer tabs should use the current simplified residential tab row')
-assert.match(pageSource, /<BuyerLeadOverview/, 'buyer overview should remain the primary buyer workspace entry point')
-assert.match(pageSource, /<BuyerPropertyMatchPanel/, 'buyer workspace should render the property match panel')
-assert.match(pageSource, /<LeadDealProgressionPanel/, 'buyer workspace should render the offers and transactions panel')
-assert.match(pageSource, /<BuyerLeadDocumentsTab/, 'buyer workspace should render buyer documents')
-for (const copy of ['Listing Journey', 'Readiness', 'Seller Actions', 'Seller leads progress toward a listing']) {
-  assert.match(pageSource, new RegExp(copy), `seller leads workspace should render seller-specific workflow copy for ${copy}`)
-}
-for (const copy of ['Send Seller Onboarding', 'Generate in Seller Profile', 'Seller onboarding must be submitted before generating a mandate']) {
-  assert.match(pageSource, new RegExp(copy), `seller leads workspace should restore seller onboarding and mandate action copy for ${copy}`)
-}
-for (const copy of [
-  'SellerLeadWorkspaceLayout',
-  'SellerLeadHeader',
-  'SellerAcquisitionActionRow',
-  'SellerJourneyRail',
-  'SellerOverviewTab',
-  'SellerDocumentsSummaryCard',
-  'OwnershipCard',
-  'SellerCommunicationCard',
-  'SellerTimelinePanel',
-  'Documents Complete',
-  'Lead Age',
-  'Mandate Status',
-  'Listing Status',
-  'Preferred Channel',
-  'Email Alerts',
-  'WhatsApp Alerts',
-  'Last Contact',
-]) {
-  assert.match(pageSource, new RegExp(copy), `seller lead workspace consolidation should render ${copy}`)
-}
-assert.match(pageSource, /grid min-w-0 gap-5 lg:grid-cols-12/)
-const sellerDetailsSource = pageSource.slice(pageSource.indexOf('function SellerDetailsCard'), pageSource.indexOf('function SellerDocumentsSummaryCard'))
-assert.doesNotMatch(sellerDetailsSource, /Legacy Budget|Area Interest|Property Interest|Property Alerts|Saved Searches/)
-const sellerCommunicationSource = pageSource.slice(pageSource.indexOf('function SellerCommunicationCard'), pageSource.indexOf('function SellerTimelinePanel'))
-assert.doesNotMatch(sellerCommunicationSource, /Property Alerts|Buyer Preferences|Saved Searches/)
-assert.match(pageSource, /CreateLeadDropdown/)
-assert.match(pageSource, /LeadCreateModal/)
+assert.match(pageSource, /selectedLeadEnquiryPropertyContext/, 'buyer overview should build property enquiry context')
+assert.match(pageSource, /Property enquiry/, 'buyer overview should show the property the buyer enquired on')
+assert.match(pageSource, /handleLinkBuyerEnquiryListing/, 'buyer overview should let agents link an enquiry to a listing')
+assert.match(pageSource, /updateAgencyCrmLeadRecord\(organisationId, selectedLeadRecordId, leadPatch\)/, 'linking should persist listingId to the lead')
+assert.match(pageSource, /<ListingPicker[\s\S]*label="Link to listing"/, 'buyer overview should expose a listing picker for enquiry linking')
+assert.match(pageSource, /data-testid="simplified-viewing-planner"/, 'buyer overview should keep the viewing planner below the enquiry link block')
 assert.match(pageSource, /sendSellerOnboarding/)
-assert.match(pageSource, /sellerOnboardingIsSubmitted/)
-assert.match(pageSource, /function buildSellerLeadMandateWorkspacePath/)
-assert.match(pageSource, /\/pipeline\/leads\/\$\{encodeURIComponent\(leadId\)\}\/legal\/mandate\?\$\{params\.toString\(\)\}/)
 assert.match(pageSource, /buildSellerJourney/)
 assert.match(pageSource, /buildSellerReadinessSummary/)
-assert.match(pageSource, /activeTab === 'property_match'/)
-assert.match(pageSource, /activeTab === BUYER_ONBOARDING_OTP_TAB_KEY/)
-assert.match(pageSource, /normalizeCanonicalLeadCategory\(createCategory, 'other'\)/)
-assert.match(pageSource, /leadCategory: category/)
-assert.match(pageSource, /sellerPropertyAddress: category === 'seller'/)
-assert.match(pageSource, /budget: category === 'buyer'/)
-assert.match(pageSource, /setImportLeadCategory\(normalizedCategory === 'buyer' \|\| normalizedCategory === 'seller' \? normalizedCategory : ''\)/, 'lead list import should carry the selected buyer or seller category into bulk upload')
-assert.match(pageSource, /defaultLeadCategory=\{importLeadCategory\}/, 'lead list import modal should receive the selected buyer or seller category')
+assert.match(pageSource, /sellerPropertyAddress: normalizeText\(leadForm\.sellerPropertyAddress/)
 assert.doesNotMatch(pageSource, /<th[^>]*>\s*Next Action\s*<\/th>/)
-assert.match(pageSource, /buildAgentLeadRows\(\{/, 'manual lead create should build an optimistic lead-list row')
-assert.match(pageSource, /loadRows\(\{[\s\S]*showLoading: false,[\s\S]*preserveRowsOnError: true,[\s\S]*preserveLeadIds:/, 'manual lead create should refresh without blanking or dropping the optimistic lead')
-assert.equal(pageSource.includes('navigate(`/pipeline/leads/${createdLead.leadId}`)'), false, 'manual lead create should stay on the leads list after save')
 
 const enquiriesPageSource = await fs.readFile(new URL('../src/pages/AgentEnquiriesPage.jsx', import.meta.url), 'utf8')
 assert.match(enquiriesPageSource, /searchParams\.get\('leadCategory'\)/, 'enquiries page should read leadCategory import intent')
@@ -161,6 +109,7 @@ try {
     normalizeEnquiryPayload,
     normalizeLeadSource,
     normalizePhone,
+    scoreListingTextMatch,
   } = __leadIngestionServiceTestUtils
 
   assert.equal(normalizeLeadSource('property24'), 'Property24')
@@ -204,6 +153,32 @@ try {
   })
   assert.equal(showDayEnquiry.source, 'Show Day')
   assert.equal(showDayEnquiry.lead.leadCategory, 'buyer')
+
+  const listingTextMatchScore = scoreListingTextMatch(
+    {
+      title: '12 Oak Avenue',
+      address_line_1: '12 Oak Avenue',
+      suburb: 'Bedfordview',
+      city: 'Johannesburg',
+    },
+    {
+      lead: {
+        enquiredPropertyTitle: '12 Oak Avenue',
+        enquiredPropertyAddress: '12 Oak Avenue, Bedfordview',
+        propertyInterest: '',
+      },
+      raw: {},
+    },
+  )
+  assert.ok(listingTextMatchScore >= 0.72, 'listing title/address should match Mailgun property text')
+  assert.equal(
+    scoreListingTextMatch(
+      { title: '99 Different Road', address_line_1: '99 Different Road', suburb: 'Sandton' },
+      { lead: { enquiredPropertyTitle: '12 Oak Avenue', enquiredPropertyAddress: '12 Oak Avenue, Bedfordview' }, raw: {} },
+    ),
+    0,
+    'unrelated listing text should not match',
+  )
 
   const invalid = normalizeEnquiryPayload({ organisationId: enquiry.organisationId, source: 'Website' })
   assert.equal(invalid.contact.hasIdentity, false, 'empty payload should be flagged for failed handling')

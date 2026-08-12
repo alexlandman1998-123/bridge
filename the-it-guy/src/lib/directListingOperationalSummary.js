@@ -1,0 +1,181 @@
+import {
+  buildSellerPortalFormDataFromDirectListing,
+  hasDirectListingPortalIntake,
+} from './directListingSellerPortalBridge.js'
+
+function normalizeText(value) {
+  return String(value ?? '').trim()
+}
+
+function normalizeKey(value) {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function humanize(value = '', fallback = 'Not captured') {
+  const text = normalizeText(value)
+  if (!text) return fallback
+  return text
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function firstObject(...values) {
+  return values.find((value) => value && typeof value === 'object' && !Array.isArray(value)) || {}
+}
+
+function firstText(...values) {
+  return values.find((value) => normalizeText(value)) || ''
+}
+
+function getOnboardingFormData(listing = {}) {
+  return firstObject(listing?.sellerOnboarding?.formData, listing?.seller_onboarding?.form_data)
+}
+
+function getReadinessFacts(listing = {}) {
+  return firstObject(
+    listing?.sellerCanonicalFactReadiness,
+    listing?.seller_canonical_fact_readiness_json,
+    listing?.directListingIntake?.sellerCanonicalFactReadiness,
+  )
+}
+
+function getDirectListingIntake(listing = {}, portalFormData = {}) {
+  return firstObject(
+    portalFormData?.directListingIntake,
+    listing?.directListingIntake,
+    listing?.direct_listing_intake,
+  )
+}
+
+function getPortalInviteSummary(listing = {}, portalFormData = {}) {
+  const onboarding = listing?.sellerOnboarding || {}
+  const localInvite = firstObject(onboarding.sellerPortalInvite, onboarding.seller_portal_invite)
+  const requested = Boolean(
+    portalFormData.sellerPortalInviteRequested ||
+      portalFormData.seller_portal_invite_requested ||
+      localInvite.requested ||
+      onboarding.sellerPortalActivationSource ||
+      onboarding.seller_portal_activation_source,
+  )
+  const token = firstText(onboarding.sellerPortalToken, onboarding.seller_portal_token, onboarding.token, listing?.sellerPortalToken, listing?.seller_portal_token)
+  const sentAt = firstText(onboarding.invitationLastSentAt, onboarding.seller_portal_invitation_last_sent_at, onboarding.inviteCreatedAt, onboarding.seller_portal_invite_created_at)
+  const activatedAt = firstText(onboarding.activatedAt, onboarding.seller_portal_activated_at, onboarding.termsAcceptedAt, onboarding.seller_portal_terms_accepted_at)
+  const status = normalizeKey(localInvite.status || onboarding.sellerPortalStatus || onboarding.seller_portal_status)
+
+  return {
+    requested,
+    prepared: Boolean(token || localInvite.link || localInvite.portalLinkPresent),
+    sent: Boolean(localInvite.sent || sentAt || status === 'invitation_sent'),
+    activated: Boolean(activatedAt || status === 'activated' || status === 'profile_complete'),
+    status: status || (activatedAt ? 'activated' : sentAt ? 'invitation_sent' : token ? 'invitation_pending' : requested ? 'requested' : 'not_requested'),
+    label: activatedAt
+      ? 'Activated'
+      : sentAt || localInvite.sent
+        ? 'Invitation sent'
+        : token || localInvite.link
+          ? 'Prepared'
+          : requested
+            ? 'Requested'
+            : 'Not requested',
+    sentAt,
+    activatedAt,
+    error: normalizeText(localInvite.error),
+  }
+}
+
+function buildReadinessSummary(readiness = {}) {
+  const keys = Object.keys(readiness).filter((key) => typeof readiness[key] === 'boolean')
+  const complete = keys.filter((key) => readiness[key]).length
+  const missingKeys = keys.filter((key) => !readiness[key])
+  return {
+    total: keys.length,
+    complete,
+    missing: missingKeys.length,
+    percent: keys.length ? Math.round((complete / keys.length) * 100) : 0,
+    missingKeys,
+    missingLabels: missingKeys.map((key) => humanize(key)),
+  }
+}
+
+function buildDeclarationRows(portalFormData = {}) {
+  const sourceRows = Array.isArray(portalFormData.directListingComplianceSummary)
+    ? portalFormData.directListingComplianceSummary
+    : []
+  return sourceRows.map((row) => ({
+    key: row.key,
+    label: row.label,
+    held: row.held,
+    status: row.status,
+    statusLabel: row.statusLabel,
+  }))
+}
+
+export function buildDirectListingOperationalSummary(listing = {}) {
+  const hasIntake = hasDirectListingPortalIntake(listing)
+  if (!hasIntake) {
+    return {
+      hasIntake: false,
+      title: 'No direct listing intake',
+      declarationOnly: true,
+      uploadsRequired: false,
+      readiness: buildReadinessSummary({}),
+      declarations: [],
+      portalInvite: getPortalInviteSummary(listing, {}),
+    }
+  }
+
+  const portalFormData = buildSellerPortalFormDataFromDirectListing(listing)
+  const existingFormData = getOnboardingFormData(listing)
+  const intake = getDirectListingIntake(listing, portalFormData)
+  const readiness = buildReadinessSummary(getReadinessFacts(listing))
+  const declarations = buildDeclarationRows(portalFormData)
+  const portalInvite = getPortalInviteSummary(listing, {
+    ...existingFormData,
+    ...portalFormData,
+  })
+  const sellerType = portalFormData.directListingSellerLegalType || portalFormData.sellerLegalType || portalFormData.ownershipType
+  const propertyStructureType = portalFormData.propertyStructureType || listing?.propertyStructureType || listing?.property_structure_type
+
+  return {
+    hasIntake: true,
+    title: 'Direct listing intake',
+    source: intake.source || 'direct_listing_intake',
+    version: intake.version || '',
+    capturedAt: intake.capturedAt || intake.captured_at || '',
+    capturedBy: intake.capturedBy || intake.captured_by || '',
+    declarationOnly: true,
+    uploadsRequired: false,
+    sellerType,
+    sellerTypeLabel: humanize(sellerType),
+    ownerModelLabel: [portalFormData.ownerEntityType, portalFormData.ownerStructureType].filter(Boolean).map(humanize).join(' / '),
+    propertyStructureType,
+    propertyStructureLabel: humanize(propertyStructureType),
+    sellerName: firstText(
+      [portalFormData.sellerFirstName, portalFormData.sellerSurname].filter(Boolean).join(' '),
+      listing?.seller?.name,
+      listing?.sellerName,
+      listing?.seller_name,
+    ),
+    sellerEmail: firstText(portalFormData.email, listing?.seller?.email, listing?.sellerEmail, listing?.seller_email),
+    propertyAddress: firstText(portalFormData.propertyAddress, listing?.formattedAddress, listing?.propertyAddress, listing?.addressLine1),
+    declarations,
+    readiness,
+    portalInvite,
+    attentionItems: [
+      readiness.missing ? `${readiness.missing} intake fact${readiness.missing === 1 ? '' : 's'} missing` : '',
+      ...declarations
+        .filter((row) => row.held !== true)
+        .map((row) => `${row.label}: ${row.statusLabel}`),
+      portalInvite.requested && !portalInvite.sent && !portalInvite.activated ? 'Seller portal invite not sent yet' : '',
+      portalInvite.error ? `Seller portal invite error: ${portalInvite.error}` : '',
+    ].filter(Boolean),
+  }
+}
+
+export default {
+  buildDirectListingOperationalSummary,
+}
