@@ -6509,6 +6509,15 @@ function AgentListingDetail() {
       .slice(0, 4)
   }, [viewings])
 
+  const sellerPortalLifecycleStatus = useMemo(
+    () => resolveSellerPortalLifecycle({
+      listing: listingRecord,
+      accessState: sellerPortalAccessState,
+      diagnostics: sellerPortalSecurityDiagnostics,
+    }),
+    [listingRecord, sellerPortalAccessState, sellerPortalSecurityDiagnostics],
+  )
+
   const overviewSellerSnapshot = useMemo(() => {
     const lastOfferShare = offerRows.find((offer) => offer?.sentToSellerAt || normalizeOfferWorkflowStatus(offer?.status) === OFFER_WORKFLOW_STATUS.SELLER_REVIEW)
     const lastSellerContact = firstDraftValue(
@@ -6578,15 +6587,6 @@ function AgentListingDetail() {
         : '—',
     }
   }, [offerPriceOverview])
-
-  const sellerPortalLifecycleStatus = useMemo(
-    () => resolveSellerPortalLifecycle({
-      listing: listingRecord,
-      accessState: sellerPortalAccessState,
-      diagnostics: sellerPortalSecurityDiagnostics,
-    }),
-    [listingRecord, sellerPortalAccessState, sellerPortalSecurityDiagnostics],
-  )
 
   const sellerPortalActivationPreview = useMemo(
     () => buildSellerPortalInvitationPreview({

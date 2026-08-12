@@ -63,6 +63,15 @@ assert.ok(overviewBlock.includes("openSellerWorkspaceSection('activity')"), 'Ove
 assert.ok(source.includes('const totalViews = explicitViews || portalViews + bridgeViews || 0'), 'Overview views should not use estimated/demo view counts.')
 assert.ok(source.includes('areaAverageDays,') && !source.includes('Math.max(metrics.daysOnMarket + 15, 30)'), 'Area average days should only render when real data exists.')
 
+const sellerPortalLifecycleStatusIndex = source.indexOf('const sellerPortalLifecycleStatus = useMemo')
+const overviewSellerSnapshotIndex = source.indexOf('const overviewSellerSnapshot = useMemo')
+assert.ok(sellerPortalLifecycleStatusIndex > -1, 'Seller portal lifecycle status memo should exist.')
+assert.ok(overviewSellerSnapshotIndex > -1, 'Overview seller snapshot memo should exist.')
+assert.ok(
+  sellerPortalLifecycleStatusIndex < overviewSellerSnapshotIndex,
+  'Seller portal lifecycle status must be initialized before the overview seller snapshot reads it.',
+)
+
 const leadsBlock = source.slice(leadsStart, sellerStart)
 const requiredLeadsCopy = [
   'Leads for this listing',
