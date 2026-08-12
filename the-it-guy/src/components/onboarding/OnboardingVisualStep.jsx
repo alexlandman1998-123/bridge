@@ -49,6 +49,53 @@ function HomeFallbackIcon(props) {
   return <Building2 {...props} />
 }
 
+function normalizeOnboardingBrandColour(value = '', fallback = '') {
+  const text = String(value || '').trim()
+  if (!text) return fallback
+  if (/^#[0-9a-f]{3}$/i.test(text)) {
+    return `#${text.slice(1).split('').map((char) => `${char}${char}`).join('')}`
+  }
+  if (/^#[0-9a-f]{6}$/i.test(text)) return text
+  return fallback
+}
+
+function onboardingBrandHexToRgb(hex = '#002b62') {
+  const safeHex = normalizeOnboardingBrandColour(hex, '#002b62').slice(1)
+  const value = Number.parseInt(safeHex, 16)
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255,
+  }
+}
+
+function onboardingBrandRgba(hex = '#002b62', alpha = 1) {
+  const { r, g, b } = onboardingBrandHexToRgb(hex)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function getOnboardingBrandContrastText(hex = '#ffffff', darkText = '#142033') {
+  const { r, g, b } = onboardingBrandHexToRgb(hex)
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000
+  return yiq >= 150 ? darkText : '#ffffff'
+}
+
+function resolveOnboardingHeaderTheme(brand = {}) {
+  const primary = normalizeOnboardingBrandColour(brand?.primaryColour, '#002b62')
+  const accent = normalizeOnboardingBrandColour(brand?.accentColour, '#f7cf22')
+  const action = accent || primary
+  return {
+    '--buyer-brand-primary': primary,
+    '--buyer-brand-accent': accent,
+    '--buyer-brand-action': action,
+    '--buyer-brand-action-text': getOnboardingBrandContrastText(action),
+    '--buyer-brand-action-soft': onboardingBrandRgba(action, 0.12),
+    '--buyer-brand-action-softer': onboardingBrandRgba(action, 0.07),
+    '--buyer-brand-action-border': onboardingBrandRgba(action, 0.48),
+    '--buyer-brand-primary-soft': onboardingBrandRgba(primary, 0.12),
+  }
+}
+
 export function BuyerPurchaserIllustration() {
   return (
     <svg viewBox="0 0 360 178" className="h-full w-full" role="img" aria-label="Property and buyers illustration">
@@ -322,7 +369,7 @@ export function OnboardingStepHeader({
   const logoUrl = String(brand.logoUrl || '').trim()
 
   return (
-    <section className="md:hidden rounded-[22px] border border-[#dbe5ef] bg-white/95 p-4 shadow-[0_14px_34px_rgba(15,23,42,0.07)] backdrop-blur-xl">
+    <section className="md:hidden rounded-[22px] border border-[#dbe5ef] bg-white/95 p-4 shadow-[0_14px_34px_rgba(15,23,42,0.07)] backdrop-blur-xl" style={resolveOnboardingHeaderTheme(brand)}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           {logoUrl ? (
@@ -333,7 +380,7 @@ export function OnboardingStepHeader({
             />
           ) : (
             <>
-              <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[15px] bg-[#142033] text-xs font-semibold text-white shadow-[0_12px_24px_rgba(20,32,51,0.16)]">
+              <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[15px] bg-[var(--buyer-brand-action)] text-xs font-semibold text-[var(--buyer-brand-action-text)] shadow-[0_12px_24px_rgba(20,32,51,0.16)]">
                 {initials}
               </span>
               <div className="min-w-0">
@@ -343,13 +390,13 @@ export function OnboardingStepHeader({
             </>
           )}
         </div>
-        <span className="inline-flex h-10 shrink-0 items-center rounded-full border border-[#f7cf22]/45 bg-[#fff8d9] px-3 text-sm font-semibold text-[#002b62]">
+        <span className="inline-flex h-10 shrink-0 items-center rounded-full border border-[var(--buyer-brand-action-border)] bg-[var(--buyer-brand-action-soft)] px-3 text-sm font-semibold text-[var(--buyer-brand-action)]">
           {questionPosition}/{questionTotal}
         </span>
       </div>
 
       <div className="mt-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#002b62]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--buyer-brand-action)]">
           Question {questionPosition} of {questionTotal}
         </p>
         <h1 className="mt-2 text-2xl font-semibold leading-[1.1] tracking-normal text-[#132033]">
@@ -360,8 +407,8 @@ export function OnboardingStepHeader({
 
       <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#e9eef5]" aria-hidden="true">
         <span
-          className="block h-full rounded-full bg-[linear-gradient(90deg,#002b62_0%,#f7cf22_100%)] transition-[width] duration-300"
-          style={{ width: `${progressPercent}%` }}
+          className="block h-full rounded-full transition-[width] duration-300"
+          style={{ backgroundImage: 'linear-gradient(90deg,var(--buyer-brand-primary) 0%,var(--buyer-brand-action) 100%)', width: `${progressPercent}%` }}
         />
       </div>
 
@@ -398,7 +445,7 @@ export function OnboardingSectionHeader({
   const accentClasses =
     accent === 'green'
       ? 'border-[#d7eadf] bg-white text-[#137a4a]'
-      : 'border-[#dbe5ef] bg-white text-[#35546c]'
+      : 'border-[#dbe5ef] bg-white text-[var(--buyer-brand-action)]'
 
   return (
     <div className="flex items-start gap-3">
@@ -428,7 +475,7 @@ export function OnboardingSummaryCard({
   const iconClasses =
     tone === 'green'
       ? 'border-[#b9dec8] bg-[#2f8f64] text-white'
-      : 'border-[#d6e1ee] bg-white text-[#35546c]'
+      : 'border-[#d6e1ee] bg-white text-[var(--buyer-brand-action)]'
 
   return (
     <aside className={`rounded-[18px] border px-4 py-3 text-sm leading-6 shadow-[0_10px_22px_rgba(15,23,42,0.04)] ${toneClasses}`}>
@@ -469,17 +516,17 @@ export function OnboardingOptionCard({
       name={name}
       value={value}
       onClick={onSelect}
-      className={`group flex w-full items-center gap-3 rounded-[18px] border px-3.5 py-3.5 text-left transition duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f7cf22]/45 ${
+      className={`group flex w-full items-center gap-3 rounded-[18px] border px-3.5 py-3.5 text-left transition duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--buyer-brand-action-border)] ${
         selected
-          ? 'border-[#002b62] bg-[#fffbea] shadow-[0_14px_30px_rgba(0,43,98,0.12)] ring-1 ring-[#f7cf22]/30'
+          ? 'border-[var(--buyer-brand-action)] bg-[var(--buyer-brand-action-softer)] shadow-[0_14px_30px_rgba(15,23,42,0.08)] ring-1 ring-[var(--buyer-brand-action-border)]'
           : 'border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.045)] hover:border-[#b9cadd] hover:bg-[#fbfdff]'
       }`}
     >
       <span
         className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border ${
           selected
-            ? 'border-[#f7cf22]/70 bg-[#fff6c7] text-[#002b62]'
-            : 'border-[#d8e5ee] bg-[#f7fafc] text-[#35546c]'
+            ? 'border-[var(--buyer-brand-action-border)] bg-[var(--buyer-brand-action-soft)] text-[var(--buyer-brand-action)]'
+            : 'border-[#d8e5ee] bg-[#f7fafc] text-[var(--buyer-brand-action)]'
         }`}
       >
         {createElement(Icon, { size: 23, strokeWidth: 1.7 })}
@@ -487,7 +534,7 @@ export function OnboardingOptionCard({
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2 text-sm font-semibold leading-5 text-[#142033]">
           {label}
-          {selected ? <CheckCircle2 size={15} className="shrink-0 text-[#c99c00]" aria-hidden="true" /> : null}
+          {selected ? <CheckCircle2 size={15} className="shrink-0 text-[var(--buyer-brand-action)]" aria-hidden="true" /> : null}
         </span>
         {description ? <span className="mt-1 block text-xs leading-5 text-[#516981]">{description}</span> : null}
       </span>
@@ -585,7 +632,11 @@ export function StickyOnboardingActions({
             type="button"
             onClick={onPrimary}
             disabled={saving}
-            className="mt-2.5 w-full min-h-[48px] rounded-[14px] bg-[#002b62] text-white hover:bg-[#001f4a] focus-visible:ring-[#f7cf22]/45 md:mt-3 md:min-h-[54px] md:max-w-[320px]"
+            className="mt-2.5 w-full min-h-[48px] rounded-[14px] bg-[var(--buyer-brand-action)] text-[var(--buyer-brand-action-text)] hover:brightness-105 focus-visible:ring-[var(--buyer-brand-action-border)] md:mt-3 md:min-h-[54px] md:max-w-[320px]"
+            style={{
+              backgroundColor: 'var(--buyer-brand-action)',
+              color: 'var(--buyer-brand-action-text)',
+            }}
           >
             {primaryActionLabel}
             {primaryActionLabel === 'Submit Onboarding' ? null : <ChevronRight size={14} />}

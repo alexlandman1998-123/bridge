@@ -61,7 +61,7 @@ const DETAIL_FLOW_WRAP_CLASS =
   'mx-auto w-full max-w-[1120px] space-y-4 md:space-y-6'
 const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[560px] md:max-w-[1120px]'
 const DETAIL_INPUT_CLASS =
-  'w-full min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
+  'w-full min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-4 py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[var(--buyer-brand-action-border)] focus:ring-2 focus:ring-[var(--buyer-brand-action-soft)]'
 const HERO_SECTION_CLASS =
   'overflow-hidden rounded-[22px] border border-[#dbe4ee] bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_100%)] shadow-[0_16px_38px_rgba(15,23,42,0.06)] md:rounded-[32px] md:shadow-[0_22px_48px_rgba(15,23,42,0.08)]'
 const HERO_SUMMARY_CLASS =
@@ -69,9 +69,66 @@ const HERO_SUMMARY_CLASS =
 const STEP_OVERVIEW_CARD_CLASS =
   'h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[22px] md:px-5 md:py-5'
 const STEP_OVERVIEW_ACTIVE_CLASS =
-  'border-[#35546c] bg-[#f5f9ff] shadow-[0_12px_28px_rgba(53,84,108,0.12)]'
+  'border-[var(--buyer-brand-action-border)] bg-[var(--buyer-brand-action-softer)] shadow-[0_12px_28px_rgba(15,23,42,0.08)]'
 const STEP_OVERVIEW_INACTIVE_CLASS =
   'border-[#dbe5ef] bg-white shadow-[0_10px_22px_rgba(15,23,42,0.04)] hover:border-[#c9d7e6] hover:bg-[#fbfdff]'
+
+function normalizeBuyerBrandColour(value = '', fallback = '') {
+  const text = String(value || '').trim()
+  if (!text) return fallback
+  if (/^#[0-9a-f]{3}$/i.test(text)) {
+    return `#${text.slice(1).split('').map((char) => `${char}${char}`).join('')}`
+  }
+  if (/^#[0-9a-f]{6}$/i.test(text)) return text
+  return fallback
+}
+
+function buyerBrandHexToRgb(hex = '#002b62') {
+  const safeHex = normalizeBuyerBrandColour(hex, '#002b62').slice(1)
+  const value = Number.parseInt(safeHex, 16)
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255,
+  }
+}
+
+function buyerBrandRgba(hex = '#002b62', alpha = 1) {
+  const { r, g, b } = buyerBrandHexToRgb(hex)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+function getBuyerBrandContrastText(hex = '#ffffff', darkText = '#142033') {
+  const { r, g, b } = buyerBrandHexToRgb(hex)
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000
+  return yiq >= 150 ? darkText : '#ffffff'
+}
+
+function resolveBuyerOnboardingTheme(brand = {}) {
+  const primary = normalizeBuyerBrandColour(brand?.primaryColour, '#002b62')
+  const secondary = normalizeBuyerBrandColour(brand?.secondaryColour, primary)
+  const configuredAccent = normalizeBuyerBrandColour(brand?.accentColour, '')
+  const accent = configuredAccent || '#f7cf22'
+  const action = configuredAccent || primary
+  return {
+    primary,
+    secondary,
+    accent,
+    action,
+    actionText: getBuyerBrandContrastText(action),
+    cssVars: {
+      '--buyer-brand-primary': primary,
+      '--buyer-brand-secondary': secondary,
+      '--buyer-brand-accent': accent,
+      '--buyer-brand-action': action,
+      '--buyer-brand-action-text': getBuyerBrandContrastText(action),
+      '--buyer-brand-action-soft': buyerBrandRgba(action, 0.12),
+      '--buyer-brand-action-softer': buyerBrandRgba(action, 0.07),
+      '--buyer-brand-action-border': buyerBrandRgba(action, 0.5),
+      '--buyer-brand-primary-soft': buyerBrandRgba(primary, 0.12),
+    },
+  }
+}
 
 const NATURAL_PURCHASER_MODE_OPTIONS = [
   {
@@ -664,7 +721,7 @@ const CLIENT_CONTROLLED_REMOVED_KEYS = new Set([
 function choiceCardClass(active) {
   return `h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[20px] md:px-5 md:py-5 ${
     active
-      ? 'border-[#35546c] bg-[#f4f8fd] text-[#142132] shadow-[0_14px_30px_rgba(53,84,108,0.12)]'
+      ? 'border-[var(--buyer-brand-action-border)] bg-[var(--buyer-brand-action-softer)] text-[#142132] shadow-[0_14px_30px_rgba(15,23,42,0.08)]'
       : 'border-[#dde4ee] bg-white text-[#142132] shadow-[0_12px_28px_rgba(15,23,42,0.04)] hover:border-[#c8d6e5] hover:bg-[#fbfdff]'
   }`
 }
@@ -1730,13 +1787,18 @@ function resolveBuyerLandingBrand(payload = {}) {
 }
 
 function resolveBuyerQuestionHeaderIdentity(payload = {}) {
+  const development = Array.isArray(payload?.unit?.development)
+    ? payload.unit.development[0]
+    : payload?.unit?.development
   const branding = resolveOnboardingBranding(
     payload?.branding,
     payload?.organisation?.settingsJson?.agencyOnboarding?.branding,
     payload?.organisation?.settingsJson?.branding,
     payload?.organisation,
+    development,
+    payload?.transaction,
   )
-  const logoUrl = branding.logoLightUrl || branding.logoDarkUrl || branding.logoIconUrl
+  const logoUrl = branding.logoDarkUrl || branding.logoLightUrl || branding.logoIconUrl
   const agencyName = branding.organisationName
   const senderName =
     String(
@@ -1750,8 +1812,56 @@ function resolveBuyerQuestionHeaderIdentity(payload = {}) {
   return {
     name,
     logoUrl,
+    logoLightUrl: branding.logoLightUrl || '',
+    logoDarkUrl: branding.logoDarkUrl || '',
     initials: getOnboardingBrandInitials(name),
+    primaryColour: branding.primaryColour,
+    secondaryColour: branding.secondaryColour,
+    accentColour: branding.accentColour,
   }
+}
+
+function BuyerAgencyMark({ brand = {}, tone = 'light' }) {
+  const logoUrl = tone === 'light'
+    ? brand?.logoDarkUrl || brand?.logoUrl || brand?.logoLightUrl
+    : brand?.logoLightUrl || brand?.logoUrl || brand?.logoDarkUrl
+  const name = String(brand?.name || 'Your property team').trim()
+
+  if (logoUrl) {
+    return (
+      <img
+        src={logoUrl}
+        alt={`${name} logo`}
+        className="h-12 w-auto max-w-[210px] object-contain object-left md:h-14 md:max-w-[250px]"
+      />
+    )
+  }
+
+  return (
+    <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-[var(--buyer-brand-action)] text-xs font-semibold text-[var(--buyer-brand-action-text)] shadow-[0_12px_24px_rgba(15,23,42,0.12)] md:h-14 md:w-14 md:rounded-[18px] md:text-sm">
+      {brand?.initials || 'AG'}
+    </span>
+  )
+}
+
+function BuyerBrandBar({ brand = {} }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-[#e4ebf3] pb-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <BuyerAgencyMark brand={brand} />
+        {!brand?.logoUrl && !brand?.logoDarkUrl && !brand?.logoLightUrl ? (
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[#142132]">{brand?.name || 'Your property team'}</p>
+            <p className="mt-0.5 truncate text-xs text-[#6b7d93]">Buyer onboarding</p>
+          </div>
+        ) : null}
+      </div>
+      <div className="flex w-fit shrink-0 items-center gap-2 rounded-full border border-[#dfe8f2] bg-white px-3 py-2 text-xs font-semibold text-[#6b7d93]">
+        <span>Powered by</span>
+        <span className="rounded-full bg-[#142033] px-2.5 py-1 text-white">arch9</span>
+      </div>
+    </div>
+  )
 }
 
 function resolveBuyerLandingName(payload = {}, formData = {}) {
@@ -2076,6 +2186,7 @@ function ClientOnboarding() {
   const mobileStepLabel = journeySteps[mobileProgressStepIndex]?.shortLabel || journeySteps[0]?.shortLabel || 'Step'
   const submissionComplete = completionBannerVisible || payload?.onboarding?.status === 'Submitted'
   const onboardingBrand = useMemo(() => resolveBuyerLandingBrand(payload), [payload])
+  const onboardingTheme = useMemo(() => resolveBuyerOnboardingTheme(onboardingBrand), [onboardingBrand])
   const onboardingQuestionHeaderIdentity = useMemo(() => resolveBuyerQuestionHeaderIdentity(payload), [payload])
   const buyerLandingName = useMemo(() => resolveBuyerLandingName(payload, formData), [payload, formData])
   const buyerLandingBackgroundImage = useMemo(() => resolveBuyerWelcomeImageUrl(payload), [payload])
@@ -3615,10 +3726,10 @@ function ClientOnboarding() {
                   onClick={() => toggleValue(option.value)}
                   className={`min-h-[44px] rounded-[14px] border px-3 py-2 text-left text-sm font-semibold transition ${
                     selected
-                      ? 'border-[#137a4a] bg-[#eefaf3] text-[#126b34] shadow-[0_8px_20px_rgba(19,122,74,0.10)]'
+                      ? 'border-[var(--buyer-brand-action-border)] bg-[var(--buyer-brand-action-soft)] text-[var(--buyer-brand-action)] shadow-[0_8px_20px_rgba(15,23,42,0.08)]'
                       : showError
-                        ? 'border-[#d92d20]/45 bg-white text-[#35546c]'
-                        : 'border-[#d8e2ec] bg-white text-[#35546c] hover:border-[#b9c9d9]'
+                        ? 'border-[#d92d20]/45 bg-white text-[var(--buyer-brand-action)]'
+                        : 'border-[#d8e2ec] bg-white text-[var(--buyer-brand-action)] hover:border-[#b9c9d9]'
                   }`}
                 >
                   {option.label}
@@ -4006,11 +4117,11 @@ function ClientOnboarding() {
                 <button
                   key={option.value}
                   type="button"
-                  className={`w-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:px-4 md:py-4 ${
-                    active
-                      ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.14)]'
-                      : 'border-[#dbe5ef] bg-white hover:border-[#b6c9de] hover:bg-[#fafcff]'
-                  }`}
+                      className={`w-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:px-4 md:py-4 ${
+                        active
+                          ? 'border-[var(--buyer-brand-action-border)] bg-[var(--buyer-brand-action-softer)] shadow-[0_10px_24px_rgba(15,23,42,0.08)]'
+                          : 'border-[#dbe5ef] bg-white hover:border-[#b6c9de] hover:bg-[#fafcff]'
+                      }`}
                   onClick={() => {
                     markFieldTouched('natural_person_purchase_mode')
                     updateNaturalPurchaseMode(option.value)
@@ -4241,7 +4352,7 @@ function ClientOnboarding() {
       <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)] md:p-5">
         <header className="mb-4 flex items-start justify-between gap-3 border-b border-[#edf2f7] pb-4">
           <div className="flex min-w-0 items-start gap-3">
-            <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border border-[#dbe6f0] bg-[#f6f9fd] text-[#35546c]">
+            <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border border-[var(--buyer-brand-action-border)] bg-[var(--buyer-brand-action-soft)] text-[var(--buyer-brand-action)]">
               {icon ? createElement(icon, { size: 19 }) : null}
             </span>
             <div className="min-w-0">
@@ -4570,7 +4681,7 @@ function ClientOnboarding() {
     : `min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#f9fbfd_0%,#eef4fb_44%,#e7eef7_100%)] px-3 py-3 ${!submissionComplete ? 'pb-40' : 'pb-24'} md:px-4 md:py-5 md:pb-12`
 
   return (
-    <main className={onboardingMainClass}>
+    <main className={onboardingMainClass} style={onboardingTheme.cssVars}>
       <div className={`${PAGE_CONTAINER_CLASS} space-y-4 md:space-y-5`}>
         {showLandingPage ? (
           <PremiumOnboardingLanding
@@ -4612,9 +4723,12 @@ function ClientOnboarding() {
             {renderMobileFlowHeader()}
 
             <section className={`hidden md:block ${HERO_SECTION_CLASS}`}>
+              <div className="p-4 pb-0 md:p-8 md:pb-0">
+                <BuyerBrandBar brand={onboardingBrand} />
+              </div>
               <div className="grid gap-0 md:grid-cols-[1.25fr_0.95fr]">
                 <div className="p-4 md:p-8">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6a7f96] md:text-xs md:tracking-[0.2em]">Buyer onboarding</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--buyer-brand-action)] md:text-xs md:tracking-[0.2em]">Buyer onboarding</p>
                   <h1 className="mt-3 max-w-2xl text-[1.75rem] font-semibold leading-[1.08] tracking-normal text-[#132033] md:mt-4 md:text-5xl">
                     Complete your buyer onboarding
                   </h1>
@@ -4675,7 +4789,7 @@ function ClientOnboarding() {
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef3f8] md:mt-4 md:h-2.5" aria-hidden="true">
                 <span
                   className="block h-full rounded-full transition-[width] duration-300"
-                  style={{ width: `${mobileProgressPercent}%`, backgroundImage: 'linear-gradient(90deg,#002b62 0%,#f7cf22 100%)' }}
+                  style={{ width: `${mobileProgressPercent}%`, backgroundImage: 'linear-gradient(90deg,var(--buyer-brand-primary) 0%,var(--buyer-brand-action) 100%)' }}
                 />
               </div>
               <div className="mt-3 grid gap-2 md:mt-4 md:grid-cols-4 md:gap-3">
@@ -4690,15 +4804,15 @@ function ClientOnboarding() {
                       <div className="flex items-start justify-between gap-3">
                         <div className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold ${
                           isActive
-                            ? 'border-[#002b62] bg-[#002b62] text-white'
+                            ? 'border-[var(--buyer-brand-action)] bg-[var(--buyer-brand-action)] text-[var(--buyer-brand-action-text)]'
                             : isComplete
-                              ? 'border-[#f7cf22] bg-[#fff8d9] text-[#735800]'
+                              ? 'border-[var(--buyer-brand-action-border)] bg-[var(--buyer-brand-action-soft)] text-[var(--buyer-brand-action)]'
                               : 'border-[#d5e0ec] bg-white text-[#6b7d93]'
                         }`}>
                           {String(index + 1).padStart(2, '0')}
                         </div>
                         {isActive ? (
-                          <span className="inline-flex items-center rounded-full border border-[#f7cf22]/55 bg-[#fff8d9] px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#735800]">
+                          <span className="inline-flex items-center rounded-full border border-[var(--buyer-brand-action-border)] bg-[var(--buyer-brand-action-soft)] px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[var(--buyer-brand-action)]">
                             Current
                           </span>
                         ) : null}
