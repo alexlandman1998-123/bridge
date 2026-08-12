@@ -3396,13 +3396,15 @@ function isStaleMandateGenerationRecoveryMessage(value = '') {
 
 const BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY = 'onboarding_otp'
 const SELLER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'seller', 'property', 'mandate', 'appointments', 'documents', 'activity'])
-const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', 'properties', 'appointments', 'activity', BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY])
+const BUYER_PROFILE_WORKSPACE_TAB_KEY = 'buyer_profile'
+const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set(['overview', BUYER_PROFILE_WORKSPACE_TAB_KEY, BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, 'properties', 'appointments', 'activity'])
 
 function normalizeLeadWorkspaceTabKey(tabKey = '') {
   const normalized = normalizeKey(tabKey)
   if (['offer', 'offers', 'otp', 'onboarding', 'onboarding_otp', 'buyer_onboarding', 'buyer_onboarding_otp'].includes(normalized)) {
     return BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY
   }
+  if (['buyer', 'buyer_profile', 'profile', 'buyer_details', 'buyer_detail'].includes(normalized)) return BUYER_PROFILE_WORKSPACE_TAB_KEY
   if (normalized === 'activities') return 'activity'
   if (normalized === 'listing_journey') return 'overview'
   return normalized
@@ -25707,7 +25709,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <h1 className="truncate text-[2rem] font-semibold leading-tight text-[#102033]" title={selectedLeadDisplayName}>
                                 {selectedLeadDisplayName}
                               </h1>
-                              <Button type="button" variant="ghost" size="sm" className="h-8 w-8 px-0" title="Edit buyer details" onClick={() => setLeadWorkspaceTab('overview')}>
+                              <Button type="button" variant="ghost" size="sm" className="h-8 w-8 px-0" title="Edit buyer details" onClick={() => setLeadWorkspaceTab(BUYER_PROFILE_WORKSPACE_TAB_KEY)}>
                                 <Pencil className="h-4 w-4" />
                               </Button>
                             </div>
@@ -25838,7 +25840,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     Icon: Pencil,
                                     onClick: () => {
                                       setLeadActionsMenuOpen(false)
-                                      setLeadWorkspaceTab('overview')
+                                      setLeadWorkspaceTab(BUYER_PROFILE_WORKSPACE_TAB_KEY)
                                     },
                                   },
                                   {
@@ -26113,7 +26115,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                          tone: 'text-[#29435d]',
 	                                          onClick: () => {
 	                                            setLeadActionsMenuOpen(false)
-	                                            setLeadWorkspaceTab('overview')
+	                                            setLeadWorkspaceTab(BUYER_PROFILE_WORKSPACE_TAB_KEY)
 	                                          },
 	                                        },
 	                                      ]),
@@ -26454,13 +26456,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                 {selectedLead && !selectedLeadIsSeller ? (
                   <div className="mx-5 mb-5 scroll-mt-4 overflow-x-auto rounded-[22px] border border-[#dbe7f2] bg-[#fbfdff] p-2 shadow-[0_12px_32px_rgba(31,54,78,0.06)] sm:mx-7 lg:mx-8" role="tablist" aria-label="Lead workspace sections" data-testid="lead-workspace-tabs">
-                    <div className="grid min-w-[680px] grid-cols-5 gap-2">
+                    <div className="grid min-w-[840px] grid-cols-6 gap-2">
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
+                        { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
+                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Onboarding / OTP', meta: selectedLeadBuyerOnboardingSubmitted ? 'Ready' : '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
-	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Onboarding / OTP', meta: selectedLeadBuyerOnboardingSubmitted ? 'Ready' : '' },
                       ].map((tab) => {
                         const isActive = resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === tab.key
                         return (
@@ -26738,13 +26741,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </section>
 
 	                  <section className="scroll-mt-4 overflow-x-auto rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_10px_30px_rgba(31,54,78,0.045)]" role="tablist" aria-label="Buyer workspace sections" data-testid="lead-workspace-tabs">
-	                    <div className="grid min-w-[680px] grid-cols-5">
+	                    <div className="grid min-w-[840px] grid-cols-6">
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
+                        { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
+                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Onboarding / OTP', meta: selectedLeadBuyerOnboardingSubmitted ? 'Ready' : '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
-	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Onboarding / OTP', meta: selectedLeadBuyerOnboardingSubmitted ? 'Ready' : '' },
                       ].map((tab) => {
                         const isActive = resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === tab.key
                         return (
@@ -27450,7 +27454,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </div>
                   ) : null}
 
-                  {resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === 'overview' && !selectedLeadIsSeller ? (
+                  {resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === BUYER_PROFILE_WORKSPACE_TAB_KEY && !selectedLeadIsSeller ? (
                     <div className="space-y-6">
                       {(() => {
                         const qualificationQuestionRows = buildBuyerQualificationQuestionRows(buyerQualificationForm)
