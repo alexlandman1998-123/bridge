@@ -16,9 +16,25 @@ assert.match(
   /\{ key: 'overview', label: 'Overview', meta: '' \},\s*\{ key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' \},\s*\{ key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Onboarding \/ OTP'[\s\S]*?\{ key: 'properties', label: 'Properties'[\s\S]*?\{ key: 'appointments', label: 'Appointments'[\s\S]*?\{ key: 'activity', label: 'Activity'/,
 )
 assert.match(agencyPipelinePageSource, /BUYER_PROFILE_WORKSPACE_TAB_KEY = 'buyer_profile'/)
-assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === BUYER_PROFILE_WORKSPACE_TAB_KEY/)
+assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === 'overview' && !selectedLeadIsSeller \? \(/)
 assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY/)
 assert.match(agencyPipelinePageSource, /Open Onboarding \/ OTP/)
+for (const overviewPanelLabel of ['Buyer Qualification', 'What’s next', 'Activity Logger', 'Viewing Planner']) {
+  assert.match(agencyPipelinePageSource, new RegExp(overviewPanelLabel), `${overviewPanelLabel} should render from the buyer overview workspace.`)
+}
+
+assert.match(agencyPipelinePageSource, /data-testid="simplified-viewing-planner"/)
+assert.match(agencyPipelinePageSource, /Plan the viewing in 3 simple steps\./)
+assert.match(agencyPipelinePageSource, /const viewingPlannerWizardSteps = \[/)
+assert.match(agencyPipelinePageSource, /label: 'Date & Time'/)
+assert.match(agencyPipelinePageSource, /Choose the preferred date and time for each property\./)
+assert.match(agencyPipelinePageSource, /Already confirmed/)
+assert.match(agencyPipelinePageSource, /Seller needs to RSVP/)
+assert.match(agencyPipelinePageSource, /Viewing scheduled/)
+assert.match(agencyPipelinePageSource, /RSVP request sent/)
+assert.match(agencyPipelinePageSource, /viewingPlannerPropertyScheduleById/)
+assert.match(agencyPipelinePageSource, /slotStartTime/)
+assert.match(agencyPipelinePageSource, /slotEndTime/)
 
 assert.doesNotMatch(agencyPipelinePageSource, /\{ key: 'offers', label: 'Offers' \}/)
 assert.doesNotMatch(agencyPipelinePageSource, /activeTab === 'offers'/)

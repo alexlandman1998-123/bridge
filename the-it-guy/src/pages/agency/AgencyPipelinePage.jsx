@@ -9400,6 +9400,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     durationMinutes: 45,
     notes: '',
   }))
+  const [viewingPlannerPropertyScheduleById, setViewingPlannerPropertyScheduleById] = useState({})
   const [viewingPlanResponseForm, setViewingPlanResponseForm] = useState(BUYER_VIEWING_RESPONSE_DEFAULTS)
   const [, setBuyerViewingPreferenceLinks] = useState([])
   const [, setBuyerViewingPreferenceLinksLoading] = useState(false)
@@ -15875,6 +15876,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ...response,
           confirmedPropertyIds: (Array.isArray(response.confirmedPropertyIds) ? response.confirmedPropertyIds : []).filter((id) => id !== normalizedId),
         }))
+        setViewingPlannerPropertyScheduleById((schedule) => {
+          const next = { ...schedule }
+          delete next[normalizedId]
+          return next
+        })
         return previous.filter((id) => id !== normalizedId)
       }
       return [...previous, normalizedId]
@@ -16345,20 +16351,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleCreateAlreadyRsvpdViewingAppointments() {
     if (!organisationId || !selectedLead || selectedLeadIsSeller) return
-    const confirmedPropertyIds = (Array.isArray(viewingPlanResponseForm.confirmedPropertyIds) ? viewingPlanResponseForm.confirmedPropertyIds : [])
+    const formConfirmedPropertyIds = (Array.isArray(viewingPlanResponseForm.confirmedPropertyIds) ? viewingPlanResponseForm.confirmedPropertyIds : [])
       .map(normalizeText)
       .filter(Boolean)
+    const wizardSelectedPropertyIds = viewingPlanSelectedPropertyIds
+      .map(normalizeText)
+      .filter(Boolean)
+    const confirmedPropertyIds = formConfirmedPropertyIds.length ? formConfirmedPropertyIds : wizardSelectedPropertyIds
     const confirmedProperties = selectedLeadViewingPlanProperties.filter((property) => confirmedPropertyIds.includes(normalizeText(property?.id)))
     const appointmentDate = normalizeText(viewingPlannerConfirmedAppointmentForm.date)
     const startTime = normalizeText(viewingPlannerConfirmedAppointmentForm.startTime)
     const durationMinutes = Math.max(15, Number(viewingPlannerConfirmedAppointmentForm.durationMinutes) || 45)
-    const startMinutes = parseTimeToMinutes(startTime)
 
     if (!confirmedProperties.length) {
       setMessage('Select at least one property for the confirmed viewing.')
       return
     }
-    if (!appointmentDate || !startTime || !Number.isFinite(startMinutes)) {
+    if (!appointmentDate || !startTime || !Number.isFinite(parseTimeToMinutes(startTime))) {
       setMessage('Add the confirmed viewing date and start time.')
       return
     }
@@ -16391,10 +16400,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       for (const [index, property] of confirmedProperties.entries()) {
         const propertyId = normalizeText(property?.id)
+        const scheduledSlot = viewingPlannerPropertyScheduleById[propertyId] || {}
+        const slotDate = normalizeText(scheduledSlot.date) || appointmentDate
+        const slotStartTimeInput = normalizeText(scheduledSlot.startTime) || formatMinutesToTime(parseTimeToMinutes(startTime) + (index * durationMinutes))
+        const slotDurationMinutes = Math.max(15, Number(scheduledSlot.durationMinutes) || durationMinutes)
         const listing = appointmentListingById.get(propertyId) || {}
-        const slotStartMinutes = startMinutes + (index * durationMinutes)
+        const slotStartMinutes = parseTimeToMinutes(slotStartTimeInput)
+        if (!slotDate || !Number.isFinite(slotStartMinutes)) {
+          throw new Error(`Add a valid date and start time for ${normalizeText(property?.title) || 'the selected property'}.`)
+        }
         const slotStartTime = formatMinutesToTime(slotStartMinutes)
-        const slotEndTime = formatMinutesToTime(slotStartMinutes + durationMinutes)
+        const slotEndTime = formatMinutesToTime(slotStartMinutes + slotDurationMinutes)
         const location = normalizeText(listing?.address || property?.address || property?.title || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress)
         const sellerEmail = normalizeText(property?.sellerEmail).toLowerCase()
         const sellerName = normalizeText(property?.sellerName) || sellerEmail || 'Seller'
@@ -16428,10 +16444,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const appointmentPayload = applyAppointmentTemplate('viewing', {
           appointmentType: 'viewing',
           title: `Property Viewing - ${normalizeText(property?.title || location) || 'Selected property'}`,
-          date: appointmentDate,
+          date: slotDate,
           startTime: slotStartTime,
           endTime: slotEndTime,
-          durationMinutes,
+          durationMinutes: slotDurationMinutes,
           timezone: 'Africa/Johannesburg',
           locationType: location ? 'physical_address' : 'to_be_confirmed',
           location,
@@ -16456,7 +16472,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           appointmentPayload,
           { actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email } },
         )
-        createdAppointments.push({ appointment: created, propertyId })
+        createdAppointments.push({ appointment: created, propertyId, slotDate, slotStartTime, slotEndTime, slotDurationMinutes })
       }
 
       const bookedAt = new Date().toISOString()
@@ -16469,7 +16485,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ...savedPlan.bookedAppointmentIds,
         ...createdAppointments.map((item) => normalizeText(item?.appointment?.appointmentId || item?.appointment?.id)),
       ].map(normalizeText).filter(Boolean))]
-      const timeSummary = `${appointmentDate} ${startTime}${confirmedProperties.length > 1 ? `, ${durationMinutes} minutes per viewing` : ''}`
+      const timeSummary = createdAppointments
+        .map((item) => {
+          const property = confirmedProperties.find((candidate) => normalizeText(candidate?.id) === item.propertyId)
+          const propertyLabel = normalizeText(property?.title || resolveAppointmentListingLabel(item.propertyId)) || 'Viewing property'
+          return `${propertyLabel}: ${item.slotDate} ${item.slotStartTime}-${item.slotEndTime}`
+        })
+        .join('\n') || `${appointmentDate} ${startTime}${confirmedProperties.length > 1 ? `, ${durationMinutes} minutes per viewing` : ''}`
       const notes = buildBuyerViewingPlanNotes(
         {
           status: 'booked',
@@ -16552,21 +16574,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleCreateSellerFirstViewingRequests() {
     if (!organisationId || !selectedLead || selectedLeadIsSeller) return
-    const confirmedPropertyIds = (Array.isArray(viewingPlanResponseForm.confirmedPropertyIds) ? viewingPlanResponseForm.confirmedPropertyIds : [])
+    const formConfirmedPropertyIds = (Array.isArray(viewingPlanResponseForm.confirmedPropertyIds) ? viewingPlanResponseForm.confirmedPropertyIds : [])
       .map(normalizeText)
       .filter(Boolean)
+    const wizardSelectedPropertyIds = viewingPlanSelectedPropertyIds
+      .map(normalizeText)
+      .filter(Boolean)
+    const confirmedPropertyIds = formConfirmedPropertyIds.length ? formConfirmedPropertyIds : wizardSelectedPropertyIds
     const requestedProperties = selectedLeadViewingPlanProperties.filter((property) => confirmedPropertyIds.includes(normalizeText(property?.id)))
     const appointmentDate = normalizeText(viewingPlannerConfirmedAppointmentForm.date)
     const startTime = normalizeText(viewingPlannerConfirmedAppointmentForm.startTime)
     const durationMinutes = Math.max(15, Number(viewingPlannerConfirmedAppointmentForm.durationMinutes) || 45)
-    const startMinutes = parseTimeToMinutes(startTime)
     const manualSellerEmails = parseEmailList(viewingPlanSellerForm.sellerRecipientEmails)
 
     if (!requestedProperties.length) {
       setMessage('Select at least one property for the seller RSVP request.')
       return
     }
-    if (!appointmentDate || !startTime || !Number.isFinite(startMinutes)) {
+    if (!appointmentDate || !startTime || !Number.isFinite(parseTimeToMinutes(startTime))) {
       setMessage('Add the proposed viewing date and start time.')
       return
     }
@@ -16605,17 +16630,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       for (const [index, property] of requestedProperties.entries()) {
         const propertyId = normalizeText(property?.id)
+        const scheduledSlot = viewingPlannerPropertyScheduleById[propertyId] || {}
+        const slotDate = normalizeText(scheduledSlot.date) || appointmentDate
+        const slotStartTimeInput = normalizeText(scheduledSlot.startTime) || formatMinutesToTime(parseTimeToMinutes(startTime) + (index * durationMinutes))
+        const slotDurationMinutes = Math.max(15, Number(scheduledSlot.durationMinutes) || durationMinutes)
         const listing = appointmentListingById.get(propertyId) || {}
-        const slotStartMinutes = startMinutes + (index * durationMinutes)
+        const slotStartMinutes = parseTimeToMinutes(slotStartTimeInput)
+        if (!slotDate || !Number.isFinite(slotStartMinutes)) {
+          throw new Error(`Add a valid date and start time for ${normalizeText(property?.title) || 'the selected property'}.`)
+        }
         const slotStartTime = formatMinutesToTime(slotStartMinutes)
-        const slotEndTime = formatMinutesToTime(slotStartMinutes + durationMinutes)
+        const slotEndTime = formatMinutesToTime(slotStartMinutes + slotDurationMinutes)
         const location = normalizeText(listing?.address || property?.address || property?.title || selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress)
         const propertySellerEmail = normalizeText(property?.sellerEmail).toLowerCase()
         const sellerEmails = propertySellerEmail ? [propertySellerEmail] : manualSellerEmails
         const sellerName = normalizeText(property?.sellerName) || sellerEmails[0] || 'Seller'
         const notes = [
           'Seller-first viewing request.',
-          `Proposed time: ${appointmentDate} ${slotStartTime}-${slotEndTime}`,
+          `Proposed time: ${slotDate} ${slotStartTime}-${slotEndTime}`,
           normalizeText(viewingPlannerConfirmedAppointmentForm.notes),
           normalizeText(viewingPlanResponseForm.responseNotes),
         ].filter(Boolean).join('\n')
@@ -16640,10 +16672,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         const appointmentPayload = applyAppointmentTemplate('viewing', {
           appointmentType: 'viewing',
           title: `Property Viewing Request - ${normalizeText(property?.title || location) || 'Selected property'}`,
-          date: appointmentDate,
+          date: slotDate,
           startTime: slotStartTime,
           endTime: slotEndTime,
-          durationMinutes,
+          durationMinutes: slotDurationMinutes,
           timezone: 'Africa/Johannesburg',
           locationType: location ? 'physical_address' : 'to_be_confirmed',
           location,
@@ -16678,7 +16710,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 source: 'buyer_viewing_planner_seller_first',
                 listingId: propertyId,
                 listingLabel: normalizeText(property?.title || resolveAppointmentListingLabel(propertyId)),
-                proposedStart: `${appointmentDate} ${slotStartTime}`,
+                proposedStart: `${slotDate} ${slotStartTime}`,
                 attachCalendarInvite: true,
                 notifyCreatorOnRsvp: true,
                 ...appointmentEmailBranding,
@@ -16688,6 +16720,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         createdRequests.push({
           appointment: created,
           propertyId,
+          slotDate,
+          slotStartTime,
+          slotEndTime,
+          slotDurationMinutes,
           sellerEmails,
           notificationResults: Array.isArray(notificationResults) ? notificationResults : [],
         })
@@ -16710,7 +16746,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         : sentCount
           ? 'sent'
           : 'pending'
-      const timeSummary = `${appointmentDate} ${startTime}${requestedProperties.length > 1 ? `, ${durationMinutes} minutes per viewing` : ''}`
+      const timeSummary = createdRequests
+        .map((item) => {
+          const property = requestedProperties.find((candidate) => normalizeText(candidate?.id) === item.propertyId)
+          const propertyLabel = normalizeText(property?.title || resolveAppointmentListingLabel(item.propertyId)) || 'Viewing property'
+          return `${propertyLabel}: ${item.slotDate} ${item.slotStartTime}-${item.slotEndTime}`
+        })
+        .join('\n') || `${appointmentDate} ${startTime}${requestedProperties.length > 1 ? `, ${durationMinutes} minutes per viewing` : ''}`
       const notes = buildBuyerViewingPlanNotes(
         {
           status: 'seller_coordination',
@@ -27454,7 +27496,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   </div>
                   ) : null}
 
-                  {resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === BUYER_PROFILE_WORKSPACE_TAB_KEY && !selectedLeadIsSeller ? (
+                  {resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === 'overview' && !selectedLeadIsSeller ? (
                     <div className="space-y-6">
                       {(() => {
                         const qualificationQuestionRows = buildBuyerQualificationQuestionRows(buyerQualificationForm)
@@ -27609,6 +27651,122 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           if (viewingPlanBookedAppointmentIds.length) return viewingPlanBookedAppointmentIds.includes(appointmentId)
                           return normalizeText(appointment?.appointmentType || appointment?.appointmentTypeLabel || appointment?.title).toLowerCase().includes('viewing')
                         })
+                        const viewingPlannerWizardSteps = [
+                          { key: 'properties', label: 'Properties', meta: 'Select properties' },
+                          { key: 'date_time', label: 'Date & Time', meta: 'Choose date and time' },
+                          { key: 'confirmation', label: 'Confirmation', meta: 'Confirm or request RSVP' },
+                        ]
+                        const viewingPlannerWizardStepKey = viewingPlanStatus === 'draft'
+                          ? 'properties'
+                          : viewingPlanStatus === 'buyer_availability'
+                            ? 'date_time'
+                            : 'confirmation'
+                        const viewingPlannerWizardStepIndex = Math.max(0, viewingPlannerWizardSteps.findIndex((step) => step.key === viewingPlannerWizardStepKey))
+                        const originalViewingPlanProperties = selectedLeadViewingPlanProperties.filter((property) => property?.planLabel === 'Original enquiry')
+                        const suggestedViewingPlanProperties = selectedLeadViewingPlanProperties.filter((property) => property?.planLabel !== 'Original enquiry')
+                        const getViewingPlannerPropertySchedule = (property, index = 0) => {
+                          const propertyId = normalizeText(property?.id)
+                          const savedSlot = viewingPlannerPropertyScheduleById[propertyId] || {}
+                          const fallbackDurationMinutes = Math.max(15, Number(viewingPlannerConfirmedAppointmentForm.durationMinutes) || 45)
+                          const fallbackStartMinutes = parseTimeToMinutes(viewingPlannerConfirmedAppointmentForm.startTime)
+                          const startTime = normalizeText(savedSlot.startTime) || (Number.isFinite(fallbackStartMinutes) ? formatMinutesToTime(fallbackStartMinutes + (index * fallbackDurationMinutes)) : '')
+                          const durationMinutes = Math.max(15, Number(savedSlot.durationMinutes) || fallbackDurationMinutes)
+                          const startMinutes = parseTimeToMinutes(startTime)
+                          return {
+                            date: normalizeText(savedSlot.date) || normalizeText(viewingPlannerConfirmedAppointmentForm.date),
+                            startTime,
+                            durationMinutes,
+                            endTime: Number.isFinite(startMinutes) ? formatMinutesToTime(startMinutes + durationMinutes) : '',
+                          }
+                        }
+                        const updateViewingPlannerPropertySchedule = (propertyId, patch = {}) => {
+                          const normalizedId = normalizeText(propertyId)
+                          if (!normalizedId) return
+                          setViewingPlannerPropertyScheduleById((previous) => ({
+                            ...previous,
+                            [normalizedId]: {
+                              ...(previous[normalizedId] || {}),
+                              ...patch,
+                            },
+                          }))
+                          if (viewingPlanSelectedPropertyIds[0] === normalizedId) {
+                            setViewingPlannerConfirmedAppointmentForm((previous) => ({
+                              ...previous,
+                              date: normalizeText(patch.date) || previous.date,
+                              startTime: normalizeText(patch.startTime) || previous.startTime,
+                              durationMinutes: patch.durationMinutes ? Number(patch.durationMinutes) || previous.durationMinutes : previous.durationMinutes,
+                            }))
+                          }
+                        }
+                        const viewingPlannerScheduleRows = viewingPlanSelectedProperties.map((property, index) => ({
+                          property,
+                          ...getViewingPlannerPropertySchedule(property, index),
+                        }))
+                        const viewingPlannerScheduleComplete = Boolean(viewingPlannerScheduleRows.length) && viewingPlannerScheduleRows.every((row) => (
+                          normalizeText(row.date) &&
+                          normalizeText(row.startTime) &&
+                          Number.isFinite(parseTimeToMinutes(row.startTime)) &&
+                          Number(row.durationMinutes) >= 15
+                        ))
+                        const viewingPlannerScheduleSummary = viewingPlannerScheduleRows.map((row) => `${row.property?.title || 'Viewing property'}: ${row.date} ${row.startTime}-${row.endTime}`).join('\n')
+                        const syncViewingPlannerScheduleToForms = () => {
+                          const confirmedPropertyIds = viewingPlanSelectedProperties.map((property) => normalizeText(property?.id)).filter(Boolean)
+                          const firstRow = viewingPlannerScheduleRows[0] || null
+                          setViewingPlanResponseForm((previous) => ({
+                            ...previous,
+                            confirmedPropertyIds,
+                            availabilityWindows: viewingPlannerScheduleSummary,
+                          }))
+                          if (firstRow) {
+                            setViewingPlannerConfirmedAppointmentForm((previous) => ({
+                              ...previous,
+                              date: firstRow.date || previous.date,
+                              startTime: firstRow.startTime || previous.startTime,
+                              durationMinutes: Number(firstRow.durationMinutes) || previous.durationMinutes,
+                            }))
+                          }
+                        }
+                        const handleViewingPlannerWizardBack = () => {
+                          if (viewingPlannerWizardStepKey === 'date_time') {
+                            setViewingPlanStatus('draft')
+                            return
+                          }
+                          if (viewingPlannerWizardStepKey === 'confirmation') {
+                            setViewingPlanStatus('buyer_availability')
+                          }
+                        }
+                        const handleViewingPlannerWizardPrimaryAction = () => {
+                          if (viewingPlannerWizardStepKey === 'properties') {
+                            const selectedPropertyIds = viewingPlanSelectedProperties.map((property) => normalizeText(property?.id)).filter(Boolean)
+                            setViewingPlanResponseForm((previous) => ({
+                              ...previous,
+                              confirmedPropertyIds: selectedPropertyIds,
+                            }))
+                            void handleSaveBuyerViewingPlan('buyer_availability')
+                            return
+                          }
+                          if (viewingPlannerWizardStepKey === 'date_time') {
+                            if (!viewingPlannerScheduleComplete) {
+                              setMessage('Add a valid date and start time for each selected property.')
+                              return
+                            }
+                            syncViewingPlannerScheduleToForms()
+                            setViewingPlanStatus('buyer_confirmed')
+                            return
+                          }
+                          syncViewingPlannerScheduleToForms()
+                          if (viewingPlannerConfirmPath === 'already_rsvpd') {
+                            void handleCreateAlreadyRsvpdViewingAppointments()
+                            return
+                          }
+                          void handleCreateSellerFirstViewingRequests()
+                        }
+                        const viewingPlannerFinalActionLabel = viewingPlannerConfirmPath === 'already_rsvpd' ? 'Create appointment' : 'Send RSVP request'
+                        const viewingPlannerWizardPrimaryDisabled = viewingPlannerWizardStepKey === 'properties'
+                          ? (!viewingPlanSelectedProperties.length || isLeadDetailSaving)
+                          : viewingPlannerWizardStepKey === 'date_time'
+                            ? (!viewingPlannerScheduleComplete || isLeadDetailSaving)
+                            : (viewingPlannerConfirmPath === 'viewing_request' && !viewingPlannerHasSellerRecipientForRequest) || !viewingPlannerScheduleComplete || isLeadDetailSaving
                         const viewingPlannerNextStageLabel = viewingPlannerActiveStepKey === 'request'
                           ? (viewingPlannerConfirmPath === 'viewing_request' ? 'Prepare seller RSVP' : 'Create confirmed appointment')
                           : viewingPlannerActiveStepKey === 'seller'
@@ -28016,6 +28174,329 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             </div>
 
+                            <section className="overflow-hidden rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="simplified-viewing-planner">
+                              <div className="grid gap-6 border-b border-[#edf3f8] p-5 lg:grid-cols-[minmax(220px,0.75fr)_minmax(320px,1.25fr)_minmax(240px,0.62fr)] lg:items-start">
+                                <div>
+                                  <h3 className="text-2xl font-semibold tracking-[-0.03em] text-[#07162d]">Viewing Planner</h3>
+                                  <p className="mt-2 text-sm leading-6 text-[#526a85]">Plan the viewing in 3 simple steps.</p>
+                                </div>
+                                <div className="grid gap-2 sm:grid-cols-3">
+                                  {viewingPlannerWizardSteps.map((step, index) => {
+                                    const isCurrent = index === viewingPlannerWizardStepIndex
+                                    const isComplete = index < viewingPlannerWizardStepIndex || (step.key === 'confirmation' && ['booked', 'seller_coordination'].includes(viewingPlanStatus))
+                                    const canNavigate = index < viewingPlannerWizardStepIndex
+                                    return (
+                                      <button
+                                        key={step.key}
+                                        type="button"
+                                        disabled={!canNavigate}
+                                        onClick={() => {
+                                          if (step.key === 'properties') setViewingPlanStatus('draft')
+                                          if (step.key === 'date_time') setViewingPlanStatus('buyer_availability')
+                                        }}
+                                        className={`relative flex min-h-[82px] flex-col items-center justify-center rounded-[14px] px-3 text-center transition ${canNavigate ? 'hover:bg-[#f7fbf9]' : ''}`}
+                                      >
+                                        {index > 0 ? <span className="absolute right-[calc(50%+22px)] top-[20px] hidden h-px w-[calc(100%-44px)] bg-[#b7c5d4] sm:block" aria-hidden="true" /> : null}
+                                        <span className={`relative z-10 grid h-10 w-10 place-items-center rounded-full border text-sm font-semibold ${isComplete || isCurrent ? 'border-[#157a4d] bg-[#157a4d] text-white shadow-[0_8px_18px_rgba(21,122,77,0.18)]' : 'border-[#cbd8e6] bg-white text-[#526a85]'}`}>
+                                          {isComplete && !isCurrent ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                                        </span>
+                                        <span className={`mt-2 text-sm font-semibold ${isComplete || isCurrent ? 'text-[#157a4d]' : 'text-[#102033]'}`}>{step.label}</span>
+                                        <span className="mt-1 text-xs text-[#526a85]">{step.meta}</span>
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                                <div className="flex items-center gap-3 rounded-[16px] border border-[#dce7f2] bg-[#fbfdff] px-4 py-3">
+                                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-[#102033] ring-1 ring-[#dce7f2]">
+                                    <UserRound className="h-5 w-5" />
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#526a85]">Buyer</p>
+                                    <p className="truncate text-sm font-semibold text-[#07162d]" title={selectedLeadDisplayName}>{selectedLeadDisplayName || 'Buyer'}</p>
+                                    <p className="truncate text-xs text-[#526a85]" title={viewingPlanBuyerEmail || undefined}>{viewingPlanBuyerEmail || 'Email pending'}</p>
+                                    {viewingPlannerBuyerPhone ? <p className="truncate text-xs text-[#526a85]">{viewingPlannerBuyerPhone}</p> : null}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="p-5 sm:p-6">
+                                {viewingPlannerWizardStepKey === 'properties' ? (
+                                  <div className="mx-auto max-w-[1280px]">
+                                    <div className="flex flex-wrap items-end justify-between gap-3">
+                                      <div>
+                                        <p className="text-sm font-semibold text-[#157a4d]">Step 1</p>
+                                        <h4 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[#07162d]">Select properties</h4>
+                                        <p className="mt-2 text-sm leading-6 text-[#526a85]">Choose the properties the buyer wants to view.</p>
+                                      </div>
+                                      <Button type="button" size="sm" variant="secondary" onClick={() => handleLeadWorkspaceTabSelection('properties')}>
+                                        <Plus className="h-4 w-4" />
+                                        Search another property
+                                      </Button>
+                                    </div>
+
+                                    {originalViewingPlanProperties.length ? (
+                                      <div className="mt-6">
+                                        <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#526a85]">Original enquiry</p>
+                                        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                          {originalViewingPlanProperties.map((property) => {
+                                            const propertyId = normalizeText(property?.id)
+                                            const isSelected = viewingPlanSelectedPropertyIds.includes(propertyId)
+                                            return (
+                                              <button
+                                                key={`original-viewing-${propertyId}`}
+                                                type="button"
+                                                className={`grid min-h-[132px] gap-4 rounded-[14px] border p-3 text-left transition sm:grid-cols-[150px_minmax(0,1fr)] ${isSelected ? 'border-[#157a4d] bg-[#f5fbf8] shadow-[0_10px_24px_rgba(21,122,77,0.08)]' : 'border-[#dce7f2] bg-white hover:border-[#b9d8c8]'}`}
+                                                onClick={() => handleToggleViewingPlanProperty(propertyId)}
+                                                aria-pressed={isSelected}
+                                              >
+                                                <span className="relative h-32 overflow-hidden rounded-[10px] bg-[#edf4fb] sm:h-full">
+                                                  <img src={property.image} alt={property.title} className="h-full w-full object-cover" />
+                                                  <span className={`absolute left-2 top-2 grid h-7 w-7 place-items-center rounded-[8px] border ${isSelected ? 'border-[#157a4d] bg-[#157a4d] text-white' : 'border-[#cbd8e6] bg-white text-[#9aa9b8]'}`}>
+                                                    {isSelected ? <CheckCircle2 className="h-4 w-4" /> : null}
+                                                  </span>
+                                                </span>
+                                                <span className="min-w-0 py-1">
+                                                  <span className="block truncate text-base font-semibold text-[#07162d]" title={property.title}>{property.title}</span>
+                                                  <span className="mt-1 block truncate text-sm text-[#526a85]" title={property.area}>{property.area || 'Area pending'}</span>
+                                                  <span className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-semibold text-[#526a85]">
+                                                    <span className="inline-flex items-center gap-1"><BedDouble className="h-4 w-4" />{property.bedrooms || '—'} Beds</span>
+                                                    <span className="inline-flex items-center gap-1"><Bath className="h-4 w-4" />{property.bathrooms || '—'} Baths</span>
+                                                    <span className="inline-flex items-center gap-1"><Car className="h-4 w-4" />{property.parking || '—'} Parking</span>
+                                                  </span>
+                                                  {property.price ? <span className="mt-3 block text-sm font-semibold text-[#07162d]">{property.price}</span> : null}
+                                                </span>
+                                              </button>
+                                            )
+                                          })}
+                                        </div>
+                                      </div>
+                                    ) : null}
+
+                                    <div className="mt-6">
+                                      <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#526a85]">Suggested matches</p>
+                                      {suggestedViewingPlanProperties.length ? (
+                                        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                          {suggestedViewingPlanProperties.map((property) => {
+                                            const propertyId = normalizeText(property?.id)
+                                            const isSelected = viewingPlanSelectedPropertyIds.includes(propertyId)
+                                            return (
+                                              <button
+                                                key={`suggested-viewing-${propertyId}`}
+                                                type="button"
+                                                className={`grid min-h-[116px] gap-3 rounded-[14px] border p-3 text-left transition sm:grid-cols-[128px_minmax(0,1fr)] ${isSelected ? 'border-[#157a4d] bg-[#f5fbf8]' : 'border-[#dce7f2] bg-white hover:border-[#b9d8c8]'}`}
+                                                onClick={() => handleToggleViewingPlanProperty(propertyId)}
+                                                aria-pressed={isSelected}
+                                              >
+                                                <span className="relative h-28 overflow-hidden rounded-[10px] bg-[#edf4fb] sm:h-full">
+                                                  <img src={property.image} alt={property.title} className="h-full w-full object-cover" />
+                                                  <span className={`absolute left-2 top-2 grid h-6 w-6 place-items-center rounded-[7px] border ${isSelected ? 'border-[#157a4d] bg-[#157a4d] text-white' : 'border-[#cbd8e6] bg-white text-[#9aa9b8]'}`}>
+                                                    {isSelected ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
+                                                  </span>
+                                                </span>
+                                                <span className="min-w-0">
+                                                  <span className="block truncate text-sm font-semibold text-[#07162d]" title={property.title}>{property.title}</span>
+                                                  <span className="mt-1 block truncate text-xs text-[#526a85]" title={property.area}>{property.area || 'Area pending'}</span>
+                                                  <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-[#526a85]">
+                                                    <span className="inline-flex items-center gap-1"><BedDouble className="h-3.5 w-3.5" />{property.bedrooms || '—'} Beds</span>
+                                                    <span className="inline-flex items-center gap-1"><Bath className="h-3.5 w-3.5" />{property.bathrooms || '—'} Baths</span>
+                                                    <span className="inline-flex items-center gap-1"><Car className="h-3.5 w-3.5" />{property.parking || '—'} Parking</span>
+                                                  </span>
+                                                  {property.price ? <span className="mt-2 block text-sm font-semibold text-[#07162d]">{property.price}</span> : null}
+                                                </span>
+                                              </button>
+                                            )
+                                          })}
+                                        </div>
+                                      ) : (
+                                        <div className="mt-3 rounded-[14px] border border-dashed border-[#d7e2ef] bg-[#fbfdff] px-4 py-6 text-sm text-[#526a85]">
+                                          No suggested matches are ready yet.
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : null}
+
+                                {viewingPlannerWizardStepKey === 'date_time' ? (
+                                  <div className="mx-auto max-w-[1120px]">
+                                    <div>
+                                      <p className="text-sm font-semibold text-[#157a4d]">Step 2</p>
+                                      <h4 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[#07162d]">Select date & time</h4>
+                                      <p className="mt-2 text-sm leading-6 text-[#526a85]">Choose the preferred date and time for each property.</p>
+                                    </div>
+                                    <label className="mt-6 grid max-w-[360px] gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#526a85]">
+                                      Select date
+                                      <Field
+                                        type="date"
+                                        value={viewingPlannerConfirmedAppointmentForm.date}
+                                        onChange={(event) => {
+                                          const nextDate = event.target.value
+                                          setViewingPlannerConfirmedAppointmentForm((previous) => ({ ...previous, date: nextDate }))
+                                          setViewingPlannerPropertyScheduleById((previous) => Object.fromEntries(Object.entries(previous).map(([propertyId, slot]) => [propertyId, { ...slot, date: nextDate }])))
+                                        }}
+                                      />
+                                    </label>
+                                    <div className="mt-6 space-y-3">
+                                      <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#526a85]">Viewing schedule</p>
+                                      {viewingPlannerScheduleRows.map((row, index) => {
+                                        const propertyId = normalizeText(row.property?.id)
+                                        return (
+                                          <article key={`schedule-${propertyId}`} className="grid gap-4 rounded-[16px] border border-[#dce7f2] bg-[#fbfdff] p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(360px,1.2fr)] lg:items-center">
+                                            <div className="flex min-w-0 items-center gap-3">
+                                              <img src={row.property.image} alt="" className="h-16 w-16 rounded-[12px] object-cover" />
+                                              <div className="min-w-0">
+                                                <p className="truncate text-base font-semibold text-[#07162d]" title={row.property.title}>{row.property.title}</p>
+                                                <p className="mt-1 truncate text-sm text-[#526a85]" title={row.property.area}>{row.property.area || 'Area pending'}</p>
+                                              </div>
+                                            </div>
+                                            <div className="grid gap-3 sm:grid-cols-3">
+                                              <label className="grid gap-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#526a85]">
+                                                Start time
+                                                <Field type="time" value={row.startTime} onChange={(event) => updateViewingPlannerPropertySchedule(propertyId, { startTime: event.target.value, date: row.date, durationMinutes: row.durationMinutes })} />
+                                              </label>
+                                              <label className="grid gap-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#526a85]">
+                                                Duration
+                                                <Field as="select" value={row.durationMinutes} onChange={(event) => updateViewingPlannerPropertySchedule(propertyId, { durationMinutes: Number(event.target.value) || 45, date: row.date, startTime: row.startTime })}>
+                                                  {[30, 45, 60, 90].map((minutes) => <option key={`duration-${propertyId}-${minutes}`} value={minutes}>{minutes} min</option>)}
+                                                </Field>
+                                              </label>
+                                              <label className="grid gap-1 text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#526a85]">
+                                                End time
+                                                <Field value={row.endTime} disabled readOnly />
+                                              </label>
+                                            </div>
+                                          </article>
+                                        )
+                                      })}
+                                    </div>
+                                    <button type="button" className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-[14px] border border-[#dce7f2] bg-white text-sm font-semibold text-[#20364c] transition hover:border-[#b9d8c8]" onClick={() => handleLeadWorkspaceTabSelection('properties')}>
+                                      <Plus className="h-4 w-4" />
+                                      Add another property
+                                    </button>
+                                  </div>
+                                ) : null}
+
+                                {viewingPlannerWizardStepKey === 'confirmation' ? (
+                                  <div className="mx-auto max-w-[920px]">
+                                    {viewingPlanStatus === 'booked' || viewingPlanStatus === 'seller_coordination' ? (
+                                      <div className="rounded-[18px] border border-[#cbe7d7] bg-[#f5fbf8] p-6 text-center">
+                                        <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#157a4d] text-white">
+                                          <CheckCircle2 className="h-6 w-6" />
+                                        </span>
+                                        <h4 className="mt-4 text-2xl font-semibold tracking-[-0.03em] text-[#07162d]">{viewingPlanStatus === 'booked' ? 'Viewing scheduled' : 'RSVP request sent'}</h4>
+                                        <p className="mx-auto mt-2 max-w-[520px] text-sm leading-6 text-[#526a85]">
+                                          {viewingPlanStatus === 'booked'
+                                            ? 'The appointment has been created and confirmations have been sent.'
+                                            : 'The seller has been asked to confirm the proposed viewing time.'}
+                                        </p>
+                                        <Button type="button" className="mt-5" variant="secondary" onClick={() => setViewingPlanStatus('draft')}>
+                                          Plan another viewing
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <div>
+                                          <p className="text-sm font-semibold text-[#157a4d]">Step 3</p>
+                                          <h4 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-[#07162d]">Confirm viewing</h4>
+                                          <p className="mt-2 text-sm leading-6 text-[#526a85]">Choose how this viewing should be handled.</p>
+                                        </div>
+                                        <div className="mt-6 grid gap-4 md:grid-cols-2">
+                                          {[
+                                            {
+                                              key: 'already_rsvpd',
+                                              title: 'Already confirmed',
+                                              detail: 'The viewing is already arranged with the seller.',
+                                              helper: 'Arch9 will create the appointment and send the confirmations.',
+                                              icon: CheckCircle2,
+                                            },
+                                            {
+                                              key: 'viewing_request',
+                                              title: 'Seller needs to RSVP',
+                                              detail: 'Send the proposed viewing date and time to the seller for confirmation.',
+                                              helper: 'Once accepted, Arch9 confirms the appointment with everyone.',
+                                              icon: Mail,
+                                            },
+                                          ].map((option) => {
+                                            const isSelected = viewingPlannerConfirmPath === option.key
+                                            return (
+                                              <button
+                                                key={option.key}
+                                                type="button"
+                                                className={`flex min-h-[132px] items-start gap-4 rounded-[16px] border p-5 text-left transition ${isSelected ? 'border-[#157a4d] bg-[#f5fbf8] shadow-[0_10px_26px_rgba(21,122,77,0.08)]' : 'border-[#dce7f2] bg-white hover:border-[#b9d8c8]'}`}
+                                                onClick={() => setViewingPlannerConfirmPath(option.key)}
+                                                aria-pressed={isSelected}
+                                              >
+                                                <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-full ${isSelected ? 'bg-[#157a4d] text-white' : 'bg-[#eef4f9] text-[#526a85]'}`}>
+                                                  {createElement(option.icon, { className: 'h-5 w-5' })}
+                                                </span>
+                                                <span>
+                                                  <span className="block text-base font-semibold text-[#07162d]">{option.title}</span>
+                                                  <span className="mt-2 block text-sm leading-6 text-[#526a85]">{option.detail}</span>
+                                                  <span className="mt-2 block text-sm leading-6 text-[#526a85]">{option.helper}</span>
+                                                </span>
+                                              </button>
+                                            )
+                                          })}
+                                        </div>
+                                        <div className="mt-5 rounded-[16px] border border-[#dce7f2] bg-white p-5">
+                                          <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#526a85]">Viewing summary</p>
+                                          <div className="mt-4 space-y-3">
+                                            {viewingPlannerScheduleRows.map((row) => (
+                                              <div key={`summary-${row.property?.id}`} className="grid gap-2 border-b border-[#edf3f8] pb-3 last:border-b-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_auto]">
+                                                <div className="min-w-0">
+                                                  <p className="truncate text-sm font-semibold text-[#07162d]" title={row.property?.title}>{row.property?.title || 'Viewing property'}</p>
+                                                  <p className="mt-1 truncate text-xs text-[#526a85]" title={row.property?.area}>{row.property?.area || 'Area pending'}</p>
+                                                </div>
+                                                <div className="text-sm font-semibold text-[#20364c]">
+                                                  {formatDate(row.date)} · {row.startTime} - {row.endTime} ({row.durationMinutes} min)
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                          <div className="mt-4 flex items-center gap-3 rounded-[14px] bg-[#fbfdff] px-3 py-3">
+                                            <span className="grid h-9 w-9 place-items-center rounded-full bg-[#e8f4ee] text-[#157a4d]">
+                                              <UserRound className="h-4 w-4" />
+                                            </span>
+                                            <div className="min-w-0">
+                                              <p className="text-xs font-semibold text-[#526a85]">Buyer</p>
+                                              <p className="truncate text-sm font-semibold text-[#07162d]">{selectedLeadDisplayName || 'Buyer'}</p>
+                                            </div>
+                                          </div>
+                                          {viewingPlannerConfirmPath === 'viewing_request' && !viewingPlannerHasSellerRecipientForRequest ? (
+                                            <p className="mt-3 rounded-[12px] border border-[#f0dfb7] bg-[#fffaf0] px-3 py-2 text-sm font-semibold text-[#8a5b13]">
+                                              Add a seller email on the selected property before sending the RSVP request.
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              {viewingPlanStatus !== 'booked' && viewingPlanStatus !== 'seller_coordination' ? (
+                                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf3f8] bg-[#fbfdff] px-5 py-4 sm:px-6">
+                                  <div className="text-sm font-semibold text-[#157a4d]">
+                                    {viewingPlannerWizardStepKey === 'properties' ? `${viewingPlanSelectedProperties.length} propert${viewingPlanSelectedProperties.length === 1 ? 'y' : 'ies'} selected` : null}
+                                    {viewingPlannerWizardStepKey === 'date_time' ? `${viewingPlannerScheduleRows.length} viewing${viewingPlannerScheduleRows.length === 1 ? '' : 's'} to schedule` : null}
+                                    {viewingPlannerWizardStepKey === 'confirmation' ? (viewingPlannerConfirmPath === 'already_rsvpd' ? 'Ready to create appointment' : 'Ready to request seller RSVP') : null}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {viewingPlannerWizardStepIndex > 0 ? (
+                                      <Button type="button" variant="secondary" onClick={handleViewingPlannerWizardBack}>
+                                        <ArrowLeft className="h-4 w-4" />
+                                        Back
+                                      </Button>
+                                    ) : null}
+                                    <Button type="button" disabled={viewingPlannerWizardPrimaryDisabled} onClick={handleViewingPlannerWizardPrimaryAction}>
+                                      {isLeadDetailSaving ? 'Saving...' : viewingPlannerWizardStepKey === 'confirmation' ? viewingPlannerFinalActionLabel : 'Continue'}
+                                      {viewingPlannerWizardStepKey === 'confirmation' ? <CalendarDays className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </section>
+
+                            {false ? (
                             <section className="rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5">
                               <div className="flex flex-wrap items-start justify-between gap-4">
 	                                <div className="min-w-[220px]">
@@ -28557,6 +29038,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 </div>
                               </div>
                             </section>
+                            ) : null}
 
                             {showLegacyViewingPlanWorkspace ? (
                               <>
