@@ -10,6 +10,10 @@ import {
   buildSellerViewingAvailabilityRequestEmailHtml,
   buildSellerViewingAvailabilityRequestEmailText,
 } from "./sellerViewingAvailabilityRequest.ts";
+import {
+  buildKingstonsValuationDownloadEmailHtml,
+  buildKingstonsValuationDownloadEmailText,
+} from "./kingstonsValuationDownload.ts";
 import { buildOnboardingEmailHtml } from "./onboarding.ts";
 import {
   buildReservationDepositEmailHtml,
@@ -173,7 +177,10 @@ Deno.test("appointment template renders the Kingstons valuation invite experienc
     actionLink: "https://app.example.test/appointment-rsvp/token-123",
     acceptLink: "https://app.example.test/accept",
     rescheduleLink: "https://app.example.test/reschedule",
-    branding,
+    branding: {
+      ...branding,
+      logoDarkUrl: "https://cdn.example.test/kingstons-dark-header.png",
+    },
   });
   const text = buildAppointmentEmailText({
     eventType: "appointment_confirmation_required",
@@ -192,11 +199,19 @@ Deno.test("appointment template renders the Kingstons valuation invite experienc
   });
 
   assertIncludes(html, "Kingstons Valuation Request");
+  assertIncludes(html, "https://cdn.example.test/kingstons-dark-header.png");
   assertIncludes(html, "Your valuation appointment is ready for confirmation.");
   assertIncludes(html, "Confirm appointment");
   assertIncludes(html, "Property valuation");
   assertIncludes(html, "Valuation prepared");
   assertIncludes(html, "Before we meet");
+  assertIncludes(html, "Your property professional");
+  assertIncludes(html, "📅");
+  assertIncludes(html, "◷");
+  assertIncludes(html, "⌖");
+  assertNotIncludes(html, ">CAL<");
+  assertNotIncludes(html, ">TIME<");
+  assertNotIncludes(html, ">PIN<");
   assertIncludes(
     html,
     "Specialist in residential sales across the local market.",
@@ -249,7 +264,10 @@ Deno.test("appointment template renders the Kingstons valuation presentation inv
   });
 
   assertIncludes(html, "Kingstons Valuation Presentation Request");
-  assertIncludes(html, "Your valuation presentation is ready for confirmation.");
+  assertIncludes(
+    html,
+    "Your valuation presentation is ready for confirmation.",
+  );
   assertIncludes(html, "Confirm presentation");
   assertIncludes(html, "Review the valuation");
   assertIncludes(html, "Seller pack next steps");
@@ -259,6 +277,49 @@ Deno.test("appointment template renders the Kingstons valuation presentation inv
     text,
     "RSVP to this time: https://app.example.test/appointment-rsvp/token-456",
   );
+});
+
+Deno.test("Kingstons valuation download email renders direct-download experience", () => {
+  const html = buildKingstonsValuationDownloadEmailHtml({
+    recipientName: "Alexander Landman",
+    propertyLabel: "19 Aspen Creek, Benoni North AH",
+    agentName: "Alexander Landman",
+    agentRole: "Agent",
+    valuationDownloadUrl:
+      "https://storage.example.test/signed-valuation.pdf?download=valuation.pdf",
+    valuationFileName: "valuation.pdf",
+    organisationName: branding.organisationName,
+    branding: {
+      ...branding,
+      logoDarkUrl: "https://cdn.example.test/kingstons-dark-header.png",
+    },
+  });
+  const text = buildKingstonsValuationDownloadEmailText({
+    recipientName: "Alexander Landman",
+    propertyLabel: "19 Aspen Creek, Benoni North AH",
+    agentName: "Alexander Landman",
+    valuationDownloadUrl:
+      "https://storage.example.test/signed-valuation.pdf?download=valuation.pdf",
+    organisationName: branding.organisationName,
+  });
+
+  assertIncludes(html, "Your valuation is ready");
+  assertIncludes(html, "https://cdn.example.test/kingstons-dark-header.png");
+  assertIncludes(html, "Download valuation");
+  assertIncludes(html, "Public download link &middot; no sign-in needed");
+  assertIncludes(html, "How Kingstons helps from here");
+  assertIncludes(html, "Market exposure");
+  assertIncludes(html, "internal buyer database");
+  assertIncludes(html, "Smart process");
+  assertIncludes(html, "Human guidance");
+  assertIncludes(html, "What to do next");
+  assertNotIncludes(html, "sign in");
+  assertNotIncludes(html, "portal");
+  assertIncludes(
+    text,
+    "Download valuation: https://storage.example.test/signed-valuation.pdf?download=valuation.pdf",
+  );
+  assertIncludes(text, "Public download link - no sign-in needed.");
 });
 
 Deno.test("appointment template preserves notes and branded plain-text support", () => {

@@ -79,7 +79,7 @@ function isValuationAppointment(
 
 function isValuationPresentation(
   appointmentType?: string,
-  appointmentTitle?: string,
+  _appointmentTitle?: string,
 ) {
   return normalizeAppointmentTypeKey(appointmentType) ===
     "valuation_presentation";
@@ -103,15 +103,13 @@ function isKingstonsValuationTheme({
   emailTemplateKey?: string;
 }) {
   const eventSupported = [
-      "appointment_scheduled",
-      "appointment_confirmed",
-      "appointment_confirmation_required",
-    ].includes(eventType);
-  const explicitKingstonsTheme =
-    isKingstonsValuationThemeKey(emailTheme) ||
+    "appointment_scheduled",
+    "appointment_confirmed",
+    "appointment_confirmation_required",
+  ].includes(eventType);
+  const explicitKingstonsTheme = isKingstonsValuationThemeKey(emailTheme) ||
     isKingstonsValuationThemeKey(emailTemplateKey);
-  const kingstonsSellerTheme =
-    isKingstonsOrganisation(organisationName) &&
+  const kingstonsSellerTheme = isKingstonsOrganisation(organisationName) &&
     (!participantRole || isSellerParticipant(participantRole));
   return eventSupported &&
     isValuationAppointment(appointmentType, appointmentTitle) &&
@@ -254,11 +252,11 @@ function buildKingstonsDisplayTitle({
   return `Kingstons ${label} Request`;
 }
 
-function getBrandLogoUrl(branding?: BridgeEmailLayoutBranding) {
+function getHeaderBrandLogoUrl(branding?: BridgeEmailLayoutBranding) {
   return pickText(
     branding?.logoDarkUrl ||
-      branding?.logoLightUrl ||
       branding?.logoUrl ||
+      branding?.logoLightUrl ||
       branding?.logoIconUrl,
     "",
   );
@@ -273,35 +271,38 @@ function getInitials(value?: string) {
     .join("") || "A";
 }
 
-function renderKingstonsIcon(label: string, primaryColor: string) {
-  return `<td width="54" valign="top" style="padding: 0 14px 18px 0;">
-    <div style="width: 44px; height: 44px; border-radius: 12px; background: #f7f2ec; border: 1px solid #efe5d8; color: ${primaryColor}; font-size: 12px; line-height: 44px; text-align: center; font-weight: 800; letter-spacing: 0.02em;">${escapeHtml(label)}</div>
+function renderKingstonsIcon(symbol: string, primaryColor: string) {
+  return `<td width="48" valign="top" style="padding: 0 14px 16px 0;">
+    <div style="width: 38px; height: 38px; border-radius: 12px; background: #f7f2ec; border: 1px solid #efe5d8; color: ${primaryColor}; font-size: 18px; line-height: 38px; text-align: center; font-weight: 700;">${
+    escapeHtml(symbol)
+  }</div>
   </td>`;
 }
 
 function renderKingstonsTimelineStep({
-  number,
   icon,
   title,
   body,
   primaryColor,
 }: {
-  number: string;
   icon: string;
   title: string;
   body: string;
   primaryColor: string;
 }) {
   return `<tr>
-    <td width="50" valign="top" style="padding: 0;">
-      <div style="width: 28px; height: 28px; border-radius: 50%; background: #032a28; color: #ffffff; font-size: 13px; line-height: 28px; text-align: center; font-weight: 800;">${escapeHtml(number)}</div>
+    <td width="58" valign="top" style="padding: 0 18px 20px 0;">
+      <div style="width: 44px; height: 44px; border-radius: 16px; background: #f7f2ec; border: 1px solid #efe5d8; color: ${primaryColor}; font-size: 20px; line-height: 44px; text-align: center; font-weight: 700;">${
+    escapeHtml(icon)
+  }</div>
     </td>
-    <td width="76" valign="top" style="padding: 0 14px 18px 0;">
-      <div style="width: 56px; height: 56px; border-radius: 50%; background: #f7f2ec; color: ${primaryColor}; font-size: 15px; line-height: 56px; text-align: center; font-weight: 800;">${escapeHtml(icon)}</div>
-    </td>
-    <td valign="top" style="padding: 0 0 18px; border-bottom: 1px solid #e7e7e7;">
-      <p style="margin: 0 0 4px; color: #111827; font-size: 16px; line-height: 1.35; font-weight: 800;">${escapeHtml(title)}</p>
-      <p style="margin: 0; color: #263241; font-size: 14px; line-height: 1.45;">${escapeHtml(body)}</p>
+    <td valign="top" style="padding: 0 0 20px; border-bottom: 1px solid #e7e7e7;">
+      <p style="margin: 0 0 5px; color: #111827; font-size: 15px; line-height: 1.35; font-weight: 750;">${
+    escapeHtml(title)
+  }</p>
+      <p style="margin: 0; color: #394555; font-size: 14px; line-height: 1.55; font-weight: 400;">${
+    escapeHtml(body)
+  }</p>
     </td>
   </tr>`;
 }
@@ -310,46 +311,52 @@ function buildKingstonsNextSteps(isPresentation?: boolean) {
   return isPresentation
     ? [
       {
-        icon: "CAL",
+        icon: "✓",
         title: "Confirm your presentation",
         body: "Let us know whether the proposed date and time works for you.",
       },
       {
-        icon: "VAL",
+        icon: "◇",
         title: "Review the valuation",
-        body: "Your agent will walk you through the formal valuation and market context.",
+        body:
+          "Your agent will walk you through the formal valuation and market context.",
       },
       {
-        icon: "PLAN",
+        icon: "→",
         title: "Discuss the strategy",
-        body: "We will talk through pricing, positioning, launch timing, and buyer response.",
+        body:
+          "We will talk through pricing, positioning, launch timing, and buyer response.",
       },
       {
-        icon: "NEXT",
+        icon: "•",
         title: "Seller pack next steps",
-        body: "Your agent will guide you through the documents and listing readiness items.",
+        body:
+          "Your agent will guide you through the documents and listing readiness items.",
       },
     ]
     : [
       {
-        icon: "CAL",
+        icon: "✓",
         title: "Confirm your appointment",
         body: "Let us know whether the proposed date and time works for you.",
       },
       {
-        icon: "HOME",
+        icon: "⌂",
         title: "Property valuation",
-        body: "Your agent will meet you at the property and assess everything required.",
+        body:
+          "Your agent will meet you at the property and assess everything required.",
       },
       {
-        icon: "DOC",
+        icon: "□",
         title: "Valuation prepared",
-        body: "Your agent reviews the property and relevant market information.",
+        body:
+          "Your agent reviews the property and relevant market information.",
       },
       {
-        icon: "NEXT",
+        icon: "→",
         title: "Review and next steps",
-        body: "Your agent will present the valuation and discuss what happens from here.",
+        body:
+          "Your agent will present the valuation and discuss what happens from here.",
       },
     ];
 }
@@ -397,12 +404,18 @@ function renderKingstonsAppointmentEmail({
 }) {
   const primaryColor = normalizeBrandColor(branding?.primaryColor, "#052b2b");
   const goldColor = normalizeBrandColor(branding?.secondaryColor, "#d49a18");
-  const logoUrl = getBrandLogoUrl(branding);
+  const logoUrl = getHeaderBrandLogoUrl(branding);
   const safeLogo = logoUrl ? escapeHtml(logoUrl) : "";
-  const displayTitle = buildKingstonsDisplayTitle({ eventType, isPresentation });
+  const displayTitle = buildKingstonsDisplayTitle({
+    eventType,
+    isPresentation,
+  });
   const displayDate = formatKingstonsDisplayDate(appointmentDate);
   const displayTime = formatKingstonsTime(appointmentTime);
-  const displayLocation = pickText(meetingUrl || location || relatedListing, "To be confirmed");
+  const displayLocation = pickText(
+    meetingUrl || location || relatedListing,
+    "To be confirmed",
+  );
   const resolvedAgentName = pickText(agentName, "Your property professional");
   const resolvedAgentRole = pickText(agentRole, "Property Practitioner");
   const resolvedOrganisationName = pickText(organisationName, "Kingstons");
@@ -430,77 +443,120 @@ function renderKingstonsAppointmentEmail({
   const hiddenPreheader = `${displayTitle} for ${typeLabel}`;
   const agentInitials = getInitials(resolvedAgentName);
 
-  return `<div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent;">${escapeHtml(hiddenPreheader)}</div>
+  return `<div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent;">${
+    escapeHtml(hiddenPreheader)
+  }</div>
   <div style="margin: 0; padding: 18px 12px 32px; background: #f5f5f3;">
     <div style="max-width: 640px; margin: 0 auto; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #0f172a;">
       <div style="border-radius: 10px 10px 0 0; overflow: hidden; background: ${primaryColor};">
-        <div style="min-height: 280px; padding: 24px 36px 42px; background: radial-gradient(circle at 84% 44%, rgba(255,255,255,0.10) 0, rgba(255,255,255,0.04) 22%, rgba(255,255,255,0) 42%), linear-gradient(135deg, #001f20 0%, ${primaryColor} 54%, #031414 100%);">
-          <div style="text-align: center; margin: 0 0 34px;">
-            ${safeLogo ? `<img src="${safeLogo}" alt="${escapeHtml(resolvedOrganisationName)}" style="display: inline-block; max-height: 64px; max-width: 250px; width: auto; height: auto; border: 0;" />` : `<div style="display: inline-block; color: #ffffff; font-size: 22px; line-height: 1.1; font-weight: 900; letter-spacing: 0.12em;">${escapeHtml(resolvedOrganisationName)}</div>`}
+        <div style="min-height: 248px; padding: 26px 34px 38px; background: radial-gradient(circle at 84% 44%, rgba(255,255,255,0.10) 0, rgba(255,255,255,0.04) 22%, rgba(255,255,255,0) 42%), linear-gradient(135deg, #001f20 0%, ${primaryColor} 54%, #031414 100%);">
+          <div style="text-align: center; margin: 0 0 30px;">
+            ${
+    safeLogo
+      ? `<img src="${safeLogo}" alt="${
+        escapeHtml(resolvedOrganisationName)
+      }" style="display: inline-block; max-height: 52px; max-width: 220px; width: auto; height: auto; border: 0; object-fit: contain;" />`
+      : ""
+  }
           </div>
-          <div style="max-width: 330px;">
-            <h1 style="margin: 0; color: #ffffff; font-size: 36px; line-height: 1.05; font-weight: 900; letter-spacing: 0;">${escapeHtml(displayTitle)}</h1>
-            <div style="width: 78px; height: 4px; background: ${goldColor}; margin: 24px 0 22px;"></div>
-            <p style="margin: 0 0 10px; color: #ffffff; font-size: 18px; line-height: 1.35; font-weight: 800;">Hi ${escapeHtml(pickText(recipientName, "there"))},</p>
-            <p style="margin: 0; color: #ffffff; font-size: 16px; line-height: 1.55; font-weight: 500;">${escapeHtml(intro)}</p>
+          <div style="max-width: 390px;">
+            <h1 style="margin: 0; color: #ffffff; font-size: 30px; line-height: 1.16; font-weight: 750; letter-spacing: 0;">${
+    escapeHtml(displayTitle)
+  }</h1>
+            <div style="width: 68px; height: 3px; background: ${goldColor}; margin: 22px 0 20px;"></div>
+            <p style="margin: 0 0 8px; color: #ffffff; font-size: 16px; line-height: 1.4; font-weight: 650;">Hi ${
+    escapeHtml(pickText(recipientName, "there"))
+  },</p>
+            <p style="margin: 0; color: rgba(255,255,255,0.92); font-size: 15px; line-height: 1.6; font-weight: 400;">${
+    escapeHtml(intro)
+  }</p>
           </div>
         </div>
       </div>
 
       <div style="background: #ffffff; padding: 0 28px 28px;">
-        <div style="margin: -34px 0 22px; padding: 32px 42px 28px; background: #ffffff; border: 1px solid #e9e2d8; border-radius: 14px; box-shadow: 0 18px 38px rgba(15, 23, 42, 0.14);">
+        <div style="margin: -34px 0 22px; padding: 30px 38px 26px; background: #ffffff; border: 1px solid #e9e2d8; border-radius: 14px; box-shadow: 0 18px 38px rgba(15, 23, 42, 0.14);">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
             <tr>
-              ${renderKingstonsIcon("CAL", goldColor)}
-              <td valign="top" style="padding: 0 0 18px; border-bottom: 1px solid #e7e7e7;">
-                <p style="margin: 0 0 8px; color: #53616f; font-size: 13px; line-height: 1.2; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase;">Your appointment</p>
-                <p style="margin: 0; color: #060915; font-size: 28px; line-height: 1.2; font-weight: 900;">${escapeHtml(displayDate)}</p>
+              ${renderKingstonsIcon("📅", goldColor)}
+              <td valign="top" style="padding: 0 0 16px; border-bottom: 1px solid #e7e7e7;">
+                <p style="margin: 0 0 7px; color: #657180; font-size: 12px; line-height: 1.2; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase;">Your appointment</p>
+                <p style="margin: 0; color: #060915; font-size: 24px; line-height: 1.24; font-weight: 750;">${
+    escapeHtml(displayDate)
+  }</p>
               </td>
             </tr>
             <tr>
-              ${renderKingstonsIcon("TIME", goldColor)}
-              <td valign="top" style="padding: 0 0 18px; border-bottom: 1px solid #e7e7e7;">
-                <p style="margin: 0; color: #060915; font-size: 28px; line-height: 44px; font-weight: 900;">${escapeHtml(displayTime)}</p>
+              ${renderKingstonsIcon("◷", goldColor)}
+              <td valign="top" style="padding: 0 0 16px; border-bottom: 1px solid #e7e7e7;">
+                <p style="margin: 0; color: #060915; font-size: 24px; line-height: 38px; font-weight: 750;">${
+    escapeHtml(displayTime)
+  }</p>
               </td>
             </tr>
             <tr>
-              ${renderKingstonsIcon("PIN", goldColor)}
+              ${renderKingstonsIcon("⌖", goldColor)}
               <td valign="top" style="padding: 0 0 16px;">
-                <p style="margin: 0 0 14px; color: #060915; font-size: 25px; line-height: 1.18; font-weight: 900;">${escapeHtml(displayLocation)}</p>
-                <span style="display: inline-block; padding: 7px 12px; border-radius: 999px; background: #eef0ee; color: #2f3741; font-size: 12px; line-height: 1.2; font-weight: 700;">${escapeHtml(typeLabel)}</span>
+                <p style="margin: 0 0 14px; color: #060915; font-size: 22px; line-height: 1.24; font-weight: 750;">${
+    escapeHtml(displayLocation)
+  }</p>
+                <span style="display: inline-block; padding: 7px 12px; border-radius: 999px; background: #eef0ee; color: #2f3741; font-size: 12px; line-height: 1.2; font-weight: 650;">${
+    escapeHtml(typeLabel)
+  }</span>
               </td>
             </tr>
           </table>
-          ${actionLink ? `<a href="${safeActionLink}" style="display: block; margin: 22px 0 16px; padding: 18px 24px; border-radius: 8px; background: linear-gradient(135deg, ${goldColor} 0%, #e2a821 50%, #c9840f 100%); color: #ffffff; font-size: 20px; line-height: 1.2; font-weight: 900; text-align: center; text-decoration: none;">${escapeHtml(confirmLabel)}</a>` : ""}
-          ${rescheduleLink || actionLink ? `<p style="margin: 0; text-align: center;"><a href="${safeRescheduleLink}" style="color: #161616; font-size: 15px; line-height: 1.4; font-weight: 800; text-decoration: underline;">Request another time</a></p>` : ""}
+          ${
+    actionLink
+      ? `<a href="${safeActionLink}" style="display: block; margin: 22px 0 16px; padding: 16px 24px; border-radius: 8px; background: linear-gradient(135deg, ${goldColor} 0%, #e2a821 50%, #c9840f 100%); color: #ffffff; font-size: 18px; line-height: 1.2; font-weight: 750; text-align: center; text-decoration: none;">${
+        escapeHtml(confirmLabel)
+      }</a>`
+      : ""
+  }
+          ${
+    rescheduleLink || actionLink
+      ? `<p style="margin: 0; text-align: center;"><a href="${safeRescheduleLink}" style="color: #161616; font-size: 14px; line-height: 1.4; font-weight: 650; text-decoration: underline;">Request another time</a></p>`
+      : ""
+  }
         </div>
 
-        <div style="margin: 0 0 18px; padding: 22px 24px; background: linear-gradient(90deg, #f4f8f5 0%, #eef5f2 100%); border: 1px solid #eef1ec; border-radius: 12px;">
+        <div style="margin: 0 0 18px; padding: 26px 30px; background: linear-gradient(90deg, #f4f8f5 0%, #eef5f2 100%); border: 1px solid #eef1ec; border-radius: 12px; text-align: center;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
             <tr>
-              <td width="110" valign="middle" style="padding: 0 22px 0 0;">
-                <div style="width: 94px; height: 94px; border-radius: 50%; background: ${primaryColor}; color: #ffffff; font-size: 28px; line-height: 94px; text-align: center; font-weight: 900;">${escapeHtml(agentInitials)}</div>
-              </td>
-              <td valign="middle">
-                <p style="margin: 0 0 8px; color: #00614f; font-size: 13px; line-height: 1.2; font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em;">Your property professional</p>
-                <p style="margin: 0 0 4px; color: #050812; font-size: 25px; line-height: 1.15; font-weight: 900;">${escapeHtml(resolvedAgentName)}</p>
-                <p style="margin: 0 0 10px; color: #17202c; font-size: 15px; line-height: 1.35;">${escapeHtml(resolvedAgentRole)} <span style="color: #8b919a; padding: 0 8px;">-</span> ${escapeHtml(resolvedOrganisationName)}</p>
-                <p style="margin: 0; color: #101827; font-size: 15px; line-height: 1.42;">${escapeHtml(resolvedAgentBio)}</p>
+              <td valign="top" style="padding: 0;">
+                <p style="margin: 0 0 10px; color: #00614f; font-size: 12px; line-height: 1.3; font-weight: 750; text-transform: uppercase; letter-spacing: 0.08em;">Your property professional</p>
+                <div style="width: 92px; height: 92px; border-radius: 50%; background: ${primaryColor}; color: #ffffff; font-size: 26px; line-height: 92px; text-align: center; font-weight: 750; margin: 0 auto 16px;">${
+    escapeHtml(agentInitials)
+  }</div>
+                <p style="margin: 0 0 6px; color: #050812; font-size: 23px; line-height: 1.16; font-weight: 750;">${
+    escapeHtml(resolvedAgentName)
+  }</p>
+                <p style="margin: 0 0 14px; color: #394555; font-size: 14px; line-height: 1.45;">${
+    escapeHtml(resolvedAgentRole)
+  } <span style="color: #9aa2ad; padding: 0 8px;">|</span> ${
+    escapeHtml(resolvedOrganisationName)
+  }</p>
+                <p style="margin: 0 auto; max-width: 360px; color: #263241; font-size: 14px; line-height: 1.6; font-weight: 400;">${
+    escapeHtml(resolvedAgentBio)
+  }</p>
               </td>
             </tr>
           </table>
         </div>
 
-        <div style="margin: 0 0 18px; padding: 26px 26px 10px; background: #ffffff; border-radius: 12px; border: 1px solid #f0f0ef;">
-          <p style="margin: 0 0 24px; color: #005e4e; font-size: 18px; line-height: 1.2; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase;">What happens next</p>
+        <div style="margin: 0 0 18px; padding: 26px 30px 10px; background: #ffffff; border-radius: 12px; border: 1px solid #f0f0ef;">
+          <p style="margin: 0 0 24px; color: #005e4e; font-size: 17px; line-height: 1.2; font-weight: 750; letter-spacing: 0.06em; text-transform: uppercase;">What happens next</p>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
-            ${steps.map((step, index) => renderKingstonsTimelineStep({
-              number: String(index + 1).padStart(2, "0"),
-              icon: step.icon,
-              title: step.title,
-              body: step.body,
-              primaryColor: goldColor,
-            })).join("")}
+            ${
+    steps.map((step) =>
+      renderKingstonsTimelineStep({
+        icon: step.icon,
+        title: step.title,
+        body: step.body,
+        primaryColor: goldColor,
+      })
+    ).join("")
+  }
           </table>
         </div>
 
@@ -510,7 +566,9 @@ function renderKingstonsAppointmentEmail({
               <td width="72" valign="top"><div style="width: 48px; height: 48px; border-radius: 10px; background: #fff3d6; color: ${goldColor}; font-size: 12px; line-height: 48px; text-align: center; font-weight: 900;">NOTE</div></td>
               <td valign="top">
                 <p style="margin: 0 0 8px; color: ${goldColor}; font-size: 18px; line-height: 1.2; font-weight: 900; text-transform: uppercase;">Before we meet</p>
-                <p style="margin: 0; color: #141922; font-size: 15px; line-height: 1.5;">${escapeHtml(notesText)}</p>
+                <p style="margin: 0; color: #141922; font-size: 15px; line-height: 1.5;">${
+    escapeHtml(notesText)
+  }</p>
               </td>
             </tr>
           </table>
@@ -522,7 +580,9 @@ function renderKingstonsAppointmentEmail({
               <td width="72" valign="middle"><div style="width: 48px; height: 48px; border-radius: 10px; background: #dff0ea; color: #00614f; font-size: 24px; line-height: 48px; text-align: center; font-weight: 900;">?</div></td>
               <td valign="middle">
                 <p style="margin: 0 0 4px; color: #0a121d; font-size: 18px; line-height: 1.25; font-weight: 900;">Need help?</p>
-                <p style="margin: 0; color: #182333; font-size: 15px; line-height: 1.45;">Simply reply to this email and ${escapeHtml(resolvedAgentName)} will be able to assist.</p>
+                <p style="margin: 0; color: #182333; font-size: 15px; line-height: 1.45;">Simply reply to this email and ${
+    escapeHtml(resolvedAgentName)
+  } will be able to assist.</p>
               </td>
             </tr>
           </table>
@@ -533,8 +593,16 @@ function renderKingstonsAppointmentEmail({
             <tr>
               <td valign="top" style="padding-right: 18px;">
                 <p style="margin: 0 0 4px; color: #111827; font-size: 13px; line-height: 1.3; font-weight: 900;">Your information is secure</p>
-                <p style="margin: 0; color: #263241; font-size: 12px; line-height: 1.45;">Arch9 securely manages your appointment information on behalf of ${escapeHtml(resolvedOrganisationName)}.</p>
-                ${supportEmail || supportPhone ? `<p style="margin: 10px 0 0; color: #4b5563; font-size: 12px; line-height: 1.45;">${escapeHtml([supportEmail, supportPhone].filter(Boolean).join(" - "))}</p>` : ""}
+                <p style="margin: 0; color: #263241; font-size: 12px; line-height: 1.45;">Arch9 securely manages your appointment information on behalf of ${
+    escapeHtml(resolvedOrganisationName)
+  }.</p>
+                ${
+    supportEmail || supportPhone
+      ? `<p style="margin: 10px 0 0; color: #4b5563; font-size: 12px; line-height: 1.45;">${
+        escapeHtml([supportEmail, supportPhone].filter(Boolean).join(" - "))
+      }</p>`
+      : ""
+  }
               </td>
               <td width="116" valign="top" align="right">
                 <p style="margin: 0 0 4px; color: #4b5563; font-size: 12px; line-height: 1.2;">Powered by</p>
@@ -744,7 +812,10 @@ export function buildAppointmentEmailHtml({
     organisationName: resolvedOrganisationName,
   });
   const sellerRecipient = isSellerParticipant(participantRole);
-  const isKingstonsValuationPresentation = isValuationPresentation(appointmentType, appointmentTitle);
+  const isKingstonsValuationPresentation = isValuationPresentation(
+    appointmentType,
+    appointmentTitle,
+  );
   const isKingstonsValuationInvite = isKingstonsValuationTheme({
     eventType,
     appointmentType,
@@ -992,7 +1063,10 @@ export function buildAppointmentEmailText({
     organisationName: resolvedOrganisationName,
   });
   const sellerRecipient = isSellerParticipant(participantRole);
-  const isKingstonsValuationPresentation = isValuationPresentation(appointmentType, appointmentTitle);
+  const isKingstonsValuationPresentation = isValuationPresentation(
+    appointmentType,
+    appointmentTitle,
+  );
   const isKingstonsValuationInvite = isKingstonsValuationTheme({
     eventType,
     appointmentType,

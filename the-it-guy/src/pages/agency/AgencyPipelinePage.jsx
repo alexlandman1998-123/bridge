@@ -95,6 +95,7 @@ import { buildSellerProcessWorkspacePanelModel } from '../../services/sellerProc
 import { resolveLeadNextStep } from '../../services/leadNextActionService'
 import { buildAppointmentSaveFeedback } from '../../services/appointmentSaveFeedbackService'
 import { notifyAppointmentParticipants } from '../../services/appointmentNotificationService'
+import { sendKingstonsValuationDownloadEmailForPresentation } from '../../services/kingstonsValuationDownloadEmailService'
 import { normalizeLeadLifecycleStageKey, resolveLeadLifecyclePresentation } from '../../services/leadLifecyclePresentationService'
 import {
   BUYER_PROCESS_STAGE_KEYS,
@@ -19778,6 +19779,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       appointmentPayload.organisationName = normalizeText(appointmentPayload.organisationName) || 'Kingstons Real Estate'
     }
     setAppointmentSchedulingSubmitting(true)
+    let valuationDownloadEmailResult = null
     try {
       if (linkedLead && resolveLeadCategoryView(linkedLead) !== 'seller') {
         const linkedContact =
@@ -19894,6 +19896,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             console.warn('[AgencyPipelinePage] Kingstons valuation appointment activity could not be recorded.', activityError)
 	          })
 	        }
+        if (isKingstonsValuationPresentation) {
+          try {
+            const valuationPresentationLead = selectedLead || linkedLead
+            valuationDownloadEmailResult = await sendKingstonsValuationDownloadEmailForPresentation({
+              appointment: {
+                ...created,
+                ...appointmentPayload,
+                appointmentId: createdAppointmentId,
+              },
+              documentRow: buildKingstonsFormalValuationDocumentRow(valuationPresentationLead),
+              participants: participantSeed,
+              lead: valuationPresentationLead,
+              recipientEmail: explicitRecipientEmail || linkedLeadEmail,
+              recipientName: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || valuationPresentationLead?.name,
+              propertyLabel: appointmentPayload.location || selectedLeadPropertyLabel || resolveAppointmentListingLabel(appointmentPayload.listingId),
+              agent: currentAgent,
+              organisationId,
+              organisationName,
+              branding: appointmentEmailBranding,
+            })
+          } catch (downloadEmailError) {
+            valuationDownloadEmailResult = {
+              status: 'failed',
+              reason: downloadEmailError?.message || 'valuation_download_email_failed',
+            }
+            console.warn('[AgencyPipelinePage] Kingstons valuation download email could not be sent.', downloadEmailError)
+          }
+        }
 	      }
 	      if (
 	        linkedLead &&
@@ -20002,13 +20032,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setAppointmentSchedulingIntegrity(created?.schedulingIntegrity || null)
       setAppointmentSchedulingError('')
       setError('')
-      setMessage(summarizeAppointmentInviteDelivery(created, {
+      const appointmentSaveMessage = summarizeAppointmentInviteDelivery(created, {
         actionLabel: 'Appointment saved',
         requestedInvite: appointmentPayload.sendInviteEmails !== false,
         attachCalendarInvite: appointmentPayload.attachCalendarInvite !== false,
         participants: participantSeed,
         recipientEmail: explicitRecipientEmail,
-      }))
+      })
+      const valuationDownloadMessage = valuationDownloadEmailResult?.status === 'sent'
+        ? ' Valuation download email sent.'
+        : valuationDownloadEmailResult?.status === 'skipped' && valuationDownloadEmailResult?.reason === 'missing_valuation_download_url'
+          ? ' Valuation download email skipped because the formal valuation has not been uploaded yet.'
+          : valuationDownloadEmailResult?.status === 'failed'
+            ? ' Valuation presentation saved, but the valuation download email could not be sent.'
+            : ''
+      setMessage(`${appointmentSaveMessage}${valuationDownloadMessage}`)
       setAppointmentModalOpen(false)
       if (createdAppointmentId) {
         setSelectedAppointmentId(createdAppointmentId)

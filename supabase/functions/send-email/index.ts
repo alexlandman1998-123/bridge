@@ -13,6 +13,7 @@ import { handleLeadPropertyShareEmail } from "./handlers/leadPropertyShare.ts";
 import { handleBuyerViewingAvailabilityRequestEmail } from "./handlers/viewingAvailabilityRequest.ts";
 import { handleSellerViewingAvailabilityRequestEmail } from "./handlers/sellerViewingAvailabilityRequest.ts";
 import { handleLeadAcknowledgementEmail } from "./handlers/leadAcknowledgement.ts";
+import { handleKingstonsValuationDownloadEmail } from "./handlers/kingstonsValuationDownload.ts";
 import { handleLeadOperationsNotificationEmail } from "./handlers/leadOperationsNotification.ts";
 import { handleAdditionalDocumentRequestEmail } from "./handlers/additionalDocumentRequest.ts";
 import {
@@ -58,6 +59,7 @@ import type {
   SendCommercialAccessNotificationPayload,
   SendCommercialEnterpriseNotificationPayload,
   SendCommercialLandlordOnboardingPayload,
+  SendKingstonsValuationDownloadPayload,
   SendLeadAcknowledgementPayload,
   SendLeadOperationsNotificationPayload,
   SendLeadPropertySharePayload,
@@ -286,6 +288,25 @@ Deno.serve(async (req: Request) => {
           ...(payload as SendOnboardingSubmittedPayload),
           type: "onboarding_submitted",
           transactionId,
+        },
+      );
+    }
+
+    if (
+      [
+        "kingstons_valuation_download",
+        "kingstons_formal_valuation_download",
+        "valuation_download",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "kingstons_valuation_download",
+        recipient: recipient || null,
+      });
+      return await handleKingstonsValuationDownloadEmail(
+        {
+          ...(payload as SendKingstonsValuationDownloadPayload),
+          type: "kingstons_valuation_download",
         },
       );
     }
@@ -1142,6 +1163,9 @@ Deno.serve(async (req: Request) => {
           "commercial_viewing_status_changed",
           "commercial_document_request_created",
           "commercial_document_uploaded",
+          "kingstons_valuation_download",
+          "kingstons_formal_valuation_download",
+          "valuation_download",
           "commercial_heads_of_terms_status_changed",
           "commercial_transaction_status_changed",
           "enterprise_member_scope_changed",
@@ -1301,6 +1325,9 @@ Deno.serve(async (req: Request) => {
         "commercial_viewing_status_changed",
         "commercial_document_request_created",
         "commercial_document_uploaded",
+        "kingstons_valuation_download",
+        "kingstons_formal_valuation_download",
+        "valuation_download",
         "commercial_heads_of_terms_status_changed",
         "commercial_transaction_status_changed",
         "enterprise_member_scope_changed",

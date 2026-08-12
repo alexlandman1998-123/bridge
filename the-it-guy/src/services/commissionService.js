@@ -56,6 +56,14 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
 }
 
+function normalizeCommissionVatBasis(value = 'inclusive') {
+  return normalizeKey(value || 'inclusive') === 'exclusive' ? 'exclusive' : 'inclusive'
+}
+
+function formatCommissionVatBasis(value = 'inclusive') {
+  return normalizeCommissionVatBasis(value) === 'exclusive' ? 'Ex VAT' : 'Inc VAT'
+}
+
 function normalizeTargetPeriod(value, fallback = 'monthly') {
   const normalized = normalizeKey(value || fallback || 'monthly')
   return COMMISSION_TARGET_PERIODS.includes(normalized) ? normalized : 'monthly'
@@ -1119,11 +1127,15 @@ function findById(rows = [], id = '') {
 
 function formatListingCommission(structure = null) {
   const type = normalizeKey(structure?.listingCommissionType || structure?.listing_commission_type || 'percentage')
+  const vatBasis = normalizeCommissionVatBasis(structure?.commissionVatBasis || structure?.commission_vat_basis || structure?.metadata?.commission_vat_basis)
+  const vatBasisLabel = formatCommissionVatBasis(vatBasis)
   if (type === 'fixed') {
     return {
       label: `Fixed ${roundMoney(structure?.listingCommissionAmount ?? structure?.listing_commission_amount ?? 0)}`,
       basis: 'Fixed amount',
       type,
+      vatBasis,
+      vatBasisLabel,
     }
   }
   const percentage = normalizePercentage(structure?.listingCommissionPercentage ?? structure?.listing_commission_percentage, 7.5)
@@ -1131,6 +1143,8 @@ function formatListingCommission(structure = null) {
     label: `${percentage}%`,
     basis: 'Selling price',
     type: 'percentage',
+    vatBasis,
+    vatBasisLabel,
   }
 }
 
@@ -1185,6 +1199,8 @@ export function buildAgentCommissionSummary({
     listingCommissionLabel: listingCommission.label,
     listingCommissionBasis: listingCommission.basis,
     listingCommissionType: listingCommission.type,
+    listingCommissionVatBasis: listingCommission.vatBasis,
+    listingCommissionVatBasisLabel: listingCommission.vatBasisLabel,
     agentSplitPercentage,
     companySplitPercentage,
     splitOverrideApplied: overrideSplit !== null,
@@ -1249,6 +1265,7 @@ export async function getCommissionOverview() {
 export function buildListingCommissionRows(defaultStructure = null, defaultLevel = null) {
   const salesPercentage = normalizePercentage(defaultStructure?.listingCommissionPercentage, 7.5)
   const levelName = normalizeText(defaultLevel?.name) || 'Standard'
+  const vatBasisLabel = formatCommissionVatBasis(defaultStructure?.commissionVatBasis || defaultStructure?.commission_vat_basis)
   return [
     {
       key: 'residential_sales',
@@ -1259,6 +1276,8 @@ export function buildListingCommissionRows(defaultStructure = null, defaultLevel
       commissionLevel: levelName,
       appliesTo: 'Mandates and sales',
       type: defaultStructure?.listingCommissionType || 'percentage',
+      vatBasis: normalizeCommissionVatBasis(defaultStructure?.commissionVatBasis || defaultStructure?.commission_vat_basis),
+      vatBasisLabel,
     },
     { key: 'residential_rentals', category: 'Residential Rentals', defaultCommission: "1 Month's Rent", commissionLevel: levelName, appliesTo: 'Rental mandates', type: 'one_month_rental' },
     { key: 'commercial_sales', category: 'Commercial Sales', defaultCommission: '5%', commissionLevel: levelName, appliesTo: 'Commercial sales', type: 'percentage' },

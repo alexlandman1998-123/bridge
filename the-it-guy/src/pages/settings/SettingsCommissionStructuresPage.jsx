@@ -78,6 +78,14 @@ function formatPercent(value, fallback = 0) {
   return `${numeric.toFixed(numeric % 1 ? 1 : 0)}%`
 }
 
+function normalizeCommissionVatBasis(value = 'inclusive') {
+  return normalizeText(value).toLowerCase() === 'exclusive' ? 'exclusive' : 'inclusive'
+}
+
+function getCommissionVatBasisLabel(value = 'inclusive') {
+  return normalizeCommissionVatBasis(value) === 'exclusive' ? 'Ex VAT' : 'Inc VAT'
+}
+
 function createLevelDraft(level = {}) {
   const agentPercentage = normalizePercentage(level.agentPercentage, 70)
   return {
@@ -98,6 +106,7 @@ function createStructureDraft(structure = {}) {
     listingCommissionType: structure.listingCommissionType || 'percentage',
     listingCommissionPercentage: structure.listingCommissionPercentage ?? 7.5,
     listingCommissionAmount: structure.listingCommissionAmount ?? '',
+    commissionVatBasis: normalizeCommissionVatBasis(structure.commissionVatBasis || structure.commission_vat_basis || structure.vatBasis || structure.vat_basis || (structure.vatInclusive === false ? 'exclusive' : 'inclusive')),
     agentSplitPercentage: structure.agentSplitPercentage ?? 70,
     allowSalesCommissionOverride: structure.allowSalesCommissionOverride !== false,
     isDefault: Boolean(structure.isDefault),
@@ -212,6 +221,23 @@ function StatusPill({ children, tone = 'neutral' }) {
     <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${classes[tone] || classes.neutral}`}>
       {children}
     </span>
+  )
+}
+
+function VatBasisSwitch({ value = 'inclusive', onChange }) {
+  const basis = normalizeCommissionVatBasis(value)
+  const isInclusive = basis !== 'exclusive'
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={isInclusive}
+      onClick={() => onChange(isInclusive ? 'exclusive' : 'inclusive')}
+      className="inline-grid h-11 grid-cols-2 items-center rounded-[14px] border border-[#d8e3ee] bg-[#f5f8fb] p-1 text-xs font-semibold text-[#52667d] transition focus:outline-none focus:ring-2 focus:ring-[#dff2e8]"
+    >
+      <span className={`grid h-8 min-w-20 place-items-center rounded-[10px] px-3 transition ${isInclusive ? 'bg-white text-[#0f7f4f] shadow-[0_4px_12px_rgba(15,23,42,0.08)]' : ''}`}>Inc VAT</span>
+      <span className={`grid h-8 min-w-20 place-items-center rounded-[10px] px-3 transition ${!isInclusive ? 'bg-white text-[#0f7f4f] shadow-[0_4px_12px_rgba(15,23,42,0.08)]' : ''}`}>Ex VAT</span>
+    </button>
   )
 }
 
@@ -689,7 +715,10 @@ function TemplatesWorkspace({ structures, openModal, removeStructure, saving }) 
                       : formatPercent(structure.listingCommissionPercentage, 7.5)}
                   </p>
                 </div>
-                {structure.isDefault ? <StatusPill tone="green">Default</StatusPill> : null}
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  {structure.isDefault ? <StatusPill tone="green">Default</StatusPill> : null}
+                  <StatusPill tone="blue">{getCommissionVatBasisLabel(structure.commissionVatBasis)}</StatusPill>
+                </div>
               </div>
               <div className="mt-4">
                 <SplitBar agent={structure.agentSplitPercentage} agency={structure.agencySplitPercentage} />
@@ -838,6 +867,10 @@ function TemplateEditor({ draft, updateDraft, onSubmit, onCancel, saving }) {
             onChange={(event) => updateDraft(draft.listingCommissionType === 'fixed' ? 'listingCommissionAmount' : 'listingCommissionPercentage', event.target.value)}
           />
         </FieldLabel>
+        <div className="grid gap-1.5">
+          <span className={LABEL_CLASS}>VAT Basis</span>
+          <VatBasisSwitch value={draft.commissionVatBasis} onChange={(nextBasis) => updateDraft('commissionVatBasis', nextBasis)} />
+        </div>
         <FieldLabel label="Agent Split %" id="template-agent">
           <Field id="template-agent" type="number" min="0" max="100" step="0.01" className={INPUT_CLASS} value={draft.agentSplitPercentage} onChange={(event) => updateDraft('agentSplitPercentage', event.target.value)} />
         </FieldLabel>
@@ -1221,6 +1254,7 @@ export default function SettingsCommissionStructuresPage() {
         listingCommissionType: structureDraft.listingCommissionType,
         listingCommissionPercentage: normalizePercentage(structureDraft.listingCommissionPercentage, 7.5),
         listingCommissionAmount: structureDraft.listingCommissionType === 'fixed' ? Number(structureDraft.listingCommissionAmount || 0) : null,
+        commissionVatBasis: normalizeCommissionVatBasis(structureDraft.commissionVatBasis),
         agentSplitPercentage,
         agencySplitPercentage: normalizePercentage(100 - agentSplitPercentage, 30),
         allowSalesCommissionOverride: Boolean(structureDraft.allowSalesCommissionOverride),

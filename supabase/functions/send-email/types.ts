@@ -219,6 +219,63 @@ export type SendLeadAcknowledgementPayload = {
   custom_response_text?: string;
 };
 
+export type SendKingstonsValuationDownloadPayload = {
+  type:
+    | "kingstons_valuation_download"
+    | "kingstons_formal_valuation_download"
+    | "valuation_download";
+  to: string;
+  subject?: string;
+  replyTo?: string;
+  reply_to?: string;
+  fromName?: string;
+  from_name?: string;
+  fromEmail?: string;
+  from_email?: string;
+  idempotencyKey?: string;
+  idempotency_key?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  recipientName?: string;
+  recipient_name?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  organisationLogoUrl?: string;
+  organisation_logo_url?: string;
+  organisationLogoLightUrl?: string;
+  organisation_logo_light_url?: string;
+  organisationLogoDarkUrl?: string;
+  organisation_logo_dark_url?: string;
+  organisationLogoIconUrl?: string;
+  organisation_logo_icon_url?: string;
+  organisationBrandPrimaryColor?: string;
+  organisation_brand_primary_color?: string;
+  organisationBrandSecondaryColor?: string;
+  organisation_brand_secondary_color?: string;
+  supportEmail?: string;
+  support_email?: string;
+  supportPhone?: string;
+  support_phone?: string;
+  propertyLabel?: string;
+  property_label?: string;
+  agentName?: string;
+  agent_name?: string;
+  agentEmail?: string;
+  agent_email?: string;
+  agentRole?: string;
+  agent_role?: string;
+  valuationDownloadUrl?: string;
+  valuation_download_url?: string;
+  downloadUrl?: string;
+  download_url?: string;
+  valuationFileName?: string;
+  valuation_file_name?: string;
+  leadId?: string;
+  lead_id?: string;
+  appointmentId?: string;
+  appointment_id?: string;
+} & DeliveryContextPayload;
+
 export type SendLeadOperationsNotificationPayload = {
   type:
     | "new_enquiry_assigned_agent"

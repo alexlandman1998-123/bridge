@@ -3976,10 +3976,6 @@ function AgentListings({ initialTab = null } = {}) {
                 <Plus size={16} />
                 Quick Add Listing
               </Button>
-              <Button type="button" variant="secondary" onClick={openSellerLeadModal} disabled={pilotCreationFreeze.paused}>
-                <Plus size={16} />
-                Guided Listing
-              </Button>
             </div>
           ) : null}
         </div>
@@ -4252,10 +4248,6 @@ function AgentListings({ initialTab = null } = {}) {
                 <Button type="button" onClick={openMandateFirstWorkspace} disabled={pilotCreationFreeze.paused}>
                   <FileText size={16} />
                   Generate Mandate
-                </Button>
-                <Button type="button" variant="secondary" onClick={openSellerLeadModal} disabled={pilotCreationFreeze.paused}>
-                  <Plus size={16} />
-                  Guided Listing
                 </Button>
                 <Button type="button" variant="secondary" onClick={openManualListingModal} disabled={pilotCreationFreeze.paused}>
                   <Plus size={16} />

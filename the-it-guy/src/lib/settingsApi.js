@@ -1205,6 +1205,12 @@ function normalizeCommissionValueType(value, fallback = 'percentage') {
   return normalized === 'fixed' ? 'fixed' : 'percentage'
 }
 
+function normalizeCommissionVatBasis(value, fallback = 'inclusive') {
+  const normalized = normalizeText(value || fallback).toLowerCase().replace(/[\s-]+/g, '_')
+  if (['exclusive', 'ex_vat', 'exvat', 'excluding_vat', 'vat_exclusive'].includes(normalized)) return 'exclusive'
+  return 'inclusive'
+}
+
 function normalizeOptionalPositiveAmount(value, fallback = null) {
   if (value === null || value === undefined || value === '') return fallback
   const numeric = Number(value)
@@ -1244,6 +1250,18 @@ function normalizeCommissionStructureRecord(input = {}, fallback = {}) {
     input.listingCommissionAmount ?? input.listing_commission_amount ?? fallback.listingCommissionAmount ?? fallback.listing_commission_amount,
     null,
   )
+  const inputVatBasis = input.commissionVatBasis ?? input.commission_vat_basis ?? input.vatBasis ?? input.vat_basis
+  const fallbackVatBasis = fallback.commissionVatBasis ?? fallback.commission_vat_basis ?? fallback.vatBasis ?? fallback.vat_basis
+  const booleanVatBasis =
+    typeof input.vatInclusive === 'boolean'
+      ? input.vatInclusive ? 'inclusive' : 'exclusive'
+      : typeof input.vat_inclusive === 'boolean'
+        ? input.vat_inclusive ? 'inclusive' : 'exclusive'
+        : typeof fallback.vatInclusive === 'boolean'
+          ? fallback.vatInclusive ? 'inclusive' : 'exclusive'
+          : typeof fallback.vat_inclusive === 'boolean'
+            ? fallback.vat_inclusive ? 'inclusive' : 'exclusive'
+            : undefined
 
   return {
     id,
@@ -1251,6 +1269,7 @@ function normalizeCommissionStructureRecord(input = {}, fallback = {}) {
     listingCommissionType,
     listingCommissionPercentage,
     listingCommissionAmount,
+    commissionVatBasis: normalizeCommissionVatBasis(inputVatBasis ?? fallbackVatBasis ?? booleanVatBasis, 'inclusive'),
     agentSplitPercentage,
     agencySplitPercentage,
     allowSalesCommissionOverride:
@@ -1289,6 +1308,7 @@ function normalizeCommissionStructureRow(row = {}) {
     listingCommissionType: row.listing_commission_type,
     listingCommissionPercentage: row.listing_commission_percentage,
     listingCommissionAmount: row.listing_commission_amount,
+    commissionVatBasis: row.commission_vat_basis,
     agentSplitPercentage: row.agent_split_percentage,
     allowSalesCommissionOverride: row.allow_sales_commission_override,
     isDefault: row.is_default,
@@ -1308,6 +1328,7 @@ function mapCommissionStructureToRow(structure = {}, organisationId = '', actorU
     listing_commission_type: normalizeNullableText(normalized.listingCommissionType),
     listing_commission_percentage: normalizePercentage(normalized.listingCommissionPercentage, 7.5),
     listing_commission_amount: normalized.listingCommissionAmount,
+    commission_vat_basis: normalizeCommissionVatBasis(normalized.commissionVatBasis, 'inclusive'),
     agent_split_percentage: normalizePercentage(normalized.agentSplitPercentage, 60),
     agency_split_percentage: normalizePercentage(normalized.agencySplitPercentage, 40),
     allow_sales_commission_override: Boolean(normalized.allowSalesCommissionOverride),
@@ -4455,7 +4476,7 @@ export async function listOrganisationCommissionStructures() {
 
   const baseQuery = await client
     .from('organisation_commission_structures')
-    .select('id, name, listing_commission_type, listing_commission_percentage, listing_commission_amount, agent_split_percentage, agency_split_percentage, allow_sales_commission_override, is_default, is_active, notes, created_at, updated_at')
+    .select('id, name, listing_commission_type, listing_commission_percentage, listing_commission_amount, commission_vat_basis, agent_split_percentage, agency_split_percentage, allow_sales_commission_override, is_default, is_active, notes, created_at, updated_at')
     .eq('organisation_id', context.organisation.id)
     .order('name', { ascending: true })
 
@@ -4464,7 +4485,8 @@ export async function listOrganisationCommissionStructures() {
     structures = (baseQuery.data || []).map((row) => normalizeCommissionStructureRow(row))
   } else if (
     isMissingColumnError(baseQuery.error, 'listing_commission_type') ||
-    isMissingColumnError(baseQuery.error, 'allow_sales_commission_override')
+    isMissingColumnError(baseQuery.error, 'allow_sales_commission_override') ||
+    isMissingColumnError(baseQuery.error, 'commission_vat_basis')
   ) {
     const legacyQuery = await client
       .from('organisation_commission_structures')
@@ -4503,7 +4525,8 @@ export async function listOrganisationCommissionStructures() {
     !isMissingTableError(baseQuery.error, 'organisation_commission_structures') &&
     !isMissingColumnError(baseQuery.error, 'agent_split_percentage') &&
     !isMissingColumnError(baseQuery.error, 'listing_commission_type') &&
-    !isMissingColumnError(baseQuery.error, 'allow_sales_commission_override')
+    !isMissingColumnError(baseQuery.error, 'allow_sales_commission_override') &&
+    !isMissingColumnError(baseQuery.error, 'commission_vat_basis')
   ) {
     throw baseQuery.error
   } else {
@@ -4588,7 +4611,7 @@ export async function saveOrganisationCommissionStructure(input = {}) {
   const saveResult = await client
     .from('organisation_commission_structures')
     .upsert(payload, { onConflict: 'id' })
-    .select('id, name, listing_commission_type, listing_commission_percentage, listing_commission_amount, agent_split_percentage, agency_split_percentage, allow_sales_commission_override, is_default, is_active, notes, created_at, updated_at')
+    .select('id, name, listing_commission_type, listing_commission_percentage, listing_commission_amount, commission_vat_basis, agent_split_percentage, agency_split_percentage, allow_sales_commission_override, is_default, is_active, notes, created_at, updated_at')
     .single()
 
   if (!saveResult.error) {
@@ -4600,6 +4623,7 @@ export async function saveOrganisationCommissionStructure(input = {}) {
     !isMissingColumnError(saveResult.error, 'agent_split_percentage') &&
     !isMissingColumnError(saveResult.error, 'listing_commission_type') &&
     !isMissingColumnError(saveResult.error, 'allow_sales_commission_override') &&
+    !isMissingColumnError(saveResult.error, 'commission_vat_basis') &&
     !isOnConflictConstraintError(saveResult.error, 'id')
   ) {
     throw saveResult.error
