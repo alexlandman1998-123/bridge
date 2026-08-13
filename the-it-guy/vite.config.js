@@ -85,6 +85,35 @@ function releaseIntegrityPlugin() {
       const marker = `<meta name="arch9-release" content="${escapeHtmlAttribute(releaseId)}" />`
       return html.replace('</head>', `    ${marker}\n  </head>`)
     },
+    configureServer(server) {
+      server.middlewares.use('/release-manifest.json', (request, response) => {
+        const method = String(request.method || 'GET').toUpperCase()
+        if (method !== 'GET' && method !== 'HEAD') {
+          response.statusCode = 405
+          response.setHeader('Allow', 'GET, HEAD')
+          response.setHeader('Cache-Control', 'no-store')
+          response.end()
+          return
+        }
+
+        response.statusCode = 200
+        response.setHeader('Content-Type', 'application/json; charset=utf-8')
+        response.setHeader('Cache-Control', 'no-store')
+        if (method === 'HEAD') {
+          response.end()
+          return
+        }
+        response.end(`${JSON.stringify({
+          version: 1,
+          releaseId,
+          supabaseOrigin,
+          generatedAt: new Date().toISOString(),
+          criticalAssets: [],
+          listingDetailAssetDetected: false,
+          dev: true,
+        }, null, 2)}\n`)
+      })
+    },
     generateBundle(_outputOptions, bundle) {
       const chunks = Object.values(bundle).filter((item) => item.type === 'chunk')
       const chunksByFileName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]))
