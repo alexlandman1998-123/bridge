@@ -83,7 +83,7 @@ button.queue-item {
   display: inline-flex;
   flex: 0 0 42px;
   font-size: 0.85rem;
-  font-weight: 800;
+  font-weight: 700;
   height: 42px;
   justify-content: center;
 }
@@ -99,6 +99,7 @@ button.queue-item {
 .brand-lockup h1 {
   color: var(--text);
   font-size: 1.05rem;
+  font-weight: 650;
   line-height: 1.1;
   margin: 0;
 }
@@ -122,6 +123,7 @@ button.queue-item {
   border-radius: 8px;
   color: #344054;
   display: flex;
+  font-weight: 500;
   gap: 10px;
   min-height: 44px;
   padding: 0 12px;
@@ -180,6 +182,7 @@ button.queue-item {
 
 .topbar h1 {
   font-size: clamp(1.65rem, 2vw, 2.25rem);
+  font-weight: 650;
   letter-spacing: 0;
   line-height: 1.1;
   margin: 0 0 8px;
@@ -192,7 +195,7 @@ button.queue-item {
 
 .eyebrow {
   font-size: 0.76rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
   margin: 0 0 8px;
   text-transform: uppercase;
@@ -290,20 +293,21 @@ button.metric-card {
 .metric-card span {
   color: var(--muted);
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.25;
 }
 
 .metric-card strong {
   color: var(--text);
   font-size: 1.8rem;
+  font-weight: 650;
   line-height: 1;
 }
 
 .metric-card small {
   color: var(--faint);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .status-strip {
@@ -325,7 +329,7 @@ button.metric-card {
 .status-pill span {
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 650;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -381,7 +385,7 @@ button.funnel-step.active {
 .brief-metrics span {
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .funnel-step strong {
@@ -529,7 +533,7 @@ button.funnel-step.active {
   border-radius: 6px;
   color: var(--muted);
   font-size: 0.84rem;
-  font-weight: 800;
+  font-weight: 600;
   min-height: 34px;
   padding: 0 10px;
 }
@@ -575,6 +579,7 @@ button.funnel-step.active {
 .panel-title h2,
 .warning-panel h2 {
   font-size: 1rem;
+  font-weight: 650;
   margin: 0;
 }
 
@@ -584,7 +589,7 @@ button.funnel-step.active {
   border-radius: 999px;
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
   padding: 5px 9px;
 }
 
@@ -734,7 +739,7 @@ button.queue-item:hover,
 .detail-panel dt {
   color: var(--muted);
   font-size: 0.76rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -801,7 +806,7 @@ button.queue-item:hover,
 
 dt {
   color: var(--muted);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 dd {
@@ -815,7 +820,7 @@ dd {
   align-items: center;
   border-radius: 8px;
   display: inline-flex;
-  font-weight: 800;
+  font-weight: 650;
   gap: 8px;
   justify-content: center;
   min-height: 42px;
@@ -876,7 +881,7 @@ dd {
 .freshness-line strong {
   color: #475467;
   font-size: 0.84rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .operating-dashboard {
@@ -885,6 +890,7 @@ dd {
 
 .platform-kpis {
   gap: 14px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .platform-kpis .metric-card {
@@ -926,17 +932,18 @@ dd {
 .metric-card .metric-copy span {
   color: #344054;
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .metric-card .metric-copy strong {
   color: #071120;
   font-size: 1.8rem;
+  font-weight: 650;
 }
 
 .metric-card .metric-copy small {
   color: #475467;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .metric-card .metric-copy .positive-metric {
@@ -975,7 +982,7 @@ dd {
   border: 0;
   color: var(--green);
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 600;
   padding: 0;
 }
 
@@ -1021,12 +1028,13 @@ dd {
 .stage-node span {
   color: #101828;
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .stage-node strong {
   color: var(--green);
   font-size: 1.35rem;
+  font-weight: 650;
   line-height: 1;
 }
 
@@ -1124,18 +1132,19 @@ dd {
 .revenue-primary > span {
   color: #344054;
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .revenue-primary > strong {
   color: var(--green);
   font-size: 1.65rem;
+  font-weight: 650;
   line-height: 1;
 }
 
 .revenue-primary > small {
   color: var(--muted);
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .compact-revenue {
@@ -1159,7 +1168,7 @@ dd {
 .revenue-breakdown span {
   color: #344054;
   font-size: 0.8rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .revenue-breakdown strong {
@@ -1179,7 +1188,7 @@ dd {
   color: #0f5135;
   display: flex;
   font-size: 0.78rem;
-  font-weight: 750;
+  font-weight: 500;
   gap: 8px;
   margin-top: 12px;
   padding: 9px 10px;
@@ -1202,7 +1211,7 @@ dd {
 .compact-table-head {
   color: var(--muted);
   font-size: 0.68rem;
-  font-weight: 850;
+  font-weight: 600;
   letter-spacing: 0.06em;
   padding: 0 0 8px;
   text-transform: uppercase;
@@ -1245,7 +1254,7 @@ dd {
 
 .trend-value {
   color: var(--green);
-  font-weight: 850;
+  font-weight: 650;
 }
 
 .healthy-state {
@@ -1283,7 +1292,7 @@ dd {
   border-radius: 999px;
   color: var(--blue);
   display: inline-flex;
-  font-weight: 850;
+  font-weight: 650;
   height: 30px;
   justify-content: center;
   min-width: 30px;
@@ -1329,7 +1338,7 @@ dd {
   border-radius: 999px;
   display: inline-flex;
   font-size: 0.72rem;
-  font-weight: 850;
+  font-weight: 600;
   padding: 4px 8px;
   white-space: nowrap;
 }
@@ -1390,7 +1399,7 @@ button:disabled {
 .login-form label span {
   color: var(--muted);
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .notice {

@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const repoRoot = path.resolve(__dirname, '..')
+
+const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), 'utf8')
+
+const agencyPage = read('the-it-guy/src/pages/agency/AgencyPipelinePage.jsx')
+const sellerDefinition = read('the-it-guy/src/services/sellerProcessDefinitionService.js')
+const sellerPanel = read('the-it-guy/src/services/sellerProcessWorkspacePanelService.js')
+
+assert(!sellerDefinition.includes("key: 'listing_terms_confirmed'"), 'Kingstons seller process must not include a Listing Terms stage.')
+assert(!sellerDefinition.includes("key: 'commission_terms_confirmed'"), 'Commission terms must not be a seller process evidence gate.')
+assert(!sellerDefinition.includes("key: 'transfer_attorney_nominated'"), 'Transfer attorney must not be a seller process evidence gate.')
+assert(!sellerPanel.includes("key: 'confirm_listing_terms'"), 'Seller workspace actions must not prompt agents to confirm listing terms.')
+
+assert(!agencyPage.includes('!selectedKingstonsListingTermsSummary.complete'), 'Seller listing creation must not be blocked by listing terms.')
+assert(!agencyPage.includes('transferAttorneyPreferredPartnerId'), 'Seller onboarding must not send a transfer attorney selection.')
+
+assert(agencyPage.includes('getKingstonsBuyerOtpTermsState'), 'Buyer OTP terms must be read from the buyer lead.')
+assert(agencyPage.includes('kingstonsBuyerOtpTerms'), 'Buyer OTP terms must be saved on the buyer lead payload.')
+assert(agencyPage.includes('commissionVatIncluded'), 'Commission VAT inclusive/exclusive state must be captured.')
+assert(agencyPage.includes('kingstons-buyer-otp-terms-summary'), 'Buyer OTP workspace must expose the internal terms selection card.')
+assert(agencyPage.includes('handleCompleteKingstonsValuationPresentationFromJourney'), 'Kingstons valuation presentation completion must use the direct Seller Pack transition helper.')
+assert(
+  agencyPage.includes("if (selectedLeadHasKingstonsPipelineSignal) {\n        void handleCompleteKingstonsValuationPresentationFromJourney()"),
+  'Kingstons Complete Valuation Presentation action must move directly to Seller Pack instead of opening the appointment modal.',
+)
+
+console.log('Kingstons buyer OTP terms regression checks passed.')

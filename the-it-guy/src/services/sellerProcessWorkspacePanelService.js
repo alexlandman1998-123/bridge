@@ -18,8 +18,6 @@ const EVIDENCE_LABELS = Object.freeze({
   defects_form_signed: 'Defects form signed',
   fica_pack_signed: 'FICA pack signed',
   seller_pack_readiness_complete: 'Seller Pack complete',
-  commission_terms_confirmed: 'Commission terms confirmed',
-  transfer_attorney_nominated: 'Transfer attorney nominated',
   listing_ready: 'Listing ready',
 })
 
@@ -30,7 +28,6 @@ const STAGE_LABELS = Object.freeze({
   valuation_presentation_scheduled: 'Valuation Presentation',
   valuation_presented: 'Valuation Presented',
   seller_pack_signed: 'Seller Pack',
-  listing_terms_confirmed: 'Listing Terms',
   listing_ready: 'List Property',
 })
 
@@ -122,7 +119,6 @@ function buildActionCards(payload = {}) {
   const canChoosePostPresentationOutcome = [
     'valuation_presented',
     'seller_pack_signed',
-    'listing_terms_confirmed',
     'listing_ready',
   ].includes(currentStageKey) || missingEvidenceKeys.includes('valuation_presented')
   return [
@@ -186,14 +182,6 @@ function buildActionCards(payload = {}) {
         readOnly: false,
       },
     ] : []),
-    {
-      key: 'confirm_listing_terms',
-      label: 'Confirm Listing Terms',
-      surface: 'listingWorkspace',
-      pending: missingEvidenceKeys.includes('commission_terms_confirmed') || missingEvidenceKeys.includes('transfer_attorney_nominated'),
-      disabled: false,
-      readOnly: false,
-    },
     {
       key: 'prepare_listing',
       label: 'Prepare Listing',

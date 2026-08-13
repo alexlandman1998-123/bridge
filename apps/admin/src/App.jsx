@@ -49,6 +49,8 @@ const NAV_ICONS = {
   settings: Settings,
 }
 
+const ARCH9_LISTING_PIPELINE_FEE = 1500
+
 const EMPTY_DASHBOARD = {
   attention: [],
   drilldowns: {
@@ -980,6 +982,7 @@ function DashboardView({ isLoading, snapshot, support }) {
   const agentRows = snapshot?.drilldowns?.activeAgents || []
   const liveRows = [...pipelineRows, ...attentionRows].slice(0, 5)
   const totalInventorySample = listingRows.reduce((total, row) => total + (Number(row.price) || 0), 0)
+  const listingPipelineRevenue = (Number(kpis.activeListings) || 0) * ARCH9_LISTING_PIPELINE_FEE
   const organisationActivity = useMemo(() => buildOrganisationActivity(snapshot), [snapshot])
   const attentionItems = useMemo(() => buildNeedsAttention(snapshot, support), [snapshot, support])
   const activitySeries = useMemo(
@@ -1027,6 +1030,14 @@ function DashboardView({ isLoading, snapshot, support }) {
       meta: totalInventorySample ? `${formatShortMoney(totalInventorySample)} sampled inventory` : '',
       context: 'Live listing base',
       value: formatCount(kpis.activeListings),
+    },
+    {
+      drilldown: 'activeListings',
+      icon: CircleDollarSign,
+      label: 'Listing Pipeline',
+      meta: `${formatCount(kpis.activeListings)} listings x R1,500`,
+      context: 'Projected Arch9 fee potential',
+      value: formatMoney(listingPipelineRevenue),
     },
     {
       drilldown: 'pipeline',

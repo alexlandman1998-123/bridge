@@ -546,9 +546,7 @@ const KINGSTONS_PIPELINE_ACTION_COPY = Object.freeze({
   complete_seller_pack: 'Capture the seller type and legal-path details, then upload the signed mandate, defect form, and FICA form.',
   seller_pack_signed: 'Capture the seller type and legal-path details, then upload the signed mandate, defect form, and FICA form.',
   mark_seller_lead_lost: 'Capture why the seller did not convert after the valuation presentation and move the lead to Lost.',
-  confirm_listing_terms: 'Confirm the commission and nominated transfer attorney before the listing is created.',
-  listing_terms_confirmed: 'Confirm the commission and nominated transfer attorney before the listing is created.',
-  prepare_listing: 'Create the listing once the Kingston seller pack and listing terms are complete.',
+  prepare_listing: 'Create the listing once the Kingston Seller Pack is complete.',
 })
 
 const KINGSTONS_COMMISSION_TYPE_OPTIONS = Object.freeze([
@@ -1231,7 +1229,6 @@ const KINGSTONS_PIPELINE_STAGE_LABELS = Object.freeze({
   valuation_presentation_scheduled: 'Valuation Presentation',
   valuation_presented: 'Valuation Presented',
   seller_pack_signed: 'Seller Pack',
-  listing_terms_confirmed: 'Listing Terms',
   listing_ready: 'List Property',
 })
 
@@ -1359,13 +1356,37 @@ function getKingstonsListingTermsState(lead = {}, listing = {}) {
   }
 }
 
+function getKingstonsBuyerOtpTermsState(lead = {}) {
+  const rawPayload = parseLeadRawEnquiryPayload(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
+  const terms = asRecord(
+    lead?.kingstonsBuyerOtpTerms ||
+      lead?.kingstons_buyer_otp_terms ||
+      lead?.buyerOtpTerms ||
+      lead?.buyer_otp_terms ||
+      rawPayload.kingstonsBuyerOtpTerms ||
+      rawPayload.kingstons_buyer_otp_terms ||
+      rawPayload.buyerOtpTerms ||
+      rawPayload.buyer_otp_terms,
+  )
+  const commission = asRecord(terms.commission || terms.commissionTerms || terms.commission_terms)
+  const transferAttorney = asRecord(terms.transferAttorney || terms.transfer_attorney || terms.attorney || terms.nominatedAttorney)
+  return {
+    ...terms,
+    commission,
+    transferAttorney,
+  }
+}
+
 function buildKingstonsListingTermsDraft(terms = {}) {
   const commission = asRecord(terms.commission || terms.commissionTerms || terms.commission_terms)
   const attorney = asRecord(terms.transferAttorney || terms.transfer_attorney || terms.attorney || terms.nominatedAttorney)
+  const vatMode = normalizeKey(commission.vatMode || commission.vat_mode || terms.commissionVatMode || terms.commission_vat_mode)
+  const vatIncludedValue = commission.vatIncluded ?? commission.vat_included ?? terms.commissionVatIncluded ?? terms.commission_vat_included
   return {
     commissionType: normalizeKey(commission.type || commission.commissionType || commission.commission_type || terms.commissionType || terms.commission_type) || 'percentage',
     commissionPercentage: normalizeText(commission.percentage || commission.commissionPercentage || commission.commission_percentage || terms.commissionPercentage || terms.commission_percentage),
     commissionAmount: normalizeText(commission.amount || commission.commissionAmount || commission.commission_amount || terms.commissionAmount || terms.commission_amount),
+    commissionVatIncluded: vatMode ? vatMode !== 'ex_vat' : vatIncludedValue !== false,
     commissionNotes: normalizeText(commission.notes || commission.commissionNotes || commission.commission_notes || terms.commissionNotes || terms.notes),
     transferAttorneyMode: normalizeKey(attorney.mode || attorney.selectionSource || attorney.selection_source || terms.transferAttorneyMode || terms.transfer_attorney_mode) || 'agency_recommended',
     transferAttorneyId: normalizeText(attorney.id || attorney.preferredPartnerId || attorney.preferred_partner_id || terms.transferAttorneyId || terms.transfer_attorney_id),
@@ -1374,6 +1395,10 @@ function buildKingstonsListingTermsDraft(terms = {}) {
     transferAttorneyEmail: normalizeText(attorney.email || attorney.emailAddress || attorney.email_address || terms.transferAttorneyEmail || terms.transfer_attorney_email).toLowerCase(),
     transferAttorneyPhone: normalizeText(attorney.phone || attorney.phoneNumber || attorney.phone_number || terms.transferAttorneyPhone || terms.transfer_attorney_phone),
   }
+}
+
+function isManualKingstonsTransferAttorneyDraft(draft = {}) {
+  return ['seller_selected', 'buyer_selected', 'manual'].includes(normalizeKey(draft.transferAttorneyMode))
 }
 
 function summarizeKingstonsListingTerms(terms = {}) {
@@ -1398,8 +1423,8 @@ function summarizeKingstonsListingTerms(terms = {}) {
     missingLabels,
     commissionLabel: commissionComplete
       ? commissionType === 'fixed'
-        ? `Fixed fee R ${Number(draft.commissionAmount || 0).toLocaleString('en-ZA')}`
-        : `${draft.commissionPercentage}% commission`
+        ? `Fixed fee R ${Number(draft.commissionAmount || 0).toLocaleString('en-ZA')} ${draft.commissionVatIncluded ? 'inc VAT' : 'ex VAT'}`
+        : `${draft.commissionPercentage}% commission ${draft.commissionVatIncluded ? 'inc VAT' : 'ex VAT'}`
       : 'Commission not captured',
     attorneyLabel: attorneyComplete
       ? normalizeText(draft.transferAttorneyCompany || draft.transferAttorneyEmail || draft.transferAttorneyId)
@@ -1562,67 +1587,24 @@ function getKingstonsExceptionSeverityClass(severity = '') {
 function buildKingstonsListingTermsExceptionReport({
   sellerJourney = {},
   sellerPackSummary = {},
-  listingTermsSummary = {},
-  listingTerms = {},
   listingId = '',
-  pipelineVerification = {},
   thresholds = KINGSTONS_LISTING_TERMS_EXCEPTION_THRESHOLDS,
 } = {}) {
   const currentStageDays = Math.max(0, Number(sellerJourney?.daysInCurrentStage || 0) || 0)
-  const pipelineState = normalizeKey(pipelineVerification?.state)
   const listingCreated = Boolean(normalizeText(listingId))
   const sellerPackComplete = sellerPackSummary?.complete === true
-  const listingTermsComplete = listingTermsSummary?.complete === true
-  const termsConfirmedAt = normalizeText(listingTerms?.confirmedAt || listingTerms?.confirmed_at)
   const items = []
 
-  if (sellerPackComplete && !listingTermsComplete) {
-    const stale = currentStageDays >= thresholds.listingTermsDays
-    items.push({
-      key: 'listing_terms_stale',
-      severity: stale ? 'warning' : 'info',
-      title: stale ? 'Listing Terms is waiting' : 'Listing Terms still outstanding',
-      copy: `Capture commission and the nominated transfer attorney before List Property. Still needed: ${(listingTermsSummary?.missingLabels || []).join(', ') || 'Listing Terms'}.`,
-      ageLabel: `${currentStageDays} days in current stage`,
-      action: 'confirm_terms',
-      actionLabel: 'Confirm terms',
-    })
-  }
-
-  if (sellerPackComplete && listingTermsComplete && !listingCreated) {
+  if (sellerPackComplete && !listingCreated) {
     const stale = currentStageDays >= thresholds.listPropertyDays
     items.push({
       key: 'list_property_stale',
       severity: stale ? 'warning' : 'info',
       title: stale ? 'Ready to list, but not listed' : 'Ready for List Property',
-      copy: 'Seller Pack and Listing Terms are complete. Create the listing to open the pre-instruction attorney visibility path.',
-      ageLabel: termsConfirmedAt ? `Terms confirmed ${termsConfirmedAt}` : `${currentStageDays} days in current stage`,
+      copy: 'Seller Pack is complete. Create the listing; commission and transfer attorney are captured on the buyer OTP stage.',
+      ageLabel: `${currentStageDays} days in current stage`,
       action: 'create_listing',
       actionLabel: 'Create listing',
-    })
-  }
-
-  if (sellerPackComplete && listingTermsComplete && ['missing_allocation', 'error'].includes(pipelineState)) {
-    items.push({
-      key: 'attorney_pipeline_exception',
-      severity: 'critical',
-      title: 'Transfer attorney is not visible',
-      copy: pipelineVerification?.copy || 'The nominated transfer attorney should be in the awaiting-buyer pipeline, but the allocation was not found.',
-      ageLabel: `${Math.max(currentStageDays, thresholds.attorneyPipelineDays)} day watch`,
-      action: 'retry_pipeline_sync',
-      actionLabel: 'Retry pipeline sync',
-    })
-  }
-
-  if (sellerPackComplete && listingTermsComplete && pipelineState === 'pending_connection') {
-    items.push({
-      key: 'attorney_connection_pending',
-      severity: 'warning',
-      title: 'Attorney connection required',
-      copy: pipelineVerification?.copy || 'The seller-selected attorney is captured, but the firm is not connected to this agency yet.',
-      ageLabel: 'Partner setup needed',
-      action: 'confirm_terms',
-      actionLabel: 'Review terms',
     })
   }
 
@@ -1646,19 +1628,9 @@ function buildKingstonsListingTermsExceptionReport({
         value: sellerPackComplete ? 'Complete' : `${sellerPackSummary?.completed || 0} of ${sellerPackSummary?.total || 0}`,
       },
       {
-        key: 'listing_terms',
-        label: 'Listing Terms',
-        value: listingTermsComplete ? 'Confirmed' : 'Outstanding',
-      },
-      {
         key: 'list_property',
         label: 'List Property',
         value: listingCreated ? 'Created' : 'Not created',
-      },
-      {
-        key: 'attorney_pipeline',
-        label: 'Attorney Pipeline',
-        value: pipelineVerification?.label || 'Not checked',
       },
     ],
   }
@@ -1670,14 +1642,9 @@ function buildKingstonsPrincipalListingTermsExceptionReport({
   organisationId = '',
   currentAgent = {},
   resolveLeadLinkedListing = null,
-  allocationByListingId = {},
-  checkedListingIds = [],
-  allocationsLoading = false,
-  allocationsError = '',
 } = {}) {
   const rows = []
   let totalKingstonsLeads = 0
-  const checkedIds = new Set((Array.isArray(checkedListingIds) ? checkedListingIds : []).map(normalizeText).filter(Boolean))
 
   for (const lead of Array.isArray(leads) ? leads : []) {
     if (resolveLeadCategoryView(lead) !== 'seller') continue
@@ -1702,8 +1669,6 @@ function buildKingstonsPrincipalListingTermsExceptionReport({
       documents: listing?.documents || [],
     })
     const sellerPackSummary = summarizeKingstonsSellerPack(buildKingstonsSellerPackDocumentRows(lead))
-    const listingTerms = getKingstonsListingTermsState(lead, listing || {})
-    const listingTermsSummary = summarizeKingstonsListingTerms(listingTerms)
     const listingId = normalizeText(
       listing?.id ||
         listing?.listingId ||
@@ -1713,24 +1678,10 @@ function buildKingstonsPrincipalListingTermsExceptionReport({
         lead?.privateListingId ||
         lead?.private_listing_id,
     )
-    const allocation = listingId
-      ? allocationByListingId?.[listingId] || allocationByListingId?.[normalizeText(listingId)] || null
-      : null
-    const allocationChecked = listingId ? checkedIds.has(listingId) : false
-    const pipelineVerification = buildKingstonsAttorneyPipelineVerification({
-      listingId,
-      summary: listingTermsSummary,
-      terms: listingTerms,
-      allocation,
-      loading: Boolean(allocationsLoading && listingId && !allocationChecked),
-    })
     const report = buildKingstonsListingTermsExceptionReport({
       sellerJourney,
       sellerPackSummary,
-      listingTermsSummary,
-      listingTerms,
       listingId,
-      pipelineVerification,
     })
 
     for (const item of report.items || []) {
@@ -1742,8 +1693,6 @@ function buildKingstonsPrincipalListingTermsExceptionReport({
         property: normalizeText(lead?.sellerPropertyAddress || lead?.propertyInterest || listing?.address || listing?.label || listing?.title) || 'Property pending',
         stage: sellerJourney?.stage?.label || KINGSTONS_PIPELINE_STAGE_LABELS[normalizeKey(sellerJourney?.stage?.key)] || 'Kingstons Seller Process',
         days: report.currentStageDays,
-        pipelineLabel: pipelineVerification?.label || 'Not checked',
-        allocationChecked,
       })
     }
   }
@@ -1757,21 +1706,14 @@ function buildKingstonsPrincipalListingTermsExceptionReport({
   })
   const criticalCount = sortedRows.filter((row) => normalizeKey(row.severity) === 'critical').length
   const warningCount = sortedRows.filter((row) => normalizeKey(row.severity) === 'warning').length
-  const listingTermsCount = sortedRows.filter((row) => row.key === 'listing_terms_stale').length
   const listPropertyCount = sortedRows.filter((row) => row.key === 'list_property_stale').length
-  const attorneyCount = sortedRows.filter((row) => row.key === 'attorney_pipeline_exception' || row.key === 'attorney_connection_pending').length
 
   return {
     totalKingstonsLeads,
     totalExceptions: sortedRows.length,
     criticalCount,
     warningCount,
-    listingTermsCount,
     listPropertyCount,
-    attorneyCount,
-    allocationsLoading: allocationsLoading === true,
-    allocationsError: normalizeText(allocationsError),
-    checkedListingCount: checkedIds.size,
     averageDays: sortedRows.length
       ? Math.round(sortedRows.reduce((sum, row) => sum + Number(row.days || 0), 0) / sortedRows.length)
       : 0,
@@ -1787,10 +1729,7 @@ function escapeKingstonsPrincipalCsvCell(value = '') {
 
 function formatKingstonsPrincipalActionLabel(action = '') {
   const normalized = normalizeKey(action)
-  if (normalized === 'confirm_terms') return 'Confirm listing terms'
   if (normalized === 'create_listing') return 'Create private listing'
-  if (normalized === 'retry_pipeline_sync') return 'Retry attorney pipeline sync'
-  if (normalized === 'connect_attorney') return 'Connect nominated attorney'
   return 'Review lead'
 }
 
@@ -1810,8 +1749,6 @@ function buildKingstonsPrincipalExceptionReportCsv(report = {}, { generatedAt = 
     'Exception',
     'Detail',
     'Recommended Action',
-    'Attorney Pipeline',
-    'Allocation Checked',
     'Lead ID',
   ]
   const bodyRows = rows.length
@@ -1826,8 +1763,6 @@ function buildKingstonsPrincipalExceptionReportCsv(report = {}, { generatedAt = 
         row.title,
         row.copy,
         formatKingstonsPrincipalActionLabel(row.action),
-        row.pipelineLabel,
-        row.allocationChecked ? 'Yes' : 'No',
         row.leadId,
       ])
     : [[
@@ -1839,10 +1774,8 @@ function buildKingstonsPrincipalExceptionReportCsv(report = {}, { generatedAt = 
         '',
         'clear',
         'Clear',
-        `Kingstons leads checked: ${report.totalKingstonsLeads || 0}; listings checked: ${report.checkedListingCount || 0}`,
+        `Kingstons leads checked: ${report.totalKingstonsLeads || 0}`,
         'No action required',
-        report.allocationsError ? `Verification failed: ${report.allocationsError}` : 'Verified from loaded workspace data',
-        report.checkedListingCount ? 'Yes' : 'No',
         '',
       ]]
 
@@ -1885,18 +1818,8 @@ function buildKingstonsPrincipalExceptionDigest(report = {}, { generatedAt = new
     `- Open exceptions: ${report.totalExceptions || 0}`,
     `- Critical: ${report.criticalCount || 0}`,
     `- Warnings: ${report.warningCount || 0}`,
-    `- Listing Terms exceptions: ${report.listingTermsCount || 0}`,
-    `- Attorney watch exceptions: ${report.attorneyCount || 0}`,
-    `- Transfer-attorney allocations checked: ${report.checkedListingCount || 0}`,
+    `- List Property exceptions: ${report.listPropertyCount || 0}`,
   ]
-
-  if (report.allocationsError) {
-    lines.push(`- Allocation verification issue: ${report.allocationsError}`)
-  } else if (report.allocationsLoading) {
-    lines.push('- Allocation verification: still checking loaded Kingstons listings')
-  } else {
-    lines.push('- Allocation verification: complete for loaded Kingstons listings')
-  }
 
   lines.push('')
 
@@ -1913,7 +1836,6 @@ function buildKingstonsPrincipalExceptionDigest(report = {}, { generatedAt = new
     lines.push(`   Agent: ${row.agent || 'Unassigned'}`)
     lines.push(`   Stage: ${row.stage || 'Kingstons Seller Process'} (${row.days || 0} days)`)
     lines.push(`   Severity: ${row.severity || 'warning'}`)
-    lines.push(`   Attorney pipeline: ${row.pipelineLabel || 'Not checked'}; allocation checked: ${row.allocationChecked ? 'yes' : 'no'}`)
     lines.push(`   Recommended action: ${formatKingstonsPrincipalActionLabel(row.action)}`)
     if (row.copy) lines.push(`   Detail: ${row.copy}`)
   })
@@ -1961,9 +1883,7 @@ function KingstonsPrincipalExceptionReportCard({
   const metrics = [
     { key: 'kingstons', label: 'Kingstons Leads', value: report.totalKingstonsLeads || 0 },
     { key: 'exceptions', label: 'Open Exceptions', value: report.totalExceptions || 0 },
-    { key: 'listing_terms', label: 'Listing Terms', value: report.listingTermsCount || 0 },
-    { key: 'attorney', label: 'Attorney Watch', value: report.attorneyCount || 0 },
-    { key: 'verified', label: 'Listings Checked', value: report.checkedListingCount || 0 },
+    { key: 'list_property', label: 'List Property', value: report.listPropertyCount || 0 },
   ]
 
   return (
@@ -1980,7 +1900,7 @@ function KingstonsPrincipalExceptionReportCard({
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Kingstons Seller Workflow</p>
             <h3 className="mt-1 text-base font-semibold text-[#20344b]">Principal exception report</h3>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758d]">
-              Aggregates seller leads stuck between Seller Pack, Listing Terms, List Property, and transfer-attorney visibility.
+              Aggregates seller leads ready for List Property after the Seller Pack is complete.
             </p>
           </div>
         </div>
@@ -1990,7 +1910,6 @@ function KingstonsPrincipalExceptionReportCard({
               type="button"
               className="inline-flex min-h-9 items-center gap-2 rounded-full border border-[#d9e4ef] bg-white px-3 text-xs font-semibold text-[#2d4560] shadow-[0_8px_18px_rgba(31,54,78,0.06)] transition hover:border-[#b9cadd] hover:bg-[#f7faff] disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => onCopyDigest?.()}
-              disabled={report.allocationsLoading}
             >
               <Copy className="h-3.5 w-3.5" />
               Copy Digest
@@ -2001,7 +1920,6 @@ function KingstonsPrincipalExceptionReportCard({
               type="button"
               className="inline-flex min-h-9 items-center gap-2 rounded-full border border-[#d9e4ef] bg-white px-3 text-xs font-semibold text-[#2d4560] shadow-[0_8px_18px_rgba(31,54,78,0.06)] transition hover:border-[#b9cadd] hover:bg-[#f7faff] disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => onExportCsv?.()}
-              disabled={report.allocationsLoading}
             >
               <Download className="h-3.5 w-3.5" />
               Export CSV
@@ -2013,15 +1931,7 @@ function KingstonsPrincipalExceptionReportCard({
         </div>
       </div>
 
-      {report.allocationsLoading || report.allocationsError ? (
-        <div className={`border-b px-5 py-3 text-sm ${report.allocationsError ? 'border-[#f3c6c3] bg-[#fff5f4] text-[#b42318]' : 'border-[#e4ebf4] bg-[#f7faff] text-[#60758b]'}`}>
-          {report.allocationsError
-            ? `Attorney allocation verification failed: ${report.allocationsError}`
-            : 'Checking transfer-attorney allocations across loaded Kingstons listings...'}
-        </div>
-      ) : null}
-
-      <div className="grid gap-3 px-5 pt-5 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 px-5 pt-5 sm:grid-cols-2 xl:grid-cols-3">
         {metrics.map((metric) => (
           <div key={metric.key} className="rounded-[16px] border border-[#e5eef7] bg-[#fbfdff] px-4 py-3">
             <p className="text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#8aa0b7]">{metric.label}</p>
@@ -2083,7 +1993,7 @@ function KingstonsPrincipalExceptionReportCard({
               </span>
               <div>
                 <p className="text-sm font-semibold text-[#20364c]">No aggregate Kingstons exceptions</p>
-                <p className="mt-1 text-sm text-[#60758b]">Nothing is currently stuck in Listing Terms, List Property, or attorney visibility.</p>
+                <p className="mt-1 text-sm text-[#60758b]">Nothing is currently stuck before List Property.</p>
               </div>
             </div>
             <span className="rounded-full border border-[#c8e7d4] bg-white px-3 py-1 text-xs font-semibold text-[#1d7a52]">Healthy</span>
@@ -2103,7 +2013,9 @@ function KingstonsListingTermsSummaryCard({
   retryingPipelineSync = false,
   compact = false,
   testId = 'kingstons-listing-terms-summary',
+  context = 'listing',
 }) {
+  const isBuyerOtpContext = normalizeKey(context) === 'buyer_otp'
   const pipelineStatus = pipelineVerification || getKingstonsListingTermsPipelineStatus(terms, summary)
   const needsPipelineAttention = ['missing_allocation', 'error'].includes(normalizeKey(pipelineStatus?.state))
   const statusLabel = summary.complete ? 'Complete' : `${summary.missingLabels?.length || 0} needed`
@@ -2118,15 +2030,20 @@ function KingstonsListingTermsSummaryCard({
     },
     {
       label: 'Transfer attorney',
-      value: summary.attorneyLabel || 'Attorney not nominated',
+      value: summary.attorneyLabel || 'Attorney not selected',
       Icon: Building2,
     },
-    {
+    ...(!isBuyerOtpContext ? [{
       label: 'Attorney pipeline',
       value: pipelineStatus.label,
       detail: pipelineStatus.copy,
       Icon: ShieldCheck,
-    },
+    }] : [{
+      label: 'OTP stage',
+      value: summary.complete ? 'Ready for OTP' : 'Needs selection',
+      detail: 'Saved internally for the agent; nothing is sent to the buyer from here.',
+      Icon: ShieldCheck,
+    }]),
   ]
 
   return (
@@ -2140,12 +2057,14 @@ function KingstonsListingTermsSummaryCard({
             <ShieldCheck className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">Listing Terms</p>
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8aa0b7]">{isBuyerOtpContext ? 'Buyer OTP Terms' : 'Listing Terms'}</p>
             <h3 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#102033]">
               Commission and transfer attorney
             </h3>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758b]">
-              Confirm the commercial terms before List Property. Signed OTP sends the formal instruction to the attorney.
+              {isBuyerOtpContext
+                ? 'Select the commission setup and transfer attorney for this buyer OTP. This is an internal agent step.'
+                : 'Legacy listing terms captured on older Kingstons seller leads.'}
             </p>
           </div>
         </div>
@@ -2161,11 +2080,11 @@ function KingstonsListingTermsSummaryCard({
             onClick={onEdit}
           >
             <Pencil className="h-3.5 w-3.5" />
-            {summary.complete ? 'Edit terms' : 'Confirm terms'}
+            {summary.complete ? 'Edit terms' : 'Select terms'}
           </Button>
         </div>
       </div>
-      {needsPipelineAttention ? (
+      {!isBuyerOtpContext && needsPipelineAttention ? (
         <div className="border-b border-[#f3dfb8] bg-[#fff8e8] px-5 py-4 sm:px-6" data-testid="kingstons-attorney-pipeline-alert">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
@@ -2249,6 +2168,7 @@ function buildKingstonsListingTermsPayload(draft = {}, attorneyOption = null, ac
   const commissionType = normalizeKey(draft.commissionType) || 'percentage'
   const commissionPercentage = Number(draft.commissionPercentage || 0) || null
   const commissionAmount = Number(draft.commissionAmount || 0) || null
+  const vatIncluded = draft.commissionVatIncluded !== false
   return {
     source: 'kingstons_listing_terms_phase1',
     status: 'confirmed',
@@ -2263,6 +2183,8 @@ function buildKingstonsListingTermsPayload(draft = {}, attorneyOption = null, ac
       commissionPercentage: commissionType === 'percentage' ? commissionPercentage : null,
       amount: commissionType === 'fixed' ? commissionAmount : null,
       commissionAmount: commissionType === 'fixed' ? commissionAmount : null,
+      vatIncluded,
+      vatMode: vatIncluded ? 'inc_vat' : 'ex_vat',
       notes: normalizeText(draft.commissionNotes),
       confirmed: true,
     },
@@ -2527,16 +2449,6 @@ function buildKingstonsSellerPackListingHandoffPayload({
   const packSummary = summary || summarizeKingstonsSellerPack(rows)
   const sellerType = normalizeKey(packSummary.sellerType || getKingstonsSellerPackState(lead).sellerType)
   const sellerTypeLabel = getKingstonsFicaSellerTypeLabel(sellerType)
-  const listingTerms = getKingstonsListingTermsState(lead)
-  const listingTermsSummary = summarizeKingstonsListingTerms(listingTerms)
-  const listingTermsFacts = {
-    ...listingTerms,
-    source: listingTerms.source || 'kingstons_listing_terms_phase1',
-    status: listingTermsSummary.complete ? 'confirmed' : 'incomplete',
-    complete: listingTermsSummary.complete === true,
-    commissionConfirmed: listingTermsSummary.commissionComplete === true,
-    transferAttorneyNominated: listingTermsSummary.attorneyComplete === true,
-  }
   const documents = rows.map((documentRow) => {
     const meta = getKingstonsSellerPackListingRequirementMeta(documentRow.key, documentRow)
     return {
@@ -2576,8 +2488,6 @@ function buildKingstonsSellerPackListingHandoffPayload({
     ...(sellerPhone ? { sellerPhone } : {}),
     kingstonsSellerPack: sellerPackFacts,
     sellerPackHandoff: sellerPackFacts,
-    kingstonsListingTerms: listingTermsFacts,
-    listingTerms: listingTermsFacts,
   }
   const sellerCanonicalFactReadiness = {
     ...asRecord(existingReadiness),
@@ -2587,10 +2497,7 @@ function buildKingstonsSellerPackListingHandoffPayload({
     signedDefectForm: documents.some((document) => document.key === 'signed_defect_form' && document.status === 'uploaded'),
     signedFicaForm: documents.some((document) => document.key === 'signed_fica_form' && document.status === 'uploaded'),
     kingstonsSellerPack: packSummary.complete === true,
-    commissionTerms: listingTermsSummary.commissionComplete === true,
-    transferAttorney: listingTermsSummary.attorneyComplete === true,
-    kingstonsListingTerms: listingTermsSummary.complete === true,
-    listingHandoff: packSummary.complete === true && listingTermsSummary.complete === true,
+    listingHandoff: packSummary.complete === true,
   }
 
   return {
@@ -2608,13 +2515,6 @@ function buildKingstonsSellerPackListingHandoffPayload({
       sellerCanonicalFacts,
       sellerCanonicalFactReadiness,
       sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
-      commission: listingTermsFacts.commission,
-      commissionTerms: listingTermsFacts.commission,
-      rolePlayers: {
-        transferAttorney: listingTermsFacts.transferAttorney,
-      },
-      transferAttorneyName: listingTermsFacts.transferAttorney?.companyName || listingTermsFacts.transferAttorney?.contactPerson || '',
-      transferAttorneyEmail: listingTermsFacts.transferAttorney?.email || '',
     },
   }
 }
@@ -9294,6 +9194,7 @@ const NEW_LEAD_DEFAULTS = {
   notes: '',
   nextFollowUpDate: '',
   nextFollowUpNote: '',
+  sendIntroduction: false,
 }
 
 const DEFAULT_LEAD_FILTER = {
@@ -14638,14 +14539,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   )
   const selectedKingstonsListingTerms = useMemo(
     () => selectedLeadHasKingstonsPipelineSignal
-      ? getKingstonsListingTermsState(selectedLead || {}, selectedLeadLinkedListing || {})
+      ? selectedLeadIsSeller
+        ? getKingstonsListingTermsState(selectedLead || {}, selectedLeadLinkedListing || {})
+        : getKingstonsBuyerOtpTermsState(selectedLead || {})
       : {},
-    [selectedLead, selectedLeadHasKingstonsPipelineSignal, selectedLeadLinkedListing],
+    [selectedLead, selectedLeadHasKingstonsPipelineSignal, selectedLeadIsSeller, selectedLeadLinkedListing],
   )
   const selectedKingstonsListingTermsSummary = useMemo(
     () => summarizeKingstonsListingTerms(selectedKingstonsListingTerms),
     [selectedKingstonsListingTerms],
   )
+  const selectedKingstonsTermsContextIsBuyerOtp = selectedLeadHasKingstonsPipelineSignal && !selectedLeadIsSeller
   const selectedKingstonsAttorneyPipelineVerification = useMemo(
     () => buildKingstonsAttorneyPipelineVerification({
       listingId: selectedKingstonsLinkedListingId,
@@ -16592,17 +16496,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         organisationId,
         currentAgent,
         resolveLeadLinkedListing,
-        allocationByListingId: kingstonsPrincipalAttorneyAllocationsState.byListingId,
-        checkedListingIds: kingstonsPrincipalAttorneyAllocationsState.checkedListingIds,
-        allocationsLoading: kingstonsPrincipalAttorneyAllocationsState.loading,
-        allocationsError: kingstonsPrincipalAttorneyAllocationsState.error,
       }),
     [
       currentAgent,
-      kingstonsPrincipalAttorneyAllocationsState.byListingId,
-      kingstonsPrincipalAttorneyAllocationsState.checkedListingIds,
-      kingstonsPrincipalAttorneyAllocationsState.error,
-      kingstonsPrincipalAttorneyAllocationsState.loading,
       organisationId,
       records.appointments,
       records.leads,
@@ -16687,6 +16583,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setLeadForm({
       ...NEW_LEAD_DEFAULTS,
       leadSource: MANUAL_LEAD_SOURCE_OPTIONS[0] || 'Other',
+      sendIntroduction: false,
     })
     setSelectedAgentId(normalizeText(currentAgent.id || currentAgent.email))
   }
@@ -16728,10 +16625,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   async function handleCopyKingstonsPrincipalExceptionDigest() {
-    if (kingstonsPrincipalExceptionReport?.allocationsLoading) {
-      setError('Wait for transfer-attorney allocation verification before copying the Kingstons digest.')
-      return
-    }
     try {
       await copyKingstonsPrincipalExceptionDigest(kingstonsPrincipalExceptionReport)
       setError('')
@@ -16759,6 +16652,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ...NEW_LEAD_DEFAULTS,
       leadSource: MANUAL_LEAD_SOURCE_OPTIONS[0] || 'Other',
       leadCategory: formCategory,
+      sendIntroduction: false,
     })
     setSelectedAgentId(normalizeText(currentAgent.id || currentAgent.email))
     setShowLeadForm(true)
@@ -16766,6 +16660,183 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function updateLeadFormField(key, value) {
     setLeadForm((previous) => ({ ...previous, [key]: value }))
+  }
+
+  async function sendManualBuyerLeadIntroductionEmail({
+    lead,
+    assignedAgent,
+    linkedListing,
+  } = {}) {
+    const workspaceId = normalizeWorkspaceUuid(organisationId)
+    const leadId = normalizeLeadUuidFromLead(lead)
+    const buyerEmail = normalizeText(lead?.email || lead?.contact?.email || leadForm.email).toLowerCase()
+    const selectedProperties = linkedListing ? [linkedListing] : []
+    const selectedPropertyIds = selectedProperties
+      .map((property) => normalizeText(property?.id))
+      .filter(Boolean)
+    const sentAt = new Date().toISOString()
+    const buyerName = normalizeText(
+      [lead?.firstName || lead?.contact?.firstName || leadForm.firstName, lead?.lastName || lead?.contact?.lastName || leadForm.lastName]
+        .filter(Boolean)
+        .join(' '),
+    ) || normalizeText(leadForm.firstName) || 'there'
+    const agentName = normalizeText(assignedAgent?.name || assignedAgent?.fullName || assignedAgent?.email || currentAgent?.fullName) || 'your agent'
+    const agentEmail = normalizeText(assignedAgent?.email || currentAgent?.email).toLowerCase()
+    const resolvedOrganisationName = normalizeText(organisationName || profile?.companyName || profile?.company || profile?.organisationName)
+
+    try {
+      if (!workspaceId) throw new Error('Workspace is not ready.')
+      if (!leadId) throw new Error('The buyer lead is not fully linked yet.')
+      if (!buyerEmail) throw new Error('The buyer email address is missing.')
+      if (!selectedPropertyIds.length) throw new Error('Select a property before sending the introduction email.')
+
+      const origin = typeof window !== 'undefined' ? window.location?.origin || '' : ''
+      const emailProperties = buildBuyerViewingAvailabilityEmailProperties(selectedProperties, origin)
+      const preferenceLinkResponse = await invokeEdgeFunction('buyer-viewing-preferences', {
+        body: {
+          action: 'create',
+          organisationId: workspaceId,
+          leadId,
+          buyerEmail,
+          buyerName,
+          agentName,
+          agentEmail,
+          organisationName: resolvedOrganisationName,
+          origin,
+          selectedPropertyIds,
+          properties: emailProperties,
+          expiresInDays: 14,
+        },
+      })
+      assertEdgeFunctionSuccess(preferenceLinkResponse, 'Unable to create the buyer viewing preference link.')
+      const preferenceLinkData = preferenceLinkResponse?.data || {}
+      const preferenceLink = normalizeText(preferenceLinkData?.preferenceLink)
+      const emailResponse = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'buyer_viewing_availability_request',
+          to: buyerEmail,
+          buyerName,
+          recipientName: buyerName,
+          agentName,
+          agentEmail,
+          organisationId: workspaceId,
+          organisationName: resolvedOrganisationName,
+          leadId,
+          recipientRole: 'buyer',
+          resend: false,
+          actionLink: preferenceLink,
+          preferenceLink,
+          propertyCount: selectedPropertyIds.length,
+          properties: emailProperties,
+          idempotencyKey: `manual-buyer-viewing-intro:${workspaceId}:${leadId}:${sentAt}:${selectedPropertyIds.join(',')}`,
+          deliveryMetadata: {
+            source: 'manual_buyer_lead_capture',
+            action: 'send_introduction',
+            selectedPropertyIds,
+            buyerViewingPreferenceLinkId: normalizeText(preferenceLinkData?.linkId),
+            buyerViewingPreferenceLinkExpiresAt: normalizeText(preferenceLinkData?.expiresAt),
+          },
+        },
+      })
+      assertEdgeFunctionSuccess(emailResponse, 'Unable to send the buyer introduction email.')
+      const deliveryData = emailResponse?.data || {}
+      const deliveryStatus = deliveryData?.suppressed ? 'suppressed' : 'sent'
+      const notes = buildBuyerViewingPlanNotes(
+        {
+          status: 'buyer_availability',
+          selectedPropertyIds,
+          confirmedPropertyIds: [],
+          availabilityWindows: '',
+          responseNotes: '',
+          sellerRecipientEmails: '',
+          sellerCoordinationNotes: '',
+          bookedPropertyIds: [],
+          bookedAppointmentIds: [],
+          requestedAt: sentAt,
+          respondedAt: '',
+          sellerRequestedAt: '',
+          bookedAt: '',
+          recipientEmail: buyerEmail,
+          buyerEmailDeliveryStatus: deliveryStatus,
+          buyerEmailDeliveryId: normalizeText(deliveryData?.deliveryId),
+          buyerEmailProviderMessageId: normalizeText(deliveryData?.providerMessageId || deliveryData?.emailId),
+          buyerEmailDeliveryFailure: '',
+          sellerEmailDeliveryStatus: '',
+          sellerEmailDeliveryIds: '',
+          sellerEmailProviderMessageIds: '',
+          sellerEmailDeliveryFailure: '',
+          updatedAt: sentAt,
+        },
+        lead?.notes,
+      )
+      const leadPatch = { notes }
+      await updateAgencyCrmLeadRecord(workspaceId, leadId, leadPatch)
+      await createAgencyCrmLeadActivity(
+        workspaceId,
+        leadId,
+        {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Viewing Availability Requested',
+          activityNote: `Manual buyer introduction sent to ${buyerEmail} with ${selectedPropertyIds.length} selected propert${selectedPropertyIds.length === 1 ? 'y' : 'ies'}.`,
+          outcome: deliveryStatus === 'suppressed' ? 'Suppressed test delivery' : 'Sent to buyer',
+        },
+        { actor: currentAgent },
+      ).catch(() => null)
+      await createBuyerViewingAutomationTask({
+        lead: { ...lead, ...leadPatch },
+        title: 'Follow up buyer viewing availability',
+        description: `Confirm viewing times for ${selectedPropertyIds.length} selected propert${selectedPropertyIds.length === 1 ? 'y' : 'ies'}.`,
+        dueDate: getDateOffsetIsoDate(1),
+        priority: 'High',
+      }).catch(() => null)
+      return { status: deliveryStatus, leadPatch }
+    } catch (sendError) {
+      const deliveryFailure = sendError?.message || 'Unable to send the buyer introduction email.'
+      const failureNotes = buildBuyerViewingPlanNotes(
+        {
+          status: 'draft',
+          selectedPropertyIds,
+          confirmedPropertyIds: [],
+          availabilityWindows: '',
+          responseNotes: '',
+          sellerRecipientEmails: '',
+          sellerCoordinationNotes: '',
+          bookedPropertyIds: [],
+          bookedAppointmentIds: [],
+          requestedAt: '',
+          respondedAt: '',
+          sellerRequestedAt: '',
+          bookedAt: '',
+          recipientEmail: buyerEmail,
+          buyerEmailDeliveryStatus: 'failed',
+          buyerEmailDeliveryId: '',
+          buyerEmailProviderMessageId: '',
+          buyerEmailDeliveryFailure: deliveryFailure,
+          sellerEmailDeliveryStatus: '',
+          sellerEmailDeliveryIds: '',
+          sellerEmailProviderMessageIds: '',
+          sellerEmailDeliveryFailure: '',
+          updatedAt: new Date().toISOString(),
+        },
+        lead?.notes,
+      )
+      const leadPatch = { notes: failureNotes }
+      if (workspaceId && leadId) {
+        await updateAgencyCrmLeadRecord(workspaceId, leadId, leadPatch).catch(() => null)
+        await createAgencyCrmLeadActivity(
+          workspaceId,
+          leadId,
+          {
+            agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+            activityType: 'Viewing Availability Email Failed',
+            activityNote: `Manual buyer introduction could not be sent to ${buyerEmail || 'the buyer'}. ${deliveryFailure}`,
+            outcome: 'Failed',
+          },
+          { actor: currentAgent },
+        ).catch(() => null)
+      }
+      return { status: 'failed', error: sendError, leadPatch }
+    }
   }
 
   async function handleCreateLead(event) {
@@ -16786,6 +16857,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const assignedAgent = resolveAgentById(selectedAgentId || currentAgent.id)
     const linkedListingId = normalizeText(leadForm.linkedListing)
     const linkedListing = linkedListingId ? appointmentListingById.get(linkedListingId) : null
+    const shouldSendManualBuyerIntro = Boolean(leadForm.sendIntroduction) && normalizeLeadCategory(leadForm.leadCategory, 'other') === 'buyer'
+    if (shouldSendManualBuyerIntro && !linkedListingId) {
+      setError('Select the property before sending the buyer introduction email.')
+      return
+    }
     setIsLeadCreating(true)
     try {
       const createdLead = await createAgencyCrmLeadRecord(
@@ -16824,12 +16900,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           },
         },
       )
-      const createdLeadKey = normalizeLeadIdentityKey(createdLead?.leadId)
+      let createdLeadRecord = createdLead
+      let manualIntroResult = null
+      if (shouldSendManualBuyerIntro) {
+        manualIntroResult = await sendManualBuyerLeadIntroductionEmail({
+          lead: createdLead,
+          assignedAgent,
+          linkedListing,
+        })
+        if (manualIntroResult?.leadPatch) {
+          createdLeadRecord = { ...createdLeadRecord, ...manualIntroResult.leadPatch }
+        }
+      }
+      const createdLeadKey = normalizeLeadIdentityKey(createdLeadRecord?.leadId)
       if (createdLeadKey) {
         setRecords((previous) => ({
           ...previous,
           leads: [
-            createdLead,
+            createdLeadRecord,
             ...(Array.isArray(previous.leads) ? previous.leads : []).filter(
               (lead) => normalizeLeadIdentityKey(lead?.leadId) !== createdLeadKey,
             ),
@@ -16865,10 +16953,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         console.warn('[PIPELINE] non-blocking lead created activity failed', activityError)
       })
       setError('')
-      setMessage('Lead created.')
-      setLeadTypeView(resolveLeadCategoryView(createdLead || leadForm.leadCategory))
+      if (manualIntroResult?.status === 'failed') {
+        setError(`Lead created, but the buyer introduction email was not sent. ${formatViewingRequestUserError(manualIntroResult.error, 'Try sending it again from the viewing planner.')}`)
+        setMessage('Lead created.')
+      } else if (manualIntroResult?.status === 'suppressed') {
+        setMessage('Lead created and introduction logged. Email delivery was suppressed for this test recipient.')
+      } else if (manualIntroResult?.status === 'sent') {
+        setMessage('Lead created and buyer introduction email sent.')
+      } else {
+        setMessage('Lead created.')
+      }
+      setLeadTypeView(resolveLeadCategoryView(createdLeadRecord || leadForm.leadCategory))
       setLeadFilter({ ...DEFAULT_LEAD_FILTER })
-      setSelectedLeadId(createdLead?.leadId || '')
+      setSelectedLeadId(createdLeadRecord?.leadId || '')
       clearLeadForm()
       setShowLeadForm(false)
       void reloadRecords(organisationId, { applyLocalSnapshot: false })
@@ -20493,36 +20590,56 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setKingstonsListingTermsSaving(true)
       setKingstonsListingTermsError('')
-      const listingTerms = buildKingstonsListingTermsPayload(
-        draft,
-        selectedAttorney,
-        normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
-      )
+      const isBuyerOtpTerms = selectedKingstonsTermsContextIsBuyerOtp
+      const listingTerms = {
+        ...buildKingstonsListingTermsPayload(
+          draft,
+          selectedAttorney,
+          normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+        ),
+        source: isBuyerOtpTerms ? 'kingstons_buyer_otp_terms_phase1' : 'kingstons_listing_terms_phase1',
+      }
       const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
-      const rawEnquiryPayload = {
-        ...rawPayload,
-        kingstonsListingTerms: listingTerms,
-        listingTerms,
-      }
-      const leadPatch = {
-        rawEnquiryPayload,
-        kingstonsListingTerms: listingTerms,
-        listingTerms,
-        stage: 'Listing Terms Confirmed',
-        status: 'Listing Terms Confirmed',
-      }
+      const rawEnquiryPayload = isBuyerOtpTerms
+        ? {
+            ...rawPayload,
+            kingstonsBuyerOtpTerms: listingTerms,
+            buyerOtpTerms: listingTerms,
+          }
+        : {
+            ...rawPayload,
+            kingstonsListingTerms: listingTerms,
+            listingTerms,
+          }
+      const leadPatch = isBuyerOtpTerms
+        ? {
+            rawEnquiryPayload,
+            kingstonsBuyerOtpTerms: listingTerms,
+            buyerOtpTerms: listingTerms,
+            buyerOtpTermsStatus: 'confirmed',
+            buyerOtpTermsConfirmedAt: listingTerms.confirmedAt,
+          }
+        : {
+            rawEnquiryPayload,
+            kingstonsListingTerms: listingTerms,
+            listingTerms,
+          }
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
       void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: 'Listing Terms Confirmed',
-        activityNote: `Commission and transfer attorney confirmed for Kingstons listing creation. Attorney: ${listingTerms.transferAttorney.companyName || listingTerms.transferAttorney.email}.`,
-        outcome: 'Listing Terms',
+        activityType: isBuyerOtpTerms ? 'Buyer OTP Terms Confirmed' : 'Listing Terms Confirmed',
+        activityNote: isBuyerOtpTerms
+          ? `Commission and transfer attorney selected for the buyer OTP stage. Attorney: ${listingTerms.transferAttorney.companyName || listingTerms.transferAttorney.email}.`
+          : `Commission and transfer attorney confirmed for Kingstons listing creation. Attorney: ${listingTerms.transferAttorney.companyName || listingTerms.transferAttorney.email}.`,
+        outcome: isBuyerOtpTerms ? 'Buyer OTP terms' : 'Listing terms',
         activityDate: listingTerms.confirmedAt,
       }, { actor: currentAgent }).catch((activityError) => {
         console.warn('[AgencyPipelinePage] Listing terms activity could not be recorded.', activityError)
       })
-      setMessage('Listing terms confirmed. The property can now move to List Property.')
+      setMessage(isBuyerOtpTerms
+        ? 'Buyer OTP commission and transfer attorney saved for the agent.'
+        : 'Listing terms saved.')
       setKingstonsListingTermsModalOpen(false)
       scheduleRecordsReload(organisationId, 850)
     } catch (saveError) {
@@ -20577,12 +20694,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       openSellerContactFeedbackModal()
       return
     }
-    const preferredAttorneyId = normalizeText(preferredAttorney?.id || preferredAttorney?.preferredPartnerId)
-    if (!preferredAttorneyId) {
-      await requestSellerOnboardingAttorneySelection()
-      return
-    }
-
     const resolvedSellerDisplayName = selectedLeadDisplayName && selectedLeadDisplayName !== 'Lead Workspace'
       ? selectedLeadDisplayName
       : resolveLeadDisplayName(
@@ -20652,7 +20763,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           const onboarding = await sendSellerOnboarding(canonicalListingId, {
             sellerContactEmail: sellerEmail,
             sellerContactPhone: normalizeText(selectedLeadContact?.phone),
-            transferAttorneyPreferredPartnerId: preferredAttorneyId,
           })
           token = normalizeText(onboarding?.token) || token
           onboardingLink = normalizeText(onboarding?.link) || onboardingLink
@@ -20767,7 +20877,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Onboarding Sent',
-        activityNote: `Seller onboarding was sent to ${sellerName} with ${preferredAttorney.companyName || 'the selected firm'} nominated as transferring attorney.`,
+        activityNote: `Seller onboarding was sent to ${sellerName}.`,
         outcome: 'Onboarding link sent',
         activityDate: new Date().toISOString(),
       }, { actor: currentAgent })
@@ -20840,7 +20950,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       setError('')
-      setMessage(`Seller onboarding sent with ${preferredAttorney.companyName || 'the selected transfer attorney'} nominated.`)
+      setMessage('Seller onboarding sent.')
       setSellerAttorneyPickerOpen(false)
       await reloadRecords(organisationId)
     } catch (sendError) {
@@ -21731,11 +21841,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError(`Complete the Kingston Seller Pack before creating the listing. Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`)
       return
     }
-    if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsListingTermsSummary.complete) {
-      openKingstonsListingTermsModal()
-      setError(`Confirm the Kingston listing terms before creating the listing. Still needed: ${selectedKingstonsListingTermsSummary.missingLabels.join(', ')}.`)
-      return
-    }
 
     const stageKey = normalizeText(selectedLead?.stage).toLowerCase()
     const hasMandateSigned = stageKey.includes('mandate signed')
@@ -21759,8 +21864,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     let createdListingId = ''
     let sellerPackSyncResult = null
     let sellerPackSyncError = ''
-    let attorneyPreInstructionResult = null
-    let attorneyPreInstructionError = ''
 
     if (useDbFirstListingPersistence) {
       const created = await createPrivateListing({
@@ -21923,25 +22026,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     if (useDbFirstListingPersistence && selectedLeadHasKingstonsPipelineSignal) {
       try {
-        attorneyPreInstructionResult = await syncKingstonsTransferAttorneyPreInstruction(
-          createdListingId,
-          selectedLead,
-          selectedKingstonsListingTerms,
-        )
-        if (attorneyPreInstructionResult?.allocation) {
-          kingstonsAttorneyAllocationCacheRef.current.set(createdListingId, attorneyPreInstructionResult.allocation)
-          setKingstonsAttorneyPipelineAllocationState({
-            listingId: createdListingId,
-            allocation: attorneyPreInstructionResult.allocation,
-            loading: false,
-            error: '',
-          })
-        }
-      } catch (attorneyAllocationError) {
-        attorneyPreInstructionError = attorneyAllocationError?.message || 'Transfer attorney could not be added to the pre-instruction pipeline.'
-        console.warn('[AgencyPipelinePage] Kingston transfer attorney pre-instruction allocation failed.', attorneyAllocationError)
-      }
-      try {
         sellerPackSyncResult = await syncKingstonsSellerPackToListing(createdListingId, selectedLead, kingstonsListingHandoffPayload)
       } catch (sellerPackError) {
         sellerPackSyncError = sellerPackError?.message || 'Seller Pack could not be linked to the listing documents.'
@@ -21968,27 +22052,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ? 'Mandate signed'
           : 'Manual override',
       metadata: selectedLeadHasKingstonsPipelineSignal
-        ? {
-            attorneyPreInstructionStatus: attorneyPreInstructionResult?.allocation?.status || null,
-            attorneyPreInstructionSkipped: attorneyPreInstructionResult?.skipped === true,
-            attorneyPreInstructionSkipReason: attorneyPreInstructionResult?.reason || null,
-          }
+        ? undefined
         : undefined,
     }, { actor: currentAgent })
 
     setError('')
-    if (sellerPackSyncError || attorneyPreInstructionError) {
-      setError([
-        sellerPackSyncError && `Seller Pack handoff needs attention. ${sellerPackSyncError}`,
-        attorneyPreInstructionError && `Transfer attorney allocation needs attention. ${attorneyPreInstructionError}`,
-      ].filter(Boolean).join(' '))
+    if (sellerPackSyncError) {
+      setError(`Seller Pack handoff needs attention. ${sellerPackSyncError}`)
     }
     setMessage(
-      attorneyPreInstructionResult?.allocation?.status === 'awaiting_buyer'
-        ? 'Listing created, Seller Pack linked, and transfer attorney added to the awaiting-buyer pipeline.'
-        : attorneyPreInstructionResult?.skipped
-          ? 'Listing created and attorney nomination captured. Connect the attorney firm to add it to their pipeline.'
-          : sellerPackSyncResult?.linked === selectedKingstonsSellerPackSummary.total
+      sellerPackSyncResult?.linked === selectedKingstonsSellerPackSummary.total
         ? 'Listing created and Seller Pack linked to the listing documents.'
         : useDbFirstListingPersistence
         ? 'Canonical private listing created and linked to this seller lead.'
@@ -22204,6 +22277,68 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function findSelectedLeadKingstonsValuationPresentationAppointment() {
+    return selectedLeadAppointments
+      .slice()
+      .reverse()
+      .find((appointment) => {
+        const appointmentType = normalizeKey(appointment?.appointmentType || appointment?.appointment_type || appointment?.type || appointment?.title)
+        const workflowStage = normalizeKey(appointment?.linkedWorkflowStage || appointment?.linked_workflow_stage)
+        return appointmentType.includes('valuation_presentation') || workflowStage === 'valuation_presentation'
+      }) || null
+  }
+
+  async function handleCompleteKingstonsValuationPresentationFromJourney() {
+    if (!selectedLead || !organisationId || !selectedLeadIsSeller) return
+    if (isAppointmentSchedulingSubmitting) return
+    const valuationPresentation = findSelectedLeadKingstonsValuationPresentationAppointment()
+    const appointmentId = normalizeText(valuationPresentation?.appointmentId || valuationPresentation?.appointment_id || valuationPresentation?.id)
+    const leadPatch = {
+      stage: 'Seller Pack',
+      status: 'Valuation Presented',
+    }
+    setAppointmentSchedulingSubmitting(true)
+    setMessage('Moving seller lead to Seller Pack...')
+    try {
+      if (appointmentId) {
+        await addAppointmentOutcomeAsync(
+          organisationId,
+          appointmentId,
+          {
+            status: 'completed',
+            outcomeSummary: 'Valuation presentation completed.',
+            clientFeedback: normalizeText(valuationPresentation?.clientFeedback),
+            agentNotes: normalizeText(valuationPresentation?.agentNotes || valuationPresentation?.notes),
+            nextStep: 'Seller Pack',
+          },
+          {
+            actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          },
+        )
+      }
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: currentAgent,
+        activityType: 'Valuation Presented',
+        activityNote: appointmentId
+          ? 'Valuation presentation completed from Next Best Action. Seller process moved to Seller Pack.'
+          : 'Valuation presentation completed from Next Best Action without a matching appointment record. Seller process moved to Seller Pack.',
+        outcome: 'Seller Pack',
+        activityDate: new Date().toISOString(),
+      }, { actor: currentAgent })
+      handleLeadWorkspaceTabSelection('documents')
+      setAppointmentModalOpen(false)
+      setError('')
+      setMessage('Valuation presentation completed. Seller process moved to Seller Pack.')
+      await reloadRecords(organisationId)
+    } catch (completionError) {
+      setError(completionError?.message || 'Unable to complete the valuation presentation right now.')
+    } finally {
+      setAppointmentSchedulingSubmitting(false)
+    }
+  }
+
   function handleSellerJourneyAction(actionId) {
     const id = normalizeText(actionId)
     if (id === 'contact_seller') {
@@ -22262,6 +22397,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (id === 'complete_valuation_presentation') {
+      if (selectedLeadHasKingstonsPipelineSignal) {
+        void handleCompleteKingstonsValuationPresentationFromJourney()
+        return
+      }
       const valuationPresentation = selectedLeadAppointments
         .slice()
         .reverse()
@@ -22300,19 +22439,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')
       return
     }
-    if (id === 'confirm_listing_terms' || id === 'listing_terms_confirmed') {
-      openKingstonsListingTermsModal()
-      return
-    }
     if (id === 'prepare_listing') {
       if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsSellerPackSummary.complete) {
         handleLeadWorkspaceTabSelection('documents')
         setError(`Complete the Kingston Seller Pack before creating the listing. Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`)
-        return
-      }
-      if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsListingTermsSummary.complete) {
-        openKingstonsListingTermsModal()
-        setError(`Confirm the Kingston listing terms before creating the listing. Still needed: ${selectedKingstonsListingTermsSummary.missingLabels.join(', ')}.`)
         return
       }
       void handleCreateListingFromSellerLead()
@@ -28862,17 +28992,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </div>
 
                     {selectedLeadHasKingstonsPipelineSignal ? (
-                      <KingstonsListingTermsSummaryCard
-                        terms={selectedKingstonsListingTerms}
-                        summary={selectedKingstonsListingTermsSummary}
-                        pipelineVerification={selectedKingstonsAttorneyPipelineVerification}
-                        onEdit={openKingstonsListingTermsModal}
-                        onRetryPipelineSync={handleRetryKingstonsAttorneyPipelineSync}
-                        retryingPipelineSync={kingstonsAttorneyPipelineSyncing}
-                      />
-                    ) : null}
-
-                    {selectedLeadHasKingstonsPipelineSignal ? (
                       <>
                       <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)]" data-testid="kingstons-seller-pack-overview">
                         <div className="border-b border-[#edf3f8] px-5 py-5 sm:px-6">
@@ -32619,6 +32738,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </div>
                         </section>
 
+                        {selectedLeadHasKingstonsPipelineSignal ? (
+                          <KingstonsListingTermsSummaryCard
+                            terms={selectedKingstonsListingTerms}
+                            summary={selectedKingstonsListingTermsSummary}
+                            onEdit={openKingstonsListingTermsModal}
+                            compact
+                            context="buyer_otp"
+                            testId="kingstons-buyer-otp-terms-summary"
+                          />
+                        ) : null}
+
                         <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
                           <div className="flex items-center gap-2">
                             <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">2</span>
@@ -33177,21 +33307,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             ))}
                           </div>
-
-                          {selectedLeadHasKingstonsPipelineSignal ? (
-                            <div className="mt-6">
-                              <KingstonsListingTermsSummaryCard
-                                terms={selectedKingstonsListingTerms}
-                                summary={selectedKingstonsListingTermsSummary}
-                                pipelineVerification={selectedKingstonsAttorneyPipelineVerification}
-                                onEdit={openKingstonsListingTermsModal}
-                                onRetryPipelineSync={handleRetryKingstonsAttorneyPipelineSync}
-                                retryingPipelineSync={kingstonsAttorneyPipelineSyncing}
-                                compact
-                                testId="kingstons-documents-listing-terms-summary"
-                              />
-                            </div>
-                          ) : null}
 
                           <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
                             <div className="space-y-4" data-testid="seller-documents-list">
@@ -34048,11 +34163,40 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           </div>
 
           {normalizeLeadCategory(leadForm.leadCategory, 'other') !== 'seller' ? (
-            <ListingPicker
-              listings={appointmentListingOptions}
-              value={leadForm.linkedListing}
-              onChange={(nextListingId) => updateLeadFormField('linkedListing', nextListingId)}
-            />
+            <div className="grid gap-3">
+              <ListingPicker
+                listings={appointmentListingOptions}
+                value={leadForm.linkedListing}
+                onChange={(nextListingId) => updateLeadFormField('linkedListing', nextListingId)}
+              />
+              <label className="flex cursor-pointer items-center justify-between gap-4 rounded-[14px] border border-[#dfe9f4] bg-[#f8fbff] px-4 py-3">
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-white text-[#0c6b58] ring-1 ring-[#dfe9f4]">
+                    <Mail className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-[#142338]">Send introduction email</span>
+                    <span className="block text-xs leading-5 text-[#60758b]">
+                      Sends the branded buyer intro with the public 3-time viewing link after capture.
+                    </span>
+                  </span>
+                </span>
+                <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${leadForm.sendIntroduction ? 'bg-[#0c6b58]' : 'bg-[#cbd8e6]'}`}>
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={Boolean(leadForm.sendIntroduction)}
+                    onChange={(event) => updateLeadFormField('sendIntroduction', event.target.checked)}
+                  />
+                  <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition ${leadForm.sendIntroduction ? 'left-6' : 'left-1'}`} />
+                </span>
+              </label>
+              {leadForm.sendIntroduction && !normalizeText(leadForm.linkedListing) ? (
+                <p className="rounded-[12px] border border-[#f4d7a2] bg-[#fff8e9] px-3 py-2 text-xs font-semibold text-[#9a6a12]">
+                  Select the property first so the buyer receives the right viewing link.
+                </p>
+              ) : null}
+            </div>
           ) : null}
 
           <Field as="textarea" rows={3} placeholder="Notes (optional)" value={leadForm.notes} onChange={(event) => updateLeadFormField('notes', event.target.value)} />
@@ -34427,8 +34571,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	      <Modal
 	        open={kingstonsListingTermsModalOpen}
 	        onClose={closeKingstonsListingTermsModal}
-	        title="Confirm listing terms"
-	        subtitle="Capture the commission and nominated transfer attorney before this Kingstons seller lead becomes a listing."
+	        title={selectedKingstonsTermsContextIsBuyerOtp ? 'Select buyer OTP terms' : 'Confirm listing terms'}
+	        subtitle={selectedKingstonsTermsContextIsBuyerOtp
+	          ? 'Agent-only commission and transfer attorney selection for this buyer OTP. Nothing is sent to the client from this step.'
+	          : 'Legacy Kingstons listing terms capture.'}
 	        className="max-w-3xl"
 	      >
 	        {kingstonsListingTermsError ? (
@@ -34444,7 +34590,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	              </span>
 	              <div>
 	                <h4 className="text-base font-semibold text-[#102033]">Commission</h4>
-	                <p className="mt-1 text-sm leading-5 text-[#60758b]">Store the agreed agency commission before the listing is created.</p>
+	                <p className="mt-1 text-sm leading-5 text-[#60758b]">
+	                  {selectedKingstonsTermsContextIsBuyerOtp
+	                    ? 'Store the agreed OTP commission for the agent workflow.'
+	                    : 'Store the agreed agency commission.'}
+	                </p>
 	              </div>
 	            </div>
 	            <div className="mt-4 grid gap-3 md:grid-cols-[180px_1fr]">
@@ -34486,6 +34636,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                </label>
 	              )}
 	            </div>
+	            <label className="mt-3 inline-flex min-h-11 items-center gap-3 rounded-[14px] border border-[#dfe9f4] bg-white px-4 text-sm font-semibold text-[#2a4057]">
+	              <input
+	                type="checkbox"
+	                checked={kingstonsListingTermsDraft?.commissionVatIncluded !== false}
+	                onChange={(event) => updateKingstonsListingTermsDraftField('commissionVatIncluded', event.target.checked)}
+	                className="h-4 w-4 rounded border-[#cbd8e6] text-[#0b63f6]"
+	              />
+	              <span>{kingstonsListingTermsDraft?.commissionVatIncluded !== false ? 'Commission includes VAT' : 'Commission excludes VAT'}</span>
+	            </label>
 	            <label className="mt-3 grid gap-2 text-sm font-medium text-[#2a4057]">
 	              Notes <span className="font-normal text-[#7a8da3]">(optional)</span>
 	              <Field
@@ -34506,7 +34665,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                </span>
 	                <div>
 	                  <h4 className="text-base font-semibold text-[#102033]">Transfer attorney nomination</h4>
-	                  <p className="mt-1 text-sm leading-5 text-[#60758b]">This creates pre-instruction context only. The formal instruction remains locked until signed OTP.</p>
+	                  <p className="mt-1 text-sm leading-5 text-[#60758b]">
+	                    {selectedKingstonsTermsContextIsBuyerOtp
+	                      ? 'Select the transfer attorney for the buyer OTP stage. This stays internal to the agent workflow.'
+	                      : 'Legacy transfer attorney capture for older seller records.'}
+	                  </p>
 	                </div>
 	              </div>
 	              {sellerPreferredAttorneysLoading ? (
@@ -34527,10 +34690,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                  onChange={(event) => updateKingstonsListingTermsDraftField('transferAttorneyMode', event.target.value)}
 	                >
 	                  <option value="agency_recommended">Agency panel</option>
-	                  <option value="seller_selected">Seller selected</option>
+	                  <option value={selectedKingstonsTermsContextIsBuyerOtp ? 'buyer_selected' : 'seller_selected'}>Manual firm</option>
 	                </Field>
 	              </label>
-	              {normalizeKey(kingstonsListingTermsDraft?.transferAttorneyMode) !== 'seller_selected' ? (
+	              {!isManualKingstonsTransferAttorneyDraft(kingstonsListingTermsDraft || {}) ? (
 	                <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
 	                  Attorney
 	                  <Field
@@ -34568,7 +34731,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                </label>
 	              )}
 	            </div>
-	            {normalizeKey(kingstonsListingTermsDraft?.transferAttorneyMode) === 'seller_selected' ? (
+	            {isManualKingstonsTransferAttorneyDraft(kingstonsListingTermsDraft || {}) ? (
 	              <div className="mt-3 grid gap-3 md:grid-cols-3">
 	                <Field
 	                  placeholder="Contact person"
@@ -34598,7 +34761,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	            Cancel
 	          </Button>
 	          <Button type="button" onClick={() => void handleSaveKingstonsListingTerms()} disabled={kingstonsListingTermsSaving}>
-	            {kingstonsListingTermsSaving ? 'Saving...' : 'Confirm Terms'}
+	            {kingstonsListingTermsSaving ? 'Saving...' : selectedKingstonsTermsContextIsBuyerOtp ? 'Save OTP Terms' : 'Save Terms'}
 	          </Button>
 	        </div>
 	      </Modal>
