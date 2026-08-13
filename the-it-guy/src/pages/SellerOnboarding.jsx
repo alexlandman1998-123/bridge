@@ -97,7 +97,7 @@ import {
   readArch9SellerTermsAcceptance,
 } from '../lib/arch9TermsAcceptance'
 
-const STEPS = ['Seller Information', 'Property Details', 'Property Disclosure', 'Transferring Attorney', 'Review & Submit']
+const STEPS = ['Seller Information', 'Property Details', 'Property Disclosure', 'Review & Submit']
 
 const SELLER_STATUS_LABELS = {
   [SELLER_ONBOARDING_STATUS.NOT_STARTED]: 'Not Started',
@@ -314,11 +314,6 @@ const STEP_META = [
     label: 'Property Disclosure',
     helper: 'Capture known material facts and seller declaration.',
     icon: ClipboardCheck,
-  },
-  {
-    label: 'Transferring Attorney',
-    helper: 'Accept the preferred attorney or nominate another.',
-    icon: Landmark,
   },
   {
     label: 'Review & Submit',
@@ -1286,71 +1281,6 @@ function resolveSellerResidentialAddress(form = {}) {
   ).trim()
 }
 
-function getPreferredTransferAttorneyId(attorney = {}) {
-  return String(
-    attorney?.preferredPartnerId ||
-      attorney?.preferred_partner_id ||
-      attorney?.partnerId ||
-      attorney?.partner_id ||
-      attorney?.id ||
-      '',
-  ).trim()
-}
-
-function hasPreferredTransferAttorney(attorney = {}) {
-  return Boolean(getPreferredTransferAttorneyId(attorney) || attorney?.companyName || attorney?.company_name || attorney?.name)
-}
-
-function getPreferredTransferAttorneyName(attorney = {}) {
-  return String(attorney?.companyName || attorney?.company_name || attorney?.name || 'the preferred transferring attorney').trim()
-}
-
-function getTransferAttorneyChoice(form = {}) {
-  const explicitChoice = String(form.transferAttorneyChoice || form.transfer_attorney_choice || '').trim()
-  if (explicitChoice) return explicitChoice
-  return hasPreferredTransferAttorney(form.preferredTransferAttorney) ? 'preferred' : 'deferred'
-}
-
-function hasTransferAttorneyAcceptance(form = {}) {
-  return Boolean(form.preferredTransferAttorneyAccepted || form.preferredTransferAttorneyAcceptance?.acceptedAt || form.preferredTransferAttorneyAcceptance?.accepted_at)
-}
-
-function buildPreferredTransferAttorneyAcceptance(form = {}, listing = {}) {
-  const preferredPartnerId = getPreferredTransferAttorneyId(form.preferredTransferAttorney)
-  if (!preferredPartnerId) return null
-  const acceptedAt = form.preferredTransferAttorneyAcceptance?.acceptedAt || form.preferredTransferAttorneyAcceptance?.accepted_at || new Date().toISOString()
-  const companyName = getPreferredTransferAttorneyName(form.preferredTransferAttorney)
-  return {
-    ...(form.preferredTransferAttorneyAcceptance || {}),
-    preferredPartnerId,
-    preferred_partner_id: preferredPartnerId,
-    companyName,
-    company_name: companyName,
-    acceptedAt,
-    accepted_at: acceptedAt,
-    acceptedByName: getSellerDisplayName(listing, form),
-    accepted_by_name: getSellerDisplayName(listing, form),
-    source: 'seller_onboarding',
-  }
-}
-
-function getTransferAttorneyMissingItems(form = {}) {
-  const choice = getTransferAttorneyChoice(form)
-  if (choice === 'nominate_other') {
-    return [
-      !String(form.nominatedTransferAttorneyName || form.nominated_transfer_attorney_name || '').trim() && 'Attorney name or firm',
-      !String(form.nominatedTransferAttorneyEmail || form.nominated_transfer_attorney_email || form.nominatedTransferAttorneyPhone || form.nominated_transfer_attorney_phone || '').trim() && 'Attorney email or phone',
-    ].filter(Boolean)
-  }
-
-  if (choice === 'deferred') return []
-
-  return [
-    !hasPreferredTransferAttorney(form.preferredTransferAttorney) && 'Preferred transferring attorney is not configured',
-    hasPreferredTransferAttorney(form.preferredTransferAttorney) && !hasTransferAttorneyAcceptance(form) && 'Seller acceptance',
-  ].filter(Boolean)
-}
-
 function getOwnershipFieldLabels(value = '') {
   const branch = getOwnershipBranch(value)
   const isEntityBranch = ['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(branch)
@@ -1394,12 +1324,6 @@ function normalizeFormData(listing) {
     ...(listing?.sellerOnboarding?.formData || {}),
     ...buildSellerPortalFormDataFromDirectListing(listing),
   }
-  const preferredTransferAttorney = existing.preferredTransferAttorney && typeof existing.preferredTransferAttorney === 'object'
-    ? {
-      ...existing.preferredTransferAttorney,
-      preferredPartnerId: getPreferredTransferAttorneyId(existing.preferredTransferAttorney),
-    }
-    : null
   const canonicalFacts = getCanonicalSellerFacts(listing)
   const flow = getFlowContract(existing, listing, canonicalFacts)
   const split = splitName(existing.fullName || seller.name || '')
@@ -1823,18 +1747,6 @@ function normalizeFormData(listing) {
     cancellationRequired: existing.cancellationRequired !== undefined ? Boolean(existing.cancellationRequired) : Boolean(existing.existingBond),
     cancellationAttorneyKnown: Boolean(existing.cancellationAttorneyKnown),
     cancellationAttorneyDetails: existing.cancellationAttorneyDetails || '',
-    preferredTransferAttorney,
-    preferredTransferAttorneyAccepted: Boolean(existing.preferredTransferAttorneyAccepted || existing.preferredTransferAttorneyAcceptance?.acceptedAt || existing.preferredTransferAttorneyAcceptance?.accepted_at),
-    preferredTransferAttorneyAcceptance:
-      existing.preferredTransferAttorneyAcceptance && typeof existing.preferredTransferAttorneyAcceptance === 'object'
-        ? existing.preferredTransferAttorneyAcceptance
-        : null,
-    transferAttorneyChoice: getTransferAttorneyChoice(existing),
-    nominatedTransferAttorneyName: existing.nominatedTransferAttorneyName || existing.nominated_transfer_attorney_name || '',
-    nominatedTransferAttorneyEmail: existing.nominatedTransferAttorneyEmail || existing.nominated_transfer_attorney_email || '',
-    nominatedTransferAttorneyPhone: existing.nominatedTransferAttorneyPhone || existing.nominated_transfer_attorney_phone || '',
-    nominatedTransferAttorneyNotes: existing.nominatedTransferAttorneyNotes || existing.nominated_transfer_attorney_notes || '',
-
     gasInstallation: Boolean(existing.gasInstallation || existing.gasGeyser || existing.gas_geyser || canonicalFacts?.compliance?.gas_installation || canonicalFacts?.compliance?.gas_geyser),
     gasGeyser: normalizedFeatures.includes('gas_geyser'),
     electricFence: Boolean(existing.electricFence || canonicalFacts?.compliance?.electric_fence),
@@ -2556,10 +2468,6 @@ function PropertyDisclosureSection({
               I declare that the information provided above is true and complete to the best of my knowledge and that I have disclosed all known material facts relating to the property.
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                <input type="checkbox" checked={Boolean(normalized.declarationAccepted)} onChange={(event) => onDisclosureChange('declarationAccepted', event.target.checked)} />
-                I accept the seller declaration
-              </label>
               <section className="rounded-[18px] border border-[#dbe6f2] bg-white p-4 md:col-span-2">
                 <h4 className="text-base font-semibold tracking-normal text-[#172334]">{termsConfig.title}</h4>
                 <p className="mt-2 text-sm leading-6 text-[#35546c]">{termsConfig.body}</p>
@@ -2585,6 +2493,15 @@ function PropertyDisclosureSection({
                     className="mt-1 h-4 w-4"
                   />
                   <span>{termsConfig.checkboxLabel}</span>
+                </label>
+                <label className="mt-3 flex min-h-[52px] items-start gap-3 rounded-[12px] border border-[#d9e2ee] bg-[#fbfdff] px-3 py-3 text-sm font-medium text-[#2a4057]">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(normalized.declarationAccepted)}
+                    onChange={(event) => onDisclosureChange('declarationAccepted', event.target.checked)}
+                    className="mt-1 h-4 w-4"
+                  />
+                  <span>I accept the seller declaration</span>
                 </label>
                 {termsAcceptanceError ? (
                   <p id="seller-arch9-terms-error" className="mt-2 text-sm font-semibold text-[#b42318]">
@@ -3231,31 +3148,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       nextAddress.source = 'seller_residential_address'
       nextAddress.formatted = formatPropertyAddress(nextAddress)
       return buildFormWithPropertyAddress(previous || {}, nextAddress)
-    })
-  }
-
-  function handleTransferAttorneyChoiceChange(choice) {
-    setForm((previous) => ({
-      ...(previous || {}),
-      transferAttorneyChoice: choice,
-      preferredTransferAttorneyAccepted: choice === 'preferred' ? Boolean(previous?.preferredTransferAttorneyAccepted) : false,
-      preferredTransferAttorneyAcceptance: choice === 'preferred' ? previous?.preferredTransferAttorneyAcceptance || null : null,
-    }))
-  }
-
-  function handlePreferredTransferAttorneyAcceptance(checked) {
-    setForm((previous) => {
-      const next = {
-        ...(previous || {}),
-        transferAttorneyChoice: 'preferred',
-        preferredTransferAttorneyAccepted: checked,
-      }
-      return {
-        ...next,
-        preferredTransferAttorneyAcceptance: checked
-          ? buildPreferredTransferAttorneyAcceptance(next, listing || {})
-          : null,
-      }
     })
   }
 
@@ -3965,13 +3857,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       }
     }
 
-    if (currentStep === 3) {
-      const missingAttorneyItems = getTransferAttorneyMissingItems(form)
-      if (missingAttorneyItems.length) {
-        return `Please complete the transferring attorney step before continuing: ${missingAttorneyItems.join(', ')}.`
-      }
-    }
-
     return ''
   }
 
@@ -4229,7 +4114,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       submissionOwnershipBranch === 'married'
     const submissionCompanyDirectors = Array.isArray(submissionForm.companyDirectors) ? submissionForm.companyDirectors : []
     const submissionTrustees = Array.isArray(submissionForm.trustees) ? submissionForm.trustees : []
-    const submissionAttorneyMissing = getTransferAttorneyMissingItems(submissionForm)
     const submissionSellerMissing = [
       !submissionForm.sellerFirstName && 'Seller name',
       !submissionForm.sellerSurname && 'Seller surname',
@@ -4254,7 +4138,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       ...submissionSellerMissing.map((item) => `Seller: ${item}`),
       ...submissionPropertyMissing.map((item) => `Property: ${item}`),
       ...getPropertyDisclosureMissingItems(submissionForm.propertyDisclosure || {}).map((item) => `Disclosure: ${item}`),
-      ...submissionAttorneyMissing.map((item) => `Attorney: ${item}`),
     ]
     if (finalRequiredMissing.length) {
       setError(`Please finish the required items before submitting: ${finalRequiredMissing.join(', ')}.`)
@@ -4330,20 +4213,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         arch9_terms_accepted: arch9TermsAcceptance.accepted,
         arch9TermsAcceptedAt,
         arch9_terms_accepted_at: arch9TermsAcceptedAt,
-        transferAttorneyChoice: getTransferAttorneyChoice(submissionForm),
-        preferredTransferAttorneyAcceptance: getTransferAttorneyChoice(submissionForm) === 'preferred'
-          ? buildPreferredTransferAttorneyAcceptance(submissionForm, listing || {})
-          : null,
-        nominatedTransferAttorney: getTransferAttorneyChoice(submissionForm) === 'nominate_other'
-          ? {
-            name: String(submissionForm.nominatedTransferAttorneyName || '').trim(),
-            email: String(submissionForm.nominatedTransferAttorneyEmail || '').trim(),
-            phone: String(submissionForm.nominatedTransferAttorneyPhone || '').trim(),
-            notes: String(submissionForm.nominatedTransferAttorneyNotes || '').trim(),
-            nominatedAt: new Date().toISOString(),
-            source: 'seller_onboarding',
-          }
-          : null,
         propertyDisclosure: {
           ...(submissionForm.propertyDisclosure || {}),
           arch9TermsAcceptance: {
@@ -4508,8 +4377,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const ownershipFieldLabels = getOwnershipFieldLabels(form.ownershipType)
   const sellerResidentialAddress = resolveSellerResidentialAddress(form)
   const canCopySellerResidentialAddressToProperty = Boolean(sellerResidentialAddress)
-  const transferAttorneyChoice = getTransferAttorneyChoice(form)
-  const preferredTransferAttorneyName = getPreferredTransferAttorneyName(form.preferredTransferAttorney)
   const multipleOwnerCaptureMode = form.multipleOwnerCaptureMode || 'capture_now'
   const isMultipleOwnerInviteMode = isMultipleOwners && multipleOwnerCaptureMode === 'send_onboarding'
   const showSectionalTitleDetails = propertyBranch === 'sectional_title'
@@ -4627,9 +4494,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     !form.mandateEndDate && 'End date',
     mandateDatesInvalid && 'End date must be after start date',
   ].filter(Boolean)
-  const attorneyMissing = [
-    ...getTransferAttorneyMissingItems(form),
-  ]
   const propertyMissing = getPropertyAddressMissingItems(resolveProgressionPropertyAddress(listing || {}, form || {}))
   const sectionSummaryValue = [form.schemeName, form.sectionNumber || form.unitNumber].filter(Boolean).join(' / ')
   const estateSummaryValue = [form.estateName || form.estateComplexName, form.hoaContactName].filter(Boolean).join(' / ')
@@ -4655,7 +4519,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const reviewIssueGroups = [
     { label: 'Seller details', missing: sellerMissing, onEdit: () => setCurrentStep(0) },
     { label: 'Mandate preferences', missing: mandateMissing, onEdit: () => setCurrentStep(0) },
-    { label: 'Transferring attorney', missing: attorneyMissing, onEdit: () => setCurrentStep(3) },
     { label: 'Property details', missing: propertyMissing, onEdit: () => setCurrentStep(1) },
     { label: 'Property disclosure', missing: disclosureMissing, onEdit: () => setCurrentStep(2) },
     ...(bondComplianceSummary ? [{ label: 'Bond follow-up', missing: bondComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
@@ -6132,127 +5995,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             />
           ) : null}
 
-          {currentStep === 3 ? (
-            <StepShell
-              eyebrow="Transferring Attorney"
-              title="Transfer attorney preference"
-              description="Accept the preferred transferring attorney, nominate another attorney, or leave this for your agent to assign later."
-            >
-              <div className="grid gap-4">
-                <FormSection
-                  icon={Landmark}
-                  title="Attorney nomination"
-                  description="This helps your agent prepare transfer instructions after submission."
-                >
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <button
-                      type="button"
-                      onClick={() => handleTransferAttorneyChoiceChange('preferred')}
-                      className={choiceCardClass(transferAttorneyChoice === 'preferred')}
-                      disabled={!hasPreferredTransferAttorney(form.preferredTransferAttorney)}
-                    >
-                      <span className="block text-sm font-semibold">Use preferred attorney</span>
-                      <span className="mt-1 block text-xs leading-5 text-[#60748b]">
-                        {hasPreferredTransferAttorney(form.preferredTransferAttorney)
-                          ? 'Accept the attorney configured by your agent.'
-                          : 'No preferred attorney is configured yet.'}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleTransferAttorneyChoiceChange('nominate_other')}
-                      className={choiceCardClass(transferAttorneyChoice === 'nominate_other')}
-                    >
-                      <span className="block text-sm font-semibold">Nominate another attorney</span>
-                      <span className="mt-1 block text-xs leading-5 text-[#60748b]">
-                        Provide another attorney or firm for review.
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleTransferAttorneyChoiceChange('deferred')}
-                      className={choiceCardClass(transferAttorneyChoice === 'deferred')}
-                    >
-                      <span className="block text-sm font-semibold">Assign later</span>
-                      <span className="mt-1 block text-xs leading-5 text-[#60748b]">
-                        Let your agent assign the transfer attorney after onboarding.
-                      </span>
-                    </button>
-                  </div>
-
-                  {transferAttorneyChoice === 'preferred' ? (
-                    <div className={`mt-4 rounded-[18px] border p-4 ${hasPreferredTransferAttorney(form.preferredTransferAttorney) ? 'border-[#b9dfc7] bg-[#f5fcf7]' : 'border-[#efb6ad] bg-[#fff8f6]'}`}>
-                      <div className="flex items-start gap-3">
-                        <span className="mt-0.5 rounded-full bg-white p-2 text-[var(--seller-brand-action)] shadow-sm">
-                          <Landmark size={18} />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold text-[#172334]">Preferred transferring attorney</p>
-                          {hasPreferredTransferAttorney(form.preferredTransferAttorney) ? (
-                            <>
-                              <p className="mt-2 font-semibold text-[#243b53]">{preferredTransferAttorneyName}</p>
-                              <p className="mt-1 text-sm text-[#60748b]">
-                                {[form.preferredTransferAttorney?.contactPerson, form.preferredTransferAttorney?.email, form.preferredTransferAttorney?.phone].filter(Boolean).join(' · ')}
-                              </p>
-                              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-[14px] border border-[#d9e2ee] bg-white px-4 py-3 text-sm leading-5 text-[#35546c]">
-                                <input
-                                  type="checkbox"
-                                  className="mt-0.5"
-                                  checked={Boolean(form.preferredTransferAttorneyAccepted)}
-                                  onChange={(event) => handlePreferredTransferAttorneyAcceptance(event.target.checked)}
-                                />
-                                <span>
-                                  I accept and nominate <strong>{preferredTransferAttorneyName}</strong> as the preferred transferring attorney for this sale.
-                                </span>
-                              </label>
-                            </>
-                          ) : (
-                            <p className="mt-2 text-sm font-semibold text-[#8a5c10]">
-                              No preferred transferring attorney is configured yet. Choose another option to continue.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ) : transferAttorneyChoice === 'nominate_other' ? (
-                    <div className="mt-4 rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-4">
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                          Attorney or firm name
-                          <input className={DETAIL_INPUT_CLASS} value={form.nominatedTransferAttorneyName || ''} onChange={(event) => handleFormUpdate('nominatedTransferAttorneyName', event.target.value)} />
-                        </label>
-                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                          Email
-                          <input className={DETAIL_INPUT_CLASS} type="email" inputMode="email" value={form.nominatedTransferAttorneyEmail || ''} onChange={(event) => handleFormUpdate('nominatedTransferAttorneyEmail', event.target.value)} />
-                        </label>
-                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                          Phone
-                          <input className={DETAIL_INPUT_CLASS} type="tel" inputMode="tel" value={form.nominatedTransferAttorneyPhone || ''} onChange={(event) => handleFormUpdate('nominatedTransferAttorneyPhone', event.target.value)} />
-                        </label>
-                        <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                          Notes (optional)
-                          <textarea
-                            className={`${DETAIL_INPUT_CLASS} min-h-[104px] resize-y text-sm placeholder:text-sm`}
-                            value={form.nominatedTransferAttorneyNotes || ''}
-                            onChange={(event) => handleFormUpdate('nominatedTransferAttorneyNotes', event.target.value)}
-                            placeholder="Firm contact, branch, relationship, or anything your agent should know."
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-4 rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-4">
-                      <p className="text-sm font-semibold text-[#243b53]">Transfer attorney assignment deferred</p>
-                      <p className="mt-1 text-sm leading-5 text-[#60748b]">
-                        Your agent can assign or confirm the transfer attorney after reviewing your seller onboarding.
-                      </p>
-                    </div>
-                  )}
-                </FormSection>
-              </div>
-            </StepShell>
-          ) : null}
-
           {currentStep === FINAL_STEP_INDEX ? (
             <StepShell
               eyebrow="Review & Submit"
@@ -6316,30 +6058,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     { label: 'End Date', value: formatDateValue(form.mandateEndDate) },
                     { label: 'Special Conditions', value: selectedSpecialMandateConditionLabels.length ? selectedSpecialMandateConditionLabels.join(', ') : 'None selected' },
                     { label: 'Additional Conditions', value: form.additionalConditions || 'Not provided' },
-                  ]}
-                />
-                <ReviewCard
-                  title="Transferring Attorney"
-                  missing={attorneyMissing}
-                  onEdit={() => setCurrentStep(3)}
-                  collapsible
-                  defaultOpen={Boolean(attorneyMissing.length)}
-                  items={[
-                    { label: 'Choice', value: transferAttorneyChoice === 'nominate_other' ? 'Nominate another attorney' : transferAttorneyChoice === 'deferred' ? 'Assign later' : 'Use preferred attorney' },
-                    ...(transferAttorneyChoice === 'nominate_other'
-                      ? [
-                        { label: 'Attorney', value: form.nominatedTransferAttorneyName || 'Not provided' },
-                        { label: 'Email', value: form.nominatedTransferAttorneyEmail || 'Not provided' },
-                        { label: 'Phone', value: form.nominatedTransferAttorneyPhone || 'Not provided' },
-                      ]
-                      : transferAttorneyChoice === 'deferred'
-                        ? [
-                          { label: 'Assignment', value: 'Agent to assign after onboarding' },
-                        ]
-                      : [
-                        { label: 'Preferred Attorney', value: hasPreferredTransferAttorney(form.preferredTransferAttorney) ? preferredTransferAttorneyName : 'Not configured' },
-                        { label: 'Acceptance', value: hasTransferAttorneyAcceptance(form) ? 'Accepted' : 'Not accepted' },
-                      ]),
                   ]}
                 />
                 <ReviewCard

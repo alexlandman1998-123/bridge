@@ -31,6 +31,14 @@ assertContract(
   /onChange=\{\(event\) => onDisclosureChange\('declarationAccepted', event\.target\.checked\)\}/,
   'Seller declaration acceptance should send the checked state rather than relying on implicit event data.',
 )
+const termsCheckboxIndex = sellerOnboardingPage.indexOf('<span>{termsConfig.checkboxLabel}</span>')
+const declarationCheckboxIndex = sellerOnboardingPage.indexOf('<span>I accept the seller declaration</span>')
+assert.ok(termsCheckboxIndex > -1, 'Seller onboarding should render the Arch9 terms checkbox.')
+assert.ok(declarationCheckboxIndex > -1, 'Seller onboarding should render the seller declaration checkbox.')
+assert.ok(
+  termsCheckboxIndex < declarationCheckboxIndex,
+  'Seller declaration checkbox should sit directly below the Arch9 terms checkbox.',
+)
 assertContract(
   sellerOnboardingPage,
   /getEdgeFunctionInvokeError\(notificationResult\)/,
@@ -38,7 +46,7 @@ assertContract(
 )
 assertContract(
   sellerOnboardingPage,
-  /void notifySellerOnboardingSubmitted\(updated, form\)/,
+  /void notifySellerOnboardingSubmitted\(updated, submissionForm\)/,
   'Seller onboarding submit should trigger post-submit notifications after save.',
 )
 
@@ -243,7 +251,7 @@ assertContract(
 )
 assertContract(
   privateListingService,
-  /p_access_token: accessToken \|\| getStoredSellerPortalAccessToken/,
+  /const resolvedAccessToken = accessToken \|\| getStoredSellerPortalAccessToken\(normalizedToken\)[\s\S]*p_access_token: resolvedAccessToken \|\| null/,
   'Seller portal document uploads should pass the stored access token to the RPC.',
 )
 

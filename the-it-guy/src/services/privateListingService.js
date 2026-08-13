@@ -181,26 +181,33 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
-function getPreferredTransferAttorneyId(attorney = {}) {
-  return normalizeText(
-    attorney?.preferredPartnerId ||
-      attorney?.preferred_partner_id ||
-      attorney?.partnerId ||
-      attorney?.partner_id ||
-      attorney?.id ||
-      '',
-  )
-}
-
-function getPreferredTransferAttorneyAcceptanceId(acceptance = {}) {
-  return normalizeText(
-    acceptance?.preferredPartnerId ||
-      acceptance?.preferred_partner_id ||
-      acceptance?.partnerId ||
-      acceptance?.partner_id ||
-      acceptance?.id ||
-      '',
-  )
+function stripSellerOnboardingTransferAttorneyFields(formData = {}) {
+  const sellerOnboardingFormData = {
+    ...(formData && typeof formData === 'object' ? formData : {}),
+  }
+  for (const key of [
+    'preferredTransferAttorney',
+    'preferred_transfer_attorney',
+    'preferredTransferAttorneyAccepted',
+    'preferred_transfer_attorney_accepted',
+    'preferredTransferAttorneyAcceptance',
+    'preferred_transfer_attorney_acceptance',
+    'transferAttorneyChoice',
+    'transfer_attorney_choice',
+    'nominatedTransferAttorney',
+    'nominated_transfer_attorney',
+    'nominatedTransferAttorneyName',
+    'nominated_transfer_attorney_name',
+    'nominatedTransferAttorneyEmail',
+    'nominated_transfer_attorney_email',
+    'nominatedTransferAttorneyPhone',
+    'nominated_transfer_attorney_phone',
+    'nominatedTransferAttorneyNotes',
+    'nominated_transfer_attorney_notes',
+  ]) {
+    delete sellerOnboardingFormData[key]
+  }
+  return sellerOnboardingFormData
 }
 
 function getSellerPortalAccessStorageKey(token = '') {
@@ -4728,9 +4735,7 @@ export async function ensureSellerPortalActivationRecord(
     throw existingQuery.error
   }
 
-  const existingFormData = existingQuery.data?.form_data && typeof existingQuery.data.form_data === 'object'
-    ? existingQuery.data.form_data
-    : {}
+  const existingFormData = stripSellerOnboardingTransferAttorneyFields(existingQuery.data?.form_data)
   const listingSellerFacts = listing?.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object'
     ? listing.sellerCanonicalFacts
     : {}
@@ -7188,80 +7193,6 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
   }
 }
 
-function normalizePartnerRelationshipStatus(value = '') {
-  const normalized = normalizeText(value).toLowerCase()
-  if (normalized === 'approved' || normalized === 'connected') return 'accepted'
-  if (normalized === 'rejected' || normalized === 'revoked') return 'declined'
-  if (normalized === 'inactive' || normalized === 'archived' || normalized === 'deleted') return 'removed'
-  return normalized || 'pending'
-}
-
-function resolveConnectedPartnerContactEmail(organisation = {}) {
-  const settings = organisation.settings_json && typeof organisation.settings_json === 'object' ? organisation.settings_json : {}
-  return normalizeText(
-    organisation.contact_email ||
-      organisation.contactEmail ||
-      settings.contactEmail ||
-      settings.contact_email ||
-      settings.email ||
-      settings.inviteEmail,
-  ).toLowerCase()
-}
-
-async function resolveConnectedTransferAttorneySelection(client, organisationId = '', relationshipId = '') {
-  const scopedOrganisationId = normalizeText(organisationId)
-  const selectedRelationshipId = normalizeText(relationshipId)
-  if (!scopedOrganisationId || !selectedRelationshipId) return null
-
-  const relationshipQuery = await client
-    .from('organisation_partners')
-    .select('id, organisation_id, partner_organisation_id, partner_type, status, relationship_status, relationship_type, preferred')
-    .eq('id', selectedRelationshipId)
-    .maybeSingle()
-
-  if (relationshipQuery.error) {
-    if (isMissingTableError(relationshipQuery.error, 'organisation_partners') || isMissingColumnError(relationshipQuery.error)) return null
-    throw relationshipQuery.error
-  }
-
-  const relationship = relationshipQuery.data || null
-  if (!relationship?.id) return null
-  const ownerOrganisationId = normalizeText(relationship.organisation_id)
-  const partnerOrganisationId = normalizeText(relationship.partner_organisation_id)
-  if (ownerOrganisationId !== scopedOrganisationId && partnerOrganisationId !== scopedOrganisationId) return null
-  const relationshipStatuses = [relationship.relationship_status, relationship.status].map(normalizePartnerRelationshipStatus)
-  if (!relationshipStatuses.includes('accepted')) return null
-
-  const attorneyOrganisationId = ownerOrganisationId === scopedOrganisationId ? partnerOrganisationId : ownerOrganisationId
-  if (!attorneyOrganisationId || attorneyOrganisationId === scopedOrganisationId) return null
-
-  const organisationQuery = await client
-    .from('organisations')
-    .select('id, name, display_name, legal_name, type, settings_json')
-    .eq('id', attorneyOrganisationId)
-    .maybeSingle()
-
-  if (organisationQuery.error) {
-    if (isMissingTableError(organisationQuery.error, 'organisations') || isMissingColumnError(organisationQuery.error)) return null
-    throw organisationQuery.error
-  }
-
-  const organisation = organisationQuery.data || {}
-  const companyName = normalizeText(organisation.display_name || organisation.name || organisation.legal_name)
-  if (!companyName) return null
-
-  return {
-    preferredPartnerId: relationship.id,
-    partnerRelationshipId: relationship.id,
-    partnerOrganisationId: attorneyOrganisationId,
-    companyName,
-    contactPerson: companyName,
-    email: resolveConnectedPartnerContactEmail(organisation),
-    phone: '',
-    selectionSource: 'connected_partner',
-  }
-}
-
 export async function sendSellerOnboarding(
   listingId,
   {
@@ -7274,11 +7205,6 @@ export async function sendSellerOnboarding(
     includePortalBranding = true,
     deferStatusTransition = false,
     performedBy = '',
-    transferAttorneyPreferredPartnerId = '',
-    transferAttorneyPreferredUserId = '',
-    transferAttorneyPreferredUserName = '',
-    transferAttorneyPreferredUserEmail = '',
-    transferAttorneyPreferredUserPhone = '',
   } = {},
 ) {
   const client = requireClient()
@@ -7289,79 +7215,6 @@ export async function sendSellerOnboarding(
   }
   const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   if (!listing?.id) throw new Error('Private listing not found.')
-
-  const requestedPreferredAttorneyId = normalizeText(transferAttorneyPreferredPartnerId)
-  let preferredAttorneyBuilder = client
-    .from('organisation_preferred_partners')
-    .select('id, partner_organisation_id, company_name, contact_person, email_address, phone_number, is_preferred_default')
-    .eq('organisation_id', listing.organisationId)
-    .eq('partner_type', 'transfer_attorney')
-    .eq('is_active', true)
-    .order('is_preferred_default', { ascending: false })
-    .order('company_name', { ascending: true })
-    .limit(1)
-  if (requestedPreferredAttorneyId) preferredAttorneyBuilder = preferredAttorneyBuilder.eq('id', requestedPreferredAttorneyId)
-  let preferredAttorneyQuery = await preferredAttorneyBuilder.maybeSingle()
-
-  if (preferredAttorneyQuery.error && isMissingColumnError(preferredAttorneyQuery.error, 'partner_organisation_id')) {
-    let legacyPreferredAttorneyBuilder = client
-      .from('organisation_preferred_partners')
-      .select('id, company_name, contact_person, email_address, phone_number, is_preferred_default')
-      .eq('organisation_id', listing.organisationId)
-      .eq('partner_type', 'transfer_attorney')
-      .eq('is_active', true)
-      .order('is_preferred_default', { ascending: false })
-      .order('company_name', { ascending: true })
-      .limit(1)
-    if (requestedPreferredAttorneyId) legacyPreferredAttorneyBuilder = legacyPreferredAttorneyBuilder.eq('id', requestedPreferredAttorneyId)
-    preferredAttorneyQuery = await legacyPreferredAttorneyBuilder.maybeSingle()
-  }
-  if (preferredAttorneyQuery.error) throw preferredAttorneyQuery.error
-  let preferredTransferAttorney = null
-  if (preferredAttorneyQuery.data?.id && normalizeText(preferredAttorneyQuery.data?.company_name)) {
-    preferredTransferAttorney = {
-      preferredPartnerId: preferredAttorneyQuery.data.id,
-      partnerOrganisationId: preferredAttorneyQuery.data.partner_organisation_id || null,
-      companyName: normalizeText(preferredAttorneyQuery.data.company_name),
-      contactPerson: normalizeText(preferredAttorneyQuery.data.contact_person),
-      email: normalizeText(preferredAttorneyQuery.data.email_address).toLowerCase(),
-      phone: normalizeText(preferredAttorneyQuery.data.phone_number),
-      selectionSource: 'agency_recommended',
-    }
-  } else if (requestedPreferredAttorneyId) {
-    preferredTransferAttorney = await resolveConnectedTransferAttorneySelection(client, listing.organisationId, requestedPreferredAttorneyId)
-  }
-
-  if (!preferredTransferAttorney?.preferredPartnerId || !normalizeText(preferredTransferAttorney.companyName)) {
-    if (requestedPreferredAttorneyId) {
-      console.warn('[Private Listings] selected transfer attorney is unavailable; sending seller onboarding without a nomination.', {
-        listingId: listing.id,
-        requestedPreferredAttorneyId,
-      })
-    }
-    preferredTransferAttorney = null
-  }
-  const preferredAttorneyUserId = normalizeText(transferAttorneyPreferredUserId)
-  const preferredAttorneyName = normalizeText(transferAttorneyPreferredUserName)
-  const preferredAttorneyEmail = normalizeText(transferAttorneyPreferredUserEmail).toLowerCase()
-  const preferredAttorneyPhone = normalizeText(transferAttorneyPreferredUserPhone)
-  if (preferredTransferAttorney && preferredAttorneyUserId) {
-    preferredTransferAttorney = {
-      ...preferredTransferAttorney,
-      preferredAttorneyUserId,
-      userId: preferredAttorneyUserId,
-      preferredAttorneyName,
-      preferredAttorneyEmail,
-      preferredAttorneyPhone,
-      selectedPerson: {
-        id: preferredAttorneyUserId,
-        userId: preferredAttorneyUserId,
-        name: preferredAttorneyName,
-        email: preferredAttorneyEmail,
-        phone: preferredAttorneyPhone,
-      },
-    }
-  }
 
   const existingQuery = await client
     .from('private_listing_seller_onboarding')
@@ -7374,9 +7227,7 @@ export async function sendSellerOnboarding(
 
   const token = normalizeText(existingQuery.data?.token) || generateSellerOnboardingToken()
   const expiresAt = new Date(Date.now() + Math.max(1, Number(expiresInDays || 14)) * 24 * 60 * 60 * 1000).toISOString()
-  const existingFormData = existingQuery.data?.form_data && typeof existingQuery.data.form_data === 'object'
-    ? existingQuery.data.form_data
-    : {}
+  const existingFormData = stripSellerOnboardingTransferAttorneyFields(existingQuery.data?.form_data)
   const listingSellerFacts = listing?.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object'
     ? listing.sellerCanonicalFacts
     : {}
@@ -7395,12 +7246,6 @@ export async function sendSellerOnboarding(
   const portalBranding = includePortalBranding
     ? await fetchOrganisationBrandingSnapshot(client, listing.organisationId)
     : null
-  const hasPreferredTransferAttorneyNomination = Boolean(preferredTransferAttorney)
-  const existingAcceptedAttorneyId = getPreferredTransferAttorneyAcceptanceId(existingFormData.preferredTransferAttorneyAcceptance)
-  const preserveAttorneyAcceptance =
-    hasPreferredTransferAttorneyNomination &&
-    existingFormData.preferredTransferAttorneyAccepted === true &&
-    existingAcceptedAttorneyId === getPreferredTransferAttorneyId(preferredTransferAttorney)
   const payload = {
     private_listing_id: listing.id,
     token,
@@ -7419,14 +7264,6 @@ export async function sendSellerOnboarding(
       email: resolvedSellerEmail,
       sellerPhone: resolvedSellerPhone,
       phone: resolvedSellerPhone,
-      preferredTransferAttorney,
-      transferAttorneyChoice: hasPreferredTransferAttorneyNomination
-        ? normalizeText(existingFormData.transferAttorneyChoice || existingFormData.transfer_attorney_choice || 'preferred')
-        : 'deferred',
-      preferredTransferAttorneyAccepted: preserveAttorneyAcceptance,
-      preferredTransferAttorneyAcceptance: preserveAttorneyAcceptance
-        ? existingFormData.preferredTransferAttorneyAcceptance
-        : null,
       ...(portalBranding ? { portalBranding } : {}),
     },
     status: 'sent',
@@ -7717,93 +7554,6 @@ async function maybeResolveCanonicalSellerRequirements({ listing, formData, clie
   return resolution
 }
 
-function readAcceptedPreferredTransferAttorney(formData = {}) {
-  const source = formData && typeof formData === 'object' ? formData : {}
-  const choice = normalizeText(source.transferAttorneyChoice || source.transfer_attorney_choice || 'preferred').toLowerCase()
-  if (['nominate_other', 'nominate-other', 'other'].includes(choice)) return null
-
-  const preferred = source.preferredTransferAttorney && typeof source.preferredTransferAttorney === 'object'
-    ? source.preferredTransferAttorney
-    : {}
-  const acceptance = source.preferredTransferAttorneyAcceptance && typeof source.preferredTransferAttorneyAcceptance === 'object'
-    ? source.preferredTransferAttorneyAcceptance
-    : {}
-  const preferredPartnerId = getPreferredTransferAttorneyId(preferred)
-  const acceptedPartnerId = getPreferredTransferAttorneyAcceptanceId(acceptance) || preferredPartnerId
-  const accepted = source.preferredTransferAttorneyAccepted === true ||
-    normalizeText(source.preferred_transfer_attorney_accepted).toLowerCase() === 'true'
-
-  if (!preferredPartnerId || !accepted || acceptedPartnerId !== preferredPartnerId) return null
-
-  return {
-    preferredPartnerId,
-    partnerRelationshipId: normalizeUuid(preferred.partnerRelationshipId || preferred.partner_relationship_id || preferredPartnerId),
-    partnerOrganisationId: normalizeUuid(preferred.partnerOrganisationId || preferred.partner_organisation_id),
-    companyName: normalizeText(preferred.companyName || preferred.company_name || preferred.name),
-    contactPerson: normalizeText(preferred.contactPerson || preferred.contact_person || preferred.companyName || preferred.company_name),
-    email: normalizeText(preferred.email || preferred.emailAddress || preferred.email_address).toLowerCase(),
-    phone: normalizeText(preferred.phone || preferred.phoneNumber || preferred.phone_number),
-    acceptedAt: normalizeText(acceptance.acceptedAt || acceptance.accepted_at),
-  }
-}
-
-async function ensureAcceptedPreferredTransferAttorneyAllocation(client, {
-  listing = null,
-  onboarding = null,
-  formData = {},
-  source = 'seller_onboarding_completed',
-} = {}) {
-  const listingId = normalizeUuid(listing?.id || listing?.private_listing_id || onboarding?.private_listing_id)
-  const organisationId = normalizeUuid(resolveListingOrganisationId(listing) || listing?.organisation_id)
-  const attorney = readAcceptedPreferredTransferAttorney(formData)
-  if (!listingId || !organisationId || !attorney?.companyName) return null
-
-  const configQuery = await client.rpc('bridge_resolve_partner_role_configuration', {
-    p_organisation_id: organisationId,
-    p_role_type: 'transfer_attorney',
-    p_partner_organisation_id: attorney.partnerOrganisationId,
-    p_partner_relationship_id: attorney.partnerRelationshipId,
-    p_preferred_partner_id: normalizeUuid(attorney.preferredPartnerId),
-  })
-  if (configQuery.error) {
-    if (isMissingRpcError(configQuery.error, 'bridge_resolve_partner_role_configuration')) return null
-    throw configQuery.error
-  }
-
-  const partnerRoleConfigurationId = normalizeUuid(configQuery.data)
-  if (!partnerRoleConfigurationId) return null
-
-  const mandatePacketId = normalizeUuid(
-    listing?.mandatePacketId ||
-      listing?.mandate_packet_id ||
-      listing?.mandatePacket?.id ||
-      listing?.mandate_packet?.id,
-  )
-  const allocationQuery = await client.rpc('bridge_allocate_private_listing_transfer_attorney_v2', {
-    p_private_listing_id: listingId,
-    p_partner_role_configuration_id: partnerRoleConfigurationId,
-    p_company_name: attorney.companyName,
-    p_contact_person: attorney.contactPerson || attorney.companyName,
-    p_email_address: attorney.email || null,
-    p_phone_number: attorney.phone || null,
-    p_selection_source: 'seller_mandate',
-    p_mandate_packet_id: mandatePacketId,
-    p_mandate_signed_at: attorney.acceptedAt || onboarding?.submitted_at || new Date().toISOString(),
-    p_metadata: {
-      source,
-      onboardingId: onboarding?.id || null,
-      preferredPartnerId: attorney.preferredPartnerId,
-      partnerRelationshipId: attorney.partnerRelationshipId,
-      partnerOrganisationId: attorney.partnerOrganisationId,
-    },
-  })
-  if (allocationQuery.error) {
-    if (isMissingRpcError(allocationQuery.error, 'bridge_allocate_private_listing_transfer_attorney_v2')) return null
-    throw allocationQuery.error
-  }
-  return allocationQuery.data || null
-}
-
 function enqueueSellerOnboardingProgressProjection(client, {
   listing = null,
   onboardingId = '',
@@ -7851,50 +7601,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
-  const formData = payload.formData && typeof payload.formData === 'object' ? payload.formData : {}
-  const transferAttorneyChoice = normalizeText(formData.transferAttorneyChoice || formData.transfer_attorney_choice || 'preferred').toLowerCase()
-  const preferredAttorneyId = getPreferredTransferAttorneyId(formData.preferredTransferAttorney)
-  const nominatedAttorneyName = normalizeText(formData.nominatedTransferAttorneyName || formData.nominated_transfer_attorney_name || formData.nominatedTransferAttorney?.name)
-  const nominatedAttorneyContact = normalizeText(
-    formData.nominatedTransferAttorneyEmail ||
-      formData.nominated_transfer_attorney_email ||
-      formData.nominatedTransferAttorney?.email ||
-      formData.nominatedTransferAttorneyPhone ||
-      formData.nominated_transfer_attorney_phone ||
-      formData.nominatedTransferAttorney?.phone,
-  )
-
-  if (transferAttorneyChoice === 'nominate_other') {
-    if (!nominatedAttorneyName || !nominatedAttorneyContact) {
-      throw new Error('Nominate another transferring attorney before submitting seller onboarding.')
-    }
-    formData.preferredTransferAttorneyAccepted = false
-    formData.preferredTransferAttorneyAcceptance = null
-  } else {
-    if (!preferredAttorneyId) {
-      throw new Error('The preferred transferring attorney must be configured before seller onboarding can be completed.')
-    }
-    if (formData.preferredTransferAttorneyAccepted !== true) {
-      throw new Error('Accept the preferred transferring attorney before submitting seller onboarding.')
-    }
-    const acceptedAttorneyId = getPreferredTransferAttorneyAcceptanceId(formData.preferredTransferAttorneyAcceptance)
-    if (acceptedAttorneyId && acceptedAttorneyId !== preferredAttorneyId) {
-      throw new Error('Accept the preferred transferring attorney before submitting seller onboarding.')
-    }
-    const acceptedAt = formData.preferredTransferAttorneyAcceptance?.acceptedAt || formData.preferredTransferAttorneyAcceptance?.accepted_at || new Date().toISOString()
-    formData.preferredTransferAttorney = {
-      ...(formData.preferredTransferAttorney || {}),
-      preferredPartnerId: preferredAttorneyId,
-      preferred_partner_id: preferredAttorneyId,
-    }
-    formData.preferredTransferAttorneyAcceptance = {
-      ...(formData.preferredTransferAttorneyAcceptance || {}),
-      preferredPartnerId: preferredAttorneyId,
-      preferred_partner_id: preferredAttorneyId,
-      acceptedAt,
-      accepted_at: acceptedAt,
-    }
-  }
+  const formData = stripSellerOnboardingTransferAttorneyFields(payload.formData)
 
   const rpc = await client.rpc('bridge_complete_private_listing_seller_onboarding', {
     p_token: normalizedToken,
@@ -7924,24 +7631,24 @@ export async function submitSellerOnboarding(token, payload = {}) {
     deferSellerOnboardingFollowUp('seller client portal context sync after onboarding submit', () => ensureSellerClientPortalContext(client, {
       listing: rpcContext.listing,
       onboarding: rpcContext.onboarding,
-      formData: payload.formData,
+      formData,
     }))
     deferSellerOnboardingFollowUp('canonical seller facts persistence after onboarding submit', () => persistCanonicalSellerFactPayload(client, {
       listingId: rpcContext.listing.id,
       onboardingId: rpcContext.onboarding?.id,
-      formData: payload.formData,
+      formData,
       listing: rpcContext.listing,
       draft: false,
     }))
     deferSellerOnboardingFollowUp('seller onboarding publication draft sync after onboarding submit', () => syncSellerOnboardingPublicationDraft(client, {
       listing: rpcContext.listing,
-      formData: payload.formData,
+      formData,
     }))
     deferSellerOnboardingFollowUp('mandate editable draft pre-creation after onboarding submit', () => precreateSellerMandateDraftFromOnboarding({
       client,
       listing: rpcContext.listing,
       onboarding: rpcContext.onboarding,
-      formData: payload.formData,
+      formData,
     }))
     deferSellerOnboardingFollowUp('seller requirements sync after onboarding submit', async () => {
       const requirementSync = await syncPrivateListingRequirements(rpcContext.listing, {
@@ -7952,12 +7659,12 @@ export async function submitSellerOnboarding(token, payload = {}) {
       return ensureSellerClientPortalContext(client, {
         listing: requirementSync.listing,
         onboarding: rpcContext.onboarding,
-        formData: payload.formData,
+        formData,
       })
     })
     void maybeResolveCanonicalSellerRequirements({
       listing: rpcContext.listing,
-      formData: payload.formData,
+      formData,
       client,
       reason: 'seller_onboarding_completed',
     }).catch((canonicalError) => {
@@ -7991,12 +7698,6 @@ export async function submitSellerOnboarding(token, payload = {}) {
         updated_at: new Date().toISOString(),
       },
     }))
-    deferSellerOnboardingFollowUp('transfer attorney allocation after onboarding submit', () => ensureAcceptedPreferredTransferAttorneyAllocation(client, {
-      listing: rpcContext.listing,
-      onboarding: rpcContext.onboarding,
-      formData: payload.formData,
-      source: 'seller_onboarding_completed',
-    }))
     return rpcContext
   }
   if (isMissingPrivateListingActivityError(rpc.error)) {
@@ -8014,8 +7715,9 @@ export async function submitSellerOnboarding(token, payload = {}) {
     context.onboarding.form_data && typeof context.onboarding.form_data === 'object' ? context.onboarding.form_data : {}
   const nextFormData = {
     ...existingFormData,
-    ...(payload.formData && typeof payload.formData === 'object' ? payload.formData : {}),
+    ...formData,
   }
+  const sanitizedNextFormData = stripSellerOnboardingTransferAttorneyFields(nextFormData)
 
   const sellerTypeFromPayload =
     normalizeNullableText(payload.sellerType) ||
@@ -8026,7 +7728,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
     .from('private_listing_seller_onboarding')
     .update({
       status: normalizeStatus(payload.status || 'completed', SELLER_ONBOARDING_STATUSES, 'completed'),
-      form_data: nextFormData,
+      form_data: sanitizedNextFormData,
       submitted_at: nowIso,
       seller_type: normalizeNullableText(payload.sellerType || context.onboarding.seller_type),
       ownership_structure: normalizeNullableText(payload.ownershipStructure || context.onboarding.ownership_structure),
@@ -8050,8 +7752,8 @@ export async function submitSellerOnboarding(token, payload = {}) {
       status: 'completed',
       submittedAt: nowIso,
       completedAt: nowIso,
-      currentStep: Number(nextFormData.currentStep || 3),
-      formData: nextFormData,
+      currentStep: Number(sanitizedNextFormData.currentStep || 3),
+      formData: sanitizedNextFormData,
     },
   }
 
@@ -8060,7 +7762,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
       onboardingId: context.onboarding.id,
       submittedAt: nowIso,
       onboardingStatus: 'completed',
-      onboardingFormData: nextFormData,
+      onboardingFormData: sanitizedNextFormData,
     },
     patch: {
       sellerType: sellerTypeFromPayload,
@@ -8114,12 +7816,12 @@ export async function submitSellerOnboarding(token, payload = {}) {
     client,
     listing: listingForContext,
     onboarding: updateOnboarding.data,
-    formData: nextFormData,
+    formData: sanitizedNextFormData,
   }))
   await ensureSellerClientPortalContext(client, {
     listing: listingForContext,
     onboarding: updateOnboarding.data,
-    formData: nextFormData,
+    formData: sanitizedNextFormData,
   }).catch((contextError) => {
     console.warn('[Private Listings] seller client portal context sync skipped after onboarding fallback submit', contextError)
     return null
@@ -8127,7 +7829,7 @@ export async function submitSellerOnboarding(token, payload = {}) {
   await persistCanonicalSellerFactPayload(client, {
     listingId: listingForContext?.id || context.listing.id,
     onboardingId: updateOnboarding.data?.id,
-    formData: nextFormData,
+    formData: sanitizedNextFormData,
     listing: listingForContext,
     draft: false,
   }).catch((factError) => {
@@ -8136,28 +7838,18 @@ export async function submitSellerOnboarding(token, payload = {}) {
   })
   await syncSellerOnboardingPublicationDraft(client, {
     listing: listingForContext,
-    formData: nextFormData,
+    formData: sanitizedNextFormData,
   }).catch((publicationError) => {
     console.warn('[Private Listings] seller onboarding publication draft sync skipped after onboarding fallback submit', publicationError)
     return null
   })
   void maybeResolveCanonicalSellerRequirements({
     listing: listingForContext,
-    formData: nextFormData,
+    formData: sanitizedNextFormData,
     client,
     reason: 'seller_onboarding_completed',
   }).catch((canonicalError) => {
     console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding fallback submit', canonicalError)
-  })
-
-  await ensureAcceptedPreferredTransferAttorneyAllocation(client, {
-    listing: listingForContext,
-    onboarding: updateOnboarding.data,
-    formData: nextFormData,
-    source: 'seller_onboarding_completed_fallback',
-  }).catch((allocationError) => {
-    console.warn('[Private Listings] transfer attorney allocation skipped after onboarding fallback submit', allocationError)
-    return null
   })
 
   return {
@@ -8170,14 +7862,15 @@ async function updateSellerOnboardingProgressInternal(token, payload = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
+  const formData = {
+    ...stripSellerOnboardingTransferAttorneyFields(payload.formData),
+    ...(payload.currentStep !== undefined ? { currentStep: Number(payload.currentStep || 0) } : {}),
+  }
 
   const rpc = await client.rpc('bridge_update_private_listing_seller_onboarding_progress', {
     p_token: normalizedToken,
     p_status: normalizeStatus(payload.status || 'in_progress', SELLER_ONBOARDING_STATUSES, 'in_progress'),
-    p_form_data: {
-      ...(payload.formData && typeof payload.formData === 'object' ? payload.formData : {}),
-      ...(payload.currentStep !== undefined ? { currentStep: Number(payload.currentStep || 0) } : {}),
-    },
+    p_form_data: formData,
     p_seller_type: normalizeNullableText(payload.sellerType),
     p_ownership_structure: normalizeNullableText(payload.ownershipStructure),
     p_marital_regime: normalizeNullableText(payload.maritalRegime),
@@ -8201,7 +7894,7 @@ async function updateSellerOnboardingProgressInternal(token, payload = {}) {
     void enqueueSellerOnboardingProgressProjection(client, {
       listing: rpcContext.listing,
       onboardingId: rpcContext.onboarding?.id,
-      formData: payload.formData,
+      formData,
       draft: true,
       reason: 'seller_onboarding_progress',
     }).catch((projectionError) => {
@@ -8220,11 +7913,10 @@ async function updateSellerOnboardingProgressInternal(token, payload = {}) {
 
   const existingFormData =
     context.onboarding.form_data && typeof context.onboarding.form_data === 'object' ? context.onboarding.form_data : {}
-  const nextFormData = {
+  const nextFormData = stripSellerOnboardingTransferAttorneyFields({
     ...existingFormData,
-    ...(payload.formData && typeof payload.formData === 'object' ? payload.formData : {}),
-    ...(payload.currentStep !== undefined ? { currentStep: Number(payload.currentStep || 0) } : {}),
-  }
+    ...formData,
+  })
 
   const nextStatus = normalizeStatus(payload.status || 'in_progress', SELLER_ONBOARDING_STATUSES, 'in_progress')
   const updateQuery = await client

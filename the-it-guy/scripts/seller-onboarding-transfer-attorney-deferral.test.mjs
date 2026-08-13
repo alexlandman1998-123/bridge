@@ -7,21 +7,17 @@ const agencyPipelinePage = await fs.readFile(new URL('src/pages/agency/AgencyPip
 const sellerOnboardingPage = await fs.readFile(new URL('src/pages/SellerOnboarding.jsx', appRoot), 'utf8')
 
 const sendSellerOnboarding = privateListingService.match(/export async function sendSellerOnboarding\([\s\S]*?\n}\n\nexport async function/)?.[0] || ''
+const submitSellerOnboarding = privateListingService.match(/export async function submitSellerOnboarding\([\s\S]*?\n}\n\nasync function updateSellerOnboardingProgressInternal/)?.[0] || ''
 
 assert.doesNotMatch(
   sendSellerOnboarding,
   /Configure an active preferred transfer attorney before sending seller onboarding/,
   'seller onboarding send must not hard-block when no active preferred transfer attorney exists.',
 )
-assert.match(
+assert.doesNotMatch(
   sendSellerOnboarding,
-  /preferredTransferAttorney = null/,
-  'unavailable transfer attorney selections should be treated as deferred nominations.',
-)
-assert.match(
-  sendSellerOnboarding,
-  /transferAttorneyChoice:[\s\S]*\?[\s\S]*'preferred'[\s\S]*:[\s\S]*'deferred'/,
-  'seller onboarding form data should mark missing transfer attorney nominations as deferred.',
+  /preferredTransferAttorney|transferAttorneyChoice|preferredTransferAttorneyAccepted|preferredTransferAttorneyAcceptance/,
+  'seller onboarding send should not seed transfer attorney fields into seller form data.',
 )
 assert.match(
   agencyPipelinePage,
@@ -33,20 +29,42 @@ assert.match(
   /disabled=\{loading \|\| sending \|\| \(hasAttorneyOptions && !selectedAttorney\)\}/,
   'the send button should only require a selected attorney when attorney options are available.',
 )
+for (const pattern of [
+  /Transfer attorney preference/,
+  /Transferring Attorney/,
+  /getTransferAttorneyMissingItems/,
+  /handleTransferAttorneyChoiceChange/,
+  /preferredTransferAttorneyAccepted/,
+  /transferAttorneyChoice/,
+  /nominatedTransferAttorney/,
+]) {
+  assert.doesNotMatch(
+    sellerOnboardingPage,
+    pattern,
+    'seller onboarding page should not render or validate transfer attorney preference.',
+  )
+}
+for (const pattern of [
+  /Nominate another transferring attorney before submitting seller onboarding\./,
+  /The preferred transferring attorney must be configured before seller onboarding can be completed\./,
+  /Accept the preferred transferring attorney before submitting seller onboarding\./,
+  /ensureAcceptedPreferredTransferAttorneyAllocation/,
+]) {
+  assert.doesNotMatch(
+    submitSellerOnboarding,
+    pattern,
+    'seller onboarding submit should not require or allocate transfer attorney preferences.',
+  )
+}
 assert.match(
-  sellerOnboardingPage,
-  /return hasPreferredTransferAttorney\(form\.preferredTransferAttorney\) \? 'preferred' : 'deferred'/,
-  'seller onboarding should default to deferred when no preferred attorney is configured.',
+  privateListingService,
+  /stripSellerOnboardingTransferAttorneyFields/,
+  'seller onboarding service should sanitize legacy transfer attorney fields from form data.',
 )
-assert.match(
+assert.doesNotMatch(
   sellerOnboardingPage,
-  /if \(choice === 'deferred'\) return \[\]/,
-  'seller onboarding validation must not treat deferred attorney assignment as missing required data.',
-)
-assert.match(
-  sellerOnboardingPage,
-  /Assign later/,
-  'seller onboarding should expose an explicit assign-later attorney path.',
+  /Attorney:/,
+  'seller onboarding final required items should not include attorney requirements.',
 )
 
-console.log('seller onboarding transfer attorney deferral checks passed')
+console.log('seller onboarding transfer attorney removal checks passed')
