@@ -56,12 +56,14 @@ const EMPTY_DASHBOARD = {
   drilldowns: {
     activeAgents: [],
     activeListings: [],
+    activeTransactions: [],
     activeOrganisations: [],
   },
   generatedAt: '',
   kpis: {
     activeAgents: 0,
     activeListings: 0,
+    activeTransactions: 0,
     activeOrganisations: 0,
     pipelineRevenue: 0,
     registeredRevenueThisMonth: 0,
@@ -443,6 +445,7 @@ function getDashboardDrilldowns(snapshot = EMPTY_DASHBOARD, support = EMPTY_SUPP
   const pipelineRows = snapshot?.pipeline || []
   const registeredRows = snapshot?.registered || []
   const attentionRows = snapshot?.attention || []
+  const activeTransactionRows = snapshot?.activeTransactions || snapshot?.drilldowns?.activeTransactions || []
   const missingRevenueRows = [...pipelineRows, ...registeredRows].filter((row) => row.revenueMissing)
   const supportItems = buildSupportItems(support, snapshot)
 
@@ -473,6 +476,13 @@ function getDashboardDrilldowns(snapshot = EMPTY_DASHBOARD, support = EMPTY_SUPP
       meta: `${formatCount(pipelineRows.length)} sampled`,
       rows: pipelineRows,
       title: 'Seller + Buyer Signed Pipeline',
+      type: 'transactions',
+    },
+    activeTransactions: {
+      empty: 'No active transaction rows returned by the current data contract.',
+      meta: `${formatCount(activeTransactionRows.length)} sampled`,
+      rows: activeTransactionRows,
+      title: 'Active Transactions',
       type: 'transactions',
     },
     registered: {
@@ -980,7 +990,8 @@ function DashboardView({ isLoading, snapshot, support }) {
   const listingRows = snapshot?.drilldowns?.activeListings || []
   const organisationRows = snapshot?.drilldowns?.activeOrganisations || []
   const agentRows = snapshot?.drilldowns?.activeAgents || []
-  const liveRows = [...pipelineRows, ...attentionRows].slice(0, 5)
+  const activeTransactionRows = snapshot?.activeTransactions || snapshot?.drilldowns?.activeTransactions || []
+  const liveRows = (activeTransactionRows.length ? activeTransactionRows : [...pipelineRows, ...attentionRows]).slice(0, 5)
   const totalInventorySample = listingRows.reduce((total, row) => total + (Number(row.price) || 0), 0)
   const listingPipelineRevenue = (Number(kpis.activeListings) || 0) * ARCH9_LISTING_PIPELINE_FEE
   const organisationActivity = useMemo(() => buildOrganisationActivity(snapshot), [snapshot])
@@ -1001,6 +1012,7 @@ function DashboardView({ isLoading, snapshot, support }) {
     { otp: 0, registered: registeredRows.length, stalled: kpis.stalledTransactions || attentionRows.length, transfer: 0 },
   )
   const pipelineCount = kpis.sellerSignedBuyerSigned || pipelineRows.length
+  const activeTransactionCount = Number(kpis.activeTransactions) || activeTransactionRows.length || pipelineCount
   const feeContext =
     pipelineCount && kpis.pipelineRevenue
       ? `${formatCount(pipelineCount)} signed transactions`
@@ -1040,12 +1052,12 @@ function DashboardView({ isLoading, snapshot, support }) {
       value: formatMoney(listingPipelineRevenue),
     },
     {
-      drilldown: 'pipeline',
+      drilldown: 'activeTransactions',
       icon: ListChecks,
       label: 'Active Transactions',
       meta: pipelineCount ? `${formatCount(pipelineCount)} signed pipeline` : '',
-      context: 'Seller + buyer signed, not registered',
-      value: formatCount(pipelineCount),
+      context: 'Open, not completed or registered',
+      value: formatCount(activeTransactionCount),
     },
   ]
 
