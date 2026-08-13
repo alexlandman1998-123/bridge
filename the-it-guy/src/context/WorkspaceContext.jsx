@@ -23,6 +23,46 @@ const DEFAULT_AGENCY_WORKFLOW_MODE = 'agent'
 const UNRESOLVED_WORKSPACE = { id: '', name: 'Workspace setup required', type: '' }
 const EMPTY_PROFILE_PATCH = {}
 
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
+function getMembershipWorkspaceId(membership = null) {
+  return normalizeText(
+    membership?.workspaceId ||
+      membership?.workspace_id ||
+      membership?.workspace?.id ||
+      membership?.organisationId ||
+      membership?.organisation_id ||
+      membership?.organizationId ||
+      membership?.organization_id ||
+      membership?.firmId ||
+      membership?.firm_id ||
+      membership?.raw?.workspace_id ||
+      membership?.raw?.organisation_id ||
+      membership?.raw?.organization_id ||
+      membership?.raw?.firm_id,
+  )
+}
+
+export function resolveOnboardingCompletionWorkspace(authState = {}) {
+  const membershipCandidates = [
+    authState.currentMembership,
+    authState.membershipContexts?.effective,
+    authState.membershipContexts?.organisation,
+    authState.membershipContexts?.attorneyFirm,
+    ...(Array.isArray(authState.currentMemberships) ? authState.currentMemberships : []),
+    ...(Array.isArray(authState.activeMemberships) ? authState.activeMemberships : []),
+  ].filter(Boolean)
+  const membership = membershipCandidates.find((candidate) => candidate?.id) || null
+  const workspaceId = normalizeText(authState.currentWorkspace?.id) || getMembershipWorkspaceId(membership)
+  return {
+    hasMembership: Boolean(membership?.id),
+    workspaceId,
+    membership,
+  }
+}
+
 function normalizeAgencyWorkflowMode(value, fallback = DEFAULT_AGENCY_WORKFLOW_MODE) {
   const normalized = String(value || '').trim().toLowerCase()
   if (normalized === 'principal' || normalized === 'agent') return normalized
@@ -200,7 +240,8 @@ export function WorkspaceProvider({ children }) {
       if (!authState.user?.id) {
         throw new Error('You must be signed in before updating your profile.')
       }
-      if (payload?.onboardingCompleted === true && baseRole !== 'client' && !authState.currentMembership?.id) {
+      const completionWorkspace = resolveOnboardingCompletionWorkspace(authState)
+      if (payload?.onboardingCompleted === true && baseRole !== 'client' && !completionWorkspace.hasMembership) {
         throw new Error('Workspace membership is required before onboarding can be marked complete.')
       }
       if (payload?.onboardingCompleted === true) {
@@ -210,7 +251,7 @@ export function WorkspaceProvider({ children }) {
           intent: signupIntent,
           appRole: payload.role || authState.appRole || profile?.role,
           workspaceType: authState.workspaceType,
-          workspaceId: authState.currentWorkspace?.id || authState.currentMembership?.workspaceId,
+          workspaceId: completionWorkspace.workspaceId,
           profilePatch: {
             first_name: payload.firstName || undefined,
             last_name: payload.lastName || undefined,
