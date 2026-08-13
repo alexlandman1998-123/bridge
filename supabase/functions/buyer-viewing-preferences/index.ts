@@ -2,6 +2,35 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
 
 type JsonRecord = Record<string, unknown>;
+type SupabaseQueryClient = { from: (table: string) => any };
+type AvailabilitySlot = {
+  date: string;
+  startTime: string;
+  endTime: string;
+  startAt: string;
+  endAt: string;
+  timezone: string;
+  label: string;
+};
+type OrganisationBranding = {
+  organisationName: string;
+  organisationLogoUrl: string;
+  organisationLogoLightUrl: string;
+  organisationLogoDarkUrl: string;
+  organisationLogoIconUrl: string;
+  organisationBrandPrimaryColor: string;
+  organisationBrandSecondaryColor: string;
+};
+
+const EMPTY_ORGANISATION_BRANDING: OrganisationBranding = {
+  organisationName: "",
+  organisationLogoUrl: "",
+  organisationLogoLightUrl: "",
+  organisationLogoDarkUrl: "",
+  organisationLogoIconUrl: "",
+  organisationBrandPrimaryColor: "",
+  organisationBrandSecondaryColor: "",
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,8 +44,85 @@ const MAX_REQUEST_BYTES = 96 * 1024;
 const LINK_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
 const UUID_PATTERN =
   /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_PATTERN = /^\d{2}:\d{2}$/;
 const NOTE_START = "[Buyer viewing plan]";
 const NOTE_END = "[/Buyer viewing plan]";
+
+const BRAND_NAME_KEYS = [
+  "organisationName",
+  "organisation_name",
+  "organisationDisplayName",
+  "organisation_display_name",
+  "displayName",
+  "display_name",
+  "name",
+];
+const BRAND_LOGO_LIGHT_KEYS = [
+  "logoLightUrl",
+  "logo_light_url",
+  "lightLogoUrl",
+  "light_logo_url",
+  "organisationLogoLightUrl",
+  "organisation_logo_light_url",
+];
+const BRAND_LOGO_DARK_KEYS = [
+  "logoDarkUrl",
+  "logo_dark_url",
+  "darkLogoUrl",
+  "dark_logo_url",
+  "logoHighContrastUrl",
+  "logo_high_contrast_url",
+  "organisationLogoDarkUrl",
+  "organisation_logo_dark_url",
+];
+const BRAND_LOGO_ICON_KEYS = [
+  "logoIconUrl",
+  "logo_icon_url",
+  "iconLogoUrl",
+  "icon_logo_url",
+  "organisationLogoIconUrl",
+  "organisation_logo_icon_url",
+];
+const BRAND_LOGO_GENERIC_KEYS = [
+  "logoUrl",
+  "logo_url",
+  "logo",
+  "primaryLogoUrl",
+  "primary_logo_url",
+  "organisationLogoUrl",
+  "organisation_logo_url",
+];
+const BRAND_PRIMARY_KEYS = [
+  "primaryColour",
+  "primaryColor",
+  "primary_colour",
+  "primary_color",
+  "primary_brand_color",
+  "brandPrimaryColor",
+  "brand_primary_color",
+];
+const BRAND_SECONDARY_KEYS = [
+  "secondaryColour",
+  "secondaryColor",
+  "secondary_colour",
+  "secondary_color",
+  "secondary_brand_color",
+  "brandSecondaryColor",
+  "brand_secondary_color",
+];
+const BRAND_NESTED_KEYS = [
+  "branding",
+  "portalBranding",
+  "portal_branding",
+  "agencyOnboarding",
+  "agency_onboarding",
+  "settingsJson",
+  "settings_json",
+  "brandAssets",
+  "brand_assets",
+  "logos",
+];
 
 function normalizeText(value: unknown, maxLength = 5000) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -26,6 +132,23 @@ function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as JsonRecord
     : {};
+}
+
+function isMissingColumnError(error: unknown, columnName = "") {
+  const row = asRecord(error);
+  const code = normalizeText(row.code, 20);
+  const message = normalizeText(row.message, 1000).toLowerCase();
+  const column = normalizeText(columnName, 120).toLowerCase();
+  return code === "42703" && (!column || message.includes(column));
+}
+
+function isMissingTableError(error: unknown, tableName = "") {
+  const row = asRecord(error);
+  const code = normalizeText(row.code, 20);
+  const message = normalizeText(row.message, 1000).toLowerCase();
+  const table = normalizeText(tableName, 120).toLowerCase();
+  return (code === "42P01" || message.includes("does not exist")) &&
+    (!table || message.includes(table));
 }
 
 function jsonResponse(status: number, body: JsonRecord) {
@@ -145,6 +268,173 @@ function normalizeUuid(value: unknown) {
   return raw.match(UUID_PATTERN)?.[0] || "";
 }
 
+function safeUrl(value: unknown) {
+  const text = normalizeText(value, 1000);
+  if (!text) return "";
+  try {
+    const url = new URL(text);
+    return url.protocol === "https:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function collectBrandingRecords(
+  value: unknown,
+  seen = new Set<object>(),
+): JsonRecord[] {
+  if (Array.isArray(value)) {
+    const records: JsonRecord[] = [];
+    for (const item of value) {
+      records.push(...collectBrandingRecords(item, seen));
+    }
+    return records;
+  }
+  if (!value || typeof value !== "object") return [];
+  const record = value as JsonRecord;
+  if (seen.has(record)) return [];
+  seen.add(record);
+  const records = [record];
+  for (const key of BRAND_NESTED_KEYS) {
+    records.push(...collectBrandingRecords(record[key], seen));
+  }
+  return records;
+}
+
+function pickBrandingText(
+  records: JsonRecord[],
+  keys: string[],
+  maxLength = 1000,
+) {
+  for (const record of records) {
+    for (const key of keys) {
+      const text = normalizeText(record[key], maxLength);
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+async function resolveOrganisationBranding(
+  client: SupabaseQueryClient,
+  organisationId: string,
+): Promise<OrganisationBranding> {
+  if (!organisationId) return EMPTY_ORGANISATION_BRANDING;
+  let organisation: JsonRecord = {};
+  let branding: JsonRecord = {};
+  let settings: JsonRecord = {};
+
+  let organisationQuery = await client
+    .from("organisations")
+    .select("id, name, display_name, logo_url")
+    .eq("id", organisationId)
+    .maybeSingle();
+  if (
+    organisationQuery.error &&
+    (isMissingColumnError(organisationQuery.error, "display_name") ||
+      isMissingColumnError(organisationQuery.error, "logo_url"))
+  ) {
+    organisationQuery = await client
+      .from("organisations")
+      .select("id, name")
+      .eq("id", organisationId)
+      .maybeSingle();
+  }
+  if (!organisationQuery.error && organisationQuery.data) {
+    organisation = organisationQuery.data as JsonRecord;
+  } else if (
+    organisationQuery.error &&
+    !isMissingTableError(organisationQuery.error, "organisations")
+  ) {
+    console.warn("[buyer-viewing-preferences] organisation branding lookup failed", {
+      code: organisationQuery.error.code,
+      message: organisationQuery.error.message,
+    });
+  }
+
+  let brandingQuery = await client
+    .from("organisation_branding")
+    .select("organisation_display_name, logo_light_url, logo_dark_url, logo_icon_url, primary_brand_color, secondary_brand_color, accent_brand_color")
+    .eq("organisation_id", organisationId)
+    .maybeSingle();
+  if (
+    brandingQuery.error &&
+    (isMissingColumnError(brandingQuery.error, "organisation_display_name") ||
+      isMissingColumnError(brandingQuery.error, "logo_icon_url") ||
+      isMissingColumnError(brandingQuery.error, "primary_brand_color") ||
+      isMissingColumnError(brandingQuery.error, "secondary_brand_color") ||
+      isMissingColumnError(brandingQuery.error, "accent_brand_color"))
+  ) {
+    brandingQuery = await client
+      .from("organisation_branding")
+      .select("logo_light_url, logo_dark_url, primary_color, secondary_color, metadata_json")
+      .eq("organisation_id", organisationId)
+      .maybeSingle();
+  }
+  if (!brandingQuery.error && brandingQuery.data) {
+    branding = brandingQuery.data as JsonRecord;
+  } else if (
+    brandingQuery.error &&
+    !isMissingTableError(brandingQuery.error, "organisation_branding")
+  ) {
+    console.warn("[buyer-viewing-preferences] organisation_branding lookup failed", {
+      code: brandingQuery.error.code,
+      message: brandingQuery.error.message,
+    });
+  }
+
+  const settingsQuery = await client
+    .from("organisation_settings")
+    .select("settings_json")
+    .eq("organisation_id", organisationId)
+    .maybeSingle();
+  if (!settingsQuery.error && settingsQuery.data?.settings_json) {
+    settings = asRecord(settingsQuery.data.settings_json);
+  } else if (
+    settingsQuery.error &&
+    !isMissingTableError(settingsQuery.error, "organisation_settings") &&
+    !isMissingColumnError(settingsQuery.error, "settings_json")
+  ) {
+    console.warn("[buyer-viewing-preferences] organisation_settings lookup failed", {
+      code: settingsQuery.error.code,
+      message: settingsQuery.error.message,
+    });
+  }
+
+  const records = collectBrandingRecords([branding, settings, organisation]);
+  const genericLogoUrl = safeUrl(
+    pickBrandingText(records, BRAND_LOGO_GENERIC_KEYS),
+  );
+  const logoLightUrl = safeUrl(
+    pickBrandingText(records, BRAND_LOGO_LIGHT_KEYS),
+  ) || genericLogoUrl;
+  const logoDarkUrl = safeUrl(
+    pickBrandingText(records, BRAND_LOGO_DARK_KEYS),
+  ) || genericLogoUrl || logoLightUrl;
+  const logoIconUrl = safeUrl(
+    pickBrandingText(records, BRAND_LOGO_ICON_KEYS),
+  ) || genericLogoUrl;
+
+  return {
+    ...EMPTY_ORGANISATION_BRANDING,
+    organisationName: pickBrandingText(records, BRAND_NAME_KEYS, 180),
+    organisationLogoUrl: logoLightUrl || logoDarkUrl || logoIconUrl,
+    organisationLogoLightUrl: logoLightUrl,
+    organisationLogoDarkUrl: logoDarkUrl,
+    organisationLogoIconUrl: logoIconUrl,
+    organisationBrandPrimaryColor: pickBrandingText(
+      records,
+      BRAND_PRIMARY_KEYS,
+      80,
+    ),
+    organisationBrandSecondaryColor: pickBrandingText(
+      records,
+      BRAND_SECONDARY_KEYS,
+      80,
+    ),
+  };
+}
+
 function normalizeProperties(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value
@@ -221,6 +511,64 @@ function normalizeWindows(value: unknown) {
     .map((line) => normalizeText(line, 160))
     .filter(Boolean)
     .slice(0, 5);
+}
+
+function formatAvailabilitySlotLabel(slot: JsonRecord) {
+  const date = normalizeText(slot.date, 10);
+  const startTime = normalizeText(slot.startTime || slot.start_time, 5);
+  const endTime = normalizeText(slot.endTime || slot.end_time, 5);
+  if (
+    !DATE_PATTERN.test(date) ||
+    !TIME_PATTERN.test(startTime) ||
+    !TIME_PATTERN.test(endTime)
+  ) {
+    return "";
+  }
+  const parsed = new Date(`${date}T00:00:00`);
+  const dateLabel = Number.isNaN(parsed.getTime())
+    ? date
+    : parsed.toLocaleDateString("en-ZA", {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  return `${dateLabel}, ${startTime}-${endTime}`;
+}
+
+function normalizeAvailabilitySlots(
+  value: unknown,
+  timezone = "Africa/Johannesburg",
+): AvailabilitySlot[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const row = asRecord(item);
+    const date = normalizeText(row.date, 10);
+    const startTime = normalizeText(row.startTime || row.start_time, 5);
+    const endTime = normalizeText(row.endTime || row.end_time, 5);
+    if (
+      !DATE_PATTERN.test(date) ||
+      !TIME_PATTERN.test(startTime) ||
+      !TIME_PATTERN.test(endTime) ||
+      endTime <= startTime
+    ) {
+      return null;
+    }
+    const slot = {
+      date,
+      startTime,
+      endTime,
+      startAt: `${date}T${startTime}:00`,
+      endAt: `${date}T${endTime}:00`,
+      timezone: normalizeText(row.timezone, 80) || timezone,
+      label: "",
+    };
+    return {
+      ...slot,
+      label: normalizeText(row.label, 160) ||
+        formatAvailabilitySlotLabel(slot),
+    };
+  }).filter((slot): slot is AvailabilitySlot => Boolean(slot)).slice(0, 5);
 }
 
 function parseNoteBlock(notes = "") {
@@ -555,9 +903,20 @@ Deno.serve(async (req) => {
     }).eq("id", link.id);
   }
 
+  const branding = await resolveOrganisationBranding(
+    supabase,
+    normalizeUuid(link.organisation_id),
+  );
   const publicSession = {
     id: link.id,
-    organisationName: link.organisation_name || "",
+    organisationName: link.organisation_name || branding.organisationName || "",
+    organisationLogoUrl: branding.organisationLogoUrl || "",
+    organisationLogoLightUrl: branding.organisationLogoLightUrl || "",
+    organisationLogoDarkUrl: branding.organisationLogoDarkUrl || "",
+    organisationLogoIconUrl: branding.organisationLogoIconUrl || "",
+    organisationBrandPrimaryColor: branding.organisationBrandPrimaryColor || "",
+    organisationBrandSecondaryColor:
+      branding.organisationBrandSecondaryColor || "",
     buyerName: link.buyer_name || "",
     agentName: link.agent_name || "",
     agentEmail: link.agent_email || "",
@@ -600,9 +959,19 @@ Deno.serve(async (req) => {
   const confirmedPropertyIds = propertyResponses.filter((item) =>
     item.wantsToView
   ).map((item) => item.propertyId);
-  const availabilityWindows = normalizeWindows(
-    body.availabilityWindows || body.availability_windows,
+  const rawAvailabilitySlots = body.availabilitySlots ||
+    body.availability_slots;
+  const hasStructuredAvailabilitySlots = Array.isArray(rawAvailabilitySlots);
+  const timezone = normalizeText(body.timezone, 80) || "Africa/Johannesburg";
+  const availabilitySlots = normalizeAvailabilitySlots(
+    rawAvailabilitySlots,
+    timezone,
   );
+  const availabilityWindows = availabilitySlots.length
+    ? availabilitySlots.map((slot) => normalizeText(slot?.label, 160)).filter(
+      Boolean,
+    )
+    : normalizeWindows(body.availabilityWindows || body.availability_windows);
   const attendeeNotes = normalizeText(
     body.attendeeNotes || body.attendee_notes,
     1000,
@@ -623,6 +992,13 @@ Deno.serve(async (req) => {
       code: "availability_required",
     });
   }
+  if (hasStructuredAvailabilitySlots && availabilitySlots.length !== 3) {
+    return jsonResponse(400, {
+      error:
+        "Please choose a date, start time, and end time for all three viewing options.",
+      code: "structured_availability_required",
+    });
+  }
   if (availabilityWindows.length !== 3) {
     return jsonResponse(400, {
       error: "Please add three preferred viewing times.",
@@ -635,6 +1011,8 @@ Deno.serve(async (req) => {
     propertyResponses,
     confirmedPropertyIds,
     availabilityWindows,
+    availabilitySlots,
+    timezone,
     attendeeNotes,
     responseNotes,
     submittedAt: now,
@@ -767,6 +1145,8 @@ Deno.serve(async (req) => {
             preferenceLinkId: link.id,
             confirmedPropertyIds,
             availabilityWindows,
+            availabilitySlots,
+            timezone,
           },
         });
       } catch (notifyError) {

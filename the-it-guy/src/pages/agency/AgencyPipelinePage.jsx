@@ -8662,8 +8662,21 @@ function isLeadCreatedActivity(activity = {}) {
   return type === 'lead created' || note === 'lead_created'
 }
 
+function isSystemGeneratedContactActivity(activity = {}) {
+  const type = normalizeText(activity?.activityType || activity?.activity_type).toLowerCase()
+  const note = normalizeText(activity?.activityNote || activity?.activity_note).toLowerCase()
+  const outcome = normalizeText(activity?.outcome).toLowerCase()
+  return (
+    type.includes('system') ||
+    type.includes('automated') ||
+    note.startsWith('acknowledgement email ') ||
+    note.includes('automatic acknowledgement') ||
+    outcome.startsWith('provider_message_id:')
+  )
+}
+
 function isBuyerContactActivity(activity = {}) {
-  if (!activity || isLeadCreatedActivity(activity)) return false
+  if (!activity || isLeadCreatedActivity(activity) || isSystemGeneratedContactActivity(activity)) return false
   const type = normalizeText(activity.activityType || activity.activity_type).toLowerCase()
   return ['call', 'whatsapp', 'email', 'meeting', 'sms'].some((token) => type.includes(token))
 }
@@ -9386,6 +9399,13 @@ const BUYER_VIEWING_RESPONSE_DEFAULTS = {
   availabilityWindows: '',
   responseNotes: '',
 }
+const AGENCY_PIPELINE_REALTIME_TABLES = [
+  'leads',
+  'contacts',
+  'lead_activities',
+  'tasks',
+  'inbound_lead_emails',
+]
 const BUYER_SELLER_COORDINATION_DEFAULTS = {
   sellerRecipientEmails: '',
   sellerCoordinationNotes: '',
@@ -9448,16 +9468,24 @@ function parseBuyerQualificationNoteBlock(notes = '') {
   return parsed
 }
 
-function buildBuyerQualificationFormFromLead(lead = {}) {
+function hasBuyerQualificationNoteBlock(notes = '') {
+  const raw = String(notes || '')
+  const startIndex = raw.indexOf(BUYER_QUALIFICATION_NOTE_START)
+  const endIndex = raw.indexOf(BUYER_QUALIFICATION_NOTE_END, startIndex)
+  return startIndex >= 0 && endIndex > startIndex
+}
+
+function buildBuyerQualificationFormFromLead(lead = {}, { includeLeadFieldFallbacks = true } = {}) {
   const parsed = parseBuyerQualificationNoteBlock(lead?.notes)
   const freeformNotes = stripBuyerStructuredNoteBlocks(lead?.notes)
+  const canUseLeadFieldFallbacks = includeLeadFieldFallbacks && !hasBuyerQualificationNoteBlock(lead?.notes)
   return {
     ...BUYER_QUALIFICATION_FORM_DEFAULTS,
     ...parsed,
-    budget: normalizeText(parsed.budget) || normalizeText(lead?.budget),
-    areaInterest: normalizeText(parsed.areaInterest) || normalizeText(lead?.areaInterest),
-    propertyNeed: normalizeText(parsed.propertyNeed) || normalizeText(lead?.propertyInterest),
-    additionalNotes: [normalizeText(parsed.additionalNotes), parsed.additionalNotes ? freeformNotes : ''].filter(Boolean).join('\n\n') || freeformNotes,
+    budget: normalizeText(parsed.budget) || (canUseLeadFieldFallbacks ? normalizeText(lead?.budget) : ''),
+    areaInterest: normalizeText(parsed.areaInterest) || (canUseLeadFieldFallbacks ? normalizeText(lead?.areaInterest) : ''),
+    propertyNeed: normalizeText(parsed.propertyNeed) || (canUseLeadFieldFallbacks ? normalizeText(lead?.propertyInterest) : ''),
+    additionalNotes: [normalizeText(parsed.additionalNotes), parsed.additionalNotes ? freeformNotes : ''].filter(Boolean).join('\n\n') || (canUseLeadFieldFallbacks ? freeformNotes : ''),
   }
 }
 
@@ -9715,6 +9743,18 @@ function normalizeBuyerViewingPreferenceResponse(link = {}) {
   const availabilityWindows = (Array.isArray(response.availabilityWindows) ? response.availabilityWindows : [])
     .map(normalizeText)
     .filter(Boolean)
+  const availabilitySlots = (Array.isArray(response.availabilitySlots) ? response.availabilitySlots : Array.isArray(response.availability_slots) ? response.availability_slots : [])
+    .filter((slot) => slot && typeof slot === 'object' && !Array.isArray(slot))
+    .map((slot) => ({
+      date: normalizeText(slot.date),
+      startTime: normalizeText(slot.startTime || slot.start_time),
+      endTime: normalizeText(slot.endTime || slot.end_time),
+      startAt: normalizeText(slot.startAt || slot.start_at),
+      endAt: normalizeText(slot.endAt || slot.end_at),
+      timezone: normalizeText(slot.timezone),
+      label: normalizeText(slot.label),
+    }))
+    .filter((slot) => slot.date && slot.startTime && slot.endTime)
   const responseNotes = [
     normalizeText(response.responseNotes || response.response_notes),
     normalizeText(response.attendeeNotes || response.attendee_notes)
@@ -9728,6 +9768,7 @@ function normalizeBuyerViewingPreferenceResponse(link = {}) {
     selectedPropertyIds,
     confirmedPropertyIds,
     availabilityWindows,
+    availabilitySlots,
     availabilityText: availabilityWindows.join('\n'),
     responseNotes,
     submittedAt: normalizeText(link?.submittedAt || response.submittedAt || response.submitted_at),
@@ -11116,6 +11157,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       window.removeEventListener(eventName, handler)
       window.removeEventListener('itg:quick-create-updated', handler)
       window.removeEventListener('itg:viewings-updated', handler)
+    }
+  }, [organisationId, scheduleRecordsReload])
+
+  useEffect(() => {
+    if (!organisationId || !isSupabaseConfigured || !supabase) return undefined
+
+    const channel = supabase.channel(`agency-pipeline:${organisationId}`)
+    AGENCY_PIPELINE_REALTIME_TABLES.forEach((table) => {
+      channel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table,
+          filter: `organisation_id=eq.${organisationId}`,
+        },
+        () => {
+          scheduleRecordsReload(organisationId, 250)
+        },
+      )
+    })
+    channel.subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('[PIPELINE] realtime subscription unavailable; falling back to manual refresh.', { organisationId, status })
+      }
+    })
+
+    return () => {
+      void supabase.removeChannel(channel)
     }
   }, [organisationId, scheduleRecordsReload])
 
@@ -13608,7 +13678,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       : resolveLeadLifecyclePresentation(selectedLead).label
 
   const selectedLeadBuyerQualificationEvidence = useMemo(
-    () => getBuyerQualificationEvidence(buildBuyerQualificationFormFromLead(selectedLead || {})),
+    () => getBuyerQualificationEvidence(buildBuyerQualificationFormFromLead(selectedLead || {}, { includeLeadFieldFallbacks: false })),
     [selectedLead],
   )
 

@@ -52,6 +52,8 @@ export function mergePartnerConnectionOptions(connectionOptions = [], legacyOpti
       ...preferredRecord,
       connectionId: preferredRecord.connectionId || secondaryRecord.connectionId || null,
       relationshipId: preferredRecord.relationshipId || secondaryRecord.relationshipId || null,
+      partnerRoleConfigurationId:
+        preferredRecord.partnerRoleConfigurationId || secondaryRecord.partnerRoleConfigurationId || null,
       preferredPartnerId: preferredRecord.preferredPartnerId || secondaryRecord.preferredPartnerId || null,
       organisationId: preferredRecord.organisationId || secondaryRecord.organisationId || null,
       partnerOrganisationId: preferredRecord.partnerOrganisationId || secondaryRecord.partnerOrganisationId || null,
@@ -92,6 +94,7 @@ export function partnerOptionToRolePlayerSelection(roleType, partner, selectionS
     preferredPartnerId: partner.preferredPartnerId || partner.preferred_partner_id || null,
     partnerRelationshipId: partner.relationshipId || null,
     partnerConnectionId: partner.connectionId || null,
+    partnerRoleConfigurationId: partner.partnerRoleConfigurationId || partner.partner_role_configuration_id || null,
     partnerOrganisationId:
       partner.organisationId || partner.partnerOrganisationId || partner.partnerOrganizationId || null,
     userId: isAttorneyRole ? null : selectedUserId,

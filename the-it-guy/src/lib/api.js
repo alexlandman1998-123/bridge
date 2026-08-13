@@ -1132,7 +1132,14 @@ function isPermissionDeniedError(error) {
   }
 
   const message = String(error.message || '').toLowerCase()
-  return error.code === '42501' || message.includes('permission denied')
+  const details = String(error.details || '').toLowerCase()
+  return (
+    error.code === '42501' ||
+    message.includes('permission denied') ||
+    message.includes('row-level security') ||
+    details.includes('permission denied') ||
+    details.includes('row-level security')
+  )
 }
 
 function isMissingSchemaError(error) {

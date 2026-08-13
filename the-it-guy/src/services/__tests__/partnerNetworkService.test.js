@@ -69,6 +69,35 @@ try {
   }
 
   {
+    const connection = __partnerNetworkServiceTestUtils.toPartnerConnection({
+      id: 'connection-2',
+      relationship_id: 'relationship-tuckers',
+      partner_organization_id: 'org-tuckers',
+      partner_name: 'Tuckers',
+      partner_organization_type: 'professional_services',
+      status: 'connected',
+      roleConfigurations: [
+        {
+          id: 'role-transfer-tuckers',
+          roleType: 'transfer_attorney',
+          isDefault: true,
+        },
+      ],
+    })
+
+    assert.equal(connection.relationshipId, 'relationship-tuckers')
+    assert.deepEqual(connection.partnerRoleTypes, ['transfer_attorney'])
+    assert.equal(__partnerNetworkServiceTestUtils.partnerConnectionSupportsRoleType(connection, 'transfer_attorney'), true)
+    assert.equal(__partnerNetworkServiceTestUtils.partnerConnectionSupportsRoleType(connection, 'bond_originator'), false)
+
+    const option = __partnerNetworkServiceTestUtils.toTransactionPartnerOption(connection, 'transfer_attorney')
+    assert.equal(option.relationshipId, 'relationship-tuckers')
+    assert.equal(option.partnerRoleConfigurationId, 'role-transfer-tuckers')
+    assert.equal(option.relationshipType, 'preferred')
+    assert.equal(option.preferred, true)
+  }
+
+  {
     const workflow = __partnerNetworkServiceTestUtils.resolvePartnerDeliveryWorkflow({
       transactionId: 'tx-1',
       agencyOrganisationId: 'agency-1',

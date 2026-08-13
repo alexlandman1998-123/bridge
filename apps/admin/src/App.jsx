@@ -233,6 +233,164 @@ function supportItemKey(item = {}) {
   return `${item.type || 'item'}:${item.id || item.title || item.reference || 'unknown'}`
 }
 
+function normalizeDashboardToken(value = '') {
+  return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function collectDashboardTokens(row = {}, keys = []) {
+  return keys.map((key) => normalizeDashboardToken(row?.[key])).filter(Boolean).join(' ')
+}
+
+function firstDashboardValue(row = {}, keys = [], fallback = '') {
+  for (const key of keys) {
+    const value = normalizeText(row?.[key])
+    if (value) return value
+  }
+  return fallback
+}
+
+function isInactiveDashboardStatus(value = '') {
+  return /(^|_)(inactive|archived|deleted|suspended|disabled|false|invited|pending)(_|$)/.test(normalizeDashboardToken(value))
+}
+
+function isAgentModulePerson(row = {}) {
+  const status = firstDashboardValue(row, ['status', 'membership_status', 'profile_status', 'is_active'], 'active')
+  if (isInactiveDashboardStatus(status)) return false
+
+  const tokens = collectDashboardTokens(row, [
+    'role',
+    'app_role',
+    'system_role',
+    'workspace_role',
+    'organisation_role',
+    'organization_role',
+    'portal_role',
+    'commercial_role',
+    'module_context',
+    'workspace_kind',
+  ])
+
+  return /(^|_)(agent|agency|principal|broker|consultant|manager|admin|property_practitioner|estate_agent|realtor|real_estate)(_|$)/.test(tokens)
+}
+
+function isActiveListingRow(row = {}) {
+  const tokens = collectDashboardTokens(row, [
+    'listing_status',
+    'status',
+    'publication_status',
+    'marketing_status',
+    'listing_visibility',
+    'bridge_listing_status',
+    'property24_status',
+    'private_property_status',
+    'mandate_status',
+  ])
+  const isFlaggedActive = ['is_active', 'active'].some((key) => {
+    const value = normalizeDashboardToken(row?.[key])
+    return ['true', 't', 'yes', 'y', '1', 'active', 'live', 'published'].includes(value)
+  })
+  const hasActiveSignal =
+    isFlaggedActive ||
+    /(mandate_signed|listing_active|active_market|under_offer|transaction_created|published|live|active|signed_external_pending_upload|signed_uploaded|uploaded_signed|current_listing)/.test(tokens)
+  const hasTerminalSignal = /(^|_)(inactive|archived|withdrawn|deleted|disabled|registered|sold|sold_archived)(_|$)/.test(tokens)
+
+  return hasActiveSignal && !hasTerminalSignal
+}
+
+function mapDirectAgent(row = {}, fallbackRole = 'agent_module') {
+  const id = firstDashboardValue(row, ['user_id', 'profile_id', 'id', 'email'])
+  return {
+    id,
+    name: firstDashboardValue(row, ['full_name', 'name', 'display_name', 'email'], 'Agent module user'),
+    email: firstDashboardValue(row, ['email', 'email_address']),
+    phone: firstDashboardValue(row, ['phone', 'mobile', 'cellphone']),
+    role: firstDashboardValue(row, ['workspace_role', 'organisation_role', 'organization_role', 'role', 'commercial_role'], fallbackRole),
+    status: firstDashboardValue(row, ['status', 'membership_status', 'profile_status'], 'active'),
+    organisationId: firstDashboardValue(row, ['organisation_id', 'organization_id', 'agency_id', 'company_id']),
+    createdAt: firstDashboardValue(row, ['created_at', 'inserted_at']),
+    updatedAt: firstDashboardValue(row, ['last_active_at', 'updated_at', 'created_at']),
+  }
+}
+
+function mapDirectListing(row = {}) {
+  return {
+    id: firstDashboardValue(row, ['id', 'listing_id', 'reference']),
+    reference: firstDashboardValue(row, ['reference', 'listing_reference', 'code', 'id'], 'Listing'),
+    title: firstDashboardValue(row, ['title', 'property_title', 'name', 'reference'], 'Listing'),
+    location: firstDashboardValue(row, ['location', 'suburb', 'city', 'area']),
+    address: firstDashboardValue(row, ['address', 'property_address', 'address_line_1']),
+    status: firstDashboardValue(row, ['listing_status', 'status', 'bridge_listing_status'], 'active'),
+    organisationId: firstDashboardValue(row, ['organisation_id', 'organization_id', 'agency_id', 'company_id']),
+    agentId: firstDashboardValue(row, ['assigned_agent_id', 'agent_id', 'assigned_user_id', 'owner_user_id']),
+    price: Number(firstDashboardValue(row, ['price', 'asking_price', 'listing_price', 'purchase_price'], 0)) || 0,
+    createdAt: firstDashboardValue(row, ['created_at', 'inserted_at']),
+    updatedAt: firstDashboardValue(row, ['updated_at', 'last_activity_at', 'created_at']),
+  }
+}
+
+async function fetchAdminRows(table, select = '*') {
+  if (!supabase) return { rows: [], warning: `${table}: Supabase is not configured.` }
+  try {
+    const { data, error } = await supabase.from(table).select(select).limit(10000)
+    if (error) return { rows: [], warning: `${table}: ${error.message}` }
+    return { rows: Array.isArray(data) ? data : [], warning: '' }
+  } catch (error) {
+    return { rows: [], warning: `${table}: ${error?.message || 'Direct read failed'}` }
+  }
+}
+
+async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD) {
+  const [profilesResult, orgUsersResult, listingsResult] = await Promise.all([
+    fetchAdminRows('profiles'),
+    fetchAdminRows('organisation_users'),
+    fetchAdminRows('private_listings'),
+  ])
+
+  const agentMap = new Map()
+  for (const row of [...profilesResult.rows, ...orgUsersResult.rows]) {
+    if (!isAgentModulePerson(row)) continue
+    const agent = mapDirectAgent(row)
+    if (agent.id && !agentMap.has(agent.id)) agentMap.set(agent.id, agent)
+  }
+
+  const activeListings = listingsResult.rows.filter(isActiveListingRow).map(mapDirectListing)
+  for (const listing of activeListings) {
+    if (listing.agentId && !agentMap.has(listing.agentId)) {
+      agentMap.set(listing.agentId, {
+        id: listing.agentId,
+        name: 'Assigned agent',
+        email: '',
+        phone: '',
+        role: 'assigned_agent',
+        status: 'active_work',
+        organisationId: listing.organisationId,
+        createdAt: listing.createdAt,
+        updatedAt: listing.updatedAt,
+      })
+    }
+  }
+
+  const directAgents = Array.from(agentMap.values())
+  const warnings = [profilesResult.warning, orgUsersResult.warning, listingsResult.warning]
+    .filter(Boolean)
+    .map((message) => ({ message, type: 'admin_direct_data' }))
+
+  return {
+    ...snapshot,
+    drilldowns: {
+      ...(snapshot?.drilldowns || {}),
+      activeAgents: directAgents.length ? directAgents : snapshot?.drilldowns?.activeAgents || [],
+      activeListings: activeListings.length ? activeListings : snapshot?.drilldowns?.activeListings || [],
+    },
+    kpis: {
+      ...(snapshot?.kpis || {}),
+      activeAgents: Math.max(Number(snapshot?.kpis?.activeAgents) || 0, directAgents.length),
+      activeListings: Math.max(Number(snapshot?.kpis?.activeListings) || 0, activeListings.length),
+    },
+    warnings: [...(snapshot?.warnings || []), ...warnings],
+  }
+}
+
 function getOrgKey(row = {}) {
   return row.organisationId || row.organizationId || row.agencyId || row.companyId || 'unassigned'
 }
@@ -544,8 +702,9 @@ async function loadDashboardSnapshot(rangeId) {
     p_range_end: range.end,
     p_range_start: range.start,
   })
+  const snapshot = await enhanceDashboardSnapshotWithDirectData(data || EMPTY_DASHBOARD)
   return {
-    data: data || EMPTY_DASHBOARD,
+    data: snapshot,
     error: error?.message || '',
   }
 }

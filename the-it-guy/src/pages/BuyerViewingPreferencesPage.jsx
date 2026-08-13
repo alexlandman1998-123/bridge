@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, Home, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, Home, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
@@ -12,6 +12,47 @@ function formatDate(value) {
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return ''
   return parsed.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function getTodayInputValue() {
+  return new Date().toLocaleDateString('en-CA')
+}
+
+function buildEmptyAvailabilityWindows() {
+  return Array.from({ length: 3 }, () => ({ date: '', startTime: '', endTime: '' }))
+}
+
+function formatAvailabilityWindowLabel({ date = '', startTime = '', endTime = '' } = {}) {
+  if (!date || !startTime || !endTime) return ''
+  const [year, month, day] = date.split('-').map(Number)
+  const displayDate = Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(day)
+    ? new Date(year, month - 1, day)
+    : null
+  const dateLabel = displayDate && !Number.isNaN(displayDate.getTime())
+    ? displayDate.toLocaleDateString('en-ZA', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+    : date
+  return `${dateLabel}, ${startTime}-${endTime}`
+}
+
+function buildAvailabilitySlot({ date = '', startTime = '', endTime = '' } = {}) {
+  const label = formatAvailabilityWindowLabel({ date, startTime, endTime })
+  return {
+    date,
+    startTime,
+    endTime,
+    startAt: date && startTime ? `${date}T${startTime}:00` : '',
+    endAt: date && endTime ? `${date}T${endTime}:00` : '',
+    label,
+  }
+}
+
+function isAvailabilityWindowComplete(window = {}) {
+  return Boolean(window.date && window.startTime && window.endTime)
+}
+
+function isAvailabilityWindowRangeValid(window = {}) {
+  if (!isAvailabilityWindowComplete(window)) return false
+  return window.endTime > window.startTime
 }
 
 function PropertyImage({ property }) {
@@ -51,7 +92,7 @@ function BuyerViewingPreferencesPage() {
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [propertyResponses, setPropertyResponses] = useState({})
-  const [availabilityWindows, setAvailabilityWindows] = useState(['', '', ''])
+  const [availabilityWindows, setAvailabilityWindows] = useState(buildEmptyAvailabilityWindows)
   const [attendeeNotes, setAttendeeNotes] = useState('')
   const [responseNotes, setResponseNotes] = useState('')
 
@@ -82,15 +123,22 @@ function BuyerViewingPreferencesPage() {
 
   const properties = useMemo(() => (Array.isArray(session?.properties) ? session.properties : []), [session?.properties])
   const isClosed = ['submitted', 'expired', 'revoked'].includes(normalizeText(session?.status).toLowerCase())
-  const confirmedCount = useMemo(() => (
-    Object.values(propertyResponses).filter(Boolean).length
-  ), [propertyResponses])
+  const selectedTimeCount = useMemo(() => (
+    availabilityWindows.filter(isAvailabilityWindowComplete).length
+  ), [availabilityWindows])
+
+  function updateAvailabilityWindow(index, patch) {
+    setAvailabilityWindows((previous) => previous.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, ...patch } : item
+    )))
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
     setErrorMessage('')
     setSuccessMessage('')
-    const windows = availabilityWindows.map(normalizeText).filter(Boolean)
+    const availabilitySlots = availabilityWindows.map(buildAvailabilitySlot)
+    const windows = availabilitySlots.map((slot) => normalizeText(slot.label)).filter(Boolean)
     const responses = properties
       .map((property) => ({
         propertyId: normalizeText(property?.id),
@@ -102,8 +150,12 @@ function BuyerViewingPreferencesPage() {
       setErrorMessage('Choose at least one property you would like to view.')
       return
     }
-    if (windows.length !== 3) {
-      setErrorMessage('Please add three preferred viewing times.')
+    if (availabilitySlots.some((slot) => !isAvailabilityWindowComplete(slot))) {
+      setErrorMessage('Please select a date, start time, and end time for all three options.')
+      return
+    }
+    if (availabilityWindows.some((window) => !isAvailabilityWindowRangeValid(window))) {
+      setErrorMessage('Each viewing option needs an end time after the start time.')
       return
     }
 
@@ -115,6 +167,8 @@ function BuyerViewingPreferencesPage() {
           token,
           propertyResponses: responses,
           availabilityWindows: windows,
+          availabilitySlots,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Johannesburg',
           attendeeNotes,
           responseNotes,
         },
@@ -160,8 +214,18 @@ function BuyerViewingPreferencesPage() {
     <main className="min-h-screen bg-[#F7F8F5] px-5 py-8 text-[#142132]">
       <div className="mx-auto max-w-5xl">
         <header className="mb-7 rounded-[8px] bg-[#081735] px-6 py-6 text-white shadow-sm sm:px-8">
-          <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#D8B15F]">{normalizeText(session?.organisationName) || 'Produktive Real Estate'}</p>
-          <h1 className="mt-4 text-3xl font-bold tracking-normal sm:text-4xl">Choose 3 Viewing Times</h1>
+          <div className="flex items-center gap-4">
+            {normalizeText(session?.organisationLogoLightUrl || session?.organisationLogoUrl || session?.organisationLogoDarkUrl || session?.organisationLogoIconUrl) ? (
+              <img
+                src={normalizeText(session?.organisationLogoLightUrl || session?.organisationLogoUrl || session?.organisationLogoDarkUrl || session?.organisationLogoIconUrl)}
+                alt={`${normalizeText(session?.organisationName) || 'Agency'} logo`}
+                className="max-h-12 max-w-[220px] object-contain"
+              />
+            ) : (
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#D8B15F]">{normalizeText(session?.organisationName) || 'Produktive Real Estate'}</p>
+            )}
+          </div>
+          <h1 className="mt-4 text-3xl font-bold tracking-normal text-white sm:text-4xl">Choose 3 Viewing Times</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-[#E5ECF7]">
             {normalizeText(session?.agentName) || 'Your agent'} will review your options and coordinate the best time with the seller.
           </p>
@@ -243,22 +307,49 @@ function BuyerViewingPreferencesPage() {
             <aside className="h-fit rounded-[8px] border border-[#DDE7DF] bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-lg font-bold text-[#142132]">Your 3 Times</h2>
-                <span className="rounded-full bg-[#EDF4F1] px-3 py-1 text-xs font-bold text-[#0F7A5A]">{confirmedCount} selected</span>
+                <span className="rounded-full bg-[#EDF4F1] px-3 py-1 text-xs font-bold text-[#0F7A5A]">{selectedTimeCount}/3 ready</span>
               </div>
               <p className="mt-2 text-sm leading-6 text-[#526678]">
-                Add three options so your agent has enough flexibility to confirm access quickly.
+                Select three date and time windows so your agent can match them against the viewing calendar.
               </p>
               <div className="mt-4 grid gap-3">
                 {availabilityWindows.map((value, index) => (
-                  <label key={index} className="grid gap-2">
+                  <div key={index} className="grid gap-2">
                     <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#718398]">Time option {index + 1}</span>
-                    <input
-                      value={value}
-                      onChange={(event) => setAvailabilityWindows((previous) => previous.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
-                      placeholder={index === 0 ? 'e.g. Thu 13 Aug, 14:00-16:00' : index === 1 ? 'e.g. Fri 14 Aug, 09:00-11:00' : 'e.g. Sat 15 Aug, after 10:00'}
-                      className="min-h-11 rounded-[8px] border border-[#DDE7DF] px-3 text-sm font-semibold text-[#142132] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
-                    />
-                  </label>
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_104px_104px]">
+                      <input
+                        type="date"
+                        value={value.date}
+                        min={getTodayInputValue()}
+                        onChange={(event) => updateAvailabilityWindow(index, { date: event.target.value })}
+                        className="min-h-11 rounded-[8px] border border-[#DDE7DF] px-3 text-sm font-semibold text-[#142132] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
+                        aria-label={`Time option ${index + 1} date`}
+                        required
+                      />
+                      <input
+                        type="time"
+                        value={value.startTime}
+                        onChange={(event) => updateAvailabilityWindow(index, { startTime: event.target.value })}
+                        className="min-h-11 rounded-[8px] border border-[#DDE7DF] px-3 text-sm font-semibold text-[#142132] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
+                        aria-label={`Time option ${index + 1} start time`}
+                        required
+                      />
+                      <input
+                        type="time"
+                        value={value.endTime}
+                        onChange={(event) => updateAvailabilityWindow(index, { endTime: event.target.value })}
+                        className="min-h-11 rounded-[8px] border border-[#DDE7DF] px-3 text-sm font-semibold text-[#142132] outline-none transition focus:border-[#0F7A5A] focus:ring-4 focus:ring-[#0F7A5A]/10"
+                        aria-label={`Time option ${index + 1} end time`}
+                        required
+                      />
+                    </div>
+                    {formatAvailabilityWindowLabel(value) ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#526678]">
+                        <CalendarDays className="h-3.5 w-3.5 text-[#0F7A5A]" aria-hidden="true" />
+                        {formatAvailabilityWindowLabel(value)}
+                      </span>
+                    ) : null}
+                  </div>
                 ))}
                 <label className="grid gap-2">
                   <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#718398]">Joining you</span>

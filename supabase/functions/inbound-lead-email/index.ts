@@ -1549,7 +1549,7 @@ async function recordLeadAcknowledgementActivity(
     organisation_id: organisationId,
     lead_id: leadId,
     agent_id: isUuidLike(agentId) ? agentId : null,
-    activity_type: "Email",
+    activity_type: "System",
     activity_note: normalizeText(note),
     activity_date: new Date().toISOString(),
     outcome: normalizeText(outcome) || null,
