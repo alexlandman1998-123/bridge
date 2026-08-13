@@ -8544,6 +8544,12 @@ function resolveAppointmentDurationMinutes(source = {}, template = null) {
   return Number.isFinite(duration) && duration > 0 ? duration : Number(template?.defaultDurationMinutes || 45)
 }
 
+function isValuationAppointmentDraft(source = {}, template = null) {
+  const appointmentType = normalizeText(source?.appointmentType || source?.type).toLowerCase()
+  const templateLabel = normalizeText(template?.label).toLowerCase()
+  return appointmentType.includes('valuation') || templateLabel.includes('valuation')
+}
+
 function buildDefaultAppointmentFormForType(type, seed = {}) {
   const hasExplicitType = Boolean(normalizeText(type || seed?.appointmentType))
   const template = getAppointmentTypeTemplate(hasExplicitType ? (type || seed?.appointmentType) : 'other')
@@ -16201,7 +16207,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const appointmentSchedulerVerb = useMemo(() => {
     const templateLabel = normalizeText(selectedAppointmentTemplate.label).toLowerCase()
     const appointmentType = normalizeText(appointmentForm.appointmentType).toLowerCase()
-    if (selectedLeadIsSeller || appointmentType.includes('valuation') || templateLabel.includes('valuation')) return 'valuation'
+    if (selectedLeadIsSeller || isValuationAppointmentDraft(appointmentForm, selectedAppointmentTemplate)) return 'valuation'
     if (appointmentType.includes('viewing') || templateLabel.includes('viewing')) return 'viewing'
     if (appointmentType.includes('follow') || templateLabel.includes('follow')) return 'follow-up'
     if (appointmentType.includes('consult') || templateLabel.includes('consult')) return 'consultation'
@@ -16229,6 +16235,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return normalizeText(appointmentForm.meetingUrl) || normalizeText(appointmentForm.location)
     }
     return normalizeText(appointmentForm.location) || normalizeText(appointmentForm.meetingUrl)
+  }, [appointmentForm.location, appointmentForm.locationType, appointmentForm.meetingUrl])
+
+  const appointmentSchedulerAddressValue = useMemo(() => {
+    if (normalizeText(appointmentForm.locationType) === 'video_call') {
+      return appointmentForm.meetingUrl || appointmentForm.location || ''
+    }
+    return appointmentForm.location || appointmentForm.meetingUrl || ''
   }, [appointmentForm.location, appointmentForm.locationType, appointmentForm.meetingUrl])
 
   const appointmentLinkOptions = useMemo(() => {
@@ -19815,12 +19828,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   function handleAppointmentLocationChange(nextValue) {
-    const value = normalizeText(nextValue)
+    const rawValue = String(nextValue || '')
+    const value = rawValue.trim()
     const looksLikeLink = /^(https?:\/\/|www\.)/i.test(value) || /(meet\.google|zoom\.us|teams\.microsoft|microsoft\.com\/en-us\/microsoft-teams\/join)/i.test(value)
     setAppointmentForm((previous) => ({
       ...previous,
       locationType: looksLikeLink ? 'video_call' : 'physical_address',
-      location: looksLikeLink ? '' : value,
+      location: looksLikeLink ? '' : rawValue,
       meetingUrl: looksLikeLink ? value : '',
     }))
   }
@@ -19833,7 +19847,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       listingId,
       relatedEntityType: listingId && ['none', 'listing', ''].includes(normalizeText(previous.relatedEntityType)) ? 'listing' : previous.relatedEntityType,
       relatedEntityId: listingId && ['none', 'listing', ''].includes(normalizeText(previous.relatedEntityType)) ? listingId : previous.relatedEntityId,
-      location: normalizeText(previous.location) || normalizeText(listing?.address || listing?.label) || previous.location,
+      location: normalizeText(previous.location)
+        ? previous.location
+        : (!selectedLeadIsSeller && !isValuationAppointmentDraft(previous, getAppointmentTypeTemplate(previous.appointmentType || 'other'))
+            ? normalizeText(listing?.address || listing?.label)
+            : previous.location),
     }))
   }
 
@@ -20449,15 +20467,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.private_listing_id,
     )
     const sellerLeadId = normalizeText(selectedLead?.leadId || selectedLead?.lead_id)
-    const sellerLocation = normalizeText(
-      selectedLeadLinkedListing?.propertyAddress ||
-      selectedLeadLinkedListing?.formattedAddress ||
-      selectedLeadLinkedListing?.address ||
-      selectedLead?.sellerPropertyAddress ||
-      selectedLead?.propertyInterest ||
-      selectedLeadPropertyLabel ||
-      resolveAppointmentListingLabel(sellerListingId),
-    )
     const sellerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email).toLowerCase()
     const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() ||
       selectedLead?.name ||
@@ -20475,7 +20484,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       listingId: sellerListingId || previous.listingId || '',
       relatedEntityType: 'lead',
       relatedEntityId: sellerLeadId || previous.relatedEntityId || '',
-      location: normalizeText(previous.location) || sellerLocation,
+      location: '',
       visibility: 'client_visible',
       status: isKingstonsSellerAppointment ? 'scheduled' : (previous.status || 'requested'),
       recipientEmail: sellerEmail,
@@ -34536,7 +34545,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               </label>
               <div className="grid gap-1.5 text-xs font-semibold text-[#60758d]">
                 Duration
-                <div className="grid grid-cols-3 gap-1 rounded-[14px] border border-[#d8e3ef] bg-white p-1">
+                <div className="grid h-[50px] grid-cols-3 gap-1 rounded-[14px] border border-[#d8e3ef] bg-white p-1">
                   {APPOINTMENT_DURATION_OPTIONS.map((duration) => {
                     const selected = appointmentDurationMinutes === duration
                     return (
@@ -34544,7 +34553,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         key={duration}
                         type="button"
                         onClick={() => handleAppointmentDurationChange(duration)}
-                        className={`rounded-[10px] px-3 py-2 text-sm font-semibold transition ${
+                        className={`flex h-full items-center justify-center rounded-[10px] px-2 text-sm font-semibold whitespace-nowrap transition ${
                           selected
                             ? 'border border-[#2c6f45] bg-[#eef8f1] text-[#205a35] shadow-[0_0_0_1px_rgba(44,111,69,0.08)]'
                             : 'text-[#20364c] hover:bg-[#f7fafc]'
@@ -34560,28 +34569,25 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             {appointmentSchedulingError ? (
               <p className="text-xs text-[#9f3028]">{appointmentSchedulingError}</p>
             ) : null}
-            {appointmentSchedulingLoading ? (
-              <p className="text-xs font-medium text-[#6f839c]">Checking availability…</p>
-            ) : null}
           </section>
 
           <section className="grid gap-3">
-            <p className="text-sm font-semibold text-[#102033]">Where</p>
+            <p className="text-sm font-semibold text-[#102033]">Address</p>
             <label className="grid gap-1.5 text-xs font-semibold text-[#60758d]">
-              Location
+              Address
               <div className="relative">
                 <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f839c]" />
                 <Field
                   className="pr-10 pl-10"
                   placeholder="15 Ocean View Drive, Camps Bay, Cape Town"
-                  value={appointmentSchedulerLocation}
+                  value={appointmentSchedulerAddressValue}
                   onChange={(event) => handleAppointmentLocationChange(event.target.value)}
                 />
-                {appointmentSchedulerLocation ? (
+                {appointmentSchedulerAddressValue ? (
                   <button
                     type="button"
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6f839c]"
-                    aria-label="Clear location"
+                    aria-label="Clear address"
                     onClick={() => setAppointmentForm((previous) => ({ ...previous, location: '', meetingUrl: '', locationType: 'physical_address' }))}
                   >
                     <X size={16} />
