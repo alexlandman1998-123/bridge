@@ -20563,21 +20563,46 @@ function resolvePurchasePrice({ setup = {}, formData = {}, transaction = null } 
   return null
 }
 
-async function findOrCreateBuyer(client, { name, phone, email }) {
+async function resolveDevelopmentOrganisationId(client, developmentId) {
+  const normalizedDevelopmentId = normalizeNullableUuid(developmentId)
+  if (!normalizedDevelopmentId) return null
+
+  const query = await client
+    .from('developments')
+    .select('id, organisation_id')
+    .eq('id', normalizedDevelopmentId)
+    .maybeSingle()
+
+  if (query.error) {
+    if (isMissingSchemaError(query.error) || isMissingColumnError(query.error, 'organisation_id')) {
+      return null
+    }
+    throw query.error
+  }
+
+  return normalizeNullableUuid(query.data?.organisation_id)
+}
+
+async function findOrCreateBuyer(client, { name, phone, email, organisationId = null }) {
   const normalizedName = name.trim()
   const normalizedPhone = phone?.trim() || null
   const normalizedEmail = email?.trim().toLowerCase() || null
+  const normalizedOrganisationId = normalizeNullableUuid(organisationId)
 
   let existing = null
 
   if (normalizedEmail) {
-    const { data, error } = await client
+    let query = client
       .from('buyers')
       .select('id, name, phone, email')
       .ilike('email', normalizedEmail)
       .order('id', { ascending: true })
       .limit(1)
-      .maybeSingle()
+    if (normalizedOrganisationId) {
+      query = query.eq('organisation_id', normalizedOrganisationId)
+    }
+
+    const { data, error } = await query.maybeSingle()
 
     if (error) {
       throw error
@@ -20587,13 +20612,17 @@ async function findOrCreateBuyer(client, { name, phone, email }) {
   }
 
   if (!existing && normalizedPhone) {
-    const { data, error } = await client
+    let query = client
       .from('buyers')
       .select('id, name, phone, email')
       .eq('phone', normalizedPhone)
       .order('id', { ascending: true })
       .limit(1)
-      .maybeSingle()
+    if (normalizedOrganisationId) {
+      query = query.eq('organisation_id', normalizedOrganisationId)
+    }
+
+    const { data, error } = await query.maybeSingle()
 
     if (error) {
       throw error
@@ -20603,13 +20632,18 @@ async function findOrCreateBuyer(client, { name, phone, email }) {
   }
 
   if (!existing) {
+    const insertPayload = {
+      name: normalizedName,
+      phone: normalizedPhone,
+      email: normalizedEmail,
+    }
+    if (normalizedOrganisationId) {
+      insertPayload.organisation_id = normalizedOrganisationId
+    }
+
     const { data, error } = await client
       .from('buyers')
-      .insert({
-        name: normalizedName,
-        phone: normalizedPhone,
-        email: normalizedEmail,
-      })
+      .insert(insertPayload)
       .select('id, name, phone, email')
       .single()
 
@@ -20697,7 +20731,7 @@ export async function saveDeveloperTransactionWorkspace({
     let existingQuery = await client
       .from('transactions')
       .select(
-        'id, development_id, unit_id, buyer_id, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, sales_price, is_active',
+        'id, organisation_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, sales_price, is_active',
       )
       .eq('id', transactionId)
       .maybeSingle()
@@ -20710,6 +20744,7 @@ export async function saveDeveloperTransactionWorkspace({
         isMissingColumnError(existingQuery.error, 'assigned_agent_email') ||
         isMissingColumnError(existingQuery.error, 'assigned_attorney_email') ||
         isMissingColumnError(existingQuery.error, 'assigned_bond_originator_email') ||
+        isMissingColumnError(existingQuery.error, 'organisation_id') ||
         isMissingColumnError(existingQuery.error, 'finance_managed_by') ||
         isMissingColumnError(existingQuery.error, 'sales_price') ||
         isMissingColumnError(existingQuery.error, 'purchaser_type') ||
@@ -20731,7 +20766,7 @@ export async function saveDeveloperTransactionWorkspace({
     let existingQuery = await client
       .from('transactions')
       .select(
-        'id, development_id, unit_id, buyer_id, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, sales_price, is_active, updated_at',
+        'id, organisation_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, finance_managed_by, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, sales_price, is_active, updated_at',
       )
       .eq('unit_id', unitId)
       .eq('is_active', true)
@@ -20746,6 +20781,7 @@ export async function saveDeveloperTransactionWorkspace({
         isMissingColumnError(existingQuery.error, 'assigned_agent_email') ||
         isMissingColumnError(existingQuery.error, 'assigned_attorney_email') ||
         isMissingColumnError(existingQuery.error, 'assigned_bond_originator_email') ||
+        isMissingColumnError(existingQuery.error, 'organisation_id') ||
         isMissingColumnError(existingQuery.error, 'finance_managed_by') ||
         isMissingColumnError(existingQuery.error, 'sales_price') ||
         isMissingColumnError(existingQuery.error, 'purchaser_type') ||
@@ -20768,6 +20804,18 @@ export async function saveDeveloperTransactionWorkspace({
     existingTransaction = (existingQuery.data || [])[0] || null
   }
 
+  const unitLookup = await client.from('units').select('id, development_id').eq('id', unitId).maybeSingle()
+  if (unitLookup.error) {
+    throw unitLookup.error
+  }
+
+  const buyerOrganisationId =
+    normalizeNullableUuid(existingTransaction?.organisation_id) ||
+    (await resolveDevelopmentOrganisationId(
+      client,
+      existingTransaction?.development_id || unitLookup.data?.development_id || null,
+    ))
+
   const normalizedBuyerName = String(buyerName || '').trim()
   const normalizedBuyerPhone = String(buyerPhone || '').trim()
   const normalizedBuyerEmail = String(buyerEmail || '').trim()
@@ -20782,6 +20830,7 @@ export async function saveDeveloperTransactionWorkspace({
       name: normalizedBuyerName,
       phone: normalizedBuyerPhone,
       email: normalizedBuyerEmail,
+      organisationId: buyerOrganisationId,
     })
     resolvedBuyerId = buyer.id
   }
@@ -20878,11 +20927,6 @@ export async function saveDeveloperTransactionWorkspace({
     }
   }
 
-  const unitLookup = await client.from('units').select('id, development_id').eq('id', unitId).maybeSingle()
-  if (unitLookup.error) {
-    throw unitLookup.error
-  }
-
   const subprocessLabel =
     normalizedSubprocessType === 'finance'
       ? 'Finance workflow'
@@ -20909,6 +20953,7 @@ export async function saveDeveloperTransactionWorkspace({
           : 'Available'
 
   const transactionPayload = {
+    organisation_id: buyerOrganisationId,
     development_id: existingTransaction?.development_id || unitLookup.data?.development_id || null,
     unit_id: unitId,
     buyer_id: resolvedBuyerId,
@@ -20960,9 +21005,11 @@ export async function saveDeveloperTransactionWorkspace({
       isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(transactionResult.error, 'organisation_id') ||
       isMissingColumnError(transactionResult.error, 'is_active'))
   ) {
     const fallbackPayload = { ...transactionPayload }
+    delete fallbackPayload.organisation_id
     delete fallbackPayload.current_main_stage
     delete fallbackPayload.current_sub_stage_summary
     delete fallbackPayload.sales_price
@@ -27438,6 +27485,29 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     throw new Error('Buyer full name is required.')
   }
 
+  const sourceContext = options?.sourceContext && typeof options.sourceContext === 'object' ? options.sourceContext : {}
+  const linkedPrivateListingId = transactionType === 'private_property'
+    ? normalizeNullableUuid(
+      sourceContext.listingId ||
+        sourceContext.listing_id ||
+        setup.privateListingId ||
+        setup.private_listing_id ||
+        setup.listingId ||
+        setup.listing_id,
+    )
+    : null
+  let resolvedOrganisationId = normalizeNullableUuid(
+    sourceContext.organisationId ||
+      sourceContext.organisation_id ||
+      sourceContext.workspaceId ||
+      sourceContext.workspace_id ||
+      setup.organisationId ||
+      setup.organisation_id,
+  )
+  if (!resolvedOrganisationId && transactionType === 'developer_sale' && setup.developmentId) {
+    resolvedOrganisationId = await resolveDevelopmentOrganisationId(client, setup.developmentId)
+  }
+
   let buyer = null
   const hasBuyerSeed = Boolean(setup?.buyerName?.trim() || setup?.buyerEmail?.trim() || setup?.buyerPhone?.trim())
   if (hasBuyerSeed) {
@@ -27445,6 +27515,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       name: setup.buyerName,
       phone: setup.buyerPhone,
       email: setup.buyerEmail,
+      organisationId: resolvedOrganisationId,
     })
   }
 
@@ -27482,25 +27553,6 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const rolePlayerSelections = normalizeTransactionRolePlayerInputs(options?.rolePlayers || [], {
     transactionType,
   })
-  const sourceContext = options?.sourceContext && typeof options.sourceContext === 'object' ? options.sourceContext : {}
-  const linkedPrivateListingId = transactionType === 'private_property'
-    ? normalizeNullableUuid(
-      sourceContext.listingId ||
-        sourceContext.listing_id ||
-        setup.privateListingId ||
-        setup.private_listing_id ||
-        setup.listingId ||
-        setup.listing_id,
-    )
-    : null
-  const resolvedOrganisationId = normalizeNullableUuid(
-    sourceContext.organisationId ||
-      sourceContext.organisation_id ||
-      sourceContext.workspaceId ||
-      sourceContext.workspace_id ||
-      setup.organisationId ||
-      setup.organisation_id,
-  )
   const shouldAutoResolveRolePlayers = options?.disableAutoPartnerRouting !== true
   const autoRoutingRoleTypes = shouldAutoResolveRolePlayers
     ? Array.isArray(options?.partnerRoleTypes) && options.partnerRoleTypes.length
@@ -34371,7 +34423,7 @@ export async function saveTransactionClientInformation({
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, buyer_id, purchaser_type, finance_type, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, reservation_required, stage, current_main_stage, finance_managed_by, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, onboarding_completed_at, external_onboarding_submitted_at',
+      'id, organisation_id, buyer_id, purchaser_type, finance_type, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, reservation_required, stage, current_main_stage, finance_managed_by, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, onboarding_completed_at, external_onboarding_submitted_at',
     )
     .eq('id', transactionId)
     .maybeSingle()
@@ -34383,6 +34435,7 @@ export async function saveTransactionClientInformation({
       isMissingColumnError(transactionQuery.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(transactionQuery.error, 'organisation_id') ||
       isMissingColumnError(transactionQuery.error, 'finance_type') ||
       isMissingColumnError(transactionQuery.error, 'sales_price') ||
       isMissingColumnError(transactionQuery.error, 'purchase_price') ||
@@ -34479,6 +34532,7 @@ export async function saveTransactionClientInformation({
       name: normalizedBuyerName || normalizedBuyerEmail || 'Client / Buyer',
       email: normalizedBuyerEmail,
       phone: normalizedBuyerPhone,
+      organisationId: transaction.organisation_id,
     })
     effectiveBuyerId = nextBuyer.id
     buyer = nextBuyer
@@ -35292,7 +35346,7 @@ export async function updateTransactionStakeholderContacts({
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, buyer_id, purchaser_type, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, matter_owner, seller_name, seller_email, seller_phone, updated_at',
+        'id, organisation_id, buyer_id, purchaser_type, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, matter_owner, seller_name, seller_email, seller_phone, updated_at',
       ),
     )
     .eq('id', transactionId)
@@ -35304,6 +35358,7 @@ export async function updateTransactionStakeholderContacts({
       isMissingColumnError(transactionQuery.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionQuery.error, 'assigned_bond_originator_email') ||
+      isMissingColumnError(transactionQuery.error, 'organisation_id') ||
       isMissingColumnError(transactionQuery.error, 'matter_owner') ||
       isMissingColumnError(transactionQuery.error, 'seller_name') ||
       isMissingColumnError(transactionQuery.error, 'seller_email') ||
@@ -35314,6 +35369,7 @@ export async function updateTransactionStakeholderContacts({
       'assigned_agent_email',
       'assigned_attorney_email',
       'assigned_bond_originator_email',
+      'organisation_id',
       'matter_owner',
       'seller_name',
       'seller_email',
@@ -35362,6 +35418,7 @@ export async function updateTransactionStakeholderContacts({
       name: normalizedBuyerName || normalizedBuyerEmail || 'Client / Buyer',
       email: normalizedBuyerEmail,
       phone: normalizedBuyerPhone,
+      organisationId: transaction.organisation_id,
     })
     effectiveBuyerId = nextBuyer.id
     buyer = nextBuyer

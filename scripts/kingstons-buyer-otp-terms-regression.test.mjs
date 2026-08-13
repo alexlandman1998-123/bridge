@@ -11,6 +11,7 @@ const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath)
 const agencyPage = read('the-it-guy/src/pages/agency/AgencyPipelinePage.jsx')
 const sellerDefinition = read('the-it-guy/src/services/sellerProcessDefinitionService.js')
 const sellerPanel = read('the-it-guy/src/services/sellerProcessWorkspacePanelService.js')
+const currentListingImportGuardMigration = read('supabase/migrations/202608130002_current_listing_import_activation_guard.sql')
 
 assert(!sellerDefinition.includes("key: 'listing_terms_confirmed'"), 'Kingstons seller process must not include a Listing Terms stage.')
 assert(!sellerDefinition.includes("key: 'commission_terms_confirmed'"), 'Commission terms must not be a seller process evidence gate.')
@@ -28,6 +29,22 @@ assert(agencyPage.includes('handleCompleteKingstonsValuationPresentationFromJour
 assert(
   agencyPage.includes("if (selectedLeadHasKingstonsPipelineSignal) {\n        void handleCompleteKingstonsValuationPresentationFromJourney()"),
   'Kingstons Complete Valuation Presentation action must move directly to Seller Pack instead of opening the appointment modal.',
+)
+
+assert(
+  currentListingImportGuardMigration.includes('bridge_private_listing_is_current_import_activation_phase0'),
+  'Database mandate guard must expose a current-listing import bypass helper.',
+)
+assert(
+  currentListingImportGuardMigration.includes('signed_external_pending_upload') &&
+    currentListingImportGuardMigration.includes('"quickaddintent":"active_listing"') &&
+    currentListingImportGuardMigration.includes('"quickaddintent":"under_offer"'),
+  'Database bypass must only cover current/legacy imports with upload-later mandate status.',
+)
+assert(
+  currentListingImportGuardMigration.includes('if public.bridge_private_listing_is_current_import_activation_phase0(new) then') &&
+    currentListingImportGuardMigration.includes('if public.bridge_private_listing_is_current_import_activation_phase0(v_listing) then'),
+  'Private listing and publication triggers must both skip current-listing imports.',
 )
 
 console.log('Kingstons buyer OTP terms regression checks passed.')
