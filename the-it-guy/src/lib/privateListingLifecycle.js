@@ -224,6 +224,18 @@ function hasCurrentListingExternalSignal(listing = {}, metadata = {}, quickMetad
   ].some(hasValue)
 }
 
+function hasOperationalCurrentListingShape(listing = {}, metadata = {}) {
+  const status = normalizeKey(metadata?.listingStatus || metadata?.listing_status || listing?.listingStatus || listing?.listing_status || listing?.status)
+  const visibility = normalizeKey(metadata?.listingVisibility || metadata?.listing_visibility || listing?.listingVisibility || listing?.listing_visibility)
+  const bridgeStatus = normalizeKey(metadata?.bridgeListingStatus || metadata?.bridge_listing_status || listing?.bridgeListingStatus || listing?.bridge_listing_status)
+  return (
+    ['active', 'listing_active', 'live', 'published', 'under_offer', 'transaction_created', 'sold'].includes(status) ||
+    ['active_market', 'public', 'published', 'live'].includes(visibility) ||
+    ['published', 'live'].includes(bridgeStatus) ||
+    Boolean(metadata?.isActive ?? metadata?.is_active ?? listing?.isActive ?? listing?.is_active)
+  )
+}
+
 export function isCurrentListingImportActivation(listing = {}, targetStatus = '', metadata = {}) {
   const normalizedTarget = mapLegacyListingStatusToCanonicalStatus(targetStatus)
   if (normalizedTarget !== 'active') return false
@@ -262,7 +274,8 @@ export function isCurrentListingImportActivation(listing = {}, targetStatus = ''
     CURRENT_LISTING_IMPORT_SOURCES.has(source) ||
     source.includes('bulk') ||
     source.includes('import') ||
-    hasCurrentListingExternalSignal(listing, metadata, quickMetadata)
+    hasCurrentListingExternalSignal(listing, metadata, quickMetadata) ||
+    hasOperationalCurrentListingShape(listing, metadata)
 
   return currentImportSignal
 }

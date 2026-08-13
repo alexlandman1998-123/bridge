@@ -12,6 +12,7 @@ const agencyPage = read('the-it-guy/src/pages/agency/AgencyPipelinePage.jsx')
 const sellerDefinition = read('the-it-guy/src/services/sellerProcessDefinitionService.js')
 const sellerPanel = read('the-it-guy/src/services/sellerProcessWorkspacePanelService.js')
 const currentListingImportGuardMigration = read('supabase/migrations/202608130002_current_listing_import_activation_guard.sql')
+const currentListingOperationalShapeMigration = read('supabase/migrations/202608130004_current_listing_upload_later_operational_shape.sql')
 
 assert(!sellerDefinition.includes("key: 'listing_terms_confirmed'"), 'Kingstons seller process must not include a Listing Terms stage.')
 assert(!sellerDefinition.includes("key: 'commission_terms_confirmed'"), 'Commission terms must not be a seller process evidence gate.')
@@ -45,6 +46,12 @@ assert(
   currentListingImportGuardMigration.includes('if public.bridge_private_listing_is_current_import_activation_phase0(new) then') &&
     currentListingImportGuardMigration.includes('if public.bridge_private_listing_is_current_import_activation_phase0(v_listing) then'),
   'Private listing and publication triggers must both skip current-listing imports.',
+)
+assert(
+  currentListingOperationalShapeMigration.includes("v_listing_status in ('active', 'listing_active', 'live', 'published', 'under_offer', 'transaction_created', 'sold')") &&
+    currentListingOperationalShapeMigration.includes("v_listing_visibility in ('active_market', 'public', 'published', 'live')") &&
+    currentListingOperationalShapeMigration.includes('coalesce(p_listing.is_active, false)'),
+  'Database bypass must recognise already-operational upload-later listings even when old imports have no quick-add notes.',
 )
 
 console.log('Kingstons buyer OTP terms regression checks passed.')

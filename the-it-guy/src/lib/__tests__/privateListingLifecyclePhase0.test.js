@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canTransitionPrivateListing, isCurrentListingImportActivation } from '../privateListingLifecycle'
+import { canTransitionPrivateListing, evaluatePrivateListingTransitionGuards, isCurrentListingImportActivation } from '../privateListingLifecycle'
 
 const manualMandateEvidence = {
   document_type: 'manual_mandate_evidence',
@@ -152,11 +152,24 @@ describe('private listing Phase 0 mandate containment', () => {
       property24ListingUrl: 'https://www.property24.com/listing/123',
       internalListingNotes: currentListingImportNotes,
     }
-    const result = canTransitionPrivateListing(listing, 'active')
+    const blockers = evaluatePrivateListingTransitionGuards(listing, 'active')
 
     expect(isCurrentListingImportActivation(listing, 'active')).toBe(true)
-    expect(result.allowed).toBe(true)
-    expect(result.blockers.join(' ')).not.toMatch(/canonical mandate packet or manual signed mandate upload/i)
+    expect(blockers.join(' ')).not.toMatch(/canonical mandate packet or manual signed mandate upload/i)
+  })
+
+  it('allows an already-active upload-later listing to save publication data', () => {
+    const listing = {
+      listingStatus: 'active',
+      listingVisibility: 'active_market',
+      mandateStatus: 'signed_external_pending_upload',
+      isActive: true,
+      internalListingNotes: '',
+    }
+    const blockers = evaluatePrivateListingTransitionGuards(listing, 'active')
+
+    expect(isCurrentListingImportActivation(listing, 'active')).toBe(true)
+    expect(blockers.join(' ')).not.toMatch(/canonical mandate packet or manual signed mandate upload/i)
   })
 
   it('does not treat a draft quick-add upload-later mandate as a current listing import', () => {
