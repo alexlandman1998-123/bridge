@@ -76,6 +76,15 @@ assert.match(
   'scheduled retry attempts should be tracked with retry reason metadata',
 )
 
+const degradedStateIndex = source.indexOf('const degradedState = retryReason')
+const retryAttemptsIndex = source.indexOf('const retryAttemptsUsed = bridgeRetryScopeRef.current.attempts || 0')
+assert.ok(degradedStateIndex > -1, 'retryable bridge boot failures should attempt a last-good degraded workspace recovery')
+assert.ok(retryAttemptsIndex > -1, 'retryable bridge boot failures should still keep bounded retry bookkeeping')
+assert.ok(
+  degradedStateIndex < retryAttemptsIndex,
+  'last-good degraded workspace recovery should happen before scheduling another retry',
+)
+
 assert.match(
   source,
   /writeAuthBootBreadcrumb\('bridge_boot_failed'[\s\S]*?reportError\(error,[\s\S]*?breadcrumbs: failureBreadcrumbs/,

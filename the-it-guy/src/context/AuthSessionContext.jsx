@@ -610,6 +610,45 @@ export function AuthSessionProvider({ children }) {
             breadcrumbs: failureBreadcrumbs,
           },
         })
+        const degradedState = retryReason
+          ? buildDegradedBridgeAuthState({ session, selectedWorkspaceId, error })
+          : null
+        if (degradedState) {
+          bridgeOutcome = 'degraded'
+          resolvedBridgeState = degradedState
+          console.warn('[AUTH] bridge-boot:degraded', {
+            userId: session.user.id,
+            selectedWorkspaceId: selectedWorkspaceId || null,
+            previousError: error?.message || null,
+            currentWorkspaceId: degradedState.currentWorkspace?.id || null,
+          })
+          const degradedMetadata = buildAuthBootObservabilityMetadata({
+            selectedWorkspaceId,
+            attempt: bootAttempt + 1,
+            retryReason,
+            bootHealth: degradedState.workspaceDiagnostics?.bootHealth || error?.bootHealth || null,
+            currentWorkspaceId: degradedState.currentWorkspace?.id || '',
+            outcome: 'degraded',
+            error,
+          })
+          const degradedBreadcrumbs = writeAuthBootBreadcrumb('bridge_boot_degraded', degradedMetadata)
+          bridgeBootHealthStatus = degradedMetadata.bootHealthStatus || ''
+          bridgeBreadcrumbCount = degradedBreadcrumbs.length
+          setAuthState(degradedState)
+          void trackAuthMetric('auth_boot_degraded', {
+            userId: session.user.id,
+            workspaceId: degradedState.currentWorkspace?.id || '',
+            metadata: {
+              ...degradedMetadata,
+              selectedWorkspaceId: selectedWorkspaceId || null,
+              previousError: error?.message || null,
+              sourceCapturedAt: degradedState.workspaceDiagnostics?.sourceCapturedAt || null,
+              bootHealthStatus: degradedState.workspaceDiagnostics?.bootHealth?.status || null,
+              breadcrumbCount: degradedBreadcrumbs.length,
+            },
+          })
+          return
+        }
         const retryAttemptsUsed = bridgeRetryScopeRef.current.attempts || 0
         if (retryReason && retryAttemptsUsed < MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS) {
           const nextRetryAttempt = retryAttemptsUsed + 1
@@ -672,45 +711,6 @@ export function AuthSessionProvider({ children }) {
             })
             setBootAttempt((previous) => previous + 1)
           }, retryInMs)
-          return
-        }
-        const degradedState = retryReason
-          ? buildDegradedBridgeAuthState({ session, selectedWorkspaceId, error })
-          : null
-        if (degradedState) {
-          bridgeOutcome = 'degraded'
-          resolvedBridgeState = degradedState
-          console.warn('[AUTH] bridge-boot:degraded', {
-            userId: session.user.id,
-            selectedWorkspaceId: selectedWorkspaceId || null,
-            previousError: error?.message || null,
-            currentWorkspaceId: degradedState.currentWorkspace?.id || null,
-          })
-          const degradedMetadata = buildAuthBootObservabilityMetadata({
-            selectedWorkspaceId,
-            attempt: bootAttempt + 1,
-            retryReason,
-            bootHealth: degradedState.workspaceDiagnostics?.bootHealth || error?.bootHealth || null,
-            currentWorkspaceId: degradedState.currentWorkspace?.id || '',
-            outcome: 'degraded',
-            error,
-          })
-          const degradedBreadcrumbs = writeAuthBootBreadcrumb('bridge_boot_degraded', degradedMetadata)
-          bridgeBootHealthStatus = degradedMetadata.bootHealthStatus || ''
-          bridgeBreadcrumbCount = degradedBreadcrumbs.length
-          setAuthState(degradedState)
-          void trackAuthMetric('auth_boot_degraded', {
-            userId: session.user.id,
-            workspaceId: degradedState.currentWorkspace?.id || '',
-            metadata: {
-              ...degradedMetadata,
-              selectedWorkspaceId: selectedWorkspaceId || null,
-              previousError: error?.message || null,
-              sourceCapturedAt: degradedState.workspaceDiagnostics?.sourceCapturedAt || null,
-              bootHealthStatus: degradedState.workspaceDiagnostics?.bootHealth?.status || null,
-              breadcrumbCount: degradedBreadcrumbs.length,
-            },
-          })
           return
         }
         void trackAuthMetric('auth_boot_failed', {
