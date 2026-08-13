@@ -8108,12 +8108,13 @@ function ClientPortal() {
     }
   }, [location.pathname, navigate, token])
 
-  const loadPortal = useCallback(async ({ background = false } = {}) => {
+  const loadPortal = useCallback(async ({ background = false, sellerPortalAccessTokenOverride = '' } = {}) => {
     if (!token) {
       setError('Missing client portal token.')
       setLoading(false)
       return
     }
+    const effectiveSellerPortalAccessToken = sellerPortalAccessTokenOverride || sellerPortalAccessToken
 
     if (background) {
       const backgroundStartedAt = Date.now()
@@ -8122,7 +8123,7 @@ function ClientPortal() {
         setHydratingPortal(true)
         const data = await getClientPortalWorkspaceData(token, requestedWorkspace, {
           mode: 'full',
-          sellerPortalAccessToken: isSellerPortalToken ? sellerPortalAccessToken : '',
+          sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
         })
         portalContextsRef.current = {
           contexts: data?.portalContext?.contexts || [],
@@ -8162,7 +8163,7 @@ function ClientPortal() {
       setDocumentActionError('')
       const coreData = await getClientPortalWorkspaceData(token, requestedWorkspace, {
         mode: 'core',
-        sellerPortalAccessToken: isSellerPortalToken ? sellerPortalAccessToken : '',
+        sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
       })
       portalContextsRef.current = {
         contexts: coreData?.portalContext?.contexts || [],
@@ -8195,7 +8196,7 @@ function ClientPortal() {
       setHydratingPortal(true)
       const fullData = await getClientPortalWorkspaceData(token, requestedWorkspace, {
         mode: 'full',
-        sellerPortalAccessToken: isSellerPortalToken ? sellerPortalAccessToken : '',
+        sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
       })
       portalContextsRef.current = {
         contexts: fullData?.portalContext?.contexts || [],
@@ -8313,13 +8314,15 @@ function ClientPortal() {
       if (stablePortalToken && stablePortalToken !== token && stablePortalPath) {
         clearSellerPortalAccessToken(token)
         navigate(stablePortalPath, { replace: true })
+      } else {
+        await loadPortal({ sellerPortalAccessTokenOverride: accessToken })
       }
     } catch (passwordError) {
       setSellerPortalPasswordFeedback(passwordError?.message || 'Unable to open your seller portal right now.')
     } finally {
       setSellerPortalPasswordSaving(false)
     }
-  }, [navigate, sellerPortalAuth?.passwordSet, sellerPortalAuth?.sellerEmail, sellerPortalAuth?.tokenKind, sellerPortalPasswordForm.confirmPassword, sellerPortalPasswordForm.password, sellerPortalPasswordForm.termsAccepted, sellerPortalTermsConfig, token])
+  }, [loadPortal, navigate, sellerPortalAuth?.passwordSet, sellerPortalAuth?.sellerEmail, sellerPortalAuth?.tokenKind, sellerPortalPasswordForm.confirmPassword, sellerPortalPasswordForm.password, sellerPortalPasswordForm.termsAccepted, sellerPortalTermsConfig, token])
 
   const applyUploadedPortalDocument = useCallback(
     (uploadedDocument, { requiredDocumentKey = null } = {}) => {
