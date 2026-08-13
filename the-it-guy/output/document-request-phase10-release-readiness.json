@@ -1,0 +1,617 @@
+{
+  "phase": "document_request_phase10_release_readiness",
+  "generatedAt": "2026-08-13T16:17:55.143Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "version": "document_request_release_readiness_v1",
+  "phaseSummaries": [
+    {
+      "key": "phase0_freeze_and_map",
+      "path": "output/document-request-phase0-freeze-and-map.json",
+      "expectedPhase": "document_request_phase0_freeze_and_map",
+      "actualPhase": "document_request_phase0_freeze_and_map",
+      "present": true,
+      "phaseMatches": true,
+      "status": "mapped",
+      "mutatedData": false,
+      "failures": [],
+      "warnings": [],
+      "warningCodes": [],
+      "productionActivationReady": false
+    },
+    {
+      "key": "phase1_single_canonical_policy",
+      "path": "output/document-request-phase1-single-canonical-policy.json",
+      "expectedPhase": "document_request_phase1_single_canonical_policy",
+      "actualPhase": "document_request_phase1_single_canonical_policy",
+      "present": true,
+      "phaseMatches": true,
+      "status": "policy_valid_pending_signoff",
+      "mutatedData": false,
+      "failures": [],
+      "warnings": [
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "electrical_compliance_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "electrical_compliance_certificate",
+          "signoffKey": "electrical_coc"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "gas_compliance_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "gas_compliance_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "electric_fence_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "electric_fence_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "water_installation_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "water_installation_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "beetle_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "beetle_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "solar_compliance_documents: active row is related to a pending signoff decision",
+          "requirementKey": "solar_compliance_documents",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "approved_building_plans: active row is related to a pending signoff decision",
+          "requirementKey": "approved_building_plans",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "occupation_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "occupation_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "professional_shared_client_owned",
+          "message": "vat_status_confirmation: professional-shared row is requested from a client role",
+          "requirementKey": "vat_status_confirmation"
+        }
+      ],
+      "warningCodes": [
+        "active_row_has_pending_related_signoff",
+        "active_row_has_pending_related_signoff",
+        "active_row_has_pending_related_signoff",
+        "active_row_has_pending_related_signoff",
+        "active_row_has_pending_related_signoff",
+        "active_row_has_pending_related_signoff",
+        "active_row_has_pending_related_signoff",
+        "active_row_has_pending_related_signoff",
+        "professional_shared_client_owned"
+      ],
+      "productionActivationReady": false
+    },
+    {
+      "key": "phase2_containers",
+      "path": "output/document-request-phase2-containers.json",
+      "expectedPhase": "document_request_phase2_containers",
+      "actualPhase": "document_request_phase2_containers",
+      "present": true,
+      "phaseMatches": true,
+      "status": "containers_mapped",
+      "mutatedData": false,
+      "failures": [],
+      "warnings": [],
+      "warningCodes": [],
+      "productionActivationReady": false
+    },
+    {
+      "key": "phase3_buyer_cleanup",
+      "path": "output/document-request-phase3-buyer-cleanup.json",
+      "expectedPhase": "document_request_phase3_buyer_cleanup",
+      "actualPhase": "document_request_phase3_buyer_cleanup",
+      "present": true,
+      "phaseMatches": true,
+      "status": "buyer_cleanup_mapped_with_warnings",
+      "mutatedData": false,
+      "failures": [],
+      "warnings": [
+        {
+          "code": "legacy_buyer_profile_contains_professional_rows",
+          "message": "Legacy buyer profiles still emit professional/generated rows such as OTP and transfer documents; portal upload filtering and canonical overlay now keep buyer upload requests clean.",
+          "count": 16
+        },
+        {
+          "code": "canonical_overlay_adds_buyer_policy_rows",
+          "message": "Canonical buyer plans include policy rows not represented as one-to-one legacy upload rows, such as marital/source-of-funds declarations.",
+          "count": 8
+        }
+      ],
+      "warningCodes": [
+        "legacy_buyer_profile_contains_professional_rows",
+        "canonical_overlay_adds_buyer_policy_rows"
+      ],
+      "productionActivationReady": false
+    },
+    {
+      "key": "phase4_bond_model",
+      "path": "output/document-request-phase4-bond-model.json",
+      "expectedPhase": "document_request_phase4_bond_model",
+      "actualPhase": "document_request_phase4_bond_model",
+      "present": true,
+      "phaseMatches": true,
+      "status": "bond_model_mapped_with_warnings",
+      "mutatedData": false,
+      "failures": [],
+      "warnings": [
+        {
+          "code": "bond_parent_is_broad",
+          "message": "Granular bond upload rows intentionally roll up to the broad canonical income_affordability_documents parent until Phase 4 child-container activation is approved."
+        }
+      ],
+      "warningCodes": [
+        "bond_parent_is_broad"
+      ],
+      "productionActivationReady": false
+    },
+    {
+      "key": "phase5_seller_cleanup",
+      "path": "output/document-request-phase5-seller-cleanup.json",
+      "expectedPhase": "document_request_phase5_seller_cleanup",
+      "actualPhase": "document_request_phase5_seller_cleanup",
+      "present": true,
+      "phaseMatches": true,
+      "status": "seller_cleanup_mapped_with_warnings",
+      "mutatedData": false,
+      "failures": [],
+      "warnings": [
+        {
+          "code": "legacy_seller_generator_not_full_canonical_policy",
+          "message": "The legacy seller generator is mapped, but some canonical seller policy containers are not emitted by every seller scenario yet.",
+          "count": 48
+        },
+        {
+          "code": "legacy_rows_roll_up_to_parent_containers",
+          "message": "Some detailed seller rows roll up to one canonical parent container, such as company/trust FICA and bond-statement support rows.",
+          "count": 9
+        }
+      ],
+      "warningCodes": [
+        "legacy_seller_generator_not_full_canonical_policy",
+        "legacy_rows_roll_up_to_parent_containers"
+      ],
+      "productionActivationReady": false
+    },
+    {
+      "key": "phase6_professional_propagation",
+      "path": "output/document-request-phase6-professional-propagation.json",
+      "expectedPhase": "document_request_phase6_professional_propagation",
+      "actualPhase": "document_request_phase6_professional_propagation",
+      "present": true,
+      "phaseMatches": true,
+      "status": "professional_request_propagation_mapped",
+      "mutatedData": false,
+      "failures": [],
+      "warnings": [
+        {
+          "code": "runtime_requires_document_request_tables",
+          "message": "Professional request propagation depends on the document_requests table being present in the target environment."
+        }
+      ],
+      "warningCodes": [
+        "runtime_requires_document_request_tables"
+      ],
+      "productionActivationReady": false
+    },
+    {
+      "key": "phase7_workspace_smoke",
+      "path": "output/document-request-phase7-workspace-smoke.json",
+      "expectedPhase": "document_request_phase7_workspace_smoke",
+      "actualPhase": "document_request_phase7_workspace_smoke",
+      "present": true,
+      "phaseMatches": true,
+      "status": "workspace_smoke_mapped",
+      "mutatedData": false,
+      "failures": [],
+      "warnings": [],
+      "warningCodes": [],
+      "productionActivationReady": true
+    },
+    {
+      "key": "phase8_client_portal_container_adoption",
+      "path": "output/document-request-phase8-client-portal-container-adoption.json",
+      "expectedPhase": "document_request_phase8_client_portal_container_adoption",
+      "actualPhase": "document_request_phase8_client_portal_container_adoption",
+      "present": true,
+      "phaseMatches": true,
+      "status": "client_portal_container_adoption_mapped",
+      "mutatedData": false,
+      "failures": [],
+      "warnings": [
+        {
+          "code": "legacy_request_fallback_retained",
+          "message": "The client portal keeps a fallback path for older payloads that do not include documentRequestContainers."
+        }
+      ],
+      "warningCodes": [
+        "legacy_request_fallback_retained"
+      ],
+      "productionActivationReady": false
+    },
+    {
+      "key": "phase9_upload_linking",
+      "path": "output/document-request-phase9-upload-linking.json",
+      "expectedPhase": "document_request_phase9_upload_linking",
+      "actualPhase": "document_request_phase9_upload_linking",
+      "present": true,
+      "phaseMatches": true,
+      "status": "request_upload_linking_mapped",
+      "mutatedData": false,
+      "failures": [],
+      "warnings": [
+        {
+          "code": "seller_portal_request_link_permission_guard",
+          "message": "Seller portal request-linking treats missing schema or denied direct table access as non-blocking so the physical upload is not lost."
+        }
+      ],
+      "warningCodes": [
+        "seller_portal_request_link_permission_guard"
+      ],
+      "productionActivationReady": false
+    }
+  ],
+  "warningSummary": {
+    "total": 17,
+    "managed": 17,
+    "unmanaged": 0,
+    "byCode": {
+      "active_row_has_pending_related_signoff": 8,
+      "professional_shared_client_owned": 1,
+      "legacy_buyer_profile_contains_professional_rows": 1,
+      "canonical_overlay_adds_buyer_policy_rows": 1,
+      "bond_parent_is_broad": 1,
+      "legacy_seller_generator_not_full_canonical_policy": 1,
+      "legacy_rows_roll_up_to_parent_containers": 1,
+      "runtime_requires_document_request_tables": 1,
+      "legacy_request_fallback_retained": 1,
+      "seller_portal_request_link_permission_guard": 1
+    }
+  },
+  "pendingActivationItems": [
+    {
+      "phase": "phase1_single_canonical_policy",
+      "code": "active_row_has_pending_related_signoff",
+      "message": "electrical_compliance_certificate: active row is related to a pending signoff decision",
+      "count": null,
+      "requirementKey": "electrical_compliance_certificate"
+    },
+    {
+      "phase": "phase1_single_canonical_policy",
+      "code": "active_row_has_pending_related_signoff",
+      "message": "gas_compliance_certificate: active row is related to a pending signoff decision",
+      "count": null,
+      "requirementKey": "gas_compliance_certificate"
+    },
+    {
+      "phase": "phase1_single_canonical_policy",
+      "code": "active_row_has_pending_related_signoff",
+      "message": "electric_fence_certificate: active row is related to a pending signoff decision",
+      "count": null,
+      "requirementKey": "electric_fence_certificate"
+    },
+    {
+      "phase": "phase1_single_canonical_policy",
+      "code": "active_row_has_pending_related_signoff",
+      "message": "water_installation_certificate: active row is related to a pending signoff decision",
+      "count": null,
+      "requirementKey": "water_installation_certificate"
+    },
+    {
+      "phase": "phase1_single_canonical_policy",
+      "code": "active_row_has_pending_related_signoff",
+      "message": "beetle_certificate: active row is related to a pending signoff decision",
+      "count": null,
+      "requirementKey": "beetle_certificate"
+    },
+    {
+      "phase": "phase1_single_canonical_policy",
+      "code": "active_row_has_pending_related_signoff",
+      "message": "solar_compliance_documents: active row is related to a pending signoff decision",
+      "count": null,
+      "requirementKey": "solar_compliance_documents"
+    },
+    {
+      "phase": "phase1_single_canonical_policy",
+      "code": "active_row_has_pending_related_signoff",
+      "message": "approved_building_plans: active row is related to a pending signoff decision",
+      "count": null,
+      "requirementKey": "approved_building_plans"
+    },
+    {
+      "phase": "phase1_single_canonical_policy",
+      "code": "active_row_has_pending_related_signoff",
+      "message": "occupation_certificate: active row is related to a pending signoff decision",
+      "count": null,
+      "requirementKey": "occupation_certificate"
+    },
+    {
+      "phase": "phase1_single_canonical_policy",
+      "code": "professional_shared_client_owned",
+      "message": "vat_status_confirmation: professional-shared row is requested from a client role",
+      "count": null,
+      "requirementKey": "vat_status_confirmation"
+    },
+    {
+      "phase": "phase3_buyer_cleanup",
+      "code": "legacy_buyer_profile_contains_professional_rows",
+      "message": "Legacy buyer profiles still emit professional/generated rows such as OTP and transfer documents; portal upload filtering and canonical overlay now keep buyer upload requests clean.",
+      "count": 16,
+      "requirementKey": null
+    },
+    {
+      "phase": "phase3_buyer_cleanup",
+      "code": "canonical_overlay_adds_buyer_policy_rows",
+      "message": "Canonical buyer plans include policy rows not represented as one-to-one legacy upload rows, such as marital/source-of-funds declarations.",
+      "count": 8,
+      "requirementKey": null
+    },
+    {
+      "phase": "phase4_bond_model",
+      "code": "bond_parent_is_broad",
+      "message": "Granular bond upload rows intentionally roll up to the broad canonical income_affordability_documents parent until Phase 4 child-container activation is approved.",
+      "count": null,
+      "requirementKey": null
+    },
+    {
+      "phase": "phase5_seller_cleanup",
+      "code": "legacy_seller_generator_not_full_canonical_policy",
+      "message": "The legacy seller generator is mapped, but some canonical seller policy containers are not emitted by every seller scenario yet.",
+      "count": 48,
+      "requirementKey": null
+    },
+    {
+      "phase": "phase5_seller_cleanup",
+      "code": "legacy_rows_roll_up_to_parent_containers",
+      "message": "Some detailed seller rows roll up to one canonical parent container, such as company/trust FICA and bond-statement support rows.",
+      "count": 9,
+      "requirementKey": null
+    },
+    {
+      "phase": "phase6_professional_propagation",
+      "code": "runtime_requires_document_request_tables",
+      "message": "Professional request propagation depends on the document_requests table being present in the target environment.",
+      "count": null,
+      "requirementKey": null
+    },
+    {
+      "phase": "phase8_client_portal_container_adoption",
+      "code": "legacy_request_fallback_retained",
+      "message": "The client portal keeps a fallback path for older payloads that do not include documentRequestContainers.",
+      "count": null,
+      "requirementKey": null
+    },
+    {
+      "phase": "phase9_upload_linking",
+      "code": "seller_portal_request_link_permission_guard",
+      "message": "Seller portal request-linking treats missing schema or denied direct table access as non-blocking so the physical upload is not lost.",
+      "count": null,
+      "requirementKey": null
+    }
+  ],
+  "smokeSummary": {
+    "failedSmokeCount": 0,
+    "unstableContainerIdCount": 0,
+    "deferredSellerUploadLeakCount": 0,
+    "buyerContainerCount": 13,
+    "sellerContainerCount": 17,
+    "agentContainerCount": 30,
+    "attorneyContainerCount": 30,
+    "bondOriginatorContainerCount": 5,
+    "internalContainerCount": 30
+  },
+  "releaseRecommendation": "ready_for_internal_pilot_not_production_activation",
+  "gate": {
+    "status": "release_readiness_mapped_with_warnings",
+    "ok": true,
+    "mayProceedToPhase11": true,
+    "productionActivationReady": false,
+    "checks": [
+      {
+        "key": "all_phase_reports_present_and_matched",
+        "ok": true
+      },
+      {
+        "key": "all_phase_reports_read_only",
+        "ok": true
+      },
+      {
+        "key": "no_hard_phase_failures",
+        "ok": true
+      },
+      {
+        "key": "warnings_are_managed_and_explicit",
+        "ok": true
+      },
+      {
+        "key": "canonical_policy_and_cleanup_models_exist",
+        "ok": true
+      },
+      {
+        "key": "container_model_covers_all_workspaces",
+        "ok": true
+      },
+      {
+        "key": "workspace_smoke_has_no_failures_or_deferred_leaks",
+        "ok": true
+      },
+      {
+        "key": "client_portal_uses_container_request_ids",
+        "ok": true
+      },
+      {
+        "key": "buyer_and_seller_uploads_link_request_rows",
+        "ok": true
+      },
+      {
+        "key": "phase10_verify_chain_is_registered",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "hardBlockers": [],
+    "warnings": [
+      {
+        "phase": "phase1_single_canonical_policy",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "electrical_compliance_certificate: active row is related to a pending signoff decision",
+        "managed": true,
+        "count": null,
+        "requirementKey": "electrical_compliance_certificate"
+      },
+      {
+        "phase": "phase1_single_canonical_policy",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "gas_compliance_certificate: active row is related to a pending signoff decision",
+        "managed": true,
+        "count": null,
+        "requirementKey": "gas_compliance_certificate"
+      },
+      {
+        "phase": "phase1_single_canonical_policy",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "electric_fence_certificate: active row is related to a pending signoff decision",
+        "managed": true,
+        "count": null,
+        "requirementKey": "electric_fence_certificate"
+      },
+      {
+        "phase": "phase1_single_canonical_policy",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "water_installation_certificate: active row is related to a pending signoff decision",
+        "managed": true,
+        "count": null,
+        "requirementKey": "water_installation_certificate"
+      },
+      {
+        "phase": "phase1_single_canonical_policy",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "beetle_certificate: active row is related to a pending signoff decision",
+        "managed": true,
+        "count": null,
+        "requirementKey": "beetle_certificate"
+      },
+      {
+        "phase": "phase1_single_canonical_policy",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "solar_compliance_documents: active row is related to a pending signoff decision",
+        "managed": true,
+        "count": null,
+        "requirementKey": "solar_compliance_documents"
+      },
+      {
+        "phase": "phase1_single_canonical_policy",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "approved_building_plans: active row is related to a pending signoff decision",
+        "managed": true,
+        "count": null,
+        "requirementKey": "approved_building_plans"
+      },
+      {
+        "phase": "phase1_single_canonical_policy",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "occupation_certificate: active row is related to a pending signoff decision",
+        "managed": true,
+        "count": null,
+        "requirementKey": "occupation_certificate"
+      },
+      {
+        "phase": "phase1_single_canonical_policy",
+        "code": "professional_shared_client_owned",
+        "message": "vat_status_confirmation: professional-shared row is requested from a client role",
+        "managed": true,
+        "count": null,
+        "requirementKey": "vat_status_confirmation"
+      },
+      {
+        "phase": "phase3_buyer_cleanup",
+        "code": "legacy_buyer_profile_contains_professional_rows",
+        "message": "Legacy buyer profiles still emit professional/generated rows such as OTP and transfer documents; portal upload filtering and canonical overlay now keep buyer upload requests clean.",
+        "managed": true,
+        "count": 16,
+        "requirementKey": null
+      },
+      {
+        "phase": "phase3_buyer_cleanup",
+        "code": "canonical_overlay_adds_buyer_policy_rows",
+        "message": "Canonical buyer plans include policy rows not represented as one-to-one legacy upload rows, such as marital/source-of-funds declarations.",
+        "managed": true,
+        "count": 8,
+        "requirementKey": null
+      },
+      {
+        "phase": "phase4_bond_model",
+        "code": "bond_parent_is_broad",
+        "message": "Granular bond upload rows intentionally roll up to the broad canonical income_affordability_documents parent until Phase 4 child-container activation is approved.",
+        "managed": true,
+        "count": null,
+        "requirementKey": null
+      },
+      {
+        "phase": "phase5_seller_cleanup",
+        "code": "legacy_seller_generator_not_full_canonical_policy",
+        "message": "The legacy seller generator is mapped, but some canonical seller policy containers are not emitted by every seller scenario yet.",
+        "managed": true,
+        "count": 48,
+        "requirementKey": null
+      },
+      {
+        "phase": "phase5_seller_cleanup",
+        "code": "legacy_rows_roll_up_to_parent_containers",
+        "message": "Some detailed seller rows roll up to one canonical parent container, such as company/trust FICA and bond-statement support rows.",
+        "managed": true,
+        "count": 9,
+        "requirementKey": null
+      },
+      {
+        "phase": "phase6_professional_propagation",
+        "code": "runtime_requires_document_request_tables",
+        "message": "Professional request propagation depends on the document_requests table being present in the target environment.",
+        "managed": true,
+        "count": null,
+        "requirementKey": null
+      },
+      {
+        "phase": "phase8_client_portal_container_adoption",
+        "code": "legacy_request_fallback_retained",
+        "message": "The client portal keeps a fallback path for older payloads that do not include documentRequestContainers.",
+        "managed": true,
+        "count": null,
+        "requirementKey": null
+      },
+      {
+        "phase": "phase9_upload_linking",
+        "code": "seller_portal_request_link_permission_guard",
+        "message": "Seller portal request-linking treats missing schema or denied direct table access as non-blocking so the physical upload is not lost.",
+        "managed": true,
+        "count": null,
+        "requirementKey": null
+      }
+    ]
+  }
+}

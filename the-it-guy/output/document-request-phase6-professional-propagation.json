@@ -1,0 +1,2075 @@
+{
+  "phase": "document_request_phase6_professional_propagation",
+  "generatedAt": "2026-08-13T16:17:52.120Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "version": "document_request_professional_propagation_v1",
+  "scenarioCount": 5,
+  "summary": {
+    "missingAudienceCount": 0,
+    "leakedAudienceCount": 0,
+    "uploadTransitionOk": true,
+    "buyerVisibleRequestCount": 3,
+    "sellerVisibleRequestCount": 2,
+    "bondOriginatorVisibleRequestCount": 2
+  },
+  "results": [
+    {
+      "id": "transfer_attorney_requests_buyer_fica",
+      "label": "Transfer attorney requests buyer FICA support",
+      "transactionId": "phase6-transfer-buyer",
+      "requestId": "phase6-transfer-buyer-request",
+      "requestedFrom": "buyer",
+      "requestedByRole": "transfer_attorney",
+      "visibility": "client_visible",
+      "status": "requested",
+      "containerId": "request:phase6-transfer-buyer-request",
+      "documentKey": "updated_buyer_fica",
+      "visibleTo": [
+        "agent",
+        "attorney",
+        "internal",
+        "transfer_attorney",
+        "buyer"
+      ],
+      "expectedVisibleTo": [
+        "buyer",
+        "agent",
+        "attorney",
+        "transfer_attorney",
+        "internal"
+      ],
+      "expectedHiddenFrom": [
+        "seller",
+        "bond_originator"
+      ],
+      "visibleAudiences": [
+        "buyer",
+        "agent",
+        "attorney",
+        "transfer_attorney",
+        "internal"
+      ],
+      "missingAudience": [],
+      "leakedAudience": [],
+      "blocksReadiness": true,
+      "hasUploadedDocument": false,
+      "uploadSpecType": "additional_request",
+      "audienceSnapshots": {
+        "buyer": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "transfer_attorney": 1,
+              "buyer": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-transfer-buyer-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-transfer-buyer-request",
+              "source": "document_requests",
+              "sourceId": "phase6-transfer-buyer-request",
+              "transactionId": "phase6-transfer-buyer",
+              "canonicalKey": "",
+              "documentKey": "updated_buyer_fica",
+              "title": "Updated Buyer FICA",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer",
+              "requestedByRole": "transfer_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-transfer-buyer-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "transfer_attorney",
+                "buyer"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "seller": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "agent": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "transfer_attorney": 1,
+              "buyer": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-transfer-buyer-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-transfer-buyer-request",
+              "source": "document_requests",
+              "sourceId": "phase6-transfer-buyer-request",
+              "transactionId": "phase6-transfer-buyer",
+              "canonicalKey": "",
+              "documentKey": "updated_buyer_fica",
+              "title": "Updated Buyer FICA",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer",
+              "requestedByRole": "transfer_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-transfer-buyer-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "transfer_attorney",
+                "buyer"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "attorney": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "transfer_attorney": 1,
+              "buyer": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-transfer-buyer-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-transfer-buyer-request",
+              "source": "document_requests",
+              "sourceId": "phase6-transfer-buyer-request",
+              "transactionId": "phase6-transfer-buyer",
+              "canonicalKey": "",
+              "documentKey": "updated_buyer_fica",
+              "title": "Updated Buyer FICA",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer",
+              "requestedByRole": "transfer_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-transfer-buyer-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "transfer_attorney",
+                "buyer"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "transfer_attorney": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "transfer_attorney": 1,
+              "buyer": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-transfer-buyer-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-transfer-buyer-request",
+              "source": "document_requests",
+              "sourceId": "phase6-transfer-buyer-request",
+              "transactionId": "phase6-transfer-buyer",
+              "canonicalKey": "",
+              "documentKey": "updated_buyer_fica",
+              "title": "Updated Buyer FICA",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer",
+              "requestedByRole": "transfer_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-transfer-buyer-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "transfer_attorney",
+                "buyer"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "cancellation_attorney": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "bond_originator": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "internal": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "transfer_attorney": 1,
+              "buyer": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-transfer-buyer-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-transfer-buyer-request",
+              "source": "document_requests",
+              "sourceId": "phase6-transfer-buyer-request",
+              "transactionId": "phase6-transfer-buyer",
+              "canonicalKey": "",
+              "documentKey": "updated_buyer_fica",
+              "title": "Updated Buyer FICA",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer",
+              "requestedByRole": "transfer_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-transfer-buyer-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "transfer_attorney",
+                "buyer"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cancellation_attorney_requests_seller_bond_statement",
+      "label": "Cancellation attorney requests seller bond statement",
+      "transactionId": "phase6-cancellation-seller",
+      "requestId": "phase6-cancellation-seller-request",
+      "requestedFrom": "seller",
+      "requestedByRole": "cancellation_attorney",
+      "visibility": "client_visible",
+      "status": "requested",
+      "containerId": "request:phase6-cancellation-seller-request",
+      "documentKey": "bond_statement",
+      "visibleTo": [
+        "agent",
+        "attorney",
+        "internal",
+        "cancellation_attorney",
+        "seller"
+      ],
+      "expectedVisibleTo": [
+        "seller",
+        "agent",
+        "attorney",
+        "cancellation_attorney",
+        "internal"
+      ],
+      "expectedHiddenFrom": [
+        "buyer",
+        "bond_originator"
+      ],
+      "visibleAudiences": [
+        "seller",
+        "agent",
+        "attorney",
+        "cancellation_attorney",
+        "internal"
+      ],
+      "missingAudience": [],
+      "leakedAudience": [],
+      "blocksReadiness": true,
+      "hasUploadedDocument": false,
+      "uploadSpecType": "additional_request",
+      "audienceSnapshots": {
+        "buyer": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "seller": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "seller": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "cancellation_attorney": 1,
+              "seller": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-cancellation-seller-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-cancellation-seller-request",
+              "source": "document_requests",
+              "sourceId": "phase6-cancellation-seller-request",
+              "transactionId": "phase6-cancellation-seller",
+              "canonicalKey": "",
+              "documentKey": "bond_statement",
+              "title": "Latest Bond Statement",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "seller",
+              "requestedByRole": "cancellation_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-cancellation-seller-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "cancellation_attorney",
+                "seller"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "agent": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "seller": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "cancellation_attorney": 1,
+              "seller": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-cancellation-seller-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-cancellation-seller-request",
+              "source": "document_requests",
+              "sourceId": "phase6-cancellation-seller-request",
+              "transactionId": "phase6-cancellation-seller",
+              "canonicalKey": "",
+              "documentKey": "bond_statement",
+              "title": "Latest Bond Statement",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "seller",
+              "requestedByRole": "cancellation_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-cancellation-seller-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "cancellation_attorney",
+                "seller"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "attorney": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "seller": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "cancellation_attorney": 1,
+              "seller": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-cancellation-seller-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-cancellation-seller-request",
+              "source": "document_requests",
+              "sourceId": "phase6-cancellation-seller-request",
+              "transactionId": "phase6-cancellation-seller",
+              "canonicalKey": "",
+              "documentKey": "bond_statement",
+              "title": "Latest Bond Statement",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "seller",
+              "requestedByRole": "cancellation_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-cancellation-seller-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "cancellation_attorney",
+                "seller"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "transfer_attorney": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "cancellation_attorney": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "seller": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "cancellation_attorney": 1,
+              "seller": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-cancellation-seller-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-cancellation-seller-request",
+              "source": "document_requests",
+              "sourceId": "phase6-cancellation-seller-request",
+              "transactionId": "phase6-cancellation-seller",
+              "canonicalKey": "",
+              "documentKey": "bond_statement",
+              "title": "Latest Bond Statement",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "seller",
+              "requestedByRole": "cancellation_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-cancellation-seller-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "cancellation_attorney",
+                "seller"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "bond_originator": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "internal": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "seller": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "cancellation_attorney": 1,
+              "seller": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-cancellation-seller-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-cancellation-seller-request",
+              "source": "document_requests",
+              "sourceId": "phase6-cancellation-seller-request",
+              "transactionId": "phase6-cancellation-seller",
+              "canonicalKey": "",
+              "documentKey": "bond_statement",
+              "title": "Latest Bond Statement",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "seller",
+              "requestedByRole": "cancellation_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-cancellation-seller-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "cancellation_attorney",
+                "seller"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bond_originator_requests_buyer_affordability",
+      "label": "Bond originator requests buyer affordability documents",
+      "transactionId": "phase6-originator-buyer",
+      "requestId": "phase6-originator-buyer-request",
+      "requestedFrom": "buyer",
+      "requestedByRole": "bond_originator",
+      "visibility": "client_visible",
+      "status": "requested",
+      "containerId": "request:phase6-originator-buyer-request",
+      "documentKey": "income_affordability_documents",
+      "visibleTo": [
+        "agent",
+        "attorney",
+        "internal",
+        "bond_originator",
+        "buyer"
+      ],
+      "expectedVisibleTo": [
+        "buyer",
+        "agent",
+        "attorney",
+        "bond_originator",
+        "internal"
+      ],
+      "expectedHiddenFrom": [
+        "seller"
+      ],
+      "visibleAudiences": [
+        "buyer",
+        "agent",
+        "attorney",
+        "bond_originator",
+        "internal"
+      ],
+      "missingAudience": [],
+      "leakedAudience": [],
+      "blocksReadiness": true,
+      "hasUploadedDocument": false,
+      "uploadSpecType": "additional_request",
+      "audienceSnapshots": {
+        "buyer": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "bond_originator": 1,
+              "buyer": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-originator-buyer-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-originator-buyer-request",
+              "source": "document_requests",
+              "sourceId": "phase6-originator-buyer-request",
+              "transactionId": "phase6-originator-buyer",
+              "canonicalKey": "income_affordability_documents",
+              "documentKey": "income_affordability_documents",
+              "title": "Income and Affordability Documents",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer",
+              "requestedByRole": "bond_originator",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-originator-buyer-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "bond_originator",
+                "buyer"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "seller": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "agent": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "bond_originator": 1,
+              "buyer": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-originator-buyer-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-originator-buyer-request",
+              "source": "document_requests",
+              "sourceId": "phase6-originator-buyer-request",
+              "transactionId": "phase6-originator-buyer",
+              "canonicalKey": "income_affordability_documents",
+              "documentKey": "income_affordability_documents",
+              "title": "Income and Affordability Documents",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer",
+              "requestedByRole": "bond_originator",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-originator-buyer-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "bond_originator",
+                "buyer"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "attorney": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "bond_originator": 1,
+              "buyer": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-originator-buyer-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-originator-buyer-request",
+              "source": "document_requests",
+              "sourceId": "phase6-originator-buyer-request",
+              "transactionId": "phase6-originator-buyer",
+              "canonicalKey": "income_affordability_documents",
+              "documentKey": "income_affordability_documents",
+              "title": "Income and Affordability Documents",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer",
+              "requestedByRole": "bond_originator",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-originator-buyer-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "bond_originator",
+                "buyer"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "transfer_attorney": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "cancellation_attorney": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "bond_originator": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "bond_originator": 1,
+              "buyer": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-originator-buyer-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-originator-buyer-request",
+              "source": "document_requests",
+              "sourceId": "phase6-originator-buyer-request",
+              "transactionId": "phase6-originator-buyer",
+              "canonicalKey": "income_affordability_documents",
+              "documentKey": "income_affordability_documents",
+              "title": "Income and Affordability Documents",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer",
+              "requestedByRole": "bond_originator",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-originator-buyer-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "bond_originator",
+                "buyer"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "internal": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "bond_originator": 1,
+              "buyer": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-originator-buyer-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-originator-buyer-request",
+              "source": "document_requests",
+              "sourceId": "phase6-originator-buyer-request",
+              "transactionId": "phase6-originator-buyer",
+              "canonicalKey": "income_affordability_documents",
+              "documentKey": "income_affordability_documents",
+              "title": "Income and Affordability Documents",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer",
+              "requestedByRole": "bond_originator",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-originator-buyer-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "bond_originator",
+                "buyer"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "transfer_attorney_requests_both_clients",
+      "label": "Transfer attorney requests buyer and seller document",
+      "transactionId": "phase6-transfer-both",
+      "requestId": "phase6-transfer-both-request",
+      "requestedFrom": "buyer_and_seller",
+      "requestedByRole": "transfer_attorney",
+      "visibility": "client_visible",
+      "status": "requested",
+      "containerId": "request:phase6-transfer-both-request",
+      "documentKey": "signed_clarification",
+      "visibleTo": [
+        "agent",
+        "attorney",
+        "internal",
+        "transfer_attorney",
+        "buyer",
+        "seller"
+      ],
+      "expectedVisibleTo": [
+        "buyer",
+        "seller",
+        "agent",
+        "attorney",
+        "transfer_attorney",
+        "internal"
+      ],
+      "expectedHiddenFrom": [
+        "bond_originator"
+      ],
+      "visibleAudiences": [
+        "buyer",
+        "seller",
+        "agent",
+        "attorney",
+        "transfer_attorney",
+        "internal"
+      ],
+      "missingAudience": [],
+      "leakedAudience": [],
+      "blocksReadiness": true,
+      "hasUploadedDocument": false,
+      "uploadSpecType": "additional_request",
+      "audienceSnapshots": {
+        "buyer": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer_and_seller": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "transfer_attorney": 1,
+              "buyer": 1,
+              "seller": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-transfer-both-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-transfer-both-request",
+              "source": "document_requests",
+              "sourceId": "phase6-transfer-both-request",
+              "transactionId": "phase6-transfer-both",
+              "canonicalKey": "",
+              "documentKey": "signed_clarification",
+              "title": "Signed Clarification",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer_and_seller",
+              "requestedByRole": "transfer_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-transfer-both-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "transfer_attorney",
+                "buyer",
+                "seller"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "seller": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer_and_seller": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "transfer_attorney": 1,
+              "buyer": 1,
+              "seller": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-transfer-both-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-transfer-both-request",
+              "source": "document_requests",
+              "sourceId": "phase6-transfer-both-request",
+              "transactionId": "phase6-transfer-both",
+              "canonicalKey": "",
+              "documentKey": "signed_clarification",
+              "title": "Signed Clarification",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer_and_seller",
+              "requestedByRole": "transfer_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-transfer-both-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "transfer_attorney",
+                "buyer",
+                "seller"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "agent": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer_and_seller": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "transfer_attorney": 1,
+              "buyer": 1,
+              "seller": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-transfer-both-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-transfer-both-request",
+              "source": "document_requests",
+              "sourceId": "phase6-transfer-both-request",
+              "transactionId": "phase6-transfer-both",
+              "canonicalKey": "",
+              "documentKey": "signed_clarification",
+              "title": "Signed Clarification",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer_and_seller",
+              "requestedByRole": "transfer_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-transfer-both-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "transfer_attorney",
+                "buyer",
+                "seller"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "attorney": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer_and_seller": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "transfer_attorney": 1,
+              "buyer": 1,
+              "seller": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-transfer-both-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-transfer-both-request",
+              "source": "document_requests",
+              "sourceId": "phase6-transfer-both-request",
+              "transactionId": "phase6-transfer-both",
+              "canonicalKey": "",
+              "documentKey": "signed_clarification",
+              "title": "Signed Clarification",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer_and_seller",
+              "requestedByRole": "transfer_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-transfer-both-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "transfer_attorney",
+                "buyer",
+                "seller"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "transfer_attorney": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer_and_seller": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "transfer_attorney": 1,
+              "buyer": 1,
+              "seller": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-transfer-both-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-transfer-both-request",
+              "source": "document_requests",
+              "sourceId": "phase6-transfer-both-request",
+              "transactionId": "phase6-transfer-both",
+              "canonicalKey": "",
+              "documentKey": "signed_clarification",
+              "title": "Signed Clarification",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer_and_seller",
+              "requestedByRole": "transfer_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-transfer-both-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "transfer_attorney",
+                "buyer",
+                "seller"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "cancellation_attorney": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "bond_originator": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "internal": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer_and_seller": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "transfer_attorney": 1,
+              "buyer": 1,
+              "seller": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-transfer-both-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-transfer-both-request",
+              "source": "document_requests",
+              "sourceId": "phase6-transfer-both-request",
+              "transactionId": "phase6-transfer-both",
+              "canonicalKey": "",
+              "documentKey": "signed_clarification",
+              "title": "Signed Clarification",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "buyer_and_seller",
+              "requestedByRole": "transfer_attorney",
+              "visibility": "client_visible",
+              "priority": "required",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-transfer-both-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "transfer_attorney",
+                "buyer",
+                "seller"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bond_originator_internal_follow_up",
+      "label": "Bond originator internal follow-up stays professional-only",
+      "transactionId": "phase6-originator-professional",
+      "requestId": "phase6-originator-professional-request",
+      "requestedFrom": "bond_originator",
+      "requestedByRole": "bond_originator",
+      "visibility": "shared_role_players",
+      "status": "requested",
+      "containerId": "request:phase6-originator-professional-request",
+      "documentKey": "bank_valuation_follow_up",
+      "visibleTo": [
+        "agent",
+        "attorney",
+        "internal",
+        "bond_originator"
+      ],
+      "expectedVisibleTo": [
+        "agent",
+        "attorney",
+        "bond_originator",
+        "internal"
+      ],
+      "expectedHiddenFrom": [
+        "buyer",
+        "seller"
+      ],
+      "visibleAudiences": [
+        "agent",
+        "attorney",
+        "bond_originator",
+        "internal"
+      ],
+      "missingAudience": [],
+      "leakedAudience": [],
+      "blocksReadiness": true,
+      "hasUploadedDocument": false,
+      "uploadSpecType": "additional_request",
+      "audienceSnapshots": {
+        "buyer": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "seller": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "agent": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "bond_originator": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "bond_originator": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-originator-professional-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-originator-professional-request",
+              "source": "document_requests",
+              "sourceId": "phase6-originator-professional-request",
+              "transactionId": "phase6-originator-professional",
+              "canonicalKey": "",
+              "documentKey": "bank_valuation_follow_up",
+              "title": "Bank Valuation Follow-Up",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "bond_originator",
+              "requestedByRole": "bond_originator",
+              "visibility": "shared_role_players",
+              "priority": "normal",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-originator-professional-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "bond_originator"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "attorney": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "bond_originator": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "bond_originator": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-originator-professional-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-originator-professional-request",
+              "source": "document_requests",
+              "sourceId": "phase6-originator-professional-request",
+              "transactionId": "phase6-originator-professional",
+              "canonicalKey": "",
+              "documentKey": "bank_valuation_follow_up",
+              "title": "Bank Valuation Follow-Up",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "bond_originator",
+              "requestedByRole": "bond_originator",
+              "visibility": "shared_role_players",
+              "priority": "normal",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-originator-professional-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "bond_originator"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "transfer_attorney": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "cancellation_attorney": {
+          "summary": {
+            "total": 0,
+            "canonicalRequired": 0,
+            "additionalRequests": 0,
+            "blocking": 0,
+            "uploaded": 0,
+            "byRequestedFrom": {},
+            "byAudience": {},
+            "byStatus": {}
+          },
+          "containerIds": [],
+          "containers": []
+        },
+        "bond_originator": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "bond_originator": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "bond_originator": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-originator-professional-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-originator-professional-request",
+              "source": "document_requests",
+              "sourceId": "phase6-originator-professional-request",
+              "transactionId": "phase6-originator-professional",
+              "canonicalKey": "",
+              "documentKey": "bank_valuation_follow_up",
+              "title": "Bank Valuation Follow-Up",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "bond_originator",
+              "requestedByRole": "bond_originator",
+              "visibility": "shared_role_players",
+              "priority": "normal",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-originator-professional-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "bond_originator"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        },
+        "internal": {
+          "summary": {
+            "total": 1,
+            "canonicalRequired": 0,
+            "additionalRequests": 1,
+            "blocking": 1,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "bond_originator": 1
+            },
+            "byAudience": {
+              "agent": 1,
+              "attorney": 1,
+              "internal": 1,
+              "bond_originator": 1
+            },
+            "byStatus": {
+              "requested": 1
+            }
+          },
+          "containerIds": [
+            "request:phase6-originator-professional-request"
+          ],
+          "containers": [
+            {
+              "id": "request:phase6-originator-professional-request",
+              "source": "document_requests",
+              "sourceId": "phase6-originator-professional-request",
+              "transactionId": "phase6-originator-professional",
+              "canonicalKey": "",
+              "documentKey": "bank_valuation_follow_up",
+              "title": "Bank Valuation Follow-Up",
+              "description": "",
+              "category": "Additional Requests",
+              "requestedFrom": "bond_originator",
+              "requestedByRole": "bond_originator",
+              "visibility": "shared_role_players",
+              "priority": "normal",
+              "status": "requested",
+              "blocker": "additional_document_request",
+              "dueDate": "",
+              "requestGroupId": "",
+              "linkedDocumentId": "",
+              "uploadSpec": {
+                "type": "additional_request",
+                "requestId": "phase6-originator-professional-request"
+              },
+              "visibleTo": [
+                "agent",
+                "attorney",
+                "internal",
+                "bond_originator"
+              ],
+              "blocksReadiness": true,
+              "hasUploadedDocument": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "missingAudience": [],
+  "leakedAudience": [],
+  "uploadTransition": {
+    "before": {
+      "status": "requested",
+      "blocksReadiness": true,
+      "hasUploadedDocument": false,
+      "uploadSpecType": "additional_request"
+    },
+    "after": {
+      "status": "uploaded",
+      "blocksReadiness": false,
+      "hasUploadedDocument": true,
+      "linkedDocumentId": "phase6-uploaded-document",
+      "uploadSpecType": "additional_request"
+    }
+  },
+  "phase6Decisions": [
+    {
+      "key": "single_container_source",
+      "decision": "Professional document requests use document_requests rows as the single source for additional request containers."
+    },
+    {
+      "key": "client_visible_request_propagation",
+      "decision": "A client-visible request from an attorney or bond originator appears to the targeted client party, the agent, the requester role, attorneys, and internal users."
+    },
+    {
+      "key": "professional_only_request_scope",
+      "decision": "Shared role-player requests stay out of buyer/seller portals unless explicitly targeted to a client party."
+    }
+  ],
+  "gate": {
+    "status": "professional_request_propagation_mapped",
+    "ok": true,
+    "mayProceedToPhase7": true,
+    "productionActivationReady": false,
+    "checks": [
+      {
+        "key": "professional_propagation_model_exists",
+        "ok": true
+      },
+      {
+        "key": "general_api_stores_request_container_fields",
+        "ok": true
+      },
+      {
+        "key": "attorney_lane_preserves_shared_request_fields",
+        "ok": true
+      },
+      {
+        "key": "container_model_supports_additional_requests",
+        "ok": true
+      },
+      {
+        "key": "no_missing_audience",
+        "ok": true
+      },
+      {
+        "key": "no_leaked_audience",
+        "ok": true
+      },
+      {
+        "key": "upload_transition_links_container",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "warnings": [
+      {
+        "code": "runtime_requires_document_request_tables",
+        "message": "Professional request propagation depends on the document_requests table being present in the target environment."
+      }
+    ]
+  }
+}

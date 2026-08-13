@@ -71,6 +71,7 @@ import {
   statusFromLegacyFlags,
 } from '../core/documents/documentVaultArchitecture'
 import { normalizePortalDocumentType, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
+import { resolveDefaultDocumentRequestVisibility } from '../core/documents/documentRequestContainerModel.js'
 import {
   CANONICAL_FINANCE_TYPES,
   deriveFinanceManagedBy,
@@ -14246,42 +14247,44 @@ export async function createTransactionDocumentRequests({
     }
   }
 
-  const insertRows = requests.map((request, index) => ({
-    request_type: String(request.requestType || request.request_type || 'additional_document_request')
-      .trim()
-      .toLowerCase(),
-    transaction_id: transactionId,
-    category: normalizeTextValue(request.category || 'Additional Requests'),
-    document_type: normalizeTextValue(
-      request.documentType || request.document_type || request.title || `Document ${index + 1}`,
-    ),
-    title: normalizeTextValue(
-      request.title || request.documentType || request.document_type || `Document ${index + 1}`,
-    ),
-    description: normalizeNullableText(request.description || request.notes),
-    notes: normalizeNullableText(request.notes || request.description),
-    priority: mapAdditionalPriorityToRequestPriority(request.priority),
-    due_date: normalizeOptionalDate(request.dueDate || request.due_date),
-    requested_from: normalizeAdditionalDocumentRequestRequestedFrom(
+  const insertRows = requests.map((request, index) => {
+    const requestedFrom = normalizeAdditionalDocumentRequestRequestedFrom(
       request.requestedFrom || request.requested_from || request.assignedToRole || request.assigned_to_role,
       'buyer',
-    ),
-    assigned_to_role: mapRequestedFromToAssignedRole(
-      request.requestedFrom || request.requested_from || request.assignedToRole || request.assigned_to_role,
-    ),
-    visibility_scope: normalizeAdditionalDocumentRequestVisibility(
-      request.visibility || request.visibility_scope || 'shared_role_players',
-    ),
-    assigned_to_user_id: request.assignedToUserId || request.assigned_to_user_id || null,
-    request_group_id: groupId,
-    status: normalizeDocumentRequestStatusValue(request.status || 'requested'),
-    requires_review: request.requiresReview !== false && request.requires_review !== false,
-    created_by: actor.userId || null,
-    created_by_role: normalizedActorRole,
-    resend_count: 0,
-    created_at: createdAt,
-    updated_at: createdAt,
-  }))
+    )
+    return {
+      request_type: String(request.requestType || request.request_type || 'additional_document_request')
+        .trim()
+        .toLowerCase(),
+      transaction_id: transactionId,
+      category: normalizeTextValue(request.category || 'Additional Requests'),
+      document_type: normalizeTextValue(
+        request.documentType || request.document_type || request.title || `Document ${index + 1}`,
+      ),
+      title: normalizeTextValue(
+        request.title || request.documentType || request.document_type || `Document ${index + 1}`,
+      ),
+      description: normalizeNullableText(request.description || request.notes),
+      notes: normalizeNullableText(request.notes || request.description),
+      priority: mapAdditionalPriorityToRequestPriority(request.priority),
+      due_date: normalizeOptionalDate(request.dueDate || request.due_date),
+      requested_from: requestedFrom,
+      assigned_to_role: mapRequestedFromToAssignedRole(requestedFrom),
+      visibility_scope: resolveDefaultDocumentRequestVisibility(
+        requestedFrom,
+        request.visibility || request.visibility_scope,
+      ),
+      assigned_to_user_id: request.assignedToUserId || request.assigned_to_user_id || null,
+      request_group_id: groupId,
+      status: normalizeDocumentRequestStatusValue(request.status || 'requested'),
+      requires_review: request.requiresReview !== false && request.requires_review !== false,
+      created_by: actor.userId || null,
+      created_by_role: normalizedActorRole,
+      resend_count: 0,
+      created_at: createdAt,
+      updated_at: createdAt,
+    }
+  })
 
   let insert = await client
     .from('document_requests')

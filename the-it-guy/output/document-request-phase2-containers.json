@@ -1,0 +1,403 @@
+{
+  "phase": "document_request_phase2_containers",
+  "generatedAt": "2026-08-13T16:17:49.255Z",
+  "commit": false,
+  "mutatedData": false,
+  "modelVersion": "document_request_container_model_v1",
+  "defaultVisibilityProof": {
+    "buyer": "client_visible",
+    "seller": "client_visible",
+    "buyerAndSeller": "client_visible",
+    "bondOriginator": "shared_role_players"
+  },
+  "audienceProofs": {
+    "buyer": {
+      "summary": {
+        "total": 3,
+        "canonicalRequired": 1,
+        "additionalRequests": 2,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1,
+          "requested": 2
+        }
+      },
+      "containerIds": [
+        "required:phase2-transaction:buyer_fica_pack",
+        "request:attorney-request-buyer-bank",
+        "request:bond-request-income"
+      ],
+      "uploadTargets": [
+        {
+          "type": "required_document",
+          "documentKey": "buyer_fica_pack",
+          "requirementId": "buyer-fica-row"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "attorney-request-buyer-bank"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "bond-request-income"
+        }
+      ]
+    },
+    "seller": {
+      "summary": {
+        "total": 2,
+        "canonicalRequired": 1,
+        "additionalRequests": 1,
+        "blocking": 1,
+        "uploaded": 1,
+        "byRequestedFrom": {
+          "seller": 2
+        },
+        "byAudience": {
+          "agent": 2,
+          "attorney": 2,
+          "internal": 2,
+          "seller": 2
+        },
+        "byStatus": {
+          "uploaded": 1,
+          "requested": 1
+        }
+      },
+      "containerIds": [
+        "required:phase2-transaction:seller_fica_pack",
+        "request:agent-request-seller-levy"
+      ],
+      "uploadTargets": [
+        {
+          "type": "required_document",
+          "documentKey": "seller_fica_pack",
+          "requirementId": "seller-fica-row"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "agent-request-seller-levy"
+        }
+      ]
+    },
+    "agent": {
+      "summary": {
+        "total": 5,
+        "canonicalRequired": 2,
+        "additionalRequests": 3,
+        "blocking": 4,
+        "uploaded": 1,
+        "byRequestedFrom": {
+          "buyer": 3,
+          "seller": 2
+        },
+        "byAudience": {
+          "agent": 5,
+          "attorney": 5,
+          "internal": 5,
+          "buyer": 3,
+          "seller": 2,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1,
+          "uploaded": 1,
+          "requested": 3
+        }
+      },
+      "containerIds": [
+        "required:phase2-transaction:buyer_fica_pack",
+        "required:phase2-transaction:seller_fica_pack",
+        "request:attorney-request-buyer-bank",
+        "request:bond-request-income",
+        "request:agent-request-seller-levy"
+      ],
+      "uploadTargets": [
+        {
+          "type": "required_document",
+          "documentKey": "buyer_fica_pack",
+          "requirementId": "buyer-fica-row"
+        },
+        {
+          "type": "required_document",
+          "documentKey": "seller_fica_pack",
+          "requirementId": "seller-fica-row"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "attorney-request-buyer-bank"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "bond-request-income"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "agent-request-seller-levy"
+        }
+      ]
+    },
+    "attorney": {
+      "summary": {
+        "total": 5,
+        "canonicalRequired": 2,
+        "additionalRequests": 3,
+        "blocking": 4,
+        "uploaded": 1,
+        "byRequestedFrom": {
+          "buyer": 3,
+          "seller": 2
+        },
+        "byAudience": {
+          "agent": 5,
+          "attorney": 5,
+          "internal": 5,
+          "buyer": 3,
+          "seller": 2,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1,
+          "uploaded": 1,
+          "requested": 3
+        }
+      },
+      "containerIds": [
+        "required:phase2-transaction:buyer_fica_pack",
+        "required:phase2-transaction:seller_fica_pack",
+        "request:attorney-request-buyer-bank",
+        "request:bond-request-income",
+        "request:agent-request-seller-levy"
+      ],
+      "uploadTargets": [
+        {
+          "type": "required_document",
+          "documentKey": "buyer_fica_pack",
+          "requirementId": "buyer-fica-row"
+        },
+        {
+          "type": "required_document",
+          "documentKey": "seller_fica_pack",
+          "requirementId": "seller-fica-row"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "attorney-request-buyer-bank"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "bond-request-income"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "agent-request-seller-levy"
+        }
+      ]
+    },
+    "bond_originator": {
+      "summary": {
+        "total": 1,
+        "canonicalRequired": 0,
+        "additionalRequests": 1,
+        "blocking": 1,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 1
+        },
+        "byAudience": {
+          "agent": 1,
+          "attorney": 1,
+          "internal": 1,
+          "bond_originator": 1,
+          "buyer": 1
+        },
+        "byStatus": {
+          "requested": 1
+        }
+      },
+      "containerIds": [
+        "request:bond-request-income"
+      ],
+      "uploadTargets": [
+        {
+          "type": "additional_request",
+          "requestId": "bond-request-income"
+        }
+      ]
+    },
+    "client": {
+      "summary": {
+        "total": 5,
+        "canonicalRequired": 2,
+        "additionalRequests": 3,
+        "blocking": 4,
+        "uploaded": 1,
+        "byRequestedFrom": {
+          "buyer": 3,
+          "seller": 2
+        },
+        "byAudience": {
+          "agent": 5,
+          "attorney": 5,
+          "internal": 5,
+          "buyer": 3,
+          "seller": 2,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1,
+          "uploaded": 1,
+          "requested": 3
+        }
+      },
+      "containerIds": [
+        "required:phase2-transaction:buyer_fica_pack",
+        "required:phase2-transaction:seller_fica_pack",
+        "request:attorney-request-buyer-bank",
+        "request:bond-request-income",
+        "request:agent-request-seller-levy"
+      ],
+      "uploadTargets": [
+        {
+          "type": "required_document",
+          "documentKey": "buyer_fica_pack",
+          "requirementId": "buyer-fica-row"
+        },
+        {
+          "type": "required_document",
+          "documentKey": "seller_fica_pack",
+          "requirementId": "seller-fica-row"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "attorney-request-buyer-bank"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "bond-request-income"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "agent-request-seller-levy"
+        }
+      ]
+    },
+    "internal": {
+      "summary": {
+        "total": 5,
+        "canonicalRequired": 2,
+        "additionalRequests": 3,
+        "blocking": 4,
+        "uploaded": 1,
+        "byRequestedFrom": {
+          "buyer": 3,
+          "seller": 2
+        },
+        "byAudience": {
+          "agent": 5,
+          "attorney": 5,
+          "internal": 5,
+          "buyer": 3,
+          "seller": 2,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1,
+          "uploaded": 1,
+          "requested": 3
+        }
+      },
+      "containerIds": [
+        "required:phase2-transaction:buyer_fica_pack",
+        "required:phase2-transaction:seller_fica_pack",
+        "request:attorney-request-buyer-bank",
+        "request:bond-request-income",
+        "request:agent-request-seller-levy"
+      ],
+      "uploadTargets": [
+        {
+          "type": "required_document",
+          "documentKey": "buyer_fica_pack",
+          "requirementId": "buyer-fica-row"
+        },
+        {
+          "type": "required_document",
+          "documentKey": "seller_fica_pack",
+          "requirementId": "seller-fica-row"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "attorney-request-buyer-bank"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "bond-request-income"
+        },
+        {
+          "type": "additional_request",
+          "requestId": "agent-request-seller-levy"
+        }
+      ]
+    }
+  },
+  "phase2Findings": [
+    {
+      "id": "shared_container_model_added",
+      "severity": "info",
+      "finding": "Canonical required documents and ad hoc document_requests now normalize to one document request container model."
+    },
+    {
+      "id": "client_requests_default_client_visible",
+      "severity": "info",
+      "finding": "New shared API requests aimed at buyer, seller, or both default to client_visible unless explicitly overridden."
+    },
+    {
+      "id": "attorney_lane_direct_insert_still_mapped",
+      "severity": "warning",
+      "finding": "Attorney lane-specific requests still write document_requests directly; the Phase 2 model can project them, but a later cleanup should route them through the shared API or adapter."
+    }
+  ],
+  "gate": {
+    "status": "containers_mapped",
+    "ok": true,
+    "mayProceedToPhase3": true,
+    "checks": [
+      {
+        "key": "shared_create_api_exists",
+        "ok": true
+      },
+      {
+        "key": "client_target_defaults_client_visible",
+        "ok": true
+      },
+      {
+        "key": "upload_links_to_request",
+        "ok": true
+      },
+      {
+        "key": "portal_projects_container_model",
+        "ok": true
+      },
+      {
+        "key": "attorney_lane_request_gap_identified",
+        "ok": true
+      },
+      {
+        "key": "container_model_has_upload_spec",
+        "ok": true
+      }
+    ],
+    "failed": []
+  }
+}

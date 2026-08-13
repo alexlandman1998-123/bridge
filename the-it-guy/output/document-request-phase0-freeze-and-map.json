@@ -1,0 +1,703 @@
+{
+  "phase": "document_request_phase0_freeze_and_map",
+  "generatedAt": "2026-08-13T16:17:48.320Z",
+  "commit": false,
+  "mutatedData": false,
+  "scope": {
+    "buyer": true,
+    "seller": true,
+    "agent": true,
+    "attorney": true,
+    "bondOriginator": true,
+    "generatedDocuments": true,
+    "requestContainers": true,
+    "canonicalPolicy": true
+  },
+  "freezeRules": [
+    "Do not add new client-visible required document keys until Phase 1 legal/product approval.",
+    "Do not make deferred acquisition/improvement records client-visible unless a legal trigger is approved.",
+    "Do not create another request table or portal-only request model; new work must use the shared container design.",
+    "Do not retire legacy buyer/seller keys until the adapter and backfill map prove parity.",
+    "Do not treat generated documents as upload requests when they should satisfy canonical requirements.",
+    "Do not ship request-container propagation without buyer, seller, agent, attorney, and bond-originator smoke coverage."
+  ],
+  "canonicalPolicy": {
+    "exists": true,
+    "version": "document_request_phase1_legal_checklist_v1",
+    "status": "pending_attorney_signoff",
+    "jurisdiction": "South Africa",
+    "requirementCount": 67,
+    "signoffDecisionCount": 7,
+    "pendingSignoffKeys": [
+      "company_beneficial_ownership",
+      "trust_beneficial_ownership",
+      "buyer_anc_document",
+      "electrical_coc",
+      "conditional_compliance_certificates"
+    ],
+    "pendingPolicyKeys": [
+      "buyer_anc_document",
+      "buyer_company_beneficial_ownership",
+      "buyer_trust_beneficial_ownership",
+      "seller_company_beneficial_ownership",
+      "seller_trust_beneficial_ownership"
+    ],
+    "byOwnerRole": {
+      "agent": 1,
+      "buyer": 24,
+      "seller": 39,
+      "transfer_attorney": 2,
+      "cancellation_attorney": 1
+    },
+    "byLevel": {
+      "required": 51,
+      "pending_policy_required_unless_waived": 1,
+      "pending_policy_required": 4,
+      "conditional": 11
+    },
+    "byVisibility": {
+      "professional_shared": 5,
+      "client_visible": 62
+    }
+  },
+  "surfaces": [
+    {
+      "id": "canonical_policy",
+      "label": "Canonical document policy",
+      "owner": "product_legal",
+      "path": "config/document-request-phase1-legal-checklist.json",
+      "markers": [
+        {
+          "marker": "document_request_phase1_legal_checklist_v1",
+          "present": true,
+          "line": 2
+        },
+        {
+          "marker": "\"requirements\"",
+          "present": true,
+          "line": 27
+        },
+        {
+          "marker": "\"signoffDecisions\"",
+          "present": true,
+          "line": 18
+        }
+      ],
+      "phaseRisk": "Policy has pending legal decisions; Phase 1 must convert this into the only request policy.",
+      "exists": true,
+      "lineCount": 97,
+      "contentHash": "sha256:a321106d7e4daa315333bc514183df351725f6db801dc7d0fa386e5f45331806",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "canonical_planner",
+      "label": "Canonical request planner",
+      "owner": "engineering",
+      "path": "src/core/documents/documentRequestCanonicalPlanner.js",
+      "markers": [
+        {
+          "marker": "buildCanonicalDocumentRequestPlan",
+          "present": true,
+          "line": 164
+        },
+        {
+          "marker": "pending_policy",
+          "present": true,
+          "line": 35
+        },
+        {
+          "marker": "bond_originator",
+          "present": true,
+          "line": 25
+        }
+      ],
+      "phaseRisk": "Planner visibility/requestability must remain aligned with the policy matrix.",
+      "exists": true,
+      "lineCount": 198,
+      "contentHash": "sha256:acb9f2c839feeb992186e478dbf8689017ed8af7f05b231266264ddc2c5b9170",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "canonical_adapter",
+      "label": "Legacy-to-canonical adapter",
+      "owner": "engineering",
+      "path": "src/core/documents/documentRequestCanonicalAdapter.js",
+      "markers": [
+        {
+          "marker": "resolveCanonicalDocumentRequestKey",
+          "present": true,
+          "line": 219
+        },
+        {
+          "marker": "income_affordability_documents",
+          "present": true,
+          "line": 42
+        },
+        {
+          "marker": "signed_otp",
+          "present": true,
+          "line": 9
+        }
+      ],
+      "phaseRisk": "Legacy keys must keep mapping until migration and backfill are complete.",
+      "exists": true,
+      "lineCount": 259,
+      "contentHash": "sha256:9d14629b6e0293bc4e932020c59b5fd24f2fe3afff72315726a52e4d7b33acbb",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "canonical_transaction_sync",
+      "label": "Canonical transaction sync",
+      "owner": "engineering",
+      "path": "src/services/documents/documentRequestCanonicalTransactionSyncService.js",
+      "markers": [
+        {
+          "marker": "syncCanonicalRequiredDocumentsForTransactionContext",
+          "present": true,
+          "line": 457
+        },
+        {
+          "marker": "buildCanonicalDocumentRequestScenarioFromTransactionContext",
+          "present": true,
+          "line": 178
+        }
+      ],
+      "phaseRisk": "This is the bridge between calculated policy and transaction rows.",
+      "exists": true,
+      "lineCount": 524,
+      "contentHash": "sha256:59f8bae979b622f1e0fd82fa393bfe17db779f1333141f5d744bc4942ed968a4",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "canonical_required_document_sync",
+      "label": "Canonical required-document row sync",
+      "owner": "engineering",
+      "path": "src/services/documents/documentRequestCanonicalRequiredDocumentSyncService.js",
+      "markers": [
+        {
+          "marker": "transaction_required_documents",
+          "present": true,
+          "line": 180
+        },
+        {
+          "marker": "canonical_requirement_instance_id",
+          "present": true,
+          "line": 9
+        }
+      ],
+      "phaseRisk": "Readiness and upload state must attach to stable canonical requirement rows.",
+      "exists": true,
+      "lineCount": 247,
+      "contentHash": "sha256:22f3721afe70239f690382821510340139b15901d0507b653241b1f3edf07482",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "buyer_legacy_engine",
+      "label": "Buyer legacy requirement engine",
+      "owner": "buyer_onboarding",
+      "path": "src/lib/buyerRequirementEngine.js",
+      "markers": [
+        {
+          "marker": "getBuyerRequirementProfile",
+          "present": true,
+          "line": 92
+        },
+        {
+          "marker": "deriveOnboardingConfiguration",
+          "present": true,
+          "line": 2
+        },
+        {
+          "marker": "legacy",
+          "present": true,
+          "line": 12
+        }
+      ],
+      "phaseRisk": "Buyer generation still has compatibility fallback behavior; Phase 3 should remove surprises.",
+      "exists": true,
+      "lineCount": 473,
+      "contentHash": "sha256:342732be59ec63e921a80e3c9c8f29cab287c16799bea6722ebf14aaa39d2e16",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "buyer_personas",
+      "label": "Buyer persona and employment rules",
+      "owner": "buyer_onboarding",
+      "path": "src/lib/purchaserPersonas.js",
+      "markers": [
+        {
+          "marker": "deriveOnboardingConfiguration",
+          "present": true,
+          "line": 1786
+        },
+        {
+          "marker": "employment_type",
+          "present": true,
+          "line": 226
+        },
+        {
+          "marker": "purchase_finance_type",
+          "present": true,
+          "line": 458
+        }
+      ],
+      "phaseRisk": "Buyer entity and employment rules must be reconciled with canonical and bond requirements.",
+      "exists": true,
+      "lineCount": 2466,
+      "contentHash": "sha256:561d9c4770dede47f3b96654b7550655f2fe001703d67a9d47038d781fb20a3e",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "bond_document_rules",
+      "label": "Bond document rule set",
+      "owner": "bond_ops",
+      "path": "src/modules/bond/application/documents/bondApplicationDocumentRules.js",
+      "markers": [
+        {
+          "marker": "BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION",
+          "present": true,
+          "line": 3
+        },
+        {
+          "marker": "employment",
+          "present": true,
+          "line": 28
+        },
+        {
+          "marker": "self_employed",
+          "present": true,
+          "line": 185
+        }
+      ],
+      "phaseRisk": "Bond child requirements are more granular than the transaction-level canonical row.",
+      "exists": true,
+      "lineCount": 343,
+      "contentHash": "sha256:fb8bd1609fc6411b1f08efba58106c813e3ac7858564fa9793e0d3d984326619",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "seller_requirement_service",
+      "label": "Seller requirement service",
+      "owner": "seller_onboarding",
+      "path": "src/services/sellerDocumentRequirementsService.js",
+      "markers": [
+        {
+          "marker": "getSellerRequiredDocuments",
+          "present": true,
+          "line": 1076
+        },
+        {
+          "marker": "property_acquisition_record",
+          "present": true,
+          "line": 315
+        },
+        {
+          "marker": "capital_improvement_records",
+          "present": true,
+          "line": 316
+        }
+      ],
+      "phaseRisk": "Stale/deferred seller generated keys exist and must stay non-client-facing unless policy approves them.",
+      "exists": true,
+      "lineCount": 2285,
+      "contentHash": "sha256:d70a94b71709d5dd424fa96b612e7f28210861995bcc8c92f72b6b24c7b45f74",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "seller_portal_projection",
+      "label": "Seller portal and document-centre projection",
+      "owner": "client_portal",
+      "path": "src/services/clientPortalWorkspaceService.js",
+      "markers": [
+        {
+          "marker": "buildDocumentCenter",
+          "present": true,
+          "line": 2945
+        },
+        {
+          "marker": "getSellerRequiredDocuments",
+          "present": true,
+          "line": 34
+        },
+        {
+          "marker": "additionalDocumentRequests",
+          "present": true,
+          "line": 1008
+        }
+      ],
+      "phaseRisk": "Portal projection must show the same requirement containers as internal workspaces.",
+      "exists": true,
+      "lineCount": 3657,
+      "contentHash": "sha256:cfe1cd9424025b5a3a9acf938fbec86ed51151f2163992424662c072ff821328",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "client_portal_document_centre",
+      "label": "Client portal document centre UI",
+      "owner": "client_portal",
+      "path": "src/components/client-portal/documents/ClientDocumentCentre.jsx",
+      "markers": [
+        {
+          "marker": "normalizeAdditionalRequest",
+          "present": true,
+          "line": 276
+        },
+        {
+          "marker": "additionalRequests",
+          "present": true,
+          "line": 410
+        },
+        {
+          "marker": "upload",
+          "present": true,
+          "line": 29
+        }
+      ],
+      "phaseRisk": "Ad hoc request containers must remain uploadable from the portal.",
+      "exists": true,
+      "lineCount": 754,
+      "contentHash": "sha256:3a71662da1e5fd07b038adba55fbdc1d1132069f083200013e87a0c970889a20",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "client_portal_page",
+      "label": "Client portal workspace page",
+      "owner": "client_portal",
+      "path": "src/pages/ClientPortal.jsx",
+      "markers": [
+        {
+          "marker": "additionalDocumentRequestsForWorkspace",
+          "present": true,
+          "line": 9984
+        },
+        {
+          "marker": "additionalRequestDocuments",
+          "present": true,
+          "line": 9980
+        },
+        {
+          "marker": "documentCenter",
+          "present": true,
+          "line": 3307
+        }
+      ],
+      "phaseRisk": "Buyer and seller portal filters must not hide valid request containers.",
+      "exists": true,
+      "lineCount": 15826,
+      "contentHash": "sha256:3e652ded69dc3cb069ab00b9512a2c3511977af7488e01fe38ce4fdb5ac5d75f",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "shared_request_api",
+      "label": "Shared transaction document request API",
+      "owner": "platform",
+      "path": "src/lib/api.js",
+      "markers": [
+        {
+          "marker": "createTransactionDocumentRequests",
+          "present": true,
+          "line": 14179
+        },
+        {
+          "marker": "document_request_groups",
+          "present": true,
+          "line": 14221
+        },
+        {
+          "marker": "document_requests",
+          "present": true,
+          "line": 13465
+        },
+        {
+          "marker": "transaction_required_documents",
+          "present": true,
+          "line": 7495
+        }
+      ],
+      "phaseRisk": "Attorney, bond-originator, and agent requests should create shared containers rather than disconnected rows.",
+      "exists": true,
+      "lineCount": 50666,
+      "contentHash": "sha256:e22e69d1f86a39d3024f38345d841858924fe6f2696003899ee3943bc451f836",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "attorney_bond_workspace",
+      "label": "Attorney, agent, and bond-originator transaction workspace",
+      "owner": "workspace",
+      "path": "src/pages/AttorneyTransactionDetail.jsx",
+      "markers": [
+        {
+          "marker": "handleQuickRequestDocuments",
+          "present": true,
+          "line": 13110
+        },
+        {
+          "marker": "createTransactionDocumentRequests",
+          "present": true,
+          "line": 105
+        },
+        {
+          "marker": "requestAttorneyWorkflowLaneDocument",
+          "present": true,
+          "line": 88
+        }
+      ],
+      "phaseRisk": "Quick request actions and lane-specific requests are not yet guaranteed to share one canonical container model.",
+      "exists": true,
+      "lineCount": 19207,
+      "contentHash": "sha256:ae0cbf4a884b3580d62b474e475edb6107aac9d0d87a5821c3b73af34b9c23a5",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "attorney_lane_requests",
+      "label": "Attorney workflow lane document requests",
+      "owner": "attorney_ops",
+      "path": "src/services/attorneyWorkflow/attorneyWorkflowLaneService.js",
+      "markers": [
+        {
+          "marker": "requestAttorneyWorkflowLaneDocument",
+          "present": true,
+          "line": 1917
+        },
+        {
+          "marker": "document_requests",
+          "present": true,
+          "line": 782
+        }
+      ],
+      "phaseRisk": "Lane-specific requests currently write document_requests directly and need a Phase 2 alignment decision.",
+      "exists": true,
+      "lineCount": 2221,
+      "contentHash": "sha256:c3869e7d94da5247abaf97850220aade8db413777b19eb514293f2e65cf835c3",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "attorney_lane_panel",
+      "label": "Attorney lane request UI",
+      "owner": "attorney_ops",
+      "path": "src/components/attorney/workflow/AttorneyWorkflowLanesPanel.jsx",
+      "markers": [
+        {
+          "marker": "requestAttorneyWorkflowLaneDocument",
+          "present": true,
+          "line": 8
+        },
+        {
+          "marker": "Request Document",
+          "present": true,
+          "line": 685
+        }
+      ],
+      "phaseRisk": "Lane request UI must display linked request containers and lifecycle status.",
+      "exists": true,
+      "lineCount": 1212,
+      "contentHash": "sha256:453518cc67f9dca01507620fe7a06d040970368f1397ce5b49a380d3a1a91e3a",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "bond_applications_table",
+      "label": "Bond applications table request action",
+      "owner": "bond_ops",
+      "path": "src/components/BondApplicationsTable.jsx",
+      "markers": [
+        {
+          "marker": "Request Documents",
+          "present": true,
+          "line": 434
+        },
+        {
+          "marker": "disabled",
+          "present": true,
+          "line": 422
+        }
+      ],
+      "phaseRisk": "Visible disabled request actions should be wired to the shared container path in Phase 2/4.",
+      "exists": true,
+      "lineCount": 966,
+      "contentHash": "sha256:6eb3976c9d6ab8331a2e2c1ffde21db29ded2e74853cfde1fdc35c2b5ca23745",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "agent_listing_detail",
+      "label": "Agent listing seller document workspace",
+      "owner": "agent_workspace",
+      "path": "src/pages/AgentListingDetail.jsx",
+      "markers": [
+        {
+          "marker": "uploadPrivateListingDocument",
+          "present": true,
+          "line": 159
+        },
+        {
+          "marker": "sellerDocumentUpload",
+          "present": true,
+          "line": 2789
+        },
+        {
+          "marker": "requiredDocuments",
+          "present": true,
+          "line": 5446
+        }
+      ],
+      "phaseRisk": "Agent upload-on-behalf must cover the same seller requirements exposed in the seller portal.",
+      "exists": true,
+      "lineCount": 12304,
+      "contentHash": "sha256:10ed408848b199d583dfd75ef2769265cec4757f95e6b8bf08b451ff3f5f1304",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "unit_detail_requests",
+      "label": "Unit/detail buyer document requests",
+      "owner": "developer_sales",
+      "path": "src/pages/UnitDetail.jsx",
+      "markers": [
+        {
+          "marker": "createTransactionDocumentRequests",
+          "present": true,
+          "line": 51
+        },
+        {
+          "marker": "getRequiredBuyerDocuments",
+          "present": true,
+          "line": 87
+        }
+      ],
+      "phaseRisk": "Development buyer document requests must be folded into the same canonical/container model.",
+      "exists": true,
+      "lineCount": 11223,
+      "contentHash": "sha256:58b313e2aee4d2d96d1c46c92fd9f77eb57072c7e6f13dc9bb273120023f9888",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    },
+    {
+      "id": "schema_document_tables",
+      "label": "Document request database tables",
+      "owner": "data_platform",
+      "path": "sql/schema.sql",
+      "markers": [
+        {
+          "marker": "create table if not exists document_request_groups",
+          "present": true,
+          "line": 1669
+        },
+        {
+          "marker": "create table if not exists document_requests",
+          "present": true,
+          "line": 1680
+        },
+        {
+          "marker": "create table if not exists transaction_required_documents",
+          "present": true,
+          "line": 2260
+        }
+      ],
+      "phaseRisk": "Canonical requirements and ad hoc requests currently live in separate table families.",
+      "exists": true,
+      "lineCount": 4320,
+      "contentHash": "sha256:0d54acecaaba84550b8ac8ddf3ec45df2613c296107f2808e1ee7338a0467911",
+      "missingMarkers": [],
+      "readOnlyPhase0Action": "map_and_freeze"
+    }
+  ],
+  "deferredOrSuspiciousKeys": [
+    {
+      "key": "property_acquisition_record",
+      "expectedPhase0Disposition": "freeze_as_not_client_requested",
+      "reason": "No confirmed reason to ask sellers for acquisition records during early onboarding.",
+      "appearances": [
+        {
+          "surfaceId": "seller_requirement_service",
+          "path": "src/services/sellerDocumentRequirementsService.js",
+          "line": 315
+        },
+        {
+          "surfaceId": "seller_portal_projection",
+          "path": "src/services/clientPortalWorkspaceService.js",
+          "line": 1544
+        }
+      ],
+      "currentlyPresentInSource": true
+    },
+    {
+      "key": "capital_improvement_records",
+      "expectedPhase0Disposition": "freeze_as_not_client_requested",
+      "reason": "Potential CGT/supporting-evidence use should not become a default upload request without legal approval.",
+      "appearances": [
+        {
+          "surfaceId": "seller_requirement_service",
+          "path": "src/services/sellerDocumentRequirementsService.js",
+          "line": 316
+        },
+        {
+          "surfaceId": "seller_portal_projection",
+          "path": "src/services/clientPortalWorkspaceService.js",
+          "line": 1545
+        }
+      ],
+      "currentlyPresentInSource": true
+    }
+  ],
+  "phase0Findings": [
+    {
+      "id": "canonical_policy_exists_but_pending",
+      "severity": "medium",
+      "finding": "The canonical legal checklist exists, but several policy decisions are still pending signoff.",
+      "nextPhase": "Phase 1"
+    },
+    {
+      "id": "request_containers_are_shared_but_not_full_readiness_source",
+      "severity": "high",
+      "finding": "The shared createTransactionDocumentRequests path creates request containers, but Phase 2 must prove they count consistently in canonical readiness and every workspace projection.",
+      "nextPhase": "Phase 2"
+    },
+    {
+      "id": "buyer_legacy_fallback_still_present",
+      "severity": "medium",
+      "finding": "Buyer-side generation still has legacy compatibility paths that need explicit canonical migration coverage.",
+      "nextPhase": "Phase 3"
+    },
+    {
+      "id": "bond_child_requirements_need_parent_mapping",
+      "severity": "medium",
+      "finding": "Bond application document rules are more granular than the transaction-level income affordability canonical requirement.",
+      "nextPhase": "Phase 4"
+    },
+    {
+      "id": "seller_deferred_keys_present_in_source",
+      "severity": "medium",
+      "finding": "Seller acquisition/improvement keys are present in source and should remain frozen from default client requests until legally approved.",
+      "nextPhase": "Phase 5"
+    },
+    {
+      "id": "upload_on_behalf_needs_cross_role_parity",
+      "severity": "high",
+      "finding": "Phase 7 must prove agent-assisted buyer and seller uploads satisfy the same containers the client portal shows.",
+      "nextPhase": "Phase 7"
+    }
+  ],
+  "gate": {
+    "status": "mapped",
+    "missingFiles": [],
+    "missingMarkers": [],
+    "mayProceedToPhase1": true,
+    "requiresRuntimeChange": false
+  }
+}

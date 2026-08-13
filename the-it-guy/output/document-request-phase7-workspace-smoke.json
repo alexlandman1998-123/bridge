@@ -1,0 +1,578 @@
+{
+  "phase": "document_request_phase7_workspace_smoke",
+  "generatedAt": "2026-08-13T16:17:53.224Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "version": "document_request_workspace_smoke_v1",
+  "transactionId": "phase7-workspace-smoke-transaction",
+  "scenario": {
+    "buyerEntityType": "trust",
+    "sellerEntityType": "company",
+    "financeType": "hybrid",
+    "sellerHasExistingBond": true,
+    "propertyType": "sectional_title",
+    "propertyTriggers": [
+      "sectional_title",
+      "gas_installation",
+      "electric_fence",
+      "solar_installation",
+      "tenant_occupied"
+    ]
+  },
+  "fixtureSummary": {
+    "requiredDocumentCount": 25,
+    "additionalRequestCount": 5,
+    "buyerPlanCount": 11,
+    "sellerPlanCount": 16,
+    "attorneyPlanCount": 31,
+    "bondOriginatorPlanCount": 5
+  },
+  "audienceSummaries": {
+    "buyer": {
+      "total": 13,
+      "canonicalRequired": 10,
+      "additionalRequests": 3,
+      "blocking": 13,
+      "uploaded": 0,
+      "byRequestedFrom": {
+        "buyer": 12,
+        "buyer_and_seller": 1
+      },
+      "byAudience": {
+        "agent": 13,
+        "attorney": 13,
+        "internal": 13,
+        "buyer": 13,
+        "bond_originator": 4,
+        "transfer_attorney": 2,
+        "seller": 1
+      },
+      "byStatus": {
+        "required": 10,
+        "requested": 3
+      }
+    },
+    "seller": {
+      "total": 17,
+      "canonicalRequired": 15,
+      "additionalRequests": 2,
+      "blocking": 17,
+      "uploaded": 0,
+      "byRequestedFrom": {
+        "seller": 16,
+        "buyer_and_seller": 1
+      },
+      "byAudience": {
+        "agent": 17,
+        "attorney": 17,
+        "internal": 17,
+        "seller": 17,
+        "cancellation_attorney": 1,
+        "transfer_attorney": 1,
+        "buyer": 1
+      },
+      "byStatus": {
+        "required": 15,
+        "requested": 2
+      }
+    },
+    "agent": {
+      "total": 30,
+      "canonicalRequired": 25,
+      "additionalRequests": 5,
+      "blocking": 30,
+      "uploaded": 0,
+      "byRequestedFrom": {
+        "buyer": 12,
+        "seller": 16,
+        "buyer_and_seller": 1,
+        "bond_originator": 1
+      },
+      "byAudience": {
+        "agent": 30,
+        "attorney": 30,
+        "internal": 30,
+        "buyer": 13,
+        "bond_originator": 5,
+        "seller": 17,
+        "transfer_attorney": 2,
+        "cancellation_attorney": 1
+      },
+      "byStatus": {
+        "required": 25,
+        "requested": 5
+      }
+    },
+    "attorney": {
+      "total": 30,
+      "canonicalRequired": 25,
+      "additionalRequests": 5,
+      "blocking": 30,
+      "uploaded": 0,
+      "byRequestedFrom": {
+        "buyer": 12,
+        "seller": 16,
+        "buyer_and_seller": 1,
+        "bond_originator": 1
+      },
+      "byAudience": {
+        "agent": 30,
+        "attorney": 30,
+        "internal": 30,
+        "buyer": 13,
+        "bond_originator": 5,
+        "seller": 17,
+        "transfer_attorney": 2,
+        "cancellation_attorney": 1
+      },
+      "byStatus": {
+        "required": 25,
+        "requested": 5
+      }
+    },
+    "transfer_attorney": {
+      "total": 2,
+      "canonicalRequired": 0,
+      "additionalRequests": 2,
+      "blocking": 2,
+      "uploaded": 0,
+      "byRequestedFrom": {
+        "buyer": 1,
+        "buyer_and_seller": 1
+      },
+      "byAudience": {
+        "agent": 2,
+        "attorney": 2,
+        "internal": 2,
+        "transfer_attorney": 2,
+        "buyer": 2,
+        "seller": 1
+      },
+      "byStatus": {
+        "requested": 2
+      }
+    },
+    "cancellation_attorney": {
+      "total": 1,
+      "canonicalRequired": 0,
+      "additionalRequests": 1,
+      "blocking": 1,
+      "uploaded": 0,
+      "byRequestedFrom": {
+        "seller": 1
+      },
+      "byAudience": {
+        "agent": 1,
+        "attorney": 1,
+        "internal": 1,
+        "cancellation_attorney": 1,
+        "seller": 1
+      },
+      "byStatus": {
+        "requested": 1
+      }
+    },
+    "bond_originator": {
+      "total": 5,
+      "canonicalRequired": 3,
+      "additionalRequests": 2,
+      "blocking": 5,
+      "uploaded": 0,
+      "byRequestedFrom": {
+        "buyer": 4,
+        "bond_originator": 1
+      },
+      "byAudience": {
+        "agent": 5,
+        "attorney": 5,
+        "internal": 5,
+        "buyer": 4,
+        "bond_originator": 5
+      },
+      "byStatus": {
+        "required": 3,
+        "requested": 2
+      }
+    },
+    "internal": {
+      "total": 30,
+      "canonicalRequired": 25,
+      "additionalRequests": 5,
+      "blocking": 30,
+      "uploaded": 0,
+      "byRequestedFrom": {
+        "buyer": 12,
+        "seller": 16,
+        "buyer_and_seller": 1,
+        "bond_originator": 1
+      },
+      "byAudience": {
+        "agent": 30,
+        "attorney": 30,
+        "internal": 30,
+        "buyer": 13,
+        "bond_originator": 5,
+        "seller": 17,
+        "transfer_attorney": 2,
+        "cancellation_attorney": 1
+      },
+      "byStatus": {
+        "required": 25,
+        "requested": 5
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "buyer_portal_smoke",
+      "audience": "buyer",
+      "total": 13,
+      "additionalRequests": 3,
+      "blocking": 13,
+      "keys": [
+        "buyer_fica_pack",
+        "buyer_source_of_funds",
+        "buyer_trust_deed",
+        "buyer_letters_of_authority",
+        "buyer_trustee_resolution",
+        "buyer_trustee_fica",
+        "proof_of_funds_cash_component",
+        "bond_approval",
+        "grant_signed",
+        "income_affordability_documents",
+        "updated_buyer_fica",
+        "signed_clarification"
+      ],
+      "requestIds": [
+        "phase6-transfer-buyer-request",
+        "phase6-originator-buyer-request",
+        "phase6-transfer-both-request"
+      ],
+      "missingKeys": [],
+      "leakedKeys": [],
+      "missingRequests": [],
+      "leakedRequests": [],
+      "deferredSellerUploadLeak": false,
+      "ok": true
+    },
+    {
+      "id": "seller_portal_smoke",
+      "audience": "seller",
+      "total": 17,
+      "additionalRequests": 2,
+      "blocking": 17,
+      "keys": [
+        "seller_fica_pack",
+        "rates_clearance",
+        "seller_company_registration",
+        "seller_company_resolution",
+        "seller_director_fica",
+        "title_deed_copy",
+        "rates_account",
+        "property_condition_disclosure",
+        "seller_bank_account_confirmation",
+        "seller_tax_number",
+        "bond_statement",
+        "electrical_compliance_certificate",
+        "levy_statement",
+        "body_corporate_details",
+        "lease_agreement",
+        "signed_clarification"
+      ],
+      "requestIds": [
+        "phase6-cancellation-seller-request",
+        "phase6-transfer-both-request"
+      ],
+      "missingKeys": [],
+      "leakedKeys": [],
+      "missingRequests": [],
+      "leakedRequests": [],
+      "deferredSellerUploadLeak": false,
+      "ok": true
+    },
+    {
+      "id": "agent_workspace_smoke",
+      "audience": "agent",
+      "total": 30,
+      "additionalRequests": 5,
+      "blocking": 30,
+      "keys": [
+        "buyer_fica_pack",
+        "buyer_source_of_funds",
+        "buyer_trust_deed",
+        "buyer_letters_of_authority",
+        "buyer_trustee_resolution",
+        "buyer_trustee_fica",
+        "proof_of_funds_cash_component",
+        "bond_approval",
+        "grant_signed",
+        "income_affordability_documents",
+        "seller_fica_pack",
+        "rates_clearance",
+        "seller_company_registration",
+        "seller_company_resolution",
+        "seller_director_fica",
+        "title_deed_copy",
+        "rates_account",
+        "property_condition_disclosure",
+        "seller_bank_account_confirmation",
+        "seller_tax_number",
+        "bond_statement",
+        "electrical_compliance_certificate",
+        "levy_statement",
+        "body_corporate_details",
+        "lease_agreement",
+        "updated_buyer_fica",
+        "signed_clarification",
+        "bank_valuation_follow_up"
+      ],
+      "requestIds": [
+        "phase6-transfer-buyer-request",
+        "phase6-cancellation-seller-request",
+        "phase6-originator-buyer-request",
+        "phase6-transfer-both-request",
+        "phase6-originator-professional-request"
+      ],
+      "missingKeys": [],
+      "leakedKeys": [],
+      "missingRequests": [],
+      "leakedRequests": [],
+      "deferredSellerUploadLeak": false,
+      "ok": true
+    },
+    {
+      "id": "attorney_workspace_smoke",
+      "audience": "attorney",
+      "total": 30,
+      "additionalRequests": 5,
+      "blocking": 30,
+      "keys": [
+        "buyer_fica_pack",
+        "buyer_source_of_funds",
+        "buyer_trust_deed",
+        "buyer_letters_of_authority",
+        "buyer_trustee_resolution",
+        "buyer_trustee_fica",
+        "proof_of_funds_cash_component",
+        "bond_approval",
+        "grant_signed",
+        "income_affordability_documents",
+        "seller_fica_pack",
+        "rates_clearance",
+        "seller_company_registration",
+        "seller_company_resolution",
+        "seller_director_fica",
+        "title_deed_copy",
+        "rates_account",
+        "property_condition_disclosure",
+        "seller_bank_account_confirmation",
+        "seller_tax_number",
+        "bond_statement",
+        "electrical_compliance_certificate",
+        "levy_statement",
+        "body_corporate_details",
+        "lease_agreement",
+        "updated_buyer_fica",
+        "signed_clarification",
+        "bank_valuation_follow_up"
+      ],
+      "requestIds": [
+        "phase6-transfer-buyer-request",
+        "phase6-cancellation-seller-request",
+        "phase6-originator-buyer-request",
+        "phase6-transfer-both-request",
+        "phase6-originator-professional-request"
+      ],
+      "missingKeys": [],
+      "leakedKeys": [],
+      "missingRequests": [],
+      "leakedRequests": [],
+      "deferredSellerUploadLeak": false,
+      "ok": true
+    },
+    {
+      "id": "bond_originator_workspace_smoke",
+      "audience": "bond_originator",
+      "total": 5,
+      "additionalRequests": 2,
+      "blocking": 5,
+      "keys": [
+        "bond_approval",
+        "grant_signed",
+        "income_affordability_documents",
+        "bank_valuation_follow_up"
+      ],
+      "requestIds": [
+        "phase6-originator-buyer-request",
+        "phase6-originator-professional-request"
+      ],
+      "missingKeys": [],
+      "leakedKeys": [],
+      "missingRequests": [],
+      "leakedRequests": [],
+      "deferredSellerUploadLeak": false,
+      "ok": true
+    },
+    {
+      "id": "internal_workspace_smoke",
+      "audience": "internal",
+      "total": 30,
+      "additionalRequests": 5,
+      "blocking": 30,
+      "keys": [
+        "buyer_fica_pack",
+        "buyer_source_of_funds",
+        "buyer_trust_deed",
+        "buyer_letters_of_authority",
+        "buyer_trustee_resolution",
+        "buyer_trustee_fica",
+        "proof_of_funds_cash_component",
+        "bond_approval",
+        "grant_signed",
+        "income_affordability_documents",
+        "seller_fica_pack",
+        "rates_clearance",
+        "seller_company_registration",
+        "seller_company_resolution",
+        "seller_director_fica",
+        "title_deed_copy",
+        "rates_account",
+        "property_condition_disclosure",
+        "seller_bank_account_confirmation",
+        "seller_tax_number",
+        "bond_statement",
+        "electrical_compliance_certificate",
+        "levy_statement",
+        "body_corporate_details",
+        "lease_agreement",
+        "updated_buyer_fica",
+        "signed_clarification",
+        "bank_valuation_follow_up"
+      ],
+      "requestIds": [
+        "phase6-transfer-buyer-request",
+        "phase6-cancellation-seller-request",
+        "phase6-originator-buyer-request",
+        "phase6-transfer-both-request",
+        "phase6-originator-professional-request"
+      ],
+      "missingKeys": [],
+      "leakedKeys": [],
+      "missingRequests": [],
+      "leakedRequests": [],
+      "deferredSellerUploadLeak": false,
+      "ok": true
+    }
+  ],
+  "crossAudienceContainerIds": [
+    {
+      "requestId": "phase6-transfer-buyer-request",
+      "containerIds": [
+        "request:phase6-transfer-buyer-request"
+      ],
+      "stable": true
+    },
+    {
+      "requestId": "phase6-cancellation-seller-request",
+      "containerIds": [
+        "request:phase6-cancellation-seller-request"
+      ],
+      "stable": true
+    },
+    {
+      "requestId": "phase6-originator-buyer-request",
+      "containerIds": [
+        "request:phase6-originator-buyer-request"
+      ],
+      "stable": true
+    },
+    {
+      "requestId": "phase6-transfer-both-request",
+      "containerIds": [
+        "request:phase6-transfer-both-request"
+      ],
+      "stable": true
+    },
+    {
+      "requestId": "phase6-originator-professional-request",
+      "containerIds": [
+        "request:phase6-originator-professional-request"
+      ],
+      "stable": true
+    }
+  ],
+  "failed": [],
+  "unstableContainerIds": [],
+  "summary": {
+    "failedSmokeCount": 0,
+    "unstableContainerIdCount": 0,
+    "deferredSellerUploadLeakCount": 0,
+    "buyerContainerCount": 13,
+    "sellerContainerCount": 17,
+    "agentContainerCount": 30,
+    "attorneyContainerCount": 30,
+    "bondOriginatorContainerCount": 5,
+    "internalContainerCount": 30
+  },
+  "phase7Decisions": [
+    {
+      "key": "workspace_smoke_matrix",
+      "decision": "Phase 7 uses a synthetic but canonical transaction fixture to smoke buyer, seller, agent, attorney, bond-originator, and internal audiences."
+    },
+    {
+      "key": "same_container_everywhere",
+      "decision": "The same document_requests row must resolve to the same request container id wherever it is visible."
+    },
+    {
+      "key": "deferred_seller_docs_guard",
+      "decision": "Acquisition and capital-improvement records remain blocked from seller upload smoke fixtures."
+    }
+  ],
+  "gate": {
+    "status": "workspace_smoke_mapped",
+    "ok": true,
+    "mayProceedToPhase8": true,
+    "productionActivationReady": true,
+    "checks": [
+      {
+        "key": "workspace_smoke_service_exists",
+        "ok": true
+      },
+      {
+        "key": "client_portal_document_center_returns_containers",
+        "ok": true
+      },
+      {
+        "key": "client_portal_consumes_additional_requests",
+        "ok": true
+      },
+      {
+        "key": "agent_workspace_can_create_additional_requests",
+        "ok": true
+      },
+      {
+        "key": "attorney_workspace_can_create_additional_requests",
+        "ok": true
+      },
+      {
+        "key": "attorney_lane_request_ui_wired",
+        "ok": true
+      },
+      {
+        "key": "workspace_smoke_passed",
+        "ok": true
+      },
+      {
+        "key": "container_ids_stable_across_audiences",
+        "ok": true
+      },
+      {
+        "key": "no_deferred_seller_upload_leak",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "warnings": []
+  }
+}

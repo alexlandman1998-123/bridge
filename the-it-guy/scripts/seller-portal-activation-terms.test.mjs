@@ -74,6 +74,11 @@ assert.match(clientPortalPage, /buildSellerPortalActivationTermsAcceptance\(\{[\
 assert.match(clientPortalPage, /termsConfig=\{sellerPortalTermsConfig\}/)
 assert.match(clientPortalPage, /termsConfigForAcceptance = await fetchSellerPortalActivationTermsConfig\(\)/)
 assert.match(clientPortalPage, /termsConfig: termsConfigForAcceptance/)
+assert.match(clientPortalPage, /portalLoadRequestRef = useRef\(0\)/)
+assert.match(clientPortalPage, /sellerPortalAccessTokenOverride = ''/)
+assert.match(clientPortalPage, /sellerPortalAccessToken: isSellerPortalToken \? effectiveSellerPortalAccessToken : ''/)
+assert.match(clientPortalPage, /if \(!isCurrentLoad\(\)\) return/)
+assert.match(clientPortalPage, /loadPortal\(\{ sellerPortalAccessTokenOverride: accessToken \}\)/)
 assert.doesNotMatch(clientPortalPage, /buildArch9SellerTermsAcceptance/)
 
 console.log('seller portal activation terms checks passed')

@@ -1,0 +1,586 @@
+{
+  "phase": "document_request_phase4_bond_model",
+  "generatedAt": "2026-08-13T16:17:51.107Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "modelVersion": "bond_application_canonical_document_model_v1",
+  "scenarioModels": [
+    {
+      "id": "permanent_employee",
+      "activeChildRequirementCount": 5,
+      "requiredChildRequirementCount": 5,
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "originatorVisibleParentKeys": [
+        "income_affordability_documents"
+      ],
+      "byCanonicalParentKey": {
+        "buyer_id_document": 1,
+        "buyer_proof_of_address": 1,
+        "income_affordability_documents": 3
+      },
+      "buyerContainerSummary": {
+        "total": 3,
+        "canonicalRequired": 3,
+        "additionalRequests": 0,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 3
+        }
+      },
+      "bondOriginatorContainerSummary": {
+        "total": 1,
+        "canonicalRequired": 1,
+        "additionalRequests": 0,
+        "blocking": 1,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 1
+        },
+        "byAudience": {
+          "agent": 1,
+          "attorney": 1,
+          "internal": 1,
+          "buyer": 1,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1
+        }
+      }
+    },
+    {
+      "id": "contract_employee",
+      "activeChildRequirementCount": 6,
+      "requiredChildRequirementCount": 6,
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "originatorVisibleParentKeys": [
+        "income_affordability_documents"
+      ],
+      "byCanonicalParentKey": {
+        "buyer_id_document": 1,
+        "buyer_proof_of_address": 1,
+        "income_affordability_documents": 4
+      },
+      "buyerContainerSummary": {
+        "total": 3,
+        "canonicalRequired": 3,
+        "additionalRequests": 0,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 3
+        }
+      },
+      "bondOriginatorContainerSummary": {
+        "total": 1,
+        "canonicalRequired": 1,
+        "additionalRequests": 0,
+        "blocking": 1,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 1
+        },
+        "byAudience": {
+          "agent": 1,
+          "attorney": 1,
+          "internal": 1,
+          "buyer": 1,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1
+        }
+      }
+    },
+    {
+      "id": "self_employed",
+      "activeChildRequirementCount": 6,
+      "requiredChildRequirementCount": 6,
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "originatorVisibleParentKeys": [
+        "income_affordability_documents"
+      ],
+      "byCanonicalParentKey": {
+        "buyer_id_document": 1,
+        "buyer_proof_of_address": 1,
+        "income_affordability_documents": 4
+      },
+      "buyerContainerSummary": {
+        "total": 3,
+        "canonicalRequired": 3,
+        "additionalRequests": 0,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 3
+        }
+      },
+      "bondOriginatorContainerSummary": {
+        "total": 1,
+        "canonicalRequired": 1,
+        "additionalRequests": 0,
+        "blocking": 1,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 1
+        },
+        "byAudience": {
+          "agent": 1,
+          "attorney": 1,
+          "internal": 1,
+          "buyer": 1,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1
+        }
+      }
+    },
+    {
+      "id": "commission_based",
+      "activeChildRequirementCount": 6,
+      "requiredChildRequirementCount": 6,
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "originatorVisibleParentKeys": [
+        "income_affordability_documents"
+      ],
+      "byCanonicalParentKey": {
+        "buyer_id_document": 1,
+        "buyer_proof_of_address": 1,
+        "income_affordability_documents": 4
+      },
+      "buyerContainerSummary": {
+        "total": 3,
+        "canonicalRequired": 3,
+        "additionalRequests": 0,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 3
+        }
+      },
+      "bondOriginatorContainerSummary": {
+        "total": 1,
+        "canonicalRequired": 1,
+        "additionalRequests": 0,
+        "blocking": 1,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 1
+        },
+        "byAudience": {
+          "agent": 1,
+          "attorney": 1,
+          "internal": 1,
+          "buyer": 1,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1
+        }
+      }
+    },
+    {
+      "id": "retired",
+      "activeChildRequirementCount": 5,
+      "requiredChildRequirementCount": 5,
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "originatorVisibleParentKeys": [
+        "income_affordability_documents"
+      ],
+      "byCanonicalParentKey": {
+        "buyer_id_document": 1,
+        "buyer_proof_of_address": 1,
+        "income_affordability_documents": 3
+      },
+      "buyerContainerSummary": {
+        "total": 3,
+        "canonicalRequired": 3,
+        "additionalRequests": 0,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 3
+        }
+      },
+      "bondOriginatorContainerSummary": {
+        "total": 1,
+        "canonicalRequired": 1,
+        "additionalRequests": 0,
+        "blocking": 1,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 1
+        },
+        "byAudience": {
+          "agent": 1,
+          "attorney": 1,
+          "internal": 1,
+          "buyer": 1,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1
+        }
+      }
+    },
+    {
+      "id": "other_income",
+      "activeChildRequirementCount": 5,
+      "requiredChildRequirementCount": 5,
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "originatorVisibleParentKeys": [
+        "income_affordability_documents"
+      ],
+      "byCanonicalParentKey": {
+        "buyer_id_document": 1,
+        "buyer_proof_of_address": 1,
+        "income_affordability_documents": 3
+      },
+      "buyerContainerSummary": {
+        "total": 3,
+        "canonicalRequired": 3,
+        "additionalRequests": 0,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 3
+        }
+      },
+      "bondOriginatorContainerSummary": {
+        "total": 1,
+        "canonicalRequired": 1,
+        "additionalRequests": 0,
+        "blocking": 1,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 1
+        },
+        "byAudience": {
+          "agent": 1,
+          "attorney": 1,
+          "internal": 1,
+          "buyer": 1,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1
+        }
+      }
+    },
+    {
+      "id": "existing_property",
+      "activeChildRequirementCount": 6,
+      "requiredChildRequirementCount": 6,
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "originatorVisibleParentKeys": [
+        "income_affordability_documents"
+      ],
+      "byCanonicalParentKey": {
+        "buyer_id_document": 1,
+        "buyer_proof_of_address": 1,
+        "income_affordability_documents": 4
+      },
+      "buyerContainerSummary": {
+        "total": 3,
+        "canonicalRequired": 3,
+        "additionalRequests": 0,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 3
+        }
+      },
+      "bondOriginatorContainerSummary": {
+        "total": 1,
+        "canonicalRequired": 1,
+        "additionalRequests": 0,
+        "blocking": 1,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 1
+        },
+        "byAudience": {
+          "agent": 1,
+          "attorney": 1,
+          "internal": 1,
+          "buyer": 1,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1
+        }
+      }
+    },
+    {
+      "id": "credit_history",
+      "activeChildRequirementCount": 6,
+      "requiredChildRequirementCount": 6,
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "originatorVisibleParentKeys": [
+        "income_affordability_documents"
+      ],
+      "byCanonicalParentKey": {
+        "buyer_id_document": 1,
+        "buyer_proof_of_address": 1,
+        "income_affordability_documents": 4
+      },
+      "buyerContainerSummary": {
+        "total": 3,
+        "canonicalRequired": 3,
+        "additionalRequests": 0,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 3
+        }
+      },
+      "bondOriginatorContainerSummary": {
+        "total": 1,
+        "canonicalRequired": 1,
+        "additionalRequests": 0,
+        "blocking": 1,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 1
+        },
+        "byAudience": {
+          "agent": 1,
+          "attorney": 1,
+          "internal": 1,
+          "buyer": 1,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1
+        }
+      }
+    },
+    {
+      "id": "no_deposit",
+      "activeChildRequirementCount": 4,
+      "requiredChildRequirementCount": 4,
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "originatorVisibleParentKeys": [
+        "income_affordability_documents"
+      ],
+      "byCanonicalParentKey": {
+        "buyer_id_document": 1,
+        "buyer_proof_of_address": 1,
+        "income_affordability_documents": 2
+      },
+      "buyerContainerSummary": {
+        "total": 3,
+        "canonicalRequired": 3,
+        "additionalRequests": 0,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 3
+        }
+      },
+      "bondOriginatorContainerSummary": {
+        "total": 1,
+        "canonicalRequired": 1,
+        "additionalRequests": 0,
+        "blocking": 1,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 1
+        },
+        "byAudience": {
+          "agent": 1,
+          "attorney": 1,
+          "internal": 1,
+          "buyer": 1,
+          "bond_originator": 1
+        },
+        "byStatus": {
+          "missing": 1
+        }
+      }
+    }
+  ],
+  "unmapped": [],
+  "phase4Decisions": [
+    {
+      "key": "bond_child_parent_model",
+      "decision": "Bond application documents stay granular in the bond workflow but roll up to canonical transaction parent containers."
+    },
+    {
+      "key": "originator_visibility",
+      "decision": "Bond originators see finance parent containers, especially income_affordability_documents, not unrelated seller or transfer documents."
+    },
+    {
+      "key": "schema_safety",
+      "decision": "Phase 4 does not add unknown columns to transaction_required_documents; canonical parent metadata is model/report data until migration is designed."
+    }
+  ],
+  "gate": {
+    "status": "bond_model_mapped_with_warnings",
+    "ok": true,
+    "mayProceedToPhase5": true,
+    "productionActivationReady": false,
+    "checks": [
+      {
+        "key": "bond_rules_still_granular",
+        "ok": true
+      },
+      {
+        "key": "bond_parent_model_exists",
+        "ok": true
+      },
+      {
+        "key": "income_children_roll_up",
+        "ok": true
+      },
+      {
+        "key": "originator_finance_container_visible",
+        "ok": true
+      },
+      {
+        "key": "no_unmapped_bond_children",
+        "ok": true
+      },
+      {
+        "key": "container_model_originator_finance_keys",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "warnings": [
+      {
+        "code": "bond_parent_is_broad",
+        "message": "Granular bond upload rows intentionally roll up to the broad canonical income_affordability_documents parent until Phase 4 child-container activation is approved."
+      }
+    ]
+  }
+}

@@ -1,0 +1,1141 @@
+{
+  "phase": "document_request_phase3_buyer_cleanup",
+  "generatedAt": "2026-08-13T16:17:50.571Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "audit": {
+    "version": "buyer_document_canonical_cleanup_v1",
+    "scenarioCount": 8,
+    "results": [
+      {
+        "id": "individual_cash",
+        "label": "Individual cash buyer",
+        "profile": {
+          "version": "buyer_document_canonical_cleanup_v1",
+          "buyerType": "individual",
+          "buyerEntityType": "individual",
+          "financeType": "cash",
+          "financeBranch": "cash",
+          "scenario": {
+            "buyerEntityType": "individual",
+            "buyerMaritalRegime": "individual",
+            "financeType": "cash"
+          },
+          "legacyRequirementCount": 6,
+          "mappedRequirementCount": 6,
+          "buyerClientUploadCount": 4,
+          "requestableBuyerClientUploadCount": 4,
+          "canonicalPlanRequestCount": 6,
+          "canonicalPlanRequestableCount": 6,
+          "unmappedRows": [],
+          "professionalOnlyLegacyRows": [
+            {
+              "key": "otp",
+              "canonicalKey": "signed_otp",
+              "ownerRole": "agent",
+              "visibility": "professional_shared"
+            },
+            {
+              "key": "transfer_documents",
+              "canonicalKey": "transfer_documents",
+              "ownerRole": "transfer_attorney",
+              "visibility": "professional_shared"
+            }
+          ],
+          "pendingPolicyLegacyRows": [],
+          "duplicateCanonicalGroups": [],
+          "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_marital_status_details",
+            "buyer_source_of_funds"
+          ],
+          "extraLegacyKeysOutsideBuyerUpload": [
+            "otp",
+            "transfer_documents"
+          ],
+          "buyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "proof_of_funds"
+          ],
+          "requestableBuyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "proof_of_funds"
+          ],
+          "canonicalPlanKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_marital_status_details",
+            "buyer_source_of_funds",
+            "proof_of_funds"
+          ],
+          "canonicalPlanRequestableKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_marital_status_details",
+            "buyer_source_of_funds",
+            "proof_of_funds"
+          ],
+          "containerSummary": {
+            "total": 6,
+            "canonicalRequired": 6,
+            "additionalRequests": 0,
+            "blocking": 6,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 6
+            },
+            "byAudience": {
+              "agent": 6,
+              "attorney": 6,
+              "internal": 6,
+              "buyer": 6
+            },
+            "byStatus": {
+              "required": 6
+            }
+          }
+        }
+      },
+      {
+        "id": "individual_bond_salaried",
+        "label": "Individual bond buyer, salaried",
+        "profile": {
+          "version": "buyer_document_canonical_cleanup_v1",
+          "buyerType": "individual",
+          "buyerEntityType": "individual",
+          "financeType": "bond",
+          "financeBranch": "bond",
+          "scenario": {
+            "buyerEntityType": "individual",
+            "buyerMaritalRegime": "individual",
+            "financeType": "bond"
+          },
+          "legacyRequirementCount": 9,
+          "mappedRequirementCount": 9,
+          "buyerClientUploadCount": 7,
+          "requestableBuyerClientUploadCount": 7,
+          "canonicalPlanRequestCount": 7,
+          "canonicalPlanRequestableCount": 7,
+          "unmappedRows": [],
+          "professionalOnlyLegacyRows": [
+            {
+              "key": "otp",
+              "canonicalKey": "signed_otp",
+              "ownerRole": "agent",
+              "visibility": "professional_shared"
+            },
+            {
+              "key": "transfer_documents",
+              "canonicalKey": "transfer_documents",
+              "ownerRole": "transfer_attorney",
+              "visibility": "professional_shared"
+            }
+          ],
+          "pendingPolicyLegacyRows": [],
+          "duplicateCanonicalGroups": [
+            {
+              "canonicalKey": "income_affordability_documents",
+              "legacyKeys": [
+                "payslips_3_months",
+                "bank_statements_3_months"
+              ]
+            }
+          ],
+          "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_marital_status_details"
+          ],
+          "extraLegacyKeysOutsideBuyerUpload": [
+            "otp",
+            "transfer_documents"
+          ],
+          "buyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "income_affordability_documents",
+            "bond_approval",
+            "grant_signed"
+          ],
+          "requestableBuyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "income_affordability_documents",
+            "bond_approval",
+            "grant_signed"
+          ],
+          "canonicalPlanKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_marital_status_details",
+            "bond_approval",
+            "grant_signed",
+            "income_affordability_documents"
+          ],
+          "canonicalPlanRequestableKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_marital_status_details",
+            "bond_approval",
+            "grant_signed",
+            "income_affordability_documents"
+          ],
+          "containerSummary": {
+            "total": 7,
+            "canonicalRequired": 7,
+            "additionalRequests": 0,
+            "blocking": 7,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 7
+            },
+            "byAudience": {
+              "agent": 7,
+              "attorney": 7,
+              "internal": 7,
+              "buyer": 7,
+              "bond_originator": 3
+            },
+            "byStatus": {
+              "required": 7
+            }
+          }
+        }
+      },
+      {
+        "id": "individual_hybrid_self_employed",
+        "label": "Individual hybrid buyer, self-employed",
+        "profile": {
+          "version": "buyer_document_canonical_cleanup_v1",
+          "buyerType": "individual",
+          "buyerEntityType": "individual",
+          "financeType": "combination",
+          "financeBranch": "hybrid",
+          "scenario": {
+            "buyerEntityType": "individual",
+            "buyerMaritalRegime": "individual",
+            "financeType": "hybrid"
+          },
+          "legacyRequirementCount": 12,
+          "mappedRequirementCount": 12,
+          "buyerClientUploadCount": 10,
+          "requestableBuyerClientUploadCount": 10,
+          "canonicalPlanRequestCount": 9,
+          "canonicalPlanRequestableCount": 9,
+          "unmappedRows": [],
+          "professionalOnlyLegacyRows": [
+            {
+              "key": "otp",
+              "canonicalKey": "signed_otp",
+              "ownerRole": "agent",
+              "visibility": "professional_shared"
+            },
+            {
+              "key": "transfer_documents",
+              "canonicalKey": "transfer_documents",
+              "ownerRole": "transfer_attorney",
+              "visibility": "professional_shared"
+            }
+          ],
+          "pendingPolicyLegacyRows": [],
+          "duplicateCanonicalGroups": [
+            {
+              "canonicalKey": "income_affordability_documents",
+              "legacyKeys": [
+                "bank_statements_12_months",
+                "financial_statements",
+                "tax_returns_latest",
+                "accountant_letter"
+              ]
+            }
+          ],
+          "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_marital_status_details",
+            "buyer_source_of_funds"
+          ],
+          "extraLegacyKeysOutsideBuyerUpload": [
+            "otp",
+            "transfer_documents"
+          ],
+          "buyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "income_affordability_documents",
+            "bond_approval",
+            "grant_signed",
+            "proof_of_funds_cash_component"
+          ],
+          "requestableBuyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "income_affordability_documents",
+            "bond_approval",
+            "grant_signed",
+            "proof_of_funds_cash_component"
+          ],
+          "canonicalPlanKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_marital_status_details",
+            "buyer_source_of_funds",
+            "proof_of_funds_cash_component",
+            "bond_approval",
+            "grant_signed",
+            "income_affordability_documents"
+          ],
+          "canonicalPlanRequestableKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_marital_status_details",
+            "buyer_source_of_funds",
+            "proof_of_funds_cash_component",
+            "bond_approval",
+            "grant_signed",
+            "income_affordability_documents"
+          ],
+          "containerSummary": {
+            "total": 9,
+            "canonicalRequired": 9,
+            "additionalRequests": 0,
+            "blocking": 9,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 9
+            },
+            "byAudience": {
+              "agent": 9,
+              "attorney": 9,
+              "internal": 9,
+              "buyer": 9,
+              "bond_originator": 3
+            },
+            "byStatus": {
+              "required": 9
+            }
+          }
+        }
+      },
+      {
+        "id": "married_cop_bond",
+        "label": "Married COP bond buyer",
+        "profile": {
+          "version": "buyer_document_canonical_cleanup_v1",
+          "buyerType": "married_coc",
+          "buyerEntityType": "individual",
+          "financeType": "bond",
+          "financeBranch": "bond",
+          "scenario": {
+            "buyerEntityType": "individual",
+            "buyerMaritalRegime": "married_cop",
+            "financeType": "bond"
+          },
+          "legacyRequirementCount": 14,
+          "mappedRequirementCount": 14,
+          "buyerClientUploadCount": 12,
+          "requestableBuyerClientUploadCount": 12,
+          "canonicalPlanRequestCount": 10,
+          "canonicalPlanRequestableCount": 10,
+          "unmappedRows": [],
+          "professionalOnlyLegacyRows": [
+            {
+              "key": "otp",
+              "canonicalKey": "signed_otp",
+              "ownerRole": "agent",
+              "visibility": "professional_shared"
+            },
+            {
+              "key": "transfer_documents",
+              "canonicalKey": "transfer_documents",
+              "ownerRole": "transfer_attorney",
+              "visibility": "professional_shared"
+            }
+          ],
+          "pendingPolicyLegacyRows": [],
+          "duplicateCanonicalGroups": [
+            {
+              "canonicalKey": "income_affordability_documents",
+              "legacyKeys": [
+                "payslips_3_months",
+                "bank_statements_3_months",
+                "spouse_income_support",
+                "spouse_bank_statements"
+              ]
+            }
+          ],
+          "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_marital_status_details"
+          ],
+          "extraLegacyKeysOutsideBuyerUpload": [
+            "otp",
+            "transfer_documents"
+          ],
+          "buyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_spouse_id_document",
+            "buyer_spouse_proof_of_address",
+            "buyer_marriage_certificate",
+            "income_affordability_documents",
+            "bond_approval",
+            "grant_signed"
+          ],
+          "requestableBuyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_spouse_id_document",
+            "buyer_spouse_proof_of_address",
+            "buyer_marriage_certificate",
+            "income_affordability_documents",
+            "bond_approval",
+            "grant_signed"
+          ],
+          "canonicalPlanKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_marital_status_details",
+            "buyer_marriage_certificate",
+            "buyer_spouse_id_document",
+            "buyer_spouse_proof_of_address",
+            "bond_approval",
+            "grant_signed",
+            "income_affordability_documents"
+          ],
+          "canonicalPlanRequestableKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_marital_status_details",
+            "buyer_marriage_certificate",
+            "buyer_spouse_id_document",
+            "buyer_spouse_proof_of_address",
+            "bond_approval",
+            "grant_signed",
+            "income_affordability_documents"
+          ],
+          "containerSummary": {
+            "total": 10,
+            "canonicalRequired": 10,
+            "additionalRequests": 0,
+            "blocking": 10,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 10
+            },
+            "byAudience": {
+              "agent": 10,
+              "attorney": 10,
+              "internal": 10,
+              "buyer": 10,
+              "bond_originator": 3
+            },
+            "byStatus": {
+              "required": 10
+            }
+          }
+        }
+      },
+      {
+        "id": "married_anc_bond_self_employed",
+        "label": "Married ANC bond buyer, self-employed",
+        "profile": {
+          "version": "buyer_document_canonical_cleanup_v1",
+          "buyerType": "married_anc",
+          "buyerEntityType": "individual",
+          "financeType": "bond",
+          "financeBranch": "bond",
+          "scenario": {
+            "buyerEntityType": "individual",
+            "buyerMaritalRegime": "married_anc",
+            "financeType": "bond"
+          },
+          "legacyRequirementCount": 14,
+          "mappedRequirementCount": 14,
+          "buyerClientUploadCount": 12,
+          "requestableBuyerClientUploadCount": 11,
+          "canonicalPlanRequestCount": 9,
+          "canonicalPlanRequestableCount": 8,
+          "unmappedRows": [],
+          "professionalOnlyLegacyRows": [
+            {
+              "key": "otp",
+              "canonicalKey": "signed_otp",
+              "ownerRole": "agent",
+              "visibility": "professional_shared"
+            },
+            {
+              "key": "transfer_documents",
+              "canonicalKey": "transfer_documents",
+              "ownerRole": "transfer_attorney",
+              "visibility": "professional_shared"
+            }
+          ],
+          "pendingPolicyLegacyRows": [
+            {
+              "key": "anc_document_optional",
+              "canonicalKey": "buyer_anc_document",
+              "level": "pending_policy_required_unless_waived"
+            }
+          ],
+          "duplicateCanonicalGroups": [
+            {
+              "canonicalKey": "income_affordability_documents",
+              "legacyKeys": [
+                "bank_statements_12_months",
+                "financial_statements",
+                "tax_returns_latest",
+                "accountant_letter"
+              ]
+            }
+          ],
+          "missingFromLegacyButCoveredByCanonicalPlan": [
+            "buyer_marital_status_details",
+            "buyer_marriage_certificate"
+          ],
+          "extraLegacyKeysOutsideBuyerUpload": [
+            "otp",
+            "transfer_documents",
+            "anc_document_optional"
+          ],
+          "buyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_spouse_id_document",
+            "buyer_spouse_proof_of_address",
+            "buyer_anc_document",
+            "income_affordability_documents",
+            "bond_approval",
+            "grant_signed"
+          ],
+          "requestableBuyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_spouse_id_document",
+            "buyer_spouse_proof_of_address",
+            "income_affordability_documents",
+            "bond_approval",
+            "grant_signed"
+          ],
+          "canonicalPlanKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_marital_status_details",
+            "buyer_marriage_certificate",
+            "buyer_anc_document",
+            "bond_approval",
+            "grant_signed",
+            "income_affordability_documents"
+          ],
+          "canonicalPlanRequestableKeys": [
+            "buyer_fica_pack",
+            "buyer_id_document",
+            "buyer_proof_of_address",
+            "buyer_marital_status_details",
+            "buyer_marriage_certificate",
+            "bond_approval",
+            "grant_signed",
+            "income_affordability_documents"
+          ],
+          "containerSummary": {
+            "total": 9,
+            "canonicalRequired": 9,
+            "additionalRequests": 0,
+            "blocking": 8,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 9
+            },
+            "byAudience": {
+              "agent": 9,
+              "attorney": 9,
+              "internal": 9,
+              "buyer": 9,
+              "bond_originator": 3
+            },
+            "byStatus": {
+              "required": 8,
+              "not_applicable": 1
+            }
+          }
+        }
+      },
+      {
+        "id": "foreign_cash",
+        "label": "Foreign cash buyer",
+        "profile": {
+          "version": "buyer_document_canonical_cleanup_v1",
+          "buyerType": "foreign_purchaser",
+          "buyerEntityType": "foreign_individual",
+          "financeType": "cash",
+          "financeBranch": "cash",
+          "scenario": {
+            "buyerEntityType": "foreign_individual",
+            "buyerMaritalRegime": "foreign_purchaser",
+            "financeType": "cash"
+          },
+          "legacyRequirementCount": 7,
+          "mappedRequirementCount": 7,
+          "buyerClientUploadCount": 5,
+          "requestableBuyerClientUploadCount": 5,
+          "canonicalPlanRequestCount": 5,
+          "canonicalPlanRequestableCount": 5,
+          "unmappedRows": [],
+          "professionalOnlyLegacyRows": [
+            {
+              "key": "otp",
+              "canonicalKey": "signed_otp",
+              "ownerRole": "agent",
+              "visibility": "professional_shared"
+            },
+            {
+              "key": "transfer_documents",
+              "canonicalKey": "transfer_documents",
+              "ownerRole": "transfer_attorney",
+              "visibility": "professional_shared"
+            }
+          ],
+          "pendingPolicyLegacyRows": [],
+          "duplicateCanonicalGroups": [],
+          "missingFromLegacyButCoveredByCanonicalPlan": [],
+          "extraLegacyKeysOutsideBuyerUpload": [
+            "otp",
+            "transfer_documents"
+          ],
+          "buyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_passport",
+            "buyer_proof_of_address",
+            "buyer_source_of_funds",
+            "proof_of_funds"
+          ],
+          "requestableBuyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_passport",
+            "buyer_proof_of_address",
+            "buyer_source_of_funds",
+            "proof_of_funds"
+          ],
+          "canonicalPlanKeys": [
+            "buyer_fica_pack",
+            "buyer_proof_of_address",
+            "buyer_passport",
+            "buyer_source_of_funds",
+            "proof_of_funds"
+          ],
+          "canonicalPlanRequestableKeys": [
+            "buyer_fica_pack",
+            "buyer_proof_of_address",
+            "buyer_passport",
+            "buyer_source_of_funds",
+            "proof_of_funds"
+          ],
+          "containerSummary": {
+            "total": 5,
+            "canonicalRequired": 5,
+            "additionalRequests": 0,
+            "blocking": 5,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 5
+            },
+            "byAudience": {
+              "agent": 5,
+              "attorney": 5,
+              "internal": 5,
+              "buyer": 5
+            },
+            "byStatus": {
+              "required": 5
+            }
+          }
+        }
+      },
+      {
+        "id": "company_bond",
+        "label": "Company bond buyer",
+        "profile": {
+          "version": "buyer_document_canonical_cleanup_v1",
+          "buyerType": "company",
+          "buyerEntityType": "company",
+          "financeType": "bond",
+          "financeBranch": "bond",
+          "scenario": {
+            "buyerEntityType": "company",
+            "buyerMaritalRegime": "company",
+            "financeType": "bond"
+          },
+          "legacyRequirementCount": 14,
+          "mappedRequirementCount": 14,
+          "buyerClientUploadCount": 12,
+          "requestableBuyerClientUploadCount": 11,
+          "canonicalPlanRequestCount": 8,
+          "canonicalPlanRequestableCount": 7,
+          "unmappedRows": [],
+          "professionalOnlyLegacyRows": [
+            {
+              "key": "otp",
+              "canonicalKey": "signed_otp",
+              "ownerRole": "agent",
+              "visibility": "professional_shared"
+            },
+            {
+              "key": "transfer_documents",
+              "canonicalKey": "transfer_documents",
+              "ownerRole": "transfer_attorney",
+              "visibility": "professional_shared"
+            }
+          ],
+          "pendingPolicyLegacyRows": [
+            {
+              "key": "buyer_company_beneficial_ownership",
+              "canonicalKey": "buyer_company_beneficial_ownership",
+              "level": "pending_policy_required"
+            }
+          ],
+          "duplicateCanonicalGroups": [
+            {
+              "canonicalKey": "buyer_director_fica",
+              "legacyKeys": [
+                "director_id",
+                "director_proof_of_address"
+              ]
+            },
+            {
+              "canonicalKey": "income_affordability_documents",
+              "legacyKeys": [
+                "entity_bank_statements",
+                "entity_financials",
+                "entity_income_support",
+                "entity_tax_clearance_optional"
+              ]
+            }
+          ],
+          "missingFromLegacyButCoveredByCanonicalPlan": [],
+          "extraLegacyKeysOutsideBuyerUpload": [
+            "otp",
+            "transfer_documents",
+            "buyer_company_beneficial_ownership"
+          ],
+          "buyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_company_registration",
+            "buyer_company_resolution",
+            "buyer_director_fica",
+            "buyer_company_beneficial_ownership",
+            "income_affordability_documents",
+            "bond_approval",
+            "grant_signed"
+          ],
+          "requestableBuyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_company_registration",
+            "buyer_company_resolution",
+            "buyer_director_fica",
+            "income_affordability_documents",
+            "bond_approval",
+            "grant_signed"
+          ],
+          "canonicalPlanKeys": [
+            "buyer_fica_pack",
+            "buyer_company_registration",
+            "buyer_company_resolution",
+            "buyer_director_fica",
+            "buyer_company_beneficial_ownership",
+            "bond_approval",
+            "grant_signed",
+            "income_affordability_documents"
+          ],
+          "canonicalPlanRequestableKeys": [
+            "buyer_fica_pack",
+            "buyer_company_registration",
+            "buyer_company_resolution",
+            "buyer_director_fica",
+            "bond_approval",
+            "grant_signed",
+            "income_affordability_documents"
+          ],
+          "containerSummary": {
+            "total": 8,
+            "canonicalRequired": 8,
+            "additionalRequests": 0,
+            "blocking": 7,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 8
+            },
+            "byAudience": {
+              "agent": 8,
+              "attorney": 8,
+              "internal": 8,
+              "buyer": 8,
+              "bond_originator": 3
+            },
+            "byStatus": {
+              "required": 7,
+              "not_applicable": 1
+            }
+          }
+        }
+      },
+      {
+        "id": "trust_bond",
+        "label": "Trust bond buyer",
+        "profile": {
+          "version": "buyer_document_canonical_cleanup_v1",
+          "buyerType": "trust",
+          "buyerEntityType": "trust",
+          "financeType": "bond",
+          "financeBranch": "bond",
+          "scenario": {
+            "buyerEntityType": "trust",
+            "buyerMaritalRegime": "trust",
+            "financeType": "bond"
+          },
+          "legacyRequirementCount": 15,
+          "mappedRequirementCount": 15,
+          "buyerClientUploadCount": 13,
+          "requestableBuyerClientUploadCount": 12,
+          "canonicalPlanRequestCount": 9,
+          "canonicalPlanRequestableCount": 8,
+          "unmappedRows": [],
+          "professionalOnlyLegacyRows": [
+            {
+              "key": "otp",
+              "canonicalKey": "signed_otp",
+              "ownerRole": "agent",
+              "visibility": "professional_shared"
+            },
+            {
+              "key": "transfer_documents",
+              "canonicalKey": "transfer_documents",
+              "ownerRole": "transfer_attorney",
+              "visibility": "professional_shared"
+            }
+          ],
+          "pendingPolicyLegacyRows": [
+            {
+              "key": "buyer_trust_beneficial_ownership",
+              "canonicalKey": "buyer_trust_beneficial_ownership",
+              "level": "pending_policy_required"
+            }
+          ],
+          "duplicateCanonicalGroups": [
+            {
+              "canonicalKey": "buyer_trustee_fica",
+              "legacyKeys": [
+                "trustee_id",
+                "trustee_proof_of_address"
+              ]
+            },
+            {
+              "canonicalKey": "income_affordability_documents",
+              "legacyKeys": [
+                "entity_bank_statements",
+                "entity_financials",
+                "entity_income_support",
+                "entity_tax_clearance_optional"
+              ]
+            }
+          ],
+          "missingFromLegacyButCoveredByCanonicalPlan": [],
+          "extraLegacyKeysOutsideBuyerUpload": [
+            "otp",
+            "transfer_documents",
+            "buyer_trust_beneficial_ownership"
+          ],
+          "buyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_trust_deed",
+            "buyer_letters_of_authority",
+            "buyer_trustee_resolution",
+            "buyer_trustee_fica",
+            "buyer_trust_beneficial_ownership",
+            "income_affordability_documents",
+            "bond_approval",
+            "grant_signed"
+          ],
+          "requestableBuyerClientUploadKeys": [
+            "buyer_fica_pack",
+            "buyer_trust_deed",
+            "buyer_letters_of_authority",
+            "buyer_trustee_resolution",
+            "buyer_trustee_fica",
+            "income_affordability_documents",
+            "bond_approval",
+            "grant_signed"
+          ],
+          "canonicalPlanKeys": [
+            "buyer_fica_pack",
+            "buyer_trust_deed",
+            "buyer_letters_of_authority",
+            "buyer_trustee_resolution",
+            "buyer_trustee_fica",
+            "buyer_trust_beneficial_ownership",
+            "bond_approval",
+            "grant_signed",
+            "income_affordability_documents"
+          ],
+          "canonicalPlanRequestableKeys": [
+            "buyer_fica_pack",
+            "buyer_trust_deed",
+            "buyer_letters_of_authority",
+            "buyer_trustee_resolution",
+            "buyer_trustee_fica",
+            "bond_approval",
+            "grant_signed",
+            "income_affordability_documents"
+          ],
+          "containerSummary": {
+            "total": 9,
+            "canonicalRequired": 9,
+            "additionalRequests": 0,
+            "blocking": 8,
+            "uploaded": 0,
+            "byRequestedFrom": {
+              "buyer": 9
+            },
+            "byAudience": {
+              "agent": 9,
+              "attorney": 9,
+              "internal": 9,
+              "buyer": 9,
+              "bond_originator": 3
+            },
+            "byStatus": {
+              "required": 8,
+              "not_applicable": 1
+            }
+          }
+        }
+      }
+    ],
+    "summary": {
+      "unmappedCount": 0,
+      "professionalOnlyLegacyCount": 16,
+      "missingCoveredByCanonicalPlanCount": 8,
+      "pendingPolicyLegacyCount": 3,
+      "duplicateCanonicalGroupCount": 8
+    },
+    "unmapped": [],
+    "professionalOnly": [
+      {
+        "scenarioId": "individual_cash",
+        "key": "otp",
+        "canonicalKey": "signed_otp",
+        "ownerRole": "agent",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "individual_cash",
+        "key": "transfer_documents",
+        "canonicalKey": "transfer_documents",
+        "ownerRole": "transfer_attorney",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "individual_bond_salaried",
+        "key": "otp",
+        "canonicalKey": "signed_otp",
+        "ownerRole": "agent",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "individual_bond_salaried",
+        "key": "transfer_documents",
+        "canonicalKey": "transfer_documents",
+        "ownerRole": "transfer_attorney",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "individual_hybrid_self_employed",
+        "key": "otp",
+        "canonicalKey": "signed_otp",
+        "ownerRole": "agent",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "individual_hybrid_self_employed",
+        "key": "transfer_documents",
+        "canonicalKey": "transfer_documents",
+        "ownerRole": "transfer_attorney",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "married_cop_bond",
+        "key": "otp",
+        "canonicalKey": "signed_otp",
+        "ownerRole": "agent",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "married_cop_bond",
+        "key": "transfer_documents",
+        "canonicalKey": "transfer_documents",
+        "ownerRole": "transfer_attorney",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "married_anc_bond_self_employed",
+        "key": "otp",
+        "canonicalKey": "signed_otp",
+        "ownerRole": "agent",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "married_anc_bond_self_employed",
+        "key": "transfer_documents",
+        "canonicalKey": "transfer_documents",
+        "ownerRole": "transfer_attorney",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "foreign_cash",
+        "key": "otp",
+        "canonicalKey": "signed_otp",
+        "ownerRole": "agent",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "foreign_cash",
+        "key": "transfer_documents",
+        "canonicalKey": "transfer_documents",
+        "ownerRole": "transfer_attorney",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "company_bond",
+        "key": "otp",
+        "canonicalKey": "signed_otp",
+        "ownerRole": "agent",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "company_bond",
+        "key": "transfer_documents",
+        "canonicalKey": "transfer_documents",
+        "ownerRole": "transfer_attorney",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "trust_bond",
+        "key": "otp",
+        "canonicalKey": "signed_otp",
+        "ownerRole": "agent",
+        "visibility": "professional_shared"
+      },
+      {
+        "scenarioId": "trust_bond",
+        "key": "transfer_documents",
+        "canonicalKey": "transfer_documents",
+        "ownerRole": "transfer_attorney",
+        "visibility": "professional_shared"
+      }
+    ],
+    "missingCoveredByCanonicalPlan": [
+      {
+        "scenarioId": "individual_cash",
+        "key": "buyer_marital_status_details"
+      },
+      {
+        "scenarioId": "individual_cash",
+        "key": "buyer_source_of_funds"
+      },
+      {
+        "scenarioId": "individual_bond_salaried",
+        "key": "buyer_marital_status_details"
+      },
+      {
+        "scenarioId": "individual_hybrid_self_employed",
+        "key": "buyer_marital_status_details"
+      },
+      {
+        "scenarioId": "individual_hybrid_self_employed",
+        "key": "buyer_source_of_funds"
+      },
+      {
+        "scenarioId": "married_cop_bond",
+        "key": "buyer_marital_status_details"
+      },
+      {
+        "scenarioId": "married_anc_bond_self_employed",
+        "key": "buyer_marital_status_details"
+      },
+      {
+        "scenarioId": "married_anc_bond_self_employed",
+        "key": "buyer_marriage_certificate"
+      }
+    ]
+  },
+  "phase3Decisions": [
+    {
+      "key": "buyer_upload_source",
+      "decision": "Buyer upload requests come from canonical buyer client-visible requirements, not raw legacy sale/transfer rows."
+    },
+    {
+      "key": "professional_generated_documents",
+      "decision": "OTP and transfer documents remain transaction/professional documents and should not appear as buyer upload requests."
+    },
+    {
+      "key": "legacy_fallback",
+      "decision": "Legacy buyer rows remain as fallback data until backfill and rollout prove parity; canonical metadata and portal filtering control client-facing upload behaviour."
+    }
+  ],
+  "gate": {
+    "status": "buyer_cleanup_mapped_with_warnings",
+    "ok": true,
+    "mayProceedToPhase4": true,
+    "productionActivationReady": false,
+    "checks": [
+      {
+        "key": "buyer_engine_has_canonical_metadata",
+        "ok": true
+      },
+      {
+        "key": "portal_filters_professional_only_buyer_rows",
+        "ok": true
+      },
+      {
+        "key": "no_unmapped_buyer_rows",
+        "ok": true
+      },
+      {
+        "key": "professional_legacy_rows_identified",
+        "ok": true
+      },
+      {
+        "key": "canonical_plan_covers_legacy_gaps",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "warnings": [
+      {
+        "code": "legacy_buyer_profile_contains_professional_rows",
+        "message": "Legacy buyer profiles still emit professional/generated rows such as OTP and transfer documents; portal upload filtering and canonical overlay now keep buyer upload requests clean.",
+        "count": 16
+      },
+      {
+        "code": "canonical_overlay_adds_buyer_policy_rows",
+        "message": "Canonical buyer plans include policy rows not represented as one-to-one legacy upload rows, such as marital/source-of-funds declarations.",
+        "count": 8
+      }
+    ]
+  }
+}

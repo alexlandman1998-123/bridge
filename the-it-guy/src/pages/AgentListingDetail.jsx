@@ -2416,28 +2416,44 @@ function formatListingLeadStatusLabel(value = '') {
   return formatStatusLabel(value)
 }
 
-function getNextBestAction({ pendingOffers, missingDocuments, onboardingStatus }) {
+function getNextBestAction({ pendingOffers, missingDocuments, onboardingStatus, sellerProfileCompletion = 100 }) {
   if (pendingOffers > 0) {
     return {
+      key: 'review_offers',
       title: `${pendingOffers} offer${pendingOffers === 1 ? '' : 's'} pending review`,
       copy: 'Review, compare, and decide whether to accept, reject, or counter before momentum drops.',
+      buttonLabel: 'Review Offers',
+    }
+  }
+  if (sellerProfileCompletion < 60) {
+    return {
+      key: 'complete_seller_facts',
+      title: 'Seller profile needs completion',
+      copy: 'Capture the seller model and contact facts before generating mandate packs or activating the portal for an existing listing.',
+      buttonLabel: 'Complete Seller Profile',
     }
   }
   if (missingDocuments > 0) {
     return {
+      key: 'open_documents',
       title: `${missingDocuments} seller document${missingDocuments === 1 ? '' : 's'} still missing`,
       copy: 'Push FICA and property compliance completion so the listing can move cleanly into offer-to-deal progression.',
+      buttonLabel: 'Open Documents',
     }
   }
   if (onboardingStatus !== 'Completed') {
     return {
+      key: 'open_pipeline',
       title: 'Seller onboarding still in progress',
       copy: 'Use the onboarding link and mandate review workflow to close outstanding seller steps.',
+      buttonLabel: 'Open Pipeline',
     }
   }
   return {
+    key: 'open_pipeline',
     title: 'Listing is in a healthy operating state',
     copy: 'Focus on buyer follow-up, keeping viewings moving, and converting interest into signed offers.',
+    buttonLabel: 'Open Pipeline',
   }
 }
 
@@ -2759,7 +2775,7 @@ function AgentListingDetail() {
   const [sellerPortalSecurityDiagnostics, setSellerPortalSecurityDiagnostics] = useState(null)
   const [, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
   const [sellerPortalActivationOpen, setSellerPortalActivationOpen] = useState(false)
-  const [sellerPortalActivationDraft, setSellerPortalActivationDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' })
+  const [sellerPortalActivationDraft, setSellerPortalActivationDraft] = useState({ firstName: '', lastName: '', email: '', phone: '', physicalDocumentsHeld: false })
   const [sellerPortalActivationSending, setSellerPortalActivationSending] = useState(false)
   const [sellerContactEditorOpen, setSellerContactEditorOpen] = useState(false)
   const [sellerContactSaving, setSellerContactSaving] = useState(false)
@@ -4007,11 +4023,6 @@ function AgentListingDetail() {
     }
     if (!isValidEmail(sellerEmail)) {
       throw new Error('No seller email is linked to this listing yet. Add the seller email before resending the client portal link.')
-    }
-    if (!isSellerPortalInviteReadyAfterSignedMandate(listingRecord, {
-      mandateSigned: mandateWorkspace?.isSigned || mandateWorkspace?.signedDate,
-    })) {
-      throw new Error('Sign the seller mandate before resending the seller portal password setup link.')
     }
 
     const stablePortalToken = toCleanText(onboardingRow?.seller_portal_token || listingRecord?.sellerOnboarding?.sellerPortalToken || token)
@@ -5622,16 +5633,6 @@ function AgentListingDetail() {
       }).length,
     [listingRecord?.requiredDocuments],
   )
-  const nextBestAction = useMemo(
-    () =>
-      getNextBestAction({
-        pendingOffers: metrics.pendingOffers,
-        missingDocuments,
-        onboardingStatus: onboardingStatusLabel,
-      }),
-    [metrics.pendingOffers, missingDocuments, onboardingStatusLabel],
-  )
-
   const activityItems = useMemo(() => {
     const items = []
     if (listingRecord?.createdAt) {
@@ -6028,6 +6029,17 @@ function AgentListingDetail() {
       sections,
     }
   }, [listingRecord, mandateWorkspace.expiryDate, marketingDraft.addressLine1, marketingDraft.listingDate, marketingDraft.price, sellerFormData])
+
+  const nextBestAction = useMemo(
+    () =>
+      getNextBestAction({
+        pendingOffers: metrics.pendingOffers,
+        missingDocuments,
+        onboardingStatus: onboardingStatusLabel,
+        sellerProfileCompletion: sellerProfile.completionPercent,
+      }),
+    [metrics.pendingOffers, missingDocuments, onboardingStatusLabel, sellerProfile.completionPercent],
+  )
 
   const commissionWorkspace = useMemo(() => {
     const commission = listingRecord?.commission || {}
@@ -6517,6 +6529,18 @@ function AgentListingDetail() {
     }),
     [listingRecord, sellerPortalAccessState, sellerPortalSecurityDiagnostics],
   )
+  const sellerPortalMandateEvidenceReady = useMemo(
+    () => Boolean(isSellerPortalInviteReadyAfterSignedMandate(listingRecord, {
+      mandateSigned: mandateWorkspace?.isSigned || mandateWorkspace?.signedDate,
+    })),
+    [listingRecord, mandateWorkspace?.isSigned, mandateWorkspace?.signedDate],
+  )
+  const sellerPortalPhysicalDocsReportedHeld = useMemo(
+    () => Boolean((directListingOperationalSummary.declarations || []).find((row) =>
+      row.key === 'mandate' && row.held === true,
+    )),
+    [directListingOperationalSummary.declarations],
+  )
 
   const overviewSellerSnapshot = useMemo(() => {
     const lastOfferShare = offerRows.find((offer) => offer?.sentToSellerAt || normalizeOfferWorkflowStatus(offer?.status) === OFFER_WORKFLOW_STATUS.SELLER_REVIEW)
@@ -6607,6 +6631,7 @@ function AgentListingDetail() {
       lastName: toCleanText(canonicalFacts.lastName || sellerFormData?.sellerSurname || sellerFormData?.lastName || nameParts.slice(1).join(' ')),
       email: resolveSellerEmailFromListing(listingRecord),
       phone: resolveSellerPhoneFromListing(listingRecord),
+      physicalDocumentsHeld: sellerPortalMandateEvidenceReady || sellerPortalPhysicalDocsReportedHeld,
     })
     setSellerPortalActivationOpen(true)
     setDetailError('')
@@ -6624,6 +6649,7 @@ function AgentListingDetail() {
     const lastName = toCleanText(sellerPortalActivationDraft.lastName)
     const email = toCleanText(sellerPortalActivationDraft.email).toLowerCase()
     const phone = toCleanText(sellerPortalActivationDraft.phone)
+    const physicalDocumentsHeld = Boolean(sellerPortalActivationDraft.physicalDocumentsHeld)
     if (!isValidEmail(email)) {
       setDetailError('Add a valid seller email before sending the Seller Portal invitation.')
       return
@@ -6632,10 +6658,8 @@ function AgentListingDetail() {
       setDetailError('Seller Portal activation requires a Supabase-backed listing.')
       return
     }
-    if (!isSellerPortalInviteReadyAfterSignedMandate(listingRecord, {
-      mandateSigned: mandateWorkspace?.isSigned || mandateWorkspace?.signedDate,
-    })) {
-      setDetailError('Sign or upload the seller mandate before activating the Seller Portal for an existing listing.')
+    if (!sellerPortalMandateEvidenceReady && !physicalDocumentsHeld) {
+      setDetailError('Confirm that the signed physical seller documents are already held before activating the Seller Portal for this existing listing.')
       return
     }
 
@@ -6655,6 +6679,15 @@ function AgentListingDetail() {
         phone,
         sellerPhone: phone,
         mobile: phone,
+        sellerPortalActivationContext: {
+          source: SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
+          existingListingShortcut: true,
+          mandateEvidenceRecorded: sellerPortalMandateEvidenceReady,
+          physicalDocumentsHeld,
+          directListingDeclarationMandateHeld: sellerPortalPhysicalDocsReportedHeld,
+          capturedAt: new Date().toISOString(),
+          capturedBy: profile?.id || profile?.email || '',
+        },
       }
       const sellerCanonicalFactReadiness = {
         ...(listingRecord?.sellerCanonicalFactReadiness || listingRecord?.seller_canonical_fact_readiness_json || {}),
@@ -6723,6 +6756,24 @@ function AgentListingDetail() {
     setSellerContactEditorOpen(false)
     setDetailError('')
     setDetailMessage(message)
+  }
+
+  function handleNextBestAction(action = {}) {
+    const key = action?.key || ''
+    if (key === 'complete_seller_facts') {
+      openSellerWorkspaceSection('seller')
+      openSellerProfileBuilder('Complete the seller profile from the listing workspace.')
+      return
+    }
+    if (key === 'review_offers') {
+      setActiveTab('offers')
+      return
+    }
+    if (key === 'open_documents') {
+      setActiveTab('documents')
+      return
+    }
+    setActiveTab('pipeline')
   }
 
   function updateSellerProfileBuilderDraft(key, value) {
@@ -8692,8 +8743,8 @@ function AgentListingDetail() {
                 </div>
               </div>
               <div className="mt-auto pt-5">
-                <Button onClick={() => setActiveTab(metrics.pendingOffers > 0 ? 'offers' : missingDocuments > 0 ? 'documents' : 'pipeline')}>
-                  {metrics.pendingOffers > 0 ? 'Review Offers' : missingDocuments > 0 ? 'Open Documents' : 'Open Pipeline'}
+                <Button onClick={() => handleNextBestAction(nextBestAction)}>
+                  {nextBestAction.buttonLabel || 'Open Workspace'}
                 </Button>
               </div>
             </section>
@@ -12176,7 +12227,7 @@ function AgentListingDetail() {
             <Button type="button" variant="secondary" onClick={() => setSellerPortalActivationOpen(false)} disabled={sellerPortalActivationSending}>
               Cancel
             </Button>
-            <Button type="submit" form="seller-portal-activation-form" disabled={sellerPortalActivationSending}>
+            <Button type="submit" form="seller-portal-activation-form" disabled={sellerPortalActivationSending || (!sellerPortalMandateEvidenceReady && !sellerPortalActivationDraft.physicalDocumentsHeld)}>
               {sellerPortalActivationSending ? 'Sending...' : 'Send Invitation'}
             </Button>
           </div>
@@ -12209,8 +12260,23 @@ function AgentListingDetail() {
               <CompactSnapshotRow label="Agency" value={profile?.organisationName || profile?.companyName || profile?.agencyName || 'Arch9'} />
               <CompactSnapshotRow label="Assigned agent" value={listingActor.name || 'Agent pending'} />
               <CompactSnapshotRow label="Listing status" value={formatStatusLabel(listingRecord?.listingStatus || listingRecord?.status || 'unknown')} />
+              <CompactSnapshotRow label="Mandate evidence" value={sellerPortalMandateEvidenceReady ? 'Recorded in Arch9' : sellerPortalPhysicalDocsReportedHeld ? 'Reported held' : 'Not recorded'} />
             </div>
           </section>
+
+          {!sellerPortalMandateEvidenceReady ? (
+            <label className="flex items-start gap-3 rounded-[18px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm font-semibold leading-6 text-[#7a5a17]">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-[#d8c08e] text-[#1f7d44] focus:ring-[#1f7d44]"
+                checked={sellerPortalActivationDraft.physicalDocumentsHeld}
+                onChange={(event) => updateSellerPortalActivationDraft('physicalDocumentsHeld', event.target.checked)}
+              />
+              <span>
+                Signed physical seller documents are already held for this listing.
+              </span>
+            </label>
+          ) : null}
 
           <section className="rounded-[18px] border border-[#dbe6f2] bg-white p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Email preview</p>

@@ -8039,6 +8039,7 @@ function ClientPortal() {
     signatureName: '',
   })
   const portalContextsRef = useRef({ contexts: [], hasBuyingContext: true, hasSellingContext: false })
+  const portalLoadRequestRef = useRef(0)
   const [workspaceData, setWorkspaceData] = useState(null)
   const [matterAccountsState, setMatterAccountsState] = useState({
     accounts: [],
@@ -8109,6 +8110,10 @@ function ClientPortal() {
   }, [location.pathname, navigate, token])
 
   const loadPortal = useCallback(async ({ background = false, sellerPortalAccessTokenOverride = '' } = {}) => {
+    const loadRequestId = portalLoadRequestRef.current + 1
+    portalLoadRequestRef.current = loadRequestId
+    const isCurrentLoad = () => portalLoadRequestRef.current === loadRequestId
+
     if (!token) {
       setError('Missing client portal token.')
       setLoading(false)
@@ -8125,6 +8130,7 @@ function ClientPortal() {
           mode: 'full',
           sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
         })
+        if (!isCurrentLoad()) return
         portalContextsRef.current = {
           contexts: data?.portalContext?.contexts || [],
           hasBuyingContext: data?.portalContext?.hasBuyingContext !== false,
@@ -8138,6 +8144,7 @@ function ClientPortal() {
           durationMs: Date.now() - backgroundStartedAt,
         })
       } catch (loadError) {
+        if (!isCurrentLoad()) return
         if (isSellerPortalAuthRequiredError(loadError)) {
           setSellerPortalAuth(loadError.portalAuth || { authRequired: true })
           setPortal(null)
@@ -8150,7 +8157,7 @@ function ClientPortal() {
           error: loadError,
         })
       } finally {
-        setHydratingPortal(false)
+        if (isCurrentLoad()) setHydratingPortal(false)
       }
       return
     }
@@ -8165,6 +8172,7 @@ function ClientPortal() {
         mode: 'core',
         sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
       })
+      if (!isCurrentLoad()) return
       portalContextsRef.current = {
         contexts: coreData?.portalContext?.contexts || [],
         hasBuyingContext: coreData?.portalContext?.hasBuyingContext !== false,
@@ -8180,6 +8188,7 @@ function ClientPortal() {
         durationMs: Date.now() - startedAt,
       })
     } catch (coreError) {
+      if (!isCurrentLoad()) return
       if (isSellerPortalAuthRequiredError(coreError)) {
         setSellerPortalAuth(coreError.portalAuth || { authRequired: true })
         setPortal(null)
@@ -8198,6 +8207,7 @@ function ClientPortal() {
         mode: 'full',
         sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
       })
+      if (!isCurrentLoad()) return
       portalContextsRef.current = {
         contexts: fullData?.portalContext?.contexts || [],
         hasBuyingContext: fullData?.portalContext?.hasBuyingContext !== false,
@@ -8213,6 +8223,7 @@ function ClientPortal() {
         durationMs: Date.now() - startedAt,
       })
     } catch (loadError) {
+      if (!isCurrentLoad()) return
       if (isSellerPortalAuthRequiredError(loadError)) {
         setSellerPortalAuth(loadError.portalAuth || { authRequired: true })
         setPortal(null)
@@ -8224,8 +8235,10 @@ function ClientPortal() {
         setError(getClientPortalLoadErrorMessage(loadError, 'We could not finish loading your client workspace.'))
       }
     } finally {
-      setHydratingPortal(false)
-      setLoading(false)
+      if (isCurrentLoad()) {
+        setHydratingPortal(false)
+        setLoading(false)
+      }
     }
   }, [isSellerPortalToken, sellerPortalAccessToken, token, requestedWorkspace])
 
@@ -8982,6 +8995,7 @@ function ClientPortal() {
             file,
             requirementKey: documentKey,
             requirementInstanceId: options.requirementInstanceId || null,
+            documentRequestId: options.documentRequestId || null,
             category: options.category || 'Seller Document',
             documentType: options.documentType || documentKey,
           })
@@ -9987,6 +10001,51 @@ function ClientPortal() {
       return accumulator
     }, { items: [], seen: new Set() })
     .items
+  const documentRequestContainers = Array.isArray(workspaceData?.documentCenter?.documentRequestContainers)
+    ? workspaceData.documentCenter.documentRequestContainers
+    : Array.isArray(portal?.documentRequestContainers)
+      ? portal.documentRequestContainers
+      : []
+  const additionalDocumentRequestContainersForWorkspace = documentRequestContainers
+    .filter((container) => String(container?.source || '').trim() === 'document_requests')
+    .reduce((accumulator, container) => {
+      const key = String(container?.sourceId || container?.source_id || container?.id || '').trim()
+      if (!key || accumulator.seen.has(key)) return accumulator
+      accumulator.seen.add(key)
+      accumulator.items.push(container)
+      return accumulator
+    }, { items: [], seen: new Set() })
+    .items
+  const additionalDocumentRequestCardsForWorkspace = additionalDocumentRequestContainersForWorkspace.length
+    ? additionalDocumentRequestContainersForWorkspace.map((container) => {
+        const requestId = String(container?.sourceId || container?.source_id || container?.id || '').trim()
+        return {
+          id: requestId,
+          cardKey: String(container?.id || requestId || container?.title || '').trim(),
+          title: container?.title || 'Additional request',
+          description: container?.description || 'An additional document has been requested for your transaction.',
+          requestedByRole: container?.requestedByRole || container?.requested_by_role || container?.createdByRole || 'agent',
+          dueDate: container?.dueDate || container?.due_date || '',
+          status: container?.status || 'requested',
+          linkedDocumentId: container?.linkedDocumentId || container?.linked_document_id || '',
+          hasUploadedDocument: container?.hasUploadedDocument === true,
+          uploadSpec: container?.uploadSpec || { type: 'additional_request', requestId },
+          source: 'container',
+        }
+      })
+    : additionalDocumentRequestsForWorkspace.map((request) => ({
+        id: String(request?.id || '').trim(),
+        cardKey: String(request?.id || request?.title || request?.createdAt || '').trim(),
+        title: request?.title || 'Additional request',
+        description: request?.notes || request?.description || 'An additional document has been requested for your transaction.',
+        requestedByRole: request?.createdByRole || request?.assignedToRole || 'agent',
+        dueDate: request?.dueDate || '',
+        status: request?.status || 'requested',
+        linkedDocumentId: request?.requestedDocumentId || '',
+        hasUploadedDocument: false,
+        uploadSpec: { type: 'additional_request', requestId: String(request?.id || '').trim() },
+        source: 'legacy_request',
+      }))
   const salesSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'sales')
   const bondSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'bond')
   const additionalSharedDocuments = sharedPortalDocuments.filter((document) => getPortalDocumentWorkspaceCategory(document) === 'additional')
@@ -10347,7 +10406,7 @@ function ClientPortal() {
     sales: effectiveWorkspace === 'seller' ? salesTabSellerCount : salesTabBuyerCount,
     fica: resolvedFicaRequirements.length,
     bond: bondRequiredDocuments.length + bondSupportingSharedDocuments.length + displayedBondOfferCards.length + displayedBondGrantCards.length,
-    additional: additionalRequestDocuments.length + additionalDocumentRequestsForWorkspace.length + additionalSharedDocuments.length,
+    additional: additionalRequestDocuments.length + additionalDocumentRequestCardsForWorkspace.length + additionalSharedDocuments.length,
     property: propertySharedDocuments.length,
   }
   const documentTabs = CLIENT_DOCUMENT_TABS
@@ -14914,25 +14973,26 @@ function ClientPortal() {
                   {documentTabCountByKey.additional} items
                 </span>
               </div>
-              {additionalDocumentRequestsForWorkspace.length || additionalRequestDocuments.length || additionalSharedDocuments.length ? (
+              {additionalDocumentRequestCardsForWorkspace.length || additionalRequestDocuments.length || additionalSharedDocuments.length ? (
                 <div className="mt-4 space-y-3">
-                  {additionalDocumentRequestsForWorkspace.map((request) => {
-                    const uploadStateKey = `additional_request_${request.id}`
-                    const linkedDocument = request?.requestedDocumentId
-                      ? portalDocumentsById.get(String(request.requestedDocumentId))
+                  {additionalDocumentRequestCardsForWorkspace.map((request) => {
+                    const requestId = String(request.id || request.uploadSpec?.requestId || '').trim()
+                    const uploadStateKey = `additional_request_${requestId}`
+                    const linkedDocument = request?.linkedDocumentId
+                      ? portalDocumentsById.get(String(request.linkedDocumentId))
                       : null
-                    const hasUploadedDocument = hasPersistedPortalDocument(linkedDocument)
+                    const hasUploadedDocument = request.hasUploadedDocument || hasPersistedPortalDocument(linkedDocument)
                     const statusLabel = String(request?.status || '').trim()
                       ? toTitleLabel(String(request.status || '').replaceAll('_', ' '))
                       : 'Requested'
                     return (
-                      <article key={`request-${request.id}`} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                      <article key={`request-${request.cardKey || requestId}`} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <strong className="block text-sm font-semibold text-[#142132]">{request.title || 'Additional request'}</strong>
-                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{request.notes || request.description || 'An additional document has been requested for your transaction.'}</p>
+                            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{request.description || 'An additional document has been requested for your transaction.'}</p>
                             <p className="mt-2 text-xs font-medium text-[#7b8ca2]">
-                              Requested by: {getRequestedByLabel(request.createdByRole || request.assignedToRole || 'agent')}
+                              Requested by: {getRequestedByLabel(request.requestedByRole || 'agent')}
                               {request.dueDate ? ` • Due ${formatShortPortalDate(request.dueDate, 'TBC')}` : ''}
                             </p>
                           </div>
@@ -14950,12 +15010,13 @@ function ClientPortal() {
                               disabled={uploadingDocumentKey === uploadStateKey}
                               onChange={(event) => {
                                 const file = event.target.files?.[0]
-                                if (file) {
+                                const documentRequestId = String(request.uploadSpec?.requestId || requestId || '').trim()
+                                if (file && documentRequestId) {
                                   void handleUploadRequiredDocument(
                                     uploadStateKey,
                                     file,
                                     {
-                                      documentRequestId: request.id,
+                                      documentRequestId,
                                       category: 'Additional Requests',
                                     },
                                   )

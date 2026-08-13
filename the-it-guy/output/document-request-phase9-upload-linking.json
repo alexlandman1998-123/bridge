@@ -1,0 +1,95 @@
+{
+  "phase": "document_request_phase9_upload_linking",
+  "generatedAt": "2026-08-13T16:17:54.709Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "version": "document_request_upload_linking_v1",
+  "smokeSummary": {
+    "failedSmokeCount": 0,
+    "unstableContainerIdCount": 0,
+    "deferredSellerUploadLeakCount": 0,
+    "buyerContainerCount": 13,
+    "sellerContainerCount": 17,
+    "agentContainerCount": 30,
+    "attorneyContainerCount": 30,
+    "bondOriginatorContainerCount": 5,
+    "internalContainerCount": 30
+  },
+  "uploadTransition": {
+    "before": {
+      "status": "requested",
+      "blocksReadiness": true,
+      "hasUploadedDocument": false,
+      "uploadSpecType": "additional_request"
+    },
+    "after": {
+      "status": "uploaded",
+      "blocksReadiness": false,
+      "hasUploadedDocument": true,
+      "linkedDocumentId": "phase9-linked-document",
+      "uploadSpecType": "additional_request"
+    }
+  },
+  "phase9Decisions": [
+    {
+      "key": "request_id_is_primary_upload_match",
+      "decision": "Client portal uploads now carry the document request id so seller, buyer, agent, attorney, and bond-originator views can converge on the same container."
+    },
+    {
+      "key": "seller_upload_updates_document_requests",
+      "decision": "Seller portal uploads link the uploaded document back to document_requests after the file/document row exists."
+    },
+    {
+      "key": "promoted_document_preferred",
+      "decision": "When a seller upload is promoted into transaction documents, the shared document id is stored on the request before falling back to the private listing document id."
+    }
+  ],
+  "gate": {
+    "status": "request_upload_linking_mapped",
+    "ok": true,
+    "mayProceedToPhase10": true,
+    "productionActivationReady": false,
+    "checks": [
+      {
+        "key": "buyer_upload_links_document_request",
+        "ok": true
+      },
+      {
+        "key": "seller_upload_accepts_request_id",
+        "ok": true
+      },
+      {
+        "key": "seller_upload_links_document_request",
+        "ok": true
+      },
+      {
+        "key": "seller_upload_uses_promoted_shared_document_when_available",
+        "ok": true
+      },
+      {
+        "key": "seller_upload_invokes_linker_after_upload",
+        "ok": true
+      },
+      {
+        "key": "client_portal_passes_request_id_to_buyer_and_seller_uploads",
+        "ok": true
+      },
+      {
+        "key": "upload_transition_closes_container_readiness",
+        "ok": true
+      },
+      {
+        "key": "workspace_smoke_still_passes",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "warnings": [
+      {
+        "code": "seller_portal_request_link_permission_guard",
+        "message": "Seller portal request-linking treats missing schema or denied direct table access as non-blocking so the physical upload is not lost."
+      }
+    ]
+  }
+}

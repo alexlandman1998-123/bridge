@@ -46,6 +46,9 @@ import {
 import {
   buildCanonicalDocumentRequestAudiencePlan,
 } from '../core/documents/documentRequestCanonicalPlanner.js'
+import {
+  buildDocumentRequestContainerModel,
+} from '../core/documents/documentRequestContainerModel.js'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -1505,10 +1508,61 @@ function inferRequirementAudience(requirement = {}) {
   return { buyer: true, seller: true }
 }
 
+function isClientPortalProfessionalOnlyRequirement(requirement = {}) {
+  const canonicalVisibility = normalizeValue(
+    requirement?.canonicalDocumentRequestVisibility ||
+      requirement?.canonical_document_request_visibility ||
+      requirement?.canonicalRequestVisibility ||
+      '',
+  )
+  const canonicalOwnerRole = normalizeValue(
+    requirement?.canonicalDocumentRequestOwnerRole ||
+      requirement?.canonical_document_request_owner_role ||
+      requirement?.ownerRole ||
+      requirement?.owner_role ||
+      '',
+  )
+  const canonicalKey = normalizeValue(
+    requirement?.canonicalDocumentRequestKey ||
+      requirement?.canonical_document_request_key ||
+      requirement?.documentRequestCanonicalKey ||
+      requirement?.key ||
+      '',
+  )
+  if (canonicalVisibility === 'professional_shared') return true
+  if (
+    ['signed_otp', 'transfer_documents'].includes(canonicalKey) &&
+    canonicalOwnerRole &&
+    !['buyer', 'seller'].includes(canonicalOwnerRole)
+  ) {
+    return true
+  }
+  return false
+}
+
+const DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS = new Set([
+  'property_acquisition_record',
+  'capital_improvement_records',
+])
+
+function isDeferredSellerUploadRequirement(requirement = {}) {
+  const key = normalizeValue(
+    requirement?.key ||
+      requirement?.requirement_key ||
+      requirement?.document_key ||
+      requirement?.documentType ||
+      requirement?.document_type ||
+      '',
+  )
+  return DEFERRED_SELLER_UPLOAD_REQUIREMENT_KEYS.has(key)
+}
+
 function filterRequiredDocumentsByWorkspace(requiredDocuments = [], workspaceMode = 'buying') {
   return (requiredDocuments || []).filter((requirement) => {
     const visibility = normalizeValue(requirement?.visibilityScope || requirement?.visibility_scope || 'client')
     if (visibility === 'internal' || visibility === 'internal_only') return false
+    if (isClientPortalProfessionalOnlyRequirement(requirement)) return false
+    if (workspaceMode === 'selling' && isDeferredSellerUploadRequirement(requirement)) return false
     const audience = inferRequirementAudience(requirement)
     if (workspaceMode === 'selling') return audience.seller
     if (workspaceMode === 'buying') return audience.buyer
@@ -2932,6 +2986,12 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     Array.isArray(portalData?.additionalDocumentRequests) ? portalData.additionalDocumentRequests : [],
     workspaceMode,
   )
+  const documentRequestContainerModel = buildDocumentRequestContainerModel({
+    transactionId: portalData?.transaction?.id || portalData?.transactionId || portalData?.transaction_id || '',
+    requiredDocuments,
+    additionalRequests,
+    audience: workspaceMode === 'buying' ? 'buyer' : workspaceMode === 'selling' ? 'seller' : 'client',
+  })
   const requiredItems = requiredDocuments.map((requirement) =>
     {
       const item = buildRequirementDocumentCenterItem(requirement, uploadedDocumentsById, uploadedDocuments)
@@ -3017,6 +3077,9 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     summary,
     canonicalRequirements: Array.isArray(portalData?.canonicalRequirements) ? portalData.canonicalRequirements : [],
     canonicalDocumentRequestPlan,
+    documentRequestContainers: documentRequestContainerModel.containers,
+    documentRequestContainerSummary: documentRequestContainerModel.summary,
+    allDocumentRequestContainerSummary: documentRequestContainerModel.allSummary,
     retiredRequirements: sellerDocumentPack?.retiredRequirements || [],
     sellerStructure: sellerDocumentPack?.sellerStructure || null,
     documentPackSource: sellerDocumentPack?.source || '',

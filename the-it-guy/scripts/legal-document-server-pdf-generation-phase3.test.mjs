@@ -47,6 +47,12 @@ assertMatches(
 
 assertMatches(
   packetServiceSource,
+  /const useFrozenEditableNativeRenderer =[\s\S]+context\?\.frozenEditableRenderInput\?\.freezeId[\s\S]+context\?\.editableRenderFreeze\?\.freezeId[\s\S]+const useNativeRenderer =[\s\S]+useFrozenEditableNativeRenderer[\s\S]+const renderMode =[\s\S]+useFrozenEditableNativeRenderer[\s\S]+\? 'native_structured'[\s\S]+if \([\s\S]+!useFrozenEditableNativeRenderer[\s\S]+!useEditableNativeRenderer[\s\S]+!templateIsUsableForGeneration/,
+  'A frozen editable mandate source should force the native server job even when editable sections are not hydrated in the browser',
+)
+
+assertMatches(
+  packetServiceSource,
   /invokeEdgeFunction\('legal-document-job-runner'[\s\S]+action: 'generate_ready_packet'[\s\S]+background: true[\s\S]+jobDisplayType: 'generate_mandate_pdf'/,
   'Generate mandate should create a background legal document job',
 )

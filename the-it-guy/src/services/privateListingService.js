@@ -1332,6 +1332,111 @@ function isMissingRpcError(error, functionName = '') {
   )
 }
 
+async function linkSellerPortalDocumentRequestUpload(client, {
+  transactionId = '',
+  documentRequestId = '',
+  documentId = '',
+  privateListingDocumentId = '',
+} = {}) {
+  const normalizedTransactionId = normalizeUuid(transactionId)
+  const normalizedRequestId = normalizeText(documentRequestId)
+  const normalizedDocumentId = normalizeText(documentId || privateListingDocumentId)
+  if (!normalizedDocumentId || (!normalizedTransactionId && !normalizedRequestId)) {
+    return null
+  }
+
+  let requestQuery = client
+    .from('document_requests')
+    .select('id, transaction_id, status, requires_review, created_at')
+
+  if (normalizedRequestId) {
+    requestQuery = requestQuery.eq('id', normalizedRequestId)
+  } else {
+    requestQuery = requestQuery
+      .eq('transaction_id', normalizedTransactionId)
+      .in('status', ['requested', 'rejected', 'reviewed', 'under_review'])
+  }
+
+  let requestResult = await requestQuery.order('created_at', { ascending: false }).limit(1)
+
+  if (requestResult.error && isMissingColumnError(requestResult.error, 'requires_review')) {
+    requestResult = await client
+      .from('document_requests')
+      .select('id, transaction_id, status, created_at')
+      .eq(normalizedRequestId ? 'id' : 'transaction_id', normalizedRequestId || normalizedTransactionId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+  }
+
+  if (requestResult.error) {
+    if (
+      isMissingTableError(requestResult.error, 'document_requests') ||
+      isMissingSchemaError(requestResult.error) ||
+      isPermissionDeniedError(requestResult.error)
+    ) {
+      return null
+    }
+    throw requestResult.error
+  }
+
+  const request = Array.isArray(requestResult.data) ? requestResult.data[0] : null
+  if (!request?.id || ['completed', 'cancelled'].includes(normalizeText(request.status))) {
+    return null
+  }
+
+  const nextStatus = request.requires_review === false ? 'completed' : 'uploaded'
+  const now = new Date().toISOString()
+  const fullPayload = {
+    status: nextStatus,
+    requested_document_id: normalizedDocumentId,
+    completed_at: nextStatus === 'completed' ? now : null,
+    rejected_reason: null,
+    updated_at: now,
+  }
+
+  let update = await client
+    .from('document_requests')
+    .update(fullPayload)
+    .eq('id', request.id)
+    .select('id, transaction_id, status, requires_review, requested_document_id, completed_at, updated_at')
+    .single()
+
+  if (
+    update.error &&
+    (isMissingColumnError(update.error, 'requested_document_id') ||
+      isMissingColumnError(update.error, 'completed_at') ||
+      isMissingColumnError(update.error, 'rejected_reason') ||
+      isMissingColumnError(update.error, 'updated_at') ||
+      isMissingColumnError(update.error, 'requires_review'))
+  ) {
+    update = await client
+      .from('document_requests')
+      .update({ status: nextStatus })
+      .eq('id', request.id)
+      .select('id, transaction_id, status')
+      .single()
+  }
+
+  if (update.error) {
+    if (
+      isMissingTableError(update.error, 'document_requests') ||
+      isMissingSchemaError(update.error) ||
+      isPermissionDeniedError(update.error)
+    ) {
+      return null
+    }
+    throw update.error
+  }
+
+  return {
+    requestId: update.data?.id || request.id,
+    transactionId: update.data?.transaction_id || request.transaction_id || normalizedTransactionId || null,
+    status: update.data?.status || nextStatus,
+    requestedDocumentId: update.data?.requested_document_id || normalizedDocumentId,
+    privateListingDocumentId: privateListingDocumentId || null,
+  }
+}
+
 function isRecoverableSellerPortalPayloadRpcError(error) {
   if (!error) return false
   const status = Number(error.status || error.statusCode || 0)
@@ -8288,6 +8393,7 @@ export async function uploadSellerClientPortalDocument({
   file,
   requirementKey = '',
   requirementInstanceId = '',
+  documentRequestId = '',
   documentType = '',
   category = 'Seller Document',
 } = {}) {
@@ -8448,6 +8554,16 @@ export async function uploadSellerClientPortalDocument({
     })
   }
 
+  const documentRequestUpdate = await linkSellerPortalDocumentRequestUpload(storageClient, {
+    transactionId: promotedTransactionId || listing?.transactionId || listing?.transaction_id || '',
+    documentRequestId,
+    documentId: promotedSharedDocument?.id || documentRow?.promoted_document_id || documentRow?.id || '',
+    privateListingDocumentId: documentRow?.id || null,
+  }).catch((error) => {
+    console.warn('[Private Listings] seller document request upload link skipped after seller portal upload', error)
+    return null
+  })
+
   return {
     id: documentRow?.id || filePath,
     name: documentRow?.document_name || file.name || safeOriginalName,
@@ -8473,6 +8589,7 @@ export async function uploadSellerClientPortalDocument({
     promotionError: documentRow?.promotion_error || null,
     promotionRevision: documentRow?.promotion_revision || 0,
     sharedDocument: promotedSharedDocument,
+    documentRequestUpdate,
   }
 }
 

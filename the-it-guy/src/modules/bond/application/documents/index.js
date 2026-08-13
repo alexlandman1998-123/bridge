@@ -25,3 +25,9 @@ export {
 } from './buildBondApplicationDocumentChecklist.js'
 export { calculateBondApplicationDocumentProgress } from './bondApplicationDocumentProgress.js'
 export { buildBondApplicationDocumentReconciliationPlan } from './reconcileBondApplicationDocumentRequirements.js'
+export {
+  BOND_APPLICATION_CANONICAL_DOCUMENT_MODEL_VERSION,
+  BOND_APPLICATION_CANONICAL_PARENT_KEYS,
+  buildBondApplicationCanonicalDocumentModel,
+  resolveBondApplicationCanonicalParentKey,
+} from './bondApplicationCanonicalDocumentModel.js'

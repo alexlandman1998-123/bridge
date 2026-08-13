@@ -3872,8 +3872,12 @@ export async function generatePacketVersion({
     }
     let renderStatus = 'generated'
     const useEditableNativeRenderer = Array.isArray(context?.editableSections) && context.editableSections.length > 0
+    const useFrozenEditableNativeRenderer =
+      validation.packetType === 'mandate' &&
+      Boolean(context?.frozenEditableRenderInput?.freezeId || context?.editableRenderFreeze?.freezeId)
     const useNativeRenderer =
       validation.packetType === 'otp' ||
+      useFrozenEditableNativeRenderer ||
       useEditableNativeRenderer || shouldUseNativeGeneration(effectiveTemplate, validation.packetType)
     let canonicalOtpGeneration = null
 
@@ -3890,10 +3894,11 @@ export async function generatePacketVersion({
             'OTP generation requires a published structured template approved for the native PDF renderer.',
           )
         }
-        const renderMode = validation.packetType === 'otp' || useEditableNativeRenderer || templateUsesNativeRenderer(effectiveTemplate, validation.packetType)
+        const renderMode = validation.packetType === 'otp' || useFrozenEditableNativeRenderer || useEditableNativeRenderer || templateUsesNativeRenderer(effectiveTemplate, validation.packetType)
           ? 'native_structured'
           : resolveTemplateRenderMode(effectiveTemplate, validation.packetType)
         if (
+          !useFrozenEditableNativeRenderer &&
           !useEditableNativeRenderer &&
           !templateIsUsableForGeneration(effectiveTemplate, validation.packetType)
         ) {

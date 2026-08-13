@@ -1,0 +1,566 @@
+{
+  "phase": "document_request_phase1_single_canonical_policy",
+  "generatedAt": "2026-08-13T16:17:48.811Z",
+  "commit": false,
+  "mutatedData": false,
+  "strictSignoff": false,
+  "canonicalPolicySource": {
+    "path": "config/document-request-phase1-legal-checklist.json",
+    "bytes": 17709,
+    "hash": "sha256:a321106d7e4daa315333bc514183df351725f6db801dc7d0fa386e5f45331806"
+  },
+  "policy": {
+    "version": "document_request_canonical_policy_v1",
+    "source": "config/document-request-phase1-legal-checklist.json",
+    "matrixVersion": "document_request_canonical_matrix_v1",
+    "sourceVersion": "document_request_phase1_legal_checklist_v1",
+    "status": "valid_pending_signoff",
+    "singleSourceOfTruth": true,
+    "requestablePolicy": "pending_policy_rows_are_visible_but_not_requestable_by_default",
+    "counts": {
+      "requirements": 67,
+      "requestableByDefault": 62,
+      "pendingPolicy": 5,
+      "signoffDecisions": 7,
+      "pendingSignoffDecisions": 5,
+      "warnings": 9,
+      "errors": 0
+    },
+    "byOwnerRole": {
+      "agent": 1,
+      "buyer": 24,
+      "seller": 39,
+      "transfer_attorney": 2,
+      "cancellation_attorney": 1
+    },
+    "byRequestedFrom": {
+      "agent": 1,
+      "buyer": 24,
+      "seller": 39,
+      "transfer_attorney": 2,
+      "cancellation_attorney": 1
+    },
+    "byVisibility": {
+      "professional_shared": 5,
+      "client_visible": 62
+    },
+    "byLevel": {
+      "required": 51,
+      "pending_policy_required_unless_waived": 1,
+      "pending_policy_required": 4,
+      "conditional": 11
+    },
+    "byBlocker": {
+      "attorney_instruction_ready": 45,
+      "lodgement_ready": 15,
+      "finance_ready": 6,
+      "registration_ready": 1
+    },
+    "pendingPolicyKeys": [
+      "buyer_anc_document",
+      "buyer_company_beneficial_ownership",
+      "buyer_trust_beneficial_ownership",
+      "seller_company_beneficial_ownership",
+      "seller_trust_beneficial_ownership"
+    ],
+    "requestableByDefaultKeys": [
+      "signed_otp",
+      "buyer_fica_pack",
+      "seller_fica_pack",
+      "transfer_duty_information",
+      "rates_clearance",
+      "transfer_documents",
+      "buyer_id_document",
+      "buyer_proof_of_address",
+      "buyer_marital_status_details",
+      "buyer_marriage_certificate",
+      "buyer_spouse_id_document",
+      "buyer_spouse_proof_of_address",
+      "buyer_passport",
+      "buyer_source_of_funds",
+      "buyer_company_registration",
+      "buyer_company_resolution",
+      "buyer_director_fica",
+      "buyer_trust_deed",
+      "buyer_letters_of_authority",
+      "buyer_trustee_resolution",
+      "buyer_trustee_fica",
+      "proof_of_funds",
+      "proof_of_funds_cash_component",
+      "bond_approval",
+      "grant_signed",
+      "income_affordability_documents",
+      "seller_id_document",
+      "seller_proof_of_address",
+      "seller_marriage_certificate",
+      "seller_spouse_id_document",
+      "seller_spouse_consent",
+      "seller_anc_document",
+      "seller_company_registration",
+      "seller_company_resolution",
+      "seller_director_fica",
+      "seller_trust_deed",
+      "seller_letters_of_authority",
+      "seller_trustee_resolution",
+      "seller_trustee_fica",
+      "seller_executor_authority",
+      "seller_power_of_attorney",
+      "title_deed_copy",
+      "rates_account",
+      "property_condition_disclosure",
+      "seller_bank_account_confirmation",
+      "seller_tax_number",
+      "bond_statement",
+      "bond_cancellation_figures",
+      "electrical_compliance_certificate",
+      "gas_compliance_certificate",
+      "electric_fence_certificate",
+      "water_installation_certificate",
+      "beetle_certificate",
+      "solar_compliance_documents",
+      "approved_building_plans",
+      "occupation_certificate",
+      "levy_statement",
+      "body_corporate_details",
+      "hoa_levy_statement",
+      "lease_agreement",
+      "zoning_certificate",
+      "vat_status_confirmation"
+    ],
+    "signoffPendingKeys": [
+      "company_beneficial_ownership",
+      "trust_beneficial_ownership",
+      "buyer_anc_document",
+      "electrical_coc",
+      "conditional_compliance_certificates"
+    ],
+    "deferredKeysAbsentFromPolicy": [
+      "property_acquisition_record",
+      "capital_improvement_records"
+    ],
+    "signoffAnchors": [
+      "buyer_anc_document",
+      "company_beneficial_ownership",
+      "conditional_compliance_certificates",
+      "electrical_coc",
+      "seller_bank_confirmation",
+      "seller_income_tax_number",
+      "trust_beneficial_ownership"
+    ],
+    "validation": {
+      "ok": true,
+      "errors": [],
+      "warnings": [
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "electrical_compliance_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "electrical_compliance_certificate",
+          "signoffKey": "electrical_coc"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "gas_compliance_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "gas_compliance_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "electric_fence_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "electric_fence_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "water_installation_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "water_installation_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "beetle_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "beetle_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "solar_compliance_documents: active row is related to a pending signoff decision",
+          "requirementKey": "solar_compliance_documents",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "approved_building_plans: active row is related to a pending signoff decision",
+          "requirementKey": "approved_building_plans",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "occupation_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "occupation_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "professional_shared_client_owned",
+          "message": "vat_status_confirmation: professional-shared row is requested from a client role",
+          "requirementKey": "vat_status_confirmation"
+        }
+      ],
+      "issues": [
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "electrical_compliance_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "electrical_compliance_certificate",
+          "signoffKey": "electrical_coc"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "gas_compliance_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "gas_compliance_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "electric_fence_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "electric_fence_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "water_installation_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "water_installation_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "beetle_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "beetle_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "solar_compliance_documents: active row is related to a pending signoff decision",
+          "requirementKey": "solar_compliance_documents",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "approved_building_plans: active row is related to a pending signoff decision",
+          "requirementKey": "approved_building_plans",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "active_row_has_pending_related_signoff",
+          "message": "occupation_certificate: active row is related to a pending signoff decision",
+          "requirementKey": "occupation_certificate",
+          "signoffKey": "conditional_compliance_certificates"
+        },
+        {
+          "severity": "warning",
+          "code": "professional_shared_client_owned",
+          "message": "vat_status_confirmation: professional-shared row is requested from a client role",
+          "requirementKey": "vat_status_confirmation"
+        }
+      ]
+    }
+  },
+  "scenarioProofs": [
+    {
+      "id": "individual_buyer_company_seller_hybrid",
+      "scenario": {
+        "buyerEntityType": "individual",
+        "sellerEntityType": "company",
+        "financeType": "hybrid",
+        "sellerHasExistingBond": true,
+        "propertyType": "sectional_title"
+      },
+      "tokens": [
+        "transaction",
+        "buyer",
+        "seller",
+        "property",
+        "buyer_individual",
+        "seller_company",
+        "hybrid",
+        "sectional_title",
+        "seller_existing_bond"
+      ],
+      "total": 28,
+      "requestable": 27,
+      "pendingPolicy": 1,
+      "byAudience": {
+        "attorney": 28,
+        "buyer": 9,
+        "seller": 15,
+        "bond_originator": 5
+      },
+      "buyerKeys": [
+        "buyer_fica_pack",
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "buyer_marital_status_details",
+        "buyer_source_of_funds",
+        "proof_of_funds_cash_component",
+        "bond_approval",
+        "grant_signed",
+        "income_affordability_documents"
+      ],
+      "sellerKeys": [
+        "seller_fica_pack",
+        "rates_clearance",
+        "seller_company_registration",
+        "seller_company_resolution",
+        "seller_director_fica",
+        "seller_company_beneficial_ownership",
+        "title_deed_copy",
+        "rates_account",
+        "property_condition_disclosure",
+        "seller_bank_account_confirmation",
+        "seller_tax_number",
+        "bond_statement",
+        "electrical_compliance_certificate",
+        "levy_statement",
+        "body_corporate_details"
+      ],
+      "bondOriginatorKeys": [
+        "buyer_source_of_funds",
+        "proof_of_funds_cash_component",
+        "bond_approval",
+        "grant_signed",
+        "income_affordability_documents"
+      ],
+      "pendingPolicyKeys": [
+        "seller_company_beneficial_ownership"
+      ],
+      "nonRequestablePendingPolicyKeys": [
+        "seller_company_beneficial_ownership"
+      ]
+    },
+    {
+      "id": "trust_buyer_trust_seller_bond",
+      "scenario": {
+        "buyerEntityType": "trust",
+        "sellerEntityType": "trust",
+        "financeType": "bond",
+        "gasInstallation": true
+      },
+      "tokens": [
+        "transaction",
+        "buyer",
+        "seller",
+        "property",
+        "buyer_trust",
+        "seller_trust",
+        "bond",
+        "gas_installation"
+      ],
+      "total": 26,
+      "requestable": 24,
+      "pendingPolicy": 2,
+      "byAudience": {
+        "attorney": 26,
+        "buyer": 9,
+        "seller": 14,
+        "bond_originator": 3
+      },
+      "buyerKeys": [
+        "buyer_fica_pack",
+        "buyer_trust_deed",
+        "buyer_letters_of_authority",
+        "buyer_trustee_resolution",
+        "buyer_trustee_fica",
+        "buyer_trust_beneficial_ownership",
+        "bond_approval",
+        "grant_signed",
+        "income_affordability_documents"
+      ],
+      "sellerKeys": [
+        "seller_fica_pack",
+        "rates_clearance",
+        "seller_trust_deed",
+        "seller_letters_of_authority",
+        "seller_trustee_resolution",
+        "seller_trustee_fica",
+        "seller_trust_beneficial_ownership",
+        "title_deed_copy",
+        "rates_account",
+        "property_condition_disclosure",
+        "seller_bank_account_confirmation",
+        "seller_tax_number",
+        "electrical_compliance_certificate",
+        "gas_compliance_certificate"
+      ],
+      "bondOriginatorKeys": [
+        "bond_approval",
+        "grant_signed",
+        "income_affordability_documents"
+      ],
+      "pendingPolicyKeys": [
+        "buyer_trust_beneficial_ownership",
+        "seller_trust_beneficial_ownership"
+      ],
+      "nonRequestablePendingPolicyKeys": [
+        "buyer_trust_beneficial_ownership",
+        "seller_trust_beneficial_ownership"
+      ]
+    },
+    {
+      "id": "foreign_cash_buyer_individual_seller",
+      "scenario": {
+        "buyerEntityType": "foreign_individual",
+        "sellerEntityType": "individual",
+        "financeType": "cash",
+        "propertyType": "estate_hoa"
+      },
+      "tokens": [
+        "transaction",
+        "buyer",
+        "seller",
+        "property",
+        "buyer_foreign_individual",
+        "seller_individual",
+        "cash",
+        "estate_hoa"
+      ],
+      "total": 19,
+      "requestable": 19,
+      "pendingPolicy": 0,
+      "byAudience": {
+        "attorney": 19,
+        "buyer": 5,
+        "seller": 11,
+        "bond_originator": 1
+      },
+      "buyerKeys": [
+        "buyer_fica_pack",
+        "buyer_proof_of_address",
+        "buyer_passport",
+        "buyer_source_of_funds",
+        "proof_of_funds"
+      ],
+      "sellerKeys": [
+        "seller_fica_pack",
+        "rates_clearance",
+        "seller_id_document",
+        "seller_proof_of_address",
+        "title_deed_copy",
+        "rates_account",
+        "property_condition_disclosure",
+        "seller_bank_account_confirmation",
+        "seller_tax_number",
+        "electrical_compliance_certificate",
+        "hoa_levy_statement"
+      ],
+      "bondOriginatorKeys": [
+        "buyer_source_of_funds"
+      ],
+      "pendingPolicyKeys": [],
+      "nonRequestablePendingPolicyKeys": []
+    }
+  ],
+  "phase1Decisions": [
+    {
+      "key": "single_source_of_truth",
+      "decision": "config/document-request-phase1-legal-checklist.json is the canonical policy source consumed by the matrix, planner, sync, portal, and later migration gates."
+    },
+    {
+      "key": "pending_policy_requestability",
+      "decision": "Pending-policy rows may be visible for internal/legal review but are not requestable and do not block stages by default."
+    },
+    {
+      "key": "deferred_seller_records",
+      "decision": "Acquisition and capital-improvement records stay outside canonical policy until a legal requirement is approved."
+    },
+    {
+      "key": "legacy_keys",
+      "decision": "Legacy buyer and seller keys must map through adapters/backfill; new client-visible rules must be added to canonical policy first."
+    }
+  ],
+  "gate": {
+    "status": "policy_valid_pending_signoff",
+    "ok": true,
+    "mayProceedToPhase2": true,
+    "productionActivationReady": false,
+    "errors": [],
+    "warnings": [
+      {
+        "severity": "warning",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "electrical_compliance_certificate: active row is related to a pending signoff decision",
+        "requirementKey": "electrical_compliance_certificate",
+        "signoffKey": "electrical_coc"
+      },
+      {
+        "severity": "warning",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "gas_compliance_certificate: active row is related to a pending signoff decision",
+        "requirementKey": "gas_compliance_certificate",
+        "signoffKey": "conditional_compliance_certificates"
+      },
+      {
+        "severity": "warning",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "electric_fence_certificate: active row is related to a pending signoff decision",
+        "requirementKey": "electric_fence_certificate",
+        "signoffKey": "conditional_compliance_certificates"
+      },
+      {
+        "severity": "warning",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "water_installation_certificate: active row is related to a pending signoff decision",
+        "requirementKey": "water_installation_certificate",
+        "signoffKey": "conditional_compliance_certificates"
+      },
+      {
+        "severity": "warning",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "beetle_certificate: active row is related to a pending signoff decision",
+        "requirementKey": "beetle_certificate",
+        "signoffKey": "conditional_compliance_certificates"
+      },
+      {
+        "severity": "warning",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "solar_compliance_documents: active row is related to a pending signoff decision",
+        "requirementKey": "solar_compliance_documents",
+        "signoffKey": "conditional_compliance_certificates"
+      },
+      {
+        "severity": "warning",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "approved_building_plans: active row is related to a pending signoff decision",
+        "requirementKey": "approved_building_plans",
+        "signoffKey": "conditional_compliance_certificates"
+      },
+      {
+        "severity": "warning",
+        "code": "active_row_has_pending_related_signoff",
+        "message": "occupation_certificate: active row is related to a pending signoff decision",
+        "requirementKey": "occupation_certificate",
+        "signoffKey": "conditional_compliance_certificates"
+      },
+      {
+        "severity": "warning",
+        "code": "professional_shared_client_owned",
+        "message": "vat_status_confirmation: professional-shared row is requested from a client role",
+        "requirementKey": "vat_status_confirmation"
+      }
+    ]
+  }
+}
