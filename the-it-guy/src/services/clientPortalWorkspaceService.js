@@ -3205,6 +3205,36 @@ export async function resolveClientPortalContext(token) {
   }
 }
 
+function resolveFastClientPortalCoreContext(token, requestedWorkspace = 'shared') {
+  if (isSellerOnboardingToken(token)) {
+    return {
+      contexts: [
+        {
+          id: token,
+          contextType: 'selling',
+          status: 'active',
+          sellerWorkspaceToken: token,
+        },
+      ],
+      hasBuyingContext: false,
+      hasSellingContext: true,
+      workspaceRoles: ['seller'],
+    }
+  }
+
+  // Buyer links can also have seller contexts, but resolving those requires
+  // extra reads. Only pay that cost before first paint when the URL explicitly
+  // asks for the selling workspace.
+  if (normalizeWorkspace(requestedWorkspace) === 'selling') return null
+
+  return {
+    contexts: [],
+    hasBuyingContext: true,
+    hasSellingContext: false,
+    workspaceRoles: ['buyer'],
+  }
+}
+
 async function fetchPortalDataForWorkspace(token, mode = 'full', options = {}) {
   if (isSellerOnboardingToken(token)) {
     return fetchSellerClientPortalDataByToken(token, {
@@ -3381,7 +3411,8 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   if (demoWorkspaceData) return demoWorkspaceData
 
   const { mode = 'full' } = options
-  const context = await resolveClientPortalContext(token)
+  const coreContext = mode === 'core' ? resolveFastClientPortalCoreContext(token, workspace) : null
+  const context = coreContext || await resolveClientPortalContext(token)
   const workspaceMode = resolveWorkspaceMode({
     requestedWorkspace: workspace,
     hasBuyingContext: context.hasBuyingContext,

@@ -1,0 +1,600 @@
+{
+  "phase": "document_request_phase13_parent_child_upload_containers",
+  "generatedAt": "2026-08-13T19:38:46.138Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "version": "document_request_parent_child_upload_containers_v1",
+  "bondChildContainerPolicyVersion": "bond_application_child_container_policy_v1",
+  "bondScenarioSummary": [
+    {
+      "id": "permanent_employee",
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "splitParentKeys": [
+        "income_affordability_documents"
+      ],
+      "childContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence"
+      ],
+      "uploadContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence"
+      ],
+      "buyerContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence"
+      ],
+      "bondOriginatorContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence"
+      ],
+      "bondOriginatorContainerSummary": {
+        "total": 3,
+        "canonicalRequired": 3,
+        "additionalRequests": 0,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 3
+        },
+        "byStatus": {
+          "missing": 3
+        }
+      }
+    },
+    {
+      "id": "contract_employee",
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "splitParentKeys": [
+        "income_affordability_documents"
+      ],
+      "childContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_employment_contract"
+      ],
+      "uploadContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_employment_contract"
+      ],
+      "buyerContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_employment_contract"
+      ],
+      "bondOriginatorContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_employment_contract"
+      ],
+      "bondOriginatorContainerSummary": {
+        "total": 4,
+        "canonicalRequired": 4,
+        "additionalRequests": 0,
+        "blocking": 4,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 4
+        },
+        "byAudience": {
+          "agent": 4,
+          "attorney": 4,
+          "internal": 4,
+          "buyer": 4,
+          "bond_originator": 4
+        },
+        "byStatus": {
+          "missing": 4
+        }
+      }
+    },
+    {
+      "id": "self_employed",
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "splitParentKeys": [
+        "income_affordability_documents"
+      ],
+      "childContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_business_registration",
+        "bond_application_self_employed_financials"
+      ],
+      "uploadContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_business_registration",
+        "bond_application_self_employed_financials"
+      ],
+      "buyerContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_business_registration",
+        "bond_application_self_employed_financials"
+      ],
+      "bondOriginatorContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_business_registration",
+        "bond_application_self_employed_financials"
+      ],
+      "bondOriginatorContainerSummary": {
+        "total": 4,
+        "canonicalRequired": 4,
+        "additionalRequests": 0,
+        "blocking": 4,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 4
+        },
+        "byAudience": {
+          "agent": 4,
+          "attorney": 4,
+          "internal": 4,
+          "buyer": 4,
+          "bond_originator": 4
+        },
+        "byStatus": {
+          "missing": 4
+        }
+      }
+    },
+    {
+      "id": "commission_based",
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "splitParentKeys": [
+        "income_affordability_documents"
+      ],
+      "childContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_commission_income_evidence"
+      ],
+      "uploadContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_commission_income_evidence"
+      ],
+      "buyerContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_commission_income_evidence"
+      ],
+      "bondOriginatorContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_commission_income_evidence"
+      ],
+      "bondOriginatorContainerSummary": {
+        "total": 4,
+        "canonicalRequired": 4,
+        "additionalRequests": 0,
+        "blocking": 4,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 4
+        },
+        "byAudience": {
+          "agent": 4,
+          "attorney": 4,
+          "internal": 4,
+          "buyer": 4,
+          "bond_originator": 4
+        },
+        "byStatus": {
+          "missing": 4
+        }
+      }
+    },
+    {
+      "id": "retired",
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "splitParentKeys": [
+        "income_affordability_documents"
+      ],
+      "childContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_retirement_income_evidence"
+      ],
+      "uploadContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_retirement_income_evidence"
+      ],
+      "buyerContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_retirement_income_evidence"
+      ],
+      "bondOriginatorContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_retirement_income_evidence"
+      ],
+      "bondOriginatorContainerSummary": {
+        "total": 3,
+        "canonicalRequired": 3,
+        "additionalRequests": 0,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 3
+        },
+        "byStatus": {
+          "missing": 3
+        }
+      }
+    },
+    {
+      "id": "other_income",
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "splitParentKeys": [
+        "income_affordability_documents"
+      ],
+      "childContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_other_income_evidence"
+      ],
+      "uploadContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_other_income_evidence"
+      ],
+      "buyerContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_other_income_evidence"
+      ],
+      "bondOriginatorContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_other_income_evidence"
+      ],
+      "bondOriginatorContainerSummary": {
+        "total": 3,
+        "canonicalRequired": 3,
+        "additionalRequests": 0,
+        "blocking": 3,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 3
+        },
+        "byAudience": {
+          "agent": 3,
+          "attorney": 3,
+          "internal": 3,
+          "buyer": 3,
+          "bond_originator": 3
+        },
+        "byStatus": {
+          "missing": 3
+        }
+      }
+    },
+    {
+      "id": "existing_property",
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "splitParentKeys": [
+        "income_affordability_documents"
+      ],
+      "childContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_existing_property_bond_statement"
+      ],
+      "uploadContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_existing_property_bond_statement"
+      ],
+      "buyerContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_existing_property_bond_statement"
+      ],
+      "bondOriginatorContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_existing_property_bond_statement"
+      ],
+      "bondOriginatorContainerSummary": {
+        "total": 4,
+        "canonicalRequired": 4,
+        "additionalRequests": 0,
+        "blocking": 4,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 4
+        },
+        "byAudience": {
+          "agent": 4,
+          "attorney": 4,
+          "internal": 4,
+          "buyer": 4,
+          "bond_originator": 4
+        },
+        "byStatus": {
+          "missing": 4
+        }
+      }
+    },
+    {
+      "id": "credit_history",
+      "parentKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "income_affordability_documents"
+      ],
+      "splitParentKeys": [
+        "income_affordability_documents"
+      ],
+      "childContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_credit_history_support"
+      ],
+      "uploadContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_credit_history_support"
+      ],
+      "buyerContainerKeys": [
+        "buyer_id_document",
+        "buyer_proof_of_address",
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_credit_history_support"
+      ],
+      "bondOriginatorContainerKeys": [
+        "bond_application_primary_applicant_bank_statements",
+        "bond_application_deposit_proof",
+        "bond_application_salary_income_evidence",
+        "bond_application_credit_history_support"
+      ],
+      "bondOriginatorContainerSummary": {
+        "total": 4,
+        "canonicalRequired": 4,
+        "additionalRequests": 0,
+        "blocking": 4,
+        "uploaded": 0,
+        "byRequestedFrom": {
+          "buyer": 4
+        },
+        "byAudience": {
+          "agent": 4,
+          "attorney": 4,
+          "internal": 4,
+          "buyer": 4,
+          "bond_originator": 4
+        },
+        "byStatus": {
+          "missing": 4
+        }
+      }
+    }
+  ],
+  "sellerGroupingSummary": [
+    {
+      "scenarioId": "married_cop_existing_bond",
+      "canonicalKey": "bond_statement",
+      "legacyKeys": [
+        "bond_statement",
+        "bond_bank_details",
+        "bond_cancellation_attorney_details",
+        "settlement_figure"
+      ]
+    },
+    {
+      "scenarioId": "company_seller",
+      "canonicalKey": "seller_company_registration",
+      "legacyKeys": [
+        "company_registration",
+        "cipc_documents",
+        "company_address_proof"
+      ]
+    },
+    {
+      "scenarioId": "company_seller",
+      "canonicalKey": "seller_director_fica",
+      "legacyKeys": [
+        "director_member_ids",
+        "authorised_signatory_id"
+      ]
+    },
+    {
+      "scenarioId": "trust_seller",
+      "canonicalKey": "seller_trustee_fica",
+      "legacyKeys": [
+        "trustee_ids",
+        "authorised_trustee_signatory_id"
+      ]
+    },
+    {
+      "scenarioId": "deceased_estate",
+      "canonicalKey": "seller_executor_authority",
+      "legacyKeys": [
+        "seller_executor_authority",
+        "executor_id_document",
+        "deceased_death_certificate",
+        "estate_owner_details"
+      ]
+    },
+    {
+      "scenarioId": "tenant_occupied_estate",
+      "canonicalKey": "hoa_levy_statement",
+      "legacyKeys": [
+        "hoa_levy_statement",
+        "hoa_contact_details"
+      ]
+    },
+    {
+      "scenarioId": "tenant_occupied_estate",
+      "canonicalKey": "lease_agreement",
+      "legacyKeys": [
+        "lease_agreement",
+        "tenant_details"
+      ]
+    },
+    {
+      "scenarioId": "commercial_vat",
+      "canonicalKey": "seller_company_registration",
+      "legacyKeys": [
+        "company_registration",
+        "cipc_documents",
+        "company_address_proof"
+      ]
+    },
+    {
+      "scenarioId": "commercial_vat",
+      "canonicalKey": "seller_director_fica",
+      "legacyKeys": [
+        "director_member_ids",
+        "authorised_signatory_id"
+      ]
+    }
+  ],
+  "smokeSummary": {
+    "failedSmokeCount": 0,
+    "unstableContainerIdCount": 0,
+    "deferredSellerUploadLeakCount": 0,
+    "buyerContainerCount": 13,
+    "sellerContainerCount": 17,
+    "agentContainerCount": 30,
+    "attorneyContainerCount": 30,
+    "bondOriginatorContainerCount": 5,
+    "internalContainerCount": 30
+  },
+  "gate": {
+    "status": "parent_child_upload_containers_mapped",
+    "ok": true,
+    "mayProceedToPhase14": true,
+    "productionActivationReady": true,
+    "checks": [
+      {
+        "key": "bond_child_container_policy_exists",
+        "ok": true
+      },
+      {
+        "key": "container_model_preserves_parent_child_metadata",
+        "ok": true
+      },
+      {
+        "key": "bond_finance_parent_is_split_into_child_upload_containers",
+        "ok": true
+      },
+      {
+        "key": "bond_parent_rollup_is_retained_for_summary_only",
+        "ok": true
+      },
+      {
+        "key": "seller_grouped_containers_are_accepted_not_split",
+        "ok": true
+      },
+      {
+        "key": "workspace_smoke_still_has_no_container_drift",
+        "ok": true
+      },
+      {
+        "key": "phase13_verify_chain_is_registered",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "warnings": []
+  }
+}

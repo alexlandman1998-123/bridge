@@ -4,6 +4,11 @@ import BondRiskBadge from './BondRiskBadge'
 import BondStatusBadge from './BondStatusBadge'
 import { FINANCE_INTELLIGENCE_DISCLAIMER } from '../../services/financeIntelligenceService'
 import { resolvePortalBuyerName } from '../../services/portalCanonicalFieldFallbacks'
+import {
+  buildBondConsultantActionHref,
+  resolveBondConsultantAction,
+  resolveBondProgressStage,
+} from '../../services/bondConsultantActionService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -23,89 +28,6 @@ const PROGRESS_STAGE_ORDER = [
   'instruction_sent',
 ]
 
-const PROGRESS_STAGE_LABELS = {
-  documents_received: 'Documents Received',
-  documents_reviewed: 'Documents Reviewed',
-  ready_for_review: 'Ready For Review',
-  applications_submitted: 'Applications Submitted',
-  quotes_received: 'Quotes Received',
-  quote_approved: 'Quote Approved',
-  bond_approved: 'Bond Approved',
-  grant_received: 'Grant Received',
-  grant_signed: 'Grant Signed',
-  grant_submitted: 'Grant Submitted',
-  instruction_sent: 'Instruction Sent',
-  registered: 'Registered',
-  declined: 'Declined',
-}
-
-export const APPLICATION_PROGRESS_STAGE_OPTIONS = [
-  { key: 'all', label: 'All stages' },
-  { key: 'documents_received', label: PROGRESS_STAGE_LABELS.documents_received },
-  { key: 'documents_reviewed', label: PROGRESS_STAGE_LABELS.documents_reviewed },
-  { key: 'ready_for_review', label: PROGRESS_STAGE_LABELS.ready_for_review },
-  { key: 'applications_submitted', label: PROGRESS_STAGE_LABELS.applications_submitted },
-  { key: 'quotes_received', label: PROGRESS_STAGE_LABELS.quotes_received },
-  { key: 'quote_approved', label: PROGRESS_STAGE_LABELS.quote_approved },
-  { key: 'bond_approved', label: PROGRESS_STAGE_LABELS.bond_approved },
-  { key: 'grant_received', label: PROGRESS_STAGE_LABELS.grant_received },
-  { key: 'grant_signed', label: PROGRESS_STAGE_LABELS.grant_signed },
-  { key: 'grant_submitted', label: PROGRESS_STAGE_LABELS.grant_submitted },
-  { key: 'instruction_sent', label: PROGRESS_STAGE_LABELS.instruction_sent },
-  { key: 'registered', label: PROGRESS_STAGE_LABELS.registered },
-  { key: 'declined', label: PROGRESS_STAGE_LABELS.declined },
-]
-
-export function resolveBondProgressStage(row = {}) {
-  const normalized = {
-    financeKey: normalizeText(row?.financeStageKey).toLowerCase(),
-    financeLabel: normalizeText(row?.financeStageLabel).toLowerCase(),
-    transferKey: normalizeText(row?.transferStageKey).toLowerCase(),
-    transferLabel: normalizeText(row?.transferStageLabel).toLowerCase(),
-    status: normalizeText(row?.status).toLowerCase(),
-    risk: normalizeText(row?.riskStatus).toLowerCase(),
-    nextAction: normalizeText(row?.nextAction).toLowerCase(),
-  }
-
-  if (normalized.status === 'cancelled') {
-    return 'declined'
-  }
-  if (normalized.financeKey === 'ready_for_review' || normalized.financeLabel === 'ready for review') {
-    return 'ready_for_review'
-  }
-  if (normalized.status === 'registered' || normalized.transferKey === 'registered') {
-    return 'registered'
-  }
-  if (['bond_instruction_sent', 'instruction_sent'].includes(normalized.financeKey)) {
-    return 'instruction_sent'
-  }
-  if (['bond_approved', 'bond_approved_', 'approval_granted'].includes(normalized.financeKey)) return 'bond_approved'
-  if (normalized.financeKey === 'grant_received') return 'grant_received'
-  if (normalized.financeKey === 'grant_signed') return 'grant_signed'
-  if (normalized.financeKey === 'grant_submitted') return 'grant_submitted'
-  if (['bond_application_open', 'pre_approval', 'docs_collection', 'finance_requested'].includes(normalized.financeKey)) {
-    return normalized.financeKey === 'pre_approval' ? 'documents_reviewed' : 'documents_received'
-  }
-  if (normalized.financeKey === 'submitted_to_banks' || normalized.financeLabel.includes('submitted')) {
-    return 'applications_submitted'
-  }
-  if (normalized.financeKey === 'bank_feedback' || normalized.status === 'bank_feedback' || normalized.risk.includes('bank feedback') || normalized.nextAction.includes('bank')) {
-    return 'quotes_received'
-  }
-  if (normalized.financeLabel.includes('grant submitted')) return 'grant_submitted'
-  if (normalized.financeLabel.includes('grant signed')) return 'grant_signed'
-  if (normalized.financeLabel.includes('grant received')) return 'grant_received'
-  if (normalized.financeLabel.includes('bond approved')) return 'bond_approved'
-  if (normalized.status === 'approved' || normalized.financeLabel.includes('approved') || normalized.financeLabel.includes('quote')) {
-    return 'quote_approved'
-  }
-  if (normalized.transferKey === 'lodgement' || normalized.transferLabel.includes('lodgement') || normalized.transferLabel.includes('registered')) {
-    return 'instruction_sent'
-  }
-
-  return 'documents_received'
-}
-
 function resolveProgressStep(row = {}) {
   const stage = resolveBondProgressStage(row)
   if (stage === 'registered') {
@@ -118,30 +40,12 @@ function resolveProgressStep(row = {}) {
 }
 
 function resolveProgressLabel(row = {}) {
-  const mapped = resolveBondProgressStage(row)
   return (
-    PROGRESS_STAGE_LABELS[mapped]
+    resolveBondConsultantAction(row).stageLabel
     || normalizeText(row?.financeStageLabel)
     || normalizeText(row?.transferStageLabel)
     || 'In progress'
   )
-}
-
-function buildActionCopy(nextAction = '') {
-  const normalized = normalizeText(nextAction).toLowerCase()
-  if (!normalized || normalized === 'no next action set') {
-    return { label: 'Open', reason: '' }
-  }
-  if (/(review|check|verify|approve|audit)/.test(normalized)) {
-    return { label: 'Review', reason: normalizeText(nextAction) }
-  }
-  if (/(follow|call|ping|contact|remind|update|chase)/.test(normalized)) {
-    return { label: 'Follow up', reason: normalizeText(nextAction) }
-  }
-  if (/(doc|fica|statement|pay slip|contract|quote|upload|missing)/.test(normalized)) {
-    return { label: 'Request docs', reason: normalizeText(nextAction) }
-  }
-  return { label: 'Open', reason: normalizeText(nextAction) }
 }
 
 function resolveProblemBadge(row = {}) {
@@ -196,15 +100,16 @@ export default function BondTransactionTable({ rows = [] }) {
               const progressStep = progressIndex + 1
               const progressPercent = Math.max(0, Math.min(100, Math.round((progressStep / totalProgressStages) * 100)))
               const progressLabel = resolveProgressLabel(row)
-              const actionCopy = buildActionCopy(row?.nextAction)
+              const consultantAction = resolveBondConsultantAction(row)
+              const actionHref = row.actionHref || buildBondConsultantActionHref(row, consultantAction)
               const issueBadge = resolveProblemBadge(row)
-              const showActionReason = actionCopy.label !== 'Open' && Boolean(actionCopy.reason)
+              const showActionReason = Boolean(consultantAction.reason)
 
               return (
                 <tr
                   key={row.key}
                   className="cursor-pointer border-t border-[#edf2f7] transition hover:bg-[#fbfdff]"
-                  onClick={() => row.transactionId && navigate(`/bond/files/${row.transactionId}`)}
+                  onClick={() => navigate(actionHref)}
                 >
                   <td className="w-[30%] px-4 py-4 align-top">
                     <p className="text-sm font-semibold text-[#142132]">{resolvePortalBuyerName(row)}</p>
@@ -271,15 +176,13 @@ export default function BondTransactionTable({ rows = [] }) {
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation()
-                        if (row.transactionId) {
-                          navigate(`/bond/files/${row.transactionId}`)
-                        }
+                        navigate(actionHref)
                       }}
                       className="inline-flex h-9 min-w-24 items-center justify-center rounded-[12px] border border-[#dbe5f0] bg-[#f8fbff] px-3 text-sm font-semibold text-[#17324d] transition hover:border-[#c9d8ea] hover:bg-white"
                     >
-                      {actionCopy.label}
+                      {consultantAction.label}
                     </button>
-                    {showActionReason ? <p className="mt-1 text-xs text-[#60758d]">{actionCopy.reason}</p> : null}
+                    {showActionReason ? <p className="mt-1 text-xs text-[#60758d]">{consultantAction.reason}</p> : null}
                   </td>
                 </tr>
               )

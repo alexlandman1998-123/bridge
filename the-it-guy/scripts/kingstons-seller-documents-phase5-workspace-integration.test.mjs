@@ -36,6 +36,12 @@ const sellerPack = {
   },
 }
 
+const pendingSellerPack = {
+  ...sellerPack,
+  sellerPackDetailsCapturedAt: '',
+}
+delete pendingSellerPack.sellerPackDetailsCapturedAt
+
 const listing = {
   id: 'listing-123',
   organisationId: 'kingstons',
@@ -45,8 +51,29 @@ const listing = {
   }),
 }
 
+const pendingListing = {
+  ...listing,
+  id: 'listing-123-pending-details',
+  rawEnquiryPayload: JSON.stringify({
+    kingstonsSellerPack: pendingSellerPack,
+  }),
+}
+
+const pendingPack = buildKingstonsSellerDocumentRequirementPack(pendingListing)
+assert.equal(pendingPack.ownershipCapture.captured, true)
+assert.equal(pendingPack.ownershipCapture.documentsUnlocked, false)
+assert.deepEqual(pendingPack.generatedOwnershipDrivenDocuments, [])
+
+const pendingSource = buildSellerDocumentSourceOfTruth({ listing: pendingListing })
+assert.equal(
+  pendingSource.rows.some((row) => row.key === 'owner_fica_9001015009087'),
+  false,
+)
+assert.equal(pendingSource.summary.totalRequired, 4)
+
 const pack = buildKingstonsSellerDocumentRequirementPack(listing)
 assert.equal(pack.version, 'kingstons_seller_documents_phase6_authority_documents_v1')
+assert.equal(pack.ownershipCapture.documentsUnlocked, true)
 assert.deepEqual(
   pack.generatedOwnershipDrivenDocuments.map((row) => row.key),
   ['owner_fica_9001015009087'],

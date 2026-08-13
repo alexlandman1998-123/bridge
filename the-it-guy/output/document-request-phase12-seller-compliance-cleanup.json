@@ -1,0 +1,414 @@
+{
+  "phase": "document_request_phase12_seller_compliance_cleanup",
+  "generatedAt": "2026-08-13T19:38:45.467Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "version": "document_request_seller_compliance_cleanup_v1",
+  "complianceRows": [
+    {
+      "key": "electrical_compliance_certificate",
+      "requirement": {
+        "ownerRole": "seller",
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "level": "required",
+        "blocker": "lodgement_ready"
+      },
+      "ownership": {
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "agentMayUploadOnBehalf": true,
+        "clientUploadDebt": true,
+        "clientVisibleUploadDebt": true
+      },
+      "container": {
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "uploadOnBehalfAllowed": true,
+        "visibleTo": [
+          "agent",
+          "attorney",
+          "internal",
+          "seller"
+        ]
+      }
+    },
+    {
+      "key": "gas_compliance_certificate",
+      "requirement": {
+        "ownerRole": "seller",
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "level": "conditional",
+        "blocker": "lodgement_ready"
+      },
+      "ownership": {
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "agentMayUploadOnBehalf": true,
+        "clientUploadDebt": true,
+        "clientVisibleUploadDebt": true
+      },
+      "container": {
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "uploadOnBehalfAllowed": true,
+        "visibleTo": [
+          "agent",
+          "attorney",
+          "internal",
+          "seller"
+        ]
+      }
+    },
+    {
+      "key": "electric_fence_certificate",
+      "requirement": {
+        "ownerRole": "seller",
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "level": "conditional",
+        "blocker": "lodgement_ready"
+      },
+      "ownership": {
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "agentMayUploadOnBehalf": true,
+        "clientUploadDebt": true,
+        "clientVisibleUploadDebt": true
+      },
+      "container": {
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "uploadOnBehalfAllowed": true,
+        "visibleTo": [
+          "agent",
+          "attorney",
+          "internal",
+          "seller"
+        ]
+      }
+    },
+    {
+      "key": "water_installation_certificate",
+      "requirement": {
+        "ownerRole": "seller",
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "level": "conditional",
+        "blocker": "lodgement_ready"
+      },
+      "ownership": {
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "agentMayUploadOnBehalf": true,
+        "clientUploadDebt": true,
+        "clientVisibleUploadDebt": true
+      },
+      "container": {
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "uploadOnBehalfAllowed": true,
+        "visibleTo": [
+          "agent",
+          "attorney",
+          "internal",
+          "seller"
+        ]
+      }
+    },
+    {
+      "key": "beetle_certificate",
+      "requirement": {
+        "ownerRole": "seller",
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "level": "conditional",
+        "blocker": "lodgement_ready"
+      },
+      "ownership": {
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "agentMayUploadOnBehalf": true,
+        "clientUploadDebt": true,
+        "clientVisibleUploadDebt": true
+      },
+      "container": {
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "uploadOnBehalfAllowed": true,
+        "visibleTo": [
+          "agent",
+          "attorney",
+          "internal",
+          "seller"
+        ]
+      }
+    },
+    {
+      "key": "solar_compliance_documents",
+      "requirement": {
+        "ownerRole": "seller",
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "level": "conditional",
+        "blocker": "lodgement_ready"
+      },
+      "ownership": {
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "agentMayUploadOnBehalf": true,
+        "clientUploadDebt": true,
+        "clientVisibleUploadDebt": true
+      },
+      "container": {
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "uploadOnBehalfAllowed": true,
+        "visibleTo": [
+          "agent",
+          "attorney",
+          "internal",
+          "seller"
+        ]
+      }
+    },
+    {
+      "key": "approved_building_plans",
+      "requirement": {
+        "ownerRole": "seller",
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "level": "conditional",
+        "blocker": "lodgement_ready"
+      },
+      "ownership": {
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "agentMayUploadOnBehalf": true,
+        "clientUploadDebt": true,
+        "clientVisibleUploadDebt": true
+      },
+      "container": {
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "uploadOnBehalfAllowed": true,
+        "visibleTo": [
+          "agent",
+          "attorney",
+          "internal",
+          "seller"
+        ]
+      }
+    },
+    {
+      "key": "occupation_certificate",
+      "requirement": {
+        "ownerRole": "seller",
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "level": "conditional",
+        "blocker": "lodgement_ready"
+      },
+      "ownership": {
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "agentMayUploadOnBehalf": true,
+        "clientUploadDebt": true,
+        "clientVisibleUploadDebt": true
+      },
+      "container": {
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "uploadOnBehalfAllowed": true,
+        "visibleTo": [
+          "agent",
+          "attorney",
+          "internal",
+          "seller"
+        ]
+      }
+    },
+    {
+      "key": "vat_status_confirmation",
+      "requirement": {
+        "ownerRole": "seller",
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "level": "conditional",
+        "blocker": "attorney_instruction_ready"
+      },
+      "ownership": {
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "agentMayUploadOnBehalf": true,
+        "clientUploadDebt": true,
+        "clientVisibleUploadDebt": true
+      },
+      "container": {
+        "requestedFrom": "seller",
+        "visibility": "client_visible",
+        "responsiblePartyRole": "seller",
+        "uploadableByRoles": [
+          "seller",
+          "agent"
+        ],
+        "uploadOnBehalfAllowed": true,
+        "visibleTo": [
+          "agent",
+          "attorney",
+          "internal",
+          "seller"
+        ]
+      }
+    }
+  ],
+  "policyWarningSummary": {
+    "total": 0,
+    "sellerCompliancePendingSignoffLeaks": 0,
+    "sellerProfessionalSharedLeaks": 0,
+    "remainingWarningCodes": {}
+  },
+  "ownershipSummary": {
+    "total": 67,
+    "failures": 0,
+    "warnings": 0,
+    "sellerExternalUploadKeys": [
+      "electrical_compliance_certificate",
+      "gas_compliance_certificate",
+      "electric_fence_certificate",
+      "water_installation_certificate",
+      "beetle_certificate",
+      "solar_compliance_documents",
+      "approved_building_plans",
+      "occupation_certificate",
+      "vat_status_confirmation"
+    ]
+  },
+  "deferredKeyLeaks": [],
+  "smokeSummary": {
+    "failedSmokeCount": 0,
+    "unstableContainerIdCount": 0,
+    "deferredSellerUploadLeakCount": 0,
+    "buyerContainerCount": 13,
+    "sellerContainerCount": 17,
+    "agentContainerCount": 30,
+    "attorneyContainerCount": 30,
+    "bondOriginatorContainerCount": 5,
+    "internalContainerCount": 30
+  },
+  "gate": {
+    "status": "seller_compliance_cleanup_mapped",
+    "ok": true,
+    "mayProceedToPhase13": true,
+    "productionActivationReady": true,
+    "checks": [
+      {
+        "key": "seller_external_upload_keys_are_declared",
+        "ok": true
+      },
+      {
+        "key": "seller_compliance_rows_are_seller_client_visible_uploads",
+        "ok": true
+      },
+      {
+        "key": "vat_status_confirmation_is_no_longer_professional_shared_client_owned",
+        "ok": true
+      },
+      {
+        "key": "attorney_vat_requests_target_seller_client_visible_upload",
+        "ok": true
+      },
+      {
+        "key": "seller_compliance_uploads_do_not_emit_pending_signoff_warnings",
+        "ok": true
+      },
+      {
+        "key": "ownership_audit_has_no_warnings_or_failures",
+        "ok": true
+      },
+      {
+        "key": "deferred_acquisition_and_improvement_records_are_still_absent",
+        "ok": true
+      },
+      {
+        "key": "workspace_smoke_still_has_no_container_drift",
+        "ok": true
+      },
+      {
+        "key": "phase12_verify_chain_is_registered",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "warnings": []
+  }
+}

@@ -7044,6 +7044,35 @@ function AgentListingDetail() {
     setSellerSectionDraft((previous) => ({ ...previous, [key]: value }))
   }
 
+  function resolveSellerProfileOwnershipModel(draft = {}) {
+    const source = toCleanText(
+      draft.sellerType ||
+        draft.sellerLegalType ||
+        draft.seller_legal_type ||
+        draft.ownerStructureType ||
+        draft.owner_structure_type ||
+        draft.ownershipType ||
+        draft.ownerType,
+    )
+    const key = normalizeKey(source)
+    if (['company', 'close_corporation', 'cc', 'pty', 'pty_ltd', 'corporate'].includes(key)) {
+      return { sellerType: 'company', sellerLegalType: 'company', ownerStructureType: 'company', ownershipType: 'company' }
+    }
+    if (key === 'trust') {
+      return { sellerType: 'trust', sellerLegalType: 'trust', ownerStructureType: 'trust', ownershipType: 'trust' }
+    }
+    if (['multiple', 'multiple_owner', 'multiple_owners', 'multiple_individuals', 'joint', 'co_owners'].includes(key)) {
+      return { sellerType: 'multiple_owners', sellerLegalType: 'multiple_owners', ownerStructureType: 'multiple_owners', ownershipType: 'multiple_owners' }
+    }
+    if (['deceased_estate', 'estate', 'deceased'].includes(key)) {
+      return { sellerType: 'deceased_estate', sellerLegalType: 'deceased_estate', ownerStructureType: 'deceased_estate', ownershipType: 'deceased_estate' }
+    }
+    if (key === 'married') {
+      return { sellerType: 'individual', sellerLegalType: 'individual', ownerStructureType: 'married', ownershipType: 'married' }
+    }
+    return { sellerType: 'individual', sellerLegalType: 'individual', ownerStructureType: 'individual', ownershipType: 'individual' }
+  }
+
   function buildSellerProfileFormPatch(draft = {}) {
     const next = { ...draft }
     const fullName = toCleanText(next.fullName)
@@ -7055,6 +7084,14 @@ function AgentListingDetail() {
       next.firstName = nameParts[0] || ''
       next.sellerSurname = nameParts.slice(1).join(' ')
       next.lastName = nameParts.slice(1).join(' ')
+    }
+    if (next.sellerType !== undefined || next.ownershipType !== undefined || next.ownerType !== undefined || next.ownerStructureType !== undefined) {
+      Object.assign(next, resolveSellerProfileOwnershipModel(next))
+      next.seller_legal_type = next.sellerLegalType
+      next.owner_structure_type = next.ownerStructureType
+      next.owner_entity_type = ['company', 'trust'].includes(next.ownerStructureType)
+        ? next.ownerStructureType
+        : 'natural_person'
     }
     if (next.email !== undefined) {
       next.email = toCleanText(next.email).toLowerCase()
@@ -7145,7 +7182,7 @@ function AgentListingDetail() {
         await updatePrivateListingOnboardingFormData(listingRecord.id, nextFormData, {
           status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started',
           sellerType: nextFormData.sellerType || listingRecord?.sellerType || 'individual',
-          ownershipStructure: nextFormData.ownershipType,
+          ownershipStructure: nextFormData.ownerStructureType || nextFormData.ownershipType,
           maritalRegime: nextFormData.maritalStatus || nextFormData.maritalRegime,
           syncRequirements: true,
           requirementSyncReason: 'agent_seller_profile_edit',

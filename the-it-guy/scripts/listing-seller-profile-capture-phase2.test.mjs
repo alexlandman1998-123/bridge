@@ -12,6 +12,10 @@ import {
   updateListingSellerProfileDraftPerson,
   validateListingSellerProfileBuilderDraft,
 } from '../src/lib/listingSellerProfileBuilderModel.js'
+import {
+  buildSellerRequirementProfile,
+  getRequiredSellerDocuments,
+} from '../src/lib/sellerDocumentRequirementEngine.js'
 
 async function test(name, fn) {
   try {
@@ -33,6 +37,59 @@ await test('AgentListingDetail exposes the listing seller profile builder workfl
   assert.ok(source.includes("requirementSyncReason: 'listing_seller_profile_capture'"), 'Saving should trigger seller requirement recalculation.')
   assert.ok(source.includes("key === 'complete_seller_facts'"), 'The follow-up action should route into the builder.')
   assert.ok(source.includes('listing-seller-profile-builder-prompt'), 'Low-completion seller profiles should show a builder prompt.')
+})
+
+await test('inline seller detail edits refresh the seller requirement model for bulk uploaded listings', async () => {
+  const detailSource = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+  const serviceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+
+  assert.ok(detailSource.includes('resolveSellerProfileOwnershipModel'), 'Inline seller edits should normalize ownership type into seller type.')
+  assert.ok(detailSource.includes('ownershipStructure: nextFormData.ownerStructureType || nextFormData.ownershipType'), 'Requirement sync should receive the normalized owner structure.')
+  assert.ok(serviceSource.includes('options.sellerType || nextFormData.sellerType'), 'Onboarding updates should prefer edited seller type over stale seeded type.')
+})
+
+await test('bulk uploaded individual seed is overridden by edited company seller form data', () => {
+  const profile = buildSellerRequirementProfile({
+    id: 'bulk-listing-1',
+    sellerType: 'individual',
+    listingStatus: 'listing_review',
+    sellerOnboarding: {
+      status: 'in_progress',
+      formData: {
+        sellerType: 'company',
+        ownerStructureType: 'company',
+        ownershipType: 'company',
+        companyName: 'Bulk Import Holdings',
+        propertyAddress: '10 Example Road',
+        propertyStructureType: 'sectional_title',
+      },
+    },
+  })
+  const docs = getRequiredSellerDocuments(profile)
+  const keys = docs.map((doc) => doc.requirement_key)
+
+  assert.equal(profile.sellerType, 'company')
+  assert.equal(profile.sellerBranch, 'company')
+  assert.ok(keys.includes('company_registration'), 'Company seller requirements should be generated after seller details are edited.')
+})
+
+await test('close corporation seller type is treated as company for requirement generation', () => {
+  const profile = buildSellerRequirementProfile({
+    id: 'bulk-listing-cc',
+    sellerType: 'individual',
+    listingStatus: 'listing_review',
+    sellerOnboarding: {
+      status: 'in_progress',
+      formData: {
+        sellerType: 'close_corporation',
+        companyName: 'Example CC',
+        propertyAddress: '10 Example Road',
+      },
+    },
+  })
+
+  assert.equal(profile.sellerType, 'company')
+  assert.ok(getRequiredSellerDocuments(profile).some((doc) => doc.requirement_key === 'company_registration'))
 })
 
 await test('seeds an address-only bulk listing into an editable seller profile draft', () => {

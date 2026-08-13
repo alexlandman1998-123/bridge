@@ -160,6 +160,31 @@ assert.match(
 )
 assert.match(
   clientPortalWorkspaceSource,
+  /function resolveFastClientPortalCoreContext\(token, requestedWorkspace = 'shared'\)[\s\S]*?isSellerOnboardingToken\(token\)[\s\S]*?workspaceRoles: \['seller'\]/s,
+  'seller portal core loads should skip the context pre-read and use a fast synthetic seller context before first paint',
+)
+assert.match(
+  clientPortalWorkspaceSource,
+  /const coreContext = mode === 'core' \? resolveFastClientPortalCoreContext\(token, workspace\) : null[\s\S]*?const context = coreContext \|\| await resolveClientPortalContext\(token\)/s,
+  'client portal core mode should avoid duplicate context resolution when a fast first-paint context is available',
+)
+assert.match(
+  clientPortalPageSource,
+  /const CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS = 7000[\s\S]*?function withClientPortalLoadTimeout\(task,/s,
+  'client portal first paint loads should be bounded so mobile users cannot stay on the preparing screen indefinitely',
+)
+assert.match(
+  clientPortalPageSource,
+  /withClientPortalLoadTimeout\([\s\S]*?getClientPortalWorkspaceData\(token, requestedWorkspace,[\s\S]*?mode: 'core'[\s\S]*?phase: 'core', timeoutMs: CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS/s,
+  'client portal core workspace fetch should use the bounded first-paint timeout',
+)
+assert.match(
+  clientPortalPageSource,
+  /isSellerPortalToken && effectiveSellerPortalAccessToken && isClientPortalLoadTimeoutError\(coreError\)[\s\S]*?requireSellerReauthentication\(\{ sessionExpired: true \}\)/s,
+  'seller portal core timeout with a stored access token should clear stale session state and show the password gate',
+)
+assert.match(
+  clientPortalWorkspaceSource,
   /if \(mode !== 'core'\) \{[\s\S]*?hydrateSellerMandatePacketForPortalData/s,
   'client portal core mode should not hydrate mandate packets before first paint',
 )

@@ -58,12 +58,23 @@ function toBoolean(value) {
 
 function normalizeSellerType(value) {
   const normalized = normalizeKey(value)
-  if (['company', 'pty', 'corporate'].includes(normalized)) return 'company'
+  if (['company', 'pty', 'pty_ltd', 'corporate', 'close_corporation', 'cc'].includes(normalized)) return 'company'
   if (normalized === 'trust') return 'trust'
   if (['deceased_estate', 'estate', 'deceased'].includes(normalized)) return 'deceased_estate'
   if (['multiple_individuals', 'multiple_owners', 'multiple', 'joint'].includes(normalized)) return 'multiple_individuals'
   if (['other', 'other_legal_entity', 'legal_entity'].includes(normalized)) return 'other_legal_entity'
   return 'individual'
+}
+
+function normalizeSellerBranch(value) {
+  const normalized = normalizeKey(value)
+  if (['company', 'pty', 'pty_ltd', 'corporate', 'close_corporation', 'cc'].includes(normalized)) return 'company'
+  if (normalized === 'trust') return 'trust'
+  if (['deceased_estate', 'estate', 'deceased'].includes(normalized)) return 'deceased_estate'
+  if (['multiple_individuals', 'multiple_owners', 'multiple', 'joint', 'co_owners'].includes(normalized)) return 'multiple_owners'
+  if (['married', 'married_cop', 'married_anc', 'married_in_community', 'married_out_of_community'].includes(normalized)) return 'married'
+  if (['other', 'other_legal_entity', 'legal_entity'].includes(normalized)) return 'other_legal_entity'
+  return ''
 }
 
 function normalizeMaritalRegime(value, ownershipType = '') {
@@ -138,12 +149,16 @@ function resolveOwners(formData = {}) {
 
 function resolveSellerType(formData = {}, listing = {}) {
   const explicitSellerType =
-    listing?.sellerType ||
-    listing?.seller_type ||
     formData?.sellerType ||
+    formData?.sellerLegalType ||
+    formData?.seller_legal_type ||
+    formData?.ownerStructureType ||
+    formData?.owner_structure_type ||
     formData?.ownershipType ||
     formData?.ownershipStructure ||
-    formData?.entityType
+    formData?.entityType ||
+    listing?.sellerType ||
+    listing?.seller_type
   return normalizeSellerType(explicitSellerType)
 }
 
@@ -642,9 +657,18 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
   )
   const lifecycleStatus = toLifecycleStatus(listing)
   const resolvedSellerType = resolveSellerType(onboarding, listing)
-  const sellerBranch = flow.seller_branch || 'individual'
+  const explicitSellerBranch = normalizeSellerBranch(
+    onboarding?.ownerStructureType ||
+      onboarding?.owner_structure_type ||
+      onboarding?.ownershipType ||
+      onboarding?.ownershipStructure ||
+      onboarding?.sellerType ||
+      onboarding?.sellerLegalType ||
+      onboarding?.seller_legal_type,
+  )
+  const sellerBranch = explicitSellerBranch || flow.seller_branch || 'individual'
   const propertyBranch = flow.property_branch || 'residential'
-  const sellerType = resolvedSellerType === 'multiple_individuals' ? resolvedSellerType : flow.seller_legacy_type || resolvedSellerType
+  const sellerType = resolvedSellerType !== 'individual' ? resolvedSellerType : flow.seller_legacy_type || resolvedSellerType
   const ownershipTypeRaw = normalizeKey(onboarding?.ownershipType || onboarding?.ownershipStructure || listing?.ownership_structure || sellerType)
   const maritalRegime = normalizeMaritalRegime(
     onboarding?.maritalRegime ||

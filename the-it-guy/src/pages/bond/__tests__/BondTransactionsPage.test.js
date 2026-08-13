@@ -114,6 +114,12 @@ try {
     assert.equal(rows.find((row) => row.key === 'tx-unassigned').consultantDisplay, 'Unassigned consultant')
     assert.equal(rows.find((row) => row.key === 'tx-unassigned').regionDisplay, 'No region')
     assert.equal(rows.find((row) => row.key === 'tx-unassigned').nextActionLabel, 'Assign branch')
+    assert.equal(rows.find((row) => row.key === 'tx-ready').openHref, '/bond/files/tx-ready?tab=workflow&action=submit-bank')
+    assert.equal(rows.find((row) => row.key === 'tx-feedback').openHref, '/bond/files/tx-feedback?tab=workflow&action=capture-offer')
+    assert.equal(rows.find((row) => row.key === 'tx-instruction').openHref, '/bond/files/tx-instruction?tab=activity&action=monitor-registration')
+    assert.equal(rows.find((row) => row.key === 'tx-ready').primaryActionLabel, 'Submit to banks')
+    assert.equal(rows.find((row) => row.key === 'tx-feedback').primaryActionLabel, 'Capture offer')
+    assert.equal(rows.find((row) => row.key === 'tx-instruction').primaryActionLabel, 'Monitor transfer')
 
     assert.deepEqual(filterHqApplicationRegisterRows(rows).map((row) => row.key), ['tx-ready', 'tx-feedback', 'tx-instruction', 'tx-unassigned'])
     assert.deepEqual(filterHqApplicationRegisterRows(rows, { tab: 'unassigned' }).map((row) => row.key), ['tx-unassigned'])
@@ -159,7 +165,7 @@ try {
       }),
     )
     assert.match(rowMarkup, /Stage &amp; Progress/)
-    assert.match(rowMarkup, /Open Application/)
+    assert.match(rowMarkup, /Submit to banks|Capture offer|Monitor transfer/)
     assert.match(rowMarkup, /R 2 400 000/)
     assert.match(rowMarkup, /West|National Road|Pending Street|Lender Lane|Attorney Avenue/)
     assert.doesNotMatch(rowMarkup, /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i)

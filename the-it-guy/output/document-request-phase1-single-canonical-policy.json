@@ -1,13 +1,13 @@
 {
   "phase": "document_request_phase1_single_canonical_policy",
-  "generatedAt": "2026-08-13T16:17:48.811Z",
+  "generatedAt": "2026-08-13T19:38:38.245Z",
   "commit": false,
   "mutatedData": false,
   "strictSignoff": false,
   "canonicalPolicySource": {
     "path": "config/document-request-phase1-legal-checklist.json",
-    "bytes": 17709,
-    "hash": "sha256:a321106d7e4daa315333bc514183df351725f6db801dc7d0fa386e5f45331806"
+    "bytes": 17704,
+    "hash": "sha256:6300e1261699c3029dd739e91383f0eea30b1b799a531821c4e378b57a100099"
   },
   "policy": {
     "version": "document_request_canonical_policy_v1",
@@ -23,7 +23,7 @@
       "pendingPolicy": 5,
       "signoffDecisions": 7,
       "pendingSignoffDecisions": 5,
-      "warnings": 9,
+      "warnings": 0,
       "errors": 0
     },
     "byOwnerRole": {
@@ -41,8 +41,8 @@
       "cancellation_attorney": 1
     },
     "byVisibility": {
-      "professional_shared": 5,
-      "client_visible": 62
+      "professional_shared": 4,
+      "client_visible": 63
     },
     "byLevel": {
       "required": 51,
@@ -150,134 +150,8 @@
     "validation": {
       "ok": true,
       "errors": [],
-      "warnings": [
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "electrical_compliance_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "electrical_compliance_certificate",
-          "signoffKey": "electrical_coc"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "gas_compliance_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "gas_compliance_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "electric_fence_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "electric_fence_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "water_installation_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "water_installation_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "beetle_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "beetle_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "solar_compliance_documents: active row is related to a pending signoff decision",
-          "requirementKey": "solar_compliance_documents",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "approved_building_plans: active row is related to a pending signoff decision",
-          "requirementKey": "approved_building_plans",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "occupation_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "occupation_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "professional_shared_client_owned",
-          "message": "vat_status_confirmation: professional-shared row is requested from a client role",
-          "requirementKey": "vat_status_confirmation"
-        }
-      ],
-      "issues": [
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "electrical_compliance_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "electrical_compliance_certificate",
-          "signoffKey": "electrical_coc"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "gas_compliance_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "gas_compliance_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "electric_fence_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "electric_fence_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "water_installation_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "water_installation_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "beetle_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "beetle_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "solar_compliance_documents: active row is related to a pending signoff decision",
-          "requirementKey": "solar_compliance_documents",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "approved_building_plans: active row is related to a pending signoff decision",
-          "requirementKey": "approved_building_plans",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "occupation_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "occupation_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "professional_shared_client_owned",
-          "message": "vat_status_confirmation: professional-shared row is requested from a client role",
-          "requirementKey": "vat_status_confirmation"
-        }
-      ]
+      "warnings": [],
+      "issues": []
     }
   },
   "scenarioProofs": [
@@ -498,69 +372,6 @@
     "mayProceedToPhase2": true,
     "productionActivationReady": false,
     "errors": [],
-    "warnings": [
-      {
-        "severity": "warning",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "electrical_compliance_certificate: active row is related to a pending signoff decision",
-        "requirementKey": "electrical_compliance_certificate",
-        "signoffKey": "electrical_coc"
-      },
-      {
-        "severity": "warning",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "gas_compliance_certificate: active row is related to a pending signoff decision",
-        "requirementKey": "gas_compliance_certificate",
-        "signoffKey": "conditional_compliance_certificates"
-      },
-      {
-        "severity": "warning",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "electric_fence_certificate: active row is related to a pending signoff decision",
-        "requirementKey": "electric_fence_certificate",
-        "signoffKey": "conditional_compliance_certificates"
-      },
-      {
-        "severity": "warning",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "water_installation_certificate: active row is related to a pending signoff decision",
-        "requirementKey": "water_installation_certificate",
-        "signoffKey": "conditional_compliance_certificates"
-      },
-      {
-        "severity": "warning",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "beetle_certificate: active row is related to a pending signoff decision",
-        "requirementKey": "beetle_certificate",
-        "signoffKey": "conditional_compliance_certificates"
-      },
-      {
-        "severity": "warning",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "solar_compliance_documents: active row is related to a pending signoff decision",
-        "requirementKey": "solar_compliance_documents",
-        "signoffKey": "conditional_compliance_certificates"
-      },
-      {
-        "severity": "warning",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "approved_building_plans: active row is related to a pending signoff decision",
-        "requirementKey": "approved_building_plans",
-        "signoffKey": "conditional_compliance_certificates"
-      },
-      {
-        "severity": "warning",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "occupation_certificate: active row is related to a pending signoff decision",
-        "requirementKey": "occupation_certificate",
-        "signoffKey": "conditional_compliance_certificates"
-      },
-      {
-        "severity": "warning",
-        "code": "professional_shared_client_owned",
-        "message": "vat_status_confirmation: professional-shared row is requested from a client role",
-        "requirementKey": "vat_status_confirmation"
-      }
-    ]
+    "warnings": []
   }
 }

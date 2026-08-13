@@ -1,0 +1,105 @@
+{
+  "phase": "document_request_phase17_legacy_cleanup_guard",
+  "generatedAt": "2026-08-13T19:38:47.945Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "version": "document_request_legacy_cleanup_guard_v1",
+  "phase16Readiness": {
+    "status": "automation_handoff_mapped",
+    "ok": true,
+    "productionActivationReady": true,
+    "failedCount": 0,
+    "warningCount": 0,
+    "automationHandoffReady": true,
+    "cronCompatibleDryRunReady": true,
+    "liveAutomationExecuted": false,
+    "commitExecuted": false
+  },
+  "cleanupControls": {
+    "scriptPath": "scripts/document-request-canonical-phase17-legacy-key-cleanup.mjs",
+    "phaseMarkerPresent": true,
+    "defaultsDryRun": true,
+    "supportsDryRunFlag": true,
+    "supportsCommitFlag": true,
+    "requiresConfirmLegacyCleanup": true,
+    "rolloutPrecheckWired": true,
+    "automationPostcheckWired": true,
+    "cleanupSizeCapped": true,
+    "preservedStatusesGuarded": true,
+    "activeRowsOnly": true,
+    "disableHideOnlyStrategy": true,
+    "preservesRowsInsteadOfDeleting": true,
+    "noDocumentRequestWrites": true,
+    "mutatedDataOnlyOnConfirmedCommit": true
+  },
+  "portalVerifierControls": {
+    "scriptPath": "scripts/document-request-canonical-phase14-portal-verification.mjs",
+    "hasActiveRequiredRowFilter": true,
+    "inactiveRowsDoNotCountAsNonCanonical": true
+  },
+  "readiness": {
+    "legacyCleanupGuardReady": true,
+    "controlledCleanupDryRunReady": true,
+    "liveCleanupExecuted": false,
+    "commitExecuted": false,
+    "requiresConfirmLegacyCleanupForWrites": true,
+    "preservesUploadedOrReviewedRows": true,
+    "deletesRows": false,
+    "writesDocumentRequests": false
+  },
+  "gate": {
+    "status": "legacy_cleanup_guard_mapped",
+    "ok": true,
+    "mayProceedToPhase18": true,
+    "productionActivationReady": true,
+    "checks": [
+      {
+        "key": "phase16_handoff_is_clean",
+        "ok": true
+      },
+      {
+        "key": "legacy_cleanup_is_dry_run_first_and_commit_gated",
+        "ok": true
+      },
+      {
+        "key": "legacy_cleanup_has_precheck_and_postcheck",
+        "ok": true
+      },
+      {
+        "key": "legacy_cleanup_scope_is_capped_and_active_only",
+        "ok": true
+      },
+      {
+        "key": "legacy_cleanup_preserves_upload_and_review_state",
+        "ok": true
+      },
+      {
+        "key": "legacy_cleanup_disables_and_hides_without_deleting",
+        "ok": true
+      },
+      {
+        "key": "legacy_cleanup_does_not_write_document_requests",
+        "ok": true
+      },
+      {
+        "key": "portal_verifier_excludes_inactive_cleanup_rows",
+        "ok": true
+      },
+      {
+        "key": "phase17_guard_is_read_only_local_qa",
+        "ok": true
+      },
+      {
+        "key": "document_generator_remains_out_of_scope",
+        "ok": true
+      },
+      {
+        "key": "phase17_verify_chain_is_registered",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "warnings": []
+  }
+}

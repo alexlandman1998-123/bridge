@@ -104,13 +104,13 @@ async function main() {
     )
     assert.deepEqual(
       viewsModule.bondViews.transactions.tabs.map((tab) => tab.key),
-      ['incoming', 'processing', 'registered', 'declined'],
+      ['overview', 'bond_application', 'documents', 'quotes_grant', 'reconciliation'],
     )
     assert.equal(viewsModule.getBondPipelineView('new').filters.queue, 'awaiting_otp')
     assert.equal(viewsModule.getBondPipelineView('awaiting-documents').filters.queue, 'application_in_progress')
     assert.equal(viewsModule.getBondPipelineView('ready-for-submission').filters.queue, 'application_submitted')
-    assert.equal(viewsModule.getBondTransactionView('bond-approved').key, 'processing')
-    assert.equal(viewsModule.getBondTransactionView('all').key, 'incoming')
+    assert.equal(viewsModule.getBondTransactionView('bond-approved').key, 'quotes_grant')
+    assert.equal(viewsModule.getBondTransactionView('all').key, 'overview')
 
     const tabMarkup = renderToStaticMarkup(
       React.createElement(tabsModule.default, {

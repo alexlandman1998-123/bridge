@@ -536,7 +536,7 @@ function addTransactionTypeRequirements(requirements, facts) {
 
   if (facts.isCommercialTransaction) {
     requirements.push(
-      requirement({ id: 'vat_status_confirmation', label: 'VAT Status Confirmation', category: 'property_compliance', requiredFrom: 'seller', appliesTo: 'transaction', required: false, visibilityDefault: 'professional_shared', reason: 'Commercial transactions may require VAT treatment confirmation.' }),
+      requirement({ id: 'vat_status_confirmation', label: 'VAT Status Confirmation', category: 'property_compliance', requiredFrom: 'seller', appliesTo: 'transaction', required: false, visibilityDefault: 'client_visible', reason: 'Commercial transactions may require VAT treatment confirmation.' }),
       requirement({ id: 'lease_agreements', label: 'Lease Agreements', category: 'property_compliance', requiredFrom: 'seller', appliesTo: 'property', required: false, visibilityDefault: 'professional_shared', reason: 'Tenanted commercial properties require lease information.' }),
       requirement({ id: 'occupancy_schedule', label: 'Occupancy Schedule', category: 'property_compliance', requiredFrom: 'seller', appliesTo: 'property', required: false, visibilityDefault: 'professional_shared', reason: 'Occupancy information may be needed for commercial transfer.' }),
       requirement({ id: 'zoning_use_information', label: 'Zoning / Use Information', category: 'property_compliance', requiredFrom: 'seller', appliesTo: 'property', required: false, visibilityDefault: 'professional_shared', reason: 'Zoning or permitted-use information may be required.' }),
@@ -623,7 +623,7 @@ function addVatTreatmentRequirements(requirements, facts) {
       category: 'property_compliance',
       requiredFrom: 'seller',
       appliesTo: 'transaction',
-      visibilityDefault: 'professional_shared',
+      visibilityDefault: 'client_visible',
       reason: 'VAT-routed transfers require VAT treatment confirmation.',
     }),
   )

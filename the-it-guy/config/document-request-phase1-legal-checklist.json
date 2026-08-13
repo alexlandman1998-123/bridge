@@ -91,6 +91,6 @@
     { "key": "hoa_levy_statement", "label": "HOA Levy Statement / Clearance", "ownerRole": "seller", "appliesTo": ["estate_hoa"], "level": "required", "visibility": "client_visible", "blocker": "lodgement_ready" },
     { "key": "lease_agreement", "label": "Lease Agreement", "ownerRole": "seller", "appliesTo": ["tenant_occupied"], "level": "required", "visibility": "client_visible", "blocker": "attorney_instruction_ready" },
     { "key": "zoning_certificate", "label": "Zoning / Use Information", "ownerRole": "seller", "appliesTo": ["vacant_land", "agricultural", "commercial", "mixed_use"], "level": "conditional", "visibility": "client_visible", "blocker": "attorney_instruction_ready" },
-    { "key": "vat_status_confirmation", "label": "VAT Status Confirmation", "ownerRole": "seller", "appliesTo": ["commercial", "vat_transaction"], "level": "conditional", "visibility": "professional_shared", "blocker": "attorney_instruction_ready" }
+    { "key": "vat_status_confirmation", "label": "VAT Status Confirmation", "ownerRole": "seller", "appliesTo": ["commercial", "vat_transaction"], "level": "conditional", "visibility": "client_visible", "blocker": "attorney_instruction_ready" }
   ]
 }

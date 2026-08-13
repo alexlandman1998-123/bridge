@@ -4,6 +4,9 @@ import {
   DOCUMENT_REQUEST_CANONICAL_MATRIX_VERSION,
   validateDocumentRequestCanonicalMatrix,
 } from './documentRequestCanonicalMatrix.js'
+import {
+  SELLER_EXTERNAL_UPLOAD_DOCUMENT_KEYS,
+} from './documentRequestUploadOwnershipModel.js'
 
 export const DOCUMENT_REQUEST_CANONICAL_POLICY_VERSION = 'document_request_canonical_policy_v1'
 export const DOCUMENT_REQUEST_CANONICAL_POLICY_SOURCE = 'config/document-request-phase1-legal-checklist.json'
@@ -62,6 +65,7 @@ const ACTIVE_REQUIRED_SIGNOFF_GROUPS = Object.freeze({
   approved_building_plans: 'conditional_compliance_certificates',
   occupation_certificate: 'conditional_compliance_certificates',
 })
+const UPLOAD_ONLY_ACCEPTED_SIGNOFF_KEYS = new Set(SELLER_EXTERNAL_UPLOAD_DOCUMENT_KEYS)
 
 function normalizeKey(value = '') {
   return String(value || '')
@@ -180,7 +184,7 @@ export function validateCanonicalDocumentRequestPolicy(matrix = DOCUMENT_REQUEST
         requirementKey: requirement.key,
       })
     }
-    if (!classification.pendingPolicy && classification.signoffStatus === 'pending') {
+    if (!classification.pendingPolicy && classification.signoffStatus === 'pending' && !UPLOAD_ONLY_ACCEPTED_SIGNOFF_KEYS.has(requirement.key)) {
       pushIssue(issues, 'warning', 'active_row_has_pending_related_signoff', `${requirement.key}: active row is related to a pending signoff decision`, {
         requirementKey: requirement.key,
         signoffKey: classification.signoffKey,

@@ -1,0 +1,105 @@
+{
+  "phase": "document_request_phase11_upload_ownership",
+  "generatedAt": "2026-08-13T19:38:45.036Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "version": "document_request_upload_ownership_v1",
+  "ownershipSummary": {
+    "total": 67,
+    "byResponsibleParty": {
+      "agent": 1,
+      "buyer": 24,
+      "seller": 39,
+      "transfer_attorney": 2,
+      "cancellation_attorney": 1
+    },
+    "byUploadMode": {
+      "professional_upload": 4,
+      "client_upload": 60,
+      "client_upload_with_bond_originator_assist": 3
+    },
+    "clientUploadDebtCount": 63,
+    "professionalOnlyCount": 4,
+    "agentOnBehalfCount": 63,
+    "sellerExternalUploadKeys": [
+      "electrical_compliance_certificate",
+      "gas_compliance_certificate",
+      "electric_fence_certificate",
+      "water_installation_certificate",
+      "beetle_certificate",
+      "solar_compliance_documents",
+      "approved_building_plans",
+      "occupation_certificate",
+      "vat_status_confirmation"
+    ],
+    "bondOriginatorAssistedKeys": [
+      "bond_approval",
+      "grant_signed",
+      "income_affordability_documents"
+    ],
+    "professionalOnlyKeys": [
+      "signed_otp",
+      "transfer_duty_information",
+      "transfer_documents",
+      "bond_cancellation_figures"
+    ]
+  },
+  "smokeSummary": {
+    "failedSmokeCount": 0,
+    "unstableContainerIdCount": 0,
+    "deferredSellerUploadLeakCount": 0,
+    "buyerContainerCount": 13,
+    "sellerContainerCount": 17,
+    "agentContainerCount": 30,
+    "attorneyContainerCount": 30,
+    "bondOriginatorContainerCount": 5,
+    "internalContainerCount": 30
+  },
+  "gate": {
+    "status": "upload_ownership_mapped",
+    "ok": true,
+    "mayProceedToPhase12": true,
+    "productionActivationReady": true,
+    "checks": [
+      {
+        "key": "ownership_model_exists",
+        "ok": true
+      },
+      {
+        "key": "all_canonical_requirements_have_upload_owner",
+        "ok": true
+      },
+      {
+        "key": "client_owned_documents_allow_agent_upload_on_behalf",
+        "ok": true
+      },
+      {
+        "key": "seller_compliance_documents_are_seller_owned_uploads",
+        "ok": true
+      },
+      {
+        "key": "professional_documents_are_not_client_upload_debt",
+        "ok": true
+      },
+      {
+        "key": "bond_documents_allow_originator_assist_without_reassigning_buyer_ownership",
+        "ok": true
+      },
+      {
+        "key": "container_model_carries_upload_ownership_metadata",
+        "ok": true
+      },
+      {
+        "key": "workspace_smoke_still_has_no_container_drift",
+        "ok": true
+      },
+      {
+        "key": "phase11_verify_chain_is_registered",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "warnings": []
+  }
+}

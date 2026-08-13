@@ -1,6 +1,6 @@
 {
   "phase": "document_request_phase0_freeze_and_map",
-  "generatedAt": "2026-08-13T16:17:48.320Z",
+  "generatedAt": "2026-08-13T19:38:37.742Z",
   "commit": false,
   "mutatedData": false,
   "scope": {
@@ -56,8 +56,8 @@
       "conditional": 11
     },
     "byVisibility": {
-      "professional_shared": 5,
-      "client_visible": 62
+      "professional_shared": 4,
+      "client_visible": 63
     }
   },
   "surfaces": [
@@ -86,7 +86,7 @@
       "phaseRisk": "Policy has pending legal decisions; Phase 1 must convert this into the only request policy.",
       "exists": true,
       "lineCount": 97,
-      "contentHash": "sha256:a321106d7e4daa315333bc514183df351725f6db801dc7d0fa386e5f45331806",
+      "contentHash": "sha256:6300e1261699c3029dd739e91383f0eea30b1b799a531821c4e378b57a100099",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -292,7 +292,7 @@
         {
           "marker": "getSellerRequiredDocuments",
           "present": true,
-          "line": 1076
+          "line": 1123
         },
         {
           "marker": "property_acquisition_record",
@@ -307,8 +307,8 @@
       ],
       "phaseRisk": "Stale/deferred seller generated keys exist and must stay non-client-facing unless policy approves them.",
       "exists": true,
-      "lineCount": 2285,
-      "contentHash": "sha256:d70a94b71709d5dd424fa96b612e7f28210861995bcc8c92f72b6b24c7b45f74",
+      "lineCount": 2338,
+      "contentHash": "sha256:7241dc91295f5d9c41619fd297a3e5bb70a68142809a3df1613e6adf9e3763fe",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -336,8 +336,8 @@
       ],
       "phaseRisk": "Portal projection must show the same requirement containers as internal workspaces.",
       "exists": true,
-      "lineCount": 3657,
-      "contentHash": "sha256:cfe1cd9424025b5a3a9acf938fbec86ed51151f2163992424662c072ff821328",
+      "lineCount": 3688,
+      "contentHash": "sha256:a5f587e0292eb6e6c777e2bb3cb85bca40b472f61e33cf008c8388af9a97cdb3",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -379,23 +379,23 @@
         {
           "marker": "additionalDocumentRequestsForWorkspace",
           "present": true,
-          "line": 9984
+          "line": 10060
         },
         {
           "marker": "additionalRequestDocuments",
           "present": true,
-          "line": 9980
+          "line": 10056
         },
         {
           "marker": "documentCenter",
           "present": true,
-          "line": 3307
+          "line": 3345
         }
       ],
       "phaseRisk": "Buyer and seller portal filters must not hide valid request containers.",
       "exists": true,
-      "lineCount": 15826,
-      "contentHash": "sha256:3e652ded69dc3cb069ab00b9512a2c3511977af7488e01fe38ce4fdb5ac5d75f",
+      "lineCount": 15902,
+      "contentHash": "sha256:152cf0139cbe0ac0767f3d30cc8abd4182aed3eb56d0f93c48a2a8be0fb2f3c2",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -442,23 +442,23 @@
         {
           "marker": "handleQuickRequestDocuments",
           "present": true,
-          "line": 13110
+          "line": 13351
         },
         {
           "marker": "createTransactionDocumentRequests",
           "present": true,
-          "line": 105
+          "line": 103
         },
         {
           "marker": "requestAttorneyWorkflowLaneDocument",
           "present": true,
-          "line": 88
+          "line": 86
         }
       ],
       "phaseRisk": "Quick request actions and lane-specific requests are not yet guaranteed to share one canonical container model.",
       "exists": true,
-      "lineCount": 19207,
-      "contentHash": "sha256:ae0cbf4a884b3580d62b474e475edb6107aac9d0d87a5821c3b73af34b9c23a5",
+      "lineCount": 19380,
+      "contentHash": "sha256:fc01bdfdb40420e61dcd1c84942ba88dfd2d5e3494182df5622613112c9f5aec",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },
@@ -558,8 +558,8 @@
       ],
       "phaseRisk": "Agent upload-on-behalf must cover the same seller requirements exposed in the seller portal.",
       "exists": true,
-      "lineCount": 12304,
-      "contentHash": "sha256:10ed408848b199d583dfd75ef2769265cec4757f95e6b8bf08b451ff3f5f1304",
+      "lineCount": 12341,
+      "contentHash": "sha256:85e19aa9d98ca1c234d7611d7bc045ccb9b71838442d30e9a1184cc0748774f5",
       "missingMarkers": [],
       "readOnlyPhase0Action": "map_and_freeze"
     },

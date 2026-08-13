@@ -1,6 +1,6 @@
 {
   "phase": "document_request_phase10_release_readiness",
-  "generatedAt": "2026-08-13T16:17:55.143Z",
+  "generatedAt": "2026-08-13T19:38:44.600Z",
   "commit": false,
   "mutatedData": false,
   "strict": false,
@@ -30,81 +30,8 @@
       "status": "policy_valid_pending_signoff",
       "mutatedData": false,
       "failures": [],
-      "warnings": [
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "electrical_compliance_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "electrical_compliance_certificate",
-          "signoffKey": "electrical_coc"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "gas_compliance_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "gas_compliance_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "electric_fence_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "electric_fence_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "water_installation_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "water_installation_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "beetle_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "beetle_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "solar_compliance_documents: active row is related to a pending signoff decision",
-          "requirementKey": "solar_compliance_documents",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "approved_building_plans: active row is related to a pending signoff decision",
-          "requirementKey": "approved_building_plans",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "active_row_has_pending_related_signoff",
-          "message": "occupation_certificate: active row is related to a pending signoff decision",
-          "requirementKey": "occupation_certificate",
-          "signoffKey": "conditional_compliance_certificates"
-        },
-        {
-          "severity": "warning",
-          "code": "professional_shared_client_owned",
-          "message": "vat_status_confirmation: professional-shared row is requested from a client role",
-          "requirementKey": "vat_status_confirmation"
-        }
-      ],
-      "warningCodes": [
-        "active_row_has_pending_related_signoff",
-        "active_row_has_pending_related_signoff",
-        "active_row_has_pending_related_signoff",
-        "active_row_has_pending_related_signoff",
-        "active_row_has_pending_related_signoff",
-        "active_row_has_pending_related_signoff",
-        "active_row_has_pending_related_signoff",
-        "active_row_has_pending_related_signoff",
-        "professional_shared_client_owned"
-      ],
+      "warnings": [],
+      "warningCodes": [],
       "productionActivationReady": false
     },
     {
@@ -156,19 +83,12 @@
       "actualPhase": "document_request_phase4_bond_model",
       "present": true,
       "phaseMatches": true,
-      "status": "bond_model_mapped_with_warnings",
+      "status": "bond_model_mapped",
       "mutatedData": false,
       "failures": [],
-      "warnings": [
-        {
-          "code": "bond_parent_is_broad",
-          "message": "Granular bond upload rows intentionally roll up to the broad canonical income_affordability_documents parent until Phase 4 child-container activation is approved."
-        }
-      ],
-      "warningCodes": [
-        "bond_parent_is_broad"
-      ],
-      "productionActivationReady": false
+      "warnings": [],
+      "warningCodes": [],
+      "productionActivationReady": true
     },
     {
       "key": "phase5_seller_cleanup",
@@ -184,7 +104,7 @@
         {
           "code": "legacy_seller_generator_not_full_canonical_policy",
           "message": "The legacy seller generator is mapped, but some canonical seller policy containers are not emitted by every seller scenario yet.",
-          "count": 48
+          "count": 49
         },
         {
           "code": "legacy_rows_roll_up_to_parent_containers",
@@ -277,15 +197,12 @@
     }
   ],
   "warningSummary": {
-    "total": 17,
-    "managed": 17,
+    "total": 7,
+    "managed": 7,
     "unmanaged": 0,
     "byCode": {
-      "active_row_has_pending_related_signoff": 8,
-      "professional_shared_client_owned": 1,
       "legacy_buyer_profile_contains_professional_rows": 1,
       "canonical_overlay_adds_buyer_policy_rows": 1,
-      "bond_parent_is_broad": 1,
       "legacy_seller_generator_not_full_canonical_policy": 1,
       "legacy_rows_roll_up_to_parent_containers": 1,
       "runtime_requires_document_request_tables": 1,
@@ -294,69 +211,6 @@
     }
   },
   "pendingActivationItems": [
-    {
-      "phase": "phase1_single_canonical_policy",
-      "code": "active_row_has_pending_related_signoff",
-      "message": "electrical_compliance_certificate: active row is related to a pending signoff decision",
-      "count": null,
-      "requirementKey": "electrical_compliance_certificate"
-    },
-    {
-      "phase": "phase1_single_canonical_policy",
-      "code": "active_row_has_pending_related_signoff",
-      "message": "gas_compliance_certificate: active row is related to a pending signoff decision",
-      "count": null,
-      "requirementKey": "gas_compliance_certificate"
-    },
-    {
-      "phase": "phase1_single_canonical_policy",
-      "code": "active_row_has_pending_related_signoff",
-      "message": "electric_fence_certificate: active row is related to a pending signoff decision",
-      "count": null,
-      "requirementKey": "electric_fence_certificate"
-    },
-    {
-      "phase": "phase1_single_canonical_policy",
-      "code": "active_row_has_pending_related_signoff",
-      "message": "water_installation_certificate: active row is related to a pending signoff decision",
-      "count": null,
-      "requirementKey": "water_installation_certificate"
-    },
-    {
-      "phase": "phase1_single_canonical_policy",
-      "code": "active_row_has_pending_related_signoff",
-      "message": "beetle_certificate: active row is related to a pending signoff decision",
-      "count": null,
-      "requirementKey": "beetle_certificate"
-    },
-    {
-      "phase": "phase1_single_canonical_policy",
-      "code": "active_row_has_pending_related_signoff",
-      "message": "solar_compliance_documents: active row is related to a pending signoff decision",
-      "count": null,
-      "requirementKey": "solar_compliance_documents"
-    },
-    {
-      "phase": "phase1_single_canonical_policy",
-      "code": "active_row_has_pending_related_signoff",
-      "message": "approved_building_plans: active row is related to a pending signoff decision",
-      "count": null,
-      "requirementKey": "approved_building_plans"
-    },
-    {
-      "phase": "phase1_single_canonical_policy",
-      "code": "active_row_has_pending_related_signoff",
-      "message": "occupation_certificate: active row is related to a pending signoff decision",
-      "count": null,
-      "requirementKey": "occupation_certificate"
-    },
-    {
-      "phase": "phase1_single_canonical_policy",
-      "code": "professional_shared_client_owned",
-      "message": "vat_status_confirmation: professional-shared row is requested from a client role",
-      "count": null,
-      "requirementKey": "vat_status_confirmation"
-    },
     {
       "phase": "phase3_buyer_cleanup",
       "code": "legacy_buyer_profile_contains_professional_rows",
@@ -372,17 +226,10 @@
       "requirementKey": null
     },
     {
-      "phase": "phase4_bond_model",
-      "code": "bond_parent_is_broad",
-      "message": "Granular bond upload rows intentionally roll up to the broad canonical income_affordability_documents parent until Phase 4 child-container activation is approved.",
-      "count": null,
-      "requirementKey": null
-    },
-    {
       "phase": "phase5_seller_cleanup",
       "code": "legacy_seller_generator_not_full_canonical_policy",
       "message": "The legacy seller generator is mapped, but some canonical seller policy containers are not emitted by every seller scenario yet.",
-      "count": 48,
+      "count": 49,
       "requirementKey": null
     },
     {
@@ -477,78 +324,6 @@
     "hardBlockers": [],
     "warnings": [
       {
-        "phase": "phase1_single_canonical_policy",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "electrical_compliance_certificate: active row is related to a pending signoff decision",
-        "managed": true,
-        "count": null,
-        "requirementKey": "electrical_compliance_certificate"
-      },
-      {
-        "phase": "phase1_single_canonical_policy",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "gas_compliance_certificate: active row is related to a pending signoff decision",
-        "managed": true,
-        "count": null,
-        "requirementKey": "gas_compliance_certificate"
-      },
-      {
-        "phase": "phase1_single_canonical_policy",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "electric_fence_certificate: active row is related to a pending signoff decision",
-        "managed": true,
-        "count": null,
-        "requirementKey": "electric_fence_certificate"
-      },
-      {
-        "phase": "phase1_single_canonical_policy",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "water_installation_certificate: active row is related to a pending signoff decision",
-        "managed": true,
-        "count": null,
-        "requirementKey": "water_installation_certificate"
-      },
-      {
-        "phase": "phase1_single_canonical_policy",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "beetle_certificate: active row is related to a pending signoff decision",
-        "managed": true,
-        "count": null,
-        "requirementKey": "beetle_certificate"
-      },
-      {
-        "phase": "phase1_single_canonical_policy",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "solar_compliance_documents: active row is related to a pending signoff decision",
-        "managed": true,
-        "count": null,
-        "requirementKey": "solar_compliance_documents"
-      },
-      {
-        "phase": "phase1_single_canonical_policy",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "approved_building_plans: active row is related to a pending signoff decision",
-        "managed": true,
-        "count": null,
-        "requirementKey": "approved_building_plans"
-      },
-      {
-        "phase": "phase1_single_canonical_policy",
-        "code": "active_row_has_pending_related_signoff",
-        "message": "occupation_certificate: active row is related to a pending signoff decision",
-        "managed": true,
-        "count": null,
-        "requirementKey": "occupation_certificate"
-      },
-      {
-        "phase": "phase1_single_canonical_policy",
-        "code": "professional_shared_client_owned",
-        "message": "vat_status_confirmation: professional-shared row is requested from a client role",
-        "managed": true,
-        "count": null,
-        "requirementKey": "vat_status_confirmation"
-      },
-      {
         "phase": "phase3_buyer_cleanup",
         "code": "legacy_buyer_profile_contains_professional_rows",
         "message": "Legacy buyer profiles still emit professional/generated rows such as OTP and transfer documents; portal upload filtering and canonical overlay now keep buyer upload requests clean.",
@@ -565,19 +340,11 @@
         "requirementKey": null
       },
       {
-        "phase": "phase4_bond_model",
-        "code": "bond_parent_is_broad",
-        "message": "Granular bond upload rows intentionally roll up to the broad canonical income_affordability_documents parent until Phase 4 child-container activation is approved.",
-        "managed": true,
-        "count": null,
-        "requirementKey": null
-      },
-      {
         "phase": "phase5_seller_cleanup",
         "code": "legacy_seller_generator_not_full_canonical_policy",
         "message": "The legacy seller generator is mapped, but some canonical seller policy containers are not emitted by every seller scenario yet.",
         "managed": true,
-        "count": 48,
+        "count": 49,
         "requirementKey": null
       },
       {

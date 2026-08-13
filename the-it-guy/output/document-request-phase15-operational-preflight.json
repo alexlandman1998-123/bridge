@@ -1,0 +1,162 @@
+{
+  "phase": "document_request_phase15_operational_preflight",
+  "generatedAt": "2026-08-13T19:38:47.140Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "version": "document_request_operational_preflight_v1",
+  "phaseSummaries": [
+    {
+      "key": "phase10_release_readiness",
+      "path": "output/document-request-phase10-release-readiness.json",
+      "expectedPhase": "document_request_phase10_release_readiness",
+      "actualPhase": "document_request_phase10_release_readiness",
+      "present": true,
+      "phaseMatches": true,
+      "status": "release_readiness_mapped_with_warnings",
+      "gateOk": true,
+      "mutatedData": false,
+      "failedCount": 0,
+      "warningCount": 7,
+      "productionActivationReady": false
+    },
+    {
+      "key": "phase11_upload_ownership",
+      "path": "output/document-request-phase11-upload-ownership.json",
+      "expectedPhase": "document_request_phase11_upload_ownership",
+      "actualPhase": "document_request_phase11_upload_ownership",
+      "present": true,
+      "phaseMatches": true,
+      "status": "upload_ownership_mapped",
+      "gateOk": true,
+      "mutatedData": false,
+      "failedCount": 0,
+      "warningCount": 0,
+      "productionActivationReady": true
+    },
+    {
+      "key": "phase12_seller_compliance_cleanup",
+      "path": "output/document-request-phase12-seller-compliance-cleanup.json",
+      "expectedPhase": "document_request_phase12_seller_compliance_cleanup",
+      "actualPhase": "document_request_phase12_seller_compliance_cleanup",
+      "present": true,
+      "phaseMatches": true,
+      "status": "seller_compliance_cleanup_mapped",
+      "gateOk": true,
+      "mutatedData": false,
+      "failedCount": 0,
+      "warningCount": 0,
+      "productionActivationReady": true
+    },
+    {
+      "key": "phase13_parent_child_containers",
+      "path": "output/document-request-phase13-parent-child-containers.json",
+      "expectedPhase": "document_request_phase13_parent_child_upload_containers",
+      "actualPhase": "document_request_phase13_parent_child_upload_containers",
+      "present": true,
+      "phaseMatches": true,
+      "status": "parent_child_upload_containers_mapped",
+      "gateOk": true,
+      "mutatedData": false,
+      "failedCount": 0,
+      "warningCount": 0,
+      "productionActivationReady": true
+    },
+    {
+      "key": "phase14_cross_workspace_parity",
+      "path": "output/document-request-phase14-cross-workspace-parity.json",
+      "expectedPhase": "document_request_phase14_cross_workspace_parity",
+      "actualPhase": "document_request_phase14_cross_workspace_parity",
+      "present": true,
+      "phaseMatches": true,
+      "status": "cross_workspace_parity_mapped",
+      "gateOk": true,
+      "mutatedData": false,
+      "failedCount": 0,
+      "warningCount": 0,
+      "productionActivationReady": true
+    }
+  ],
+  "rolloutControls": {
+    "scriptPath": "scripts/document-request-canonical-phase15-operational-rollout.mjs",
+    "portalVerificationScriptPath": "scripts/document-request-canonical-phase14-portal-verification.mjs",
+    "defaultsDryRun": true,
+    "explicitCommitFlag": true,
+    "confirmationFlag": true,
+    "syncUsesDryRunUntilCommit": true,
+    "rolloutSizeCapped": true,
+    "preservesUploadedRows": true,
+    "documentRequestsDeltaAudited": true,
+    "activePortalAccessAudited": true,
+    "runsPortalPostcheck": true,
+    "noDocumentRequestWrites": true,
+    "noRawPortalTokenLeak": true
+  },
+  "readiness": {
+    "localPreflightReady": true,
+    "controlledDryRunReady": true,
+    "liveRolloutExecuted": false,
+    "commitExecuted": false,
+    "requiresExplicitTransactionScopeForLiveRun": true,
+    "requiresConfirmOperationalRolloutForWrites": true,
+    "documentRequestsWriteDebt": false
+  },
+  "gate": {
+    "status": "operational_preflight_mapped",
+    "ok": true,
+    "mayProceedToPhase16": true,
+    "productionActivationReady": true,
+    "checks": [
+      {
+        "key": "phase_reports_present_and_matched",
+        "ok": true
+      },
+      {
+        "key": "post_phase10_gates_are_clean",
+        "ok": true
+      },
+      {
+        "key": "phase10_only_has_managed_warnings",
+        "ok": true
+      },
+      {
+        "key": "rollout_defaults_to_dry_run",
+        "ok": true
+      },
+      {
+        "key": "rollout_commit_is_explicitly_confirmed",
+        "ok": true
+      },
+      {
+        "key": "rollout_size_and_portal_access_are_guarded",
+        "ok": true
+      },
+      {
+        "key": "rollout_preserves_existing_upload_and_review_state",
+        "ok": true
+      },
+      {
+        "key": "rollout_does_not_write_client_request_rows",
+        "ok": true
+      },
+      {
+        "key": "portal_postcheck_is_required_and_sanitized",
+        "ok": true
+      },
+      {
+        "key": "phase15_preflight_is_read_only_local_qa",
+        "ok": true
+      },
+      {
+        "key": "document_generator_remains_out_of_scope",
+        "ok": true
+      },
+      {
+        "key": "phase15_verify_chain_is_registered",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "warnings": []
+  }
+}

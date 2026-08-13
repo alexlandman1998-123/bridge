@@ -123,6 +123,7 @@ export {
   calculateBondApplicationDocumentProgress,
   BOND_APPLICATION_CANONICAL_DOCUMENT_MODEL_VERSION,
   BOND_APPLICATION_CANONICAL_PARENT_KEYS,
+  BOND_APPLICATION_CHILD_CONTAINER_POLICY_VERSION,
   getBondApplicationDocumentBuyerStatus,
   getBondApplicationDocumentBuyerStatusLabel,
   getBondApplicationDocumentManagedKeys,

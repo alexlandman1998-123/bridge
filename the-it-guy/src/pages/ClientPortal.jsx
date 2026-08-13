@@ -148,10 +148,48 @@ const ISSUE_CATEGORIES = [
 function getClientPortalLoadErrorMessage(error, fallback = 'We could not load your client workspace right now.') {
   const message = String(error?.message || error || '').trim()
   const normalized = message.toLowerCase()
-  if (normalized.includes('statement timeout') || normalized.includes('failed to fetch') || normalized.includes('network')) {
+  if (
+    normalized.includes('statement timeout') ||
+    normalized.includes('failed to fetch') ||
+    normalized.includes('network') ||
+    error?.code === 'client_portal_load_timeout'
+  ) {
     return 'Your client portal is temporarily taking too long to load. Please retry in a moment.'
   }
   return message || fallback
+}
+
+const CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS = 7000
+const CLIENT_PORTAL_FULL_LOAD_TIMEOUT_MS = 14000
+const CLIENT_PORTAL_BACKGROUND_LOAD_TIMEOUT_MS = 18000
+
+function createClientPortalLoadTimeoutError(phase = 'portal', timeoutMs = CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS) {
+  const error = new Error(`Client portal ${phase} load timed out after ${timeoutMs}ms.`)
+  error.code = 'client_portal_load_timeout'
+  error.phase = phase
+  error.timeoutMs = timeoutMs
+  return error
+}
+
+function isClientPortalLoadTimeoutError(error = null) {
+  return error?.code === 'client_portal_load_timeout'
+}
+
+async function withClientPortalLoadTimeout(task, { phase = 'portal', timeoutMs = CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS } = {}) {
+  let timeoutId = null
+  try {
+    return await Promise.race([
+      task,
+      new Promise((_, reject) => {
+        timeoutId = globalThis.setTimeout(
+          () => reject(createClientPortalLoadTimeoutError(phase, timeoutMs)),
+          timeoutMs,
+        )
+      }),
+    ])
+  } finally {
+    if (timeoutId) globalThis.clearTimeout(timeoutId)
+  }
 }
 
 const SELLER_PORTAL_MENU = [
@@ -8120,16 +8158,34 @@ function ClientPortal() {
       return
     }
     const effectiveSellerPortalAccessToken = sellerPortalAccessTokenOverride || sellerPortalAccessToken
+    const requireSellerReauthentication = ({ portalAuth = null, sessionExpired = false } = {}) => {
+      clearSellerPortalAccessToken(token)
+      setSellerPortalAccessToken('')
+      setSellerPortalAuth({
+        ...(portalAuth && typeof portalAuth === 'object' ? portalAuth : {}),
+        authRequired: true,
+        passwordSet: portalAuth?.passwordSet ?? true,
+        sessionExpired: Boolean(sessionExpired || portalAuth?.sessionExpired),
+      })
+      setPortal(null)
+      setWorkspaceData(null)
+      setError('')
+      setLoading(false)
+      setHydratingPortal(false)
+    }
 
     if (background) {
       const backgroundStartedAt = Date.now()
       try {
         setError('')
         setHydratingPortal(true)
-        const data = await getClientPortalWorkspaceData(token, requestedWorkspace, {
-          mode: 'full',
-          sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
-        })
+        const data = await withClientPortalLoadTimeout(
+          getClientPortalWorkspaceData(token, requestedWorkspace, {
+            mode: 'full',
+            sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
+          }),
+          { phase: 'background', timeoutMs: CLIENT_PORTAL_BACKGROUND_LOAD_TIMEOUT_MS },
+        )
         if (!isCurrentLoad()) return
         portalContextsRef.current = {
           contexts: data?.portalContext?.contexts || [],
@@ -8146,10 +8202,10 @@ function ClientPortal() {
       } catch (loadError) {
         if (!isCurrentLoad()) return
         if (isSellerPortalAuthRequiredError(loadError)) {
-          setSellerPortalAuth(loadError.portalAuth || { authRequired: true })
-          setPortal(null)
-          setWorkspaceData(null)
-          setError('')
+          requireSellerReauthentication({
+            portalAuth: loadError.portalAuth || { authRequired: true },
+            sessionExpired: Boolean(loadError?.portalAuth?.sessionExpired),
+          })
           return
         }
         console.warn('[client-portal] Background refresh skipped', {
@@ -8168,10 +8224,13 @@ function ClientPortal() {
       setLoading(true)
       setError('')
       setDocumentActionError('')
-      const coreData = await getClientPortalWorkspaceData(token, requestedWorkspace, {
-        mode: 'core',
-        sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
-      })
+      const coreData = await withClientPortalLoadTimeout(
+        getClientPortalWorkspaceData(token, requestedWorkspace, {
+          mode: 'core',
+          sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
+        }),
+        { phase: 'core', timeoutMs: CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS },
+      )
       if (!isCurrentLoad()) return
       portalContextsRef.current = {
         contexts: coreData?.portalContext?.contexts || [],
@@ -8190,23 +8249,36 @@ function ClientPortal() {
     } catch (coreError) {
       if (!isCurrentLoad()) return
       if (isSellerPortalAuthRequiredError(coreError)) {
-        setSellerPortalAuth(coreError.portalAuth || { authRequired: true })
-        setPortal(null)
-        setWorkspaceData(null)
-        setLoading(false)
+        requireSellerReauthentication({
+          portalAuth: coreError.portalAuth || { authRequired: true },
+          sessionExpired: Boolean(coreError?.portalAuth?.sessionExpired),
+        })
+        return
+      }
+      if (isSellerPortalToken && effectiveSellerPortalAccessToken && isClientPortalLoadTimeoutError(coreError)) {
+        requireSellerReauthentication({ sessionExpired: true })
         return
       }
       if (!hasCoreData) {
         setError(getClientPortalLoadErrorMessage(coreError, 'We could not load your client workspace.'))
+        if (isClientPortalLoadTimeoutError(coreError)) {
+          setPortal(null)
+          setWorkspaceData(null)
+          setLoading(false)
+          return
+        }
       }
     }
 
     try {
       setHydratingPortal(true)
-      const fullData = await getClientPortalWorkspaceData(token, requestedWorkspace, {
-        mode: 'full',
-        sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
-      })
+      const fullData = await withClientPortalLoadTimeout(
+        getClientPortalWorkspaceData(token, requestedWorkspace, {
+          mode: 'full',
+          sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
+        }),
+        { phase: 'full', timeoutMs: CLIENT_PORTAL_FULL_LOAD_TIMEOUT_MS },
+      )
       if (!isCurrentLoad()) return
       portalContextsRef.current = {
         contexts: fullData?.portalContext?.contexts || [],
@@ -8225,10 +8297,14 @@ function ClientPortal() {
     } catch (loadError) {
       if (!isCurrentLoad()) return
       if (isSellerPortalAuthRequiredError(loadError)) {
-        setSellerPortalAuth(loadError.portalAuth || { authRequired: true })
-        setPortal(null)
-        setWorkspaceData(null)
-        setError('')
+        requireSellerReauthentication({
+          portalAuth: loadError.portalAuth || { authRequired: true },
+          sessionExpired: Boolean(loadError?.portalAuth?.sessionExpired),
+        })
+        return
+      }
+      if (isSellerPortalToken && effectiveSellerPortalAccessToken && isClientPortalLoadTimeoutError(loadError) && !hasCoreData) {
+        requireSellerReauthentication({ sessionExpired: true })
         return
       }
       if (!hasCoreData) {

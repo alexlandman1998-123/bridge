@@ -18,10 +18,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import BondEmptyState from '../../components/bond/BondEmptyState'
 import BondPageShell from '../../components/bond/BondPageShell'
-import BondTransactionTable, { APPLICATION_PROGRESS_STAGE_OPTIONS, resolveBondProgressStage } from '../../components/bond/BondTransactionTable'
+import BondTransactionTable from '../../components/bond/BondTransactionTable'
 import { BOND_TRANSACTION_VIEW_PARAM, bondViews, getBondTransactionView, getBondTransactionViewFromStatus } from '../../config/bondViews'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import * as bondCommandCenterService from '../../services/bondCommandCenterService'
+import {
+  APPLICATION_PROGRESS_STAGE_OPTIONS,
+  buildBondConsultantActionHref,
+  resolveBondConsultantAction,
+  resolveBondProgressStage,
+} from '../../services/bondConsultantActionService'
 import {
   resolvePortalBuyerName,
   resolvePortalPropertyLabel,
@@ -542,6 +548,7 @@ export function buildHqApplicationRegisterRows(rows = [], now = Date.now()) {
       fallback: [row.developmentName, row.unitLabel].map((item) => safeDisplayText(item)).filter(Boolean).join(' • ') || 'Property pending',
     })
     const client = resolvePortalBuyerName(row, { fallback: safeDisplayText(row.client, 'Buyer pending') })
+    const consultantAction = isHqApplicationUnassigned(row) ? null : resolveBondConsultantAction(row)
     return {
       ...row,
       createdTimestamp: getCreatedTimestamp(row),
@@ -564,7 +571,11 @@ export function buildHqApplicationRegisterRows(rows = [], now = Date.now()) {
       client,
       propertyDisplay,
       nextActionLabel: getFriendlyNextAction(row, statusKey),
-      openHref: row.transactionId ? `/bond/files/${encodeURIComponent(row.transactionId)}` : '/bond/pipeline?view=all',
+      primaryActionLabel: consultantAction?.label || 'Open Application',
+      primaryActionReason: consultantAction?.reason || '',
+      openHref: consultantAction
+        ? buildBondConsultantActionHref(row, consultantAction)
+        : row.transactionId ? `/bond/files/${encodeURIComponent(row.transactionId)}` : '/bond/pipeline?view=all',
     }
   })
 }
@@ -847,7 +858,7 @@ export function HqApplicationsTable({ rows = [], onOpen }) {
                     onClick={() => onOpen(row)}
                     className="inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-[10px] bg-[#07183f] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(7,24,63,0.18)] transition hover:bg-[#102a63]"
                   >
-                    <span className="truncate">Open Application</span>
+                    <span className="truncate">{row.primaryActionLabel || 'Open Application'}</span>
                     <ArrowRight size={15} />
                   </button>
                   <OverflowMenuButton />

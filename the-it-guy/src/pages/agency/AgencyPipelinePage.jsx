@@ -1330,6 +1330,39 @@ function getKingstonsSellerPackState(lead = {}) {
   }
 }
 
+function hasKingstonsSellerPackDetailsCompletionSignal(pack = {}) {
+  const legalPath = asRecord(
+    pack.legalPath ||
+      pack.legal_path ||
+      pack.sellerProfile ||
+      pack.seller_profile ||
+      pack.sellerPackProfile ||
+      pack.seller_pack_profile,
+  )
+  const status = normalizeKey(pack.sellerPackStatus || pack.seller_pack_status || pack.status || legalPath.status)
+  return Boolean(
+    firstWorkspaceText(
+      pack.sellerPackDetailsCapturedAt,
+      pack.seller_pack_details_captured_at,
+      pack.detailsCapturedAt,
+      pack.details_captured_at,
+      pack.sellerPackReadinessCompletedAt,
+      pack.seller_pack_readiness_completed_at,
+      pack.readinessCompletedAt,
+      pack.readiness_completed_at,
+      legalPath.capturedAt,
+      legalPath.captured_at,
+    ) ||
+      pack.sellerPackDetailsComplete === true ||
+      pack.seller_pack_details_complete === true ||
+      pack.sellerPackReadinessComplete === true ||
+      pack.seller_pack_readiness_complete === true ||
+      pack.readinessComplete === true ||
+      pack.readiness_complete === true ||
+      ['details_captured', 'ready_for_generation', 'readiness_complete', 'complete', 'completed'].includes(status)
+  )
+}
+
 function getKingstonsListingTermsState(lead = {}, listing = {}) {
   const rawPayload = parseLeadRawEnquiryPayload(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
   const listingFacts = parseLeadRawEnquiryPayload(listing?.sellerCanonicalFacts || listing?.seller_canonical_facts_json)
@@ -2389,13 +2422,19 @@ function buildKingstonsSellerPackDocumentRows(lead = {}, {
   contact = null,
 } = {}) {
   const baselineRows = buildKingstonsSellerPackBaselineDocumentRows(lead)
-  const roleplayerFicaRows = buildKingstonsSellerFicaRoleplayerDocumentRows(lead, contact || {})
-  const sourceRows = buildSellerLeadDocumentRowsFromSource({
-    lead,
-    listing,
-    journey,
-    mandatePacketStatus,
-  })
+  const sellerPack = getKingstonsSellerPackState(lead)
+  const ownershipDocsUnlocked = hasKingstonsSellerPackDetailsCompletionSignal(sellerPack)
+  const roleplayerFicaRows = ownershipDocsUnlocked
+    ? buildKingstonsSellerFicaRoleplayerDocumentRows(lead, contact || {})
+    : []
+  const sourceRows = ownershipDocsUnlocked
+    ? buildSellerLeadDocumentRowsFromSource({
+        lead,
+        listing,
+        journey,
+        mandatePacketStatus,
+      })
+    : []
   const generatedRows = sourceRows.filter((documentRow) => {
     const key = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
     if (!key || key === KINGSTONS_FORMAL_VALUATION_DOCUMENT.key) return false

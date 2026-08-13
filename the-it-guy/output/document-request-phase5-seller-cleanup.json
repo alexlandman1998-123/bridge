@@ -1,6 +1,6 @@
 {
   "phase": "document_request_phase5_seller_cleanup",
-  "generatedAt": "2026-08-13T16:17:51.694Z",
+  "generatedAt": "2026-08-13T19:38:41.164Z",
   "commit": false,
   "mutatedData": false,
   "strict": false,
@@ -9,7 +9,7 @@
   "summary": {
     "unmappedCount": 0,
     "professionalOnlyLegacyCount": 0,
-    "missingCoveredByCanonicalPlanCount": 48,
+    "missingCoveredByCanonicalPlanCount": 49,
     "pendingPolicyLegacyCount": 0,
     "duplicateCanonicalGroupCount": 9,
     "deferredSellerUploadCount": 0
@@ -1065,8 +1065,8 @@
         "mappedRequirementCount": 11,
         "sellerClientUploadCount": 11,
         "requestableSellerClientUploadCount": 11,
-        "canonicalPlanRequestCount": 13,
-        "canonicalPlanRequestableCount": 12,
+        "canonicalPlanRequestCount": 14,
+        "canonicalPlanRequestableCount": 13,
         "unmappedRows": [],
         "professionalOnlyLegacyRows": [],
         "pendingPolicyLegacyRows": [],
@@ -1092,7 +1092,8 @@
           "rates_clearance",
           "seller_bank_account_confirmation",
           "seller_tax_number",
-          "electrical_compliance_certificate"
+          "electrical_compliance_certificate",
+          "vat_status_confirmation"
         ],
         "extraLegacyKeysOutsideSellerUpload": [],
         "sellerClientUploadKeys": [
@@ -1128,7 +1129,8 @@
           "seller_bank_account_confirmation",
           "seller_tax_number",
           "electrical_compliance_certificate",
-          "zoning_certificate"
+          "zoning_certificate",
+          "vat_status_confirmation"
         ],
         "canonicalPlanRequestableKeys": [
           "seller_fica_pack",
@@ -1142,25 +1144,26 @@
           "seller_bank_account_confirmation",
           "seller_tax_number",
           "electrical_compliance_certificate",
-          "zoning_certificate"
+          "zoning_certificate",
+          "vat_status_confirmation"
         ],
         "containerSummary": {
-          "total": 13,
-          "canonicalRequired": 13,
+          "total": 14,
+          "canonicalRequired": 14,
           "additionalRequests": 0,
-          "blocking": 12,
+          "blocking": 13,
           "uploaded": 0,
           "byRequestedFrom": {
-            "seller": 13
+            "seller": 14
           },
           "byAudience": {
-            "agent": 13,
-            "attorney": 13,
-            "internal": 13,
-            "seller": 13
+            "agent": 14,
+            "attorney": 14,
+            "internal": 14,
+            "seller": 14
           },
           "byStatus": {
-            "required": 12,
+            "required": 13,
             "not_applicable": 1
           }
         }
@@ -1565,6 +1568,10 @@
       "key": "electrical_compliance_certificate"
     },
     {
+      "scenarioId": "commercial_vat",
+      "key": "vat_status_confirmation"
+    },
+    {
       "scenarioId": "conditional_compliance",
       "key": "rates_clearance"
     },
@@ -1648,7 +1655,7 @@
       {
         "code": "legacy_seller_generator_not_full_canonical_policy",
         "message": "The legacy seller generator is mapped, but some canonical seller policy containers are not emitted by every seller scenario yet.",
-        "count": 48
+        "count": 49
       },
       {
         "code": "legacy_rows_roll_up_to_parent_containers",

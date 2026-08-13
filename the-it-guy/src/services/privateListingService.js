@@ -5769,8 +5769,8 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
         form_data: formData && typeof formData === 'object' ? formData : {},
         status: normalizeStatus(options.status || 'completed', SELLER_ONBOARDING_STATUSES, 'completed'),
         submitted_at: new Date().toISOString(),
-        seller_type: normalizeNullableText(options.sellerType || formData?.sellerType || formData?.ownershipType),
-        ownership_structure: normalizeNullableText(options.ownershipStructure || formData?.ownershipType),
+        seller_type: normalizeNullableText(options.sellerType || formData?.sellerType || formData?.sellerLegalType || formData?.ownerStructureType || formData?.ownershipType),
+        ownership_structure: normalizeNullableText(options.ownershipStructure || formData?.ownerStructureType || formData?.ownershipType),
         marital_regime: normalizeNullableText(options.maritalRegime || formData?.maritalRegime || formData?.marriageRegime),
       })
       .select('*')
@@ -5786,8 +5786,9 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
       console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding form insert', factError)
       return null
     })
+    let requirementSyncResult = null
     if (options.syncRequirements !== false) {
-      await syncPrivateListingRequirements(normalizedId, {
+      requirementSyncResult = await syncPrivateListingRequirements(normalizedId, {
         emitActivity: false,
         reason: options.requirementSyncReason || 'onboarding_form_saved',
       }).catch((requirementsError) => {
@@ -5795,7 +5796,12 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
         return null
       })
     }
-    return inserted.data
+    return {
+      ...inserted.data,
+      requirementSyncResult,
+      syncedRequirements: requirementSyncResult?.requirements || null,
+      syncedListing: requirementSyncResult?.listing || null,
+    }
   }
 
   const existingFormData = existing.data.form_data && typeof existing.data.form_data === 'object' ? existing.data.form_data : {}
@@ -5810,8 +5816,8 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
       form_data: nextFormData,
       status: nextStatus,
       submitted_at: existing.data.submitted_at || (nextStatus === 'completed' ? new Date().toISOString() : null),
-      seller_type: normalizeNullableText(options.sellerType || existing.data.seller_type || nextFormData.sellerType || nextFormData.ownershipType),
-      ownership_structure: normalizeNullableText(options.ownershipStructure || existing.data.ownership_structure || nextFormData.ownershipType),
+      seller_type: normalizeNullableText(options.sellerType || nextFormData.sellerType || nextFormData.sellerLegalType || nextFormData.ownerStructureType || nextFormData.ownershipType || existing.data.seller_type),
+      ownership_structure: normalizeNullableText(options.ownershipStructure || nextFormData.ownerStructureType || nextFormData.ownershipType || existing.data.ownership_structure),
       marital_regime: normalizeNullableText(options.maritalRegime || existing.data.marital_regime || nextFormData.maritalRegime || nextFormData.marriageRegime),
     })
     .eq('id', existing.data.id)
@@ -5828,8 +5834,9 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
     console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding form update', factError)
     return null
   })
+  let requirementSyncResult = null
   if (options.syncRequirements !== false) {
-    await syncPrivateListingRequirements(normalizedId, {
+    requirementSyncResult = await syncPrivateListingRequirements(normalizedId, {
       emitActivity: false,
       reason: options.requirementSyncReason || 'onboarding_form_saved',
     }).catch((requirementsError) => {
@@ -5837,7 +5844,12 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
       return null
     })
   }
-  return update.data
+  return {
+    ...update.data,
+    requirementSyncResult,
+    syncedRequirements: requirementSyncResult?.requirements || null,
+    syncedListing: requirementSyncResult?.listing || null,
+  }
 }
 
 export async function syncPrivateListingDistributionData(listingId, payload = {}) {

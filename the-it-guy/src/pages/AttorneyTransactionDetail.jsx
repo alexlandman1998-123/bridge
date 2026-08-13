@@ -29,7 +29,6 @@ import {
   MoreHorizontal,
   Paperclip,
   Phone,
-  Plus,
   Search,
   Send,
   Smile,
@@ -43,7 +42,6 @@ import {
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
@@ -141,6 +139,12 @@ import { getTransferInstructionLifecycle } from '../services/transferInstruction
 import { buildMatterDocumentWorkspaceModel } from '../services/documents/matterDocumentWorkspaceModel'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
 import {
+  BOND_CONSULTANT_ACTION_PARAM,
+  BOND_CONSULTANT_TAB_PARAM,
+  getBondConsultantActionDeepLinkState,
+  resolveBondConsultantAction,
+} from '../services/bondConsultantActionService'
+import {
   markBondGrantMilestone,
   markBondInstructionSent,
 } from '../services/transactionFinanceService'
@@ -189,9 +193,9 @@ const AGENT_WORKSPACE_TABS = [
 ]
 
 const BOND_ORIGINATOR_WORKSPACE_TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'workflow', label: 'Workflow' },
-  { id: 'application', label: 'Bond Application' },
+  { id: 'overview', label: 'Today' },
+  { id: 'workflow', label: 'Work Queue' },
+  { id: 'application', label: 'Application' },
   { id: 'documents', label: 'Documents' },
   { id: 'activity', label: 'Activity' },
 ]
@@ -8033,7 +8037,6 @@ function BondApplicationHeader({
   purchasePrice = '',
   ageLabel = '',
   consultant = '',
-  owner = '',
   statusLabel = '',
 }) {
   return (
@@ -8041,7 +8044,7 @@ function BondApplicationHeader({
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-textMuted">
-            <span>Applications</span>
+            <span>Bond workspace</span>
             <ChevronRight size={14} />
             <strong className="text-textStrong">{reference}</strong>
           </div>
@@ -8056,33 +8059,17 @@ function BondApplicationHeader({
           <p className="mt-2 text-base text-[#243b5a]">{[propertyLabel, purchasePrice].filter(Boolean).join(' • ')}</p>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
-            <Button type="button" size="sm">
-              <Plus size={14} />
-              Create
-            </Button>
-            <Button type="button" variant="secondary" size="sm">
-              <Search size={14} />
-              Search
-            </Button>
-            <button type="button" className="ui-icon-button" aria-label="Notifications"><Bell size={16} /></button>
-            <button type="button" className="ui-icon-button" aria-label="Profile"><UserCircle size={17} /></button>
-            <button type="button" className="ui-icon-button" aria-label="More actions"><MoreHorizontal size={17} /></button>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-4">
-            {[
-              ['Application Age', ageLabel],
-              ['Consultant', consultant],
-              ['Owner', owner],
-              ['Status', statusLabel],
-            ].map(([label, value]) => (
-              <article key={label} className="min-w-0 border-l border-borderSoft pl-4 first:border-l-0 first:pl-0">
-                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
-                <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{value || 'Not assigned'}</strong>
-              </article>
-            ))}
-          </div>
+        <div className="grid min-w-0 gap-3 sm:grid-cols-3 xl:min-w-[520px]">
+          {[
+            ['Application Age', ageLabel],
+            ['Consultant', consultant],
+            ['Status', statusLabel],
+          ].map(([label, value]) => (
+            <article key={label} className="min-w-0 border-l border-borderSoft pl-4 first:border-l-0 first:pl-0">
+              <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+              <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{value || 'Not assigned'}</strong>
+            </article>
+          ))}
         </div>
       </div>
     </section>
@@ -8720,6 +8707,245 @@ function BondMatterConversationPanel({
           ) : null}
         </div>
       </div>
+    </section>
+  )
+}
+
+function getBondConsultantStatusTone(status = '') {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (normalized === 'complete') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (normalized === 'active') return 'border-blue-200 bg-blue-50 text-blue-700'
+  if (normalized === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700'
+  return 'border-borderSoft bg-surfaceAlt text-textMuted'
+}
+
+function BondConsultantProcessStep({ step }) {
+  const Icon = step.icon || CheckCircle2
+  return (
+    <button
+      type="button"
+      onClick={step.onOpen}
+      className="flex min-w-0 items-start gap-3 rounded-[14px] border border-borderSoft bg-white px-4 py-3 text-left transition hover:border-borderStrong hover:bg-surfaceAlt"
+    >
+      <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-[12px] border ${getBondConsultantStatusTone(step.status)}`}>
+        {createElement(Icon, { size: 16 })}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-2">
+          <strong className="text-sm font-semibold text-textStrong">{step.label}</strong>
+          <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${getBondConsultantStatusTone(step.status)}`}>
+            {step.statusLabel}
+          </span>
+        </span>
+        <span className="mt-1 block text-xs leading-5 text-textMuted">{step.detail}</span>
+      </span>
+    </button>
+  )
+}
+
+function BondConsultantOverviewWorkspace({
+  consultantAction = null,
+  applicationViewModel = null,
+  documentHealthSummary = {},
+  submissionRows = [],
+  quoteRows = [],
+  acceptedQuote = null,
+  activityFeed = [],
+  loadingAction = '',
+  onPrimaryAction,
+  onOpenApplication,
+  onOpenDocuments,
+  onOpenWorkflow,
+  onOpenActivity,
+}) {
+  const action = consultantAction || {}
+  const completionPercent = Number(applicationViewModel?.application?.completionPercent || 0)
+  const requiredDocs = Number(documentHealthSummary.requiredCount || 0)
+  const receivedDocs = Number(documentHealthSummary.uploadedCount || 0)
+  const missingDocs = Number(documentHealthSummary.missingCount || 0)
+  const submittedBanks = submissionRows.filter((row) => row.submittedAt).length
+  const respondedBanks = submissionRows.filter((row) => {
+    const status = String(row.status || '').toLowerCase()
+    return row.quoteReceived || ['feedback_received', 'additional_documents_required', 'approved', 'declined', 'buyer_approved'].includes(status)
+  }).length
+  const quoteCount = quoteRows.length
+  const acceptedBank = acceptedQuote ? getQuoteBankName(acceptedQuote) : ''
+  const recentActivity = activityFeed.slice(0, 3)
+  const actionBlockers = Array.isArray(action.blockers) ? action.blockers : []
+
+  const isActionFor = (keys = []) => keys.includes(action.targetAction || action.key)
+  const processSteps = [
+    {
+      key: 'application',
+      label: 'Review application',
+      status: completionPercent >= 85 ? 'complete' : isActionFor(['review-application']) ? 'active' : 'pending',
+      statusLabel: completionPercent >= 85 ? 'Ready' : isActionFor(['review-application']) ? 'Now' : 'Pending',
+      detail: `${completionPercent || 0}% complete`,
+      icon: FileCheck2,
+      onOpen: onOpenApplication,
+    },
+    {
+      key: 'documents',
+      label: 'Collect finance docs',
+      status: documentHealthSummary.submissionReady ? 'complete' : missingDocs ? 'attention' : isActionFor(['request-docs', 'review-docs']) ? 'active' : 'pending',
+      statusLabel: documentHealthSummary.submissionReady ? 'Ready' : missingDocs ? `${missingDocs} missing` : isActionFor(['request-docs', 'review-docs']) ? 'Now' : 'Pending',
+      detail: requiredDocs ? `${receivedDocs}/${requiredDocs} received` : 'Document checklist pending',
+      icon: FileText,
+      onOpen: onOpenDocuments,
+    },
+    {
+      key: 'banks',
+      label: 'Submit to banks',
+      status: submittedBanks ? 'complete' : isActionFor(['submit-bank', 'update-bank-feedback']) ? 'active' : 'pending',
+      statusLabel: submittedBanks ? `${submittedBanks} sent` : isActionFor(['submit-bank', 'update-bank-feedback']) ? 'Now' : 'Pending',
+      detail: respondedBanks ? `${respondedBanks} bank response${respondedBanks === 1 ? '' : 's'}` : 'No bank response yet',
+      icon: Landmark,
+      onOpen: onOpenWorkflow,
+    },
+    {
+      key: 'offers',
+      label: 'Capture offers',
+      status: quoteCount ? 'complete' : isActionFor(['capture-offer']) ? 'active' : 'pending',
+      statusLabel: quoteCount ? `${quoteCount} offer${quoteCount === 1 ? '' : 's'}` : isActionFor(['capture-offer']) ? 'Now' : 'Pending',
+      detail: acceptedBank ? `${acceptedBank} accepted` : 'Waiting for accepted offer',
+      icon: CircleDollarSign,
+      onOpen: onOpenWorkflow,
+    },
+    {
+      key: 'decision',
+      label: 'Record buyer decision',
+      status: acceptedQuote ? 'complete' : isActionFor(['record-buyer-decision']) ? 'active' : 'pending',
+      statusLabel: acceptedQuote ? 'Recorded' : isActionFor(['record-buyer-decision']) ? 'Now' : 'Pending',
+      detail: acceptedQuote ? `${acceptedBank || 'Selected quote'} accepted` : 'Buyer decision outstanding',
+      icon: CheckCircle2,
+      onOpen: onOpenWorkflow,
+    },
+    {
+      key: 'instruction',
+      label: 'Issue instruction',
+      status: ['instruction_sent', 'registered'].includes(action.stage) ? 'complete' : isActionFor(['record-grant-received', 'record-grant-signed', 'submit-grant', 'send-attorney-instruction']) ? 'active' : 'pending',
+      statusLabel: ['instruction_sent', 'registered'].includes(action.stage) ? 'Sent' : isActionFor(['record-grant-received', 'record-grant-signed', 'submit-grant', 'send-attorney-instruction']) ? 'Now' : 'Pending',
+      detail: ['instruction_sent', 'registered'].includes(action.stage) ? 'Attorney handoff in progress' : 'Grant and instruction still pending',
+      icon: Send,
+      onOpen: onOpenWorkflow,
+    },
+  ]
+
+  const statusMetrics = [
+    {
+      label: 'Application',
+      value: `${completionPercent || 0}%`,
+      helper: applicationViewModel?.application?.readinessLabel || applicationViewModel?.application?.onboardingStatus || 'Review pending',
+      icon: FileCheck2,
+      onOpen: onOpenApplication,
+    },
+    {
+      label: 'Documents',
+      value: requiredDocs ? `${receivedDocs}/${requiredDocs}` : `${receivedDocs}`,
+      helper: documentHealthSummary.submissionReady ? 'Ready for banks' : missingDocs ? `${missingDocs} outstanding` : 'Checklist pending',
+      icon: FileText,
+      onOpen: onOpenDocuments,
+    },
+    {
+      label: 'Banks',
+      value: `${submittedBanks}/${submissionRows.length || 0}`,
+      helper: respondedBanks ? `${respondedBanks} response${respondedBanks === 1 ? '' : 's'}` : 'Awaiting submissions',
+      icon: Landmark,
+      onOpen: onOpenWorkflow,
+    },
+    {
+      label: 'Offers',
+      value: String(quoteCount),
+      helper: acceptedBank ? `${acceptedBank} accepted` : 'No accepted quote',
+      icon: CircleDollarSign,
+      onOpen: onOpenWorkflow,
+    },
+  ]
+
+  return (
+    <section className="space-y-5">
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+        <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                {action.stageLabel || 'Bond application'}
+              </span>
+              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-textStrong">{action.label || 'Review application'}</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-textBody">
+                {action.reason || 'Open the next bond consultant workspace action for this application.'}
+              </p>
+              {actionBlockers.length ? (
+                <div className="mt-4 rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <strong className="block font-semibold">Blocked by</strong>
+                  <span className="mt-1 block">{actionBlockers.join(', ')}</span>
+                </div>
+              ) : null}
+            </div>
+            <Button type="button" onClick={() => onPrimaryAction?.(action)} disabled={Boolean(loadingAction)}>
+              {loadingAction ? 'Working...' : action.label || 'Open'}
+              <ChevronRight size={15} />
+            </Button>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {statusMetrics.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={item.onOpen}
+                className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-left transition hover:border-borderStrong hover:bg-white"
+              >
+                <span className="flex items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">
+                  {createElement(item.icon, { size: 14 })}
+                  {item.label}
+                </span>
+                <strong className="mt-2 block truncate text-lg font-semibold text-textStrong">{item.value}</strong>
+                <span className="mt-1 block truncate text-xs text-textMuted">{item.helper}</span>
+              </button>
+            ))}
+          </div>
+        </article>
+
+        <aside className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-textStrong">Recent activity</h3>
+            <Button type="button" variant="ghost" size="sm" onClick={onOpenActivity}>View all</Button>
+          </div>
+          <div className="mt-4 space-y-3">
+            {recentActivity.map((entry) => (
+              <article key={entry.id} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <strong className="block truncate text-sm text-textStrong">{entry.authorName || entry.title || 'Update'}</strong>
+                    <p className="mt-1 line-clamp-2 text-sm leading-5 text-textMuted">{entry.body || entry.title || 'Activity recorded'}</p>
+                  </div>
+                  <span className="shrink-0 text-xs text-textMuted">{formatDateTime(entry.createdAt, '')}</span>
+                </div>
+              </article>
+            ))}
+            {!recentActivity.length ? (
+              <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
+                No activity yet. Updates and bank notes will appear here.
+              </p>
+            ) : null}
+          </div>
+        </aside>
+      </section>
+
+      <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-textStrong">Bond process</h3>
+            <p className="mt-1 text-sm text-textMuted">Follow the file from application review through attorney instruction.</p>
+          </div>
+          <Button type="button" variant="secondary" size="sm" onClick={onOpenWorkflow}>
+            Open work queue
+          </Button>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+          {processSteps.map((step) => <BondConsultantProcessStep key={step.key} step={step} />)}
+        </div>
+      </section>
     </section>
   )
 }
@@ -11109,6 +11335,7 @@ function AttorneyTransactionDetail() {
   const [bondHybridFinanceActionLoading, setBondHybridFinanceActionLoading] = useState('')
   const [bondApplicationPdfBusy, setBondApplicationPdfBusy] = useState(false)
   const [activityFilter, setActivityFilter] = useState('all')
+  const processedBondConsultantDeepLinkRef = useRef('')
 
   useEffect(() => {
     if (!location.state?.openBuyerOnboardingRoleplayers) return
@@ -11517,6 +11744,20 @@ function AttorneyTransactionDetail() {
     : workspaceRole === 'attorney'
       ? 'today'
       : 'overview'
+  const bondConsultantDeepLink = useMemo(() => {
+    if (workspaceRole !== 'bond_originator') return null
+    const params = new URLSearchParams(location.search || '')
+    const requestedAction = params.get(BOND_CONSULTANT_ACTION_PARAM) || ''
+    const requestedTab = params.get(BOND_CONSULTANT_TAB_PARAM) || ''
+    if (!requestedAction && !requestedTab) return null
+    const actionState = getBondConsultantActionDeepLinkState(requestedAction)
+    const tab = normalizeDetailKey(requestedTab || actionState.targetWorkspaceTab || 'overview')
+    return {
+      ...actionState,
+      targetWorkspaceTab: BOND_ORIGINATOR_WORKSPACE_TABS.some((item) => item.id === tab) ? tab : actionState.targetWorkspaceTab || 'overview',
+      requestKey: `${transactionId || ''}:${requestedTab}:${requestedAction}:${location.search || ''}`,
+    }
+  }, [location.search, transactionId, workspaceRole])
 
   const loadPartnerInvitations = useCallback(async () => {
     if (!transaction?.id || !canViewPartnerInvitations) {
@@ -13112,6 +13353,25 @@ function AttorneyTransactionDetail() {
     setRequestDocumentModalOpen(true)
   }, [])
 
+  useEffect(() => {
+    if (workspaceRole !== 'bond_originator' || !bondConsultantDeepLink?.requestKey) return
+    if (processedBondConsultantDeepLinkRef.current === bondConsultantDeepLink.requestKey) return
+    processedBondConsultantDeepLinkRef.current = bondConsultantDeepLink.requestKey
+
+    const targetTab = bondConsultantDeepLink.targetWorkspaceTab || 'overview'
+    setWorkspaceMenu(targetTab)
+
+    if (bondConsultantDeepLink.targetAction === 'request-docs') {
+      handleQuickRequestDocuments()
+    } else if (bondConsultantDeepLink.targetAction === 'review-docs') {
+      setWorkspaceMenu('documents')
+    } else if (bondConsultantDeepLink.targetAction === 'review-application') {
+      setWorkspaceMenu('application')
+    } else if (bondConsultantDeepLink.targetAction === 'monitor-registration' || bondConsultantDeepLink.targetAction === 'review-outcome') {
+      setWorkspaceMenu('activity')
+    }
+  }, [bondConsultantDeepLink, handleQuickRequestDocuments, workspaceRole])
+
   async function handleCreateDocumentRequest(event) {
     event.preventDefault()
     if (!transaction?.id) {
@@ -13550,6 +13810,72 @@ function AttorneyTransactionDetail() {
   )
   const bondApplicationOutstandingCount = bondApplicationViewModel.readinessItems.filter((item) => !item.complete).length
   const bondApplicationUploadedCount = bondApplicationViewModel.documents.reduce((total, item) => total + (item.uploadedCount || 0), 0)
+  const bondConsultantWorkspaceAction = useMemo(
+    () =>
+      resolveBondConsultantAction({
+        transactionId,
+        financeStageKey:
+          transactionFinanceWorkflow?.currentStage ||
+          transactionFinanceWorkflow?.current_stage ||
+          transactionFinanceWorkflow?.summary?.currentStage ||
+          transactionFinanceWorkflow?.summary?.current_stage ||
+          transaction?.financeStageKey ||
+          transaction?.finance_stage_key ||
+          transaction?.stage,
+        financeStageLabel:
+          transactionFinanceWorkflow?.currentStageLabel ||
+          transactionFinanceWorkflow?.summary?.currentStageLabel ||
+          transaction?.financeStageLabel ||
+          transaction?.finance_status ||
+          transaction?.current_sub_stage_summary,
+        transferStageKey,
+        transferStageLabel,
+        status: transaction?.status || transaction?.lifecycle_state || transaction?.operational_state,
+        riskStatus: transaction?.risk_status || transaction?.riskStatus,
+        nextAction: transaction?.next_action || transaction?.nextAction,
+        missingDocuments: documentHealthSummary.missingCount,
+        documentSummary: {
+          missingCount: documentHealthSummary.missingCount,
+        },
+        acceptedQuote: acceptedBondQuote,
+      }),
+    [
+      acceptedBondQuote,
+      documentHealthSummary.missingCount,
+      transaction,
+      transactionFinanceWorkflow,
+      transactionId,
+      transferStageKey,
+      transferStageLabel,
+    ],
+  )
+  const handleBondConsultantPrimaryAction = useCallback((action = null) => {
+    const resolvedAction = action || bondConsultantWorkspaceAction
+    const targetAction = resolvedAction?.targetAction || resolvedAction?.key || ''
+    const targetTab = normalizeDetailKey(resolvedAction?.targetWorkspaceTab || '')
+
+    if (targetAction === 'request-docs') {
+      handleQuickRequestDocuments()
+      return
+    }
+    if (targetTab === 'application') {
+      setWorkspaceMenu('application')
+      return
+    }
+    if (targetTab === 'documents') {
+      setWorkspaceMenu('documents')
+      return
+    }
+    if (targetTab === 'workflow') {
+      setWorkspaceMenu('workflow')
+      return
+    }
+    if (targetTab === 'activity') {
+      setWorkspaceMenu('activity')
+      return
+    }
+    setWorkspaceMenu('overview')
+  }, [bondConsultantWorkspaceAction, handleQuickRequestDocuments])
   const displayedMatterHealthLabel = usingTransactionRollupOverview
     ? getRollupHealthLabel(transactionRollup?.parentStatus)
     : matterHealthLabel
@@ -15906,7 +16232,6 @@ function AttorneyTransactionDetail() {
               purchasePrice={formatCurrencyValue(transaction?.purchase_price || transaction?.sales_price, '')}
               ageLabel={daysBetween(transaction?.created_at)}
               consultant={transaction?.bond_originator || transaction?.assigned_bond_originator_name || getParticipantDisplayName(assignedBondOriginator) || 'Unassigned'}
-              owner={transaction?.bond_originator || transaction?.assigned_bond_processor_name || transaction?.processor_name || 'Unassigned'}
               statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
             />
           ) : (
@@ -15950,124 +16275,21 @@ function AttorneyTransactionDetail() {
     >
       <div className="space-y-6">
         {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'overview' ? (
-          <section className="space-y-7">
-            <FinanceProgressBar
-              workflowData={transactionFinanceWorkflow}
-              mode="editable"
-              viewerRole={workspaceRole}
-              loadingStage={bondHybridFinanceActionLoading}
-              onStageChange={(stageKey) => void handleBondHybridFinanceStage(stageKey)}
-            />
-
-            <FinanceReadinessDashboard
-              readiness={financeReadinessDashboard}
-              onViewIssues={() => openWorkspaceMenu('documents')}
-              onViewActionPlan={() => openWorkspaceMenu('tasks')}
-            />
-
-            <AppointmentDashboardSection
-              module="transaction"
-              organisationId={String(transaction?.organisation_id || currentMembership?.organisation_id || '').trim()}
-              userId={String(profile?.id || profile?.userId || '').trim()}
-              userEmail={String(profile?.email || '').trim()}
-              transactionId={String(transactionId || '').trim()}
-              canManage
-              onViewCalendar={() => navigate('/bond/calendar')}
-              onOpenCalendar={() => navigate('/bond/calendar')}
-              onManageAppointment={() => void handleQuickScheduleSigning()}
-              onOpenAppointment={() => void handleQuickScheduleSigning()}
-              onScheduleAppointment={() => void handleQuickScheduleSigning()}
-              refreshKey={`${transactionId}:${String(transaction?.organisation_id || currentMembership?.organisation_id || '').trim()}`}
-            />
-
-            <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
-              <BankSubmissionTracker rows={bondSubmissionRows} onViewAll={() => setWorkspaceMenu('banks_quotes')} />
-              <BestQuoteSummary
-                quote={bestBondQuote}
-                quotes={transactionFinanceWorkflow?.quotes || transactionFinanceWorkflow?.offers || []}
-                loading={Boolean(bondHybridFinanceActionLoading)}
-                onAccept={(quoteId) => void handleApproveBondHybridQuote(quoteId)}
-                onViewAll={() => setWorkspaceMenu('banks_quotes')}
-              />
-            </section>
-
-            <section className="rounded-[18px] border border-borderDefault bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold tracking-[-0.02em] text-textStrong">Matter Conversation</h3>
-                  <p className="mt-1 text-sm text-textMuted">Updates, notes, roleplayer visibility, and system activity for this application.</p>
-                </div>
-                <Button type="button" variant="ghost" size="sm" onClick={() => openWorkspaceMenu('activity')}>
-                  View all activity
-                </Button>
-              </div>
-              <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(360px,0.7fr)]">
-                <form onSubmit={handleAddDiscussion} className="rounded-[14px] border border-borderSoft bg-surfaceAlt p-4">
-                  <div className="mb-3 flex gap-2 border-b border-borderSoft">
-                    <button type="button" className="border-b-2 border-primary px-3 py-2 text-sm font-semibold text-primary">Updates</button>
-                    <button type="button" className="px-3 py-2 text-sm font-semibold text-textMuted">Notes</button>
-                  </div>
-                  <Field
-                    as="textarea"
-                    rows={4}
-                    value={discussionBody}
-                    onChange={(event) => setDiscussionBody(event.target.value)}
-                    placeholder="Write an update, note, or @mention someone..."
-                  />
-                  <DiscussionComposerControls
-                    structured={structuredDiscussionComposer}
-                    discussionType={discussionType}
-                    setDiscussionType={setDiscussionType}
-                    discussionVisibility={discussionVisibility}
-                    setDiscussionVisibility={setDiscussionVisibility}
-                    visibilityOptions={effectiveDiscussionVisibilityOptions}
-                    laneOptions={discussionLaneOptions}
-                    discussionLaneKey={activeDiscussionLane?.laneKey || discussionLaneKey}
-                    setDiscussionLaneKey={setDiscussionLaneKey}
-                    actionOptions={discussionActionOptions}
-                    discussionActionKey={selectedDiscussionAction?.key || discussionActionKey}
-                    setDiscussionActionKey={setDiscussionActionKey}
-                  />
-                  <div className="mt-4 flex flex-wrap justify-end gap-2">
-                    <Button type="button" variant="secondary" size="sm" onClick={() => openWorkspaceMenu('documents')}>
-                      <Paperclip size={14} />
-                      Attach Document
-                    </Button>
-                    <Button
-                      type="submit"
-                      size="sm"
-                      disabled={discussionSubmitDisabled}
-                    >
-                      <Send size={14} />
-                      {saving ? 'Posting...' : 'Post Update'}
-                    </Button>
-                  </div>
-                </form>
-
-                <div className="min-w-0">
-                  <h4 className="text-sm font-semibold text-textStrong">Recent Activity</h4>
-                  <div className="mt-3 space-y-3">
-                    {overviewConversationEntries.slice(0, 4).map((entry) => (
-                      <article key={entry.id} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <strong className="block truncate text-sm text-textStrong">{entry.authorName}</strong>
-                            <p className="mt-1 line-clamp-2 text-sm leading-5 text-textMuted">{entry.body || entry.title}</p>
-                          </div>
-                          <span className="shrink-0 text-xs text-textMuted">{formatDateTime(entry.createdAt)}</span>
-                        </div>
-                      </article>
-                    ))}
-                    {!overviewConversationEntries.length ? (
-                      <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
-                        No activity yet. Updates, notes and system events will appear here.
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            </section>
-          </section>
+          <BondConsultantOverviewWorkspace
+            consultantAction={bondConsultantWorkspaceAction}
+            applicationViewModel={bondApplicationViewModel}
+            documentHealthSummary={documentHealthSummary}
+            submissionRows={bondBankCommandRows}
+            quoteRows={sortedBondQuoteRows}
+            acceptedQuote={acceptedBondQuote}
+            activityFeed={overviewConversationEntries}
+            loadingAction={bondHybridFinanceActionLoading}
+            onPrimaryAction={handleBondConsultantPrimaryAction}
+            onOpenApplication={() => openWorkspaceMenu('application')}
+            onOpenDocuments={() => openWorkspaceMenu('documents')}
+            onOpenWorkflow={() => openWorkspaceMenu('workflow')}
+            onOpenActivity={() => openWorkspaceMenu('activity')}
+          />
         ) : null}
 
         {workspaceRole === 'attorney' && ['today', 'overview'].includes(activeWorkspaceMenu) ? (
@@ -17847,55 +18069,6 @@ function AttorneyTransactionDetail() {
                 onOpenActivity={() => openWorkspaceMenu('activity')}
               />
             ) : financeCommandCenterPanel}
-          </section>
-        ) : null}
-
-        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'workflow' ? (
-          <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <section className="rounded-[18px] border border-borderDefault bg-surface p-6 shadow-surface">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-section-title font-semibold text-textStrong">Next Actions</h3>
-                  <p className="mt-1 text-secondary text-textMuted">Bond application tasks, bank follow-ups, document requests, and consultant ownership.</p>
-                </div>
-                <span className="inline-flex items-center rounded-full border border-borderDefault bg-mutedBg px-3 py-1 text-helper font-semibold text-textMuted">
-                  {overviewNextActions.length} actions
-                </span>
-              </div>
-              <div className="mt-5 divide-y divide-borderSoft overflow-hidden rounded-[16px] border border-borderDefault bg-white">
-                {overviewNextActions.map((item) => (
-                  <article key={`${item.title}-${item.workflow}`} className="px-4 py-4 transition hover:bg-primarySoft/40">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="min-w-0">
-                        <strong className="text-sm font-semibold text-textStrong">{item.title}</strong>
-                        <p className="mt-1 max-w-3xl text-sm leading-6 text-textMuted">{item.description}</p>
-                      </div>
-                      <Button type="button" size="sm" variant="secondary" className="shrink-0 justify-center" onClick={() => handleOverviewActionTarget(item.actionTarget)}>
-                        {item.action}
-                      </Button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-            <aside className="space-y-4 xl:sticky xl:top-4">
-              <OverviewSidePanel title="Quick Actions">
-                <div className="grid gap-2">
-                  {[
-                    ['Request Documents', FileText, handleQuickRequestDocuments],
-                    ['Submit to Banks', Landmark, () => setWorkspaceMenu('banks_quotes')],
-                    ['Compare Quotes', CircleDollarSign, () => setWorkspaceMenu('banks_quotes')],
-                    ['View Application', UsersRound, () => setWorkspaceMenu('application')],
-                    ['Add Note', MessageSquarePlus, () => setWorkspaceMenu('activity')],
-                  ].map(([label, Icon, action]) => (
-                    <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={action}>
-                      {createElement(Icon, { size: 14 })}
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-              </OverviewSidePanel>
-            </aside>
           </section>
         ) : null}
 

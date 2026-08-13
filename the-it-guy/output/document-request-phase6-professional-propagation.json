@@ -1,6 +1,6 @@
 {
   "phase": "document_request_phase6_professional_propagation",
-  "generatedAt": "2026-08-13T16:17:52.120Z",
+  "generatedAt": "2026-08-13T19:38:41.600Z",
   "commit": false,
   "mutatedData": false,
   "strict": false,
@@ -105,6 +105,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-transfer-buyer-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "updated_buyer_fica",
+                "ownerRole": "transfer_attorney",
+                "requestedFrom": "buyer",
+                "responsiblePartyRole": "buyer",
+                "uploadableByRoles": [
+                  "buyer",
+                  "agent"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "client_upload"
+              },
+              "responsiblePartyRole": "buyer",
+              "uploadableByRoles": [
+                "buyer",
+                "agent"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -181,6 +206,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-transfer-buyer-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "updated_buyer_fica",
+                "ownerRole": "transfer_attorney",
+                "requestedFrom": "buyer",
+                "responsiblePartyRole": "buyer",
+                "uploadableByRoles": [
+                  "buyer",
+                  "agent"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "client_upload"
+              },
+              "responsiblePartyRole": "buyer",
+              "uploadableByRoles": [
+                "buyer",
+                "agent"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -243,6 +293,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-transfer-buyer-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "updated_buyer_fica",
+                "ownerRole": "transfer_attorney",
+                "requestedFrom": "buyer",
+                "responsiblePartyRole": "buyer",
+                "uploadableByRoles": [
+                  "buyer",
+                  "agent"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "client_upload"
+              },
+              "responsiblePartyRole": "buyer",
+              "uploadableByRoles": [
+                "buyer",
+                "agent"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -305,6 +380,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-transfer-buyer-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "updated_buyer_fica",
+                "ownerRole": "transfer_attorney",
+                "requestedFrom": "buyer",
+                "responsiblePartyRole": "buyer",
+                "uploadableByRoles": [
+                  "buyer",
+                  "agent"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "client_upload"
+              },
+              "responsiblePartyRole": "buyer",
+              "uploadableByRoles": [
+                "buyer",
+                "agent"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -395,6 +495,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-transfer-buyer-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "updated_buyer_fica",
+                "ownerRole": "transfer_attorney",
+                "requestedFrom": "buyer",
+                "responsiblePartyRole": "buyer",
+                "uploadableByRoles": [
+                  "buyer",
+                  "agent"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "client_upload"
+              },
+              "responsiblePartyRole": "buyer",
+              "uploadableByRoles": [
+                "buyer",
+                "agent"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -515,6 +640,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-cancellation-seller-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "bond_statement",
+                "ownerRole": "cancellation_attorney",
+                "requestedFrom": "seller",
+                "responsiblePartyRole": "seller",
+                "uploadableByRoles": [
+                  "seller",
+                  "agent"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "client_upload"
+              },
+              "responsiblePartyRole": "seller",
+              "uploadableByRoles": [
+                "seller",
+                "agent"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -577,6 +727,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-cancellation-seller-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "bond_statement",
+                "ownerRole": "cancellation_attorney",
+                "requestedFrom": "seller",
+                "responsiblePartyRole": "seller",
+                "uploadableByRoles": [
+                  "seller",
+                  "agent"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "client_upload"
+              },
+              "responsiblePartyRole": "seller",
+              "uploadableByRoles": [
+                "seller",
+                "agent"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -639,6 +814,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-cancellation-seller-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "bond_statement",
+                "ownerRole": "cancellation_attorney",
+                "requestedFrom": "seller",
+                "responsiblePartyRole": "seller",
+                "uploadableByRoles": [
+                  "seller",
+                  "agent"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "client_upload"
+              },
+              "responsiblePartyRole": "seller",
+              "uploadableByRoles": [
+                "seller",
+                "agent"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -715,6 +915,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-cancellation-seller-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "bond_statement",
+                "ownerRole": "cancellation_attorney",
+                "requestedFrom": "seller",
+                "responsiblePartyRole": "seller",
+                "uploadableByRoles": [
+                  "seller",
+                  "agent"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "client_upload"
+              },
+              "responsiblePartyRole": "seller",
+              "uploadableByRoles": [
+                "seller",
+                "agent"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -791,6 +1016,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-cancellation-seller-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "bond_statement",
+                "ownerRole": "cancellation_attorney",
+                "requestedFrom": "seller",
+                "responsiblePartyRole": "seller",
+                "uploadableByRoles": [
+                  "seller",
+                  "agent"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "client_upload"
+              },
+              "responsiblePartyRole": "seller",
+              "uploadableByRoles": [
+                "seller",
+                "agent"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -896,6 +1146,33 @@
                 "type": "additional_request",
                 "requestId": "phase6-originator-buyer-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "income_affordability_documents",
+                "ownerRole": "bond_originator",
+                "requestedFrom": "buyer",
+                "responsiblePartyRole": "buyer",
+                "uploadableByRoles": [
+                  "buyer",
+                  "agent",
+                  "bond_originator"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": true,
+                "uploadMode": "client_upload_with_bond_originator_assist"
+              },
+              "responsiblePartyRole": "buyer",
+              "uploadableByRoles": [
+                "buyer",
+                "agent",
+                "bond_originator"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -972,6 +1249,33 @@
                 "type": "additional_request",
                 "requestId": "phase6-originator-buyer-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "income_affordability_documents",
+                "ownerRole": "bond_originator",
+                "requestedFrom": "buyer",
+                "responsiblePartyRole": "buyer",
+                "uploadableByRoles": [
+                  "buyer",
+                  "agent",
+                  "bond_originator"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": true,
+                "uploadMode": "client_upload_with_bond_originator_assist"
+              },
+              "responsiblePartyRole": "buyer",
+              "uploadableByRoles": [
+                "buyer",
+                "agent",
+                "bond_originator"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1034,6 +1338,33 @@
                 "type": "additional_request",
                 "requestId": "phase6-originator-buyer-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "income_affordability_documents",
+                "ownerRole": "bond_originator",
+                "requestedFrom": "buyer",
+                "responsiblePartyRole": "buyer",
+                "uploadableByRoles": [
+                  "buyer",
+                  "agent",
+                  "bond_originator"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": true,
+                "uploadMode": "client_upload_with_bond_originator_assist"
+              },
+              "responsiblePartyRole": "buyer",
+              "uploadableByRoles": [
+                "buyer",
+                "agent",
+                "bond_originator"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1124,6 +1455,33 @@
                 "type": "additional_request",
                 "requestId": "phase6-originator-buyer-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "income_affordability_documents",
+                "ownerRole": "bond_originator",
+                "requestedFrom": "buyer",
+                "responsiblePartyRole": "buyer",
+                "uploadableByRoles": [
+                  "buyer",
+                  "agent",
+                  "bond_originator"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": true,
+                "uploadMode": "client_upload_with_bond_originator_assist"
+              },
+              "responsiblePartyRole": "buyer",
+              "uploadableByRoles": [
+                "buyer",
+                "agent",
+                "bond_originator"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1186,6 +1544,33 @@
                 "type": "additional_request",
                 "requestId": "phase6-originator-buyer-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "income_affordability_documents",
+                "ownerRole": "bond_originator",
+                "requestedFrom": "buyer",
+                "responsiblePartyRole": "buyer",
+                "uploadableByRoles": [
+                  "buyer",
+                  "agent",
+                  "bond_originator"
+                ],
+                "uploadOnBehalfAllowed": true,
+                "agentMayUploadOnBehalf": true,
+                "clientUploadDebt": true,
+                "clientVisibleUploadDebt": true,
+                "professionalOnly": false,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": true,
+                "uploadMode": "client_upload_with_bond_originator_assist"
+              },
+              "responsiblePartyRole": "buyer",
+              "uploadableByRoles": [
+                "buyer",
+                "agent",
+                "bond_originator"
+              ],
+              "uploadOnBehalfAllowed": true,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1295,6 +1680,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-transfer-both-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "signed_clarification",
+                "ownerRole": "transfer_attorney",
+                "requestedFrom": "buyer_and_seller",
+                "responsiblePartyRole": "transfer_attorney",
+                "uploadableByRoles": [
+                  "transfer_attorney",
+                  "attorney"
+                ],
+                "uploadOnBehalfAllowed": false,
+                "agentMayUploadOnBehalf": false,
+                "clientUploadDebt": false,
+                "clientVisibleUploadDebt": false,
+                "professionalOnly": true,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "professional_upload"
+              },
+              "responsiblePartyRole": "transfer_attorney",
+              "uploadableByRoles": [
+                "transfer_attorney",
+                "attorney"
+              ],
+              "uploadOnBehalfAllowed": false,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1359,6 +1769,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-transfer-both-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "signed_clarification",
+                "ownerRole": "transfer_attorney",
+                "requestedFrom": "buyer_and_seller",
+                "responsiblePartyRole": "transfer_attorney",
+                "uploadableByRoles": [
+                  "transfer_attorney",
+                  "attorney"
+                ],
+                "uploadOnBehalfAllowed": false,
+                "agentMayUploadOnBehalf": false,
+                "clientUploadDebt": false,
+                "clientVisibleUploadDebt": false,
+                "professionalOnly": true,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "professional_upload"
+              },
+              "responsiblePartyRole": "transfer_attorney",
+              "uploadableByRoles": [
+                "transfer_attorney",
+                "attorney"
+              ],
+              "uploadOnBehalfAllowed": false,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1423,6 +1858,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-transfer-both-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "signed_clarification",
+                "ownerRole": "transfer_attorney",
+                "requestedFrom": "buyer_and_seller",
+                "responsiblePartyRole": "transfer_attorney",
+                "uploadableByRoles": [
+                  "transfer_attorney",
+                  "attorney"
+                ],
+                "uploadOnBehalfAllowed": false,
+                "agentMayUploadOnBehalf": false,
+                "clientUploadDebt": false,
+                "clientVisibleUploadDebt": false,
+                "professionalOnly": true,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "professional_upload"
+              },
+              "responsiblePartyRole": "transfer_attorney",
+              "uploadableByRoles": [
+                "transfer_attorney",
+                "attorney"
+              ],
+              "uploadOnBehalfAllowed": false,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1487,6 +1947,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-transfer-both-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "signed_clarification",
+                "ownerRole": "transfer_attorney",
+                "requestedFrom": "buyer_and_seller",
+                "responsiblePartyRole": "transfer_attorney",
+                "uploadableByRoles": [
+                  "transfer_attorney",
+                  "attorney"
+                ],
+                "uploadOnBehalfAllowed": false,
+                "agentMayUploadOnBehalf": false,
+                "clientUploadDebt": false,
+                "clientVisibleUploadDebt": false,
+                "professionalOnly": true,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "professional_upload"
+              },
+              "responsiblePartyRole": "transfer_attorney",
+              "uploadableByRoles": [
+                "transfer_attorney",
+                "attorney"
+              ],
+              "uploadOnBehalfAllowed": false,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1551,6 +2036,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-transfer-both-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "signed_clarification",
+                "ownerRole": "transfer_attorney",
+                "requestedFrom": "buyer_and_seller",
+                "responsiblePartyRole": "transfer_attorney",
+                "uploadableByRoles": [
+                  "transfer_attorney",
+                  "attorney"
+                ],
+                "uploadOnBehalfAllowed": false,
+                "agentMayUploadOnBehalf": false,
+                "clientUploadDebt": false,
+                "clientVisibleUploadDebt": false,
+                "professionalOnly": true,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "professional_upload"
+              },
+              "responsiblePartyRole": "transfer_attorney",
+              "uploadableByRoles": [
+                "transfer_attorney",
+                "attorney"
+              ],
+              "uploadOnBehalfAllowed": false,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1643,6 +2153,31 @@
                 "type": "additional_request",
                 "requestId": "phase6-transfer-both-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "signed_clarification",
+                "ownerRole": "transfer_attorney",
+                "requestedFrom": "buyer_and_seller",
+                "responsiblePartyRole": "transfer_attorney",
+                "uploadableByRoles": [
+                  "transfer_attorney",
+                  "attorney"
+                ],
+                "uploadOnBehalfAllowed": false,
+                "agentMayUploadOnBehalf": false,
+                "clientUploadDebt": false,
+                "clientVisibleUploadDebt": false,
+                "professionalOnly": true,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "professional_upload"
+              },
+              "responsiblePartyRole": "transfer_attorney",
+              "uploadableByRoles": [
+                "transfer_attorney",
+                "attorney"
+              ],
+              "uploadOnBehalfAllowed": false,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1774,6 +2309,29 @@
                 "type": "additional_request",
                 "requestId": "phase6-originator-professional-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "bank_valuation_follow_up",
+                "ownerRole": "bond_originator",
+                "requestedFrom": "bond_originator",
+                "responsiblePartyRole": "bond_originator",
+                "uploadableByRoles": [
+                  "bond_originator"
+                ],
+                "uploadOnBehalfAllowed": false,
+                "agentMayUploadOnBehalf": false,
+                "clientUploadDebt": false,
+                "clientVisibleUploadDebt": false,
+                "professionalOnly": true,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "professional_upload"
+              },
+              "responsiblePartyRole": "bond_originator",
+              "uploadableByRoles": [
+                "bond_originator"
+              ],
+              "uploadOnBehalfAllowed": false,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1834,6 +2392,29 @@
                 "type": "additional_request",
                 "requestId": "phase6-originator-professional-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "bank_valuation_follow_up",
+                "ownerRole": "bond_originator",
+                "requestedFrom": "bond_originator",
+                "responsiblePartyRole": "bond_originator",
+                "uploadableByRoles": [
+                  "bond_originator"
+                ],
+                "uploadOnBehalfAllowed": false,
+                "agentMayUploadOnBehalf": false,
+                "clientUploadDebt": false,
+                "clientVisibleUploadDebt": false,
+                "professionalOnly": true,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "professional_upload"
+              },
+              "responsiblePartyRole": "bond_originator",
+              "uploadableByRoles": [
+                "bond_originator"
+              ],
+              "uploadOnBehalfAllowed": false,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1922,6 +2503,29 @@
                 "type": "additional_request",
                 "requestId": "phase6-originator-professional-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "bank_valuation_follow_up",
+                "ownerRole": "bond_originator",
+                "requestedFrom": "bond_originator",
+                "responsiblePartyRole": "bond_originator",
+                "uploadableByRoles": [
+                  "bond_originator"
+                ],
+                "uploadOnBehalfAllowed": false,
+                "agentMayUploadOnBehalf": false,
+                "clientUploadDebt": false,
+                "clientVisibleUploadDebt": false,
+                "professionalOnly": true,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "professional_upload"
+              },
+              "responsiblePartyRole": "bond_originator",
+              "uploadableByRoles": [
+                "bond_originator"
+              ],
+              "uploadOnBehalfAllowed": false,
               "visibleTo": [
                 "agent",
                 "attorney",
@@ -1982,6 +2586,29 @@
                 "type": "additional_request",
                 "requestId": "phase6-originator-professional-request"
               },
+              "uploadOwnership": {
+                "version": "document_request_upload_ownership_model_v1",
+                "documentKey": "bank_valuation_follow_up",
+                "ownerRole": "bond_originator",
+                "requestedFrom": "bond_originator",
+                "responsiblePartyRole": "bond_originator",
+                "uploadableByRoles": [
+                  "bond_originator"
+                ],
+                "uploadOnBehalfAllowed": false,
+                "agentMayUploadOnBehalf": false,
+                "clientUploadDebt": false,
+                "clientVisibleUploadDebt": false,
+                "professionalOnly": true,
+                "sellerExternalUpload": false,
+                "bondOriginatorAssisted": false,
+                "uploadMode": "professional_upload"
+              },
+              "responsiblePartyRole": "bond_originator",
+              "uploadableByRoles": [
+                "bond_originator"
+              ],
+              "uploadOnBehalfAllowed": false,
               "visibleTo": [
                 "agent",
                 "attorney",

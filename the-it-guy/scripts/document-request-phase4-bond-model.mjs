@@ -129,8 +129,20 @@ function buildReport(options = {}) {
       ok: scenarioModels.every((scenario) => scenario.model.parentKeys.includes('income_affordability_documents')),
     },
     {
+      key: 'income_children_have_upload_containers',
+      ok: scenarioModels.every((scenario) =>
+        scenario.model.childContainerKeys.length > 0 &&
+        !scenario.model.buyerContainerKeys.includes('income_affordability_documents') &&
+        scenario.model.splitParentKeys.includes('income_affordability_documents'),
+      ),
+    },
+    {
       key: 'originator_finance_container_visible',
-      ok: scenarioModels.every((scenario) => scenario.model.originatorVisibleParentKeys.includes('income_affordability_documents')),
+      ok: scenarioModels.every((scenario) =>
+        scenario.model.originatorVisibleParentKeys.includes('income_affordability_documents') &&
+        scenario.model.originatorVisibleChildKeys.length > 0 &&
+        !scenario.model.bondOriginatorContainerKeys.includes('income_affordability_documents'),
+      ),
     },
     {
       key: 'no_unmapped_bond_children',
@@ -142,12 +154,7 @@ function buildReport(options = {}) {
     },
   ]
   const failed = checks.filter((check) => !check.ok)
-  const warnings = [
-    {
-      code: 'bond_parent_is_broad',
-      message: 'Granular bond upload rows intentionally roll up to the broad canonical income_affordability_documents parent until Phase 4 child-container activation is approved.',
-    },
-  ]
+  const warnings = []
   const strictFailure = options.strict && warnings.length > 0
 
   return {
@@ -162,7 +169,11 @@ function buildReport(options = {}) {
       activeChildRequirementCount: scenario.model.activeChildRequirementCount,
       requiredChildRequirementCount: scenario.model.requiredChildRequirementCount,
       parentKeys: scenario.model.parentKeys,
+      childContainerKeys: scenario.model.childContainerKeys,
+      uploadContainerKeys: scenario.model.uploadContainerKeys,
       originatorVisibleParentKeys: scenario.model.originatorVisibleParentKeys,
+      originatorVisibleChildKeys: scenario.model.originatorVisibleChildKeys,
+      splitParentKeys: scenario.model.splitParentKeys,
       byCanonicalParentKey: scenario.model.byCanonicalParentKey,
       buyerContainerSummary: scenario.model.buyerContainerSummary,
       bondOriginatorContainerSummary: scenario.model.bondOriginatorContainerSummary,
@@ -171,7 +182,7 @@ function buildReport(options = {}) {
     phase4Decisions: [
       {
         key: 'bond_child_parent_model',
-        decision: 'Bond application documents stay granular in the bond workflow but roll up to canonical transaction parent containers.',
+        decision: 'Bond application documents keep parent roll-up metadata, while granular finance requirements render as child upload containers.',
       },
       {
         key: 'originator_visibility',
@@ -183,7 +194,7 @@ function buildReport(options = {}) {
       },
     ],
     gate: {
-      status: failed.length ? 'blocked' : strictFailure ? 'blocked_warnings' : 'bond_model_mapped_with_warnings',
+      status: failed.length ? 'blocked' : strictFailure ? 'blocked_warnings' : 'bond_model_mapped',
       ok: failed.length === 0 && !strictFailure,
       mayProceedToPhase5: failed.length === 0,
       productionActivationReady: failed.length === 0 && warnings.length === 0,

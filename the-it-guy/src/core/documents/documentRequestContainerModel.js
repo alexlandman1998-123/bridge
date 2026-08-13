@@ -1,3 +1,5 @@
+import { resolveDocumentRequestUploadOwnership } from './documentRequestUploadOwnershipModel.js'
+
 export const DOCUMENT_REQUEST_CONTAINER_MODEL_VERSION = 'document_request_container_model_v1'
 
 const CLIENT_VISIBLE = 'client_visible'
@@ -104,8 +106,8 @@ export function resolveDocumentRequestContainerAudience({ requestedFrom = '', vi
   return Object.freeze(unique(audiences))
 }
 
-function maybeAddBondOriginatorAudience(audiences = [], documentKey = '') {
-  if (BOND_ORIGINATOR_VISIBLE_CONTAINER_KEYS.has(normalizeKey(documentKey))) {
+function maybeAddBondOriginatorAudience(audiences = [], documentKey = '', row = {}) {
+  if (row.originatorVisible === true || row.originator_visible === true || BOND_ORIGINATOR_VISIBLE_CONTAINER_KEYS.has(normalizeKey(documentKey))) {
     audiences.push('bond_originator')
   }
   return audiences
@@ -138,6 +140,12 @@ export function normalizeRequiredDocumentContainer(row = {}, options = {}) {
   const rawStatus = normalizeStatus(row.status || row.requiredDocumentStatus || row.required_document_status || (hasLinkedDocument(row) ? 'uploaded' : 'required'), 'required')
   const status = hasLinkedDocument(row) && OPEN_STATUSES.has(rawStatus) ? 'uploaded' : rawStatus
   const containerId = normalizeText(row.sourceId || row.id || row.requirementId || row.requirement_id || documentKey)
+  const uploadOwnership = resolveDocumentRequestUploadOwnership({
+    documentKey,
+    ownerRole: row.requestedByRole || row.requested_by_role || row.ownerRole || row.owner_role || requestedFrom,
+    requestedFrom,
+    visibility,
+  })
 
   return Object.freeze({
     id: `required:${transactionId || 'transaction'}:${documentKey || containerId}`,
@@ -158,6 +166,10 @@ export function normalizeRequiredDocumentContainer(row = {}, options = {}) {
     dueDate: normalizeText(row.dueDate || row.due_date || row.requestDueAt || row.request_due_at),
     requestGroupId: null,
     linkedDocumentId: normalizeText(row.uploadedDocumentId || row.uploaded_document_id || row.requestedDocumentId || row.requested_document_id),
+    parentDocumentKey: normalizeKey(row.parentDocumentKey || row.parent_document_key || row.canonicalParentKey || row.canonical_parent_key),
+    childRequirementKey: normalizeKey(row.childRequirementKey || row.child_requirement_key || row.requirementKey || row.requirement_key),
+    childContainer: row.childContainer === true || row.child_container === true,
+    parentContainer: row.parentContainer === true || row.parent_container === true,
     uploadSpec: COMPLETE_STATUSES.has(status)
       ? null
       : {
@@ -165,9 +177,14 @@ export function normalizeRequiredDocumentContainer(row = {}, options = {}) {
           documentKey,
           requirementId: containerId,
         },
+    uploadOwnership,
+    responsiblePartyRole: uploadOwnership.responsiblePartyRole,
+    uploadableByRoles: uploadOwnership.uploadableByRoles,
+    uploadOnBehalfAllowed: uploadOwnership.uploadOnBehalfAllowed,
     visibleTo: Object.freeze(unique(maybeAddBondOriginatorAudience(
       [...resolveDocumentRequestContainerAudience({ requestedFrom, visibility })],
       documentKey,
+      row,
     ))),
     blocksReadiness: OPEN_STATUSES.has(status),
     hasUploadedDocument: hasLinkedDocument(row) || UPLOADED_STATUSES.has(status) || COMPLETE_STATUSES.has(status),
@@ -185,6 +202,13 @@ export function normalizeAdditionalDocumentRequestContainer(row = {}, options = 
   const rawStatus = normalizeStatus(row.status || (hasLinkedDocument(row) ? 'uploaded' : 'requested'), 'requested')
   const status = hasLinkedDocument(row) && OPEN_STATUSES.has(rawStatus) ? 'uploaded' : rawStatus
   const title = normalizeText(row.title || row.documentName || row.document_name || row.documentType || row.document_type || 'Additional document request')
+  const documentKey = normalizeKey(row.documentKey || row.document_key || row.documentType || row.document_type || title)
+  const uploadOwnership = resolveDocumentRequestUploadOwnership({
+    documentKey,
+    ownerRole: createdByRole,
+    requestedFrom,
+    visibility,
+  })
 
   return Object.freeze({
     id: `request:${requestId}`,
@@ -192,7 +216,7 @@ export function normalizeAdditionalDocumentRequestContainer(row = {}, options = 
     sourceId: requestId,
     transactionId,
     canonicalKey: normalizeKey(row.canonicalDocumentRequestKey || row.canonical_document_request_key),
-    documentKey: normalizeKey(row.documentKey || row.document_key || row.documentType || row.document_type || title),
+    documentKey,
     title,
     description: normalizeText(row.description || row.notes),
     category: normalizeText(row.category || 'Additional Requests'),
@@ -211,6 +235,10 @@ export function normalizeAdditionalDocumentRequestContainer(row = {}, options = 
           type: 'additional_request',
           requestId,
         },
+    uploadOwnership,
+    responsiblePartyRole: uploadOwnership.responsiblePartyRole,
+    uploadableByRoles: uploadOwnership.uploadableByRoles,
+    uploadOnBehalfAllowed: uploadOwnership.uploadOnBehalfAllowed,
     visibleTo: resolveDocumentRequestContainerAudience({ requestedFrom, visibility, createdByRole }),
     blocksReadiness: OPEN_STATUSES.has(status) && normalizePriority(row.priority, 'required') !== 'optional',
     hasUploadedDocument: hasLinkedDocument(row) || UPLOADED_STATUSES.has(status) || COMPLETE_STATUSES.has(status),

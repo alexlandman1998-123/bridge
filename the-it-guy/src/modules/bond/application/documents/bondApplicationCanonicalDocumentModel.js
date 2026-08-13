@@ -4,6 +4,7 @@ import { resolveBondApplicationDocumentRequirements } from './resolveBondApplica
 import { BOND_APPLICATION_DOCUMENT_TIMING } from './bondApplicationDocumentRules.js'
 
 export const BOND_APPLICATION_CANONICAL_DOCUMENT_MODEL_VERSION = 'bond_application_canonical_document_model_v1'
+export const BOND_APPLICATION_CHILD_CONTAINER_POLICY_VERSION = 'bond_application_child_container_policy_v1'
 
 export const BOND_APPLICATION_CANONICAL_PARENT_KEYS = Object.freeze({
   identity: 'buyer_id_document',
@@ -121,6 +122,40 @@ function buildParentRows(children = []) {
   }))
 }
 
+function buildChildRows(children = []) {
+  return children
+    .filter((child) => child.canonicalParentKey === BOND_APPLICATION_CANONICAL_PARENT_KEYS.affordability)
+    .map((child, index) => Object.freeze({
+      id: `bond_child_${child.key}`,
+      document_key: child.key,
+      document_label: child.title || child.key,
+      requested_from: 'buyer',
+      visibility_scope: 'client_visible',
+      status: child.required ? 'missing' : 'not_applicable',
+      is_required: child.required,
+      group_key: 'bond_application_documents',
+      group_label: child.category || 'Bond application documents',
+      sort_order: 100 + index + 1,
+      parent_document_key: child.canonicalParentKey,
+      child_requirement_key: child.key,
+      child_container: true,
+      originatorVisible: child.originatorVisible,
+    }))
+}
+
+function buildUploadRows(parentRows = [], childRows = []) {
+  const splitParentKeys = new Set(childRows.map((row) => row.parent_document_key).filter(Boolean))
+  return Object.freeze([
+    ...parentRows
+      .filter((row) => !splitParentKeys.has(row.document_key))
+      .map((row) => Object.freeze({
+        ...row,
+        parent_container: true,
+      })),
+    ...childRows,
+  ])
+}
+
 function buildCanonicalScenarioFromBondApplication(applicationState = {}) {
   return Object.freeze({
     buyerEntityType: 'individual',
@@ -143,16 +178,18 @@ export function buildBondApplicationCanonicalDocumentModel({
   const children = resolved.activeRequirements.map(childRequirementToCanonicalChild)
   const unmappedChildren = children.filter((child) => !child.canonicalParentKey)
   const parentRows = buildParentRows(children)
+  const childRows = buildChildRows(children)
+  const uploadRows = buildUploadRows(parentRows, childRows)
   const buyerContainerModel = buildDocumentRequestContainerModel({
     transactionId: applicationState?.application?.transactionId || '',
     audience: 'buyer',
-    requiredDocuments: parentRows,
+    requiredDocuments: uploadRows,
     additionalRequests,
   })
   const bondOriginatorContainerModel = buildDocumentRequestContainerModel({
     transactionId: applicationState?.application?.transactionId || '',
     audience: 'bond_originator',
-    requiredDocuments: parentRows.filter((row) => row.originatorVisible),
+    requiredDocuments: uploadRows.filter((row) => row.originatorVisible),
     additionalRequests,
   })
   const canonicalPlan = buildCanonicalDocumentRequestAudiencePlan(buildCanonicalScenarioFromBondApplication(applicationState), 'bond_originator')
@@ -168,13 +205,21 @@ export function buildBondApplicationCanonicalDocumentModel({
     children: Object.freeze(children),
     unmappedChildren: Object.freeze(unmappedChildren),
     parentRows: Object.freeze(parentRows),
+    childRows: Object.freeze(childRows),
+    uploadRows,
     parentKeys: Object.freeze(unique(parentRows.map((row) => row.document_key))),
+    childContainerKeys: Object.freeze(unique(childRows.map((row) => row.document_key))),
+    uploadContainerKeys: Object.freeze(unique(uploadRows.map((row) => row.document_key))),
     originatorVisibleParentKeys: Object.freeze(parentRows.filter((row) => row.originatorVisible).map((row) => row.document_key)),
+    originatorVisibleChildKeys: Object.freeze(childRows.filter((row) => row.originatorVisible).map((row) => row.document_key)),
+    splitParentKeys: Object.freeze(unique(childRows.map((row) => row.parent_document_key))),
     byCanonicalParentKey: Object.freeze(countBy(children, (child) => child.canonicalParentKey || 'unmapped')),
     byParticipantRole: Object.freeze(countBy(children, (child) => child.participantRole)),
     byRequiredBefore: Object.freeze(countBy(children, (child) => child.requiredBefore)),
     buyerContainerSummary: buyerContainerModel.summary,
     bondOriginatorContainerSummary: bondOriginatorContainerModel.summary,
+    buyerContainerKeys: Object.freeze(buyerContainerModel.containers.map((container) => container.documentKey)),
+    bondOriginatorContainerKeys: Object.freeze(bondOriginatorContainerModel.containers.map((container) => container.documentKey)),
     canonicalBondOriginatorPlanKeys: Object.freeze(canonicalPlan.requests.map((request) => request.key)),
     canonicalBondOriginatorRequestableKeys: Object.freeze(
       canonicalPlan.requests.filter((request) => request.requestable).map((request) => request.key),

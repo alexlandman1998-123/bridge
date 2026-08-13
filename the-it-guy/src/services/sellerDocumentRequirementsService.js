@@ -481,6 +481,13 @@ function buildKingstonsSellerPackUploadedDocuments(pack = {}) {
     .filter(Boolean)
 }
 
+function filterKingstonsSellerPackUploadedDocumentsForStage(pack = {}, documents = []) {
+  if (hasKingstonsSellerPackDetailsCompletionSignal(pack)) return documents
+  return (Array.isArray(documents) ? documents : []).filter((document) =>
+    KINGSTONS_BASELINE_SELLER_DOCUMENT_KEYS.has(requirementIdentity(document)),
+  )
+}
+
 function getKingstonsSellerPackLegalPath(pack = {}) {
   return [
     pack?.legalPath,
@@ -491,6 +498,37 @@ function getKingstonsSellerPackLegalPath(pack = {}) {
     pack?.seller_profile,
     pack,
   ].find((candidate) => isPlainObject(candidate)) || {}
+}
+
+function hasKingstonsSellerPackDetailsCompletionSignal(pack = {}) {
+  const legalPath = getKingstonsSellerPackLegalPath(pack)
+  const status = normalizeKey(firstPresent(
+    pack?.sellerPackStatus,
+    pack?.seller_pack_status,
+    pack?.status,
+    legalPath?.status,
+  ))
+  return Boolean(
+    firstPresent(
+      pack?.sellerPackDetailsCapturedAt,
+      pack?.seller_pack_details_captured_at,
+      pack?.detailsCapturedAt,
+      pack?.details_captured_at,
+      pack?.sellerPackReadinessCompletedAt,
+      pack?.seller_pack_readiness_completed_at,
+      pack?.readinessCompletedAt,
+      pack?.readiness_completed_at,
+      legalPath?.capturedAt,
+      legalPath?.captured_at,
+    ) ||
+      pack?.sellerPackDetailsComplete === true ||
+      pack?.seller_pack_details_complete === true ||
+      pack?.sellerPackReadinessComplete === true ||
+      pack?.seller_pack_readiness_complete === true ||
+      pack?.readinessComplete === true ||
+      pack?.readiness_complete === true ||
+      ['details_captured', 'ready_for_generation', 'readiness_complete', 'complete', 'completed'].includes(status)
+  )
 }
 
 function splitKingstonsPersonText(value = '') {
@@ -1008,8 +1046,11 @@ export function resolveKingstonsSellerOwnershipProfile(listing = {}) {
 
 function resolveKingstonsOwnershipCapture(listing = {}) {
   const profile = resolveKingstonsSellerOwnershipProfile(listing)
+  const pack = getKingstonsSellerPackRecord(listing)
+  const documentsUnlocked = profile.captured === true && hasKingstonsSellerPackDetailsCompletionSignal(pack)
   return {
     captured: profile.captured,
+    documentsUnlocked,
     capturedAt: profile.capturedAt,
     sellerType: profile.sellerType,
     naturalSetup: profile.naturalSetup,
@@ -1043,7 +1084,7 @@ function isKingstonsOwnershipDrivenRequirement(requirement = {}) {
 }
 
 function filterKingstonsPersistedOwnershipDrivenRequirements(requirements = [], ownershipCapture = {}) {
-  if (ownershipCapture?.captured !== true) return []
+  if (ownershipCapture?.documentsUnlocked !== true) return []
   return (Array.isArray(requirements) ? requirements : []).filter(isKingstonsOwnershipDrivenRequirement)
 }
 
@@ -1055,7 +1096,9 @@ export function buildKingstonsSellerDocumentRequirementPack(listing = {}, formDa
   const ownershipProfile = resolveKingstonsSellerOwnershipProfile(listing)
   const ownershipCapture = resolveKingstonsOwnershipCapture(listing)
   const baselineDocuments = getKingstonsBaselineSellerDocumentRequirements(persisted)
-  const generatedOwnershipDrivenDocuments = buildKingstonsOwnershipDrivenDocumentRequirements(ownershipProfile)
+  const generatedOwnershipDrivenDocuments = ownershipCapture.documentsUnlocked
+    ? buildKingstonsOwnershipDrivenDocumentRequirements(ownershipProfile)
+    : []
   const ownershipDrivenDocuments = mergeSellerRequiredDocuments(
     filterKingstonsPersistedOwnershipDrivenRequirements(persisted, ownershipCapture),
     generatedOwnershipDrivenDocuments,
@@ -1069,7 +1112,11 @@ export function buildKingstonsSellerDocumentRequirementPack(listing = {}, formDa
     requiredDocuments: mergeSellerRequiredDocuments(baselineDocuments, ownershipDrivenDocuments),
     ownershipCapture,
     ownershipProfile,
-    ownershipDrivenState: ownershipCapture.captured ? 'ready_for_generation' : 'pending_capture',
+    ownershipDrivenState: ownershipCapture.documentsUnlocked
+      ? 'ready_for_generation'
+      : ownershipCapture.captured
+        ? 'pending_details_completion'
+        : 'pending_capture',
   }
 }
 
@@ -2242,8 +2289,14 @@ export function buildSellerDocumentSourceOfTruth({
     : Array.isArray(listing?.documents)
       ? listing.documents
       : []
+  const kingstonsSellerPack = isKingstonsSellerDocumentContext(listing)
+    ? getKingstonsSellerPackRecord(listing)
+    : {}
   const kingstonsSellerPackDocuments = isKingstonsSellerDocumentContext(listing)
-    ? buildKingstonsSellerPackUploadedDocuments(getKingstonsSellerPackRecord(listing))
+    ? filterKingstonsSellerPackUploadedDocumentsForStage(
+        kingstonsSellerPack,
+        buildKingstonsSellerPackUploadedDocuments(kingstonsSellerPack),
+      )
     : []
   const signedMandateDocument = buildSellerSignedMandateDocumentFromPacket(
     mandatePacket || listing?.mandatePacket || listing?.mandate_packet || null,

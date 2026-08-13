@@ -1,0 +1,111 @@
+{
+  "phase": "document_request_phase16_automation_handoff",
+  "generatedAt": "2026-08-13T19:38:47.548Z",
+  "commit": false,
+  "mutatedData": false,
+  "strict": false,
+  "version": "document_request_automation_handoff_v1",
+  "phase15Readiness": {
+    "status": "operational_preflight_mapped",
+    "ok": true,
+    "productionActivationReady": true,
+    "failedCount": 0,
+    "warningCount": 0,
+    "controlledDryRunReady": true,
+    "liveRolloutExecuted": false,
+    "commitExecuted": false
+  },
+  "automationControls": {
+    "scriptPath": "scripts/document-request-canonical-phase16-automation.mjs",
+    "phaseMarkerPresent": true,
+    "reusesPhase15Rollout": true,
+    "defaultsDryRun": true,
+    "supportsDryRunFlag": true,
+    "supportsCommitFlag": true,
+    "requiresConfirmAutomation": true,
+    "runsPreflightBeforeCommit": true,
+    "blocksLegacyKeysByDefault": true,
+    "recordsSchedulingMode": true,
+    "distinctBlockedCommitExit": true,
+    "doesNotWriteDocumentRequestsDirectly": true,
+    "reportSanitizesRolloutOutputs": true
+  },
+  "cronControls": {
+    "endpointPath": "api/cron/document-request-canonical-automation.js",
+    "route": "/api/cron/document-request-canonical-automation",
+    "scriptInvoked": true,
+    "requiresCronSecret": true,
+    "defaultsToDryRun": true,
+    "legacyOverrideExplicit": true,
+    "transactionScopeConfigurable": true,
+    "limitCapped": true,
+    "responseSanitized": true,
+    "noRawPortalTokenLeak": true
+  },
+  "schedulingControls": {
+    "cronJobCount": 1,
+    "scheduled": true,
+    "schedule": "30 1 * * *",
+    "expectedSchedule": "30 1 * * *",
+    "scheduleMatches": true
+  },
+  "readiness": {
+    "automationHandoffReady": true,
+    "cronCompatibleDryRunReady": true,
+    "liveAutomationExecuted": false,
+    "commitExecuted": false,
+    "requiresCronSecret": true,
+    "requiresCommitEnvFlagForWrites": true,
+    "requiresLegacyKeyOverrideForLegacyRows": true
+  },
+  "gate": {
+    "status": "automation_handoff_mapped",
+    "ok": true,
+    "mayProceedToPhase17": true,
+    "productionActivationReady": true,
+    "checks": [
+      {
+        "key": "phase15_preflight_is_clean",
+        "ok": true
+      },
+      {
+        "key": "automation_runner_is_dry_run_first_and_commit_gated",
+        "ok": true
+      },
+      {
+        "key": "automation_commit_runs_preflight_and_blocks_legacy_keys",
+        "ok": true
+      },
+      {
+        "key": "automation_runner_does_not_write_client_request_rows_directly",
+        "ok": true
+      },
+      {
+        "key": "cron_endpoint_is_authorized_and_dry_run_by_default",
+        "ok": true
+      },
+      {
+        "key": "cron_endpoint_has_explicit_scope_and_sanitized_response",
+        "ok": true
+      },
+      {
+        "key": "scheduled_job_is_registered_once",
+        "ok": true
+      },
+      {
+        "key": "phase16_handoff_is_read_only_local_qa",
+        "ok": true
+      },
+      {
+        "key": "document_generator_remains_out_of_scope",
+        "ok": true
+      },
+      {
+        "key": "phase16_verify_chain_is_registered",
+        "ok": true
+      }
+    ],
+    "failed": [],
+    "warnings": []
+  }
+}
