@@ -603,7 +603,7 @@ function getDashboardDrilldowns(snapshot = EMPTY_DASHBOARD, support = EMPTY_SUPP
   const pipelineRows = snapshot?.pipeline || []
   const registeredRows = snapshot?.registered || []
   const attentionRows = snapshot?.attention || []
-  const activeTransactionRows = snapshot?.activeTransactions || snapshot?.drilldowns?.activeTransactions || []
+  const activeTransactionRows = pipelineRows
   const missingRevenueRows = [...pipelineRows, ...registeredRows].filter((row) => row.revenueMissing)
   const supportItems = buildSupportItems(support, snapshot)
 
@@ -637,8 +637,8 @@ function getDashboardDrilldowns(snapshot = EMPTY_DASHBOARD, support = EMPTY_SUPP
       type: 'transactions',
     },
     activeTransactions: {
-      empty: 'No active transaction rows returned by the current data contract.',
-      meta: `${formatCount(activeTransactionRows.length)} sampled`,
+      empty: 'No seller/buyer signed active transactions yet.',
+      meta: `${formatCount(kpis.sellerSignedBuyerSigned || activeTransactionRows.length)} signed`,
       rows: activeTransactionRows,
       title: 'Active Transactions',
       type: 'transactions',
@@ -1149,7 +1149,7 @@ function DashboardView({ isLoading, snapshot, support }) {
   const listingRows = snapshot?.drilldowns?.activeListings || []
   const organisationRows = snapshot?.drilldowns?.activeOrganisations || []
   const agentRows = snapshot?.drilldowns?.activeAgents || []
-  const activeTransactionRows = snapshot?.activeTransactions || snapshot?.drilldowns?.activeTransactions || []
+  const activeTransactionRows = pipelineRows
   const liveRows = (activeTransactionRows.length ? activeTransactionRows : [...pipelineRows, ...attentionRows]).slice(0, 5)
   const totalInventorySample = listingRows.reduce((total, row) => total + (Number(row.price) || 0), 0)
   const listingPipelineRevenue = (Number(kpis.activeListings) || 0) * ARCH9_LISTING_PIPELINE_FEE
@@ -1171,7 +1171,7 @@ function DashboardView({ isLoading, snapshot, support }) {
     { otp: 0, registered: registeredRows.length, stalled: kpis.stalledTransactions || attentionRows.length, transfer: 0 },
   )
   const pipelineCount = kpis.sellerSignedBuyerSigned || pipelineRows.length
-  const activeTransactionCount = Number(kpis.activeTransactions) || activeTransactionRows.length || pipelineCount
+  const activeTransactionCount = pipelineCount
   const feeContext =
     pipelineCount && kpis.pipelineRevenue
       ? `${formatCount(pipelineCount)} signed transactions`
@@ -1215,7 +1215,7 @@ function DashboardView({ isLoading, snapshot, support }) {
       icon: ListChecks,
       label: 'Active Transactions',
       meta: pipelineCount ? `${formatCount(pipelineCount)} signed pipeline` : '',
-      context: 'Open, not completed or registered',
+      context: 'Seller + buyer signed, not registered',
       value: formatCount(activeTransactionCount),
     },
   ]

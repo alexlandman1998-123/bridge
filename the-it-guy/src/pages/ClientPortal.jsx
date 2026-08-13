@@ -127,7 +127,10 @@ import {
   getPlatformFeeConsentConfig,
   readPlatformFeeConsentAcceptance,
 } from '../lib/platformFeeConsent'
-import { buildArch9SellerTermsAcceptance, getArch9SellerTermsConfig } from '../lib/arch9TermsAcceptance'
+import {
+  buildSellerPortalActivationTermsAcceptance,
+  getSellerPortalActivationTermsConfig,
+} from '../lib/sellerPortalActivationTerms'
 import { FEATURE_FLAGS } from '../lib/featureFlags'
 
 const ISSUE_CATEGORIES = [
@@ -7849,7 +7852,7 @@ function SellerPortalPasswordGate({
     : 'Create a password before opening your seller portal and document centre.'
   const propertyTitle = String(authState?.propertyTitle || '').trim()
   const sellerEmail = String(authState?.sellerEmail || '').trim()
-  const sellerTermsConfig = getArch9SellerTermsConfig()
+  const sellerTermsConfig = getSellerPortalActivationTermsConfig()
 
   return (
     <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
@@ -7910,6 +7913,11 @@ function SellerPortalPasswordGate({
               <span className="text-sm leading-6 text-[#425970]">
                 <strong className="block text-[#142132]">{sellerTermsConfig.title}</strong>
                 {sellerTermsConfig.body}
+                <span className="mt-2 block font-semibold text-[#24364a]">{sellerTermsConfig.checkboxLabel}</span>
+                <span className="mt-3 block">
+                  <strong className="block text-[#142132]">{sellerTermsConfig.sellerTermsTitle}</strong>
+                  {sellerTermsConfig.sellerTermsBody}
+                </span>
                 <span className="mt-2 block">{sellerTermsConfig.popiBody}</span>
                 <span className="mt-2 block text-xs font-semibold text-[#64748b]">
                   Version {sellerTermsConfig.wordingVersion}
@@ -8243,7 +8251,7 @@ function ClientPortal() {
     }
 
     if (!passwordSet && !recoveryMode && !sellerPortalPasswordForm.termsAccepted) {
-      setSellerPortalPasswordFeedback('Accept the Seller Portal Terms before activating your portal.')
+      setSellerPortalPasswordFeedback('Accept the Seller Portal Terms and fee disclosure before activating your portal.')
       return
     }
 
@@ -8251,14 +8259,13 @@ function ClientPortal() {
       setSellerPortalPasswordSaving(true)
       setSellerPortalPasswordFeedback('')
       if (!passwordSet && !recoveryMode) {
+        const acceptedAt = new Date().toISOString()
         await recordSellerPortalActivationTerms({
           token,
-          acceptance: {
-            ...buildArch9SellerTermsAcceptance(),
-            accepted: true,
-            acceptedAt: new Date().toISOString(),
+          acceptance: buildSellerPortalActivationTermsAcceptance({
+            acceptedAt,
             acceptedByEmail: String(sellerPortalAuth?.sellerEmail || '').trim(),
-          },
+          }),
         })
       }
       const session = recoveryMode
