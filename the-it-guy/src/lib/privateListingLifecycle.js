@@ -86,6 +86,23 @@ const CANONICAL_MANDATE_COMPLETION_TARGETS = new Set(['mandate_signed', 'active'
 const MANDATE_COMPLETION_BLOCKER = 'A completed canonical mandate packet or manual signed mandate upload is required before activating this listing.'
 const MANUAL_SIGNED_MANDATE_STATUSES = new Set(['signed_uploaded', 'uploaded_signed'])
 const MANUAL_SIGNED_MANDATE_DOCUMENT_STATUSES = new Set(['uploaded', 'completed', 'approved', 'verified', 'signed', 'signed_uploaded', 'uploaded_signed'])
+const QUICK_LISTING_METADATA_PREFIX = 'BRIDGE_QUICK_ADD_METADATA:'
+const CURRENT_LISTING_IMPORT_INTENTS = new Set([
+  'active_listing',
+  'under_offer',
+  'current_listing',
+  'bulk_current_listing',
+  'imported_current_listing',
+  'imported_existing_listing',
+])
+const CURRENT_LISTING_IMPORT_SOURCES = new Set([
+  'bulk_upload',
+  'bulk_import',
+  'current_listing_import',
+  'imported_property24',
+  'property24_import',
+  'manual_admin_capture',
+])
 
 const PRIVATE_LISTING_STATUS_SIDE_EFFECTS = {
   onboarding_sent: {
@@ -164,6 +181,90 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function parseQuickListingMetadata(value = '') {
+  const text = normalizeText(value)
+  const markerIndex = text.indexOf(QUICK_LISTING_METADATA_PREFIX)
+  if (markerIndex < 0) return null
+  const raw = text.slice(markerIndex + QUICK_LISTING_METADATA_PREFIX.length).trim()
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function getListingQuickImportMetadata(listing = {}, metadata = {}) {
+  const embedded = parseQuickListingMetadata(
+    listing?.internalListingNotes ||
+      listing?.internal_listing_notes ||
+      listing?.description ||
+      listing?.notes,
+  )
+  return {
+    ...(embedded && typeof embedded === 'object' ? embedded : {}),
+    ...(metadata?.quickListingMetadata && typeof metadata.quickListingMetadata === 'object' ? metadata.quickListingMetadata : {}),
+  }
+}
+
+function hasCurrentListingExternalSignal(listing = {}, metadata = {}, quickMetadata = {}) {
+  return [
+    metadata?.property24ListingUrl,
+    metadata?.privatePropertyListingUrl,
+    metadata?.externalListingUrl,
+    metadata?.externalListingLink,
+    listing?.property24ListingUrl,
+    listing?.property24_listing_url,
+    listing?.privatePropertyListingUrl,
+    listing?.private_property_listing_url,
+    listing?.bridgeListingPublicUrl,
+    listing?.bridge_listing_public_url,
+    quickMetadata?.property?.externalListingLink,
+  ].some(hasValue)
+}
+
+export function isCurrentListingImportActivation(listing = {}, targetStatus = '', metadata = {}) {
+  const normalizedTarget = mapLegacyListingStatusToCanonicalStatus(targetStatus)
+  if (normalizedTarget !== 'active') return false
+
+  const mandateStatus = normalizeKey(metadata?.mandateStatus || metadata?.mandate_status || listing?.mandateStatus || listing?.mandate_status)
+  const explicitBypass = Boolean(
+    metadata?.allowCurrentListingImportActivation ||
+      metadata?.currentListingImport ||
+      metadata?.isCurrentListingImport,
+  )
+  if (!explicitBypass && mandateStatus !== 'signed_external_pending_upload') return false
+
+  const quickMetadata = getListingQuickImportMetadata(listing, metadata)
+  const quickIntent = normalizeKey(
+    metadata?.quickAddIntent ||
+      metadata?.quick_add_intent ||
+      quickMetadata?.quickAddIntent ||
+      quickMetadata?.property?.quickAddIntent,
+  )
+  const source = normalizeKey(
+    metadata?.source ||
+      metadata?.origin ||
+      metadata?.captureMethod ||
+      listing?.source ||
+      listing?.origin ||
+      listing?.listingOrigin ||
+      listing?.listing_origin ||
+      listing?.listingSource ||
+      listing?.listing_source ||
+      quickMetadata?.source ||
+      quickMetadata?.origin,
+  )
+  const currentImportSignal =
+    explicitBypass ||
+    CURRENT_LISTING_IMPORT_INTENTS.has(quickIntent) ||
+    CURRENT_LISTING_IMPORT_SOURCES.has(source) ||
+    source.includes('bulk') ||
+    source.includes('import') ||
+    hasCurrentListingExternalSignal(listing, metadata, quickMetadata)
+
+  return currentImportSignal
 }
 
 function hasValue(value) {
@@ -256,6 +357,7 @@ function hasMandateCompletionProof(listing = {}, metadata = {}) {
 function getMandateCompletionBlocker(listing = {}, targetStatus = '', metadata = {}) {
   const normalizedTarget = mapLegacyListingStatusToCanonicalStatus(targetStatus)
   if (!CANONICAL_MANDATE_COMPLETION_TARGETS.has(normalizedTarget)) return ''
+  if (isCurrentListingImportActivation(listing, normalizedTarget, metadata)) return ''
   return hasMandateCompletionProof(listing, metadata) ? '' : MANDATE_COMPLETION_BLOCKER
 }
 

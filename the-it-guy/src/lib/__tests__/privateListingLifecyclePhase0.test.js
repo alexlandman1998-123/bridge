@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canTransitionPrivateListing } from '../privateListingLifecycle'
+import { canTransitionPrivateListing, isCurrentListingImportActivation } from '../privateListingLifecycle'
 
 const manualMandateEvidence = {
   document_type: 'manual_mandate_evidence',
@@ -131,5 +131,49 @@ describe('private listing Phase 0 mandate containment', () => {
 
     expect(signedResult.allowed).toBe(true)
     expect(activeResult.allowed).toBe(true)
+  })
+
+  it('allows a back-captured current listing import to activate without retroactive mandate upload', () => {
+    const currentListingImportNotes = [
+      'Capture type: Active listing already live',
+      `BRIDGE_QUICK_ADD_METADATA:${JSON.stringify({
+        origin: 'quick_add',
+        source: 'quick_add',
+        quickAddIntent: 'active_listing',
+        property: {
+          quickAddIntent: 'active_listing',
+          externalListingLink: 'https://www.property24.com/listing/123',
+        },
+      })}`,
+    ].join('\n')
+    const listing = {
+      listingStatus: 'listing_review',
+      mandateStatus: 'signed_external_pending_upload',
+      property24ListingUrl: 'https://www.property24.com/listing/123',
+      internalListingNotes: currentListingImportNotes,
+    }
+    const result = canTransitionPrivateListing(listing, 'active')
+
+    expect(isCurrentListingImportActivation(listing, 'active')).toBe(true)
+    expect(result.allowed).toBe(true)
+    expect(result.blockers.join(' ')).not.toMatch(/canonical mandate packet or manual signed mandate upload/i)
+  })
+
+  it('does not treat a draft quick-add upload-later mandate as a current listing import', () => {
+    const draftNotes = `BRIDGE_QUICK_ADD_METADATA:${JSON.stringify({
+      origin: 'quick_add',
+      source: 'quick_add',
+      quickAddIntent: 'draft',
+    })}`
+    const listing = {
+      listingStatus: 'listing_review',
+      mandateStatus: 'signed_external_pending_upload',
+      internalListingNotes: draftNotes,
+    }
+    const result = canTransitionPrivateListing(listing, 'active')
+
+    expect(isCurrentListingImportActivation(listing, 'active')).toBe(false)
+    expect(result.allowed).toBe(false)
+    expect(result.blockers.join(' ')).toMatch(/canonical mandate packet or manual signed mandate upload/i)
   })
 })

@@ -11,6 +11,7 @@ import {
   getPrivateListingStatusGroup,
   getPrivateListingStatusLabel,
   getPrivateListingTransitionSideEffects,
+  isCurrentListingImportActivation,
   mapLegacyListingStatusToCanonicalStatus,
   PRIVATE_LISTING_LIFECYCLE,
 } from '../lib/privateListingLifecycle'
@@ -8287,22 +8288,32 @@ export async function validatePrivateListingTransition(listingId, targetStatus, 
     allowOverride: Boolean(options?.allowOverride),
     metadata: options?.metadata || {},
   })
-  const canonicalGate = await canAdvanceWorkflowStage({
-    contextType: 'private_listing',
-    contextId: listing.id,
-    targetStage: targetStatus,
-    actorRole: options?.actorRole || 'agent',
-    actorUserId: options?.actorUserId || options?.performedBy || null,
-    client: supabase,
-    override: Boolean(options?.allowOverride),
-  }).catch((error) => ({
-    allowed: true,
-    can_advance: true,
-    skipped: true,
-    reason: null,
-    warning: null,
-    error: error?.message || 'canonical_gate_evaluation_failed',
-  }))
+  const currentListingImportActivation = isCurrentListingImportActivation(listing, targetStatus, options?.metadata || {})
+  const canonicalGate = currentListingImportActivation
+    ? {
+        allowed: true,
+        can_advance: true,
+        skipped: true,
+        reason: 'current_listing_import_activation',
+        warning: null,
+        error: null,
+      }
+    : await canAdvanceWorkflowStage({
+        contextType: 'private_listing',
+        contextId: listing.id,
+        targetStage: targetStatus,
+        actorRole: options?.actorRole || 'agent',
+        actorUserId: options?.actorUserId || options?.performedBy || null,
+        client: supabase,
+        override: Boolean(options?.allowOverride),
+      }).catch((error) => ({
+        allowed: true,
+        can_advance: true,
+        skipped: true,
+        reason: null,
+        warning: null,
+        error: error?.message || 'canonical_gate_evaluation_failed',
+      }))
   const canonicalBlockers = canonicalGate?.allowed === false
     ? [canonicalGate.reason || 'Canonical document readiness is blocking this listing stage.']
     : []
@@ -8326,7 +8337,7 @@ export async function validatePrivateListingTransition(listingId, targetStatus, 
     requirements: assuranceRequirements,
     documents: listing.documents || [],
   })
-  const assuranceBlockers = assuranceStages && sellerDocumentAssurance.ready === false && !options?.allowOverride
+  const assuranceBlockers = assuranceStages && sellerDocumentAssurance.ready === false && !options?.allowOverride && !currentListingImportActivation
     ? sellerDocumentAssurance.missing.slice(0, 8).map(({ requirement }) =>
         `${requirement?.requirement_name || requirement?.requirement_key || 'Seller document'} must be approved before ${normalizedTarget.replaceAll('_', ' ')}.`)
     : []

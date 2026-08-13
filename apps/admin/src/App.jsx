@@ -2,11 +2,15 @@ import {
   AlertTriangle,
   BarChart3,
   Building2,
+  CalendarDays,
   CheckCircle2,
+  ChevronRight,
   CircleDollarSign,
   Clock3,
+  FileText,
   Headphones,
   Home,
+  ListChecks,
   Loader2,
   LogOut,
   RefreshCw,
@@ -14,6 +18,7 @@ import {
   Settings,
   ShieldCheck,
   UserRoundCheck,
+  UsersRound,
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -35,6 +40,10 @@ const RANGE_OPTIONS = [
 
 const NAV_ICONS = {
   dashboard: Home,
+  organisations: Building2,
+  reports: BarChart3,
+  transactions: FileText,
+  users: UsersRound,
   support: Headphones,
   search: Search,
   settings: Settings,
@@ -112,6 +121,20 @@ function formatCount(value = 0) {
   return new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 }).format(Number(value) || 0)
 }
 
+function formatShortMoney(value = 0) {
+  const amount = Number(value) || 0
+  const abs = Math.abs(amount)
+  const formatter = new Intl.NumberFormat('en-ZA', {
+    maximumFractionDigits: abs >= 1_000_000 ? 1 : 0,
+    minimumFractionDigits: 0,
+  })
+
+  if (abs >= 1_000_000_000) return `R${formatter.format(amount / 1_000_000_000)}bn`
+  if (abs >= 1_000_000) return `R${formatter.format(amount / 1_000_000)}m`
+  if (abs >= 1_000) return `R${formatter.format(amount / 1_000)}k`
+  return formatMoney(amount)
+}
+
 function formatDate(value = '') {
   if (!value) return 'No date'
   const date = new Date(value)
@@ -129,6 +152,31 @@ function formatDateTime(value = '') {
     minute: '2-digit',
     month: 'short',
   }).format(date)
+}
+
+function formatUpdatedStamp(value = '') {
+  if (!value) return 'Waiting for data'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Waiting for data'
+  const time = new Intl.DateTimeFormat('en-ZA', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+  const day = new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
+  return `Updated ${time} · ${day}`
+}
+
+function formatAge(value = '') {
+  if (!value) return 'No date'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'No date'
+  const days = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86_400_000))
+  if (days <= 0) return 'Today'
+  return `${days}d`
 }
 
 function normalizeText(value = '') {
@@ -179,6 +227,180 @@ function supportItemTitle(item = {}) {
 
 function supportItemKey(item = {}) {
   return `${item.type || 'item'}:${item.id || item.title || item.reference || 'unknown'}`
+}
+
+function getOrgKey(row = {}) {
+  return row.organisationId || row.organizationId || row.agencyId || row.companyId || 'unassigned'
+}
+
+function getOrgDisplayName(row = {}) {
+  return row.name || row.tradingName || row.organisationName || row.organisationId || 'Organisation'
+}
+
+function getInitials(value = '') {
+  const words = String(value || 'A9').trim().split(/\s+/).filter(Boolean)
+  return words.slice(0, 2).map((word) => word[0]).join('').toUpperCase() || 'A9'
+}
+
+function getTransactionTitle(row = {}) {
+  return row.title || row.propertyAddress || row.address || row.reference || row.id || 'Transaction'
+}
+
+function getTransactionParties(row = {}) {
+  return [row.buyer, row.seller].filter(Boolean).join(' / ') || row.agentId || 'No parties'
+}
+
+function normalizeStageLabel(value = '') {
+  const stage = String(value || '').trim().replace(/[_-]+/g, ' ')
+  if (!stage) return 'In Transfer'
+  return stage.replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function resolveStageBucket(row = {}) {
+  const text = `${row.stage || ''} ${row.status || ''}`.toLowerCase()
+  if (text.includes('register')) return 'registered'
+  if (text.includes('stall')) return 'stalled'
+  if (text.includes('transfer') || text.includes('attorney') || text.includes('convey')) return 'transfer'
+  return 'otp'
+}
+
+function buildActivitySeries(rows = [], range = {}) {
+  const counts = new Map()
+  for (const row of rows) {
+    const date = new Date(row.registeredAt || row.lastActivityAt || row.createdAt || '')
+    if (Number.isNaN(date.getTime())) continue
+    const key = date.toISOString().slice(0, 10)
+    counts.set(key, (counts.get(key) || 0) + 1)
+  }
+
+  const start = new Date(range.start || Date.now() - 29 * 86_400_000)
+  const end = new Date(range.end || Date.now())
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return []
+
+  const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86_400_000))
+  const buckets = days > 45 ? Math.min(8, Math.ceil(days / 7)) : Math.min(10, days)
+  return Array.from({ length: buckets }, (_, index) => {
+    const bucketStart = new Date(start)
+    bucketStart.setDate(start.getDate() + Math.floor((days / buckets) * index))
+    const bucketEnd = new Date(start)
+    bucketEnd.setDate(start.getDate() + Math.floor((days / buckets) * (index + 1)))
+    let value = 0
+    for (const [key, count] of counts.entries()) {
+      const date = new Date(`${key}T00:00:00Z`)
+      if (date >= bucketStart && date < bucketEnd) value += count
+    }
+    return {
+      label: new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short' }).format(bucketStart),
+      value,
+    }
+  })
+}
+
+function buildAreaPath(points = [], width = 360, height = 96) {
+  if (!points.length) return { area: '', line: '' }
+  const max = Math.max(...points.map((point) => point.value), 1)
+  const step = points.length > 1 ? width / (points.length - 1) : width
+  const coords = points.map((point, index) => {
+    const x = points.length > 1 ? index * step : width / 2
+    const y = height - (point.value / max) * (height - 14) - 7
+    return [x, y]
+  })
+  const line = coords.map(([x, y], index) => `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
+  const area = `${line} L ${width} ${height} L 0 ${height} Z`
+  return { area, line }
+}
+
+function buildOrganisationActivity(snapshot = EMPTY_DASHBOARD) {
+  const drilldowns = snapshot?.drilldowns || EMPTY_DASHBOARD.drilldowns
+  const organisations = drilldowns.activeOrganisations || []
+  const agents = drilldowns.activeAgents || []
+  const listings = drilldowns.activeListings || []
+  const rows = new Map()
+
+  for (const org of organisations) {
+    const key = org.id || org.name || 'unassigned'
+    rows.set(key, {
+      id: key,
+      agents: 0,
+      listings: 0,
+      name: getOrgDisplayName(org),
+      transactions: 0,
+      trend: 0,
+    })
+  }
+
+  for (const agent of agents) {
+    const key = getOrgKey(agent)
+    const entry = rows.get(key) || { id: key, agents: 0, listings: 0, name: key === 'unassigned' ? 'Unassigned' : key, transactions: 0, trend: 0 }
+    entry.agents += 1
+    rows.set(key, entry)
+  }
+
+  for (const listing of listings) {
+    const key = getOrgKey(listing)
+    const entry = rows.get(key) || { id: key, agents: 0, listings: 0, name: key === 'unassigned' ? 'Unassigned' : key, transactions: 0, trend: 0 }
+    entry.listings += 1
+    rows.set(key, entry)
+  }
+
+  for (const row of [...(snapshot?.pipeline || []), ...(snapshot?.registered || [])]) {
+    const key = getOrgKey(row)
+    const entry = rows.get(key) || { id: key, agents: 0, listings: 0, name: key === 'unassigned' ? 'Unassigned' : key, transactions: 0, trend: 0 }
+    entry.transactions += 1
+    entry.trend += row.registeredAt ? 1 : 0
+    rows.set(key, entry)
+  }
+
+  return Array.from(rows.values())
+    .sort((left, right) => right.transactions - left.transactions || right.listings - left.listings || right.agents - left.agents)
+    .slice(0, 5)
+}
+
+function buildNeedsAttention(snapshot = EMPTY_DASHBOARD, support = EMPTY_SUPPORT) {
+  const attentionRows = snapshot?.attention || []
+  const supportSummary = support?.summary || EMPTY_SUPPORT.summary
+  const supportItems = buildSupportItems(support, snapshot)
+  const missingRevenue = countMissingRevenue([...(snapshot?.pipeline || []), ...(snapshot?.registered || [])], snapshot?.warnings || [])
+  const items = compactList([
+    (snapshot?.kpis?.stalledTransactions || attentionRows.length)
+      ? {
+          action: 'No activity for 14+ days',
+          count: snapshot?.kpis?.stalledTransactions || attentionRows.length,
+          key: 'stalled',
+          label: 'stalled transactions',
+          tone: 'critical',
+        }
+      : null,
+    missingRevenue
+      ? {
+          action: 'Add operating revenue',
+          count: missingRevenue,
+          key: 'revenue',
+          label: 'transactions missing revenue',
+          tone: 'warning',
+        }
+      : null,
+    supportSummary.openTickets || supportItems.length
+      ? {
+          action: 'Require response',
+          count: supportSummary.openTickets || supportItems.length,
+          key: 'support',
+          label: 'open support requests',
+          tone: 'info',
+        }
+      : null,
+    (snapshot?.warnings || []).length
+      ? {
+          action: 'Review data contract warnings',
+          count: (snapshot?.warnings || []).length,
+          key: 'warnings',
+          label: 'data warnings',
+          tone: 'warning',
+        }
+      : null,
+  ])
+
+  return items
 }
 
 function buildSupportItems(snapshot = EMPTY_SUPPORT, dashboard = EMPTY_DASHBOARD) {
@@ -525,7 +747,7 @@ function Sidebar({ access, activeView, onNavigate, onSignOut, profile }) {
   )
 }
 
-function Topbar({ activeView, isLoading, onRefresh, rangeId, setRangeId }) {
+function Topbar({ activeView, generatedAt, isLoading, onRefresh, rangeId, setRangeId }) {
   const title =
     activeView === 'support'
       ? 'Support Queue'
@@ -533,16 +755,26 @@ function Topbar({ activeView, isLoading, onRefresh, rangeId, setRangeId }) {
         ? 'Search'
         : activeView === 'settings'
           ? 'Settings'
-          : 'Operating Dashboard'
+          : activeView === 'organisations'
+            ? 'Organisations'
+            : activeView === 'transactions'
+              ? 'Transactions'
+              : activeView === 'users'
+                ? 'Users'
+                : activeView === 'reports'
+                  ? 'Reports'
+                  : 'Operating Dashboard'
 
   const subtitle =
     activeView === 'dashboard'
-      ? 'Active organisations, agents, listings, revenue, and stalled work.'
+      ? 'Platform performance and transaction activity.'
       : activeView === 'support'
         ? 'Open support work and operational exceptions.'
         : activeView === 'search'
           ? 'Find organisations, users, and transactions.'
-          : 'Access, environment, and data-contract status.'
+          : activeView === 'settings'
+            ? 'Access, environment, and data-contract status.'
+            : 'Existing admin data, filtered into a focused workspace.'
 
   return (
     <header className="topbar">
@@ -550,14 +782,23 @@ function Topbar({ activeView, isLoading, onRefresh, rangeId, setRangeId }) {
         <p className="eyebrow">Arch9 Admin</p>
         <h1>{title}</h1>
         <span>{subtitle}</span>
+        {activeView === 'dashboard' ? (
+          <div className="freshness-line">
+            <span aria-hidden="true" />
+            <strong>{isLoading ? 'Refreshing dashboard' : formatUpdatedStamp(generatedAt)}</strong>
+          </div>
+        ) : null}
       </div>
       <div className="topbar-actions">
-        <select aria-label="Date range" onChange={(event) => setRangeId(event.target.value)} value={rangeId}>
-          {RANGE_OPTIONS.map((option) => (
-            <option key={option.id} value={option.id}>{option.label}</option>
-          ))}
-        </select>
-        <button className="secondary-button compact" onClick={onRefresh} type="button">
+        <label className="range-select">
+          <CalendarDays size={16} />
+          <select aria-label="Date range" onChange={(event) => setRangeId(event.target.value)} value={rangeId}>
+            {RANGE_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <button className="primary-button compact" onClick={onRefresh} type="button">
           {isLoading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
           <span>Refresh</span>
         </button>
@@ -566,14 +807,19 @@ function Topbar({ activeView, isLoading, onRefresh, rangeId, setRangeId }) {
   )
 }
 
-function MetricCard({ active = false, icon: Icon, label, meta = '', onClick, tone = 'green', value }) {
+function MetricCard({ active = false, context = '', icon: Icon, label, meta = '', onClick, tone = 'green', value }) {
   const className = `metric-card ${tone}${onClick ? ' interactive' : ''}${active ? ' active' : ''}`
   const content = (
     <>
-      <Icon size={20} />
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {meta ? <small>{meta}</small> : null}
+      <div className="metric-icon">
+        <Icon size={20} />
+      </div>
+      <div className="metric-copy">
+        <span>{label}</span>
+        <strong>{value}</strong>
+        {meta ? <small className="positive-metric">{meta}</small> : null}
+        {context ? <small>{context}</small> : null}
+      </div>
     </>
   )
 
@@ -729,80 +975,76 @@ function DashboardView({ isLoading, snapshot, support }) {
   const missingRevenue = countMissingRevenue([...pipelineRows, ...registeredRows], warnings)
   const drilldowns = useMemo(() => getDashboardDrilldowns(snapshot, support), [snapshot, support])
   const selectedDrilldown = drilldowns[drilldownKey]
+  const listingRows = snapshot?.drilldowns?.activeListings || []
+  const organisationRows = snapshot?.drilldowns?.activeOrganisations || []
+  const agentRows = snapshot?.drilldowns?.activeAgents || []
+  const liveRows = [...pipelineRows, ...attentionRows].slice(0, 5)
+  const totalInventorySample = listingRows.reduce((total, row) => total + (Number(row.price) || 0), 0)
+  const organisationActivity = useMemo(() => buildOrganisationActivity(snapshot), [snapshot])
+  const attentionItems = useMemo(() => buildNeedsAttention(snapshot, support), [snapshot, support])
+  const activitySeries = useMemo(
+    () => buildActivitySeries([...pipelineRows, ...registeredRows], snapshot?.range || {}),
+    [pipelineRows, registeredRows, snapshot?.range],
+  )
+  const registeredSeries = useMemo(
+    () => buildActivitySeries(registeredRows, snapshot?.range || {}),
+    [registeredRows, snapshot?.range],
+  )
+  const stageBuckets = pipelineRows.reduce(
+    (totals, row) => {
+      totals[resolveStageBucket(row)] += 1
+      return totals
+    },
+    { otp: 0, registered: registeredRows.length, stalled: kpis.stalledTransactions || attentionRows.length, transfer: 0 },
+  )
+  const pipelineCount = kpis.sellerSignedBuyerSigned || pipelineRows.length
+  const feeContext =
+    pipelineCount && kpis.pipelineRevenue
+      ? `${formatCount(pipelineCount)} signed transactions`
+      : 'Configured fee values from transaction records'
 
   const metrics = [
     {
       drilldown: 'activeOrganisations',
       icon: Building2,
-      label: 'Active Organisations',
-      meta: 'Enabled workspaces',
+      label: 'Organisations',
+      meta: organisationRows.length ? `Across ${formatCount(uniqueCount(organisationRows.map((row) => row.status || 'active')))} status group` : '',
+      context: 'Enabled workspaces',
       value: formatCount(kpis.activeOrganisations),
     },
     {
       drilldown: 'activeAgents',
       icon: UserRoundCheck,
-      label: 'Active Agents',
-      meta: 'Agent participation',
-      tone: 'blue',
+      label: 'Agents',
+      meta: agentRows.length ? `Across ${formatCount(uniqueCount(agentRows.map((row) => row.organisationId)))} organisations` : '',
+      context: 'Associated active agent users',
       value: formatCount(kpis.activeAgents),
     },
     {
       drilldown: 'activeListings',
       icon: Home,
       label: 'Active Listings',
-      meta: 'Live opportunity base',
-      tone: 'teal',
+      meta: totalInventorySample ? `${formatShortMoney(totalInventorySample)} sampled inventory` : '',
+      context: 'Live listing base',
       value: formatCount(kpis.activeListings),
     },
     {
       drilldown: 'pipeline',
-      icon: CircleDollarSign,
-      label: 'Pipeline Revenue',
-      meta: 'Signed, not registered',
-      tone: 'amber',
-      value: formatMoney(kpis.pipelineRevenue),
-    },
-    {
-      drilldown: 'registered',
-      icon: CheckCircle2,
-      label: 'Registered Revenue This Month',
-      meta: 'Recognized Arch9 revenue',
-      value: formatMoney(kpis.registeredRevenueThisMonth),
-    },
-    {
-      drilldown: 'pipeline',
-      icon: BarChart3,
-      label: 'Seller + Buyer Signed',
-      meta: 'Pipeline count',
-      tone: 'blue',
-      value: formatCount(kpis.sellerSignedBuyerSigned),
-    },
-    {
-      drilldown: 'registered',
-      icon: ShieldCheck,
-      label: 'Registered This Month',
-      meta: 'Completed transfers',
-      tone: 'teal',
-      value: formatCount(kpis.registeredThisMonth),
-    },
-    {
-      drilldown: 'stalled',
-      icon: Clock3,
-      label: 'Stalled Transactions',
-      meta: '14+ days quiet',
-      tone: 'red',
-      value: formatCount(kpis.stalledTransactions),
+      icon: ListChecks,
+      label: 'Active Transactions',
+      meta: pipelineCount ? `${formatCount(pipelineCount)} signed pipeline` : '',
+      context: 'Seller + buyer signed, not registered',
+      value: formatCount(pipelineCount),
     },
   ]
 
   return (
-    <div className="view-stack">
-      <StatusStrip dashboard={snapshot} isLoading={isLoading} support={support} />
-
-      <section className="metric-grid" aria-label="Operating metrics">
+    <div className="view-stack operating-dashboard">
+      <section className="metric-grid platform-kpis" aria-label="Platform KPIs">
         {metrics.map((metric) => (
           <MetricCard
             active={drilldownKey === metric.drilldown}
+            context={metric.context}
             icon={metric.icon}
             key={metric.label}
             label={metric.label}
@@ -821,32 +1063,269 @@ function DashboardView({ isLoading, snapshot, support }) {
         />
       ) : null}
 
-      {warnings.length ? <WarningsPanel warnings={warnings} /> : null}
-
-      <section className="dashboard-overview">
-        <RevenuePath activeKey={drilldownKey} onSelect={setDrilldownKey} snapshot={snapshot} />
-        <SupportBrief onSelect={setDrilldownKey} support={support} />
-      </section>
-
-      <section className="two-column">
-        <DataPanel
-          empty="No seller/buyer signed pipeline items yet."
-          meta={`${formatCount(missingRevenue)} missing revenue values`}
-          rows={pipelineRows}
-          title="Pipeline"
-          type="pipeline"
+      <section className="dashboard-primary-row">
+        <TransactionActivityCard
+          activitySeries={activitySeries}
+          isLoading={isLoading}
+          onSelect={setDrilldownKey}
+          stageBuckets={stageBuckets}
         />
-        <DataPanel
-          empty="No registrations in this range."
-          meta={`${formatCount(kpis.registeredThisMonth)} registered`}
-          rows={registeredRows}
-          title="Registered This Month"
-          type="registered"
+        <RevenuePerformanceCard
+          feeContext={feeContext}
+          missingRevenue={missingRevenue}
+          onSelect={setDrilldownKey}
+          pipelineCount={pipelineCount}
+          registeredSeries={registeredSeries}
+          snapshot={snapshot}
         />
       </section>
 
-      <QueuePanel empty="No stalled transactions in the current data contract." rows={attentionRows} title="Transactions Requiring Attention" />
+      <section className="dashboard-bottom-row">
+        <OrganisationActivityCard
+          onSelect={() => setDrilldownKey('activeOrganisations')}
+          rows={organisationActivity}
+        />
+        <NeedsAttentionCard items={attentionItems} onSelect={setDrilldownKey} />
+        <LiveTransactionPipelineCard rows={liveRows} />
+      </section>
     </div>
+  )
+}
+
+function MiniAreaChart({ label = 'Activity chart', points = [] }) {
+  const { area, line } = buildAreaPath(points)
+  const total = points.reduce((sum, point) => sum + point.value, 0)
+
+  return (
+    <div className="mini-chart" aria-label={label}>
+      <svg role="img" viewBox="0 0 360 96">
+        <path className="chart-area" d={area} />
+        <path className="chart-line" d={line} />
+        {points.map((point, index) => {
+          const max = Math.max(...points.map((item) => item.value), 1)
+          const x = points.length > 1 ? (index * 360) / (points.length - 1) : 180
+          const y = 96 - (point.value / max) * 82 - 7
+          return <circle cx={x} cy={y} key={`${point.label}-${index}`} r="2.5" />
+        })}
+      </svg>
+      <div className="chart-axis">
+        {points.slice(0, 5).map((point) => (
+          <span key={point.label}>{point.label}</span>
+        ))}
+      </div>
+      {!total ? <p className="chart-empty">No dated activity returned for this range.</p> : null}
+    </div>
+  )
+}
+
+function TransactionActivityCard({ activitySeries = [], isLoading = false, onSelect, stageBuckets = {} }) {
+  const stages = [
+    { key: 'otp', label: 'OTP Signed', value: stageBuckets.otp || 0, icon: FileText },
+    { key: 'transfer', label: 'In Transfer', value: stageBuckets.transfer || 0, icon: RefreshCw },
+    { key: 'registered', label: 'Registered', value: stageBuckets.registered || 0, icon: CheckCircle2 },
+    { key: 'stalled', label: 'Stalled', value: stageBuckets.stalled || 0, icon: AlertTriangle, tone: 'danger' },
+  ]
+
+  return (
+    <section className="dashboard-card transaction-activity-card">
+      <div className="panel-title">
+        <h2>Transaction Activity</h2>
+        <span>{isLoading ? 'Refreshing' : 'Live snapshot'}</span>
+      </div>
+      <div className="stage-flow">
+        {stages.map((stage, index) => {
+          const Icon = stage.icon
+          return (
+            <button
+              className={`stage-node ${stage.tone || ''}`}
+              key={stage.key}
+              onClick={() => onSelect?.(stage.key === 'registered' ? 'registered' : stage.key === 'stalled' ? 'stalled' : 'pipeline')}
+              type="button"
+            >
+              <div>
+                <Icon size={20} />
+              </div>
+              <span>{stage.label}</span>
+              <strong>{formatCount(stage.value)}</strong>
+              <small>{stage.key === 'stalled' ? 'Exception queue' : 'Current snapshot'}</small>
+              {index < stages.length - 1 ? <ChevronRight className="stage-arrow" size={18} /> : null}
+            </button>
+          )
+        })}
+      </div>
+      <div className="chart-block">
+        <div>
+          <h3>Transaction Activity</h3>
+          <span>Based on dated pipeline and registration rows in the selected range</span>
+        </div>
+        <MiniAreaChart points={activitySeries} />
+      </div>
+    </section>
+  )
+}
+
+function RevenuePerformanceCard({ feeContext, missingRevenue = 0, onSelect, pipelineCount = 0, registeredSeries = [], snapshot }) {
+  const kpis = snapshot?.kpis || EMPTY_DASHBOARD.kpis
+  const revenue = snapshot?.revenue || {}
+  const registered = revenue.registeredThisMonth || {}
+  const pipeline = revenue.pipeline || {}
+  const registeredAmount = kpis.registeredRevenueThisMonth || registered.amount || 0
+  const pipelineAmount = kpis.pipelineRevenue || pipeline.amount || 0
+  const displayedPipelineCount = pipelineCount || pipeline.count || 0
+  const revenueRows = [
+    ['Signed pipeline', pipelineAmount, `${formatCount(displayedPipelineCount)} transactions`],
+    ['Registered this period', registeredAmount, `${formatCount(kpis.registeredThisMonth || registered.count || 0)} registrations`],
+    ['Revenue gaps', missingRevenue, 'Need operating fee values'],
+  ]
+
+  return (
+    <section className="dashboard-card revenue-performance-card">
+      <div className="panel-title">
+        <h2>Revenue Performance</h2>
+        <span>Arch9 fees</span>
+      </div>
+      <div className="revenue-split">
+        <button className="revenue-primary" onClick={() => onSelect?.('registered')} type="button">
+          <span>Registered Revenue</span>
+          <strong>{formatMoney(registeredAmount)}</strong>
+          <small>{formatCount(kpis.registeredThisMonth || registered.count || 0)} registered in range</small>
+          <MiniAreaChart label="Registered revenue trend" points={registeredSeries} />
+        </button>
+        <button className="revenue-primary compact-revenue" onClick={() => onSelect?.('pipeline')} type="button">
+          <span>Pipeline Revenue</span>
+          <strong>{formatMoney(pipelineAmount)}</strong>
+          <small>{feeContext}</small>
+          <div className="revenue-breakdown">
+            {revenueRows.map(([label, amount, detail]) => (
+              <div key={label}>
+                <span>{label}</span>
+                <strong>{typeof amount === 'number' && label === 'Revenue gaps' ? formatCount(amount) : formatMoney(amount)}</strong>
+                <small>{detail}</small>
+              </div>
+            ))}
+          </div>
+        </button>
+      </div>
+      <div className="fee-strip">
+        <CircleDollarSign size={16} />
+        <span>Arch9 fee context is read from transaction revenue fields where present.</span>
+      </div>
+    </section>
+  )
+}
+
+function OrganisationActivityCard({ onSelect, rows = [] }) {
+  return (
+    <section className="dashboard-card organisation-activity-card">
+      <div className="panel-title">
+        <h2>Organisation Activity</h2>
+        <button className="text-button" onClick={onSelect} type="button">View all</button>
+      </div>
+      <div className="org-table compact-table">
+        <div className="compact-table-head">
+          <span>Organisation</span>
+          <span>Agents</span>
+          <span>Listings</span>
+          <span>Tx</span>
+        </div>
+        {rows.length ? rows.map((row) => (
+          <button className="compact-table-row" key={row.id || row.name} onClick={onSelect} type="button">
+            <span className="org-name-cell">
+              <b>{getInitials(row.name)}</b>
+              <strong>{row.name}</strong>
+            </span>
+            <span>{formatCount(row.agents)}</span>
+            <span>{formatCount(row.listings)}</span>
+            <span className="trend-value">+{formatCount(row.transactions)}</span>
+          </button>
+        )) : <p className="empty-state">Organisation activity will appear once the dashboard RPC returns rows.</p>}
+      </div>
+    </section>
+  )
+}
+
+function NeedsAttentionCard({ items = [], onSelect }) {
+  if (!items.length) {
+    return (
+      <section className="dashboard-card needs-attention-card">
+        <div className="panel-title">
+          <h2>Needs Attention</h2>
+          <span>Healthy</span>
+        </div>
+        <div className="healthy-state">
+          <CheckCircle2 size={20} />
+          <strong>All systems operational</strong>
+          <span>No items currently require attention.</span>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="dashboard-card needs-attention-card">
+      <div className="panel-title">
+        <h2>Needs Attention</h2>
+        <span>{formatCount(items.length)} queues</span>
+      </div>
+      <div className="attention-list">
+        {items.slice(0, 4).map((item) => (
+          <button className={`attention-item ${item.tone}`} key={item.key} onClick={() => onSelect?.(item.key === 'warnings' ? 'missingRevenue' : item.key)} type="button">
+            <span>{formatCount(item.count)}</span>
+            <div>
+              <strong>{item.label}</strong>
+              <small>{item.action}</small>
+            </div>
+            <ChevronRight size={16} />
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function LiveTransactionPipelineCard({ rows = [] }) {
+  return (
+    <section className="dashboard-card live-pipeline-card">
+      <div className="panel-title">
+        <h2>Live Transaction Pipeline</h2>
+        <span>{formatCount(rows.length)} shown</span>
+      </div>
+      <div className="table-shell live-table-shell">
+        {rows.length ? (
+          <table className="live-pipeline-table">
+            <thead>
+              <tr>
+                <th>Transaction</th>
+                <th>Agency</th>
+                <th>Agent</th>
+                <th>Stage</th>
+                <th>Age</th>
+                <th>Arch9 Fee</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={`${row.type || 'tx'}-${row.id || row.reference}`}>
+                  <td>
+                    <strong>{getTransactionTitle(row)}</strong>
+                    <span>{getTransactionParties(row)}</span>
+                  </td>
+                  <td>{row.organisationId || 'No agency'}</td>
+                  <td>{row.agentId || 'No agent'}</td>
+                  <td>
+                    <span className={`stage-pill ${resolveStageBucket(row)}`}>{normalizeStageLabel(row.stage || row.status)}</span>
+                  </td>
+                  <td>{formatAge(row.lastActivityAt || row.registeredAt)}</td>
+                  <td>{row.revenueMissing ? <span className="missing">Missing</span> : formatMoney(row.revenue)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="empty-state">No live pipeline rows returned by the current dashboard contract.</p>
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -860,9 +1339,11 @@ function DrilldownPanel({ config, onClose }) {
           <h2>{config.title}</h2>
           <span>{config.meta}</span>
         </div>
-        <button className="icon-button" onClick={onClose} title="Close drilldown" type="button">
-          <X size={16} />
-        </button>
+        {onClose ? (
+          <button className="icon-button" onClick={onClose} title="Close drilldown" type="button">
+            <X size={16} />
+          </button>
+        ) : null}
       </div>
       <div className="table-shell">
         {rows.length ? <DrilldownTable rows={rows} type={config.type} /> : <p className="empty-state">{config.empty}</p>}
@@ -1359,6 +1840,68 @@ function QueuePanel({ empty, rows = [], title }) {
   )
 }
 
+function AdminWorkspaceView({ snapshot, type }) {
+  const drilldowns = getDashboardDrilldowns(snapshot, EMPTY_SUPPORT)
+
+  if (type === 'organisations') {
+    return (
+      <div className="view-stack">
+        <DrilldownPanel config={drilldowns.activeOrganisations} />
+      </div>
+    )
+  }
+
+  if (type === 'users') {
+    return (
+      <div className="view-stack">
+        <DrilldownPanel config={drilldowns.activeAgents} />
+      </div>
+    )
+  }
+
+  if (type === 'transactions') {
+    return (
+      <div className="view-stack">
+        <section className="two-column">
+          <DataPanel
+            empty="No seller/buyer signed pipeline items yet."
+            rows={snapshot?.pipeline || []}
+            title="Signed Pipeline"
+            type="pipeline"
+          />
+          <DataPanel
+            empty="No registrations in this range."
+            rows={snapshot?.registered || []}
+            title="Registered"
+            type="registered"
+          />
+        </section>
+        <QueuePanel empty="No stalled transactions in the current data contract." rows={snapshot?.attention || []} title="Stalled Transactions" />
+      </div>
+    )
+  }
+
+  if (type === 'reports') {
+    return (
+      <div className="view-stack">
+        <section className="dashboard-overview">
+          <RevenuePath snapshot={snapshot} />
+          <DataPanel
+            empty="No registrations in this range."
+            meta={`${formatCount(snapshot?.kpis?.registeredThisMonth || 0)} registered`}
+            rows={snapshot?.registered || []}
+            title="Registered Revenue"
+            type="registered"
+          />
+        </section>
+        {(snapshot?.warnings || []).length ? <WarningsPanel warnings={snapshot.warnings} /> : null}
+      </div>
+    )
+  }
+
+  return null
+}
+
 function SearchView() {
   const [term, setTerm] = useState('')
   const [results, setResults] = useState([])
@@ -1657,12 +2200,16 @@ export default function App() {
       <main className="admin-main">
         <Topbar
           activeView={view}
+          generatedAt={dashboard.generatedAt}
           isLoading={isLoading}
           onRefresh={() => refreshData()}
           rangeId={rangeId}
           setRangeId={setRangeId}
         />
         {view === 'dashboard' ? <DashboardView isLoading={isLoading} snapshot={dashboard} support={support} /> : null}
+        {['organisations', 'transactions', 'users', 'reports'].includes(view) ? (
+          <AdminWorkspaceView snapshot={dashboard} type={view} />
+        ) : null}
         {view === 'support' ? <SupportView dashboard={dashboard} snapshot={support} /> : null}
         {view === 'search' ? <SearchView /> : null}
         {view === 'settings' ? <SettingsView access={access} profile={profile} /> : null}
