@@ -98,6 +98,7 @@ import {
   clearSellerPortalAccessToken,
   completeSellerPortalPasswordRecovery,
   createSellerClientPortalDocumentSignedUrl,
+  fetchSellerPortalActivationTermsConfig,
   resolveSellerClientPortalFinalSignedDocumentAccess,
   getStoredSellerPortalAccessToken,
   isSellerPortalAuthRequiredError,
@@ -7835,6 +7836,7 @@ function SellerPortalPasswordGate({
   notice = '',
   saving = false,
   recoveryRequesting = false,
+  termsConfig = getSellerPortalActivationTermsConfig(),
   onChange,
   onRequestRecovery,
   onSubmit,
@@ -7852,7 +7854,7 @@ function SellerPortalPasswordGate({
     : 'Create a password before opening your seller portal and document centre.'
   const propertyTitle = String(authState?.propertyTitle || '').trim()
   const sellerEmail = String(authState?.sellerEmail || '').trim()
-  const sellerTermsConfig = getSellerPortalActivationTermsConfig()
+  const sellerTermsConfig = termsConfig || getSellerPortalActivationTermsConfig()
 
   return (
     <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
@@ -7975,6 +7977,7 @@ function ClientPortal() {
   const [sellerPortalAccessToken, setSellerPortalAccessToken] = useState(() => getStoredSellerPortalAccessToken(token))
   const [sellerPortalAuth, setSellerPortalAuth] = useState(null)
   const [sellerPortalPasswordForm, setSellerPortalPasswordForm] = useState({ password: '', confirmPassword: '', termsAccepted: false })
+  const [sellerPortalTermsConfig, setSellerPortalTermsConfig] = useState(() => getSellerPortalActivationTermsConfig())
   const [sellerPortalPasswordFeedback, setSellerPortalPasswordFeedback] = useState('')
   const [sellerPortalPasswordSaving, setSellerPortalPasswordSaving] = useState(false)
   const [sellerPortalRecoveryNotice, setSellerPortalRecoveryNotice] = useState('')
@@ -8071,7 +8074,25 @@ function ClientPortal() {
     setSellerPortalRecoveryNotice('')
     setSellerPortalRecoveryRequesting(false)
     setSellerPortalPasswordForm({ password: '', confirmPassword: '', termsAccepted: false })
+    setSellerPortalTermsConfig(getSellerPortalActivationTermsConfig())
   }, [token])
+
+  useEffect(() => {
+    if (!isSellerPortalToken) return undefined
+
+    let cancelled = false
+    fetchSellerPortalActivationTermsConfig()
+      .then((config) => {
+        if (!cancelled) setSellerPortalTermsConfig(config)
+      })
+      .catch((termsError) => {
+        console.warn('[client-portal] Seller portal terms config lookup skipped', termsError)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isSellerPortalToken, token])
 
   useEffect(() => {
     const normalizedToken = String(token || '').trim().toLowerCase()
@@ -8260,9 +8281,17 @@ function ClientPortal() {
       setSellerPortalPasswordFeedback('')
       if (!passwordSet && !recoveryMode) {
         const acceptedAt = new Date().toISOString()
+        let termsConfigForAcceptance = sellerPortalTermsConfig
+        try {
+          termsConfigForAcceptance = await fetchSellerPortalActivationTermsConfig()
+          setSellerPortalTermsConfig(termsConfigForAcceptance)
+        } catch (termsError) {
+          console.warn('[client-portal] Seller portal terms config refresh skipped before activation', termsError)
+        }
         await recordSellerPortalActivationTerms({
           token,
           acceptance: buildSellerPortalActivationTermsAcceptance({
+            termsConfig: termsConfigForAcceptance,
             acceptedAt,
             acceptedByEmail: String(sellerPortalAuth?.sellerEmail || '').trim(),
           }),
@@ -8290,7 +8319,7 @@ function ClientPortal() {
     } finally {
       setSellerPortalPasswordSaving(false)
     }
-  }, [navigate, sellerPortalAuth?.passwordSet, sellerPortalAuth?.sellerEmail, sellerPortalAuth?.tokenKind, sellerPortalPasswordForm.confirmPassword, sellerPortalPasswordForm.password, sellerPortalPasswordForm.termsAccepted, token])
+  }, [navigate, sellerPortalAuth?.passwordSet, sellerPortalAuth?.sellerEmail, sellerPortalAuth?.tokenKind, sellerPortalPasswordForm.confirmPassword, sellerPortalPasswordForm.password, sellerPortalPasswordForm.termsAccepted, sellerPortalTermsConfig, token])
 
   const applyUploadedPortalDocument = useCallback(
     (uploadedDocument, { requiredDocumentKey = null } = {}) => {
@@ -9574,6 +9603,7 @@ function ClientPortal() {
         notice={sellerPortalRecoveryNotice}
         saving={sellerPortalPasswordSaving}
         recoveryRequesting={sellerPortalRecoveryRequesting}
+        termsConfig={sellerPortalTermsConfig}
         onChange={handleSellerPortalPasswordChange}
         onRequestRecovery={handleSellerPortalRecoveryRequest}
         onSubmit={handleSellerPortalPasswordSubmit}

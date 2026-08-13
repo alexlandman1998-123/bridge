@@ -71,6 +71,7 @@ import {
   documentExactlyMatchesSellerRequirement,
   resolveExactSellerRequirement,
 } from './sellerDocumentSatisfactionAssuranceService.js'
+import { normalizeSellerPortalActivationTermsConfig } from '../lib/sellerPortalActivationTerms.js'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -4900,6 +4901,29 @@ export async function recordSellerPortalActivationTerms({ token, acceptance = {}
     throw error
   }
   return data || { ok: true }
+}
+
+export async function fetchSellerPortalActivationTermsConfig() {
+  const client = requireClient()
+  const { data, error } = await client
+    .from('transaction_consent_wording_versions')
+    .select('title, body, checkbox_label, fee_amount, currency, wording_version')
+    .eq('consent_type', 'arch9_transaction_platform_fee')
+    .eq('party_type', 'seller')
+    .eq('status', 'published')
+    .order('effective_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    if (isMissingTableError(error, 'transaction_consent_wording_versions') || isMissingSchemaError(error)) {
+      return normalizeSellerPortalActivationTermsConfig()
+    }
+    throw error
+  }
+
+  return normalizeSellerPortalActivationTermsConfig(data || {})
 }
 
 export async function requestSellerPortalPasswordRecovery(token) {

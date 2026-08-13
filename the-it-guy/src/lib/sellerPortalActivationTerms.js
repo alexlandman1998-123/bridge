@@ -27,9 +27,26 @@ export function getSellerPortalActivationTermsConfig() {
   }
 }
 
+export function normalizeSellerPortalActivationTermsConfig(config = {}) {
+  const fallback = getSellerPortalActivationTermsConfig()
+  if (!config || typeof config !== 'object') return fallback
+
+  return {
+    ...fallback,
+    title: config.title || fallback.title,
+    body: config.body || fallback.body,
+    checkboxLabel: config.checkboxLabel || config.checkbox_label || fallback.checkboxLabel,
+    feeAmount: config.feeAmount ?? config.fee_amount ?? fallback.feeAmount,
+    currency: config.currency || fallback.currency,
+    wordingVersion: config.wordingVersion || config.wording_version || fallback.wordingVersion,
+    privacyPolicyVersion: config.privacyPolicyVersion || config.privacy_policy_version || fallback.privacyPolicyVersion,
+  }
+}
+
 export function buildSellerPortalActivationTermsAcceptance(overrides = {}) {
-  const config = getSellerPortalActivationTermsConfig()
-  const acceptedAt = overrides.acceptedAt || overrides.accepted_at || new Date().toISOString()
+  const { termsConfig, ...acceptanceOverrides } = overrides || {}
+  const config = normalizeSellerPortalActivationTermsConfig(termsConfig)
+  const acceptedAt = acceptanceOverrides.acceptedAt || acceptanceOverrides.accepted_at || new Date().toISOString()
   return {
     consentType: config.consentType,
     consent_type: config.consentType,
@@ -52,6 +69,6 @@ export function buildSellerPortalActivationTermsAcceptance(overrides = {}) {
     source: 'seller_portal_activation',
     popiConsentIncluded: true,
     popi_consent_included: true,
-    ...overrides,
+    ...acceptanceOverrides,
   }
 }

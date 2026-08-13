@@ -4,10 +4,15 @@ import fs from 'node:fs/promises'
 import {
   buildSellerPortalActivationTermsAcceptance,
   getSellerPortalActivationTermsConfig,
+  normalizeSellerPortalActivationTermsConfig,
   SELLER_PORTAL_ACTIVATION_TERMS_VERSION,
 } from '../src/lib/sellerPortalActivationTerms.js'
 
 const clientPortalPage = await fs.readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
+const privateListingService = await fs.readFile(
+  new URL('../src/services/privateListingService.js', import.meta.url),
+  'utf8',
+)
 const migration = await fs.readFile(
   new URL('../../supabase/migrations/202607280001_seller_portal_activation_lifecycle.sql', import.meta.url),
   'utf8',
@@ -20,6 +25,19 @@ const wordingMigration = await fs.readFile(
 const config = getSellerPortalActivationTermsConfig()
 const acceptedAt = '2026-08-13T14:31:00.000Z'
 const acceptance = buildSellerPortalActivationTermsAcceptance({
+  acceptedAt,
+  acceptedByEmail: 'seller@example.com',
+})
+const liveConfig = normalizeSellerPortalActivationTermsConfig({
+  title: 'Updated Seller Platform Fee',
+  body: 'Updated seller fee wording.',
+  checkbox_label: 'I accept the updated wording.',
+  fee_amount: '875.00',
+  currency: 'ZAR',
+  wording_version: 'seller-platform-fee-v2',
+})
+const liveAcceptance = buildSellerPortalActivationTermsAcceptance({
+  termsConfig: liveConfig,
   acceptedAt,
   acceptedByEmail: 'seller@example.com',
 })
@@ -36,12 +54,26 @@ assert.equal(acceptance.fee_amount, '750.00')
 assert.equal(acceptance.currency, 'ZAR')
 assert.equal(acceptance.privacyPolicyVersion, 'arch9-seller-terms-popi-v1')
 assert.equal(acceptance.acceptedByEmail, 'seller@example.com')
+assert.equal(liveAcceptance.wordingVersion, 'seller-platform-fee-v2')
+assert.equal(liveAcceptance.wording_version, 'seller-platform-fee-v2')
+assert.equal(liveAcceptance.feeAmount, '875.00')
+assert.equal(liveAcceptance.fee_amount, '875.00')
+assert.equal(liveAcceptance.wordingSnapshot, 'Updated seller fee wording.')
+assert.equal(liveAcceptance.checkboxLabel, 'I accept the updated wording.')
+assert.equal(liveAcceptance.termsConfig, undefined)
 
 assert.match(wordingMigration, /'seller'[\s\S]*'seller-platform-fee-v1'/)
 assert.match(migration, /p_acceptance ->> 'feeAmount'[\s\S]*p_acceptance ->> 'fee_amount'/)
 assert.match(migration, /v_terms_version is distinct from v_wording\.wording_version/)
+assert.match(privateListingService, /function fetchSellerPortalActivationTermsConfig/)
+assert.match(privateListingService, /transaction_consent_wording_versions/)
+assert.match(privateListingService, /order\('effective_at', \{ ascending: false \}\)/)
 assert.match(clientPortalPage, /getSellerPortalActivationTermsConfig/)
+assert.match(clientPortalPage, /fetchSellerPortalActivationTermsConfig/)
 assert.match(clientPortalPage, /buildSellerPortalActivationTermsAcceptance\(\{[\s\S]*acceptedAt,[\s\S]*acceptedByEmail:/)
+assert.match(clientPortalPage, /termsConfig=\{sellerPortalTermsConfig\}/)
+assert.match(clientPortalPage, /termsConfigForAcceptance = await fetchSellerPortalActivationTermsConfig\(\)/)
+assert.match(clientPortalPage, /termsConfig: termsConfigForAcceptance/)
 assert.doesNotMatch(clientPortalPage, /buildArch9SellerTermsAcceptance/)
 
 console.log('seller portal activation terms checks passed')
