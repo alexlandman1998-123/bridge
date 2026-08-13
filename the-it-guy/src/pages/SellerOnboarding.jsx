@@ -1306,7 +1306,9 @@ function getPreferredTransferAttorneyName(attorney = {}) {
 }
 
 function getTransferAttorneyChoice(form = {}) {
-  return String(form.transferAttorneyChoice || form.transfer_attorney_choice || '').trim() || 'preferred'
+  const explicitChoice = String(form.transferAttorneyChoice || form.transfer_attorney_choice || '').trim()
+  if (explicitChoice) return explicitChoice
+  return hasPreferredTransferAttorney(form.preferredTransferAttorney) ? 'preferred' : 'deferred'
 }
 
 function hasTransferAttorneyAcceptance(form = {}) {
@@ -1340,6 +1342,8 @@ function getTransferAttorneyMissingItems(form = {}) {
       !String(form.nominatedTransferAttorneyEmail || form.nominated_transfer_attorney_email || form.nominatedTransferAttorneyPhone || form.nominated_transfer_attorney_phone || '').trim() && 'Attorney email or phone',
     ].filter(Boolean)
   }
+
+  if (choice === 'deferred') return []
 
   return [
     !hasPreferredTransferAttorney(form.preferredTransferAttorney) && 'Preferred transferring attorney is not configured',
@@ -3235,6 +3239,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       ...(previous || {}),
       transferAttorneyChoice: choice,
       preferredTransferAttorneyAccepted: choice === 'preferred' ? Boolean(previous?.preferredTransferAttorneyAccepted) : false,
+      preferredTransferAttorneyAcceptance: choice === 'preferred' ? previous?.preferredTransferAttorneyAcceptance || null : null,
     }))
   }
 
@@ -6130,24 +6135,27 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           {currentStep === 3 ? (
             <StepShell
               eyebrow="Transferring Attorney"
-              title="Confirm the transfer attorney"
-              description="Accept the preferred transferring attorney or nominate another attorney for your agent to review."
+              title="Transfer attorney preference"
+              description="Accept the preferred transferring attorney, nominate another attorney, or leave this for your agent to assign later."
             >
               <div className="grid gap-4">
                 <FormSection
                   icon={Landmark}
                   title="Attorney nomination"
-                  description="This controls who your agent will prepare transfer instructions for after submission."
+                  description="This helps your agent prepare transfer instructions after submission."
                 >
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-3 md:grid-cols-3">
                     <button
                       type="button"
                       onClick={() => handleTransferAttorneyChoiceChange('preferred')}
                       className={choiceCardClass(transferAttorneyChoice === 'preferred')}
+                      disabled={!hasPreferredTransferAttorney(form.preferredTransferAttorney)}
                     >
                       <span className="block text-sm font-semibold">Use preferred attorney</span>
                       <span className="mt-1 block text-xs leading-5 text-[#60748b]">
-                        Accept the attorney configured by your agent.
+                        {hasPreferredTransferAttorney(form.preferredTransferAttorney)
+                          ? 'Accept the attorney configured by your agent.'
+                          : 'No preferred attorney is configured yet.'}
                       </span>
                     </button>
                     <button
@@ -6158,6 +6166,16 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       <span className="block text-sm font-semibold">Nominate another attorney</span>
                       <span className="mt-1 block text-xs leading-5 text-[#60748b]">
                         Provide another attorney or firm for review.
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleTransferAttorneyChoiceChange('deferred')}
+                      className={choiceCardClass(transferAttorneyChoice === 'deferred')}
+                    >
+                      <span className="block text-sm font-semibold">Assign later</span>
+                      <span className="mt-1 block text-xs leading-5 text-[#60748b]">
+                        Let your agent assign the transfer attorney after onboarding.
                       </span>
                     </button>
                   </div>
@@ -6189,14 +6207,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                               </label>
                             </>
                           ) : (
-                            <p className="mt-2 text-sm font-semibold text-[#a33b2f]">
-                              Your agent must configure a preferred transferring attorney, or you can nominate another attorney.
+                            <p className="mt-2 text-sm font-semibold text-[#8a5c10]">
+                              No preferred transferring attorney is configured yet. Choose another option to continue.
                             </p>
                           )}
                         </div>
                       </div>
                     </div>
-                  ) : (
+                  ) : transferAttorneyChoice === 'nominate_other' ? (
                     <div className="mt-4 rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-4">
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
@@ -6221,6 +6239,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                           />
                         </label>
                       </div>
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-4">
+                      <p className="text-sm font-semibold text-[#243b53]">Transfer attorney assignment deferred</p>
+                      <p className="mt-1 text-sm leading-5 text-[#60748b]">
+                        Your agent can assign or confirm the transfer attorney after reviewing your seller onboarding.
+                      </p>
                     </div>
                   )}
                 </FormSection>
@@ -6300,13 +6325,17 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   collapsible
                   defaultOpen={Boolean(attorneyMissing.length)}
                   items={[
-                    { label: 'Choice', value: transferAttorneyChoice === 'nominate_other' ? 'Nominate another attorney' : 'Use preferred attorney' },
+                    { label: 'Choice', value: transferAttorneyChoice === 'nominate_other' ? 'Nominate another attorney' : transferAttorneyChoice === 'deferred' ? 'Assign later' : 'Use preferred attorney' },
                     ...(transferAttorneyChoice === 'nominate_other'
                       ? [
                         { label: 'Attorney', value: form.nominatedTransferAttorneyName || 'Not provided' },
                         { label: 'Email', value: form.nominatedTransferAttorneyEmail || 'Not provided' },
                         { label: 'Phone', value: form.nominatedTransferAttorneyPhone || 'Not provided' },
                       ]
+                      : transferAttorneyChoice === 'deferred'
+                        ? [
+                          { label: 'Assignment', value: 'Agent to assign after onboarding' },
+                        ]
                       : [
                         { label: 'Preferred Attorney', value: hasPreferredTransferAttorney(form.preferredTransferAttorney) ? preferredTransferAttorneyName : 'Not configured' },
                         { label: 'Acceptance', value: hasTransferAttorneyAcceptance(form) ? 'Accepted' : 'Not accepted' },

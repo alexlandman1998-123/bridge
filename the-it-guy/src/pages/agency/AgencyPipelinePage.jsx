@@ -2977,12 +2977,13 @@ function PreferredAttorneySelectionModal({
   onConfirm,
 }) {
   const selectedAttorney = attorneys.find((attorney) => String(attorney.id) === String(selectedId)) || null
+  const hasAttorneyOptions = attorneys.length > 0
   return (
     <Modal
       open={open}
       onClose={sending ? undefined : onClose}
       title="Choose the seller's transferring attorney"
-      subtitle="Select the attorney before creating the onboarding link. The seller will see and accept this nomination during onboarding."
+      subtitle="Select an attorney now, or send onboarding and assign the transfer attorney later."
       className="max-w-2xl"
       footer={(
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -2990,11 +2991,11 @@ function PreferredAttorneySelectionModal({
           <button
             type="button"
             onClick={() => onConfirm?.(selectedAttorney)}
-            disabled={loading || sending || !selectedAttorney}
+            disabled={loading || sending || (hasAttorneyOptions && !selectedAttorney)}
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             <Send size={15} />
-            {sending ? 'Sending onboarding...' : 'Confirm attorney & send'}
+            {sending ? 'Sending onboarding...' : selectedAttorney ? 'Confirm attorney & send' : 'Send without attorney'}
           </button>
         </div>
       )}
@@ -3043,7 +3044,7 @@ function PreferredAttorneySelectionModal({
         </div>
       ) : (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          No active transfer attorneys are configured. Add one under Organisation / Partners before sending seller onboarding.
+          No active transfer attorneys are configured. You can still send seller onboarding and assign the transfer attorney later.
         </div>
       )}
     </Modal>
@@ -20504,7 +20505,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (applyState && requestId === sellerPreferredAttorneysRequestRef.current) {
         applySellerPreferredAttorneyOptions(attorneys)
         if (!attorneys.length) {
-          setSellerPreferredAttorneysError('Configure an active transfer attorney under Organisation / Partners before sending onboarding.')
+          setSellerPreferredAttorneysError('No active transfer attorney is configured. Seller onboarding can still be sent; assign the attorney later.')
         }
       }
       return attorneys
@@ -20671,7 +20672,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       applySellerPreferredAttorneyOptions(cached.attorneys)
       setSellerPreferredAttorneysLoading(false)
       if (!cached.attorneys.length) {
-        setSellerPreferredAttorneysError('Configure an active transfer attorney under Organisation / Partners before sending onboarding.')
+        setSellerPreferredAttorneysError('No active transfer attorney is configured. Seller onboarding can still be sent; assign the attorney later.')
       }
     } else {
       setSellerPreferredAttorneys([])

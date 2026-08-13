@@ -7333,15 +7333,19 @@ export async function sendSellerOnboarding(
   }
 
   if (!preferredTransferAttorney?.preferredPartnerId || !normalizeText(preferredTransferAttorney.companyName)) {
-    throw new Error(requestedPreferredAttorneyId
-      ? 'The selected transfer attorney is no longer active for this agency.'
-      : 'Configure an active preferred transfer attorney before sending seller onboarding.')
+    if (requestedPreferredAttorneyId) {
+      console.warn('[Private Listings] selected transfer attorney is unavailable; sending seller onboarding without a nomination.', {
+        listingId: listing.id,
+        requestedPreferredAttorneyId,
+      })
+    }
+    preferredTransferAttorney = null
   }
   const preferredAttorneyUserId = normalizeText(transferAttorneyPreferredUserId)
   const preferredAttorneyName = normalizeText(transferAttorneyPreferredUserName)
   const preferredAttorneyEmail = normalizeText(transferAttorneyPreferredUserEmail).toLowerCase()
   const preferredAttorneyPhone = normalizeText(transferAttorneyPreferredUserPhone)
-  if (preferredAttorneyUserId) {
+  if (preferredTransferAttorney && preferredAttorneyUserId) {
     preferredTransferAttorney = {
       ...preferredTransferAttorney,
       preferredAttorneyUserId,
@@ -7391,8 +7395,10 @@ export async function sendSellerOnboarding(
   const portalBranding = includePortalBranding
     ? await fetchOrganisationBrandingSnapshot(client, listing.organisationId)
     : null
+  const hasPreferredTransferAttorneyNomination = Boolean(preferredTransferAttorney)
   const existingAcceptedAttorneyId = getPreferredTransferAttorneyAcceptanceId(existingFormData.preferredTransferAttorneyAcceptance)
   const preserveAttorneyAcceptance =
+    hasPreferredTransferAttorneyNomination &&
     existingFormData.preferredTransferAttorneyAccepted === true &&
     existingAcceptedAttorneyId === getPreferredTransferAttorneyId(preferredTransferAttorney)
   const payload = {
@@ -7414,6 +7420,9 @@ export async function sendSellerOnboarding(
       sellerPhone: resolvedSellerPhone,
       phone: resolvedSellerPhone,
       preferredTransferAttorney,
+      transferAttorneyChoice: hasPreferredTransferAttorneyNomination
+        ? normalizeText(existingFormData.transferAttorneyChoice || existingFormData.transfer_attorney_choice || 'preferred')
+        : 'deferred',
       preferredTransferAttorneyAccepted: preserveAttorneyAcceptance,
       preferredTransferAttorneyAcceptance: preserveAttorneyAcceptance
         ? existingFormData.preferredTransferAttorneyAcceptance
