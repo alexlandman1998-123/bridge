@@ -419,6 +419,46 @@ export function resolveAgencyPublicIntakeSlugCandidates(slug = '') {
   return Array.from(new Set([normalizedSlug, normalizeAgencyIntakeSlug(aliasSlug)].filter(Boolean)))
 }
 
+async function fetchActiveAgencyPublicIntakeLink(client, slug = '') {
+  const normalizedSlug = normalizeAgencyIntakeSlug(slug)
+  if (!normalizedSlug) return null
+  const result = await client
+    .from('agency_public_intake_links')
+    .select([
+      'id',
+      'organisation_id',
+      'slug',
+      'status',
+      'heading',
+      'introduction',
+      'buyer_cta_label',
+      'seller_cta_label',
+      'enabled_intents',
+      'lead_source_label',
+      'source_channel',
+      'campaign_code',
+      'default_branch_id',
+      'default_assigned_agent_id',
+      'privacy_policy_version',
+      'consent_copy',
+      'branding_config_json',
+      'buyer_config_json',
+      'seller_config_json',
+      'listing_match_config_json',
+      'routing_config_json',
+      'attribution_config_json',
+      'metadata_json',
+      'updated_at',
+    ].join(', '))
+    .eq('slug', normalizedSlug)
+    .eq('status', 'active')
+    .is('disabled_at', null)
+    .maybeSingle()
+
+  if (result.error) throw result.error
+  return result.data || null
+}
+
 function normalizeSourceChannel(value = '', fallback = 'other') {
   const candidate = normalizeLower(value || fallback || 'other')
   return ALLOWED_SOURCE_CHANNELS.has(candidate) ? candidate : 'other'
@@ -589,43 +629,11 @@ export async function resolveAgencyPublicIntake(client, slug = '', { host = '' }
   const slugCandidates = resolveAgencyPublicIntakeSlugCandidates(slug)
   if (!slugCandidates.length) return null
 
-  const linkResult = await client
-    .from('agency_public_intake_links')
-    .select([
-      'id',
-      'organisation_id',
-      'slug',
-      'status',
-      'heading',
-      'introduction',
-      'buyer_cta_label',
-      'seller_cta_label',
-      'enabled_intents',
-      'lead_source_label',
-      'source_channel',
-      'campaign_code',
-      'default_branch_id',
-      'default_assigned_agent_id',
-      'privacy_policy_version',
-      'consent_copy',
-      'branding_config_json',
-      'buyer_config_json',
-      'seller_config_json',
-      'listing_match_config_json',
-      'routing_config_json',
-      'attribution_config_json',
-      'metadata_json',
-      'updated_at',
-    ].join(', '))
-    .in('slug', slugCandidates)
-    .eq('status', 'active')
-    .is('disabled_at', null)
-
-  if (linkResult.error) throw linkResult.error
-  const linkRows = Array.isArray(linkResult.data) ? linkResult.data : linkResult.data ? [linkResult.data] : []
-  const link = slugCandidates
-    .map((candidate) => linkRows.find((row) => normalizeAgencyIntakeSlug(row?.slug) === candidate))
-    .find(Boolean)
+  let link = null
+  for (const candidate of slugCandidates) {
+    link = await fetchActiveAgencyPublicIntakeLink(client, candidate)
+    if (link) break
+  }
   if (!link) return null
 
   const [organisationResult, settingsResult] = await Promise.all([
