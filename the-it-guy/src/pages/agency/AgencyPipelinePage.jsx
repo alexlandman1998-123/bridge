@@ -22527,7 +22527,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleCompleteKingstonsValuationPresentationFromJourney() {
     if (!selectedLead || !organisationId || !selectedLeadIsSeller) return
-    if (isAppointmentSchedulingSubmitting) return
+    if (appointmentSchedulingSubmitting) return
     const valuationPresentation = findSelectedLeadKingstonsValuationPresentationAppointment()
     const appointmentId = normalizeText(valuationPresentation?.appointmentId || valuationPresentation?.appointment_id || valuationPresentation?.id)
     const leadPatch = {
