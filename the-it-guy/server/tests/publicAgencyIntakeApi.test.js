@@ -24,6 +24,20 @@ const contract = buildAgencyPublicIntakeContract({
     seller_config_json: { valuationRequired: true },
     listing_match_config_json: { maxListings: 12 },
     attribution_config_json: { defaultCampaign: 'instagram-july' },
+    metadata_json: {
+      surface: 'agent_digital_card',
+      version: 1,
+      agentDigitalCard: {
+        agent: {
+          userId: '33333333-3333-4333-8333-333333333333',
+          name: 'John Smith',
+          email: 'john@kingstons.test',
+          phone: '082 123 4567',
+          jobTitle: 'Property Practitioner',
+        },
+        features: { vcf: true, qr: true, listings: true, leadCapture: true },
+      },
+    },
     updated_at: '2026-07-29T10:00:00.000Z',
   },
   organisation: {
@@ -41,6 +55,11 @@ const contract = buildAgencyPublicIntakeContract({
 
 assert.equal(contract.slug, 'kingstons-atlantic')
 assert.equal(contract.intakeUrl, 'https://app.arch9.co.za/intake/kingstons-atlantic')
+assert.equal(contract.cardUrl, 'https://app.arch9.co.za/card/kingstons-atlantic')
+assert.equal(contract.card.enabled, true)
+assert.equal(contract.card.agent.name, 'John Smith')
+assert.equal(contract.card.agent.email, 'john@kingstons.test')
+assert.equal(contract.card.features.vcf, true)
 assert.equal(contract.agency.name, 'Kingstons Atlantic')
 assert.deepEqual(contract.intake.enabledIntents, ['buy', 'sell'])
 assert.equal(contract.intake.privacyPolicyVersion, 'privacy-v2')

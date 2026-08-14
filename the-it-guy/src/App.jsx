@@ -196,6 +196,7 @@ const BridgeToolsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'Bridge
 const BuyerViewingPreferencesPage = lazy(() => import('./pages/BuyerViewingPreferencesPage'))
 const SellerViewingCoordinationPage = lazy(() => import('./pages/SellerViewingCoordinationPage'))
 const PublicAgencyIntakePage = lazy(() => import('./pages/PublicAgencyIntakePage'))
+const PublicAgentDigitalCardPage = lazy(() => import('./pages/PublicAgentDigitalCardPage'))
 const RetiredOfferWorkflowPage = lazy(() => import('./pages/RetiredOfferWorkflowPage'))
 const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
@@ -1450,6 +1451,7 @@ function AppRoutes() {
           <Route path="/arch9-launch" element={<Arch9LaunchConcierge />} />
           <Route path="/launch/arch9" element={<Arch9LaunchConcierge />} />
           <Route path="/qr/arch9" element={<Arch9LaunchConcierge />} />
+          <Route path="/card/:cardSlug" element={<AppErrorBoundary scope="agent-digital-card" title="Agent digital card failed to load"><PublicAgentDigitalCardPage /></AppErrorBoundary>} />
           <Route path="/intake/:agencySlug" element={<AppErrorBoundary scope="agency-public-intake" title="Agency intake page failed to load"><PublicAgencyIntakePage /></AppErrorBoundary>} />
           <Route path="/a/:agencySlug" element={<AppErrorBoundary scope="agency-public-intake" title="Agency intake page failed to load"><PublicAgencyIntakePage /></AppErrorBoundary>} />
           <Route path="/young-law" element={<AppErrorBoundary scope="young-law-calculators" title="Young Law calculators failed to load"><YoungLawCalculatorsPage /></AppErrorBoundary>} />

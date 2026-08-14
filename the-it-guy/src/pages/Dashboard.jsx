@@ -7,12 +7,18 @@ import {
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
+  Copy,
   Download,
+  ExternalLink,
   FileCheck2,
   Home,
+  IdCard,
   LandPlot,
   Layers3,
+  Link2,
+  MessageCircle,
   PieChart,
+  QrCode,
   ShieldCheck,
   TrendingUp,
   Users,
@@ -96,6 +102,18 @@ import {
   normalizePropertyCategory,
   normalizePropertyStructureType,
 } from '../lib/propertyTaxonomy'
+import {
+  buildAgencyAgentCardUrls,
+  loadAgencyAgentCardInsights,
+  loadAgencyAgentCardLink,
+} from '../services/agencyPublicIntakeLinkService'
+import {
+  buildAgentDigitalCardFileBaseName,
+  buildAgentDigitalCardShareText,
+  buildAgentDigitalCardVcard,
+  downloadAgentDigitalCardQrPng,
+  downloadAgentDigitalCardTextFile,
+} from '../services/agentDigitalCardShareService'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -284,6 +302,247 @@ function PrincipalLeadSources({ sources = [] }) {
         )
       })}
     </div>
+  )
+}
+
+function getDashboardPublicShareHost() {
+  if (typeof window === 'undefined') return 'https://app.arch9.co.za'
+  return window.location.origin || 'https://app.arch9.co.za'
+}
+
+async function copyDashboardTextToClipboard(value = '') {
+  const text = normalizeDashboardText(value)
+  if (!text) return false
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return true
+  }
+  if (typeof document === 'undefined') return false
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand('copy')
+  document.body.removeChild(textarea)
+  return copied
+}
+
+function getDashboardProfileName(profile = {}) {
+  return normalizeDashboardText(
+    profile?.fullName ||
+      profile?.full_name ||
+      profile?.displayName ||
+      profile?.display_name ||
+      profile?.name ||
+      [profile?.firstName || profile?.first_name, profile?.lastName || profile?.last_name].filter(Boolean).join(' '),
+  ) || normalizeDashboardText(profile?.email) || 'Agent'
+}
+
+function getDashboardProfileEmail(profile = {}) {
+  return normalizeDashboardText(profile?.email || profile?.emailAddress || profile?.email_address).toLowerCase()
+}
+
+function getDashboardProfilePhone(profile = {}) {
+  return normalizeDashboardText(profile?.phone || profile?.phoneNumber || profile?.phone_number || profile?.mobile || profile?.mobileNumber || profile?.mobile_number)
+}
+
+function getDashboardProfileJobTitle(profile = {}) {
+  return normalizeDashboardText(profile?.jobTitle || profile?.job_title || profile?.title || profile?.roleLabel || profile?.role_label || 'Property Practitioner')
+}
+
+function getDashboardOrganisationName(organisation = {}, profile = {}) {
+  return normalizeDashboardText(
+    organisation?.name ||
+      organisation?.displayName ||
+      organisation?.display_name ||
+      profile?.organisationName ||
+      profile?.organisation_name ||
+      profile?.agencyName ||
+      profile?.agency_name,
+  ) || 'Agency'
+}
+
+function getAgentDigitalCardIdentityCandidates({ profile = {}, currentMembership = {} } = {}) {
+  return [
+    profile?.id,
+    profile?.userId,
+    profile?.user_id,
+    currentMembership?.userId,
+    currentMembership?.user_id,
+    currentMembership?.id,
+  ]
+    .map(normalizeDashboardText)
+    .filter(Boolean)
+    .filter((value, index, rows) => rows.indexOf(value) === index)
+}
+
+function AgentDigitalCardPanel({
+  loading = false,
+  error = '',
+  link = null,
+  agent = {},
+  organisationName = '',
+  shareUrl = '',
+  urls = {},
+  insights = null,
+  feedback = '',
+  busyAction = '',
+  onCopy = () => {},
+  onOpenPreview = () => {},
+  onShareWhatsApp = () => {},
+  onDownloadVcard = () => {},
+  onDownloadQr = () => {},
+}) {
+  const hasActiveCard = Boolean(link?.id && link.status === 'active' && shareUrl)
+  const displayName = normalizeDashboardText(agent.name) || 'Agent'
+  const displayRole = normalizeDashboardText(agent.jobTitle) || 'Property Practitioner'
+  const displayAgency = normalizeDashboardText(organisationName) || 'Agency'
+  const insightSummary = insights?.summary || {}
+  const insightRows = [
+    { label: 'Views', value: insightSummary.views || 0 },
+    { label: 'Contact clicks', value: insightSummary.contactClicks || 0 },
+    { label: 'WhatsApp', value: insightSummary.whatsappClicks || 0 },
+    { label: 'Buyer leads', value: insightSummary.buyerLeads || 0 },
+    { label: 'Seller leads', value: insightSummary.sellerLeads || 0 },
+    { label: 'Listing clicks', value: insightSummary.listingClicks || 0 },
+  ]
+
+  return (
+    <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
+        <article className="min-w-0 rounded-[18px] border border-[#dce6f2] bg-[linear-gradient(145deg,#102236_0%,#21445f_58%,#f5b83c_160%)] p-5 text-white">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[0.75rem] font-semibold text-white/82">
+                <IdCard size={14} /> My Digital Card
+              </span>
+              <h3 className="mt-4 truncate text-[1.32rem] font-semibold tracking-[-0.03em] text-white">{displayName}</h3>
+              <p className="mt-1 text-sm font-medium text-white/78">{displayRole}</p>
+              <p className="mt-0.5 text-sm text-white/68">{displayAgency}</p>
+            </div>
+            <span className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
+              hasActiveCard ? 'border-[#bce8cf] bg-[#ecfbf2] text-[#1f7a45]' : 'border-white/18 bg-white/10 text-white/76'
+            }`}>
+              {loading ? 'Loading' : hasActiveCard ? 'Active' : 'Not Active'}
+            </span>
+          </div>
+
+          {hasActiveCard ? (
+            <div className="mt-5 rounded-[14px] border border-white/14 bg-white/10 p-3">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-white/58">Share Link</p>
+              <p className="mt-1 break-all text-[0.88rem] font-medium text-white">{shareUrl}</p>
+            </div>
+          ) : (
+            <div className="mt-5 rounded-[14px] border border-white/14 bg-white/10 p-4">
+              <p className="text-sm font-semibold text-white">Your card is not ready yet.</p>
+              <p className="mt-1 text-sm leading-6 text-white/70">
+                A principal or admin can generate and activate it from Settings, then this panel becomes your copy-and-share hub.
+              </p>
+            </div>
+          )}
+        </article>
+
+        <article className="min-w-0 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">Copy & Share</h3>
+              <p className="mt-1 text-[0.88rem] leading-6 text-[#6b7d93]">
+                Share this card wherever buyers and sellers already contact you.
+              </p>
+            </div>
+            {feedback ? (
+              <span className="inline-flex shrink-0 rounded-full border border-[#ccead8] bg-[#f2fbf5] px-3 py-1 text-xs font-semibold text-[#1f7a45]">
+                {feedback}
+              </span>
+            ) : null}
+          </div>
+
+          {error ? (
+            <p className="mt-4 rounded-[14px] border border-[#f3d2cc] bg-[#fef3f2] px-4 py-3 text-sm text-[#b42318]">{error}</p>
+          ) : null}
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              className={DASHBOARD_ACTION_SECONDARY_CLASS}
+              disabled={!hasActiveCard}
+              onClick={() => onCopy(shareUrl, 'Card link copied')}
+            >
+              <Copy size={16} className="mr-2" /> Copy Link
+            </button>
+            <button
+              type="button"
+              className={DASHBOARD_ACTION_SECONDARY_CLASS}
+              disabled={!hasActiveCard}
+              onClick={onOpenPreview}
+            >
+              <ExternalLink size={16} className="mr-2" /> Open Preview
+            </button>
+            <button
+              type="button"
+              className={DASHBOARD_ACTION_SECONDARY_CLASS}
+              disabled={!hasActiveCard}
+              onClick={onShareWhatsApp}
+            >
+              <MessageCircle size={16} className="mr-2" /> WhatsApp
+            </button>
+            <button
+              type="button"
+              className={DASHBOARD_ACTION_SECONDARY_CLASS}
+              disabled={!hasActiveCard || busyAction === 'qr'}
+              onClick={onDownloadQr}
+            >
+              <QrCode size={16} className="mr-2" /> {busyAction === 'qr' ? 'Preparing' : 'QR PNG'}
+            </button>
+            <button
+              type="button"
+              className={`${DASHBOARD_ACTION_SECONDARY_CLASS} sm:col-span-2`}
+              disabled={!hasActiveCard}
+              onClick={onDownloadVcard}
+            >
+              <Download size={16} className="mr-2" /> Download .vcf Contact
+            </button>
+          </div>
+
+          {hasActiveCard && urls?.buyerUrl && urls?.sellerUrl ? (
+            <div className="mt-4 grid gap-2 text-[0.78rem] font-medium text-[#62778f] sm:grid-cols-2">
+              <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-[#22374d]"><Home size={13} /> Buyer CTA</span>
+                <p className="mt-1 break-all">{urls.buyerUrl}</p>
+              </div>
+              <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-[#22374d]"><Link2 size={13} /> Seller CTA</span>
+                <p className="mt-1 break-all">{urls.sellerUrl}</p>
+              </div>
+            </div>
+          ) : null}
+
+          {hasActiveCard ? (
+            <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-white p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#71849b]">Card Insights</p>
+                <span className="text-[0.72rem] font-semibold text-[#8a9aab]">Last {insights?.windowDays || 30} days</span>
+              </div>
+              {insights?.missingSchema ? (
+                <p className="mt-2 text-sm text-[#7a5a1b]">Insights will appear after the card events migration is applied.</p>
+              ) : (
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  {insightRows.map((item) => (
+                    <div key={item.label} className="rounded-[12px] border border-[#edf2f7] bg-[#f8fbfe] px-3 py-2">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8da6]">{item.label}</p>
+                      <p className="mt-1 text-lg font-semibold tabular-nums text-[#162334]">{formatKpiCount(item.value)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+        </article>
+      </div>
+    </section>
   )
 }
 
@@ -1758,11 +2017,23 @@ function Dashboard() {
   const [residentialDateRange, setResidentialDateRange] = useState('last_30_days')
   const [agentPrivateListingRows, setAgentPrivateListingRows] = useState([])
   const [agentCommissionTracker, setAgentCommissionTracker] = useState(null)
+  const [agentDigitalCardState, setAgentDigitalCardState] = useState({
+    loading: false,
+    error: '',
+    link: null,
+    insights: null,
+    schemaReady: true,
+    missingSchema: false,
+    insightsMissingSchema: false,
+  })
+  const [agentDigitalCardFeedback, setAgentDigitalCardFeedback] = useState('')
+  const [agentDigitalCardBusyAction, setAgentDigitalCardBusyAction] = useState('')
   const [principalCrmSnapshot, setPrincipalCrmSnapshot] = useState({ leads: [], leadActivities: [] })
   const [principalCanvassingSnapshot, setPrincipalCanvassingSnapshot] = useState({ prospects: [], activities: [] })
   const dashboardHasLoadedRef = useRef(false)
   const dashboardLoadKeyRef = useRef('')
   const agentPrivateListingLoadRef = useRef(0)
+  const agentDigitalCardFeedbackTimerRef = useRef(null)
 
   const navigateWithTrace = useCallback(
     (to, label = 'dashboard-navigation') => {
@@ -1790,12 +2061,129 @@ function Dashboard() {
       setOrganisationIdForAppointments('')
       setAgentPrivateListingRows([])
       setAgentCommissionTracker(null)
+      setAgentDigitalCardState({
+        loading: false,
+        error: '',
+        link: null,
+        insights: null,
+        schemaReady: true,
+        missingSchema: false,
+        insightsMissingSchema: false,
+      })
       return
     }
     if (organisationLoading) return
     setOrganisationMembershipRole(hydratedMembershipRole || 'viewer')
     setOrganisationIdForAppointments(currentOrganisationId)
   }, [currentOrganisationId, hydratedMembershipRole, organisationLoading, role])
+
+  useEffect(() => {
+    if (agentDigitalCardFeedbackTimerRef.current) {
+      clearTimeout(agentDigitalCardFeedbackTimerRef.current)
+      agentDigitalCardFeedbackTimerRef.current = null
+    }
+    return () => {
+      if (agentDigitalCardFeedbackTimerRef.current) {
+        clearTimeout(agentDigitalCardFeedbackTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (role !== 'agent' || isPrincipalAgentView || organisationLoading || !currentOrganisationId) {
+      setAgentDigitalCardState((current) => ({
+        ...current,
+        loading: false,
+        error: '',
+        link: null,
+        insights: null,
+      }))
+      return undefined
+    }
+
+    const agentUserIds = getAgentDigitalCardIdentityCandidates({ profile, currentMembership })
+    if (!agentUserIds.length) {
+      setAgentDigitalCardState({
+        loading: false,
+        error: '',
+        link: null,
+        insights: null,
+        schemaReady: true,
+        missingSchema: false,
+        insightsMissingSchema: false,
+      })
+      return undefined
+    }
+
+    let cancelled = false
+    setAgentDigitalCardState((current) => ({
+      ...current,
+      loading: true,
+      error: '',
+    }))
+
+    async function loadAgentDigitalCard() {
+      try {
+        let resolvedResult = null
+        for (const agentUserId of agentUserIds) {
+          const result = await loadAgencyAgentCardLink({
+            organisationId: currentOrganisationId,
+            agentUserId,
+          })
+          resolvedResult = result
+          if (result?.missingSchema || result?.link) break
+        }
+
+        const insightsResult = resolvedResult?.link?.id
+          ? await loadAgencyAgentCardInsights({
+              organisationId: currentOrganisationId,
+              intakeLinkId: resolvedResult.link.id,
+              windowDays: 30,
+            }).catch((insightError) => ({
+              error: insightError,
+              summary: null,
+              schemaReady: true,
+              missingSchema: false,
+              windowDays: 30,
+            }))
+          : null
+
+        if (cancelled) return
+        setAgentDigitalCardState({
+          loading: false,
+          error: insightsResult?.error ? (insightsResult.error?.message || 'Unable to load your card insights.') : '',
+          link: resolvedResult?.link || null,
+          insights: insightsResult?.error ? null : insightsResult,
+          schemaReady: resolvedResult?.schemaReady !== false,
+          missingSchema: resolvedResult?.missingSchema === true,
+          insightsMissingSchema: insightsResult?.missingSchema === true,
+        })
+      } catch (cardError) {
+        if (cancelled) return
+        setAgentDigitalCardState({
+          loading: false,
+          error: cardError?.message || 'Unable to load your digital card.',
+          link: null,
+          insights: null,
+          schemaReady: true,
+          missingSchema: false,
+          insightsMissingSchema: false,
+        })
+      }
+    }
+
+    void loadAgentDigitalCard()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    currentMembership,
+    currentOrganisationId,
+    isPrincipalAgentView,
+    organisationLoading,
+    profile,
+    role,
+  ])
 
   const loadDashboard = useCallback(async () => {
     const dashboardLoadKey = [
@@ -2179,6 +2567,104 @@ function Dashboard() {
     [isAgentRole, isBondRole, rows, transactionScope],
   )
   const profileIdentitySet = useMemo(() => getProfileIdentitySet(profile), [profile])
+  const agentDigitalCardLink = agentDigitalCardState.link?.status === 'active' ? agentDigitalCardState.link : null
+  const agentDigitalCardUrls = useMemo(
+    () => buildAgencyAgentCardUrls({
+      slug: agentDigitalCardLink?.slug || '',
+      host: getDashboardPublicShareHost(),
+    }),
+    [agentDigitalCardLink?.slug],
+  )
+  const agentDigitalCardAgent = useMemo(() => {
+    const cardAgent = agentDigitalCardLink?.agentDigitalCard?.agent || {}
+    return {
+      name: normalizeDashboardText(cardAgent.name) || getDashboardProfileName(profile),
+      email: normalizeDashboardText(cardAgent.email) || getDashboardProfileEmail(profile),
+      phone: normalizeDashboardText(cardAgent.phone || cardAgent.whatsapp) || getDashboardProfilePhone(profile),
+      jobTitle: normalizeDashboardText(cardAgent.jobTitle) || getDashboardProfileJobTitle(profile),
+    }
+  }, [agentDigitalCardLink, profile])
+  const agentDigitalCardOrganisationName = useMemo(
+    () => getDashboardOrganisationName(organisation, profile),
+    [organisation, profile],
+  )
+  const agentDigitalCardShareUrl = agentDigitalCardLink ? (agentDigitalCardUrls.cardUrl || agentDigitalCardUrls.intakeUrl || '') : ''
+  const agentDigitalCardFileBaseName = useMemo(
+    () => buildAgentDigitalCardFileBaseName({
+      agentName: agentDigitalCardAgent.name,
+      organisationName: agentDigitalCardOrganisationName,
+    }),
+    [agentDigitalCardAgent.name, agentDigitalCardOrganisationName],
+  )
+  const showAgentDigitalCardFeedback = useCallback((message) => {
+    setAgentDigitalCardFeedback(message)
+    if (agentDigitalCardFeedbackTimerRef.current) {
+      clearTimeout(agentDigitalCardFeedbackTimerRef.current)
+    }
+    agentDigitalCardFeedbackTimerRef.current = setTimeout(() => {
+      setAgentDigitalCardFeedback('')
+      agentDigitalCardFeedbackTimerRef.current = null
+    }, 2400)
+  }, [])
+  const copyAgentDigitalCardText = useCallback(async (value, successMessage = 'Copied') => {
+    try {
+      const copied = await copyDashboardTextToClipboard(value)
+      showAgentDigitalCardFeedback(copied ? successMessage : 'Copy unavailable')
+    } catch {
+      showAgentDigitalCardFeedback('Copy unavailable')
+    }
+  }, [showAgentDigitalCardFeedback])
+  const openAgentDigitalCardPreview = useCallback(() => {
+    if (!agentDigitalCardShareUrl || typeof window === 'undefined') return
+    window.open(agentDigitalCardShareUrl, '_blank', 'noopener,noreferrer')
+  }, [agentDigitalCardShareUrl])
+  const shareAgentDigitalCardWhatsApp = useCallback(() => {
+    if (!agentDigitalCardShareUrl || typeof window === 'undefined') return
+    const shareText = buildAgentDigitalCardShareText({
+      agentName: agentDigitalCardAgent.name,
+      organisationName: agentDigitalCardOrganisationName,
+      shareUrl: agentDigitalCardShareUrl,
+    })
+    window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer')
+  }, [agentDigitalCardAgent.name, agentDigitalCardOrganisationName, agentDigitalCardShareUrl])
+  const downloadAgentDigitalCardVcard = useCallback(() => {
+    if (!agentDigitalCardShareUrl) return
+    const vcard = buildAgentDigitalCardVcard({
+      agentName: agentDigitalCardAgent.name,
+      agentEmail: agentDigitalCardAgent.email,
+      agentPhone: agentDigitalCardAgent.phone,
+      agentJobTitle: agentDigitalCardAgent.jobTitle,
+      organisationName: agentDigitalCardOrganisationName,
+      shareUrl: agentDigitalCardShareUrl,
+    })
+    const downloaded = downloadAgentDigitalCardTextFile({
+      fileName: `${agentDigitalCardFileBaseName}.vcf`,
+      text: vcard,
+      mimeType: 'text/vcard;charset=utf-8',
+    })
+    showAgentDigitalCardFeedback(downloaded ? '.vcf downloaded' : 'Download unavailable')
+  }, [
+    agentDigitalCardAgent,
+    agentDigitalCardFileBaseName,
+    agentDigitalCardOrganisationName,
+    agentDigitalCardShareUrl,
+    showAgentDigitalCardFeedback,
+  ])
+  const downloadAgentDigitalCardQr = useCallback(async () => {
+    if (!agentDigitalCardShareUrl) return
+    setAgentDigitalCardBusyAction('qr')
+    try {
+      const downloaded = await downloadAgentDigitalCardQrPng({
+        shareUrl: agentDigitalCardShareUrl,
+        fileName: `${agentDigitalCardFileBaseName}-qr.png`,
+      })
+      showAgentDigitalCardFeedback(downloaded ? 'QR downloaded' : 'Download unavailable')
+    } catch (qrError) {
+      showAgentDigitalCardFeedback(qrError?.message || 'QR unavailable')
+    } finally {
+      setAgentDigitalCardBusyAction('')
+    }
+  }, [agentDigitalCardFileBaseName, agentDigitalCardShareUrl, showAgentDigitalCardFeedback])
   const agentScopedRows = useMemo(() => {
     if (!isAgentRole || isPrincipalAgentView) {
       return roleScopedRows
@@ -4715,6 +5201,29 @@ function renderActiveTransactionsBlock({
 
           {isAgentRole ? (
             <>
+              {!isPrincipalAgentView ? (
+                <AgentDigitalCardPanel
+                  loading={agentDigitalCardState.loading}
+                  error={agentDigitalCardState.missingSchema ? 'Digital card setup is waiting for the latest database migration.' : agentDigitalCardState.error}
+                  link={agentDigitalCardLink}
+                  agent={agentDigitalCardAgent}
+                  organisationName={agentDigitalCardOrganisationName}
+                  shareUrl={agentDigitalCardShareUrl}
+                  urls={agentDigitalCardUrls}
+                  insights={{
+                    ...(agentDigitalCardState.insights || {}),
+                    missingSchema: agentDigitalCardState.insightsMissingSchema,
+                  }}
+                  feedback={agentDigitalCardFeedback}
+                  busyAction={agentDigitalCardBusyAction}
+                  onCopy={copyAgentDigitalCardText}
+                  onOpenPreview={openAgentDigitalCardPreview}
+                  onShareWhatsApp={shareAgentDigitalCardWhatsApp}
+                  onDownloadVcard={downloadAgentDigitalCardVcard}
+                  onDownloadQr={downloadAgentDigitalCardQr}
+                />
+              ) : null}
+
               {!isPrincipalAgentView && agentResidentialModel ? (
                 <section className="mt-6">
                   <div className="space-y-5">

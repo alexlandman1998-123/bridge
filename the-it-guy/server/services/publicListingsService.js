@@ -431,12 +431,12 @@ function normalizeOffset(value) {
   return Math.max(0, Math.round(numeric))
 }
 
-async function resolveAgencyScope(client, agencySlug = '') {
-  const normalizedSlug = normalizeText(agencySlug).toLowerCase()
+async function resolveAgencyScope(client, agencySlug = '', options = {}) {
+  const normalizedSlug = normalizeText(options.cardSlug || agencySlug).toLowerCase()
   if (!normalizedSlug) return null
   const result = await client
     .from('agency_public_intake_links')
-    .select('organisation_id, slug')
+    .select('organisation_id, slug, default_assigned_agent_id, metadata_json')
     .eq('slug', normalizedSlug)
     .eq('status', 'active')
     .is('disabled_at', null)
@@ -445,7 +445,14 @@ async function resolveAgencyScope(client, agencySlug = '') {
     if (isMissingRelationError(result.error)) return null
     throw result.error
   }
-  return result.data || null
+  const row = result.data || null
+  if (!row) return null
+  const metadata = row.metadata_json && typeof row.metadata_json === 'object' ? row.metadata_json : {}
+  return {
+    ...row,
+    is_agent_card: Boolean(options.cardSlug) || metadata.surface === 'agent_digital_card',
+    default_assigned_agent_id: normalizeText(row.default_assigned_agent_id),
+  }
 }
 
 async function loadAgencyPublicMetadata(client, organisationIds = []) {
@@ -544,21 +551,37 @@ export async function getPublicListings(options = {}) {
   const limit = normalizeLimit(options.limit)
   const offset = normalizeOffset(options.offset)
   const agencySlug = normalizeText(options.agencySlug)
+  const cardSlug = normalizeText(options.cardSlug)
   const audience = normalizeToken(options.audience || options.surface)
-  const agencyScope = await resolveAgencyScope(client, agencySlug)
+  const agencyScope = await resolveAgencyScope(client, agencySlug, { cardSlug })
   if (agencySlug && !agencyScope) {
     return options.slug
       ? { listing: null, generatedAt: new Date().toISOString() }
       : { items: [], count: 0, limit, offset, generatedAt: new Date().toISOString() }
   }
-  const isAgencyIntakeAudience = Boolean(agencyScope?.organisation_id && ['agency_intake', 'buyer_intake', 'intake'].includes(audience))
+  if (cardSlug && !agencyScope) {
+    return options.slug
+      ? { listing: null, generatedAt: new Date().toISOString() }
+      : { items: [], count: 0, limit, offset, generatedAt: new Date().toISOString() }
+  }
+  const isAgentCardAudience = Boolean(cardSlug && agencyScope?.organisation_id)
+  const isAgencyIntakeAudience = Boolean(
+    agencyScope?.organisation_id &&
+      (isAgentCardAudience || ['agency_intake', 'buyer_intake', 'intake', 'agent_card', 'card'].includes(audience)),
+  )
 
   if (isAgencyIntakeAudience) {
-    const listingsResult = await client
+    let listingsQuery = client
       .from('private_listings')
       .select(PUBLIC_LISTING_FIELDS)
       .eq('organisation_id', agencyScope.organisation_id)
       .eq('listing_visibility', 'active_market')
+
+    if (isAgentCardAudience && agencyScope.default_assigned_agent_id) {
+      listingsQuery = listingsQuery.eq('assigned_agent_id', agencyScope.default_assigned_agent_id)
+    }
+
+    const listingsResult = await listingsQuery
       .order('updated_at', { ascending: false })
       .limit(500)
 
@@ -606,7 +629,7 @@ export async function getPublicListings(options = {}) {
       .map((row) => {
         const listing = {
           ...row,
-          agency_public_intake_slug: metadata.agencySlug || agencyScope.slug || agencySlug,
+          agency_public_intake_slug: isAgentCardAudience ? agencyScope.slug : metadata.agencySlug || agencyScope.slug || agencySlug,
           agency_public_name: metadata.agencyName || '',
         }
         if (!isAgencyIntakeListingEligible({ listing })) return null

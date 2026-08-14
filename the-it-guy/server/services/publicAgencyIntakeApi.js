@@ -461,11 +461,31 @@ export function buildAgencyPublicIntakeContract({ link = {}, organisation = {}, 
   const slug = normalizeAgencyIntakeSlug(link.slug)
   const enabledIntents = normalizeEnabledIntents(link.enabled_intents)
   const intakeUrl = `${normalizeText(host).replace(/\/+$/g, '') || 'https://app.arch9.co.za'}/intake/${encodeURIComponent(slug)}`
+  const metadata = safeObject(link.metadata_json)
+  const agentDigitalCard = safeObject(metadata.agentDigitalCard)
+  const agentCardAgent = safeObject(agentDigitalCard.agent)
+  const isAgentDigitalCard = metadata.surface === 'agent_digital_card'
 
   return {
     slug,
     status: 'active',
     intakeUrl,
+    cardUrl: `${normalizeText(host).replace(/\/+$/g, '') || 'https://app.arch9.co.za'}/card/${encodeURIComponent(slug)}`,
+    card: {
+      enabled: isAgentDigitalCard,
+      surface: normalizeText(metadata.surface),
+      version: Number(metadata.version || 0) || null,
+      agent: {
+        userId: normalizeText(agentCardAgent.userId),
+        name: normalizeText(agentCardAgent.name),
+        email: normalizeText(agentCardAgent.email),
+        phone: normalizeText(agentCardAgent.phone),
+        whatsapp: normalizeText(agentCardAgent.whatsapp),
+        jobTitle: normalizeText(agentCardAgent.jobTitle),
+        avatarUrl: normalizeText(agentCardAgent.avatarUrl),
+      },
+      features: safeObject(agentDigitalCard.features),
+    },
     agency: {
       name: normalizeText(branding.agencyName || branding.organisationName || organisation.display_name || organisation.name),
       logoUrl: normalizeText(branding.logoUrl),
@@ -528,6 +548,7 @@ export async function resolveAgencyPublicIntake(client, slug = '', { host = '' }
       'listing_match_config_json',
       'routing_config_json',
       'attribution_config_json',
+      'metadata_json',
       'updated_at',
     ].join(', '))
     .eq('slug', normalizedSlug)

@@ -6,6 +6,7 @@ import react from '@vitejs/plugin-react'
 import { createAdminMobileDashboardResponse } from './server/services/adminMobileDashboardApi.js'
 import { createMissionControlResponse, writeNodeJsonResponse } from './server/services/hqMissionControlApi.js'
 import { createBuyerOfferBrandingResponse } from './server/services/buyerOfferBrandingApi.js'
+import { createPublicAgentCardEventsResponse } from './server/services/publicAgentCardEventsApi.js'
 import { createPublicAgencyIntakeResponse } from './server/services/publicAgencyIntakeApi.js'
 import { createPublicListingsResponse } from './server/services/publicListingsApi.js'
 
@@ -189,6 +190,18 @@ function missionControlApiPlugin() {
         for await (const chunk of request) chunks.push(chunk)
         const body = chunks.length ? Buffer.concat(chunks).toString('utf8') : null
         const payload = await createPublicAgencyIntakeResponse({
+          method: request.method,
+          url: request.url,
+          headers: request.headers,
+          body,
+        })
+        writeNodeJsonResponse(response, payload)
+      })
+      server.middlewares.use('/api/public/agent-card-events', async (request, response) => {
+        const chunks = []
+        for await (const chunk of request) chunks.push(chunk)
+        const body = chunks.length ? Buffer.concat(chunks).toString('utf8') : null
+        const payload = await createPublicAgentCardEventsResponse({
           method: request.method,
           url: request.url,
           headers: request.headers,

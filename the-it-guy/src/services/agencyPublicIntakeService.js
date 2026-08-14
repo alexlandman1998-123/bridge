@@ -113,6 +113,46 @@ export async function resolveAgencyPublicListings(slug = '', filters = {}) {
   return Array.isArray(payload?.items) ? payload.items : []
 }
 
+export async function resolveAgencyPublicCardListings(slug = '', filters = {}) {
+  const safeSlug = normalizeSlug(slug)
+  if (!safeSlug) return []
+  const params = new URLSearchParams({ cardSlug: safeSlug, audience: 'agent-card', limit: String(filters.limit || 6) })
+  for (const [key, value] of Object.entries(filters)) {
+    const text = normalizeText(value)
+    if (key !== 'limit' && text) params.set(key, text)
+  }
+  const response = await fetch(`/api/public/listings?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
+  })
+  const payload = await readJsonResponse(response, 'Agent listings could not be loaded.')
+  return Array.isArray(payload?.items) ? payload.items : []
+}
+
+export async function recordAgentDigitalCardEvent({ slug = '', eventType = '', metadata = {} } = {}) {
+  const safeSlug = normalizeSlug(slug)
+  const safeEventType = normalizeLower(eventType)
+  if (!safeSlug || !safeEventType) return { accepted: false, skipped: true }
+
+  const response = await fetch('/api/public/agent-card-events', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    keepalive: true,
+    body: JSON.stringify({
+      slug: safeSlug,
+      eventType: safeEventType,
+      metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {},
+    }),
+  })
+  return readJsonResponse(response, 'Agent digital card event could not be recorded.')
+}
+
+export function recordAgentDigitalCardEventSoon(options = {}) {
+  void recordAgentDigitalCardEvent(options).catch(() => {})
+}
+
 export async function submitAgencyPublicIntake({ slug = '', idempotencyKey = '', payload = {} } = {}) {
   const safeSlug = normalizeSlug(slug || payload.slug)
   if (!safeSlug) throw new Error('Agency intake link is missing.')

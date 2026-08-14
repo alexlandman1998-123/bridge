@@ -231,6 +231,46 @@ assert.deepEqual(
   ['eq', 'organisation_id', 'org-1'],
 )
 
+const cardScopedClient = createFakePublicListingsClient({
+  agencyScope: {
+    organisation_id: 'org-1',
+    slug: 'kingstons-john-smith',
+    default_assigned_agent_id: 'agent-1',
+    metadata_json: { surface: 'agent_digital_card' },
+  },
+  overrides: {
+    private_listings: {
+      data: [
+        {
+          ...validListing,
+          assigned_agent_id: 'agent-1',
+          title: 'Modern Family Home',
+          asking_price: 3250000,
+          suburb: 'Bedfordview',
+          property_type: 'House',
+        },
+      ],
+      error: null,
+    },
+  },
+})
+const cardScopedListings = await getPublicListings({
+  client: cardScopedClient,
+  cardSlug: 'kingstons-john-smith',
+  audience: 'agent-card',
+  host: 'https://www.arch9.co.za',
+})
+
+assert.equal(cardScopedListings.count, 1)
+assert.equal(cardScopedListings.items[0].agencySlug, 'kingstons-john-smith')
+assert.deepEqual(
+  cardScopedClient.calls
+    .find((call) => call.table === 'private_listings')
+    .filters
+    .find((filter) => filter[0] === 'eq' && filter[1] === 'assigned_agent_id'),
+  ['eq', 'assigned_agent_id', 'agent-1'],
+)
+
 const scopedListingsWithUnsetFilters = await getPublicListings({
   client: createFakePublicListingsClient(),
   agencySlug: 'kingstons',

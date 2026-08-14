@@ -68,6 +68,7 @@ export async function createPublicListingsResponse({ method = 'GET', url = '', h
       host: getPublicHost(headers),
       slug: params.get('slug'),
       agencySlug: params.get('agencySlug') || params.get('agency'),
+      cardSlug: params.get('cardSlug') || params.get('card') || params.get('agentCard'),
       q: params.get('q'),
       listingType: params.get('listingType'),
       propertyType: params.get('propertyType'),

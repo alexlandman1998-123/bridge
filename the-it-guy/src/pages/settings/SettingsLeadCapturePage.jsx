@@ -2,9 +2,14 @@ import {
   AlertCircle,
   CheckCircle2,
   Copy,
+  Download,
   ExternalLink,
   Inbox,
+  IdCard,
+  Link2,
   Mail,
+  Plus,
+  QrCode,
   RefreshCw,
   Search,
   UserRound,
@@ -13,10 +18,23 @@ import {
   X,
   XCircle,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../lib/settingsApi'
+import {
+  buildAgencyAgentCardUrls,
+  listAgencyAgentCardLinks,
+  loadAgencyAgentCardInsights,
+  saveAgencyAgentCardLink,
+} from '../../services/agencyPublicIntakeLinkService'
+import {
+  buildAgentDigitalCardFileBaseName,
+  buildAgentDigitalCardShareKit,
+  buildAgentDigitalCardShareKitCsv,
+  downloadAgentDigitalCardQrPng,
+  downloadAgentDigitalCardTextFile,
+} from '../../services/agentDigitalCardShareService'
 import {
   buildLeadCaptureDnsChecklist,
   buildLeadCaptureReviewQueueRows,
@@ -78,6 +96,54 @@ function formatConfidence(value) {
   return `${Math.round(Number(value) * 100)}%`
 }
 
+function getUserId(user = {}) {
+  return normalizeText(user.userId || user.user_id || user.id)
+}
+
+function getUserDisplayName(user = {}) {
+  return normalizeText(user.fullName || user.full_name || user.name || [user.firstName || user.first_name, user.lastName || user.last_name].filter(Boolean).join(' ')) || normalizeText(user.email) || getUserId(user) || 'Agent'
+}
+
+function getUserEmail(user = {}) {
+  return normalizeText(user.email || user.emailAddress || user.email_address).toLowerCase()
+}
+
+function getUserPhone(user = {}) {
+  return normalizeText(user.phone || user.phoneNumber || user.phone_number || user.mobile || user.mobileNumber || user.mobile_number)
+}
+
+function getUserJobTitle(user = {}) {
+  return normalizeText(user.jobTitle || user.job_title || user.role || user.workspaceRole || user.workspace_role)
+}
+
+function getUserAvatarUrl(user = {}) {
+  return normalizeText(user.avatarUrl || user.avatar_url || user.profile?.avatarUrl || user.profile?.avatar_url)
+}
+
+function buildAgentCardShareProfile({ user = {}, card = null, urls = {}, organisationName = '' } = {}) {
+  const cardAgent = card?.agentDigitalCard?.agent || {}
+  return {
+    agentName: normalizeText(cardAgent.name) || getUserDisplayName(user),
+    agentEmail: normalizeText(cardAgent.email) || getUserEmail(user),
+    agentPhone: normalizeText(cardAgent.phone || cardAgent.whatsapp) || getUserPhone(user),
+    agentJobTitle: normalizeText(cardAgent.jobTitle) || getUserJobTitle(user),
+    organisationName: normalizeText(organisationName) || 'Agency',
+    shareUrl: normalizeText(urls.cardUrl || urls.intakeUrl),
+  }
+}
+
+function isActiveAgentUser(user = {}) {
+  const userId = getUserId(user)
+  if (!userId) return false
+  const status = normalizeText(user.status || user.membershipStatus || user.membership_status || 'active').toLowerCase()
+  return !['disabled', 'archived', 'revoked', 'inactive'].includes(status)
+}
+
+function getPublicShareHost() {
+  if (typeof window === 'undefined') return 'https://app.arch9.co.za'
+  return window.location.origin || 'https://app.arch9.co.za'
+}
+
 function statusToneClass(tone = 'slate') {
   if (tone === 'success') return 'border-[#ccead8] bg-[#f2fbf5] text-[#1f7a45]'
   if (tone === 'blue') return 'border-[#c9ddf3] bg-[#f3f8fe] text-[#255e96]'
@@ -95,6 +161,7 @@ function StatusPill({ status }) {
 }
 
 function IconButton({ label, icon: Icon, onClick, disabled = false }) {
+  const icon = Icon ? createElement(Icon, { size: 15 }) : null
   return (
     <button
       type="button"
@@ -104,12 +171,13 @@ function IconButton({ label, icon: Icon, onClick, disabled = false }) {
       disabled={disabled}
       className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#d7e2ee] bg-white text-[#35546c] transition hover:border-[#bfccdb] hover:bg-[#f7fafd] disabled:cursor-not-allowed disabled:opacity-60"
     >
-      <Icon size={15} />
+      {icon}
     </button>
   )
 }
 
 function PrimaryButton({ children, onClick, disabled = false, icon: Icon = null }) {
+  const icon = Icon ? createElement(Icon, { size: 16 }) : null
   return (
     <button
       type="button"
@@ -117,13 +185,14 @@ function PrimaryButton({ children, onClick, disabled = false, icon: Icon = null 
       disabled={disabled}
       className="inline-flex min-h-10 items-center gap-2 rounded-[12px] border border-[#244b76] bg-[#274e7a] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f4167] disabled:cursor-not-allowed disabled:opacity-60"
     >
-      {Icon ? <Icon size={16} /> : null}
+      {icon}
       {children}
     </button>
   )
 }
 
 function SecondaryButton({ children, onClick, disabled = false, icon: Icon = null }) {
+  const icon = Icon ? createElement(Icon, { size: 16 }) : null
   return (
     <button
       type="button"
@@ -131,7 +200,7 @@ function SecondaryButton({ children, onClick, disabled = false, icon: Icon = nul
       disabled={disabled}
       className="inline-flex min-h-10 items-center gap-2 rounded-[12px] border border-[#d7e2ee] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#bfccdb] hover:bg-[#f7fafd] disabled:cursor-not-allowed disabled:opacity-60"
     >
-      {Icon ? <Icon size={16} /> : null}
+      {icon}
       {children}
     </button>
   )
@@ -190,6 +259,7 @@ function AgentStatusRow({ row, onCopy }) {
 }
 
 function MetricCard({ label, value, icon: Icon }) {
+  const icon = Icon ? createElement(Icon, { size: 19 }) : null
   return (
     <div className={settingsCardClass}>
       <div className="flex items-center justify-between gap-3">
@@ -198,10 +268,101 @@ function MetricCard({ label, value, icon: Icon }) {
           <p className="mt-2 text-2xl font-semibold text-[#162334]">{value}</p>
         </div>
         <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#d9e4ef] bg-white text-[#35546c]">
-          <Icon size={19} />
+          {icon}
         </span>
       </div>
     </div>
+  )
+}
+
+function AgentCardManagementRow({
+  user,
+  card,
+  urls,
+  insights = null,
+  saving = false,
+  assetBusy = '',
+  onCreate,
+  onActivate,
+  onDisable,
+  onCopy,
+  onOpen,
+  onCopyShareText,
+  onDownloadQr,
+  onDownloadVcard,
+}) {
+  const status = card?.status || 'not_created'
+  const active = status === 'active'
+  const disabled = ['disabled', 'archived'].includes(status)
+  const summary = insights?.summary || {}
+  const rowDisabled = saving || Boolean(assetBusy)
+  return (
+    <tr className="border-t border-[#e8eef5] align-top">
+      <td className="px-4 py-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-[#d9e4ef] bg-[#f8fbff] text-[#35546c]">
+            <UserRound size={16} />
+          </span>
+          <div className="min-w-0">
+            <p className="font-semibold text-[#162334]">{getUserDisplayName(user)}</p>
+            {getUserEmail(user) ? <p className="truncate text-sm text-[#6b7d93]">{getUserEmail(user)}</p> : null}
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-4">
+        {card ? (
+          <div className="grid gap-2">
+            <span className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${active ? statusToneClass('success') : disabled ? statusToneClass('slate') : statusToneClass('warning')}`}>
+              {active ? 'Active' : disabled ? 'Disabled' : 'Draft'}
+            </span>
+            {active && insights ? (
+              <span className="text-xs font-medium text-[#7b8da6]">
+                30d: {summary.views || 0} views · {summary.totalLeads || 0} leads
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${statusToneClass('slate')}`}>
+            Not Created
+          </span>
+        )}
+      </td>
+      <td className="px-4 py-4">
+        {card?.slug ? (
+          <div className="grid max-w-[420px] gap-2">
+            <code className="min-w-0 truncate rounded-[10px] border border-[#e0e8f1] bg-[#fbfdff] px-3 py-2 text-xs text-[#35546c]">
+              {urls.cardUrl}
+            </code>
+            <code className="min-w-0 truncate rounded-[10px] border border-[#e0e8f1] bg-white px-3 py-2 text-xs text-[#6b7d93]">
+              {urls.intakeUrl}
+            </code>
+          </div>
+        ) : (
+          <span className="text-sm text-[#8a9aab]">Generate to create URLs</span>
+        )}
+      </td>
+      <td className="px-4 py-4">
+        <div className="flex flex-wrap gap-2">
+          {card?.slug ? (
+            <>
+              <IconButton label={`Copy card link for ${getUserDisplayName(user)}`} icon={Copy} onClick={() => onCopy(urls.cardUrl)} disabled={saving} />
+              <IconButton label={`Copy intake link for ${getUserDisplayName(user)}`} icon={Link2} onClick={() => onCopy(urls.intakeUrl)} disabled={saving} />
+              <IconButton label={`Open card for ${getUserDisplayName(user)}`} icon={ExternalLink} onClick={() => onOpen(urls.cardUrl)} disabled={saving} />
+              <IconButton label={`Copy share message for ${getUserDisplayName(user)}`} icon={Mail} onClick={() => onCopyShareText(user, card, urls)} disabled={rowDisabled} />
+              <IconButton label={`Download QR code for ${getUserDisplayName(user)}`} icon={QrCode} onClick={() => onDownloadQr(user, card, urls)} disabled={rowDisabled} />
+              <IconButton label={`Download contact file for ${getUserDisplayName(user)}`} icon={Download} onClick={() => onDownloadVcard(user, card, urls)} disabled={rowDisabled} />
+            </>
+          ) : null}
+          {!card ? (
+            <SecondaryButton icon={Plus} onClick={() => onCreate(user)} disabled={saving}>Generate</SecondaryButton>
+          ) : active ? (
+            <SecondaryButton icon={XCircle} onClick={() => onDisable(user, card)} disabled={saving}>Disable</SecondaryButton>
+          ) : (
+            <SecondaryButton icon={CheckCircle2} onClick={() => onActivate(user, card)} disabled={saving}>Activate</SecondaryButton>
+          )}
+        </div>
+      </td>
+    </tr>
   )
 }
 
@@ -496,6 +657,9 @@ export default function SettingsLeadCapturePage() {
   const [context, setContext] = useState(null)
   const [users, setUsers] = useState([])
   const [aliases, setAliases] = useState([])
+  const [agentCardLinks, setAgentCardLinks] = useState([])
+  const [agentCardInsights, setAgentCardInsights] = useState(null)
+  const [agentCardAssetBusy, setAgentCardAssetBusy] = useState('')
   const [inboundEmails, setInboundEmails] = useState([])
   const [reviewItems, setReviewItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -522,15 +686,25 @@ export default function SettingsLeadCapturePage() {
         setContext(nextContext)
         setUsers([])
         setAliases([])
+        setAgentCardLinks([])
+        setAgentCardInsights(null)
         setInboundEmails([])
         setReviewItems([])
         return
       }
-      const [nextUsers, nextAliases, nextInboundEmails, nextFailures] = await Promise.all([
+      const [nextUsers, nextAliases, nextAgentCardLinksResult, nextAgentCardInsightsResult, nextInboundEmails, nextFailures] = await Promise.all([
         listOrganisationUsers().catch(() => []),
         listLeadCaptureAliases(organisationId).catch((aliasError) => {
           if (String(aliasError?.message || '').toLowerCase().includes('lead_capture_aliases')) return []
           throw aliasError
+        }),
+        listAgencyAgentCardLinks({ organisationId, status: 'all' }).catch((cardError) => {
+          if (String(cardError?.message || '').toLowerCase().includes('agency_public_intake_links')) return { links: [] }
+          throw cardError
+        }),
+        loadAgencyAgentCardInsights({ organisationId, windowDays: 30 }).catch((insightError) => {
+          if (String(insightError?.message || '').toLowerCase().includes('agency_agent_card_events')) return null
+          throw insightError
         }),
         listInboundLeadEmails(organisationId, { limit: 200 }).catch((emailError) => {
           if (String(emailError?.message || '').toLowerCase().includes('inbound_lead_emails')) return []
@@ -545,6 +719,8 @@ export default function SettingsLeadCapturePage() {
       setContext(nextContext)
       setUsers(nextUsers)
       setAliases(nextAliases)
+      setAgentCardLinks(nextAgentCardLinksResult?.links || [])
+      setAgentCardInsights(nextAgentCardInsightsResult)
       setInboundEmails(nextInboundEmails)
       setReviewItems(buildLeadCaptureReviewQueueRows({
         failures: nextFailures,
@@ -587,6 +763,32 @@ export default function SettingsLeadCapturePage() {
     () => buildLeadCaptureStatusRows({ aliases, inboundEmails, users }),
     [aliases, inboundEmails, users],
   )
+  const agentCardRows = useMemo(() => {
+    const cardsByAgentId = new Map()
+    for (const card of agentCardLinks) {
+      const agentId = normalizeText(card.defaultAssignedAgentId || card.agentDigitalCard?.agent?.userId)
+      if (!agentId) continue
+      const existing = cardsByAgentId.get(agentId)
+      if (!existing || card.status === 'active' || (existing.status !== 'active' && String(card.updatedAt || '') > String(existing.updatedAt || ''))) {
+        cardsByAgentId.set(agentId, card)
+      }
+    }
+    return users
+      .filter(isActiveAgentUser)
+      .map((user) => {
+        const userId = getUserId(user)
+        const card = cardsByAgentId.get(userId) || null
+        return {
+          user,
+          card,
+          urls: buildAgencyAgentCardUrls({ slug: card?.slug || '', host: getPublicShareHost() }),
+          insights: card?.id ? {
+            summary: agentCardInsights?.summary?.byIntakeLink?.[card.id] || null,
+            windowDays: agentCardInsights?.windowDays || 30,
+          } : null,
+        }
+      })
+  }, [agentCardInsights, agentCardLinks, users])
   const reviewItemsWithAssignment = useMemo(() => {
     const aliasesById = new Map(aliases.map((alias) => [alias.aliasId, alias]))
     return reviewItems.map((item) => {
@@ -607,6 +809,10 @@ export default function SettingsLeadCapturePage() {
 
   const generatedCount = aliases.filter((alias) => alias.status === 'active' && isPrimaryLeadCaptureAlias(alias)).length
   const activeAgentCount = rows.filter((row) => row.status === 'active').length
+  const activeCardCount = agentCardLinks.filter((card) => card.status === 'active').length
+  const cardViewCount = agentCardInsights?.summary?.views || 0
+  const missingAgentCardRows = agentCardRows.filter(({ card }) => !card)
+  const exportableAgentCardRows = agentCardRows.filter(({ card, urls }) => card?.status === 'active' && urls?.cardUrl)
   const receivedCount = inboundEmails.length
   const failureCount = reviewItemsWithAssignment.filter((item) => item.status === 'open').length
   const leadCaptureDomain = aliases[0]?.aliasDomain || 'leads.arch9.co.za'
@@ -623,6 +829,187 @@ export default function SettingsLeadCapturePage() {
     } catch {
       setNotice(value)
     }
+  }
+
+  function openExternalUrl(value) {
+    const url = normalizeText(value)
+    if (!url) return
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  function getOrganisationDisplayName() {
+    return normalizeText(
+      context?.organisation?.displayName ||
+        context?.organisation?.display_name ||
+        context?.organisation?.name ||
+        currentWorkspace?.name,
+    )
+  }
+
+  function buildShareKitForAgentCard(user, card, urls) {
+    return buildAgentDigitalCardShareKit(buildAgentCardShareProfile({
+      user,
+      card,
+      urls,
+      organisationName: getOrganisationDisplayName(),
+    }))
+  }
+
+  async function copyAgentCardShareText(user, card, urls) {
+    const shareKit = buildShareKitForAgentCard(user, card, urls)
+    if (!shareKit.shareText) return
+    try {
+      await navigator.clipboard.writeText(shareKit.shareText)
+      setNotice(`Share message copied for ${getUserDisplayName(user)}.`)
+    } catch {
+      setNotice(shareKit.shareText)
+    }
+  }
+
+  async function downloadAgentCardQrAsset(user, card, urls) {
+    const shareKit = buildShareKitForAgentCard(user, card, urls)
+    if (!shareKit.shareText || !urls.cardUrl) return
+    setAgentCardAssetBusy(`qr:${card?.id || getUserId(user)}`)
+    setError('')
+    setNotice('')
+    try {
+      const downloaded = await downloadAgentDigitalCardQrPng({
+        shareUrl: urls.cardUrl,
+        fileName: shareKit.qrFileName,
+      })
+      setNotice(downloaded ? `QR downloaded for ${getUserDisplayName(user)}.` : 'QR download is not available in this browser.')
+    } catch (downloadError) {
+      setError(downloadError?.message || 'Agent digital card QR could not be downloaded.')
+    } finally {
+      setAgentCardAssetBusy('')
+    }
+  }
+
+  function downloadAgentCardVcardAsset(user, card, urls) {
+    const shareKit = buildShareKitForAgentCard(user, card, urls)
+    if (!shareKit.vcard) return
+    setError('')
+    setNotice('')
+    const downloaded = downloadAgentDigitalCardTextFile({
+      fileName: shareKit.vcardFileName,
+      text: shareKit.vcard,
+      mimeType: 'text/vcard;charset=utf-8',
+    })
+    setNotice(downloaded ? `.vcf downloaded for ${getUserDisplayName(user)}.` : '.vcf download is not available in this browser.')
+  }
+
+  async function saveAgentCardForUser(user, card = null, status = 'active') {
+    const userId = getUserId(user)
+    if (!userId) return
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await saveAgencyAgentCardLink({
+        id: card?.id,
+        organisationId,
+        organisationName: getOrganisationDisplayName(),
+        slug: card?.slug,
+        status,
+        enabledIntents: card?.enabledIntents || ['buy', 'sell'],
+        defaultBranchId: card?.defaultBranchId || user.branchId || user.branch_id,
+        agentUserId: userId,
+        agentName: getUserDisplayName(user),
+        agentEmail: getUserEmail(user),
+        agentPhone: getUserPhone(user),
+        agentWhatsApp: getUserPhone(user),
+        agentJobTitle: getUserJobTitle(user),
+        agentAvatarUrl: getUserAvatarUrl(user),
+        vcfEnabled: true,
+        qrEnabled: true,
+        listingsEnabled: true,
+        leadCaptureEnabled: true,
+      }, {
+        organisationName: getOrganisationDisplayName(),
+      })
+      const action = status === 'active' ? (card ? 'activated' : 'generated') : 'disabled'
+      setNotice(`Agent digital card ${action} for ${getUserDisplayName(user)}.`)
+      if (result?.link) {
+        setAgentCardLinks((previous) => {
+          const withoutCurrent = previous.filter((item) => item.id !== result.link.id)
+          return [result.link, ...withoutCurrent]
+        })
+      }
+      await load()
+    } catch (cardError) {
+      setError(cardError?.message || 'Agent digital card could not be saved.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function generateMissingAgentCards() {
+    const targets = missingAgentCardRows.map(({ user }) => user).filter(Boolean)
+    if (!targets.length) {
+      setNotice('All active agents already have digital cards.')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      const organisationName = getOrganisationDisplayName()
+      for (const user of targets) {
+        await saveAgencyAgentCardLink({
+          organisationId,
+          organisationName,
+          status: 'active',
+          enabledIntents: ['buy', 'sell'],
+          defaultBranchId: user.branchId || user.branch_id,
+          agentUserId: getUserId(user),
+          agentName: getUserDisplayName(user),
+          agentEmail: getUserEmail(user),
+          agentPhone: getUserPhone(user),
+          agentWhatsApp: getUserPhone(user),
+          agentJobTitle: getUserJobTitle(user),
+          agentAvatarUrl: getUserAvatarUrl(user),
+          vcfEnabled: true,
+          qrEnabled: true,
+          listingsEnabled: true,
+          leadCaptureEnabled: true,
+        }, {
+          organisationName,
+        })
+      }
+      setNotice(`Generated ${targets.length} missing agent digital ${targets.length === 1 ? 'card' : 'cards'}.`)
+      await load()
+    } catch (bulkError) {
+      setError(bulkError?.message || 'Missing agent digital cards could not be generated.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function exportAgentCardRolloutCsv() {
+    if (!exportableAgentCardRows.length) {
+      setNotice('No active agent digital cards are ready to export yet.')
+      return
+    }
+
+    const organisationName = getOrganisationDisplayName()
+    const csv = buildAgentDigitalCardShareKitCsv(exportableAgentCardRows.map(({ user, card, urls }) => ({
+      ...buildAgentCardShareProfile({ user, card, urls, organisationName }),
+      cardUrl: urls.cardUrl,
+      intakeUrl: urls.intakeUrl,
+      buyerUrl: urls.buyerUrl,
+      sellerUrl: urls.sellerUrl,
+    })))
+    const fileBaseName = buildAgentDigitalCardFileBaseName({
+      organisationName,
+      agentName: 'agent-card-rollout',
+    })
+    const downloaded = downloadAgentDigitalCardTextFile({
+      fileName: `${fileBaseName}.csv`,
+      text: csv,
+      mimeType: 'text/csv;charset=utf-8',
+    })
+    setNotice(downloaded ? `Exported ${exportableAgentCardRows.length} agent card ${exportableAgentCardRows.length === 1 ? 'row' : 'rows'}.` : 'CSV export is not available in this browser.')
   }
 
   async function generateMyAddresses() {
@@ -759,9 +1146,11 @@ export default function SettingsLeadCapturePage() {
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {notice ? <SettingsBanner tone="success">{notice}</SettingsBanner> : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <MetricCard label="Active Addresses" value={generatedCount} icon={Mail} />
         <MetricCard label="Active Agents" value={activeAgentCount} icon={UsersRound} />
+        <MetricCard label="Digital Cards" value={activeCardCount} icon={IdCard} />
+        <MetricCard label="Card Views" value={cardViewCount} icon={QrCode} />
         <MetricCard label="Emails Received" value={receivedCount} icon={Inbox} />
         <MetricCard label="Needs Review" value={failureCount} icon={AlertCircle} />
       </section>
@@ -784,6 +1173,61 @@ export default function SettingsLeadCapturePage() {
           />
         )}
       </SettingsSectionCard>
+
+      {canManage ? (
+        <SettingsSectionCard
+          title="Agent Digital Cards"
+          description="Create and manage public agent card links. Leads from these links route to the selected agent through the existing public intake flow."
+          actions={(
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-full border border-[#dce6f0] bg-[#f8fbfe] px-3 py-1 text-xs font-semibold text-[#60758d]"><QrCode size={14} /> QR-ready links</span>
+              <SecondaryButton icon={Download} onClick={exportAgentCardRolloutCsv} disabled={saving || !exportableAgentCardRows.length}>Export CSV</SecondaryButton>
+              <PrimaryButton icon={Plus} onClick={generateMissingAgentCards} disabled={saving || !missingAgentCardRows.length || !organisationId}>Generate Missing</PrimaryButton>
+            </div>
+          )}
+        >
+          {agentCardRows.length ? (
+            <div className="overflow-hidden rounded-[18px] border border-[#e3eaf2] bg-white">
+              <table className="min-w-full divide-y divide-[#e8eef5] text-left">
+                <thead className="bg-[#f8fbfe]">
+                  <tr className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">
+                    <th className="px-4 py-3">Agent</th>
+                    <th className="px-4 py-3">Card</th>
+                    <th className="px-4 py-3">Links</th>
+                    <th className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {agentCardRows.map(({ user, card, urls, insights }) => (
+                    <AgentCardManagementRow
+                      key={getUserId(user)}
+                      user={user}
+                      card={card}
+                      urls={urls}
+                      insights={insights}
+                      saving={saving}
+                      assetBusy={agentCardAssetBusy}
+                      onCreate={(targetUser) => saveAgentCardForUser(targetUser, null, 'active')}
+                      onActivate={(targetUser, targetCard) => saveAgentCardForUser(targetUser, targetCard, 'active')}
+                      onDisable={(targetUser, targetCard) => saveAgentCardForUser(targetUser, targetCard, 'disabled')}
+                      onCopy={copyAddress}
+                      onOpen={openExternalUrl}
+                      onCopyShareText={copyAgentCardShareText}
+                      onDownloadQr={downloadAgentCardQrAsset}
+                      onDownloadVcard={downloadAgentCardVcardAsset}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <SettingsEmptyState
+              title="No active agents found"
+              description="Invite or activate agents before generating digital card links."
+            />
+          )}
+        </SettingsSectionCard>
+      ) : null}
 
       {canManage ? (
         <SettingsSectionCard title="Agency Activation" description="Agent-level lead capture status across the organisation.">

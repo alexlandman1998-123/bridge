@@ -1242,6 +1242,7 @@
     "lucide-react": "^0.577.0",
     "motion": "^12.38.0",
     "pdfjs-dist": "^5.7.284",
+    "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.1",
