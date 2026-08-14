@@ -7,11 +7,17 @@ import {
   buildPublicIntakeSupervisorLeadOperationsPayload,
   createPublicAgencyIntakeResponse,
   normalizeAgencyIntakeSlug,
+  resolveAgencyPublicIntakeSlugCandidates,
   selectPublicIntakeFallbackOwner,
   validateAgencyIntakeSubmission,
 } from '../services/publicAgencyIntakeApi.js'
 
 assert.equal(normalizeAgencyIntakeSlug(' Kingstons-Atlantic '), 'kingstons-atlantic')
+assert.deepEqual(
+  resolveAgencyPublicIntakeSlugCandidates(' Kingstons '),
+  ['kingstons', 'kingstons-real-estate'],
+  'legacy Kingstons intake links should resolve through the active canonical slug',
+)
 
 const contract = buildAgencyPublicIntakeContract({
   host: 'https://app.arch9.co.za/',

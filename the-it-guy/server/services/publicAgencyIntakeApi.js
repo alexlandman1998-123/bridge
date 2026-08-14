@@ -23,6 +23,9 @@ const ALLOWED_INTENTS = new Set(['buy', 'sell'])
 const DEFAULT_PRIVACY_POLICY_VERSION = 'agency-public-intake-v1'
 const MAX_SELECTED_LISTINGS = 24
 const PUBLIC_INTAKE_AUTOMATION_KEY = 'agency_public_intake_received'
+const LEGACY_AGENCY_PUBLIC_INTAKE_SLUG_ALIASES = Object.freeze({
+  kingstons: 'kingstons-real-estate',
+})
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const PUBLIC_INTAKE_OWNER_ROLE_PRIORITY = new Map([
   ['principal', 0],
@@ -409,6 +412,13 @@ export function normalizeAgencyIntakeSlug(value = '') {
   return normalizeLower(value)
 }
 
+export function resolveAgencyPublicIntakeSlugCandidates(slug = '') {
+  const normalizedSlug = normalizeAgencyIntakeSlug(slug)
+  if (!normalizedSlug) return []
+  const aliasSlug = LEGACY_AGENCY_PUBLIC_INTAKE_SLUG_ALIASES[normalizedSlug]
+  return Array.from(new Set([normalizedSlug, normalizeAgencyIntakeSlug(aliasSlug)].filter(Boolean)))
+}
+
 function normalizeSourceChannel(value = '', fallback = 'other') {
   const candidate = normalizeLower(value || fallback || 'other')
   return ALLOWED_SOURCE_CHANNELS.has(candidate) ? candidate : 'other'
@@ -576,8 +586,8 @@ export function buildAgencyPublicIntakeContract({ link = {}, organisation = {}, 
 }
 
 export async function resolveAgencyPublicIntake(client, slug = '', { host = '' } = {}) {
-  const normalizedSlug = normalizeAgencyIntakeSlug(slug)
-  if (!normalizedSlug) return null
+  const slugCandidates = resolveAgencyPublicIntakeSlugCandidates(slug)
+  if (!slugCandidates.length) return null
 
   const linkResult = await client
     .from('agency_public_intake_links')
@@ -607,15 +617,17 @@ export async function resolveAgencyPublicIntake(client, slug = '', { host = '' }
       'metadata_json',
       'updated_at',
     ].join(', '))
-    .eq('slug', normalizedSlug)
+    .in('slug', slugCandidates)
     .eq('status', 'active')
     .is('disabled_at', null)
-    .maybeSingle()
 
   if (linkResult.error) throw linkResult.error
-  if (!linkResult.data) return null
+  const linkRows = Array.isArray(linkResult.data) ? linkResult.data : linkResult.data ? [linkResult.data] : []
+  const link = slugCandidates
+    .map((candidate) => linkRows.find((row) => normalizeAgencyIntakeSlug(row?.slug) === candidate))
+    .find(Boolean)
+  if (!link) return null
 
-  const link = linkResult.data
   const [organisationResult, settingsResult] = await Promise.all([
     client
       .from('organisations')

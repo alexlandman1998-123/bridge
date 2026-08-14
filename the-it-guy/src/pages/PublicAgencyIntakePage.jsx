@@ -746,6 +746,7 @@ export default function PublicAgencyIntakePage() {
   const [queryIntentApplied, setQueryIntentApplied] = useState(false)
 
   const attribution = useMemo(() => readAgencyIntakeAttribution(searchParams), [searchParams])
+  const activeAgencySlug = normalizeText(intake?.slug || agencySlug)
 
   useEffect(() => {
     let cancelled = false
@@ -815,7 +816,7 @@ export default function PublicAgencyIntakePage() {
     }
     setListingLoading(true)
     setListingError('')
-    resolveAgencyPublicListings(agencySlug, filters)
+    resolveAgencyPublicListings(activeAgencySlug, filters)
       .then((items) => {
         if (!cancelled) setListingOptions(items.filter(hasDisplayPrice))
       })
@@ -831,7 +832,7 @@ export default function PublicAgencyIntakePage() {
     return () => {
       cancelled = true
     }
-  }, [agencySlug, buyerStep, form.budgetMax, form.budgetMin, intent])
+  }, [activeAgencySlug, buyerStep, form.budgetMax, form.budgetMin, intent])
 
   function retryLoad() {
     setReloadKey((value) => value + 1)
@@ -865,7 +866,7 @@ export default function PublicAgencyIntakePage() {
   }
 
   function resetFlow() {
-    if (intent) rotateAgencyIntakeIdempotencyKey(agencySlug, getIdempotencyIntentKey())
+    if (intent) rotateAgencyIntakeIdempotencyKey(activeAgencySlug, getIdempotencyIntentKey())
     setQueryIntentApplied(true)
     setIntent('')
     setBuyerStep(BUYER_STEPS[0].id)
@@ -980,9 +981,9 @@ export default function PublicAgencyIntakePage() {
     setSubmitting(true)
     setFormError('')
     try {
-      const idempotencyKey = getOrCreateAgencyIntakeIdempotencyKey(agencySlug, getIdempotencyIntentKey())
+      const idempotencyKey = getOrCreateAgencyIntakeIdempotencyKey(activeAgencySlug, getIdempotencyIntentKey())
       const payload = {
-        slug: agencySlug,
+        slug: activeAgencySlug,
         intent,
         idempotencyKey,
         contact: {
@@ -1026,7 +1027,7 @@ export default function PublicAgencyIntakePage() {
         }
       }
 
-      const result = await submitAgencyPublicIntake({ slug: agencySlug, idempotencyKey, payload })
+      const result = await submitAgencyPublicIntake({ slug: activeAgencySlug, idempotencyKey, payload })
       if (!result.accepted) throw new Error('We could not confirm your enquiry. Please try again.')
       setSubmittedDuplicate(Boolean(result.duplicate))
       setSubmitted(true)
