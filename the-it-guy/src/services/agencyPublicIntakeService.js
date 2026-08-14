@@ -62,12 +62,14 @@ export function readAgencyIntakeAttribution(searchParams) {
 
   const listingId = normalizeText(params.get('listingId') || params.get('listing_id'))
   const listingSlug = normalizeText(params.get('listing') || params.get('listingSlug') || params.get('listing_slug'))
+  const listingTitle = normalizeText(params.get('listingTitle') || params.get('listing_title') || params.get('property'))
+  const listingPrice = normalizeText(params.get('listingPrice') || params.get('listing_price') || params.get('price'))
 
   return {
     sourceChannel: normalizeLower(params.get('source') || params.get('channel') || params.get('utm_source') || 'website'),
     campaignCode: normalizeLower(params.get('campaign') || params.get('campaign_code') || params.get('utm_campaign')),
     utm,
-    selectedListings: listingId || listingSlug ? [{ id: listingId, slug: listingSlug }] : [],
+    selectedListings: listingId || listingSlug ? [{ id: listingId, slug: listingSlug, title: listingTitle, askingPrice: listingPrice }] : [],
     context: {
       pageUrl: typeof window !== 'undefined' ? window.location.href : '',
       referrer: typeof document !== 'undefined' ? document.referrer : '',

@@ -41,6 +41,8 @@ const BACKGROUND_IMAGES = {
 
 const INITIAL_FORM = Object.freeze({
   name: '',
+  firstName: '',
+  lastName: '',
   email: '',
   phone: '',
   budgetMin: '',
@@ -779,6 +781,12 @@ export default function PublicAgencyIntakePage() {
   const theme = useMemo(() => buildTheme(intake?.agency || {}), [intake?.agency])
   const buyerStepIndex = Math.max(0, BUYER_STEPS.findIndex((step) => step.id === buyerStep))
   const currentBuyerStep = BUYER_STEPS[buyerStepIndex] || BUYER_STEPS[0]
+  const isListingCardEnquiry = intent === 'buy' && attribution.sourceChannel === 'card' && attribution.selectedListings.length > 0
+  const listingEnquiry = useMemo(
+    () => mergeSelectedListings(attribution.selectedListings, form.selectedListings)[0] || null,
+    [attribution.selectedListings, form.selectedListings],
+  )
+  const listingEnquiryLabel = normalizeText(listingEnquiry?.title || listingEnquiry?.slug || listingEnquiry?.id)
 
   useEffect(() => {
     if (!intake || queryIntentApplied || intent) return
@@ -857,7 +865,7 @@ export default function PublicAgencyIntakePage() {
   }
 
   function resetFlow() {
-    if (intent) rotateAgencyIntakeIdempotencyKey(agencySlug, intent)
+    if (intent) rotateAgencyIntakeIdempotencyKey(agencySlug, getIdempotencyIntentKey())
     setQueryIntentApplied(true)
     setIntent('')
     setBuyerStep(BUYER_STEPS[0].id)
@@ -870,8 +878,26 @@ export default function PublicAgencyIntakePage() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  function getContactName() {
+    return normalizeText(form.name || [form.firstName, form.lastName].map(normalizeText).filter(Boolean).join(' '))
+  }
+
+  function getIdempotencyIntentKey() {
+    return isListingCardEnquiry ? `buy:${listingKey(listingEnquiry) || 'listing'}` : intent
+  }
+
   function validateForm() {
-    if (!normalizeText(form.name)) return 'Please enter your name.'
+    if (isListingCardEnquiry) {
+      if (!normalizeText(form.firstName)) return 'Please enter your name.'
+      if (!normalizeText(form.lastName)) return 'Please enter your surname.'
+      if (!normalizeText(form.email)) return 'Please enter your email address.'
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeText(form.email))) return 'Please enter a valid email address.'
+      if (!normalizeText(form.phone)) return 'Please enter your phone number.'
+      const phoneDigits = normalizeText(form.phone).replace(/[^0-9]+/g, '')
+      if (phoneDigits.length < 7 || phoneDigits.length > 20) return 'Please enter a valid phone number.'
+      return ''
+    }
+    if (!getContactName()) return 'Please enter your name.'
     if (!normalizeText(form.email) && !normalizeText(form.phone)) return 'Please provide an email address or mobile number.'
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeText(form.email))) return 'Please enter a valid email address.'
     if (intent === 'buy') {
@@ -884,8 +910,9 @@ export default function PublicAgencyIntakePage() {
   }
 
   function validateBuyerStep(step = buyerStep) {
+    if (isListingCardEnquiry) return validateForm()
     if (step === 'contact') {
-      if (!normalizeText(form.name)) return 'Please enter your name.'
+      if (!getContactName()) return 'Please enter your name.'
       if (!normalizeText(form.email) && !normalizeText(form.phone)) return 'Please provide an email address or mobile number.'
       if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeText(form.email))) return 'Please enter a valid email address.'
       return ''
@@ -932,7 +959,7 @@ export default function PublicAgencyIntakePage() {
   }
 
   function handleFormSubmit(event) {
-    if (intent === 'buy' && buyerStep !== 'final') {
+    if (intent === 'buy' && !isListingCardEnquiry && buyerStep !== 'final') {
       event.preventDefault()
       moveBuyerStep(1)
       return
@@ -953,13 +980,15 @@ export default function PublicAgencyIntakePage() {
     setSubmitting(true)
     setFormError('')
     try {
-      const idempotencyKey = getOrCreateAgencyIntakeIdempotencyKey(agencySlug, intent)
+      const idempotencyKey = getOrCreateAgencyIntakeIdempotencyKey(agencySlug, getIdempotencyIntentKey())
       const payload = {
         slug: agencySlug,
         intent,
         idempotencyKey,
         contact: {
-          name: normalizeText(form.name),
+          firstName: normalizeText(form.firstName) || null,
+          lastName: normalizeText(form.lastName) || null,
+          name: getContactName(),
           email: normalizeText(form.email) || null,
           phone: normalizeText(form.phone) || null,
         },
@@ -1013,7 +1042,7 @@ export default function PublicAgencyIntakePage() {
   if (!intake || loadError) return <UnavailableState error={loadError} onRetry={retryLoad} />
 
   const agencyName = intake.agency?.name || 'Your agency'
-  const isBuyerFlow = intent === 'buy' && !submitted
+  const isBuyerFlow = intent === 'buy' && !submitted && !isListingCardEnquiry
   const pageStyle = {
     '--intake-primary': theme.primary,
     '--intake-secondary': theme.secondary,
@@ -1062,11 +1091,13 @@ export default function PublicAgencyIntakePage() {
             ) : null}
             <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--intake-accent)]">Welcome to {getAgencyShortName(agencyName)}</p>
             <h1 className="mt-4 text-[3rem] font-semibold leading-none text-white sm:text-[4.3rem]">
-              {submitted ? 'Thank you.' : intent === 'sell' ? 'Tell us about your property.' : intent === 'buy' ? 'Tell us what you want to buy.' : intake.intake.heading || 'What can we help you with?'}
+              {submitted ? 'Thank you.' : intent === 'sell' ? 'Tell us about your property.' : isListingCardEnquiry ? 'Enquire about this property.' : intent === 'buy' ? 'Tell us what you want to buy.' : intake.intake.heading || 'What can we help you with?'}
             </h1>
             <p className={`${submitted || intent ? 'block' : 'hidden'} mt-5 max-w-[560px] text-base font-medium leading-7 text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)] sm:block sm:text-lg sm:leading-8`}>
               {submitted
                 ? `${agencyName} has received your details.`
+                : isListingCardEnquiry
+                  ? 'Send your details and the agent will follow up on this listing.'
                 : intent
                   ? 'Share the basics and the team will pick it up.'
                   : intake.intake.introduction || 'Choose the path that fits you and share a few details.'}
@@ -1095,16 +1126,65 @@ export default function PublicAgencyIntakePage() {
               <section className={`${isBuyerFlow ? 'flex min-h-[calc(100dvh-6.5rem)] flex-col rounded-lg border border-white/18 bg-white text-[#173238] shadow-[0_30px_90px_rgba(0,0,0,0.24)] sm:min-h-0 sm:p-6' : 'rounded-lg border border-white/18 bg-white p-5 text-[#173238] shadow-[0_30px_90px_rgba(0,0,0,0.24)] sm:p-6'}`}>
                 <form className={`${isBuyerFlow ? 'flex min-h-0 flex-1 flex-col gap-4 p-4 sm:gap-5 sm:p-0' : 'space-y-5'}`} onSubmit={handleFormSubmit} noValidate>
                   <div>
-                    <h2 className="text-2xl font-semibold">{intent === 'sell' ? 'Selling details' : currentBuyerStep.title}</h2>
+                    <h2 className="text-2xl font-semibold">{intent === 'sell' ? 'Selling details' : isListingCardEnquiry ? 'Property enquiry' : currentBuyerStep.title}</h2>
                     {intent === 'buy' ? (
-                      <>
+                      isListingCardEnquiry ? (
+                        <p className="mt-1.5 text-sm leading-6 text-slate-500">
+                          {listingEnquiryLabel ? `Enquiry for ${listingEnquiryLabel}.` : 'Send your contact details to the listing agent.'}
+                        </p>
+                      ) : (
+                        <>
                         <p className="mt-1.5 text-sm leading-6 text-slate-500">{currentBuyerStep.summary}</p>
                         <p className="mt-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Step {buyerStepIndex + 1} of {BUYER_STEPS.length}</p>
-                      </>
+                        </>
+                      )
                     ) : null}
                   </div>
 
                   {intent === 'buy' ? (
+                    isListingCardEnquiry ? (
+                      <>
+                        <IntakeSection title="Your contact details">
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <TextInput icon={User} label="Name" required value={form.firstName} onChange={(event) => updateForm('firstName', event.target.value)} autoComplete="given-name" maxLength={120} placeholder="Name" />
+                            <TextInput icon={User} label="Surname" required value={form.lastName} onChange={(event) => updateForm('lastName', event.target.value)} autoComplete="family-name" maxLength={120} placeholder="Surname" />
+                          </div>
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <TextInput icon={Mail} label="Email address" required value={form.email} onChange={(event) => updateForm('email', event.target.value)} autoComplete="email" inputMode="email" maxLength={254} placeholder="name@example.com" />
+                            <TextInput icon={Phone} label="Phone number" required value={form.phone} onChange={(event) => updateForm('phone', event.target.value)} autoComplete="tel" inputMode="tel" maxLength={40} placeholder="082 123 4567" />
+                          </div>
+                        </IntakeSection>
+
+                        <div className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden" aria-hidden="true">
+                          <label>
+                            Website
+                            <input type="text" tabIndex={-1} autoComplete="off" value={form.website} onChange={(event) => updateForm('website', event.target.value)} />
+                          </label>
+                        </div>
+
+                        <p className="rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3 text-xs leading-5 text-slate-500">
+                          {intake.intake.consentCopy || `By sending this enquiry, you consent to ${agencyName} using these details to respond to you.`}
+                        </p>
+
+                        {formError ? (
+                          <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-5 text-rose-800" role="alert">
+                            {formError}
+                          </div>
+                        ) : null}
+
+                        <button
+                          type="submit"
+                          disabled={submitting}
+                          className="inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-lg bg-[var(--intake-accent)] px-6 text-base font-semibold text-[var(--intake-accent-text)] shadow-[0_14px_30px_rgba(15,23,42,0.16)] transition hover:brightness-105 focus:outline-none focus:ring-4 focus:ring-slate-200 disabled:cursor-wait disabled:opacity-70"
+                        >
+                          {submitting ? (
+                            <><LoaderCircle className="animate-spin" size={19} aria-hidden="true" /> Sending...</>
+                          ) : (
+                            <>Send enquiry <ArrowRight size={19} aria-hidden="true" /></>
+                          )}
+                        </button>
+                      </>
+                    ) : (
                     <>
                       <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${BUYER_STEPS.length}, minmax(0, 1fr))` }} aria-label="Buyer intake progress">
                         {BUYER_STEPS.map((step, index) => {
@@ -1279,6 +1359,7 @@ export default function PublicAgencyIntakePage() {
                         </button>
                       </div>
                     </>
+                    )
                   ) : (
                     <>
                       <IntakeSection title="Your details">

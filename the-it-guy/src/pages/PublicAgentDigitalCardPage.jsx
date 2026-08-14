@@ -10,6 +10,7 @@ import {
   MessageCircle,
   Phone,
   Tag,
+  UserPlus,
 } from 'lucide-react'
 import { createElement, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
@@ -19,7 +20,10 @@ import {
   resolveAgencyPublicCardListings,
 } from '../services/agencyPublicIntakeService'
 import {
+  buildAgentDigitalCardFileBaseName,
   buildAgentDigitalCardShareText,
+  buildAgentDigitalCardVcard,
+  downloadAgentDigitalCardTextFile,
 } from '../services/agentDigitalCardShareService'
 
 function normalizeText(value = '') {
@@ -68,6 +72,15 @@ function formatLocation(listing = {}) {
   return [listing.suburb, listing.city || listing.province].map(normalizeText).filter(Boolean).join(', ')
 }
 
+function formatDisplayRole(value = '') {
+  const text = normalizeText(value)
+  if (!text) return ''
+  if (text === text.toLowerCase()) {
+    return text.replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
+  }
+  return text
+}
+
 function buildTheme(agency = {}) {
   const primary = normalizeThemeColour(agency.primaryColour, '#102236')
   const secondary = normalizeThemeColour(agency.secondaryColour, '#21445f')
@@ -93,10 +106,10 @@ function normalizeWhatsAppHref(value = '', fallbackText = '') {
   return fallbackText ? `https://wa.me/?text=${encodeURIComponent(fallbackText)}` : ''
 }
 
-function RoundContactLink({ icon: Icon, label, href, onClick = null }) {
+function RoundContactLink({ icon: Icon, label, href = '', onClick = null }) {
   const icon = Icon ? createElement(Icon, { size: 22, strokeWidth: 2.4 }) : null
-  const disabled = !href
-  const className = `group flex min-w-0 flex-col items-center gap-2 text-center ${disabled ? 'pointer-events-none opacity-45' : ''}`
+  const disabled = !href && !onClick
+  const className = `group flex w-full min-w-0 flex-col items-center gap-2 text-center ${disabled ? 'pointer-events-none opacity-45' : ''}`
   const content = (
     <>
       <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--card-primary)] text-white shadow-[0_12px_26px_rgba(15,23,42,0.2)] ring-1 ring-white/70 transition group-hover:-translate-y-0.5 group-hover:brightness-110">
@@ -106,8 +119,16 @@ function RoundContactLink({ icon: Icon, label, href, onClick = null }) {
     </>
   )
 
+  if (!href) {
+    return (
+      <button type="button" className={className} onClick={disabled ? undefined : onClick || undefined}>
+        {content}
+      </button>
+    )
+  }
+
   return (
-    <a className={className} href={href || undefined} target={href?.startsWith('http') ? '_blank' : undefined} rel={href?.startsWith('http') ? 'noreferrer' : undefined} onClick={disabled ? undefined : onClick || undefined}>
+    <a className={className} href={href} target={href.startsWith('http') ? '_blank' : undefined} rel={href.startsWith('http') ? 'noreferrer' : undefined} onClick={onClick || undefined}>
       {content}
     </a>
   )
@@ -142,7 +163,15 @@ function IntentCta({ icon: Icon, title, subtitle, href, onClick = null, tone = '
 function ListingCard({ listing, intakeSlug = '', onTrack = () => {} }) {
   const price = formatCurrency(listing.askingPrice)
   const location = formatLocation(listing)
-  const enquiryUrl = `/intake/${encodeURIComponent(intakeSlug)}?intent=buy&listing=${encodeURIComponent(listing.slug || '')}&listingId=${encodeURIComponent(listing.id || '')}&source=card`
+  const enquiryParams = new URLSearchParams({
+    intent: 'buy',
+    listing: listing.slug || '',
+    listingId: listing.id || '',
+    listingTitle: listing.title || '',
+    listingPrice: listing.askingPrice ? String(listing.askingPrice) : '',
+    source: 'card',
+  })
+  const enquiryUrl = `/intake/${encodeURIComponent(intakeSlug)}?${enquiryParams.toString()}`
 
   return (
     <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.08)]">
@@ -264,7 +293,7 @@ export default function PublicAgentDigitalCardPage() {
   const agency = intake?.agency || {}
   const agencyName = normalizeText(agency.name) || 'Agency'
   const agentName = normalizeText(agent.name) || agencyName
-  const jobTitle = normalizeText(agent.jobTitle) || 'Property Practitioner'
+  const jobTitle = formatDisplayRole(agent.jobTitle) || 'Property Practitioner'
   const phone = normalizeText(agent.phone)
   const whatsapp = normalizeText(agent.whatsapp || agent.phone)
   const email = normalizeText(agent.email)
@@ -277,7 +306,7 @@ export default function PublicAgentDigitalCardPage() {
     organisationName: agencyName,
     shareUrl,
   })
-  const heroLogoUrl = normalizeText(agency.logoLightUrl || agency.logoUrl || agency.logoDarkUrl || agency.logoIconUrl)
+  const heroLogoUrl = normalizeText(agency.logoDarkUrl || agency.logoLightUrl || agency.logoUrl || agency.logoIconUrl)
 
   function trackCardEvent(eventType, metadata = {}) {
     recordAgentDigitalCardEventSoon({
@@ -288,6 +317,24 @@ export default function PublicAgentDigitalCardPage() {
         pageUrl: typeof window !== 'undefined' ? window.location.href : '',
         referrer: typeof document !== 'undefined' ? document.referrer : '',
       },
+    })
+  }
+
+  function downloadVcard() {
+    trackCardEvent('vcf_download')
+    const fileBaseName = buildAgentDigitalCardFileBaseName({ agentName, organisationName: agencyName })
+    const vcard = buildAgentDigitalCardVcard({
+      agentName,
+      agentEmail: email,
+      agentPhone: phone || whatsapp,
+      agentJobTitle: jobTitle,
+      organisationName: agencyName,
+      shareUrl,
+    })
+    downloadAgentDigitalCardTextFile({
+      fileName: `${fileBaseName}.vcf`,
+      text: vcard,
+      mimeType: 'text/vcard;charset=utf-8',
     })
   }
 
@@ -326,7 +373,7 @@ export default function PublicAgentDigitalCardPage() {
           <div className="px-6 pb-24 pt-7 text-white" style={{ background: theme.hero }}>
             <div className="flex items-center justify-center">
               {heroLogoUrl ? (
-                <img src={heroLogoUrl} alt={agencyName} className="max-h-20 max-w-[260px] object-contain" />
+                <img src={heroLogoUrl} alt={agencyName} className="max-h-24 w-full max-w-[340px] object-contain sm:max-h-28" />
               ) : (
                 <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-2xl font-semibold text-white">
                   {agencyName.slice(0, 1).toUpperCase()}
@@ -352,10 +399,11 @@ export default function PublicAgentDigitalCardPage() {
               </p>
             </div>
 
-            <div className="mt-7 grid grid-cols-3 gap-3">
+            <div className="mt-7 grid grid-cols-4 gap-3">
               <RoundContactLink icon={Phone} label="Call" href={normalizePhoneHref(phone)} onClick={() => trackCardEvent('call_click')} />
               <RoundContactLink icon={MessageCircle} label="WhatsApp" href={normalizeWhatsAppHref(whatsapp, shareText)} onClick={() => trackCardEvent('whatsapp_click')} />
               <RoundContactLink icon={Mail} label="Email" href={email ? `mailto:${email}` : ''} onClick={() => trackCardEvent('email_click')} />
+              <RoundContactLink icon={UserPlus} label="Save" onClick={downloadVcard} />
             </div>
 
             <div className="mt-6 grid gap-3">
@@ -379,15 +427,12 @@ export default function PublicAgentDigitalCardPage() {
           </div>
         </aside>
 
-        <section className="min-w-0 rounded-lg border border-slate-200 bg-white/96 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur sm:p-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <section className="min-w-0 rounded-lg border border-white/25 bg-white/[0.08] p-5 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur sm:p-6">
+          <div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">My Listings</p>
-              <h2 className="mt-1 text-2xl font-semibold text-slate-950">Featured Properties</h2>
+              <p className="text-xs font-semibold uppercase text-white/60">My Listings</p>
+              <h2 className="mt-1 text-2xl font-semibold text-white/90">Featured Properties</h2>
             </div>
-            <a href={buyerUrl} onClick={() => trackCardEvent('buyer_cta_click', { placement: 'listings_header' })} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50">
-              Buyer enquiry
-            </a>
           </div>
 
           {listingLoading ? (

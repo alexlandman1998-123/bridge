@@ -12,6 +12,7 @@ const ALLOWED_SOURCE_CHANNELS = new Set([
   'linkedin',
   'website',
   'whatsapp',
+  'card',
   'email',
   'qr',
   'referral',
@@ -244,6 +245,29 @@ function displayName(row = {}, fallback = '') {
     fallback
 }
 
+function firstNameFromDisplayName(value = '') {
+  return normalizeText(value).split(/\s+/).filter(Boolean)[0] || ''
+}
+
+function getAgentDigitalCardMetadata(link = {}) {
+  return safeObject(safeObject(safeObject(link.metadata_json).agentDigitalCard).agent)
+}
+
+function buildAgentAcknowledgementContact({ agent = {}, link = {} } = {}) {
+  const cardAgent = getAgentDigitalCardMetadata(link)
+  const email = normalizeEmail(agent.email || cardAgent.email)
+  const agentDisplayName = displayName(agent, '')
+  const name = (agentDisplayName && agentDisplayName !== email ? agentDisplayName : '') || normalizeText(cardAgent.name) || agentDisplayName
+  return {
+    name,
+    firstName: firstNameFromDisplayName(name),
+    email,
+    phone: normalizeText(agent.phone || agent.mobile_phone || agent.contact_phone || cardAgent.phone || cardAgent.whatsapp),
+    jobTitle: normalizeText(agent.job_title || agent.jobTitle || agent.title || cardAgent.jobTitle) || 'Property Practitioner',
+    avatarUrl: normalizeText(agent.avatar_url || agent.avatarUrl || cardAgent.avatarUrl),
+  }
+}
+
 export function buildPublicIntakeSupervisorLeadOperationsPayload({ basePayload = {}, supervisor = {}, dedupeSeed = '' } = {}) {
   const supervisorId = normalizeText(supervisor.user_id || supervisor.id || basePayload.assignedUserId)
   const supervisorEmail = normalizeEmail(supervisor.email)
@@ -315,6 +339,38 @@ async function invokeLeadOperationsEmail(payload = {}) {
     return { sent: false, error: data?.message || data?.error || 'send_email_rejected', status: response.status }
   }
   return { sent: data?.sent !== false, result: data }
+}
+
+export function buildAgencyPublicIntakeLeadAcknowledgementPayload({ rows = {}, submission = {}, normalized = {}, link = {}, agent = {}, basePayload = {}, dedupeSeed = '' } = {}) {
+  const leadEmail = normalizeEmail(basePayload.leadEmail || normalized.contactEmail || submission.contact_email || rows.contactRow?.email)
+  if (!leadEmail) return null
+
+  const selectedListings = mergeListingSummaries(rows.selectedListings, submission.selected_listings_json, submission.payload_json?.selectedListings, normalized.selectedListings)
+  const selectedListing = selectedListings[0] || {}
+  const propertyLabel = normalizeText(basePayload.propertyLabel || selectedListing.title || selectedListing.slug || selectedListing.id || rows.leadRow?.property_interest)
+  const agentContact = buildAgentAcknowledgementContact({ agent, link })
+  const originalMessage = normalizeText(submission.payload_json?.message || normalized.message) ||
+    (propertyLabel ? `Property enquiry: ${propertyLabel}` : '')
+  const stableDedupeSeed = normalizeText(dedupeSeed || submission.id || submission.idempotency_key || rows.leadId)
+
+  return {
+    type: 'property_enquiry_acknowledgement',
+    to: leadEmail,
+    recipientName: normalizeText(basePayload.leadName || normalized.contactName || submission.contact_name),
+    organisationId: rows.organisationId,
+    leadId: rows.leadId,
+    source: normalizeText(basePayload.leadSource || rows.leadSource || rows.leadRow?.lead_source || normalized.sourceChannel || submission.source_channel),
+    originalMessage,
+    agentName: agentContact.name,
+    agentFirstName: agentContact.firstName,
+    agentEmail: agentContact.email,
+    agentPhone: agentContact.phone,
+    agentJobTitle: agentContact.jobTitle,
+    agentAvatarUrl: agentContact.avatarUrl,
+    replyTo: agentContact.email || undefined,
+    subject: 'Thanks for your property enquiry',
+    idempotencyKey: `lead-ack:${stableDedupeSeed}:${leadEmail}`,
+  }
 }
 
 function buildJsonResponse(status, body, headers = {}) {
@@ -1309,37 +1365,64 @@ function buildLeadOperationBasePayload(rows = {}, submission = {}, normalized = 
   }
 }
 
-async function dispatchAgencyPublicIntakeLeadOperationsEmail(client, rows, submission = {}, normalized = {}) {
+async function dispatchAgencyPublicIntakeLeadAcknowledgementEmail({ rows = {}, submission = {}, normalized = {}, link = {}, agent = {}, basePayload = {}, dedupeSeed = '' } = {}) {
+  const payload = buildAgencyPublicIntakeLeadAcknowledgementPayload({
+    rows,
+    submission,
+    normalized,
+    link,
+    agent,
+    basePayload,
+    dedupeSeed,
+  })
+  if (!payload) return { attempted: false, skipped: true, reason: 'missing_lead_email' }
+  return {
+    attempted: true,
+    result: await invokeLeadOperationsEmail(payload),
+  }
+}
+
+async function dispatchAgencyPublicIntakeLeadOperationsEmail(client, rows, submission = {}, normalized = {}, link = {}) {
   const basePayload = buildLeadOperationBasePayload(rows, submission, normalized)
   const assignedUserId = normalizeText(basePayload.assignedUserId)
   const fallbackSupervisorAssignment = normalizeText(rows.assignmentSource) === 'fallback_owner'
   const dedupeSeed = normalizeText(submission.id || submission.idempotency_key || rows.leadId)
   const results = []
+  let assignedAgent = null
 
   if (assignedUserId) {
-    const agent = await fetchOrganisationUserById(client, rows.organisationId, assignedUserId)
-    const agentEmail = normalizeEmail(agent?.email)
+    assignedAgent = await fetchOrganisationUserById(client, rows.organisationId, assignedUserId)
+    const agentEmail = normalizeEmail(assignedAgent?.email)
     if (agentEmail) {
       const payload = fallbackSupervisorAssignment
         ? buildPublicIntakeSupervisorLeadOperationsPayload({
             basePayload,
-            supervisor: agent,
+            supervisor: assignedAgent,
             dedupeSeed,
           })
         : {
             ...basePayload,
             type: 'new_enquiry_assigned_agent',
             to: agentEmail,
-            recipientName: displayName(agent, 'Agent'),
+            recipientName: displayName(assignedAgent, 'Agent'),
             recipientRole: 'agent',
-            assignedAgentName: displayName(agent, ''),
+            assignedAgentName: displayName(assignedAgent, ''),
             assignedAgentEmail: agentEmail,
             subject: 'New enquiry assigned to you',
             idempotencyKey: `lead-ops:${dedupeSeed}:assigned-agent:${assignedUserId}`,
           }
       results.push(await invokeLeadOperationsEmail(payload))
     }
-    return { attempted: results.length > 0, results }
+    const acknowledgement = await dispatchAgencyPublicIntakeLeadAcknowledgementEmail({
+      rows,
+      submission,
+      normalized,
+      link,
+      agent: assignedAgent,
+      basePayload,
+      dedupeSeed,
+    })
+    return { attempted: results.length > 0 || Boolean(acknowledgement?.attempted), results, acknowledgement }
   }
 
   const managers = await fetchLeadManagerRecipients(client, rows.organisationId, normalizeText(rows.leadRow?.branch_id))
@@ -1356,7 +1439,15 @@ async function dispatchAgencyPublicIntakeLeadOperationsEmail(client, rows, submi
       idempotencyKey: `lead-ops:${dedupeSeed}:unassigned-manager:${normalizeText(manager.user_id || managerEmail)}`,
     }))
   }
-  return { attempted: results.length > 0, results }
+  const acknowledgement = await dispatchAgencyPublicIntakeLeadAcknowledgementEmail({
+    rows,
+    submission,
+    normalized,
+    link,
+    basePayload,
+    dedupeSeed,
+  })
+  return { attempted: results.length > 0 || Boolean(acknowledgement?.attempted), results, acknowledgement }
 }
 
 async function persistIngestionLog(client, rows, submission = {}) {
@@ -1449,7 +1540,7 @@ async function hydrateAgencyPublicIntakeSubmission(client, { link = {}, submissi
     try {
       rows = {
         ...rows,
-        leadOperationsEmail: await dispatchAgencyPublicIntakeLeadOperationsEmail(client, rows, submission, normalized),
+        leadOperationsEmail: await dispatchAgencyPublicIntakeLeadOperationsEmail(client, rows, submission, normalized, assignmentLink),
       }
     } catch (notificationError) {
       rows = {

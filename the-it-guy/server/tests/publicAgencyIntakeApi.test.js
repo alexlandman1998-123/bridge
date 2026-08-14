@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import {
   buildAgencyPublicIntakeAutomationEvent,
   buildAgencyPublicIntakeCrmRows,
+  buildAgencyPublicIntakeLeadAcknowledgementPayload,
   buildAgencyPublicIntakeContract,
   buildPublicIntakeSupervisorLeadOperationsPayload,
   createPublicAgencyIntakeResponse,
@@ -133,6 +134,111 @@ assert.deepEqual(buyerCrmRows.requirementRow.areas, ['Bedfordview', 'Edenvale'])
 assert.deepEqual(buyerCrmRows.requirementRow.property_types, ['House'])
 assert.equal(buyerCrmRows.requirementRow.finance_status, 'pre_approved')
 assert.equal(buyerCrmRows.requirementRow.timeline, '0_3_months')
+
+const listingCardSubmission = validateAgencyIntakeSubmission({
+  slug: 'kingstons-atlantic',
+  intent: 'buy',
+  idempotencyKey: 'listing-card-enquiry-0001',
+  contact: {
+    firstName: 'Mila',
+    lastName: 'Mokoena',
+    email: 'mila@example.com',
+    phone: '082 987 6543',
+  },
+  selectedListings: [{
+    id: '44444444-4444-4444-8444-444444444444',
+    slug: 'bedfordview-family-home',
+    title: 'Bedfordview family home',
+    askingPrice: 2450000,
+  }],
+  sourceChannel: 'card',
+  privacyConsent: true,
+  privacyPolicyVersion: 'privacy-v2',
+}, {
+  slug: 'kingstons-atlantic',
+  enabled_intents: ['buy', 'sell'],
+})
+
+assert.deepEqual(listingCardSubmission.errors, {})
+assert.equal(listingCardSubmission.normalized.contactName, 'Mila Mokoena')
+assert.equal(listingCardSubmission.normalized.contactEmail, 'mila@example.com')
+assert.equal(listingCardSubmission.normalized.contactPhone, '082 987 6543')
+assert.equal(listingCardSubmission.normalized.sourceChannel, 'card')
+assert.equal(listingCardSubmission.normalized.selectedListings[0].title, 'Bedfordview family home')
+
+const listingCardCrmRows = buildAgencyPublicIntakeCrmRows({
+  nowIso: '2026-07-29T10:00:00.000Z',
+  link: {
+    organisation_id: '11111111-1111-4111-8111-111111111111',
+    lead_source_label: 'Agent Digital Card',
+    source_channel: 'card',
+    default_branch_id: '22222222-2222-4222-8222-222222222222',
+    default_assigned_agent_id: '33333333-3333-4333-8333-333333333333',
+  },
+  submission: {
+    id: '99999999-9999-4999-8999-999999999999',
+    idempotency_key: 'listing-card-enquiry-0001',
+    contact_name: 'Mila Mokoena',
+    contact_email: 'mila@example.com',
+    contact_phone: '082 987 6543',
+    selected_listings_json: listingCardSubmission.normalized.selectedListings,
+    payload_json: { message: '' },
+  },
+  normalized: listingCardSubmission.normalized,
+})
+
+assert.equal(listingCardCrmRows.contactRow.first_name, 'Mila')
+assert.equal(listingCardCrmRows.contactRow.last_name, 'Mokoena')
+assert.equal(listingCardCrmRows.leadRow.lead_category, 'buyer')
+assert.equal(listingCardCrmRows.leadRow.lead_source, 'Agent Digital Card')
+assert.equal(listingCardCrmRows.leadRow.source_channel, 'card')
+assert.equal(listingCardCrmRows.leadRow.assigned_agent_id, '33333333-3333-4333-8333-333333333333')
+assert.equal(listingCardCrmRows.leadRow.enquired_listing_id, '44444444-4444-4444-8444-444444444444')
+assert.equal(listingCardCrmRows.requirementRow.budget_min, null)
+assert.equal(listingCardCrmRows.requirementRow.budget_max, null)
+assert.equal(listingCardCrmRows.requirementRow.status, 'active')
+
+const listingCardAcknowledgementPayload = buildAgencyPublicIntakeLeadAcknowledgementPayload({
+  rows: listingCardCrmRows,
+  submission: {
+    id: '99999999-9999-4999-8999-999999999999',
+    idempotency_key: 'listing-card-enquiry-0001',
+    contact_name: 'Mila Mokoena',
+    contact_email: 'mila@example.com',
+    selected_listings_json: listingCardSubmission.normalized.selectedListings,
+    payload_json: { message: '' },
+  },
+  normalized: listingCardSubmission.normalized,
+  link: {
+    metadata_json: {
+      agentDigitalCard: {
+        agent: {
+          name: 'John Smith',
+          email: 'john@kingstons.test',
+          phone: '082 123 4567',
+          jobTitle: 'Property Practitioner',
+          avatarUrl: 'https://cdn.example.com/john.jpg',
+        },
+      },
+    },
+  },
+  basePayload: {
+    leadName: 'Mila Mokoena',
+    leadEmail: 'mila@example.com',
+    leadSource: 'Agent Digital Card',
+    propertyLabel: 'Bedfordview family home',
+  },
+  dedupeSeed: 'listing-card-enquiry-0001',
+})
+
+assert.equal(listingCardAcknowledgementPayload.type, 'property_enquiry_acknowledgement')
+assert.equal(listingCardAcknowledgementPayload.to, 'mila@example.com')
+assert.equal(listingCardAcknowledgementPayload.recipientName, 'Mila Mokoena')
+assert.equal(listingCardAcknowledgementPayload.agentName, 'John Smith')
+assert.equal(listingCardAcknowledgementPayload.agentEmail, 'john@kingstons.test')
+assert.equal(listingCardAcknowledgementPayload.agentPhone, '082 123 4567')
+assert.equal(listingCardAcknowledgementPayload.originalMessage, 'Property enquiry: Bedfordview family home')
+assert.equal(listingCardAcknowledgementPayload.idempotencyKey, 'lead-ack:listing-card-enquiry-0001:mila@example.com')
 
 const fallbackOwner = selectPublicIntakeFallbackOwner([
   {
