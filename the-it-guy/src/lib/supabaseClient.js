@@ -104,6 +104,8 @@ export const isSupabaseConfigured = Boolean(
 )
 
 const AUTH_READ_CACHE_TTL_MS = 750
+const AUTH_READ_LOCK_RETRY_DELAY_MS = 75
+const AUTH_READ_LOCK_RETRY_ATTEMPTS = 2
 const AUTH_READ_OBSERVABILITY_EVENT = 'arch9:auth-read-observability'
 const AUTH_READ_SLOW_THRESHOLD_MS = 1000
 const AUTH_MUTATION_METHODS = [
@@ -130,10 +132,29 @@ function isSuccessfulAuthRead(result) {
   return result && !result.error
 }
 
+function isSupabaseAuthLockRecoveryError(error) {
+  const name = String(error?.name || '').toLowerCase()
+  const message = String(error?.message || error || '').toLowerCase()
+  return (
+    (name === 'aborterror' && message.includes('lock broken by another request')) ||
+    message.includes("lock broken by another request with the 'steal' option") ||
+    message.includes('lock broken by another request with the "steal" option')
+  )
+}
+
 function getAuthReadNow() {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
     ? performance.now()
     : Date.now()
+}
+
+function delayAuthReadRetry(delayMs = AUTH_READ_LOCK_RETRY_DELAY_MS) {
+  return new Promise((resolve) => {
+    const timer = typeof window !== 'undefined' && typeof window.setTimeout === 'function'
+      ? window.setTimeout
+      : setTimeout
+    timer(resolve, delayMs)
+  })
 }
 
 function emitAuthReadObservability(detail = {}) {
@@ -210,8 +231,48 @@ function createSingleFlightAuthRead(auth, methodName, {
     }
 
     const startedAt = getAuthReadNow()
+    const runAuthReadWithLockRecovery = async () => {
+      let attempts = 0
+      while (true) {
+        try {
+          const result = await originalMethod.apply(auth, args)
+          if (
+            result?.error &&
+            isSupabaseAuthLockRecoveryError(result.error) &&
+            attempts < AUTH_READ_LOCK_RETRY_ATTEMPTS
+          ) {
+            attempts += 1
+            emitAuthReadObservability({
+              methodName,
+              source: 'auth_lock_retry',
+              elapsedMs: getAuthReadNow() - startedAt,
+              cacheable,
+              success: false,
+              errorMessage: result.error?.message || 'Supabase auth lock was interrupted.',
+            })
+            await delayAuthReadRetry()
+            continue
+          }
+          return result
+        } catch (error) {
+          if (!isSupabaseAuthLockRecoveryError(error) || attempts >= AUTH_READ_LOCK_RETRY_ATTEMPTS) {
+            throw error
+          }
+          attempts += 1
+          emitAuthReadObservability({
+            methodName,
+            source: 'auth_lock_retry',
+            elapsedMs: getAuthReadNow() - startedAt,
+            cacheable,
+            success: false,
+            errorMessage: error?.message || 'Supabase auth lock was interrupted.',
+          })
+          await delayAuthReadRetry()
+        }
+      }
+    }
     const request = Promise.resolve()
-      .then(() => originalMethod.apply(auth, args))
+      .then(runAuthReadWithLockRecovery)
       .then((result) => {
         if (cacheable && isSuccessfulAuthRead(result)) {
           cachedResult = result
@@ -579,6 +640,11 @@ export function createScopedSupabaseClient(headers = {}) {
   scopedClientCache.set(cacheKey, scopedClient)
   return scopedClient
 }
+
+export const __supabaseClientTestUtils = Object.freeze({
+  createSingleFlightAuthRead,
+  isSupabaseAuthLockRecoveryError,
+})
 
 const configuredDocumentsBuckets = [
   ...parseBucketCandidates(viteEnv.VITE_SUPABASE_DOCUMENTS_BUCKET || processEnv.VITE_SUPABASE_DOCUMENTS_BUCKET),

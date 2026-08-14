@@ -186,6 +186,7 @@ function buildImmediateOrganisationSnapshot(authState = {}) {
   if (authState.status !== 'authenticated' || !authState.user?.id) return null
   if (isDevAuthOrganisation(authState)) return buildAuthOrganisationSnapshot(authState)
   if (shouldUseWorkspaceBranding(authState)) return buildWorkspaceOrganisationSnapshot(authState)
+  if (getAuthWorkspaceId(authState)) return buildWorkspaceOrganisationSnapshot(authState)
   return null
 }
 

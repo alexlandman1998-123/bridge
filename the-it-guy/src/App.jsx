@@ -1313,7 +1313,7 @@ function MobilePublicPortalShell({ children }) {
 
 function OrganisationGate({ children }) {
   const { role, activeMemberships } = useWorkspace()
-  const { loading, error, refreshOrganisation } = useOrganisation()
+  const { loading, error, refreshOrganisation, state: organisationState } = useOrganisation()
   const shouldHydrateOrganisation = role !== 'client' && activeMemberships.length > 0
 
   if (shouldHydrateOrganisation && loading) {
@@ -1327,7 +1327,7 @@ function OrganisationGate({ children }) {
     )
   }
 
-  if (shouldHydrateOrganisation && error) {
+  if (shouldHydrateOrganisation && error && !organisationState) {
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">

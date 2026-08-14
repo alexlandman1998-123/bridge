@@ -264,7 +264,7 @@ function PrincipalStageMix({ stages }) {
           />
         ))}
       </div>
-      <div className="mt-3 grid gap-2 text-[0.76rem] font-medium text-white/76 sm:grid-cols-2">
+      <div className="mt-3 grid gap-2 text-[0.76rem] font-medium text-white/80 sm:grid-cols-2">
         {stageRows.map((item) => (
           <div key={`stage-${item.key}`} className="flex items-center justify-between gap-2">
             <span className="inline-flex items-center gap-2">
@@ -395,6 +395,7 @@ function AgentDigitalCardPanel({
   onShareWhatsApp = () => {},
   onDownloadVcard = () => {},
   onDownloadQr = () => {},
+  onManageCard = () => {},
 }) {
   const hasActiveCard = Boolean(link?.id && link.status === 'active' && shareUrl)
   const displayName = normalizeDashboardText(agent.name) || 'Agent'
@@ -416,29 +417,29 @@ function AgentDigitalCardPanel({
         <article className="min-w-0 rounded-[18px] border border-[#dce6f2] bg-[linear-gradient(145deg,#102236_0%,#21445f_58%,#f5b83c_160%)] p-5 text-white">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[0.75rem] font-semibold text-white/82">
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[0.75rem] font-semibold text-white/90">
                 <IdCard size={14} /> My Digital Card
               </span>
               <h3 className="mt-4 truncate text-[1.32rem] font-semibold tracking-[-0.03em] text-white">{displayName}</h3>
-              <p className="mt-1 text-sm font-medium text-white/78">{displayRole}</p>
-              <p className="mt-0.5 text-sm text-white/68">{displayAgency}</p>
+              <p className="mt-1 text-sm font-medium text-white/90">{displayRole}</p>
+              <p className="mt-0.5 text-sm text-white/75">{displayAgency}</p>
             </div>
             <span className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
-              hasActiveCard ? 'border-[#bce8cf] bg-[#ecfbf2] text-[#1f7a45]' : 'border-white/18 bg-white/10 text-white/76'
+              hasActiveCard ? 'border-[#bce8cf] bg-[#ecfbf2] text-[#1f7a45]' : 'border-white/20 bg-white/10 text-white/90'
             }`}>
               {loading ? 'Loading' : hasActiveCard ? 'Active' : 'Not Active'}
             </span>
           </div>
 
           {hasActiveCard ? (
-            <div className="mt-5 rounded-[14px] border border-white/14 bg-white/10 p-3">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-white/58">Share Link</p>
+            <div className="mt-5 rounded-[14px] border border-white/20 bg-white/10 p-3">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-white/70">Share Link</p>
               <p className="mt-1 break-all text-[0.88rem] font-medium text-white">{shareUrl}</p>
             </div>
           ) : (
-            <div className="mt-5 rounded-[14px] border border-white/14 bg-white/10 p-4">
+            <div className="mt-5 rounded-[14px] border border-white/20 bg-white/10 p-4">
               <p className="text-sm font-semibold text-white">Your card is not ready yet.</p>
-              <p className="mt-1 text-sm leading-6 text-white/70">
+              <p className="mt-1 text-sm leading-6 text-white/80">
                 A principal or admin can generate and activate it from Settings, then this panel becomes your copy-and-share hub.
               </p>
             </div>
@@ -448,9 +449,13 @@ function AgentDigitalCardPanel({
         <article className="min-w-0 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">Copy & Share</h3>
+              <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">
+                {hasActiveCard ? 'Copy & Share' : 'Set Up & Share'}
+              </h3>
               <p className="mt-1 text-[0.88rem] leading-6 text-[#6b7d93]">
-                Share this card wherever buyers and sellers already contact you.
+                {hasActiveCard
+                  ? 'Share this card wherever buyers and sellers already contact you.'
+                  : 'Activate your digital card before sharing it with buyers and sellers.'}
               </p>
             </div>
             {feedback ? (
@@ -464,48 +469,59 @@ function AgentDigitalCardPanel({
             <p className="mt-4 rounded-[14px] border border-[#f3d2cc] bg-[#fef3f2] px-4 py-3 text-sm text-[#b42318]">{error}</p>
           ) : null}
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              className={DASHBOARD_ACTION_SECONDARY_CLASS}
-              disabled={!hasActiveCard}
-              onClick={() => onCopy(shareUrl, 'Card link copied')}
-            >
-              <Copy size={16} className="mr-2" /> Copy Link
-            </button>
-            <button
-              type="button"
-              className={DASHBOARD_ACTION_SECONDARY_CLASS}
-              disabled={!hasActiveCard}
-              onClick={onOpenPreview}
-            >
-              <ExternalLink size={16} className="mr-2" /> Open Preview
-            </button>
-            <button
-              type="button"
-              className={DASHBOARD_ACTION_SECONDARY_CLASS}
-              disabled={!hasActiveCard}
-              onClick={onShareWhatsApp}
-            >
-              <MessageCircle size={16} className="mr-2" /> WhatsApp
-            </button>
-            <button
-              type="button"
-              className={DASHBOARD_ACTION_SECONDARY_CLASS}
-              disabled={!hasActiveCard || busyAction === 'qr'}
-              onClick={onDownloadQr}
-            >
-              <QrCode size={16} className="mr-2" /> {busyAction === 'qr' ? 'Preparing' : 'QR PNG'}
-            </button>
-            <button
-              type="button"
-              className={`${DASHBOARD_ACTION_SECONDARY_CLASS} sm:col-span-2`}
-              disabled={!hasActiveCard}
-              onClick={onDownloadVcard}
-            >
-              <Download size={16} className="mr-2" /> Download .vcf Contact
-            </button>
-          </div>
+          {hasActiveCard ? (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                className={DASHBOARD_ACTION_SECONDARY_CLASS}
+                onClick={() => onCopy(shareUrl, 'Card link copied')}
+              >
+                <Copy size={16} className="mr-2" /> Copy Link
+              </button>
+              <button
+                type="button"
+                className={DASHBOARD_ACTION_SECONDARY_CLASS}
+                onClick={onOpenPreview}
+              >
+                <ExternalLink size={16} className="mr-2" /> Open Preview
+              </button>
+              <button
+                type="button"
+                className={DASHBOARD_ACTION_SECONDARY_CLASS}
+                onClick={onShareWhatsApp}
+              >
+                <MessageCircle size={16} className="mr-2" /> WhatsApp
+              </button>
+              <button
+                type="button"
+                className={DASHBOARD_ACTION_SECONDARY_CLASS}
+                disabled={busyAction === 'qr'}
+                onClick={onDownloadQr}
+              >
+                <QrCode size={16} className="mr-2" /> {busyAction === 'qr' ? 'Preparing' : 'QR PNG'}
+              </button>
+              <button
+                type="button"
+                className={`${DASHBOARD_ACTION_SECONDARY_CLASS} sm:col-span-2`}
+                onClick={onDownloadVcard}
+              >
+                <Download size={16} className="mr-2" /> Download .vcf Contact
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-white p-4">
+              <p className="text-[0.88rem] font-medium leading-6 text-[#5f738a]">
+                Share actions will unlock as soon as the card is generated and marked active.
+              </p>
+              <button
+                type="button"
+                className={`${DASHBOARD_ACTION_SECONDARY_CLASS} mt-3 w-full`}
+                onClick={onManageCard}
+              >
+                <IdCard size={16} className="mr-2" /> Open Digital Card Settings
+              </button>
+            </div>
+          )}
 
           {hasActiveCard && urls?.buyerUrl && urls?.sellerUrl ? (
             <div className="mt-4 grid gap-2 text-[0.78rem] font-medium text-[#62778f] sm:grid-cols-2">
@@ -5201,29 +5217,6 @@ function renderActiveTransactionsBlock({
 
           {isAgentRole ? (
             <>
-              {!isPrincipalAgentView ? (
-                <AgentDigitalCardPanel
-                  loading={agentDigitalCardState.loading}
-                  error={agentDigitalCardState.missingSchema ? 'Digital card setup is waiting for the latest database migration.' : agentDigitalCardState.error}
-                  link={agentDigitalCardLink}
-                  agent={agentDigitalCardAgent}
-                  organisationName={agentDigitalCardOrganisationName}
-                  shareUrl={agentDigitalCardShareUrl}
-                  urls={agentDigitalCardUrls}
-                  insights={{
-                    ...(agentDigitalCardState.insights || {}),
-                    missingSchema: agentDigitalCardState.insightsMissingSchema,
-                  }}
-                  feedback={agentDigitalCardFeedback}
-                  busyAction={agentDigitalCardBusyAction}
-                  onCopy={copyAgentDigitalCardText}
-                  onOpenPreview={openAgentDigitalCardPreview}
-                  onShareWhatsApp={shareAgentDigitalCardWhatsApp}
-                  onDownloadVcard={downloadAgentDigitalCardVcard}
-                  onDownloadQr={downloadAgentDigitalCardQr}
-                />
-              ) : null}
-
               {!isPrincipalAgentView && agentResidentialModel ? (
                 <section className="mt-6">
                   <div className="space-y-5">
@@ -5616,6 +5609,30 @@ function renderActiveTransactionsBlock({
                   })}
                 </section>
               )}
+
+              {!isPrincipalAgentView ? (
+                <AgentDigitalCardPanel
+                  loading={agentDigitalCardState.loading}
+                  error={agentDigitalCardState.missingSchema ? 'Digital card setup is waiting for the latest database migration.' : agentDigitalCardState.error}
+                  link={agentDigitalCardLink}
+                  agent={agentDigitalCardAgent}
+                  organisationName={agentDigitalCardOrganisationName}
+                  shareUrl={agentDigitalCardShareUrl}
+                  urls={agentDigitalCardUrls}
+                  insights={{
+                    ...(agentDigitalCardState.insights || {}),
+                    missingSchema: agentDigitalCardState.insightsMissingSchema,
+                  }}
+                  feedback={agentDigitalCardFeedback}
+                  busyAction={agentDigitalCardBusyAction}
+                  onCopy={copyAgentDigitalCardText}
+                  onOpenPreview={openAgentDigitalCardPreview}
+                  onShareWhatsApp={shareAgentDigitalCardWhatsApp}
+                  onDownloadVcard={downloadAgentDigitalCardVcard}
+                  onDownloadQr={downloadAgentDigitalCardQr}
+                  onManageCard={() => navigate('/settings/lead-capture')}
+                />
+              ) : null}
 
               {!isPrincipalAgentView ? (
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
