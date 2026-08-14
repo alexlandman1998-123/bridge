@@ -27364,6 +27364,31 @@ async function persistTransactionCommissionSnapshotIfPossible(
     updated_at: new Date().toISOString(),
   }
 
+  const rpcResult = await client.rpc('bridge_upsert_transaction_commission_snapshot', {
+    p_transaction_id: transactionId,
+    p_organisation_id: payload.organisation_id,
+    p_assigned_agent_id: payload.assigned_agent_id,
+    p_assigned_agent_email: payload.assigned_agent_email,
+    p_commission_structure_id: payload.commission_structure_id,
+    p_commission_structure_name_snapshot: payload.commission_structure_name_snapshot,
+    p_sale_price: payload.sale_price,
+    p_gross_commission_percentage: payload.gross_commission_percentage,
+    p_gross_commission_amount: payload.gross_commission_amount,
+    p_agent_split_percentage_snapshot: payload.agent_split_percentage_snapshot,
+    p_agency_split_percentage_snapshot: payload.agency_split_percentage_snapshot,
+    p_agent_commission_amount: payload.agent_commission_amount,
+    p_agency_commission_amount: payload.agency_commission_amount,
+    p_status: payload.status,
+  })
+
+  if (!rpcResult.error) {
+    return payload
+  }
+
+  if (!isMissingFunctionError(rpcResult.error, 'bridge_upsert_transaction_commission_snapshot')) {
+    throw rpcResult.error
+  }
+
   let upsertResult = await client
     .from('transaction_commissions')
     .upsert(payload, { onConflict: 'transaction_id' })

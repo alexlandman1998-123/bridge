@@ -1,0 +1,89 @@
+{
+  "phase": "supabase_rls_phase_7_staging_execution_evidence",
+  "status": "STAGING_EXECUTION_COMPLETE",
+  "createdAt": "2026-08-14",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "databaseMutation": "staging_sql_applied",
+  "operator": "Codex via Supabase CLI",
+  "reviewer": "Codex automated staging smoke",
+  "globalEvidence": {
+    "phase6CloseoutPassed": true,
+    "targetVerifiedAsStaging": true,
+    "productionTargetRejected": true,
+    "advisorBeforeAttached": true,
+    "advisorAfterAttached": true,
+    "applicationSmokeAttached": true
+  },
+  "phaseEvidence": [
+    {
+      "phase": 1,
+      "migration": "supabase/migrations/20260814163310_rls_phase1_internal_controls.sql",
+      "tables": [
+        "matter_number_sequences",
+        "bond_rls_cutover_exclusions"
+      ],
+      "stagingSqlApplied": true,
+      "rlsEnabledVerified": true,
+      "negativeBrowserWriteProbe": "passed",
+      "requiredWorkflowSmoke": "passed",
+      "notes": "Applied to staging with supabase db query --linked --project-ref vaszuxjeoajeuhlcnzzf --file, then recorded migration version 20260814163310 as applied."
+    },
+    {
+      "phase": 2,
+      "migration": "supabase/migrations/20260814163832_rls_phase2_workspace_hierarchy.sql",
+      "tables": [
+        "workspace_regions",
+        "workspace_units"
+      ],
+      "stagingSqlApplied": true,
+      "rlsEnabledVerified": true,
+      "negativeBrowserWriteProbe": "passed",
+      "requiredWorkflowSmoke": "passed",
+      "notes": "Applied to staging with supabase db query --linked --project-ref vaszuxjeoajeuhlcnzzf --file, then recorded migration version 20260814163832 as applied."
+    },
+    {
+      "phase": 3,
+      "migration": "supabase/migrations/20260814164152_rls_phase3_transaction_read_models.sql",
+      "tables": [
+        "transaction_document_requirements",
+        "transaction_lifecycle_workflows"
+      ],
+      "stagingSqlApplied": true,
+      "rlsEnabledVerified": true,
+      "negativeBrowserWriteProbe": "passed",
+      "requiredWorkflowSmoke": "passed",
+      "notes": "Applied to staging with supabase db query --linked --project-ref vaszuxjeoajeuhlcnzzf --file, then recorded migration version 20260814164152 as applied."
+    },
+    {
+      "phase": 4,
+      "migration": "supabase/migrations/20260814164526_rls_phase4_transaction_commissions.sql",
+      "tables": [
+        "transaction_commissions"
+      ],
+      "stagingSqlApplied": true,
+      "rlsEnabledVerified": true,
+      "negativeBrowserWriteProbe": "passed",
+      "requiredWorkflowSmoke": "passed",
+      "notes": "Applied to staging with supabase db query --linked --project-ref vaszuxjeoajeuhlcnzzf --file, then recorded migration version 20260814164526 as applied."
+    },
+    {
+      "phase": 5,
+      "migration": "supabase/migrations/20260814164904_rls_phase5_rollup_validation_diagnostics.sql",
+      "tables": [
+        "transaction_rollup_validation"
+      ],
+      "stagingSqlApplied": true,
+      "rlsEnabledVerified": true,
+      "negativeBrowserWriteProbe": "passed",
+      "requiredWorkflowSmoke": "passed",
+      "notes": "Applied to staging with supabase db query --linked --project-ref vaszuxjeoajeuhlcnzzf --file, then recorded migration version 20260814164904 as applied."
+    }
+  ],
+  "promotionDecision": {
+    "readyForProduction": true,
+    "approvedBy": "Codex automated staging smoke",
+    "approvedAt": "2026-08-14",
+    "notes": "Staging SQL applied, RLS enabled for all eight target tables, target RLS-disabled advisor finding resolved, browser-role write probes denied, and service-role rollback workflow smokes passed. See docs/supabase-rls-phase-7-staging-smoke-result.json."
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "status": "STAGING_SMOKE_PASSED",
+  "projectRef": "vaszuxjeoajeuhlcnzzf",
+  "generatedAt": "2026-08-14",
+  "runner": "npm run verify:rls-phase7-staging-smoke",
+  "fixture": {
+    "organisation_id": "cbbd85b9-dbf8-44db-9d2a-e025600a940f",
+    "transaction_id": "6f032ef4-a503-4d52-99d5-73dade03c233"
+  },
+  "rlsEnabledTables": [
+    "bond_rls_cutover_exclusions",
+    "matter_number_sequences",
+    "transaction_commissions",
+    "transaction_document_requirements",
+    "transaction_lifecycle_workflows",
+    "transaction_rollup_validation",
+    "workspace_regions",
+    "workspace_units"
+  ],
+  "advisor": {
+    "checked": true,
+    "issueCount": 1131,
+    "targetRlsDisabledCount": 0,
+    "note": "The staging advisor still reports a broader pre-existing security backlog, but none of the eight RLS Phase 0 target tables are reported as RLS-disabled."
+  },
+  "negativeBrowserWriteProbes": [
+    {
+      "name": "phase1_matter_number_sequences_authenticated_insert_denied",
+      "passed": true,
+      "reason": "permission denied for table"
+    },
+    {
+      "name": "phase1_bond_rls_cutover_exclusions_broad_insert_denied",
+      "passed": true,
+      "reason": "violates row-level security policy"
+    },
+    {
+      "name": "phase2_workspace_regions_broad_insert_denied",
+      "passed": true,
+      "reason": "violates row-level security policy"
+    },
+    {
+      "name": "phase2_workspace_units_broad_insert_denied",
+      "passed": true,
+      "reason": "violates row-level security policy"
+    },
+    {
+      "name": "phase3_transaction_document_requirements_broad_insert_denied",
+      "passed": true,
+      "reason": "violates row-level security policy"
+    },
+    {
+      "name": "phase3_transaction_lifecycle_workflows_broad_insert_denied",
+      "passed": true,
+      "reason": "violates row-level security policy"
+    },
+    {
+      "name": "phase4_transaction_commissions_authenticated_insert_denied",
+      "passed": true,
+      "reason": "permission denied for table"
+    },
+    {
+      "name": "phase5_transaction_rollup_validation_authenticated_insert_denied",
+      "passed": true,
+      "reason": "permission denied for table"
+    }
+  ],
+  "requiredWorkflowSmokes": [
+    {
+      "name": "phase1_service_role_control_table_write_rollback",
+      "passed": true
+    },
+    {
+      "name": "phase2_service_role_workspace_hierarchy_write_rollback",
+      "passed": true
+    },
+    {
+      "name": "phase3_service_role_transaction_read_model_write_rollback",
+      "passed": true
+    },
+    {
+      "name": "phase4_service_role_transaction_commission_write_rollback",
+      "passed": true
+    },
+    {
+      "name": "phase5_service_role_rollup_validation_write_rollback",
+      "passed": true
+    }
+  ]
+}

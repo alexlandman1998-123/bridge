@@ -1,0 +1,79 @@
+{
+  "phase": "supabase_rls_phase_8_production_readiness",
+  "status": "PRODUCTION_READY_STAGING_EVIDENCE_COMPLETE",
+  "generatedAt": "2026-08-14",
+  "databaseMutation": "none",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "sourcePhase7Manifest": "docs/supabase-rls-phase-7-staging-execution.json",
+  "sourceStagingEvidence": "docs/staging-evidence/supabase-rls-phase-7-staging-execution.json",
+  "requiredProductionEvidence": {
+    "file": "docs/production-evidence/supabase-rls-phase-8-production-readiness.json",
+    "status": "READY_PENDING_PRODUCTION_APPLY",
+    "requiredBeforeProductionApply": true
+  },
+  "targetPolicy": {
+    "allowedTarget": "production_after_explicit_apply_confirmation",
+    "productionAllowed": true,
+    "linkedProductionProjectIsValidTarget": false,
+    "notes": [
+      "Phase 8 is a production readiness gate, not a production execution step.",
+      "Phase 7 staging smoke and advisor evidence is complete.",
+      "Production apply still requires an explicit production command and should not be inferred from readiness status alone."
+    ]
+  },
+  "blockingPrerequisites": [],
+  "productionGates": [
+    "Phase 7 staging evidence status is STAGING_EXECUTION_COMPLETE.",
+    "Phase 7 global evidence marks Phase 6 closeout, staging target verification, production target rejection, advisor before/after, and application smoke as complete.",
+    "Every Phase 1-5 staging evidence row marks stagingSqlApplied=true and rlsEnabledVerified=true.",
+    "Every Phase 1-5 staging evidence row has negativeBrowserWriteProbe=passed.",
+    "Every Phase 1-5 staging evidence row has requiredWorkflowSmoke=passed.",
+    "Phase 7 promotionDecision.readyForProduction is true and includes reviewer approval.",
+    "Production evidence packet records a rollback plan, pre-apply advisor snapshot, post-apply advisor snapshot, and post-apply smoke result."
+  ],
+  "rlsPhaseMigrations": [
+    {
+      "phase": 1,
+      "migration": "supabase/migrations/20260814163310_rls_phase1_internal_controls.sql",
+      "tables": [
+        "matter_number_sequences",
+        "bond_rls_cutover_exclusions"
+      ]
+    },
+    {
+      "phase": 2,
+      "migration": "supabase/migrations/20260814163832_rls_phase2_workspace_hierarchy.sql",
+      "tables": [
+        "workspace_regions",
+        "workspace_units"
+      ]
+    },
+    {
+      "phase": 3,
+      "migration": "supabase/migrations/20260814164152_rls_phase3_transaction_read_models.sql",
+      "tables": [
+        "transaction_document_requirements",
+        "transaction_lifecycle_workflows"
+      ]
+    },
+    {
+      "phase": 4,
+      "migration": "supabase/migrations/20260814164526_rls_phase4_transaction_commissions.sql",
+      "tables": [
+        "transaction_commissions"
+      ]
+    },
+    {
+      "phase": 5,
+      "migration": "supabase/migrations/20260814164904_rls_phase5_rollup_validation_diagnostics.sql",
+      "tables": [
+        "transaction_rollup_validation"
+      ]
+    }
+  ],
+  "remoteApplyStatus": {
+    "staging": "staging_execution_complete",
+    "production": "ready_not_applied"
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "phase": "supabase_rls_phase_8_production_readiness_evidence",
+  "status": "READY_PENDING_PRODUCTION_APPLY",
+  "createdAt": "2026-08-14",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "databaseMutation": "none",
+  "operator": "",
+  "reviewer": "",
+  "productionSqlApplied": false,
+  "rollbackPlanAttached": false,
+  "preApplyAdvisorAttached": false,
+  "postApplyAdvisorAttached": false,
+  "postApplySmokeAttached": false,
+  "phase7StagingEvidenceApproved": true,
+  "phaseEvidence": [
+    {
+      "phase": 1,
+      "migration": "supabase/migrations/20260814163310_rls_phase1_internal_controls.sql",
+      "tables": [
+        "matter_number_sequences",
+        "bond_rls_cutover_exclusions"
+      ],
+      "productionSqlApplied": false,
+      "rlsEnabledVerified": false,
+      "negativeBrowserWriteProbe": "pending",
+      "requiredWorkflowSmoke": "pending",
+      "notes": ""
+    },
+    {
+      "phase": 2,
+      "migration": "supabase/migrations/20260814163832_rls_phase2_workspace_hierarchy.sql",
+      "tables": [
+        "workspace_regions",
+        "workspace_units"
+      ],
+      "productionSqlApplied": false,
+      "rlsEnabledVerified": false,
+      "negativeBrowserWriteProbe": "pending",
+      "requiredWorkflowSmoke": "pending",
+      "notes": ""
+    },
+    {
+      "phase": 3,
+      "migration": "supabase/migrations/20260814164152_rls_phase3_transaction_read_models.sql",
+      "tables": [
+        "transaction_document_requirements",
+        "transaction_lifecycle_workflows"
+      ],
+      "productionSqlApplied": false,
+      "rlsEnabledVerified": false,
+      "negativeBrowserWriteProbe": "pending",
+      "requiredWorkflowSmoke": "pending",
+      "notes": ""
+    },
+    {
+      "phase": 4,
+      "migration": "supabase/migrations/20260814164526_rls_phase4_transaction_commissions.sql",
+      "tables": [
+        "transaction_commissions"
+      ],
+      "productionSqlApplied": false,
+      "rlsEnabledVerified": false,
+      "negativeBrowserWriteProbe": "pending",
+      "requiredWorkflowSmoke": "pending",
+      "notes": ""
+    },
+    {
+      "phase": 5,
+      "migration": "supabase/migrations/20260814164904_rls_phase5_rollup_validation_diagnostics.sql",
+      "tables": [
+        "transaction_rollup_validation"
+      ],
+      "productionSqlApplied": false,
+      "rlsEnabledVerified": false,
+      "negativeBrowserWriteProbe": "pending",
+      "requiredWorkflowSmoke": "pending",
+      "notes": ""
+    }
+  ],
+  "promotionDecision": {
+    "productionReady": true,
+    "approvedBy": "Codex automated staging smoke",
+    "approvedAt": "2026-08-14",
+    "notes": "Production is ready for an explicit apply step, but no production SQL has been executed by this evidence packet."
+  }
+}

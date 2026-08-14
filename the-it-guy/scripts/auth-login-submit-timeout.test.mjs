@@ -12,6 +12,18 @@ assert.match(
 
 assert.match(
   source,
+  /const AUTH_PASSWORD_TOKEN_FALLBACK_TIMEOUT_MS = 12000/,
+  'password login should have a bounded direct-token fallback when the SDK request stalls',
+)
+
+assert.match(
+  source,
+  /const AUTH_SESSION_SAVE_TIMEOUT_MS = 6000/,
+  'recovered login sessions should not hang indefinitely while being saved',
+)
+
+assert.match(
+  source,
   /const FOUNDER_LOGIN_TARGET_TIMEOUT_MS = 3000/,
   'post-login founder routing should have a short timeout and must not block successful login navigation',
 )
@@ -24,8 +36,20 @@ assert.match(
 
 assert.match(
   source,
-  /withAuthRequestTimeout\(\s*supabase\.auth\.signInWithPassword\(/,
+  /function signInWithPasswordWithRecovery[\s\S]*?supabase\.auth\.signInWithPassword\(/,
   'password login should be wrapped with the auth request timeout',
+)
+
+assert.match(
+  source,
+  /function signInWithPasswordAfterSdkTimeout[\s\S]*?\/auth\/v1\/token\?grant_type=password[\s\S]*?supabase\.auth\.setSession/,
+  'password login should recover from SDK timeouts by fetching a token directly and saving the session',
+)
+
+assert.match(
+  source,
+  /if \(!isAuthRequestTimeoutError\(error\)\)[\s\S]*?return signInWithPasswordAfterSdkTimeout/,
+  'the direct-token fallback should only run for the stable auth timeout error',
 )
 
 assert.match(

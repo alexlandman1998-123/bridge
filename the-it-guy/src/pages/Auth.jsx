@@ -36,6 +36,7 @@ import {
 } from '../lib/signupIntent'
 import {
   clearSupabaseLocalAuthState,
+  getSupabaseRuntimeConfig,
   isSupabaseConfigured,
   isUnsupportedJwtAlgorithmError,
   supabase,
@@ -47,6 +48,8 @@ const PENDING_ORG_INVITE_EMAIL_STORAGE_KEY = 'itg:pending-org-invite-email'
 const PENDING_ORG_INVITE_MODULE_STORAGE_KEY = 'itg:pending-org-invite-module'
 const PENDING_ORG_INVITE_ROLE_STORAGE_KEY = 'itg:pending-org-invite-role'
 const AUTH_REQUEST_TIMEOUT_MS = 15000
+const AUTH_PASSWORD_TOKEN_FALLBACK_TIMEOUT_MS = 12000
+const AUTH_SESSION_SAVE_TIMEOUT_MS = 6000
 const FOUNDER_LOGIN_TARGET_TIMEOUT_MS = 3000
 
 function getRedirectPath(location) {
@@ -222,6 +225,10 @@ function buildAuthRequestTimeoutError(label = 'Authentication request') {
   return error
 }
 
+function isAuthRequestTimeoutError(error) {
+  return String(error?.code || '') === 'AUTH_REQUEST_TIMEOUT'
+}
+
 async function withAuthRequestTimeout(task, {
   timeoutMs = AUTH_REQUEST_TIMEOUT_MS,
   label = 'Authentication request',
@@ -242,6 +249,119 @@ async function withAuthRequestTimeout(task, {
     ])
   } finally {
     if (timeoutId) clearTimer(timeoutId)
+  }
+}
+
+async function fetchAuthJsonWithTimeout(url, options = {}, {
+  timeoutMs = AUTH_PASSWORD_TOKEN_FALLBACK_TIMEOUT_MS,
+  label = 'Authentication request',
+} = {}) {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const setTimer = typeof window !== 'undefined' && typeof window.setTimeout === 'function'
+    ? window.setTimeout.bind(window)
+    : setTimeout
+  const clearTimer = typeof window !== 'undefined' && typeof window.clearTimeout === 'function'
+    ? window.clearTimeout.bind(window)
+    : clearTimeout
+  const timeoutId = controller
+    ? setTimer(() => controller.abort(buildAuthRequestTimeoutError(label)), timeoutMs)
+    : null
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller?.signal,
+    })
+    let payload = null
+    try {
+      payload = await response.json()
+    } catch {
+      payload = null
+    }
+    return { response, payload }
+  } catch (error) {
+    if (error?.name === 'AbortError' || isAuthRequestTimeoutError(error)) {
+      throw buildAuthRequestTimeoutError(label)
+    }
+    throw error
+  } finally {
+    if (timeoutId) clearTimer(timeoutId)
+  }
+}
+
+function buildSupabaseAuthResponseError(response, payload, fallbackMessage) {
+  const error = new Error(String(payload?.msg || payload?.message || payload?.error_description || payload?.error || fallbackMessage))
+  error.code = String(payload?.error_code || payload?.code || response?.status || '')
+  error.status = response?.status || null
+  return error
+}
+
+async function signInWithPasswordAfterSdkTimeout({ email, password }) {
+  const config = getSupabaseRuntimeConfig()
+  const supabaseUrl = String(config.supabaseUrl || '').replace(/\/+$/, '')
+  const supabaseKey = String(config.supabaseKey || '')
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Supabase is not configured for password login.')
+  }
+
+  console.warn('[AUTH] login:sdk-timeout-fallback:start')
+  const { response, payload } = await fetchAuthJsonWithTimeout(
+    `${supabaseUrl}/auth/v1/token?grant_type=password`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({ email, password }),
+    },
+    { label: 'Direct sign in request' },
+  )
+
+  if (!response.ok) {
+    throw buildSupabaseAuthResponseError(response, payload, 'Unable to sign in with those credentials.')
+  }
+
+  const accessToken = payload?.access_token
+  const refreshToken = payload?.refresh_token
+  if (!accessToken || !refreshToken) {
+    throw new Error('Sign in succeeded but Supabase did not return a complete session.')
+  }
+
+  const sessionResult = await withAuthRequestTimeout(
+    supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    }),
+    {
+      timeoutMs: AUTH_SESSION_SAVE_TIMEOUT_MS,
+      label: 'Session save request',
+    },
+  )
+
+  if (sessionResult?.error) {
+    throw sessionResult.error
+  }
+
+  console.warn('[AUTH] login:sdk-timeout-fallback:success')
+  return sessionResult
+}
+
+async function signInWithPasswordWithRecovery({ email, password }) {
+  try {
+    return await withAuthRequestTimeout(
+      supabase.auth.signInWithPassword({
+        email,
+        password,
+      }),
+      { label: 'Sign in request' },
+    )
+  } catch (error) {
+    if (!isAuthRequestTimeoutError(error)) {
+      throw error
+    }
+    return signInWithPasswordAfterSdkTimeout({ email, password })
   }
 }
 
@@ -651,13 +771,10 @@ function Auth({ onDevBypass = null }) {
 
       if (mode === 'login') {
         console.debug('[AUTH] login:start', { email: email.trim().toLowerCase() })
-        const { error: signInError } = await withAuthRequestTimeout(
-          supabase.auth.signInWithPassword({
-            email: email.trim(),
-            password,
-          }),
-          { label: 'Sign in request' },
-        )
+        const { error: signInError } = await signInWithPasswordWithRecovery({
+          email: email.trim(),
+          password,
+        })
 
         if (signInError) {
           throw signInError
