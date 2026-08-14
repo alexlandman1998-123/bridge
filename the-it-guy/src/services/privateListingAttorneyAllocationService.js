@@ -29,6 +29,17 @@ function isMissingRpcError(error, functionName = '') {
   )
 }
 
+function isMissingTableError(error) {
+  const code = String(error?.code || '').toUpperCase()
+  return code === '42P01' || code === 'PGRST205'
+}
+
+function isPermissionDeniedError(error) {
+  const code = String(error?.code || '').toUpperCase()
+  const message = String(error?.message || '').toLowerCase()
+  return code === '42501' || code === '403' || message.includes('permission denied')
+}
+
 function normalizeAttorneyInput(attorney = {}) {
   const source = attorney && typeof attorney === 'object' ? attorney : {}
   return {
@@ -275,6 +286,54 @@ export async function getPrivateListingTransferAttorneyAllocation(privateListing
     throw error
   }
   return data ? normalizePrivateListingAttorneyAllocation(data) : null
+}
+
+export async function instructPrivateListingTransferAttorneyAllocation({
+  privateListingId = '',
+  allocationId = '',
+  transactionId = '',
+  source = 'signed_otp_upload',
+} = {}) {
+  const listingId = normalizeNullableUuid(privateListingId)
+  const rolePlayerId = normalizeNullableUuid(allocationId)
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!listingId || !isSupabaseConfigured || !supabase) {
+    return { skipped: true, reason: 'missing_listing_or_supabase' }
+  }
+
+  const instructedAt = new Date().toISOString()
+  let query = supabase
+    .from('private_listing_role_players')
+    .update({
+      allocation_status: 'instructed',
+      transaction_id: normalizedTransactionId,
+      instructed_at: instructedAt,
+      instruction_source: normalizeText(source) || 'signed_otp_upload',
+      updated_at: instructedAt,
+    })
+    .eq('role_type', 'transfer_attorney')
+    .in('allocation_status', ['awaiting_buyer', 'under_offer', 'instructed'])
+    .select('*')
+
+  query = rolePlayerId
+    ? query.eq('id', rolePlayerId)
+    : query.eq('private_listing_id', listingId)
+
+  const { data, error } = await query
+  if (error) {
+    if (isMissingTableError(error)) return { skipped: true, reason: 'allocation_unavailable' }
+    if (isPermissionDeniedError(error)) return { skipped: true, reason: 'permission_denied' }
+    throw error
+  }
+
+  const rows = Array.isArray(data) ? data : []
+  return {
+    skipped: false,
+    updatedCount: rows.length,
+    allocation: rows[0] ? normalizePrivateListingAttorneyAllocation(rows[0]) : null,
+    instructedAt,
+    transactionId: normalizedTransactionId,
+  }
 }
 
 export async function listPrivateListingTransferAttorneyAllocations(privateListingIds = []) {

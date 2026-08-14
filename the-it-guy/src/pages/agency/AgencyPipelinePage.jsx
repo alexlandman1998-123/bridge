@@ -79,7 +79,7 @@ import { createTransactionFromLeadOverride } from '../../lib/transactionLifecycl
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
 import { DOCUMENTS_BUCKET_CANDIDATES, assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, deletePrivateListing, ensurePrivateListingDocumentRequirements, getOrganisationPrivateListings, getPrivateListing, getSellerOnboardingByToken, linkPrivateListingDocument, markPrivateListingDocumentsPendingTransactionPromotion, persistSellerProfileOnboardingFormData, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
-import { allocatePrivateListingTransferAttorneyPreInstruction, getPrivateListingTransferAttorneyAllocation, listPrivateListingTransferAttorneyAllocations } from '../../services/privateListingAttorneyAllocationService'
+import { allocatePrivateListingTransferAttorneyPreInstruction, getPrivateListingTransferAttorneyAllocation, instructPrivateListingTransferAttorneyAllocation, listPrivateListingTransferAttorneyAllocations } from '../../services/privateListingAttorneyAllocationService'
 import { repairSellerDocumentTransactionContinuity } from '../../services/sellerDocumentTransactionContinuityService'
 import { activateSellerPortalForListing, SELLER_PORTAL_ACTIVATION_SOURCES } from '../../services/sellerPortalActivationService'
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
@@ -10325,6 +10325,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [kingstonsListingTermsDraft, setKingstonsListingTermsDraft] = useState(null)
   const [kingstonsListingTermsSaving, setKingstonsListingTermsSaving] = useState(false)
   const [kingstonsListingTermsError, setKingstonsListingTermsError] = useState('')
+  const [buyerOtpAttorneyPromptOpen, setBuyerOtpAttorneyPromptOpen] = useState(false)
+  const [buyerOtpAttorneyPromptDraft, setBuyerOtpAttorneyPromptDraft] = useState(null)
+  const [buyerOtpAttorneyPromptError, setBuyerOtpAttorneyPromptError] = useState('')
+  const [buyerOtpAttorneyInstructionContext, setBuyerOtpAttorneyInstructionContext] = useState(null)
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [organisationId, setOrganisationId] = useState('')
   const [organisationName, setOrganisationName] = useState('')
@@ -25170,6 +25174,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       visibility_scope: 'agency',
       created_at: nowIso,
       metadata_json: {
+        ...(uploadedDocument.metadata && typeof uploadedDocument.metadata === 'object' ? uploadedDocument.metadata : {}),
         source: normalizeText(uploadedDocument.source || uploadedDocument.uploadSource) || 'agent_document_upload',
         offerId: normalizeText(offerId),
         uploadedFileName: uploadedDocument.uploadedFileName,
@@ -25486,6 +25491,61 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function getSelectedBuyerOtpPromptAttorney(draft = buyerOtpAttorneyPromptDraft) {
+    const promptDraft = draft || {}
+    return sellerPreferredAttorneys.find((attorney) => (
+      normalizeText(attorney.id) === normalizeText(promptDraft.transferAttorneyId) ||
+      normalizeText(attorney.preferredPartnerId) === normalizeText(promptDraft.transferAttorneyId)
+    )) || null
+  }
+
+  function buildBuyerOtpAttorneyInstructionContext(draft = buyerOtpAttorneyPromptDraft) {
+    const promptDraft = {
+      ...buildKingstonsListingTermsDraft(selectedKingstonsListingTerms),
+      ...(draft || {}),
+    }
+    const selectedAttorney = getSelectedBuyerOtpPromptAttorney(promptDraft)
+    const attorneyTerms = buildKingstonsListingTermsPayload(
+      promptDraft,
+      selectedAttorney,
+      normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+    )
+    const transferAttorney = {
+      ...attorneyTerms.transferAttorney,
+      allocationStatus: promptDraft.sendInstruction ? 'instruction_requested' : 'awaiting_buyer',
+    }
+    const nowIso = new Date().toISOString()
+    const existingCommission = asRecord(selectedKingstonsListingTerms?.commission || selectedKingstonsListingTerms?.commissionTerms || selectedKingstonsListingTerms?.commission_terms)
+    const instruction = {
+      sendInstructionRequested: promptDraft.sendInstruction === true,
+      status: promptDraft.sendInstruction === true ? 'requested' : 'not_requested',
+      requestedAt: promptDraft.sendInstruction === true ? nowIso : '',
+      requestedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+      source: 'buyer_otp_upload_prompt',
+    }
+    const terms = {
+      ...asRecord(selectedKingstonsListingTerms),
+      source: 'kingstons_buyer_otp_attorney_prompt',
+      status: 'attorney_selected',
+      transferAttorneyNominated: true,
+      attorneyInstruction: instruction,
+      attorneyInstructionRequested: instruction.sendInstructionRequested,
+      confirmedAt: nowIso,
+      confirmedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
+      commission: existingCommission,
+      transferAttorney,
+    }
+
+    return {
+      terms,
+      transferAttorney,
+      sendInstruction: instruction.sendInstructionRequested,
+      instruction,
+      selectedAttorney,
+      capturedAt: nowIso,
+    }
+  }
+
   function openBuyerOtpUploadPicker() {
     if (buyerOfferDocumentUploading) return
     const selectedListingId = normalizeText(
@@ -25499,7 +25559,52 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('Select the property before uploading the OTP.')
       return
     }
+    if (selectedLeadHasKingstonsPipelineSignal) {
+      const existingInstruction = asRecord(selectedKingstonsListingTerms?.attorneyInstruction || selectedKingstonsListingTerms?.attorney_instruction)
+      setBuyerOtpAttorneyPromptDraft({
+        ...buildKingstonsListingTermsDraft(selectedKingstonsListingTerms),
+        sendInstruction: existingInstruction.sendInstructionRequested === true || existingInstruction.send_instruction_requested === true,
+      })
+      setBuyerOtpAttorneyPromptError('')
+      setBuyerOtpAttorneyPromptOpen(true)
+      const cached = sellerPreferredAttorneysCacheRef.current.get(sellerPreferredAttorneyCacheKey)
+      if (cached?.attorneys) {
+        applySellerPreferredAttorneyOptions(cached.attorneys)
+        setSellerPreferredAttorneysLoading(false)
+      } else {
+        void loadSellerPreferredAttorneyOptions({ applyState: true, showLoading: true })
+      }
+      return
+    }
     buyerOtpUploadInputRef.current?.click()
+  }
+
+  function closeBuyerOtpAttorneyPrompt() {
+    setBuyerOtpAttorneyPromptOpen(false)
+    setBuyerOtpAttorneyPromptError('')
+  }
+
+  function updateBuyerOtpAttorneyPromptDraftField(field, value) {
+    setBuyerOtpAttorneyPromptDraft((previous) => ({
+      ...buildKingstonsListingTermsDraft(selectedKingstonsListingTerms),
+      ...(previous || {}),
+      [field]: value,
+    }))
+    setBuyerOtpAttorneyPromptError('')
+  }
+
+  function continueBuyerOtpUploadAfterAttorneyPrompt() {
+    const draft = buyerOtpAttorneyPromptDraft || buildKingstonsListingTermsDraft(selectedKingstonsListingTerms)
+    const selectedAttorney = getSelectedBuyerOtpPromptAttorney(draft)
+    if (!normalizeText(selectedAttorney?.companyName || draft.transferAttorneyCompany || draft.transferAttorneyEmail)) {
+      setBuyerOtpAttorneyPromptError('Choose the transferring attorney before uploading the OTP.')
+      return
+    }
+    setBuyerOtpAttorneyInstructionContext(buildBuyerOtpAttorneyInstructionContext(draft))
+    setBuyerOtpAttorneyPromptOpen(false)
+    window.setTimeout(() => {
+      buyerOtpUploadInputRef.current?.click?.()
+    }, 50)
   }
 
   async function handleUploadBuyerOfferDocument(event = null) {
@@ -25515,6 +25620,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (!selectedListingId) {
       setOfferPropertySelectorOpen(true)
       setError('Select the property before uploading the OTP.')
+      return
+    }
+    const otpAttorneyInstructionContext = selectedLeadHasKingstonsPipelineSignal
+      ? buyerOtpAttorneyInstructionContext
+      : null
+    if (selectedLeadHasKingstonsPipelineSignal && !otpAttorneyInstructionContext?.transferAttorney) {
+      setError('Choose the transferring attorney before uploading the OTP.')
+      setBuyerOtpAttorneyPromptOpen(true)
       return
     }
 
@@ -25555,10 +25668,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         storageBucket: upload.storageBucket,
         storagePath: upload.storagePath,
         url: upload.url,
+        metadata: {
+          kingstonsBuyerOtpTerms: otpAttorneyInstructionContext?.terms || null,
+          transferAttorney: otpAttorneyInstructionContext?.transferAttorney || null,
+          attorneyInstruction: otpAttorneyInstructionContext?.instruction || null,
+          attorneyInstructionRequested: otpAttorneyInstructionContext?.sendInstruction === true,
+        },
       }
       const selectedListing = readAgentPrivateListings().find((listing) => normalizeText(listing?.id || listing?.listingId || listing?.listing_id) === selectedListingId) || selectedLeadLinkedListing || null
       let transactionId = normalizeText(selectedLeadLinkedTransactionId)
       let transactionWarning = ''
+      let attorneyInstructionWarning = ''
+      const otpCommission = asRecord(otpAttorneyInstructionContext?.terms?.commission)
       if (!transactionId) {
         try {
           const createdTransaction = await createTransactionFromLeadOverride({
@@ -25578,6 +25699,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               purchasePrice: buyerOfferUploadForm.offerAmount || selectedLead.estimatedValue || selectedLead.budget,
               dealValue: buyerOfferUploadForm.offerAmount || selectedLead.estimatedValue || selectedLead.budget,
               financeType: normalizeText(buyerOfferUploadForm.financeType || selectedLead.financeType || selectedLead.preferredFinanceType),
+              grossCommissionPercentage: otpCommission.percentage || otpCommission.commissionPercentage || otpCommission.commission_percentage,
+              grossCommissionAmount: otpCommission.amount || otpCommission.commissionAmount || otpCommission.commission_amount,
               buyerName: normalizeText(selectedLeadContactName || selectedLead.name || selectedLead.contactName),
               buyerEmail: normalizeText(selectedLeadContact?.email || selectedLead.email),
               buyerPhone: normalizeText(selectedLeadContact?.phone || selectedLead.phone),
@@ -25590,6 +25713,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               stage: 'OTP Uploaded',
               idempotencyKey: `otp-upload:${organisationId}:${canonicalBuyerLeadId || selectedLead.leadId}:${selectedListingId}`,
               otpDocumentUploadedAt: uploadedAt,
+              kingstonsBuyerOtpTerms: otpAttorneyInstructionContext?.terms || null,
+              transferAttorney: otpAttorneyInstructionContext?.transferAttorney || null,
+              attorneyInstructionRequested: otpAttorneyInstructionContext?.sendInstruction === true,
             },
             options: {
               allowDirectLeadConversion: true,
@@ -25609,6 +25735,52 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         transactionId,
       })
 
+      let attorneyInstructionResult = null
+      if (otpAttorneyInstructionContext?.transferAttorney && selectedLeadHasKingstonsPipelineSignal && isUuidLike(selectedListingId)) {
+        try {
+          const allocationSync = await syncKingstonsTransferAttorneyPreInstruction(
+            selectedListingId,
+            selectedLead,
+            otpAttorneyInstructionContext.terms,
+          )
+          const allocation = allocationSync?.allocation || kingstonsAttorneyPipelineAllocationState.allocation || null
+          if (allocation) {
+            kingstonsAttorneyAllocationCacheRef.current.set(selectedListingId, allocation)
+            setKingstonsAttorneyPipelineAllocationState({
+              listingId: selectedListingId,
+              allocation,
+              loading: false,
+              error: '',
+            })
+          }
+          if (otpAttorneyInstructionContext.sendInstruction === true) {
+            attorneyInstructionResult = await instructPrivateListingTransferAttorneyAllocation({
+              privateListingId: selectedListingId,
+              allocationId: allocation?.id,
+              transactionId,
+              source: 'buyer_otp_upload_prompt',
+            })
+            if (attorneyInstructionResult?.skipped) {
+              attorneyInstructionWarning = attorneyInstructionResult.reason === 'permission_denied'
+                ? 'The OTP was uploaded, but this account could not update the attorney instruction lane automatically.'
+                : 'The OTP was uploaded, but the attorney instruction lane could not be updated automatically.'
+            }
+            if (attorneyInstructionResult?.allocation) {
+              kingstonsAttorneyAllocationCacheRef.current.set(selectedListingId, attorneyInstructionResult.allocation)
+              setKingstonsAttorneyPipelineAllocationState({
+                listingId: selectedListingId,
+                allocation: attorneyInstructionResult.allocation,
+                loading: false,
+                error: '',
+              })
+            }
+          }
+        } catch (instructionError) {
+          attorneyInstructionWarning = instructionError?.message || 'The transfer instruction could not be sent automatically.'
+          console.warn('[AgencyPipelinePage] Buyer OTP transfer attorney instruction could not be completed.', instructionError)
+        }
+      }
+
       const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
       const buyerOtpDocuments = [
         ...(Array.isArray(rawPayload.buyerOtpDocuments) ? rawPayload.buyerOtpDocuments : []),
@@ -25620,6 +25792,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ]
       const rawEnquiryPayload = {
         ...rawPayload,
+        ...(otpAttorneyInstructionContext?.terms ? {
+          kingstonsBuyerOtpTerms: otpAttorneyInstructionContext.terms,
+          buyerOtpTerms: otpAttorneyInstructionContext.terms,
+          buyerOtpAttorneyInstruction: {
+            ...otpAttorneyInstructionContext.instruction,
+            result: attorneyInstructionResult || null,
+            warning: attorneyInstructionWarning,
+          },
+        } : {}),
         buyerOtpDocument: {
           ...uploadedDocument,
           transactionId,
@@ -25636,13 +25817,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         otpDocumentUploadedAt: uploadedAt,
         convertedTransactionId: transactionId || selectedLead.convertedTransactionId || selectedLead.convertedDealId || '',
         convertedDealId: transactionId || selectedLead.convertedDealId || selectedLead.convertedTransactionId || '',
+        ...(otpAttorneyInstructionContext?.terms ? {
+          kingstonsBuyerOtpTerms: otpAttorneyInstructionContext.terms,
+          buyerOtpTerms: otpAttorneyInstructionContext.terms,
+          buyerOtpTermsStatus: 'attorney_selected',
+          buyerOtpTermsConfirmedAt: otpAttorneyInstructionContext.terms.confirmedAt,
+          buyerOtpAttorneyInstruction: rawEnquiryPayload.buyerOtpAttorneyInstruction,
+        } : {}),
       }
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
       await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'OTP Uploaded',
-        activityNote: `${file.name || BUYER_OTP_DOCUMENT_LABEL} uploaded as the OTP document.`,
+        activityNote: `${file.name || BUYER_OTP_DOCUMENT_LABEL} uploaded as the OTP document.${otpAttorneyInstructionContext?.transferAttorney?.companyName ? ` Transferring attorney: ${otpAttorneyInstructionContext.transferAttorney.companyName}.` : ''}${otpAttorneyInstructionContext?.sendInstruction ? ' Transfer instruction requested.' : ''}`,
         outcome: transactionId ? 'OTP transaction evidence captured' : `OTP uploaded${transactionWarning ? `; ${transactionWarning}` : ''}`,
         activityDate: uploadedAt,
       }, { actor: currentAgent })
@@ -25659,11 +25847,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
       if (transactionWarning && !transactionId) {
         setError(`OTP uploaded, but the transaction context needs attention: ${transactionWarning}`)
+      } else if (attorneyInstructionWarning) {
+        setError(`OTP uploaded, but the transfer instruction needs attention: ${attorneyInstructionWarning}`)
       } else if (!stageMoveResult) {
         setMessage('OTP uploaded. The buyer stage still needs workflow review before moving to OTP transaction.')
       } else {
-        setMessage(transactionId ? 'OTP uploaded. Buyer process moved to OTP transaction.' : 'OTP uploaded. Buyer process updated.')
+        setMessage(otpAttorneyInstructionContext?.sendInstruction
+          ? 'OTP uploaded. Transfer instruction request captured for the nominated attorney.'
+          : transactionId ? 'OTP uploaded. Buyer process moved to OTP transaction.' : 'OTP uploaded. Buyer process updated.')
       }
+      setBuyerOtpAttorneyInstructionContext(null)
       await reloadRecords(organisationId)
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the OTP.')
@@ -33244,18 +33437,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                            </label>
 	                          </div>
 	                          <div className="mt-4 flex flex-wrap items-center gap-3">
-	                            <label className={`inline-flex min-h-10 items-center gap-2 rounded-[12px] px-4 text-sm font-semibold text-white shadow-[0_12px_22px_rgba(6,29,59,0.18)] ${buyerOfferDocumentUploading ? 'cursor-not-allowed bg-[#8290a0]' : 'cursor-pointer bg-[#061d3b] hover:bg-[#0a2a52]'}`}>
+	                            <button
+                                type="button"
+                                className={`inline-flex min-h-10 items-center gap-2 rounded-[12px] px-4 text-sm font-semibold text-white shadow-[0_12px_22px_rgba(6,29,59,0.18)] ${buyerOfferDocumentUploading ? 'cursor-not-allowed bg-[#8290a0]' : 'bg-[#061d3b] hover:bg-[#0a2a52]'}`}
+                                disabled={buyerOfferDocumentUploading}
+                                onClick={openBuyerOtpUploadPicker}
+                              >
 	                              <Upload className="h-4 w-4" />
 	                              {buyerOfferDocumentUploading ? 'Uploading OTP...' : 'Upload OTP'}
-	                              <input
-                                  ref={buyerOtpUploadInputRef}
-	                                type="file"
-	                                className="sr-only"
-	                                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-	                                disabled={buyerOfferDocumentUploading}
-	                                onChange={(event) => void handleUploadBuyerOfferDocument(event)}
-	                              />
-	                            </label>
+	                            </button>
+                              <input
+                                ref={buyerOtpUploadInputRef}
+                                type="file"
+                                className="sr-only"
+                                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                                disabled={buyerOfferDocumentUploading}
+                                onChange={(event) => void handleUploadBuyerOfferDocument(event)}
+                              />
 	                            <span className="text-xs font-semibold text-[#7b8fa5]">
 	                              Accepted: PDF, images, Word documents
 	                            </span>
@@ -34898,6 +35096,149 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             />
           </section>
         </form>
+	      </Modal>
+
+	      <Modal
+	        open={buyerOtpAttorneyPromptOpen}
+	        onClose={closeBuyerOtpAttorneyPrompt}
+	        title="Upload OTP"
+	        subtitle="Choose the transferring attorney before attaching the signed OTP."
+	        className="max-w-2xl"
+	      >
+	        {buyerOtpAttorneyPromptError ? (
+	          <p className="mb-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">
+	            {buyerOtpAttorneyPromptError}
+	          </p>
+	        ) : null}
+	        <div className="grid gap-4">
+	          <section className="rounded-[18px] border border-[#e2ebf4] bg-white p-4">
+	            <div className="flex items-start justify-between gap-3">
+	              <div className="flex items-start gap-3">
+	                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#edf8f2] text-[#13784f]">
+	                  <Building2 className="h-4 w-4" />
+	                </span>
+	                <div>
+	                  <h4 className="text-base font-semibold text-[#102033]">Transferring attorney</h4>
+	                  <p className="mt-1 text-sm leading-5 text-[#60758b]">
+	                    This is saved on the buyer OTP stage before the signed document is uploaded.
+	                  </p>
+	                </div>
+	              </div>
+	              {sellerPreferredAttorneysLoading ? (
+	                <span className="rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758b]">Loading...</span>
+	              ) : null}
+	            </div>
+	            {sellerPreferredAttorneysError ? (
+	              <p className="mt-3 rounded-[12px] border border-[#f5dfbb] bg-[#fff9ee] px-3 py-2 text-sm text-[#8a5c10]">
+	                {sellerPreferredAttorneysError}
+	              </p>
+	            ) : null}
+	            <div className="mt-4 grid gap-3 md:grid-cols-[180px_1fr]">
+	              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+	                Source
+	                <Field
+	                  as="select"
+	                  value={buyerOtpAttorneyPromptDraft?.transferAttorneyMode || 'agency_recommended'}
+	                  onChange={(event) => updateBuyerOtpAttorneyPromptDraftField('transferAttorneyMode', event.target.value)}
+	                >
+	                  <option value="agency_recommended">Agency panel</option>
+	                  <option value="buyer_selected">Manual firm</option>
+	                </Field>
+	              </label>
+	              {!isManualKingstonsTransferAttorneyDraft(buyerOtpAttorneyPromptDraft || {}) ? (
+	                <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+	                  Attorney
+	                  <Field
+	                    as="select"
+	                    value={buyerOtpAttorneyPromptDraft?.transferAttorneyId || ''}
+	                    onChange={(event) => {
+	                      const attorneyId = event.target.value
+	                      const attorney = sellerPreferredAttorneys.find((row) => normalizeText(row.id) === normalizeText(attorneyId) || normalizeText(row.preferredPartnerId) === normalizeText(attorneyId))
+	                      setBuyerOtpAttorneyPromptDraft((previous) => ({
+	                        ...buildKingstonsListingTermsDraft(selectedKingstonsListingTerms),
+	                        ...(previous || {}),
+	                        transferAttorneyId: attorneyId,
+	                        transferAttorneyCompany: attorney?.companyName || previous?.transferAttorneyCompany || '',
+	                        transferAttorneyContact: attorney?.contactPerson || previous?.transferAttorneyContact || '',
+	                        transferAttorneyEmail: attorney?.email || previous?.transferAttorneyEmail || '',
+	                        transferAttorneyPhone: attorney?.phone || previous?.transferAttorneyPhone || '',
+	                      }))
+	                      setBuyerOtpAttorneyPromptError('')
+	                    }}
+	                  >
+	                    <option value="">Choose transfer attorney</option>
+	                    {sellerPreferredAttorneys.map((attorney) => (
+	                      <option key={attorney.id} value={attorney.id}>{attorney.companyName}</option>
+	                    ))}
+	                  </Field>
+	                </label>
+	              ) : (
+	                <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+	                  Firm name
+	                  <Field
+	                    placeholder="Buyer appointed firm"
+	                    value={buyerOtpAttorneyPromptDraft?.transferAttorneyCompany || ''}
+	                    onChange={(event) => updateBuyerOtpAttorneyPromptDraftField('transferAttorneyCompany', event.target.value)}
+	                  />
+	                </label>
+	              )}
+	            </div>
+	            {isManualKingstonsTransferAttorneyDraft(buyerOtpAttorneyPromptDraft || {}) ? (
+	              <div className="mt-3 grid gap-3 md:grid-cols-3">
+	                <Field
+	                  placeholder="Contact person"
+	                  value={buyerOtpAttorneyPromptDraft?.transferAttorneyContact || ''}
+	                  onChange={(event) => updateBuyerOtpAttorneyPromptDraftField('transferAttorneyContact', event.target.value)}
+	                />
+	                <Field
+	                  type="email"
+	                  inputMode="email"
+	                  placeholder="Email"
+	                  value={buyerOtpAttorneyPromptDraft?.transferAttorneyEmail || ''}
+	                  onChange={(event) => updateBuyerOtpAttorneyPromptDraftField('transferAttorneyEmail', event.target.value)}
+	                />
+	                <Field
+	                  type="tel"
+	                  inputMode="tel"
+	                  placeholder="Phone"
+	                  value={buyerOtpAttorneyPromptDraft?.transferAttorneyPhone || ''}
+	                  onChange={(event) => updateBuyerOtpAttorneyPromptDraftField('transferAttorneyPhone', event.target.value)}
+	                />
+	              </div>
+	            ) : null}
+	          </section>
+
+	          <section className="rounded-[18px] border border-[#dfe9f4] bg-[#fbfdff] p-4">
+	            <div className="flex flex-wrap items-center justify-between gap-4">
+	              <div>
+	                <h4 className="text-base font-semibold text-[#102033]">Send instruction</h4>
+	                <p className="mt-1 text-sm leading-5 text-[#60758b]">
+	                  Turn this on when the signed OTP should release the transfer instruction.
+	                </p>
+	              </div>
+	              <button
+	                type="button"
+	                role="switch"
+	                aria-checked={buyerOtpAttorneyPromptDraft?.sendInstruction === true}
+	                className={`relative h-8 w-14 rounded-full border transition ${buyerOtpAttorneyPromptDraft?.sendInstruction === true ? 'border-[#13784f] bg-[#13784f]' : 'border-[#cfdbe8] bg-white'}`}
+	                onClick={() => updateBuyerOtpAttorneyPromptDraftField('sendInstruction', buyerOtpAttorneyPromptDraft?.sendInstruction !== true)}
+	              >
+	                <span
+	                  className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow-[0_4px_10px_rgba(15,34,54,0.20)] transition ${buyerOtpAttorneyPromptDraft?.sendInstruction === true ? 'left-7' : 'left-1'}`}
+	                />
+	                <span className="sr-only">Send instruction</span>
+	              </button>
+	            </div>
+	          </section>
+	        </div>
+	        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-[#edf3f8] pt-4 sm:flex-row sm:justify-end">
+	          <Button type="button" variant="ghost" onClick={closeBuyerOtpAttorneyPrompt}>
+	            Cancel
+	          </Button>
+	          <Button type="button" onClick={continueBuyerOtpUploadAfterAttorneyPrompt} disabled={sellerPreferredAttorneysLoading}>
+	            Continue to Upload
+	          </Button>
+	        </div>
 	      </Modal>
 
 	      <Modal
