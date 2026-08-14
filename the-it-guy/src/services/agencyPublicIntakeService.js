@@ -1,4 +1,6 @@
 export const AGENCY_PUBLIC_INTAKE_PRIVACY_VERSION = 'agency-public-intake-v1'
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]+$/
+const MAX_IDEMPOTENCY_KEY_LENGTH = 128
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -16,13 +18,29 @@ function buildStorageKey(slug = '', intent = '') {
   return `arch9:agency-public-intake:${normalizeSlug(slug)}:${normalizeLower(intent || 'general')}:idempotency`
 }
 
+function hashToken(value = '') {
+  let hash = 5381
+  const text = normalizeText(value)
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ text.charCodeAt(index)
+  }
+  return (hash >>> 0).toString(36)
+}
+
+function isValidIdempotencyKey(value = '') {
+  const text = normalizeText(value)
+  return text.length >= 16 && text.length <= MAX_IDEMPOTENCY_KEY_LENGTH && IDEMPOTENCY_KEY_PATTERN.test(text)
+}
+
 function createIdempotencyKey(slug = '', intent = '') {
   const safeSlug = normalizeSlug(slug) || 'agency'
   const safeIntent = normalizeLower(intent) || 'intake'
   const random = typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  return `agency-intake:${safeSlug}:${safeIntent}:${random}`
+  const verboseKey = `agency-intake:${safeSlug}:${safeIntent}:${random}`
+  if (isValidIdempotencyKey(verboseKey)) return verboseKey
+  return `agency-intake:${hashToken(`${safeSlug}:${safeIntent}`)}:${random}`
 }
 
 function getStorage() {
@@ -39,7 +57,7 @@ export function getOrCreateAgencyIntakeIdempotencyKey(slug = '', intent = '') {
   const key = buildStorageKey(slug, intent)
   if (!storage) return createIdempotencyKey(slug, intent)
   const existing = normalizeText(storage.getItem(key))
-  if (existing) return existing
+  if (isValidIdempotencyKey(existing)) return existing
   const next = createIdempotencyKey(slug, intent)
   storage.setItem(key, next)
   return next
