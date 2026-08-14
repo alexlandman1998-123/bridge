@@ -1525,6 +1525,41 @@ function summarizeAutomationHandoff(rows = {}) {
   }
 }
 
+function appendPublicIntakeOptionalError(rows = {}, step = '', error = {}) {
+  const message = normalizeText(error?.message || error || 'Optional public intake step failed.')
+  const optionalErrors = Array.isArray(rows.optionalErrors) ? rows.optionalErrors : []
+  const nextRows = {
+    ...rows,
+    optionalErrors: [
+      ...optionalErrors,
+      {
+        step,
+        message,
+        code: normalizeText(error?.code),
+      },
+    ],
+  }
+  console.warn('[agency-public-intake] optional submit step failed', {
+    step,
+    code: normalizeText(error?.code),
+    message,
+    organisationId: normalizeText(rows.organisationId),
+    leadId: normalizeText(rows.leadId),
+  })
+  return nextRows
+}
+
+async function runOptionalPublicIntakeStep(rows = {}, step = '', runner, fallback = {}) {
+  try {
+    return await runner(rows)
+  } catch (error) {
+    return {
+      ...appendPublicIntakeOptionalError(rows, step, error),
+      ...fallback,
+    }
+  }
+}
+
 async function hydrateAgencyPublicIntakeSubmission(client, { link = {}, submission = {}, normalized = {} } = {}) {
   if (submission.lead_id) {
     return {
@@ -1545,10 +1580,19 @@ async function hydrateAgencyPublicIntakeSubmission(client, { link = {}, submissi
     }
     rows = await persistContact(client, rows)
     rows = await persistLead(client, rows)
-    rows = await persistRequirement(client, rows)
-    rows = await persistListingInterests(client, rows)
-    rows = await persistLeadActivityAndTask(client, rows, submission)
-    rows = await persistAgencyPublicIntakeAutomation(client, rows, submission, normalized)
+    rows = await runOptionalPublicIntakeStep(rows, 'lead_requirement', (currentRows) => persistRequirement(client, currentRows), { requirement: null })
+    rows = await runOptionalPublicIntakeStep(rows, 'listing_interests', (currentRows) => persistListingInterests(client, currentRows), { listingInterests: [] })
+    rows = await runOptionalPublicIntakeStep(rows, 'lead_activity_task', (currentRows) => persistLeadActivityAndTask(client, currentRows, submission), {
+      activity: null,
+      task: null,
+    })
+    rows = await runOptionalPublicIntakeStep(rows, 'automation_handoff', (currentRows) => persistAgencyPublicIntakeAutomation(client, currentRows, submission, normalized), {
+      automation: {
+        created: false,
+        skipped: true,
+        reason: 'automation_handoff_failed',
+      },
+    })
     try {
       rows = {
         ...rows,
@@ -1563,7 +1607,7 @@ async function hydrateAgencyPublicIntakeSubmission(client, { link = {}, submissi
         },
       }
     }
-    rows = await persistIngestionLog(client, rows, submission)
+    rows = await runOptionalPublicIntakeStep(rows, 'ingestion_log', (currentRows) => persistIngestionLog(client, currentRows, submission), { log: null })
 
     const processedSubmission = await updateSubmissionProcessingState(client, submission.id, {
       status: 'accepted',
@@ -1582,6 +1626,7 @@ async function hydrateAgencyPublicIntakeSubmission(client, { link = {}, submissi
         followUpPrepared: Boolean(rows.automation?.created || rows.automation?.duplicate),
         automation: summarizeAutomationHandoff(rows),
         leadOperationsEmail: rows.leadOperationsEmail || null,
+        warnings: Array.isArray(rows.optionalErrors) ? rows.optionalErrors : [],
       },
     }
   } catch (error) {
@@ -1731,6 +1776,7 @@ async function submitAgencyPublicIntake(client, { link = {}, payload = {}, heade
 
 export async function createPublicAgencyIntakeResponse({ method = 'GET', url = '', headers = {}, body = null } = {}) {
   const normalizedMethod = normalizeMethod(method)
+  let requestSlug = ''
 
   if (normalizedMethod === 'OPTIONS') {
     return {
@@ -1762,6 +1808,7 @@ export async function createPublicAgencyIntakeResponse({ method = 'GET', url = '
     }
 
     const slug = normalizeAgencyIntakeSlug(requestUrl.searchParams.get('slug') || payload.slug)
+    requestSlug = slug
     if (!slug) {
       return buildJsonResponse(400, {
         error: 'slug_required',
@@ -1800,6 +1847,15 @@ export async function createPublicAgencyIntakeResponse({ method = 'GET', url = '
     return buildJsonResponse(200, isHeadRequest ? null : { intake: resolved.publicIntake })
   } catch (error) {
     const status = Number(error?.status || error?.statusCode || 500)
+    console.error('[agency-public-intake] request failed', {
+      method: normalizedMethod,
+      slug: requestSlug,
+      status,
+      code: normalizeText(error?.code),
+      message: normalizeText(error?.message),
+      details: normalizeText(error?.details),
+      hint: normalizeText(error?.hint),
+    })
     return buildJsonResponse(status, {
       error: error?.code || 'agency_public_intake_error',
       message: status >= 500 ? 'Agency public intake could not be loaded.' : error?.message || 'Agency public intake request failed.',
