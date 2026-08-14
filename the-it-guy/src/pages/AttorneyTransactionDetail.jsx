@@ -4045,6 +4045,178 @@ function getAgentConveyancingLatestUpdate(workflow = {}, activityFeed = []) {
   }) || null
 }
 
+function getAgentConveyancingAccent(workflowKey = 'transfer') {
+  if (workflowKey === 'bond') {
+    return {
+      bar: 'bg-sky-500',
+      icon: 'border-sky-200 bg-sky-50 text-sky-700',
+      progress: 'bg-sky-600',
+      glow: 'group-hover:shadow-[0_18px_42px_rgba(2,132,199,0.12)]',
+    }
+  }
+  if (workflowKey === 'cancellation') {
+    return {
+      bar: 'bg-amber-500',
+      icon: 'border-amber-200 bg-amber-50 text-amber-700',
+      progress: 'bg-amber-600',
+      glow: 'group-hover:shadow-[0_18px_42px_rgba(217,119,6,0.12)]',
+    }
+  }
+  return {
+    bar: 'bg-emerald-600',
+    icon: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    progress: 'bg-emerald-700',
+    glow: 'group-hover:shadow-[0_18px_42px_rgba(4,120,87,0.12)]',
+  }
+}
+
+function AgentConveyancingWorkflowRow({
+  workflow,
+  routingDiagnostics = null,
+  activityFeed = [],
+  onSelectWorkflow,
+}) {
+  const workflowKey = getAgentConveyancingWorkflowKey(workflow)
+  const statusMeta = WORKFLOW_STATUS_META[workflow.statusKey] || WORKFLOW_STATUS_META.not_started
+  const accent = getAgentConveyancingAccent(workflowKey)
+  const latestUpdate = getAgentConveyancingLatestUpdate(workflow, activityFeed)
+  const metrics = getRoleWorkspaceMetrics(workflow)
+  const steps = buildLegalWorkflowProgressSteps({
+    workflowKey,
+    lane: workflow.lane,
+    facts: routingDiagnostics?.facts || {},
+  })
+  const currentStep = steps.find((step) => step.isCurrent) || steps.find((step) => step.displayStatus !== 'completed') || steps.at(-1)
+  const progressPercent = Math.max(0, Math.min(100, workflow.progressPercent || 0))
+  const openItemsCount = metrics.missingData + metrics.missingDocuments + metrics.openSignatures + metrics.blockers
+  const activityLabel = metrics.activityCount === 1 ? '1 update' : `${metrics.activityCount} updates`
+  const metricItems = [
+    {
+      key: 'documents',
+      icon: FileText,
+      label: 'Docs',
+      value: metrics.missingDocuments ? `${metrics.missingDocuments} missing` : 'Clear',
+      attention: metrics.missingDocuments > 0,
+    },
+    {
+      key: 'signatures',
+      icon: FileCheck2,
+      label: 'Signing',
+      value: metrics.openSignatures ? `${metrics.openSignatures} open` : 'Clear',
+      attention: metrics.openSignatures > 0,
+    },
+    {
+      key: 'blockers',
+      icon: AlertTriangle,
+      label: 'Blocks',
+      value: metrics.blockers ? `${metrics.blockers} active` : 'None',
+      attention: metrics.blockers > 0,
+    },
+    {
+      key: 'activity',
+      icon: MessageCircle,
+      label: 'Activity',
+      value: activityLabel,
+      attention: false,
+    },
+  ]
+
+  return (
+    <button
+      type="button"
+      className={`group relative w-full overflow-hidden rounded-[18px] border border-borderDefault bg-white text-left shadow-[0_10px_22px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-slate-300 ${accent.glow}`}
+      onClick={() => onSelectWorkflow?.(workflow.detailKey)}
+    >
+      <span className={`absolute inset-y-0 left-0 w-1.5 ${accent.bar}`} />
+      <div className="grid gap-5 p-5 pl-6 lg:grid-cols-[minmax(13rem,0.72fr)_minmax(0,1.2fr)_minmax(15rem,0.62fr)] lg:items-center">
+        <div className="min-w-0">
+          <div className="flex items-start gap-3">
+            <span className={`inline-flex size-11 shrink-0 items-center justify-center rounded-[14px] border ${accent.icon}`}>
+              <Workflow size={19} />
+            </span>
+            <div className="min-w-0">
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">
+                {workflow.assignedLabel || 'Legal lane'}
+              </span>
+              <h3 className="mt-1 break-words text-lg font-semibold text-textStrong">{workflow.title}</h3>
+              <p className="mt-1 line-clamp-2 text-sm leading-5 text-textMuted">
+                {workflow.assignedDisplay || 'Not assigned'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="min-w-0">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Current Step</span>
+              <strong className="mt-1 block break-words text-sm text-textStrong">{currentStep?.label || workflow.nextStep || 'Pending'}</strong>
+            </div>
+            <span className={`inline-flex shrink-0 items-center gap-2 self-start rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
+              <span className={`h-2 w-2 rounded-full ${statusMeta.dot}`} />
+              {workflow.statusLabel}
+            </span>
+          </div>
+
+          <div className="mt-4">
+            <div className="flex items-center justify-between gap-3 text-xs font-semibold text-textMuted">
+              <span>{openItemsCount ? `${openItemsCount} open item${openItemsCount === 1 ? '' : 's'}` : 'No visible open items'}</span>
+              <span>{progressPercent}%</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div className={`h-full rounded-full ${accent.progress}`} style={{ width: `${progressPercent}%` }} />
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
+            {metricItems.map((item) => {
+              const Icon = item.icon
+              return (
+                <span
+                  key={item.key}
+                  className={`min-w-0 rounded-[12px] border px-3 py-2 ${
+                    item.attention
+                      ? 'border-amber-200 bg-amber-50 text-amber-800'
+                      : 'border-borderSoft bg-surfaceAlt text-textMuted'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 text-[0.66rem] font-semibold uppercase tracking-[0.06em]">
+                    <Icon size={13} />
+                    {item.label}
+                  </span>
+                  <strong className="mt-1 block truncate text-xs text-textStrong">{item.value}</strong>
+                </span>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3">
+          <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+            Latest Shared Update
+          </span>
+          {latestUpdate ? (
+            <>
+              <p className="mt-2 line-clamp-2 text-sm leading-5 text-textStrong">
+                {latestUpdate.body || latestUpdate.message || latestUpdate.title || 'Update recorded.'}
+              </p>
+              <span className="mt-2 block truncate text-xs font-semibold text-textMuted">
+                {latestUpdate.authorName || latestUpdate.actor || 'Matter team'} · {formatDateTime(latestUpdate.createdAt || latestUpdate.timestamp, '')}
+              </span>
+            </>
+          ) : (
+            <p className="mt-2 text-sm leading-5 text-textMuted">No shared attorney update yet.</p>
+          )}
+          <span className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-emerald-800">
+            View Progress
+            <ChevronRight size={15} className="transition group-hover:translate-x-0.5" />
+          </span>
+        </div>
+      </div>
+    </button>
+  )
+}
+
 function AgentConveyancingWorkspace({
   workflows = [],
   activeDetailKey = '',
@@ -4056,6 +4228,7 @@ function AgentConveyancingWorkspace({
   onOpenActivity,
 }) {
   const visibleWorkflows = workflows.filter((workflow) => workflow?.required)
+  const sharedUpdateCount = visibleWorkflows.reduce((total, workflow) => total + getRoleWorkspaceMetrics(workflow).activityCount, 0)
   const activeWorkflow = activeDetailKey
     ? visibleWorkflows.find((workflow) => workflow.detailKey === activeDetailKey) || null
     : null
@@ -4155,75 +4328,34 @@ function AgentConveyancingWorkspace({
   return (
     <section className="space-y-5">
       <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-        <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-textStrong">Conveyancing</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">
-          Track the legal lanes for this transaction. These cards mirror the attorney workflow source and only expose agent-safe progress.
-        </p>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-[1.35rem] font-semibold text-textStrong">Conveyancing</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">
+              Legal handoffs, outstanding requirements, and shared attorney progress for this transaction.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1.5 text-xs font-semibold text-textMuted">
+              {visibleWorkflows.length} active lane{visibleWorkflows.length === 1 ? '' : 's'}
+            </span>
+            <span className="rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1.5 text-xs font-semibold text-textMuted">
+              {sharedUpdateCount} shared update{sharedUpdateCount === 1 ? '' : 's'}
+            </span>
+          </div>
+        </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-        {visibleWorkflows.map((workflow) => {
-          const workflowKey = getAgentConveyancingWorkflowKey(workflow)
-          const statusMeta = WORKFLOW_STATUS_META[workflow.statusKey] || WORKFLOW_STATUS_META.not_started
-          const latestUpdate = getAgentConveyancingLatestUpdate(workflow, activityFeed)
-          const steps = buildLegalWorkflowProgressSteps({
-            workflowKey,
-            lane: workflow.lane,
-            facts: routingDiagnostics?.facts || {},
-          })
-          const currentStep = steps.find((step) => step.isCurrent) || steps.find((step) => step.displayStatus !== 'completed') || steps.at(-1)
-          return (
-            <button
-              key={workflow.key}
-              type="button"
-              className="flex min-h-[260px] flex-col rounded-[18px] border border-borderDefault bg-white p-5 text-left shadow-[0_10px_22px_rgba(15,23,42,0.04)] transition hover:border-emerald-200 hover:shadow-[0_16px_34px_rgba(15,23,42,0.07)]"
-              onClick={() => onSelectWorkflow?.(workflow.detailKey)}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">{workflow.assignedLabel || 'Legal lane'}</span>
-                  <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-textStrong">{workflow.title}</h3>
-                </div>
-                <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
-                  {workflow.statusLabel}
-                </span>
-              </div>
-
-              <div className="mt-4">
-                <div className="flex items-center justify-between gap-3 text-xs font-semibold text-textMuted">
-                  <span>Progress</span>
-                  <span>{workflow.progressPercent || 0}%</span>
-                </div>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                  <div className="h-full rounded-full bg-emerald-700" style={{ width: `${workflow.progressPercent || 0}%` }} />
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-3">
-                <div>
-                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Current Step</span>
-                  <strong className="mt-1 block text-sm text-textStrong">{currentStep?.label || workflow.nextStep || 'Pending'}</strong>
-                </div>
-                <div>
-                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Assigned</span>
-                  <strong className="mt-1 block text-sm text-textStrong">{workflow.assignedDisplay || 'Not assigned'}</strong>
-                </div>
-              </div>
-
-              <div className="mt-auto pt-4">
-                {latestUpdate ? (
-                  <p className="line-clamp-2 text-sm leading-6 text-textMuted">{latestUpdate.body || latestUpdate.message || latestUpdate.title}</p>
-                ) : (
-                  <p className="text-sm leading-6 text-textMuted">No shared attorney update yet.</p>
-                )}
-                <span className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-emerald-800">
-                  View Progress
-                  <ChevronRight size={15} />
-                </span>
-              </div>
-            </button>
-          )
-        })}
+      <section className="grid gap-3">
+        {visibleWorkflows.map((workflow) => (
+          <AgentConveyancingWorkflowRow
+            key={workflow.key}
+            workflow={workflow}
+            routingDiagnostics={routingDiagnostics}
+            activityFeed={activityFeed}
+            onSelectWorkflow={onSelectWorkflow}
+          />
+        ))}
       </section>
 
       {!visibleWorkflows.length ? (
