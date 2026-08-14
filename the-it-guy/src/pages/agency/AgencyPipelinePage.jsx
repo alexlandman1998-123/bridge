@@ -30296,8 +30296,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
 	                        return (
                           <>
-                            <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)]">
-                              <form className="flex h-full self-stretch flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5" onSubmit={handleSaveBuyerQualification}>
+                            <div className="grid items-start gap-5 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)]">
+                              <form className="flex flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5" onSubmit={handleSaveBuyerQualification}>
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Buyer Qualification</p>
@@ -30444,7 +30444,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 )}
                               </form>
 
-                              <div className="flex min-w-0 self-stretch flex-col gap-4">
+                              <div className="flex min-w-0 flex-col gap-4">
                               <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
                                   <div className="min-w-0">
