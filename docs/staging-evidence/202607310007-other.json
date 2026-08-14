@@ -1,0 +1,43 @@
+{
+  "version": "202607310007",
+  "stream": "other",
+  "file": "202607310007_notification_automation_reminder_health_controls.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "ledgerRecordedAt": "2026-08-14T13:08:19Z",
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging read-only evidence check",
+  "approvedBy": "Alexander Landman instruction to record 202607310007 and continue dependent row",
+  "capturedAt": "2026-08-14T13:07:38Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "The staging project is not production and was checked through scripts/run-with-staging-env.mjs.",
+    "Staging SQL was applied from the reviewed local migration file because staging did not already match the target state.",
+    "Post-apply staging verification found all six target automation rows carry the phase_7_reminder_health_controls marker, Johannesburg quiet-hours policy, and premiumControls flags.",
+    "Local smoke batch passed before staging ledger repair."
+  ],
+  "verification": {
+    "source": "staging_apply_then_verify",
+    "applyCommand": "node scripts/run-with-staging-env.mjs -- npx --yes supabase@2.109.1 db query --db-url <staging-db-url> <single-statement update from 202607310007_notification_automation_reminder_health_controls.sql>",
+    "verifyCommand": "node scripts/run-with-staging-env.mjs -- npx --yes supabase@2.109.1 db query --db-url <staging-db-url> <notification automation target-state query>",
+    "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+    "matchingRows": 6,
+    "rowsWithReminderPolicy": 6,
+    "rowsWithJohannesburgQuietHours": 6,
+    "rowsWithPhaseMarker": 6,
+    "rowsWithPremiumControls": 6,
+    "smokeEvidence": [
+      "node scripts/reconciliation-verify-batch.mjs reminder-health-controls: pass",
+      "node scripts/notification-automation-reminder-health-controls.test.mjs: pass",
+      "npm run build: pass"
+    ],
+    "rollbackOrNoResidue": "No production mutation occurred. Staging-only target confirmed by run-with-staging-env and project ref guards."
+  }
+}

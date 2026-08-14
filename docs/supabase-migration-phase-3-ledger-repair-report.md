@@ -1,6 +1,6 @@
 # Supabase Migration Phase 3 Ledger Repair Report
 
-Generated: 2026-08-14T12:09:12.120Z
+Generated: 2026-08-14T12:23:40.597Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -11,11 +11,11 @@ Phase 3 updates only the Supabase migration history for onboarding-critical migr
 
 | Field | Value |
 | --- | --- |
-| Status | BLOCKED_EVIDENCE |
-| Recommendation | Do not repair the ledger. Rerun/fix Phase 2 evidence first. |
+| Status | NOOP_ALREADY_REPAIRED |
+| Recommendation | No repair was needed; all Phase 3 candidates are already recorded applied. |
 | Apply mode | no |
 | Versions targeted | none |
-| Evidence ready | no |
+| Evidence ready | yes |
 | Duplicate local timestamps still present | 0 |
 
 ## Candidate Matrix
@@ -33,7 +33,7 @@ Phase 3 updates only the Supabase migration history for onboarding-critical migr
 | Gate | Status | Details |
 | --- | --- | --- |
 | Local migration files | PASS | all present |
-| Live object evidence | FAIL | 202606190001:workspace_repair_email_claim_function, 202607120002:workspace_onboarding_branch_scope_fix |
+| Live object evidence | PASS | all candidate evidence keys ready |
 | Behavior evidence | PASS | all behavior checks ready |
 
 ## Duplicate Local Timestamp Warning
@@ -52,5 +52,5 @@ No duplicate local timestamps detected.
 
 ## Next Step
 
-Stop here and resolve the blocking evidence before touching the migration ledger.
+Regenerate Phase 1 and Phase 2 reports. Phase 1 should show the five onboarding-critical migrations as recorded applied, and Phase 2 should remain `READY_FOR_PHASE_3`.
 

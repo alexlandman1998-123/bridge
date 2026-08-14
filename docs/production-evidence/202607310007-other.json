@@ -1,0 +1,42 @@
+{
+  "version": "202607310007",
+  "stream": "other",
+  "file": "202607310007_notification_automation_reminder_health_controls.sql",
+  "productionRoute": "production_no_sql_record_after_smoke",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": false,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "ledgerRecordedAt": "2026-08-14T13:13:48Z",
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex 2026-08-14 live read-only review",
+  "capturedAt": "2026-08-14T12:58:50Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Production target state is already compliant for all six notification automation reminder-health controls.",
+    "No production SQL was applied while preparing this evidence.",
+    "Production ledger repair succeeded for exactly this version after staging evidence, production target-state evidence, recovery evidence, and backup checks passed."
+  ],
+  "verification": {
+    "source": "linked_production_read_only_query",
+    "productionProjectRef": "isdowlnollckzvltkasn",
+    "manualReviewFile": "docs/manual-review/202607310007-other.md",
+    "clearanceFile": "docs/non-runnable-clearance/202607310007-other.json",
+    "stagingEvidenceFile": "docs/staging-evidence/202607310007-other.json",
+    "matchingRows": 6,
+    "rowsWithReminderPolicy": 6,
+    "rowsWithJohannesburgQuietHours": 6,
+    "rowsWithPhaseMarker": 6,
+    "rowsWithPremiumControls": 6,
+    "smokeEvidence": [
+      "node scripts/notification-automation-reminder-health-controls.test.mjs: pass",
+      "npm run build: pass",
+      "live notification_automation_definitions outcome query: pass"
+    ],
+    "rollbackOrNoResidue": "No SQL replay occurred for production evidence capture; target-state check was read-only."
+  }
+}

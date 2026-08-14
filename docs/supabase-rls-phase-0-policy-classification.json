@@ -1,0 +1,202 @@
+{
+  "phase": "supabase_rls_phase_0_policy_classification",
+  "status": "PHASE_0_READY",
+  "generatedAt": "2026-08-14",
+  "scope": {
+    "projectRef": "isdowlnollckzvltkasn",
+    "environment": "linked_production_read_only",
+    "tables": [
+      "bond_rls_cutover_exclusions",
+      "matter_number_sequences",
+      "transaction_commissions",
+      "transaction_document_requirements",
+      "transaction_lifecycle_workflows",
+      "transaction_rollup_validation",
+      "workspace_regions",
+      "workspace_units"
+    ]
+  },
+  "principles": [
+    "Enable RLS on public tables before exposing them through anon or authenticated API roles.",
+    "Use explicit TO anon or TO authenticated clauses, not auth.role() predicates.",
+    "Do not use TO authenticated by itself as authorization; include an organisation, transaction, assignment, or admin predicate.",
+    "Prefer existing helpers such as bridge_is_active_member, bridge_is_org_admin, bridge_has_workspace_permission, and bridge_has_transaction_permission before adding new helpers.",
+    "Keep internal control, sequence, diagnostic, and financial writes off direct browser access unless a specific UI workflow proves otherwise."
+  ],
+  "existingHelpers": [
+    {
+      "name": "public.bridge_is_active_member(uuid)",
+      "source": "supabase/migrations/202607130002_membership_helper_status_alignment.sql",
+      "recommendedUse": "Organisation/workspace membership SELECT predicates."
+    },
+    {
+      "name": "public.bridge_is_org_admin(uuid)",
+      "source": "supabase/migrations/202605210001_agent_calendar_visibility_rpc.sql",
+      "recommendedUse": "Organisation/workspace administrative write predicates."
+    },
+    {
+      "name": "public.bridge_has_workspace_permission(uuid,text)",
+      "source": "supabase/migrations/202605240013_canonical_role_resolution.sql",
+      "recommendedUse": "Workspace-level permission checks where the table row has workspace_id."
+    },
+    {
+      "name": "public.bridge_has_transaction_permission(uuid,text)",
+      "source": "supabase/migrations/202605240013_canonical_role_resolution.sql",
+      "recommendedUse": "Transaction-level read/write checks where the table row has transaction_id."
+    },
+    {
+      "name": "public.bridge_has_bond_transaction_participant_access(uuid)",
+      "source": "supabase/migrations/202605250019_bond_rls_shadow_helpers_phase5a.sql",
+      "recommendedUse": "Bond-specific transaction participant read checks."
+    }
+  ],
+  "tableClassifications": [
+    {
+      "table": "matter_number_sequences",
+      "classification": "internal_sequence_control",
+      "risk": "high",
+      "currentDirectGrantsObserved": [
+        "grant select to authenticated in 202605240005_matter_number_foundation.sql"
+      ],
+      "recommendedAnonAccess": "none",
+      "recommendedAuthenticatedAccess": {
+        "select": "none_by_default",
+        "insert": "none",
+        "update": "none",
+        "delete": "none"
+      },
+      "recommendedServiceOrRpcAccess": "public.next_matter_number and trigger assign_transaction_matter_number own sequence mutation.",
+      "phase1Action": "Enable RLS, revoke direct anon/authenticated table privileges, and keep sequence mutation behind existing SECURITY DEFINER functions after execute grants are reviewed.",
+      "smokeGate": "Create a transaction through the normal flow and confirm matter_number assignment still works; authenticated direct table select should return no rows or permission-denied depending grants."
+    },
+    {
+      "table": "bond_rls_cutover_exclusions",
+      "classification": "internal_security_control",
+      "risk": "high",
+      "currentDirectGrantsObserved": [],
+      "recommendedAnonAccess": "none",
+      "recommendedAuthenticatedAccess": {
+        "select": "admin_or_compliance_only",
+        "insert": "admin_or_compliance_only_or_service",
+        "update": "admin_or_compliance_only_or_service",
+        "delete": "none_prefer_active_false"
+      },
+      "recommendedPredicate": "Join transaction_id to transactions, derive workspace with bridge_bond_transaction_workspace_id(transaction_id), then require bridge_is_org_admin(workspace_id) or a later explicit compliance helper.",
+      "phase1Action": "Enable RLS with no anon policy; add admin/compliance read and write policy only if a UI uses the table.",
+      "smokeGate": "Bond RLS shadow safety tests plus admin-only read/write check; non-admin authenticated user must not see rows."
+    },
+    {
+      "table": "workspace_regions",
+      "classification": "workspace_hierarchy_reference",
+      "risk": "medium",
+      "currentDirectGrantsObserved": [],
+      "recommendedAnonAccess": "none",
+      "recommendedAuthenticatedAccess": {
+        "select": "active_member_of_workspace",
+        "insert": "org_admin_or_workspace_manage_hierarchy",
+        "update": "org_admin_or_workspace_manage_hierarchy",
+        "delete": "none_prefer_active_false"
+      },
+      "recommendedPredicate": "workspace_id scoped through bridge_is_active_member(workspace_id), bridge_is_org_admin(workspace_id), or bridge_has_workspace_permission(workspace_id, 'manage_branches').",
+      "phase1Action": "Enable RLS; allow members to read rows for their workspace; allow admins/managers to create/update rows for their workspace.",
+      "smokeGate": "Bond hierarchy pages load for workspace members; cross-workspace rows are hidden; admin can create/update region."
+    },
+    {
+      "table": "workspace_units",
+      "classification": "workspace_hierarchy_reference",
+      "risk": "medium",
+      "currentDirectGrantsObserved": [],
+      "recommendedAnonAccess": "none",
+      "recommendedAuthenticatedAccess": {
+        "select": "active_member_of_workspace",
+        "insert": "org_admin_or_workspace_manage_hierarchy",
+        "update": "org_admin_or_workspace_manage_hierarchy",
+        "delete": "none_prefer_active_false"
+      },
+      "recommendedPredicate": "workspace_id scoped through bridge_is_active_member(workspace_id), bridge_is_org_admin(workspace_id), or bridge_has_workspace_permission(workspace_id, 'manage_branches').",
+      "phase1Action": "Enable RLS; allow members to read rows for their workspace; allow admins/managers to create/update rows for their workspace.",
+      "smokeGate": "Bond hierarchy pages load for workspace members; cross-workspace units are hidden; admin can create/update unit."
+    },
+    {
+      "table": "transaction_document_requirements",
+      "classification": "transaction_scoped_read_model",
+      "risk": "high",
+      "currentDirectGrantsObserved": [],
+      "recommendedAnonAccess": "none_by_default",
+      "recommendedAuthenticatedAccess": {
+        "select": "transaction_participant_with_view_documents_or_view_transaction",
+        "insert": "rpc_or_service_only_by_default",
+        "update": "rpc_or_service_only_by_default",
+        "delete": "none_prefer_superseded_at"
+      },
+      "recommendedPredicate": "bridge_has_transaction_permission(transaction_id, 'view_documents') or bridge_has_transaction_permission(transaction_id, 'view_transaction') for SELECT.",
+      "phase1Action": "Enable RLS with transaction-scoped SELECT. Keep writes off direct browser access unless document UI proves it directly mutates this read model.",
+      "smokeGate": "Transaction document workspace loads for a participant; unrelated transaction requirements are hidden; resolver/RPC can still upsert generated requirements."
+    },
+    {
+      "table": "transaction_lifecycle_workflows",
+      "classification": "transaction_scoped_workflow_state",
+      "risk": "high",
+      "currentDirectGrantsObserved": [],
+      "recommendedAnonAccess": "none",
+      "recommendedAuthenticatedAccess": {
+        "select": "transaction_participant_with_view_transaction",
+        "insert": "rpc_or_service_only_by_default",
+        "update": "workflow_manager_or_rpc_only",
+        "delete": "none"
+      },
+      "recommendedPredicate": "bridge_has_transaction_permission(transaction_id, 'view_transaction') for SELECT; bridge_has_transaction_permission(transaction_id, 'edit_core_transaction') or dedicated workflow RPC for writes.",
+      "phase1Action": "Enable RLS with transaction-scoped SELECT. Prefer retaining writes behind workflow service/RPC paths.",
+      "smokeGate": "Transaction lifecycle/workflow pages load; allowed workflow advance still works; unrelated workflow rows are hidden."
+    },
+    {
+      "table": "transaction_commissions",
+      "classification": "financial_org_transaction_scoped",
+      "risk": "critical",
+      "currentDirectGrantsObserved": [
+        "grant select, insert, update, delete to authenticated in 202605230001_agent_dashboard_transaction_compat.sql",
+        "grant select to anon in 202605230001_agent_dashboard_transaction_compat.sql"
+      ],
+      "recommendedAnonAccess": "none_unless_public_portal_requirement_is_approved",
+      "recommendedAuthenticatedAccess": {
+        "select": "org_admin_or_assigned_agent_or_transaction_participant",
+        "insert": "org_admin_or_server_controlled",
+        "update": "org_admin_or_server_controlled",
+        "delete": "none_prefer_status_voided"
+      },
+      "recommendedPredicate": "organisation_id scoped through bridge_is_org_admin/bridge_is_active_member; assigned_agent_id = auth.uid() or lower(assigned_agent_email) = lower(bridge_current_email()) for self-read after confirming helper availability.",
+      "phase1Action": "Remove anon SELECT in staging first. Add financial read policies for org admins and assigned agents; keep writes restricted until commission UI write paths are mapped.",
+      "smokeGate": "Principal dashboard and commission service load expected rows; assigned agent can see own commission; anon cannot read any commission row."
+    },
+    {
+      "table": "transaction_rollup_validation",
+      "classification": "internal_diagnostic_validation",
+      "risk": "medium",
+      "currentDirectGrantsObserved": [],
+      "recommendedAnonAccess": "none",
+      "recommendedAuthenticatedAccess": {
+        "select": "admin_or_hq_diagnostic_only",
+        "insert": "service_or_validation_job_only",
+        "update": "service_or_validation_job_only",
+        "delete": "none_or_admin_cleanup_only"
+      },
+      "recommendedPredicate": "Because transaction_id is text, first decide whether to cast safely to uuid and use transaction access, or treat table as admin-only diagnostics.",
+      "phase1Action": "Prefer admin-only SELECT and service-only writes unless the diagnostics UI needs participant access.",
+      "smokeGate": "Platform diagnostics/rollup audit service can read for admin; non-admin users cannot see diagnostics rows."
+    }
+  ],
+  "openQuestions": [
+    "Does any public/anon portal intentionally read transaction_commissions? Current recommendation is to remove anon access.",
+    "Do client-side screens directly insert/update transaction_document_requirements or transaction_lifecycle_workflows, or are writes fully RPC/server controlled?",
+    "Should bond_rls_cutover_exclusions be visible to compliance users in UI, or service-only?",
+    "Should transaction_rollup_validation be admin-only despite transaction_id being present as text?"
+  ],
+  "nextPhase": {
+    "name": "supabase_rls_phase_1_internal_controls",
+    "recommendedScope": [
+      "matter_number_sequences",
+      "bond_rls_cutover_exclusions"
+    ],
+    "reason": "These have the smallest user-facing blast radius and highest security value."
+  }
+}

@@ -33,7 +33,11 @@ function getInitials(value: string) {
   ) || "A";
 }
 
-function renderHeaderBrandMark(organisationName: string, primaryColor: string, accentColor: string) {
+function renderHeaderBrandMark(
+  organisationName: string,
+  primaryColor: string,
+  accentColor: string,
+) {
   return `
     <div style="display:inline-block; width:72px; height:72px; border:1px solid ${accentColor}; border-radius:18px; background:${primaryColor}; color:${accentColor}; font-size:34px; line-height:72px; font-weight:900; text-align:center;">${
     escapeHtml(getInitials(organisationName))
@@ -91,9 +95,9 @@ function renderPropertyCard(properties: ViewingAvailabilityRequestProperty[]) {
           <td style="padding:0; background:#07142e;">
             ${
     property.imageUrl
-      ? `<img src="${
-        escapeHtml(property.imageUrl)
-      }" alt="${escapeHtml(property.title)}" width="538" style="display:block; width:100%; max-width:538px; height:190px; object-fit:cover; border:0;" />`
+      ? `<img src="${escapeHtml(property.imageUrl)}" alt="${
+        escapeHtml(property.title)
+      }" width="538" style="display:block; width:100%; max-width:538px; height:190px; object-fit:cover; border:0;" />`
       : `<div style="height:190px; background:radial-gradient(circle at 76% 22%, rgba(255,255,255,0.22) 0, rgba(255,255,255,0) 36%), linear-gradient(145deg, #043734 0%, #07142e 70%); color:#ffffff;">
               <div style="padding:24px;">
                 <div style="width: 42px; height: 42px; margin: 0 0 54px; border: 1px solid rgba(216,166,51,0.7); border-radius: 12px; color: #d8a633; font-size: 25px; line-height: 40px; font-weight: 900; text-align: center;">K</div>
@@ -311,7 +315,11 @@ export function buildBuyerViewingAvailabilityRequestEmailHtml({
       ? `<img src="${
         escapeHtml(logoUrl)
       }" alt="${safeOrganisationName}" width="286" style="display:inline-block; max-width:286px; width:100%; height:auto; border:0;" />`
-      : renderHeaderBrandMark(pickText(organisationName || branding?.organisationName, "Arch9"), primaryColor, accentColor)
+      : renderHeaderBrandMark(
+        pickText(organisationName || branding?.organisationName, "Arch9"),
+        primaryColor,
+        accentColor,
+      )
   }
         </div>
         <div style="padding:38px 38px 42px; background:radial-gradient(circle at 86% 38%, rgba(255,255,255,0.13) 0, rgba(255,255,255,0.06) 24%, rgba(255,255,255,0) 48%), linear-gradient(135deg, ${primaryColor} 0%, #05142d 100%); color:#ffffff;">

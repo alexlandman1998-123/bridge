@@ -1,0 +1,95 @@
+{
+  "phase": "supabase_rls_phase_7_staging_execution",
+  "status": "STAGING_EXECUTION_COMPLETE",
+  "generatedAt": "2026-08-14",
+  "databaseMutation": "none",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "targetPolicy": {
+    "allowedTarget": "staging",
+    "productionAllowed": false,
+    "linkedProductionProjectIsValidTarget": false,
+    "notes": [
+      "Phase 7 prepares staging evidence and execution gates only.",
+      "Do not execute the RLS migration package against production from this phase.",
+      "The local Supabase CLI was previously linked to production, so any linked apply command must be treated as unsafe until relinked and verified."
+    ]
+  },
+  "preflightCommands": [
+    "npm run test:rls-phase6-closeout",
+    "node --check the-it-guy/src/lib/api.js"
+  ],
+  "rlsPhaseMigrations": [
+    {
+      "phase": 1,
+      "name": "internal_controls",
+      "migration": "supabase/migrations/20260814163310_rls_phase1_internal_controls.sql",
+      "testScript": "test:rls-phase1-internal-controls",
+      "report": "docs/supabase-rls-phase-1-internal-controls-report.md",
+      "tables": [
+        "matter_number_sequences",
+        "bond_rls_cutover_exclusions"
+      ]
+    },
+    {
+      "phase": 2,
+      "name": "workspace_hierarchy",
+      "migration": "supabase/migrations/20260814163832_rls_phase2_workspace_hierarchy.sql",
+      "testScript": "test:rls-phase2-workspace-hierarchy",
+      "report": "docs/supabase-rls-phase-2-workspace-hierarchy-report.md",
+      "tables": [
+        "workspace_regions",
+        "workspace_units"
+      ]
+    },
+    {
+      "phase": 3,
+      "name": "transaction_read_models",
+      "migration": "supabase/migrations/20260814164152_rls_phase3_transaction_read_models.sql",
+      "testScript": "test:rls-phase3-transaction-read-models",
+      "report": "docs/supabase-rls-phase-3-transaction-read-models-report.md",
+      "tables": [
+        "transaction_document_requirements",
+        "transaction_lifecycle_workflows"
+      ]
+    },
+    {
+      "phase": 4,
+      "name": "transaction_commissions",
+      "migration": "supabase/migrations/20260814164526_rls_phase4_transaction_commissions.sql",
+      "testScript": "test:rls-phase4-transaction-commissions",
+      "report": "docs/supabase-rls-phase-4-transaction-commissions-report.md",
+      "tables": [
+        "transaction_commissions"
+      ]
+    },
+    {
+      "phase": 5,
+      "name": "rollup_validation_diagnostics",
+      "migration": "supabase/migrations/20260814164904_rls_phase5_rollup_validation_diagnostics.sql",
+      "testScript": "test:rls-phase5-rollup-validation-diagnostics",
+      "report": "docs/supabase-rls-phase-5-rollup-validation-diagnostics-report.md",
+      "tables": [
+        "transaction_rollup_validation"
+      ]
+    }
+  ],
+  "requiredStagingEvidence": {
+    "file": "docs/staging-evidence/supabase-rls-phase-7-staging-execution.json",
+    "status": "STAGING_EXECUTION_COMPLETE",
+    "requiredForProductionPromotion": true
+  },
+  "stagingGates": [
+    "Phase 6 closeout passes immediately before staging execution.",
+    "Operator verifies the active Supabase target is staging project vaszuxjeoajeuhlcnzzf.",
+    "Each Phase 1-5 migration is applied in timestamp order to staging only.",
+    "Post-apply evidence confirms RLS is enabled for all eight Phase 0 tables.",
+    "Post-apply evidence confirms browser/authenticated users cannot perform broad direct writes.",
+    "Post-apply evidence confirms service-role or controlled RPC paths still support required backend workflows.",
+    "Supabase advisor evidence no longer reports the original eight public RLS-disabled tables."
+  ],
+  "remoteApplyStatus": {
+    "staging": "staging_execution_complete",
+    "production": "not_applied"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "version": "202607310007",
+  "stream": "other",
+  "dependsOn": "stream preflight",
+  "module": "notification_automation",
+  "file": "202607310007_notification_automation_reminder_health_controls.sql",
+  "objectStatus": "no_static_objects",
+  "liveCount": 0,
+  "objectCount": 0,
+  "action": "manual_data_review",
+  "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
+  "clearanceDecision": "repair_only_after_smoke",
+  "manualReview": {
+    "checked": true,
+    "decision": "repair_only_after_smoke",
+    "source": "Codex 2026-08-14 live read-only review",
+    "ledgerRecorded": false,
+    "targetRowsExpected": 6,
+    "targetRowsObserved": 6,
+    "rowsWithReminderPolicy": 6,
+    "rowsWithJohannesburgQuietHours": 6,
+    "rowsWithPhaseMarker": 6,
+    "rowsWithPremiumControls": 6,
+    "idempotency": "Original migration updates an explicit six-key automation allowlist with deterministic reminder_policy JSON and deterministic metadata_json flags; it does not enqueue or dispatch reminders.",
+    "smokeEvidence": [
+      "node scripts/notification-automation-reminder-health-controls.test.mjs: pass",
+      "npm run build: pass",
+      "live notification_automation_definitions outcome query: pass"
+    ],
+    "requiredChecks": [
+      "staging_repair_only_evidence_required",
+      "production_repair_only_evidence_required",
+      "record_only_no_sql_replay"
+    ],
+    "blockers": []
+  },
+  "approvedBy": "Codex 2026-08-14 live read-only review",
+  "approvedAt": "2026-08-14T12:52:51Z",
+  "blockers": [],
+  "packetFile": "docs/manual-review/202607310007-other.md",
+  "clearanceFile": "docs/non-runnable-clearance/202607310007-other.json"
+}

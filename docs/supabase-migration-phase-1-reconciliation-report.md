@@ -1,6 +1,6 @@
 # Supabase Migration Phase 1 Reconciliation Report
 
-Generated: 2026-08-14T12:12:26.421Z
+Generated: 2026-08-14T12:27:45.660Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -18,7 +18,7 @@ Phase 1 is read-only. This report is built from the local migration directory, `
 | Remote-only rows | 17 |
 | Local-only rows in CLI comparison | 28 |
 | Split local/remote versions | 17 |
-| Live onboarding object checks ready | 15/17 |
+| Live onboarding object checks ready | 17/17 |
 
 ## Onboarding Critical Matrix
 
@@ -28,18 +28,13 @@ Phase 1 is read-only. This report is built from the local migration directory, `
 | 202606040001 | role-contract onboarding wrapper | 1 file | recorded applied | ready | No Phase 2 object patch needed. |
 | 202606170002 | principal claim invite RPC | 1 file | recorded applied | ready | No Phase 2 object patch needed. |
 | 202606170003 | principal claim completion RPC | 1 file | recorded applied | ready | No Phase 2 object patch needed. |
-| 202606190001 | email-claim onboarding repair | 1 file | recorded applied | missing: workspace_repair_email_claim_function | Phase 2 candidate: inspect or restore missing live object(s). |
+| 202606190001 | email-claim onboarding repair | 1 file | recorded applied | ready | No Phase 2 object patch needed. |
 | 202607020002 | principal-claim invite RLS hardening | 1 file | recorded applied | ready | No Phase 2 object patch needed. |
-| 202607120002 | branch-scope onboarding fix | 1 file | recorded applied | missing: workspace_onboarding_branch_scope_fix | Phase 2 candidate: inspect or restore missing live object(s). |
+| 202607120002 | branch-scope onboarding fix | 1 file | recorded applied | ready | No Phase 2 object patch needed. |
 
 ## Phase 2 Queue
 
-These items need live-object investigation before any ledger repair:
-
-| Version | Migration | Missing checks |
-| --- | --- | --- |
-| 202606190001 | email-claim onboarding repair | workspace_repair_email_claim_function |
-| 202607120002 | branch-scope onboarding fix | workspace_onboarding_branch_scope_fix |
+No onboarding-critical live-object patch is currently indicated by the Phase 1 checks.
 
 ## Phase 3 Ledger Repair Candidates
 
@@ -141,8 +136,8 @@ No duplicate local migration timestamps detected.
 | principal_claim_sync_trigger_function | function | yes | yes | bridge_sync_principal_claim_membership() |
 | workspace_onboarding_legacy_rpc | function | yes | yes | bridge_complete_workspace_onboarding_legacy_20260524(payload jsonb) |
 | workspace_onboarding_rpc | function | yes | yes | bridge_complete_workspace_onboarding(payload jsonb) |
-| workspace_onboarding_branch_scope_fix | function_body | no | yes | bridge_complete_workspace_onboarding handles null branch_scope |
-| workspace_repair_email_claim_function | function_body | no | yes | bridge_repair_workspace_onboarding includes email-claim repair body |
+| workspace_onboarding_branch_scope_fix | function_body | yes | yes | bridge_complete_workspace_onboarding handles null branch_scope |
+| workspace_repair_email_claim_function | function_body | yes | yes | bridge_repair_workspace_onboarding includes email-claim repair body |
 | invites_insert_member_fallback_policy | policy | yes | yes | invites_insert_active_workspace_member_fallback |
 | invites_insert_workspace_admin_policy | policy | yes | yes | invites_insert_workspace_admin |
 | organisation_users_principal_claim_select_policy | policy | yes | yes | organisation_users_agency_select |

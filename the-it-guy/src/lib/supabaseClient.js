@@ -103,6 +103,14 @@ export const isSupabaseConfigured = Boolean(
   String(supabaseUrl).startsWith('https://'),
 )
 
+export function getSupabaseRuntimeConfig() {
+  return {
+    supabaseUrl,
+    supabaseKey,
+    isSupabaseConfigured,
+  }
+}
+
 const AUTH_READ_CACHE_TTL_MS = 750
 const AUTH_READ_LOCK_RETRY_DELAY_MS = 75
 const AUTH_READ_LOCK_RETRY_ATTEMPTS = 2

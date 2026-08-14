@@ -124,6 +124,6 @@ assertIncludes(lifecycleSource, 'allowKingstonsManualSignedOtp: sellerProcessPro
 assertIncludes(incomingQueueSource, 'const DOCUMENT_COLUMNS = [', 'Incoming attorney queue must define transaction document inputs.')
 assertIncludes(incomingQueueSource, 'documentsByTransactionId', 'Incoming attorney queue must group documents by transaction.')
 assertIncludes(incomingQueueSource, 'allowKingstonsManualSignedOtp: sellerProcessProfileResolution.isKingstons', 'Incoming attorney queue must scope manual OTP readiness to Kingstons.')
-assertIncludes(attorneyDetailSource, "['signed_otp', 'signed otp', 'signed sale agreement', 'signed offer to purchase']", 'Attorney transaction UI must recognise signed_otp transaction documents.')
+assertIncludes(attorneyDetailSource, "hasDocumentWithKeywords(documents, ['signed_otp', 'signed otp', 'otp', 'sale agreement', 'offer to purchase']", 'Attorney transaction UI must recognise signed_otp transaction documents.')
 
 console.log('Kingstons buyer OTP attorney / transaction readiness phase 6 guard passed.')

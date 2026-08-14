@@ -167,6 +167,11 @@ export async function handleTemplatePreviewEmail(payload: Record<string, unknown
     price: firstText(payload.propertyPrice, "R 765 000"),
     area: firstText(payload.propertyArea, "Benoni North AH"),
     match: "New enquiry",
+    imageUrl: firstText(
+      payload.propertyImageUrl,
+      payload.property_image_url,
+      "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=1000&q=80",
+    ),
     link: "https://app.arch9.co.za/listings/demo-property",
   };
 
@@ -187,6 +192,11 @@ export async function handleTemplatePreviewEmail(payload: Record<string, unknown
       actionLink: firstText(
         payload.actionLink,
         "https://app.arch9.co.za/viewing-preferences/demo-token",
+      ),
+      agentCardUrl: firstText(
+        payload.agentCardUrl,
+        payload.agent_card_url,
+        "https://app.arch9.co.za/card/alexander-landman",
       ),
       branding,
     };
