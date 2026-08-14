@@ -1,6 +1,6 @@
 # Supabase Migration Phase 2 Onboarding-Critical Report
 
-Generated: 2026-08-14T12:16:35.756Z
+Generated: 2026-08-14T12:28:04.435Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -75,9 +75,9 @@ Phase 2 validates onboarding-critical live objects and runtime visibility. It do
 
 | Check | Ready | Expected | Observed | Details |
 | --- | --- | --- | --- | --- |
-| rest_bridge_complete_workspace_onboarding | yes | HTTP 200; success=false; code=permission_denied | HTTP 200; code=permission_denied | durationMs=407 |
-| rest_bridge_create_principal_claim_invite | yes | HTTP 200; success=false; code=not_authenticated | HTTP 200; code=not_authenticated | durationMs=203 |
-| rest_bridge_complete_principal_claim_onboarding | yes | HTTP 200; success=false; code=not_authenticated | HTTP 200; code=not_authenticated | durationMs=209 |
+| rest_bridge_complete_workspace_onboarding | yes | HTTP 200; success=false; code=permission_denied | HTTP 200; code=permission_denied | durationMs=493 |
+| rest_bridge_create_principal_claim_invite | yes | HTTP 200; success=false; code=not_authenticated | HTTP 200; code=not_authenticated | durationMs=249 |
+| rest_bridge_complete_principal_claim_onboarding | yes | HTTP 200; success=false; code=not_authenticated | HTTP 200; code=not_authenticated | durationMs=250 |
 
 ## Command Evidence
 

@@ -36,6 +36,9 @@ assert.match(pageSource, />\s*Back\s*<\/Button>/, 'planner should expose a simpl
 assert.doesNotMatch(pageSource, /Edit selected properties/, 'planner should not use the old edit-selected-properties copy')
 assert.match(pageSource, /data-testid="buyer-submitted-viewing-times"[\s\S]*data-testid="simplified-viewing-planner"/, 'planner should show buyer-submitted viewing times above Viewing Planner')
 assert.match(pageSource, /Buyer submitted 3 preferred options/, 'planner should surface the three buyer-submitted preferred viewing options')
+assert.match(pageSource, /savedBuyerViewingPlanWindows/, 'planner should surface saved manual buyer viewing times when no submitted preference link exists')
+assert.match(pageSource, /Buyer requested viewing times captured/, 'planner should label saved manual buyer viewing times on the overview')
+assert.match(pageSource, /Saved to plan/, 'planner should show saved manual buyer viewing times as already saved to the plan')
 
 assert.match(sendEmailIndexSource, /handleBuyerViewingAvailabilityRequestEmail/, 'send-email router should import the buyer viewing handler')
 assert.match(sendEmailIndexSource, /buyer_viewing_availability_request/, 'send-email router should route the buyer viewing template')

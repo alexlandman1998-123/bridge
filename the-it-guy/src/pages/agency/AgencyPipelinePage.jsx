@@ -30030,6 +30030,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const latestBuyerViewingPreferenceWindows = latestBuyerViewingPreferenceResponse?.availabilityWindows?.length
                           ? latestBuyerViewingPreferenceResponse.availabilityWindows
                           : getViewingAvailabilityLines(viewingPlannerBuyerAvailability).slice(0, 3)
+                        const savedBuyerViewingPlanWindows = getViewingAvailabilityLines(savedViewingPlan.availabilityWindows || viewingPlannerBuyerAvailability).slice(0, 3)
+                        const savedBuyerViewingPlanConfirmedNames = (savedViewingPlan.confirmedPropertyIds.length ? savedViewingPlan.confirmedPropertyIds : viewingPlanConfirmedPropertyIds)
+                          .map((propertyId) => getBuyerViewingPreferencePropertyTitle(propertyId, buyerViewingPreferenceLinks, selectedLeadViewingPlanProperties))
+                          .filter(Boolean)
+                        const buyerViewingTimesSummaryWindows = latestBuyerViewingPreferenceLink ? latestBuyerViewingPreferenceWindows : savedBuyerViewingPlanWindows
+                        const buyerViewingTimesSummaryConfirmedNames = latestBuyerViewingPreferenceLink ? latestBuyerViewingPreferenceConfirmedNames : savedBuyerViewingPlanConfirmedNames
+                        const buyerViewingTimesSummaryNotes = latestBuyerViewingPreferenceLink
+                          ? normalizeText(latestBuyerViewingPreferenceResponse?.responseNotes)
+                          : viewingPlannerBuyerNotes
+                        const buyerViewingTimesSummaryTimestamp = latestBuyerViewingPreferenceResponse?.submittedAt || savedViewingPlan.respondedAt || savedViewingPlan.updatedAt
+                        const showBuyerViewingTimesSummary = Boolean(
+                          latestBuyerViewingPreferenceLink ||
+                            buyerViewingPreferenceLinksLoading ||
+                            buyerViewingPreferenceLinksError ||
+                            savedBuyerViewingPlanWindows.length,
+                        )
                         const submittedSellerViewingCoordinationLinks = sellerViewingCoordinationLinks
                           .filter((link) => normalizeText(link?.status).toLowerCase() === 'submitted')
                           .sort((left, right) => new Date(right?.submittedAt || right?.updatedAt || right?.createdAt || 0) - new Date(left?.submittedAt || left?.updatedAt || left?.createdAt || 0))
@@ -30659,17 +30675,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             </section>
 
-                            {(latestBuyerViewingPreferenceLink || buyerViewingPreferenceLinksLoading || buyerViewingPreferenceLinksError) ? (
+                            {showBuyerViewingTimesSummary ? (
                               <section className="rounded-[20px] border border-[#cbe7d7] bg-[#f4fbf7] p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="buyer-submitted-viewing-times">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
                                   <div className="min-w-0">
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#317255]">Client Requested Viewing Times</p>
                                     <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#102033]">
-                                      {latestBuyerViewingPreferenceLink ? 'Buyer submitted 3 preferred options' : 'Checking submitted buyer options'}
+                                      {latestBuyerViewingPreferenceLink ? 'Buyer submitted 3 preferred options' : buyerViewingTimesSummaryWindows.length ? 'Buyer requested viewing times captured' : 'Checking submitted buyer options'}
                                     </h3>
                                     <p className="mt-1 text-sm leading-6 text-[#4f6b5d]">
-                                      {latestBuyerViewingPreferenceResponse?.submittedAt
-                                        ? `Submitted ${formatDateTime(latestBuyerViewingPreferenceResponse.submittedAt)}`
+                                      {buyerViewingTimesSummaryTimestamp
+                                        ? `${latestBuyerViewingPreferenceLink ? 'Submitted' : 'Recorded'} ${formatDateTime(buyerViewingTimesSummaryTimestamp)}`
                                         : buyerViewingPreferenceLinksLoading
                                           ? 'Refreshing buyer viewing preference responses.'
                                           : buyerViewingPreferenceLinksError || 'No submitted buyer viewing response is loaded yet.'}
@@ -30679,6 +30695,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     {latestBuyerViewingPreferenceLink ? (
                                       <span className={`rounded-full px-3 py-1 text-xs font-semibold ${latestBuyerViewingPreferenceApplied ? 'bg-white text-[#17643a] ring-1 ring-[#b9dbc9]' : 'bg-[#fff8ec] text-[#8a5b1f] ring-1 ring-[#f0dfb7]'}`}>
                                         {latestBuyerViewingPreferenceApplied ? 'Applied to plan' : 'Ready to apply'}
+                                      </span>
+                                    ) : buyerViewingTimesSummaryWindows.length ? (
+                                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#17643a] ring-1 ring-[#b9dbc9]">
+                                        Saved to plan
                                       </span>
                                     ) : null}
                                     <Button
@@ -30707,10 +30727,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   </div>
                                 </div>
 
-                                {latestBuyerViewingPreferenceLink ? (
+                                {buyerViewingTimesSummaryWindows.length ? (
                                   <>
                                     <div className="mt-4 grid gap-3 md:grid-cols-3">
-                                      {latestBuyerViewingPreferenceWindows.slice(0, 3).map((windowLabel, index) => (
+                                      {buyerViewingTimesSummaryWindows.slice(0, 3).map((windowLabel, index) => (
                                         <div key={`buyer-submitted-window-${index}`} className="min-h-[92px] rounded-[14px] border border-[#cbe7d7] bg-white px-4 py-3">
                                           <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#6f8e7f]">Option {index + 1}</p>
                                           <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-[#102033]">{windowLabel}</p>
@@ -30721,15 +30741,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       <div className="rounded-[14px] border border-[#cbe7d7] bg-white px-4 py-3">
                                         <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#6f8e7f]">Selected properties</p>
                                         <p className="mt-2 text-sm font-semibold leading-6 text-[#102033]">
-                                          {latestBuyerViewingPreferenceConfirmedNames.length
-                                            ? latestBuyerViewingPreferenceConfirmedNames.join(', ')
+                                          {buyerViewingTimesSummaryConfirmedNames.length
+                                            ? buyerViewingTimesSummaryConfirmedNames.join(', ')
                                             : 'No property selection was included.'}
                                         </p>
                                       </div>
                                       <div className="rounded-[14px] border border-[#cbe7d7] bg-white px-4 py-3">
                                         <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#6f8e7f]">Buyer notes</p>
                                         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#29435d]">
-                                          {normalizeText(latestBuyerViewingPreferenceResponse?.responseNotes) || 'No extra notes submitted.'}
+                                          {buyerViewingTimesSummaryNotes || 'No extra notes submitted.'}
                                         </p>
                                       </div>
                                     </div>
