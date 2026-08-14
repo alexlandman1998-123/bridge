@@ -8,7 +8,7 @@ const handlerSource = await fs.readFile(new URL('../../supabase/functions/send-e
 const templateSource = await fs.readFile(new URL('../../supabase/functions/send-email/content/viewingAvailabilityRequest.ts', import.meta.url), 'utf8')
 const templateTestSource = await fs.readFile(new URL('../../supabase/functions/send-email/content/brandedTemplates.test.ts', import.meta.url), 'utf8')
 
-const handlerStart = pageSource.indexOf('async function handleSendBuyerViewingAvailabilityRequest')
+const handlerStart = pageSource.indexOf('async function _handleSendBuyerViewingAvailabilityRequest')
 assert.notEqual(handlerStart, -1, 'buyer viewing availability handler should exist on the lead workspace')
 const handlerEnd = pageSource.indexOf('\n  async function handleCaptureBuyerViewingResponse', handlerStart)
 assert.notEqual(handlerEnd, -1, 'buyer viewing availability handler should remain before response capture')
@@ -34,6 +34,8 @@ assert.match(pageSource, /Delivery suppressed/, 'planner should label suppressed
 assert.match(pageSource, /Email failed/, 'planner should label failed delivery')
 assert.match(pageSource, />\s*Back\s*<\/Button>/, 'planner should expose a simple Back button for property selection')
 assert.doesNotMatch(pageSource, /Edit selected properties/, 'planner should not use the old edit-selected-properties copy')
+assert.match(pageSource, /data-testid="buyer-submitted-viewing-times"[\s\S]*data-testid="simplified-viewing-planner"/, 'planner should show buyer-submitted viewing times above Viewing Planner')
+assert.match(pageSource, /Buyer submitted 3 preferred options/, 'planner should surface the three buyer-submitted preferred viewing options')
 
 assert.match(sendEmailIndexSource, /handleBuyerViewingAvailabilityRequestEmail/, 'send-email router should import the buyer viewing handler')
 assert.match(sendEmailIndexSource, /buyer_viewing_availability_request/, 'send-email router should route the buyer viewing template')
@@ -53,14 +55,14 @@ for (const contract of [
 }
 
 for (const contract of [
-  /renderBridgeEmailLayout/,
-  /Viewing Availability Request/,
-  /Confirm viewings/,
+  /BridgeEmailLayoutBranding/,
+  /Choose your preferred viewing times/,
+  /Viewing request/,
   /actionLink/,
-  /Viewing Options/,
-  /property\.imageUrl/,
+  /Property requested/,
+  /imageUrl/,
   /Please reply with/,
-  /Powered by Arch9/,
+  /Powered by ARCH9|Powered by Arch9/,
 ]) {
   assert.match(templateSource, contract, `template should include ${contract}`)
 }

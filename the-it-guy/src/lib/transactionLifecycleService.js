@@ -1064,6 +1064,7 @@ export async function createTransactionFromLeadOverride({
       mandate_packet_id: normalize(payload?.mandatePacketId || listing?.mandatePacketId) || null,
       commission_snapshot_id: normalize(payload?.commissionSnapshotId) || null,
       creation_idempotency_key: creationCommand.idempotencyKey,
+      creation_mode: creationCommand.creationMode,
       gross_commission_percentage: asNumber(payload?.grossCommissionPercentage),
       gross_commission_amount: asNumber(payload?.grossCommissionAmount),
       agent_split_percentage_snapshot: asNumber(payload?.agentSplitPercentage),

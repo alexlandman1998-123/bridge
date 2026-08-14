@@ -568,72 +568,7 @@ const KINGSTONS_FORMAL_VALUATION_DOCUMENT = Object.freeze({
   fileName: 'Formal Valuation Document',
 })
 
-const DOCUMENT_UPLOAD_OVERLAY_ID = 'arch9-document-upload-overlay'
-const DOCUMENT_UPLOAD_OVERLAY_STYLE_ID = 'arch9-document-upload-overlay-style'
 const LEAD_WORKSPACE_SESSION_SNAPSHOT_PREFIX = 'arch9:lead-workspace-snapshot'
-
-function escapeHtmlForUploadOverlay(value = '') {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;')
-}
-
-function showDocumentUploadOverlay({ documentLabel = 'Document', fileName = '' } = {}) {
-  if (typeof document === 'undefined') return
-  if (!document.getElementById(DOCUMENT_UPLOAD_OVERLAY_STYLE_ID)) {
-    const style = document.createElement('style')
-    style.id = DOCUMENT_UPLOAD_OVERLAY_STYLE_ID
-    style.textContent = `
-      @keyframes arch9DocumentUploadSpin {
-        to { transform: rotate(360deg); }
-      }
-      @keyframes arch9DocumentUploadPulse {
-        0%, 100% { opacity: 0.42; transform: translateX(-58%); }
-        50% { opacity: 1; transform: translateX(58%); }
-      }
-    `
-    document.head.appendChild(style)
-  }
-  let overlay = document.getElementById(DOCUMENT_UPLOAD_OVERLAY_ID)
-  if (!overlay) {
-    overlay = document.createElement('div')
-    overlay.id = DOCUMENT_UPLOAD_OVERLAY_ID
-    document.body.appendChild(overlay)
-  }
-  overlay.setAttribute('role', 'status')
-  overlay.setAttribute('aria-live', 'polite')
-  overlay.style.cssText = [
-    'position:fixed',
-    'inset:0',
-    'z-index:2147483647',
-    'display:flex',
-    'align-items:center',
-    'justify-content:center',
-    'background:rgba(248,251,255,0.78)',
-    'backdrop-filter:blur(8px)',
-    'pointer-events:none',
-  ].join(';')
-  overlay.innerHTML = `
-    <div style="width:min(360px,calc(100vw - 48px));border:1px solid #dbe7f2;background:#fff;border-radius:24px;box-shadow:0 24px 70px rgba(15,34,54,0.18);padding:24px;text-align:center;font-family:inherit;color:#18324a;">
-      <div style="width:46px;height:46px;margin:0 auto 14px;border-radius:999px;border:4px solid #e7eef6;border-top-color:#13784f;animation:arch9DocumentUploadSpin 0.8s linear infinite;"></div>
-      <div style="font-size:15px;font-weight:800;letter-spacing:-0.01em;">Uploading document</div>
-      <div style="margin-top:6px;font-size:13px;font-weight:700;color:#55708b;">${escapeHtmlForUploadOverlay(documentLabel)}</div>
-      ${fileName ? `<div style="margin-top:3px;font-size:12px;font-weight:600;color:#7890a8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtmlForUploadOverlay(fileName)}</div>` : ''}
-      <div style="position:relative;margin-top:18px;height:6px;overflow:hidden;border-radius:999px;background:#edf3f8;">
-        <div style="position:absolute;inset:0;width:56%;border-radius:999px;background:linear-gradient(90deg,#f5c542,#13784f);animation:arch9DocumentUploadPulse 1.05s ease-in-out infinite;"></div>
-      </div>
-      <div style="margin-top:12px;font-size:12px;font-weight:700;color:#7890a8;">Please keep this tab open.</div>
-    </div>
-  `
-}
-
-function hideDocumentUploadOverlay() {
-  if (typeof document === 'undefined') return
-  document.getElementById(DOCUMENT_UPLOAD_OVERLAY_ID)?.remove()
-}
 
 function getLeadWorkspaceSessionSnapshotKey(organisationId = '', leadId = '') {
   const orgKey = normalizeText(organisationId)
@@ -10442,9 +10377,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }))
   const [viewingPlannerPropertyScheduleById, setViewingPlannerPropertyScheduleById] = useState({})
   const [viewingPlanResponseForm, setViewingPlanResponseForm] = useState(BUYER_VIEWING_RESPONSE_DEFAULTS)
-  const [, setBuyerViewingPreferenceLinks] = useState([])
-  const [, setBuyerViewingPreferenceLinksLoading] = useState(false)
-  const [, setBuyerViewingPreferenceLinksError] = useState('')
+  const [buyerViewingPreferenceLinks, setBuyerViewingPreferenceLinks] = useState([])
+  const [buyerViewingPreferenceLinksLoading, setBuyerViewingPreferenceLinksLoading] = useState(false)
+  const [buyerViewingPreferenceLinksError, setBuyerViewingPreferenceLinksError] = useState('')
   const [sellerViewingCoordinationLinks, setSellerViewingCoordinationLinks] = useState([])
   const [sellerViewingCoordinationLinksLoading, setSellerViewingCoordinationLinksLoading] = useState(false)
   const [sellerViewingCoordinationLinksError, setSellerViewingCoordinationLinksError] = useState('')
@@ -22690,10 +22625,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (id === 'upload_valuation_document') {
-      handleLeadWorkspaceTabSelection('documents')
-      window.setTimeout(() => {
-        formalValuationUploadInputRef.current?.click?.()
-      }, 75)
+      if (formalValuationUploading) return
+      formalValuationUploadInputRef.current?.click?.()
       return
     }
     if (id === 'complete_seller_pack' || id === 'seller_pack_signed') {
@@ -26871,6 +26804,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   return (
     <section className="min-w-0 max-w-full space-y-5 overflow-hidden">
+      <input
+        ref={formalValuationUploadInputRef}
+        type="file"
+        className="sr-only"
+        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+        aria-label="Upload formal valuation document"
+        disabled={formalValuationUploading}
+        onChange={(event) => void handleKingstonsFormalValuationUpload(event)}
+      />
 
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
@@ -30031,6 +29973,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const viewingPlannerBuyerAvailability = normalizeText(viewingPlanResponseForm.availabilityWindows)
                         const viewingPlannerBuyerNotes = normalizeText(viewingPlanResponseForm.responseNotes)
                         const viewingPlannerSellerNotes = normalizeText(viewingPlanSellerForm.sellerCoordinationNotes)
+                        const submittedBuyerViewingPreferenceLinks = buyerViewingPreferenceLinks
+                          .filter((link) => normalizeText(link?.status).toLowerCase() === 'submitted')
+                          .sort((left, right) => new Date(right?.submittedAt || right?.updatedAt || right?.createdAt || 0) - new Date(left?.submittedAt || left?.updatedAt || left?.createdAt || 0))
+                        const latestBuyerViewingPreferenceLink = submittedBuyerViewingPreferenceLinks[0] || null
+                        const latestBuyerViewingPreferenceResponse = latestBuyerViewingPreferenceLink
+                          ? normalizeBuyerViewingPreferenceResponse(latestBuyerViewingPreferenceLink)
+                          : null
+                        const latestBuyerViewingPreferenceApplied = latestBuyerViewingPreferenceResponse
+                          ? buyerViewingPreferenceMatchesSavedPlan(savedViewingPlan, latestBuyerViewingPreferenceResponse)
+                          : false
+                        const latestBuyerViewingPreferenceConfirmedNames = latestBuyerViewingPreferenceResponse
+                          ? latestBuyerViewingPreferenceResponse.confirmedPropertyIds
+                            .map((propertyId) => getBuyerViewingPreferencePropertyTitle(propertyId, buyerViewingPreferenceLinks, selectedLeadViewingPlanProperties))
+                            .filter(Boolean)
+                          : []
+                        const latestBuyerViewingPreferenceWindows = latestBuyerViewingPreferenceResponse?.availabilityWindows?.length
+                          ? latestBuyerViewingPreferenceResponse.availabilityWindows
+                          : getViewingAvailabilityLines(viewingPlannerBuyerAvailability).slice(0, 3)
                         const submittedSellerViewingCoordinationLinks = sellerViewingCoordinationLinks
                           .filter((link) => normalizeText(link?.status).toLowerCase() === 'submitted')
                           .sort((left, right) => new Date(right?.submittedAt || right?.updatedAt || right?.createdAt || 0) - new Date(left?.submittedAt || left?.updatedAt || left?.createdAt || 0))
@@ -30657,6 +30617,85 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 />
                               </div>
                             </section>
+
+                            {(latestBuyerViewingPreferenceLink || buyerViewingPreferenceLinksLoading || buyerViewingPreferenceLinksError) ? (
+                              <section className="rounded-[20px] border border-[#cbe7d7] bg-[#f4fbf7] p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="buyer-submitted-viewing-times">
+                                <div className="flex flex-wrap items-start justify-between gap-4">
+                                  <div className="min-w-0">
+                                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#317255]">Client Requested Viewing Times</p>
+                                    <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#102033]">
+                                      {latestBuyerViewingPreferenceLink ? 'Buyer submitted 3 preferred options' : 'Checking submitted buyer options'}
+                                    </h3>
+                                    <p className="mt-1 text-sm leading-6 text-[#4f6b5d]">
+                                      {latestBuyerViewingPreferenceResponse?.submittedAt
+                                        ? `Submitted ${formatDateTime(latestBuyerViewingPreferenceResponse.submittedAt)}`
+                                        : buyerViewingPreferenceLinksLoading
+                                          ? 'Refreshing buyer viewing preference responses.'
+                                          : buyerViewingPreferenceLinksError || 'No submitted buyer viewing response is loaded yet.'}
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {latestBuyerViewingPreferenceLink ? (
+                                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${latestBuyerViewingPreferenceApplied ? 'bg-white text-[#17643a] ring-1 ring-[#b9dbc9]' : 'bg-[#fff8ec] text-[#8a5b1f] ring-1 ring-[#f0dfb7]'}`}>
+                                        {latestBuyerViewingPreferenceApplied ? 'Applied to plan' : 'Ready to apply'}
+                                      </span>
+                                    ) : null}
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      className="rounded-[12px] border-[#b9dbc9] bg-white text-[#17643a] hover:bg-[#f8fcfa]"
+                                      disabled={buyerViewingPreferenceLinksLoading}
+                                      onClick={() => void reloadBuyerViewingPreferenceLinks({ showMessage: true })}
+                                    >
+                                      <RefreshCw className={`h-4 w-4 ${buyerViewingPreferenceLinksLoading ? 'animate-spin' : ''}`} />
+                                      Refresh
+                                    </Button>
+                                    {latestBuyerViewingPreferenceLink && !latestBuyerViewingPreferenceApplied ? (
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        className="rounded-[12px]"
+                                        disabled={isLeadDetailSaving}
+                                        onClick={() => void _handleApplyBuyerViewingPreferenceResponse(latestBuyerViewingPreferenceLink)}
+                                      >
+                                        <CheckCircle2 className="h-4 w-4" />
+                                        {isLeadDetailSaving ? 'Applying...' : 'Apply to planner'}
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                </div>
+
+                                {latestBuyerViewingPreferenceLink ? (
+                                  <>
+                                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                                      {latestBuyerViewingPreferenceWindows.slice(0, 3).map((windowLabel, index) => (
+                                        <div key={`buyer-submitted-window-${index}`} className="min-h-[92px] rounded-[14px] border border-[#cbe7d7] bg-white px-4 py-3">
+                                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#6f8e7f]">Option {index + 1}</p>
+                                          <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-[#102033]">{windowLabel}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)]">
+                                      <div className="rounded-[14px] border border-[#cbe7d7] bg-white px-4 py-3">
+                                        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#6f8e7f]">Selected properties</p>
+                                        <p className="mt-2 text-sm font-semibold leading-6 text-[#102033]">
+                                          {latestBuyerViewingPreferenceConfirmedNames.length
+                                            ? latestBuyerViewingPreferenceConfirmedNames.join(', ')
+                                            : 'No property selection was included.'}
+                                        </p>
+                                      </div>
+                                      <div className="rounded-[14px] border border-[#cbe7d7] bg-white px-4 py-3">
+                                        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#6f8e7f]">Buyer notes</p>
+                                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#29435d]">
+                                          {normalizeText(latestBuyerViewingPreferenceResponse?.responseNotes) || 'No extra notes submitted.'}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </>
+                                ) : null}
+                              </section>
+                            ) : null}
 
                             <section className="overflow-hidden rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="simplified-viewing-planner">
                               <div className="grid gap-6 border-b border-[#edf3f8] p-5 lg:grid-cols-[minmax(220px,0.45fr)_minmax(520px,1.55fr)] lg:items-start">
@@ -33997,7 +34036,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                                  <Upload className="h-3.5 w-3.5" />
 	                                                  {isUploadingKingstonsDocument ? 'Uploading...' : documentHasFile ? 'Replace' : 'Upload'}
 	                                                  <input
-	                                                    ref={isKingstonsFormalValuationDocument ? formalValuationUploadInputRef : null}
 	                                                    type="file"
 	                                                    className="sr-only"
 	                                                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
@@ -34015,15 +34053,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                                          leads: [leadSnapshotForUpload],
 	                                                        })
 	                                                      }
-	                                                      showDocumentUploadOverlay({
-	                                                        documentLabel: documentRow.label || documentRow.title || 'Document',
-	                                                        fileName: selectedFile.name,
-	                                                      })
 	                                                      if (isKingstonsFormalValuationDocument) {
-	                                                        void handleKingstonsFormalValuationUpload(event).finally(hideDocumentUploadOverlay)
+	                                                        void handleKingstonsFormalValuationUpload(event)
 	                                                        return
 	                                                      }
-	                                                      void handleKingstonsSellerPackUpload(documentKey, event, documentRow).finally(hideDocumentUploadOverlay)
+	                                                      void handleKingstonsSellerPackUpload(documentKey, event, documentRow)
 	                                                    }}
 	                                                  />
 	                                                </label>
