@@ -2260,22 +2260,7 @@ function getKingstonsFicaSellerTypeLabel(value = '') {
 }
 
 function hasKingstonsSellerPackUploadEvidence(documentRow = {}) {
-  return Boolean(
-    documentRow.url ||
-      documentRow.fileUrl ||
-      documentRow.file_url ||
-      documentRow.downloadUrl ||
-      documentRow.download_url ||
-      documentRow.storagePath ||
-      documentRow.storage_path ||
-      documentRow.documentId ||
-      documentRow.document_id ||
-      documentRow.fileId ||
-      documentRow.file_id ||
-      documentRow.uploadedAt ||
-      documentRow.uploaded_at ||
-      Number(documentRow.fileSize || documentRow.file_size || 0) > 0,
-  )
+  return sellerLeadDocumentHasFileEvidence(documentRow)
 }
 
 function isKingstonsSellerPackDocumentUploaded(documentRow = {}) {
@@ -3473,21 +3458,7 @@ function isStaleKingstonsBaselineDocumentRow(documentRow = {}) {
 function getSellerLeadDocumentStatusMeta(documentRow = {}) {
   const rawStatus = normalizeText(documentRow?.statusLabel || documentRow?.status || documentRow?.documentStatus || documentRow?.document_status)
   const status = normalizeKey(rawStatus)
-  const hasFile = Boolean(
-    documentRow?.url ||
-      documentRow?.fileUrl ||
-      documentRow?.file_url ||
-      documentRow?.downloadUrl ||
-      documentRow?.download_url ||
-      documentRow?.storagePath ||
-      documentRow?.storage_path ||
-      documentRow?.filePath ||
-      documentRow?.file_path ||
-      documentRow?.generatedHtml ||
-      documentRow?.generated_html ||
-      documentRow?.uploadedAt ||
-      documentRow?.uploaded_at,
-  )
+  const hasFile = sellerLeadDocumentHasFileEvidence(documentRow)
 
   if (/(rejected|declined|failed|invalid)/.test(status)) {
     return {
@@ -3498,7 +3469,7 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
       Icon: AlertTriangle,
     }
   }
-  if (/(approved|complete|completed|signed|verified|accepted|done)/.test(status)) {
+  if (hasFile && /(approved|complete|completed|signed|verified|accepted|done)/.test(status)) {
     return {
       state: 'complete',
       label: rawStatus || 'Complete',
@@ -3507,7 +3478,7 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
       Icon: CheckCircle2,
     }
   }
-  if (/(review|submitted|received|uploaded|processing)/.test(status) || hasFile) {
+  if (hasFile) {
     return {
       state: 'review',
       label: rawStatus || 'Uploaded',
@@ -3518,7 +3489,9 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
   }
   return {
     state: 'pending',
-    label: rawStatus || 'Pending',
+    label: /(approved|complete|completed|signed|verified|accepted|done|review|submitted|received|uploaded|processing)/.test(status)
+      ? 'Upload required'
+      : rawStatus || 'Pending',
     pillClass: 'border-[#dfe8f1] bg-[#f3f7fb] text-[#7890a8]',
     iconClass: 'bg-[#f3f7fb] text-[#7890a8]',
     Icon: FileText,
@@ -3577,20 +3550,36 @@ function getSellerLeadDocumentStatusRank(status = '') {
 }
 
 function sellerLeadDocumentHasFileEvidence(row = {}) {
+  const originalDocument = row?.originalDocument || row?.original?.document || {}
   return Boolean(
     row?.url ||
       row?.fileUrl ||
       row?.file_url ||
       row?.downloadUrl ||
       row?.download_url ||
+      originalDocument?.url ||
+      originalDocument?.fileUrl ||
+      originalDocument?.file_url ||
+      originalDocument?.downloadUrl ||
+      originalDocument?.download_url ||
+      originalDocument?.signedUrl ||
+      originalDocument?.signed_url ||
       row?.storagePath ||
       row?.storage_path ||
       row?.filePath ||
       row?.file_path ||
-      row?.generatedHtml ||
-      row?.generated_html ||
-      row?.uploadedAt ||
-      row?.uploaded_at,
+      originalDocument?.storagePath ||
+      originalDocument?.storage_path ||
+      originalDocument?.filePath ||
+      originalDocument?.file_path ||
+      row?.fileId ||
+      row?.file_id ||
+      originalDocument?.fileId ||
+      originalDocument?.file_id ||
+      Number(row?.fileSize || row?.file_size || originalDocument?.fileSize || originalDocument?.file_size || 0) > 0 ||
+      (row?.canonicalFinalArtifact &&
+        (row?.packetId || row?.packet_id) &&
+        (row?.packetVersionId || row?.packet_version_id)),
   )
 }
 
@@ -3850,6 +3839,20 @@ function mapSellerLeadDocumentSourceRow(row = {}) {
   const generatedHtml = firstWorkspaceText(upload.generatedHtml, row.generatedHtml, row.generated_html, originalDocument.generatedHtml, originalDocument.generated_html)
   const generatedFileName = firstWorkspaceText(upload.generatedFileName, row.generatedFileName, row.generated_file_name, originalDocument.generatedFileName, originalDocument.generated_file_name)
   const status = normalizeText(row?.status || (row?.complete ? 'completed' : 'required'))
+  const storagePath = firstWorkspaceText(
+    upload.storagePath,
+    upload.storage_path,
+    row.storagePath,
+    row.storage_path,
+    originalDocument.storagePath,
+    originalDocument.storage_path,
+    originalDocument.filePath,
+    originalDocument.file_path,
+  )
+  const storageBucket = firstWorkspaceText(upload.storageBucket, upload.storage_bucket, row.storageBucket, row.storage_bucket, originalDocument.storageBucket, originalDocument.storage_bucket)
+  const documentId = firstWorkspaceText(upload.documentId, upload.document_id, row.documentId, row.document_id, originalDocument.documentId, originalDocument.document_id)
+  const fileId = firstWorkspaceText(upload.fileId, upload.file_id, row.fileId, row.file_id, originalDocument.fileId, originalDocument.file_id)
+  const fileSize = firstWorkspaceText(upload.fileSize, upload.file_size, row.fileSize, row.file_size, originalDocument.fileSize, originalDocument.file_size)
   const packetId = firstWorkspaceText(row?.packetId, row?.packet_id, upload.packetId, upload.packet_id, originalDocument.packetId, originalDocument.packet_id)
   const packetVersionId = firstWorkspaceText(row?.packetVersionId, row?.packet_version_id, upload.packetVersionId, upload.packet_version_id, originalDocument.packetVersionId, originalDocument.packet_version_id)
   const canonicalKey = getSellerLeadDocumentCanonicalKey({ ...row, key, label })
@@ -3871,6 +3874,16 @@ function mapSellerLeadDocumentSourceRow(row = {}) {
     file_url: url,
     downloadUrl: url,
     download_url: url,
+    storagePath,
+    storage_path: storagePath,
+    storageBucket,
+    storage_bucket: storageBucket,
+    documentId,
+    document_id: documentId,
+    fileId,
+    file_id: fileId,
+    fileSize,
+    file_size: fileSize,
     uploadedAt: firstWorkspaceText(upload.uploadedAt, row.uploadedAt, originalDocument.uploadedAt, originalDocument.uploaded_at),
     uploaded_at: firstWorkspaceText(upload.uploadedAt, row.uploadedAt, originalDocument.uploadedAt, originalDocument.uploaded_at),
     generatedHtml,
@@ -33608,19 +33621,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 </div>
                               )
                             })}
-                          </div>
-
-                          <div className="mt-6 grid gap-3 md:grid-cols-3">
-                            {[
-                              ['Mandate', selectedSellerJourney.kpis.find((item) => item.key === 'mandate')?.value || 'Not started'],
-                              ['Onboarding Status', normalizeText(selectedLead?.sellerOnboardingStatus || selectedLead?.seller_onboarding_status) || 'Not started'],
-                              ['Listing', selectedSellerJourney.kpis.find((item) => item.key === 'listing')?.value || 'Not created'],
-                            ].map(([label, value]) => (
-                              <div key={label} className="rounded-[18px] border border-[#e6eef7] bg-[#fbfdff] px-4 py-4">
-                                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8496aa]">{label}</p>
-                                <p className="mt-2 break-words text-base font-semibold text-[#203a54]">{value}</p>
-                              </div>
-                            ))}
                           </div>
 
                           <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
