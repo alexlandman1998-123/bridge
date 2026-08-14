@@ -29850,7 +29850,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === 'overview' && !selectedLeadIsSeller ? (
-                    <div className="space-y-6">
+                    <div className="space-y-5">
                       {(() => {
                         const qualificationQuestionRows = buildBuyerQualificationQuestionRows(buyerQualificationForm)
                         const buyerQualificationStatusLabel = buyerQualificationEditing
@@ -30296,8 +30296,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
 	                        return (
                           <>
-                            <div className="grid items-start gap-5 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)]">
-                              <form className="flex flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5" onSubmit={handleSaveBuyerQualification}>
+                            <div className="grid gap-5 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)] xl:items-stretch">
+                              <form className="flex h-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5" onSubmit={handleSaveBuyerQualification}>
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Buyer Qualification</p>
@@ -30414,18 +30414,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   </>
                                 ) : (
                                   <>
-                                    <div className="mt-3 grid gap-2 lg:grid-cols-3">
-                                      {qualificationQuestionRows.map((row) => {
+                                    <div className="mt-4 flex flex-1 flex-col border-t border-[#edf3f8]">
+                                      {qualificationQuestionRows.map((row, rowIndex) => {
                                         const isMissing = row.value === 'Not captured'
                                         const QualificationIcon = buyerQualificationIconByLabel[row.label] || Columns3
                                         return (
-                                          <div key={row.label} className={`grid min-h-[48px] grid-cols-[34px_minmax(0,1fr)] items-center gap-2 rounded-[12px] bg-[#f8fbfd] px-2.5 py-2 ring-1 ring-[#edf3f8] ${row.wide ? 'lg:col-span-3' : ''}`}>
+                                          <div key={row.label} className={`grid flex-1 grid-cols-[36px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-[#edf3f8] py-1.5 last:border-b-0 sm:grid-cols-[36px_minmax(150px,0.42fr)_minmax(0,1fr)] sm:items-center ${rowIndex === 0 ? 'pt-2.5' : ''}`}>
                                             <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#eef5fb] text-[#1d65a6]">
                                               <QualificationIcon className="h-4 w-4" />
                                             </span>
-                                            <span className="min-w-0">
-                                              <span className="block truncate text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7c91a8]">{row.label}</span>
-                                              <span className={`mt-0.5 block line-clamp-2 text-sm leading-5 tracking-normal ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`}>{row.value}</span>
+                                            <span className="min-w-0 self-center">
+                                              <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#536f8f]">{row.label}</span>
+                                            </span>
+                                            <span className="col-start-2 min-w-0 self-center sm:col-start-auto">
+                                              <span className={`block whitespace-pre-line text-sm leading-5 tracking-normal ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`}>{row.value}</span>
                                             </span>
                                           </div>
                                         )
@@ -30444,7 +30446,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 )}
                               </form>
 
-                              <div className="flex min-w-0 flex-col gap-4">
+                              <div className="flex h-full min-w-0 flex-col gap-4">
                               <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
                                   <div className="min-w-0">
@@ -30472,7 +30474,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                </div>
 	                              </section>
 
-                              <section className="flex w-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                              <section className="flex w-full flex-1 flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Activity Logger</p>
