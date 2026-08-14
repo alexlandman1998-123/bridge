@@ -1546,6 +1546,71 @@ async function updateRowsByColumn(client, tableName, columnName, value, patch = 
   return { skipped: false }
 }
 
+async function archivePrivateListingDeleteFallback(client, listingId, { organisationId = null, reason = 'hard_delete_failed', originalError = null } = {}) {
+  const normalizedId = normalizeUuid(listingId)
+  const normalizedOrgId = normalizeUuid(organisationId)
+  if (!normalizedId) return null
+
+  const buildPatch = ({ includeIsActive = true } = {}) => ({
+    listing_status: 'withdrawn',
+    listing_visibility: 'archived',
+    ...(includeIsActive ? { is_active: false } : {}),
+  })
+
+  let updateQuery = client
+    .from('private_listings')
+    .update(buildPatch())
+    .eq('id', normalizedId)
+
+  if (normalizedOrgId) {
+    updateQuery = updateQuery.eq('organisation_id', normalizedOrgId)
+  }
+
+  let result = await updateQuery
+    .select('id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_reference, title, listing_status, listing_visibility, is_active')
+    .maybeSingle()
+
+  if (result.error && isMissingColumnError(result.error, 'is_active')) {
+    let compatibleQuery = client
+      .from('private_listings')
+      .update(buildPatch({ includeIsActive: false }))
+      .eq('id', normalizedId)
+
+    if (normalizedOrgId) {
+      compatibleQuery = compatibleQuery.eq('organisation_id', normalizedOrgId)
+    }
+
+    result = await compatibleQuery
+      .select('id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_reference, title, listing_status, listing_visibility')
+      .maybeSingle()
+  }
+
+  if (result.error) {
+    throw originalError || result.error
+  }
+
+  if (!result.data?.id) return null
+
+  await createPrivateListingActivity({
+    privateListingId: normalizedId,
+    activityType: 'listing_deleted',
+    activityTitle: 'Listing removed',
+    activityDescription: 'Listing was archived after a hard delete could not be completed in the current database schema.',
+    visibility: 'internal',
+    metadata: {
+      reason,
+      hardDeleteError: originalError ? buildSupabaseErrorSummary(originalError) : null,
+      fallbackMode: 'archived',
+    },
+  }).catch(() => {})
+
+  return {
+    deleted: true,
+    mode: 'archived',
+    listing: result.data,
+  }
+}
+
 async function deletePrivateListingRelatedRows(client, listing = {}, listingId = '') {
   const normalizedId = normalizeUuid(listingId || listing?.id)
   if (!normalizedId) return
@@ -5713,7 +5778,15 @@ export async function deletePrivateListing(listingId, { organisationId = null } 
     }
   }
 
-  await deletePrivateListingRelatedRows(client, existing.data, normalizedId)
+  try {
+    await deletePrivateListingRelatedRows(client, existing.data, normalizedId)
+  } catch (cleanupError) {
+    return archivePrivateListingDeleteFallback(client, normalizedId, {
+      organisationId: normalizedOrgId,
+      reason: 'related_row_cleanup_failed',
+      originalError: cleanupError,
+    })
+  }
 
   let hardDeleteQuery = client
     .from('private_listings')
@@ -5732,10 +5805,19 @@ export async function deletePrivateListing(listingId, { organisationId = null } 
     if (isMissingTableError(result.error, 'private_listings')) {
       throw new Error('Private listings table is unavailable in this Supabase project.')
     }
-    throw result.error
+    return archivePrivateListingDeleteFallback(client, normalizedId, {
+      organisationId: normalizedOrgId,
+      reason: 'hard_delete_failed',
+      originalError: result.error,
+    })
   }
 
   if (!result.data?.id) {
+    const archived = await archivePrivateListingDeleteFallback(client, normalizedId, {
+      organisationId: normalizedOrgId,
+      reason: 'hard_delete_returned_no_row',
+    })
+    if (archived?.deleted) return archived
     throw new Error('Could not delete listing. It may already be removed or you may not have permission.')
   }
 
