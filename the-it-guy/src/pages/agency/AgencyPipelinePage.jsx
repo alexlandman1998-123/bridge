@@ -15598,15 +15598,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     )
     const listingTitle = normalizeText(linkedListing?.label || linkedListing?.title || linkedListing?.address)
     const listingAddress = normalizeText(linkedListing?.address || linkedListing?.property_address || linkedListing?.address_line_1)
+    const listingPrice = Number(linkedListing?.askingPrice || linkedListing?.asking_price || linkedListing?.price || linkedListing?.estimatedValue || linkedListing?.estimated_value || 0) || 0
+    const displayTitle = listingTitle || enquiryTitle || 'Property context needed'
+    const displayAddress = listingAddress || enquiryAddress
+    const originalKey = normalizeText([enquiryTitle, enquiryAddress].filter(Boolean).join(' ')).toLowerCase()
+    const linkedKey = normalizeText([listingTitle, listingAddress].filter(Boolean).join(' ')).toLowerCase()
+    const linkedDiffersFromOriginal = Boolean(originalKey && linkedKey && originalKey !== linkedKey)
     return {
       linkedListingId,
       linkedListing,
-      title: enquiryTitle || listingTitle || 'Property context needed',
-      address: enquiryAddress || listingAddress,
-      priceLabel: priceAmount > 0 ? formatCurrency(priceAmount) : '',
+      title: displayTitle,
+      address: displayAddress,
+      priceLabel: priceAmount > 0 ? formatCurrency(priceAmount) : listingPrice > 0 ? formatCurrency(listingPrice) : '',
+      originalTitle: enquiryTitle,
+      originalAddress: enquiryAddress,
       reference: normalizeText(selectedLead?.sourceReferenceId || selectedLead?.source_reference_id || selectedLead?.listingReference || selectedLead?.listing_reference),
       hasOriginalEnquiry: Boolean(enquiryTitle || enquiryAddress || priceAmount > 0),
       hasLinkedListing: Boolean(linkedListingId),
+      linkedDiffersFromOriginal,
     }
   }, [
     appointmentListingById,
@@ -19134,69 +19143,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       scheduleRecordsReload(organisationId, 250)
     } catch (saveError) {
       setError(saveError?.message || 'Unable to save buyer qualification right now.')
-    } finally {
-      setIsLeadDetailSaving(false)
-    }
-  }
-
-  async function handleLinkBuyerEnquiryListing(nextListingId = '') {
-    if (!organisationId || !selectedLeadRecordId || !selectedLead || selectedLeadIsSeller) return
-    const listingId = normalizeText(nextListingId)
-    const linkedListing = listingId ? appointmentListingById.get(listingId) : null
-    const leadPatch = {
-      listingId,
-    }
-    if (linkedListing) {
-      const listingTitle = normalizeText(linkedListing?.title || linkedListing?.label)
-      const listingAddress = normalizeText(linkedListing?.address || linkedListing?.property_address || linkedListing?.address_line_1)
-      if (listingTitle && !normalizeText(selectedLead?.propertyInterest || selectedLead?.property_interest)) {
-        leadPatch.propertyInterest = listingTitle
-      }
-      if (listingAddress && !normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.seller_property_address)) {
-        leadPatch.sellerPropertyAddress = listingAddress
-      }
-    }
-
-    setIsLeadDetailSaving(true)
-    try {
-      await updateAgencyCrmLeadRecord(organisationId, selectedLeadRecordId, leadPatch)
-      patchSelectedLeadRecord(leadPatch, selectedLeadRecordId)
-      setOfferLinkForm((previous) => ({
-        ...previous,
-        listingId,
-        lastOfferLink: '',
-        lastBuyerOnboardingLink: '',
-      }))
-      setBuyerOfferUploadForm((previous) => ({
-        ...previous,
-        listingId,
-      }))
-      if (listingId) {
-        setViewingPlanSelectedPropertyIds((previous) => {
-          const existing = (Array.isArray(previous) ? previous : []).map(normalizeText).filter(Boolean)
-          return [listingId, ...existing.filter((id) => id !== listingId)]
-        })
-        setViewingPlanBookingPropertyId((previous) => normalizeText(previous) || listingId)
-      }
-      await createAgencyCrmLeadActivity(
-        organisationId,
-        selectedLeadRecordId,
-        {
-          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-          activityType: 'Listing Linked',
-          activityNote: listingId
-            ? `Buyer enquiry linked to ${resolveAppointmentListingLabel(listingId)}.`
-            : 'Buyer enquiry listing link cleared.',
-          outcome: listingId ? 'Listing linked' : 'Listing cleared',
-          activityDate: new Date().toISOString(),
-        },
-        { actor: currentAgent },
-      ).catch(() => null)
-      setError('')
-      setMessage(listingId ? 'Buyer enquiry linked to listing.' : 'Buyer enquiry listing cleared.')
-      scheduleRecordsReload(organisationId, 500)
-    } catch (linkError) {
-      setError(linkError?.message || 'Unable to link this buyer enquiry to a listing right now.')
     } finally {
       setIsLeadDetailSaving(false)
     }
@@ -29914,7 +29860,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             : buyerOverviewQualification.hasQualificationStarted
                               ? 'In progress'
                               : 'Needs qualification'
-                        const buyerQualificationProgressLabel = `${selectedLeadBuyerQualificationEvidence.answeredCount}/${selectedLeadBuyerQualificationEvidence.minimumCount} minimum answers`
                         const activityQuickTypes = ['Call', 'WhatsApp', 'Email', 'Note', 'Meeting'].filter((type) => type !== 'Meeting' || ACTIVITY_TYPES.includes('Meeting'))
                         const activityIconByType = {
                           Call: Phone,
@@ -30330,16 +30275,39 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   ],
                                 }
 	                        const showViewingCompletedFeedbackOverride = false
+                        const buyerQualificationIconByLabel = {
+                          Budget: Tag,
+                          'Preferred areas': MapPin,
+                          'Move timeframe': CalendarDays,
+                          'Cash or bond': Building2,
+                          'Subject to finance': FileText,
+                          'Deposit available': Box,
+                          'Pre-approval status': ShieldCheck,
+                          'Property to sell first': Home,
+                          'Property need': UserRound,
+                          'Call notes': MessageCircle,
+                        }
+                        const buyerQualificationCapturedCount = qualificationQuestionRows.filter((row) => row.value !== 'Not captured').length
+                        const buyerQualificationTotalCount = qualificationQuestionRows.length
+                        const buyerQualificationDisplayProgressLabel = `${buyerQualificationCapturedCount} / ${buyerQualificationTotalCount} captured`
+                        const buyerQualificationProgressPercent = buyerQualificationTotalCount
+                          ? Math.round((buyerQualificationCapturedCount / buyerQualificationTotalCount) * 100)
+                          : 0
 
 	                        return (
                           <>
                             <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)]">
-                              <form className="flex h-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" onSubmit={handleSaveBuyerQualification}>
+                              <form className="flex h-full self-stretch flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5" onSubmit={handleSaveBuyerQualification}>
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Buyer Qualification</p>
                                     <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">Phone qualification questions</h3>
-                                    <p className="mt-1 text-sm leading-5 text-[#60758b]">{buyerQualificationProgressLabel}</p>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                      <span className="h-2 w-24 overflow-hidden rounded-full bg-[#e8eef5]">
+                                        <span className="block h-full rounded-full bg-[#157aaf]" style={{ width: `${buyerQualificationProgressPercent}%` }} />
+                                      </span>
+                                      <span className="text-xs font-semibold text-[#60758b]">{buyerQualificationDisplayProgressLabel}</span>
+                                    </div>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2">
                                     <span className="rounded-full border border-[#d7e6f2] bg-[#f8fbfd] px-3 py-1 text-xs font-semibold text-[#60758b]">
@@ -30446,13 +30414,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   </>
                                 ) : (
                                   <>
-                                    <div className="mt-4 grid gap-2.5 md:grid-cols-2">
+                                    <div className="mt-3 grid gap-2 lg:grid-cols-3">
                                       {qualificationQuestionRows.map((row) => {
                                         const isMissing = row.value === 'Not captured'
+                                        const QualificationIcon = buyerQualificationIconByLabel[row.label] || Columns3
                                         return (
-                                          <div key={row.label} className={`rounded-[12px] border border-[#edf3f8] bg-[#fbfdff] px-3.5 py-2.5 ${row.wide ? 'md:col-span-2' : ''}`}>
-                                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7c91a8]">{row.label}</p>
-                                            <p className={`mt-1 whitespace-pre-wrap text-sm leading-5 tracking-normal ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`}>{row.value}</p>
+                                          <div key={row.label} className={`grid min-h-[48px] grid-cols-[34px_minmax(0,1fr)] items-center gap-2 rounded-[12px] bg-[#f8fbfd] px-2.5 py-2 ring-1 ring-[#edf3f8] ${row.wide ? 'lg:col-span-3' : ''}`}>
+                                            <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#eef5fb] text-[#1d65a6]">
+                                              <QualificationIcon className="h-4 w-4" />
+                                            </span>
+                                            <span className="min-w-0">
+                                              <span className="block truncate text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7c91a8]">{row.label}</span>
+                                              <span className={`mt-0.5 block line-clamp-2 text-sm leading-5 tracking-normal ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`}>{row.value}</span>
+                                            </span>
                                           </div>
                                         )
                                       })}
@@ -30470,7 +30444,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 )}
                               </form>
 
-                              <div className="flex h-full min-w-0 flex-col gap-4">
+                              <div className="flex min-w-0 self-stretch flex-col gap-4">
                               <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
                                   <div className="min-w-0">
@@ -30498,7 +30472,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                </div>
 	                              </section>
 
-                              <section className="flex flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                              <section className="flex w-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Activity Logger</p>
@@ -30601,61 +30575,66 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             </div>
 
-                            <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
-                              <div className="flex flex-wrap items-start justify-between gap-4">
-                                <div className="flex min-w-0 items-start gap-3">
-                                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[14px] ${selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'bg-[#eaf7f0] text-[#157a4d]' : 'bg-[#fff7ed] text-[#b45309]'}`}>
+                            <section className="relative overflow-hidden rounded-[20px] border border-[#dce7f2] bg-white px-4 py-3 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                              <span className="absolute inset-y-0 left-0 w-1 bg-[#157a4d]" aria-hidden="true" />
+                              <div className="flex flex-wrap items-center justify-between gap-4 pl-1">
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[13px] bg-[#eef8f3] text-[#157a4d]">
                                     <Home className="h-5 w-5" />
                                   </span>
                                   <div className="min-w-0">
-                                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Property enquiry</p>
-                                    <h3 className="mt-1 truncate text-lg font-semibold tracking-[-0.02em] text-[#102033]">{selectedLeadEnquiryPropertyContext.title}</h3>
-                                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#60758b]">
+                                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Property enquiry</p>
+                                    <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                                      <h3 className="truncate text-base font-semibold tracking-[-0.02em] text-[#102033]">{selectedLeadEnquiryPropertyContext.title}</h3>
+                                      {selectedLeadEnquiryPropertyContext.priceLabel ? (
+                                        <span className="shrink-0 text-base font-semibold text-[#102033]">{selectedLeadEnquiryPropertyContext.priceLabel}</span>
+                                      ) : null}
+                                    </div>
+                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[#60758b]">
                                       {selectedLeadEnquiryPropertyContext.address ? (
                                         <span className="inline-flex min-w-0 items-center gap-1.5">
-                                          <MapPin className="h-4 w-4 shrink-0 text-[#2f7b9e]" />
+                                          <MapPin className="h-4 w-4 shrink-0 text-[#157a4d]" />
                                           <span className="truncate">{selectedLeadEnquiryPropertyContext.address}</span>
                                         </span>
                                       ) : null}
-                                      {selectedLeadEnquiryPropertyContext.priceLabel ? (
-                                        <span className="inline-flex items-center gap-1.5">
-                                          <Tag className="h-4 w-4 text-[#2f7b9e]" />
-                                          {selectedLeadEnquiryPropertyContext.priceLabel}
-                                        </span>
-                                      ) : null}
-                                      {selectedLeadEnquiryPropertyContext.reference ? (
-                                        <span className="inline-flex items-center gap-1.5">
-                                          <Link2 className="h-4 w-4 text-[#2f7b9e]" />
-                                          {selectedLeadEnquiryPropertyContext.reference}
+                                      {selectedLeadEnquiryPropertyContext.linkedDiffersFromOriginal ? (
+                                        <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-medium text-[#7c91a8]">
+                                          <Link2 className="h-3.5 w-3.5 shrink-0" />
+                                          <span className="truncate">Originally enquired about {selectedLeadEnquiryPropertyContext.originalTitle || selectedLeadEnquiryPropertyContext.originalAddress}</span>
                                         </span>
                                       ) : null}
                                     </div>
                                   </div>
                                 </div>
-                                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'border-[#bfe5cf] bg-[#f1fbf5] text-[#157a4d]' : 'border-[#fed7aa] bg-[#fff7ed] text-[#b45309]'}`}>
-                                  {selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'Linked listing' : 'Needs listing link'}
-                                </span>
-                              </div>
-
-                              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.75fr)_minmax(300px,0.25fr)] lg:items-end">
-                                <div className="rounded-[14px] border border-[#edf3f8] bg-[#fbfdff] px-4 py-3">
-                                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.11em] text-[#7c91a8]">Original enquiry</p>
-                                  <p className="mt-1 text-sm font-semibold leading-5 text-[#102033]">
-                                    {selectedLeadEnquiryPropertyContext.hasOriginalEnquiry
-                                      ? selectedLeadEnquiryPropertyContext.title
-                                      : 'No original property text was captured.'}
-                                  </p>
-                                  {selectedLeadEnquiryPropertyContext.address ? (
-                                    <p className="mt-1 text-sm leading-5 text-[#60758b]">{selectedLeadEnquiryPropertyContext.address}</p>
-                                  ) : null}
+                                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                  <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'border-[#bfe5cf] bg-[#f7fcf9] text-[#157a4d]' : 'border-[#fed7aa] bg-[#fffaf2] text-[#b45309]'}`}>
+                                    {selectedLeadEnquiryPropertyContext.hasLinkedListing ? (
+                                      <>
+                                        <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                                        Linked listing
+                                      </>
+                                    ) : 'Needs listing link'}
+                                  </span>
+                                  {selectedLeadEnquiryPropertyContext.hasLinkedListing ? (
+                                    <button
+                                      type="button"
+                                      className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold text-[#17643a] transition hover:bg-[#f0f8f4]"
+                                      onClick={() => navigate(`/listings/${selectedLeadEnquiryPropertyContext.linkedListingId}`)}
+                                    >
+                                      View listing
+                                      <ArrowUpRight className="h-3.5 w-3.5" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold text-[#17643a] transition hover:bg-[#f0f8f4]"
+                                      onClick={() => handleLeadWorkspaceTabSelection('properties')}
+                                    >
+                                      Link listing
+                                      <ArrowUpRight className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
                                 </div>
-                                <ListingPicker
-                                  listings={leadAppointmentOfferListingOptions}
-                                  value={selectedLeadEnquiryPropertyContext.linkedListingId}
-                                  onChange={(listingId) => void handleLinkBuyerEnquiryListing(listingId)}
-                                  label="Link to listing"
-                                  className="min-w-0"
-                                />
                               </div>
                             </section>
 

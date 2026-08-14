@@ -133,13 +133,13 @@ import_map = "./functions/generate-final-signed-document/deno.json"
 entrypoint = "./functions/generate-final-signed-document/index.ts"
 
 [functions.legal-document-watchdog]
-enabled = true
+enabled = false
 verify_jwt = false
 import_map = "./functions/legal-document-watchdog/deno.json"
 entrypoint = "./functions/legal-document-watchdog/index.ts"
 
 [functions.legal-document-job-runner]
-enabled = true
+enabled = false
 verify_jwt = true
 import_map = "./functions/legal-document-job-runner/deno.json"
 entrypoint = "./functions/legal-document-job-runner/index.ts"
