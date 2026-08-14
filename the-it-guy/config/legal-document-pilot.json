@@ -31,15 +31,16 @@
     ]
   },
   "activation": {
-    "status": "inactive",
+    "status": "deactivated",
     "targetProjectRef": null,
     "activatedOrganisationIds": [],
     "activatedBy": null,
     "activatedAt": null,
     "activationReference": null,
-    "deactivatedBy": null,
-    "deactivatedAt": null,
-    "deactivationReason": null
+    "deactivatedBy": "codex-incident-response",
+    "deactivatedAt": "2026-08-14T18:00:12.230Z",
+    "deactivationReason": "prod-supabase-522-api-timeouts-watchdog-retry-loop",
+    "deactivationReference": "2026-08-14-dashboard-auth-outage"
   },
   "limits": {
     "maxOrganisations": 5,

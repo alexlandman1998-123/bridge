@@ -24,7 +24,6 @@ const ROOT_TABLES = new Set([
   'transactions',
   'leads',
   'document_packets',
-  'document_packet_events',
   'organisation_users',
   'transaction_commissions',
   'commission_targets',
@@ -156,7 +155,7 @@ try {
     getPrincipalDashboardData(baseOptions),
     getPrincipalDashboardData(baseOptions),
   ])
-  assert.equal(rootRequests().length, 8, 'two matching cold loads must share the eight root dashboard reads')
+  assert.equal(rootRequests().length, 7, 'two matching cold loads must share the seven root dashboard reads')
   assert.equal(coldResult?.meta?.cacheHit, undefined, 'the cold result must not be marked as a cache hit')
   assert.equal(coalescedResult?.meta?.deduplicated, true, 'the follower must be marked as an in-flight coalesced request')
   assert.deepEqual(
@@ -173,21 +172,21 @@ try {
   }
 
   const cachedResult = await getPrincipalDashboardData(baseOptions)
-  assert.equal(rootRequests().length, 8, 'an identical sequential load must use the short-lived result cache')
+  assert.equal(rootRequests().length, 7, 'an identical sequential load must use the short-lived result cache')
   assert.equal(cachedResult?.meta?.cacheHit, true, 'the sequential result must be marked as a cache hit')
 
   const [, coalescedForceRefresh] = await Promise.all([
     getPrincipalDashboardData({ ...baseOptions, forceRefresh: true }),
     getPrincipalDashboardData({ ...baseOptions, forceRefresh: true }),
   ])
-  assert.equal(rootRequests().length, 16, 'matching forced refreshes must still share one fresh root query set')
+  assert.equal(rootRequests().length, 14, 'matching forced refreshes must still share one fresh root query set')
   assert.equal(coalescedForceRefresh?.meta?.deduplicated, true, 'the forced-refresh follower must be coalesced')
 
   await getPrincipalDashboardData({ ...baseOptions, workspaceId: BRANCH_ID })
   await getPrincipalDashboardData({ ...baseOptions, actorId: OTHER_ACTOR_ID })
   await getPrincipalDashboardData({ ...baseOptions, dateRangePreset: 'this_month' })
   await getPrincipalDashboardData({ ...baseOptions, overviewMode: 'pipeline' })
-  assert.equal(rootRequests().length, 48, 'workspace, actor, date range, and overview changes must not share cached data')
+  assert.equal(rootRequests().length, 42, 'workspace, actor, date range, and overview changes must not share cached data')
 
   clearPrincipalDashboardRuntimeCache({ agencyId: ORGANISATION_ID })
   requests.length = 0
@@ -204,12 +203,12 @@ try {
   const latestRefresh = getPrincipalDashboardData({ ...baseOptions, forceRefresh: true })
   try {
     await waitFor(
-      () => rootRequests().length >= 24,
+      () => rootRequests().length >= 21,
       'a forced refresh after another filter invalidates the agency must issue a new root query set',
     )
     assert.equal(
       rootRequests().length,
-      24,
+      21,
       'a pre-invalidation forced request must not satisfy a later forced refresh for the same filter',
     )
   } finally {
@@ -234,27 +233,25 @@ try {
   await getPrincipalDashboardData(baseOptions)
   assert.equal(
     rootRequests().length,
-    16,
+    14,
     'a global workspace or logout cache reset must prevent an older in-flight load from repopulating the result cache',
   )
 
   clearPrincipalDashboardRuntimeCache({ agencyId: ORGANISATION_ID })
   requests.length = 0
   responseMode = 'fail-transactions'
-  await assert.rejects(
-    getPrincipalDashboardData({ ...baseOptions, dateRangePreset: 'failure-check' }),
-    (error) => error?.message === 'Synthetic Principal dashboard failure',
-    'a failed dashboard load must surface to the caller',
-  )
+  const degradedResult = await getPrincipalDashboardData({ ...baseOptions, dateRangePreset: 'failure-check' })
+  assert.equal(degradedResult?.meta?.isEmpty, true, 'a 5xx dashboard source failure should degrade to an empty dashboard payload')
+  assert.equal(degradedResult?.meta?.sourceDegraded, true, 'a 5xx dashboard source failure should be marked as degraded')
   const failedRequestCount = rootRequests().length
-  assert.equal(failedRequestCount, 8, 'the failed cold load must still issue one root query set')
+  assert.equal(failedRequestCount, 7, 'the degraded cold load must still issue one root query set')
 
   responseMode = 'success'
   await getPrincipalDashboardData({ ...baseOptions, dateRangePreset: 'failure-check' })
   assert.equal(
     rootRequests().length,
-    failedRequestCount + 8,
-    'failed loads must not remain cached or leave a stale in-flight promise behind',
+    failedRequestCount + 7,
+    'degraded loads must not leave a stale in-flight promise behind',
   )
 
   console.log('Principal dashboard Phase 6 cache and refresh tests passed')

@@ -28,6 +28,7 @@ const ATTORNEY_PROCESS_KEYS = ['attorney', 'transfer', 'conveyancing']
 const ALL_BRANCHES_ID = 'all'
 export const PRINCIPAL_DASHBOARD_CACHE_TTL_MS = 12_000
 const PRINCIPAL_DASHBOARD_CACHE_MAX_ENTRIES = 24
+const PRINCIPAL_DASHBOARD_LOAD_CONCURRENCY = 3
 const principalDashboardResultCache = new Map()
 const principalDashboardInflight = new Map()
 const principalDashboardRefreshInflight = new Map()
@@ -217,6 +218,8 @@ function isMissingSourceError(error) {
 }
 
 function isServerSourceError(error) {
+  const code = normalizeText(error?.code).toUpperCase()
+  if (/^PGRST5\d\d$/.test(code)) return true
   const status = Number(error?.status || error?.statusCode || 0)
   return status >= 500
 }
@@ -248,7 +251,32 @@ function logUnavailableDashboardSource(message, table, error) {
   }
 }
 
-async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn = 'organisation_id', order = 'updated_at', ascending = false, limit = 1000, tolerateServerErrors = false } = {}) {
+async function runPrincipalDashboardLoadBatch(tasks = [], concurrency = PRINCIPAL_DASHBOARD_LOAD_CONCURRENCY) {
+  const results = new Array(tasks.length)
+  let nextIndex = 0
+  const workerCount = Math.min(Math.max(1, Math.floor(concurrency || 1)), tasks.length)
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < tasks.length) {
+      const currentIndex = nextIndex
+      nextIndex += 1
+      results[currentIndex] = await tasks[currentIndex]()
+    }
+  }))
+  return results
+}
+
+function recordPrincipalDashboardSourceDegradation(sourceHealth, table, error) {
+  if (!sourceHealth || typeof sourceHealth !== 'object') return
+  sourceHealth.degraded = true
+  if (!Array.isArray(sourceHealth.tables)) sourceHealth.tables = []
+  sourceHealth.tables.push({
+    table,
+    status: Number(error?.status || error?.statusCode || 0) || null,
+    message: normalizeText(error?.message),
+  })
+}
+
+async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn = 'organisation_id', order = 'updated_at', ascending = false, limit = 1000, tolerateServerErrors = false, sourceHealth = null } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
   const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
   let lastError = null
@@ -270,7 +298,12 @@ async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn =
         fields = nextFields
         continue
       }
-      if (!isMissingSourceError(error) && !(tolerateServerErrors && isServerSourceError(error))) throw error
+      if (tolerateServerErrors && isServerSourceError(error)) {
+        recordPrincipalDashboardSourceDegradation(sourceHealth, table, error)
+        logUnavailableDashboardSource('[PrincipalDashboard] Source unavailable; using empty result.', table, error)
+        return []
+      }
+      if (!isMissingSourceError(error)) throw error
       break
     }
   }
@@ -278,7 +311,7 @@ async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn =
   return []
 }
 
-async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'transaction_id', order = 'updated_at', ascending = false, limit = 1000, tolerateServerErrors = false } = {}) {
+async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'transaction_id', order = 'updated_at', ascending = false, limit = 1000, tolerateServerErrors = false, sourceHealth = null } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
   const normalizedIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map(normalizeText).filter(Boolean)))
   if (!normalizedIds.length) return []
@@ -301,7 +334,12 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
         fields = nextFields
         continue
       }
-      if (!isMissingSourceError(error) && !(tolerateServerErrors && isServerSourceError(error))) throw error
+      if (tolerateServerErrors && isServerSourceError(error)) {
+        recordPrincipalDashboardSourceDegradation(sourceHealth, table, error)
+        logUnavailableDashboardSource('[PrincipalDashboard] Scoped source unavailable; using empty result.', table, error)
+        return []
+      }
+      if (!isMissingSourceError(error)) throw error
       break
     }
   }
@@ -1692,6 +1730,7 @@ async function getPrincipalDashboardDataUncached({
   const resolvedAgencyId = normalizeText(organisationId || agencyId)
   assertResolvedWorkspaceContext({ organisationId: resolvedAgencyId, appRole: 'agent' }, { service: 'principalDashboardService.getPrincipalDashboardData' })
   const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
+  const sourceHealth = { degraded: false, tables: [] }
   const [
     rawTransactions,
     allLeads,
@@ -1701,18 +1740,18 @@ async function getPrincipalDashboardDataUncached({
     allTransactionCommissions,
     allCommissionTargets,
     organisationBranches,
-  ] = await Promise.all([
-    safeSelect('transactions', PRINCIPAL_DASHBOARD_TRANSACTION_SELECT_VARIANTS, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
-    safeSelect('leads', [
+  ] = await runPrincipalDashboardLoadBatch([
+    () => safeSelect('transactions', PRINCIPAL_DASHBOARD_TRANSACTION_SELECT_VARIANTS, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelect('leads', [
       'lead_id, organisation_id, branch_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
       'lead_id, organisation_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
-    ], { agencyId: resolvedAgencyId, order: 'created_at', limit: 1500 }),
-    safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000 }),
-    [],
-    safeSelect('organisation_users', PRINCIPAL_DASHBOARD_ORGANISATION_USER_SELECT_VARIANTS, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
-    safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
-    safeSelect('commission_targets', 'id, organisation_id, branch_id, user_id, target_type, target_metric, period, target_amount, start_month, is_active, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'start_month', ascending: false, limit: 100 }),
-    safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { agencyId: resolvedAgencyId, order: 'name', ascending: true, limit: 200 }),
+    ], { agencyId: resolvedAgencyId, order: 'created_at', limit: 1500, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000, tolerateServerErrors: true, sourceHealth }),
+    () => [],
+    () => safeSelect('organisation_users', PRINCIPAL_DASHBOARD_ORGANISATION_USER_SELECT_VARIANTS, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelect('commission_targets', 'id, organisation_id, branch_id, user_id, target_type, target_metric, period, target_amount, start_month, is_active, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'start_month', ascending: false, limit: 100, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelect('organisation_branches', 'id, organisation_id, name, location, city, is_head_office, is_active, updated_at, created_at', { agencyId: resolvedAgencyId, order: 'name', ascending: true, limit: 200, tolerateServerErrors: true, sourceHealth }),
   ])
 
   const availableBranches = buildAvailableWorkspaces(organisationBranches)
@@ -1736,7 +1775,6 @@ async function getPrincipalDashboardDataUncached({
   const scopedAllTransactions = canViewAllTransactions
     ? allTransactions
     : allTransactions.filter(matchesActorScope)
-  const organisationUserEnrichmentPromise = enrichOrganisationUsersWithProfileAvatars(allOrganisationUsers)
   const transactions = scopedAllTransactions.filter((row) => isScopedToBranch(row, selectedBranchId, 'assigned_branch_id'))
   const scopedAllLeads = canViewAllTransactions ? allLeads : allLeads.filter(matchesActorScope)
   const leads = scopedAllLeads.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
@@ -1757,18 +1795,18 @@ async function getPrincipalDashboardDataUncached({
     transactionRolePlayers,
     linkedDocumentPackets,
     linkedTransactionCommissions,
-  ] = await Promise.all([
-    organisationUserEnrichmentPromise,
-    safeSelectByIds('document_requests', 'id, transaction_id, status, assigned_to_role, document_type, title, created_at, updated_at, completed_at', [...transactionIds], { order: 'updated_at', limit: 1500 }),
-    safeSelectByIds('documents', 'id, transaction_id, name, category, uploaded_by_email, uploaded_by_role, created_at', [...transactionIds], { order: 'created_at', limit: 300 }),
-    safeSelectByIds('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
-    safeSelectByIds('tasks', 'task_id, id, transaction_id, lead_id, title, due_date, status, priority, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000 }),
-    safeSelectByIds('transaction_role_players', [
+  ] = await runPrincipalDashboardLoadBatch([
+    () => enrichOrganisationUsersWithProfileAvatars(allOrganisationUsers),
+    () => safeSelectByIds('document_requests', 'id, transaction_id, status, assigned_to_role, document_type, title, created_at, updated_at, completed_at', [...transactionIds], { order: 'updated_at', limit: 1500, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelectByIds('documents', 'id, transaction_id, name, category, uploaded_by_email, uploaded_by_role, created_at', [...transactionIds], { order: 'created_at', limit: 300, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelectByIds('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelectByIds('tasks', 'task_id, id, transaction_id, lead_id, title, due_date, status, priority, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelectByIds('transaction_role_players', [
       'id, transaction_id, role_type, selection_source, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, removed_at, snapshot_json, created_at, updated_at',
       'id, transaction_id, role_type, selection_source, partner_name, contact_person, email_address, phone_number, snapshot_json, created_at, updated_at',
-    ], [...transactionIds], { order: 'updated_at', limit: 3000 }),
-    safeSelectByIds('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000 }),
-    safeSelectByIds('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
+    ], [...transactionIds], { order: 'updated_at', limit: 3000, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelectByIds('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelectByIds('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200, tolerateServerErrors: true, sourceHealth }),
   ])
   const organisationUsers = enrichedOrganisationUsers.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
   const effectiveDocumentPackets = dedupeRowsById([...documentPackets, ...linkedDocumentPackets])
@@ -1778,6 +1816,7 @@ async function getPrincipalDashboardDataUncached({
     order: 'created_at',
     limit: 300,
     tolerateServerErrors: true,
+    sourceHealth,
   })
   const effectivePacketEvents = dedupeRowsById([...packetEvents, ...linkedPacketEvents])
     .filter((event) => selectedBranchId === ALL_BRANCHES_ID || effectivePacketIds.has(normalizeText(event.packet_id)))
@@ -2267,6 +2306,8 @@ async function getPrincipalDashboardDataUncached({
       requestedBranchId: normalizeText(workspaceId),
       requestedWorkspaceId: normalizeText(workspaceId),
       dateRange: range.key,
+      sourceDegraded: Boolean(sourceHealth.degraded),
+      degradedTables: sourceHealth.tables,
     },
   }
 }
@@ -2306,7 +2347,7 @@ export async function getPrincipalDashboardData(options = {}) {
   let loadPromise
   loadPromise = getPrincipalDashboardDataUncached(options)
     .then((result) => {
-      if (getPrincipalDashboardCacheEpoch(agencyScope) === cacheEpoch) {
+      if (getPrincipalDashboardCacheEpoch(agencyScope) === cacheEpoch && !result?.meta?.sourceDegraded) {
         principalDashboardResultCache.set(cacheKey, {
           agencyScope,
           expiresAt: Date.now() + PRINCIPAL_DASHBOARD_CACHE_TTL_MS,
