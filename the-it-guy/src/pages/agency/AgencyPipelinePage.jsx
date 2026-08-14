@@ -8550,6 +8550,22 @@ function isValuationAppointmentDraft(source = {}, template = null) {
   return appointmentType.includes('valuation') || templateLabel.includes('valuation')
 }
 
+function isValuationPresentationDraft(source = {}, template = null) {
+  const appointmentType = normalizeKey(source?.appointmentType || source?.type || source?.title)
+  const workflowStage = normalizeKey(source?.linkedWorkflowStage || source?.linked_workflow_stage)
+  const templateLabel = normalizeKey(template?.label)
+  return appointmentType.includes('valuation_presentation') ||
+    workflowStage === 'valuation_presentation' ||
+    templateLabel.includes('valuation_presentation')
+}
+
+function getAppointmentSchedulingConflictMessage(integrity = null) {
+  const hardConflicts = Array.isArray(integrity?.hardConflicts) ? integrity.hardConflicts : []
+  const firstMessage = normalizeText(hardConflicts[0]?.message)
+  if (!firstMessage) return ''
+  return hardConflicts.length > 1 ? `${firstMessage} (${hardConflicts.length} conflicts found)` : firstMessage
+}
+
 function buildDefaultAppointmentFormForType(type, seed = {}) {
   const hasExplicitType = Boolean(normalizeText(type || seed?.appointmentType))
   const template = getAppointmentTypeTemplate(hasExplicitType ? (type || seed?.appointmentType) : 'other')
@@ -12357,6 +12373,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     () => (selectedLead ? resolveLeadLinkedListing(selectedLead) : null),
     [resolveLeadLinkedListing, selectedLead],
   )
+  const selectedLeadValuationAddress = useMemo(() => {
+    if (!selectedLead) return ''
+    const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+    const sellerOnboarding = asRecord(
+      selectedLead?.sellerOnboarding ||
+        selectedLead?.seller_onboarding ||
+        rawPayload.sellerOnboarding ||
+        rawPayload.seller_onboarding ||
+        rawPayload.kingstonsSellerProfile ||
+        rawPayload.kingstons_seller_profile,
+    )
+    const sellerOnboardingForm = asRecord(sellerOnboarding.formData || sellerOnboarding.form_data || sellerOnboarding)
+    return normalizeText(
+      selectedLead?.sellerPropertyAddress ||
+        selectedLead?.formattedAddress ||
+        selectedLead?.formatted_address ||
+        sellerOnboardingForm.propertyAddress ||
+        sellerOnboardingForm.formattedAddress ||
+        sellerOnboardingForm.addressLine1 ||
+        sellerOnboardingForm.streetAddress ||
+        selectedLeadLinkedListing?.propertyAddress ||
+        selectedLeadLinkedListing?.formattedAddress ||
+        resolveListingAddressLabel(selectedLeadLinkedListing),
+    )
+  }, [selectedLead, selectedLeadLinkedListing])
   const selectedKingstonsLinkedListingId = useMemo(() => normalizeText(
     selectedLeadLinkedListing?.id ||
       selectedLeadLinkedListing?.listingId ||
@@ -16207,18 +16248,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const appointmentSchedulerVerb = useMemo(() => {
     const templateLabel = normalizeText(selectedAppointmentTemplate.label).toLowerCase()
     const appointmentType = normalizeText(appointmentForm.appointmentType).toLowerCase()
+    if (isValuationPresentationDraft(appointmentForm, selectedAppointmentTemplate)) return 'presentation'
     if (selectedLeadIsSeller || isValuationAppointmentDraft(appointmentForm, selectedAppointmentTemplate)) return 'valuation'
     if (appointmentType.includes('viewing') || templateLabel.includes('viewing')) return 'viewing'
     if (appointmentType.includes('follow') || templateLabel.includes('follow')) return 'follow-up'
     if (appointmentType.includes('consult') || templateLabel.includes('consult')) return 'consultation'
     return normalizeText(selectedAppointmentTemplate.label).toLowerCase() || 'appointment'
-  }, [appointmentForm.appointmentType, selectedAppointmentTemplate.label, selectedLeadIsSeller])
+  }, [appointmentForm, selectedAppointmentTemplate, selectedLeadIsSeller])
 
   const appointmentSchedulerTitle = useMemo(() => {
     if (selectedAppointmentId) return 'Appointment Details'
     if (!normalizeText(appointmentForm.appointmentType)) return 'Create Appointment'
     return `Schedule ${appointmentSchedulerVerb}`
   }, [appointmentForm.appointmentType, appointmentSchedulerVerb, selectedAppointmentId])
+
+  const appointmentSchedulingInlineError = useMemo(
+    () => appointmentSchedulingError || getAppointmentSchedulingConflictMessage(appointmentSchedulingIntegrity),
+    [appointmentSchedulingError, appointmentSchedulingIntegrity],
+  )
+
+  const appointmentCreateRunsInBackground = useMemo(() => {
+    if (selectedAppointmentId) return false
+    if (!appointmentModalOpen) return false
+    if (isValuationPresentationDraft(appointmentForm, selectedAppointmentTemplate)) return true
+    return selectedLeadIsSeller && isValuationAppointmentDraft(appointmentForm, selectedAppointmentTemplate)
+  }, [appointmentForm, appointmentModalOpen, selectedAppointmentId, selectedAppointmentTemplate, selectedLeadIsSeller])
 
   const appointmentSchedulerSubtitle = useMemo(() => {
     if (selectedAppointmentId) {
@@ -19887,20 +19941,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleCreateAppointment(event) {
     event.preventDefault()
     if (!organisationId) return
+    const showAppointmentModalError = (message, integrity = null) => {
+      const fallbackMessage = message || 'Unable to create appointment right now.'
+      if (integrity) {
+        setAppointmentSchedulingIntegrity(integrity)
+      }
+      setAppointmentSchedulingError(fallbackMessage)
+      setError('')
+    }
     if (appointmentModalOpen && !appointmentCanSave) {
-      setError('Resolve hard scheduling conflicts before saving this appointment.')
+      showAppointmentModalError(getAppointmentSchedulingConflictMessage(appointmentSchedulingIntegrity) || 'Resolve hard scheduling conflicts before saving this appointment.')
       return
     }
     if (!normalizeText(appointmentForm.appointmentType)) {
-      setError('Select an appointment type before sending the request.')
+      showAppointmentModalError('Select an appointment type before sending the request.')
       return
     }
     if (!normalizeText(appointmentForm.date) || (!appointmentForm.allDay && !normalizeText(appointmentForm.startTime))) {
-      setError('Appointment date and start time are required unless this is an all-day appointment.')
+      showAppointmentModalError('Appointment date and start time are required unless this is an all-day appointment.')
       return
     }
     if (!appointmentForm.allDay && normalizeText(appointmentForm.endTime) && parseTimeToMinutes(appointmentForm.endTime) <= parseTimeToMinutes(appointmentForm.startTime)) {
-      setError('Appointment end time must be after the start time.')
+      showAppointmentModalError('Appointment end time must be after the start time.')
       return
     }
     const linkedLead = selectedLead || null
@@ -19921,7 +19983,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const participantSeed = buildAppointmentParticipantsForSave(appointmentForm.participants || [])
     const explicitRecipientEmail = normalizeText(appointmentForm.recipientEmail).toLowerCase()
     if (explicitRecipientEmail && !isValidEmail(explicitRecipientEmail)) {
-      setError('Enter a valid recipient email before sending the appointment request.')
+      showAppointmentModalError('Enter a valid recipient email before sending the appointment request.')
       return
     }
     if (explicitRecipientEmail && !participantSeed.some((participant) => normalizeText(participant?.email).toLowerCase() === explicitRecipientEmail)) {
@@ -20023,6 +20085,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setAppointmentSchedulingSubmitting(true)
     let valuationDownloadEmailQueued = false
     try {
+      if (appointmentCreateRunsInBackground) {
+        setAppointmentModalOpen(false)
+        setAppointmentSchedulingSubmitting(false)
+        setMessage(isValuationPresentationDraft(appointmentForm, selectedAppointmentTemplate)
+          ? 'Scheduling presentation in the background...'
+          : 'Scheduling valuation in the background...')
+      }
       if (linkedLead && resolveLeadCategoryView(linkedLead) !== 'seller') {
         const linkedContact =
           records.contacts.find((contact) => normalizeText(contact?.contactId) === normalizeText(linkedLead.contactId)) ||
@@ -20301,9 +20370,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
     } catch (createError) {
       if (createError?.code === 'APPOINTMENT_HARD_CONFLICT') {
-        setAppointmentSchedulingIntegrity(createError?.schedulingConflicts || null)
+        const conflicts = createError?.schedulingConflicts || null
+        setAppointmentSchedulingIntegrity(conflicts)
+        setAppointmentSchedulingError(createError?.message || getAppointmentSchedulingConflictMessage(conflicts) || 'Scheduling conflict detected.')
+        setAppointmentModalOpen(true)
+        setMessage('')
+        setError('')
+      } else if (appointmentCreateRunsInBackground || appointmentModalOpen) {
+        setAppointmentSchedulingError(createError?.message || 'Unable to create appointment right now.')
+        setAppointmentModalOpen(true)
+        setMessage('')
+        setError('')
+      } else {
+        setError(createError?.message || 'Unable to create appointment right now.')
       }
-      setError(createError?.message || 'Unable to create appointment right now.')
     } finally {
       setAppointmentSchedulingSubmitting(false)
     }
@@ -20484,7 +20564,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       listingId: sellerListingId || previous.listingId || '',
       relatedEntityType: 'lead',
       relatedEntityId: sellerLeadId || previous.relatedEntityId || '',
-      location: '',
+      location: selectedLeadValuationAddress || '',
+      locationType: selectedLeadValuationAddress ? 'physical_address' : previous.locationType || 'physical_address',
       visibility: 'client_visible',
       status: isKingstonsSellerAppointment ? 'scheduled' : (previous.status || 'requested'),
       recipientEmail: sellerEmail,
@@ -22498,7 +22579,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         listingId: normalizeText(selectedLeadLinkedListing?.id || selectedLead?.listingId || selectedLead?.listing_id) || '',
         relatedEntityType: 'lead',
         relatedEntityId: normalizeText(selectedLead?.leadId) || '',
-        location: normalizeText(selectedLeadLinkedListing?.address || selectedLeadLinkedListing?.propertyAddress || selectedLead?.sellerPropertyAddress || selectedLead?.propertyInterest) || '',
+        location: selectedLeadValuationAddress || '',
+        locationType: 'physical_address',
         status: 'scheduled',
         recipientEmail: normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email).toLowerCase(),
         participants: [{
@@ -22645,7 +22727,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     event.preventDefault()
     if (!organisationId) return
     if (!appointmentCanSave) {
-      setError('Resolve hard scheduling conflicts before saving this appointment.')
+      setAppointmentSchedulingError(getAppointmentSchedulingConflictMessage(appointmentSchedulingIntegrity) || 'Resolve hard scheduling conflicts before saving this appointment.')
+      setError('')
       return
     }
     if (!selectedAppointmentId) {
@@ -22653,17 +22736,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (!normalizeText(appointmentForm.date) || (!appointmentForm.allDay && !normalizeText(appointmentForm.startTime))) {
-      setError('Appointment date and start time are required unless this is an all-day appointment.')
+      setAppointmentSchedulingError('Appointment date and start time are required unless this is an all-day appointment.')
+      setError('')
       return
     }
     if (!appointmentForm.allDay && normalizeText(appointmentForm.endTime) && parseTimeToMinutes(appointmentForm.endTime) <= parseTimeToMinutes(appointmentForm.startTime)) {
-      setError('Appointment end time must be after the start time.')
+      setAppointmentSchedulingError('Appointment end time must be after the start time.')
+      setError('')
       return
     }
     const updateParticipants = buildAppointmentParticipantsForSave(appointmentForm.participants || [])
     const explicitRecipientEmail = normalizeText(appointmentForm.recipientEmail).toLowerCase()
     if (explicitRecipientEmail && !isValidEmail(explicitRecipientEmail)) {
-      setError('Enter a valid recipient email before sending the appointment request.')
+      setAppointmentSchedulingError('Enter a valid recipient email before sending the appointment request.')
+      setError('')
       return
     }
     if (explicitRecipientEmail && !updateParticipants.some((participant) => normalizeText(participant?.email).toLowerCase() === explicitRecipientEmail)) {
@@ -22773,8 +22859,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     } catch (updateError) {
       if (updateError?.code === 'APPOINTMENT_HARD_CONFLICT') {
         setAppointmentSchedulingIntegrity(updateError?.schedulingConflicts || null)
+        setAppointmentSchedulingError(updateError?.message || getAppointmentSchedulingConflictMessage(updateError?.schedulingConflicts) || 'Scheduling conflict detected.')
+        setError('')
+      } else {
+        setError(updateError?.message || 'Unable to update appointment right now.')
       }
-      setError(updateError?.message || 'Unable to update appointment right now.')
     } finally {
       setAppointmentSchedulingSubmitting(false)
     }
@@ -34566,8 +34655,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 </div>
               </div>
             </div>
-            {appointmentSchedulingError ? (
-              <p className="text-xs text-[#9f3028]">{appointmentSchedulingError}</p>
+            {appointmentSchedulingInlineError ? (
+              <p className="text-xs text-[#9f3028]">{appointmentSchedulingInlineError}</p>
             ) : null}
           </section>
 
