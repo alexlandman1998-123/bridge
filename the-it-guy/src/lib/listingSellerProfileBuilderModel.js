@@ -110,9 +110,28 @@ function normalizeBranch(value, fallback = 'individual') {
 }
 
 function getListingSellerFormData(listing = {}) {
-  return listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
-    ? listing.sellerOnboarding.formData
-    : {}
+  const mergeObjects = (...sources) => sources.reduce((accumulator, source) => {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return accumulator
+    return {
+      ...accumulator,
+      ...source,
+    }
+  }, {})
+
+  const onboarding = listing?.sellerOnboarding || listing?.seller_onboarding || {}
+  const canonicalFacts = getCanonicalFacts(listing)
+  const sellerFacts = canonicalFacts?.seller && typeof canonicalFacts.seller === 'object' ? canonicalFacts.seller : {}
+  const propertyFacts = canonicalFacts?.property && typeof canonicalFacts.property === 'object' ? canonicalFacts.property : {}
+
+  return mergeObjects(
+    sellerFacts,
+    propertyFacts,
+    canonicalFacts,
+    onboarding.formData,
+    onboarding.form_data,
+    listing?.sellerOnboardingFormData,
+    listing?.seller_onboarding_form_data,
+  )
 }
 
 function getCanonicalFacts(listing = {}) {

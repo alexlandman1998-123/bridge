@@ -950,9 +950,37 @@ function isValidEmail(value) {
 }
 
 function getListingSellerFormData(listing = {}) {
-  return listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
-    ? listing.sellerOnboarding.formData
-    : {}
+  const mergeObjects = (...sources) => sources.reduce((accumulator, source) => {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return accumulator
+    return {
+      ...accumulator,
+      ...source,
+    }
+  }, {})
+
+  const onboarding = listing?.sellerOnboarding || listing?.seller_onboarding || {}
+  const canonicalFacts = listing?.sellerCanonicalFacts || listing?.seller_canonical_facts_json || {}
+  const sellerFacts = canonicalFacts?.seller && typeof canonicalFacts.seller === 'object' ? canonicalFacts.seller : {}
+  const propertyFacts = canonicalFacts?.property && typeof canonicalFacts.property === 'object' ? canonicalFacts.property : {}
+
+  return mergeObjects(
+    sellerFacts,
+    propertyFacts,
+    canonicalFacts,
+    onboarding.formData,
+    onboarding.form_data,
+    listing?.sellerOnboardingFormData,
+    listing?.seller_onboarding_form_data,
+  )
+}
+
+function isRemoteListingMissingError(error) {
+  const code = String(error?.code || '').toUpperCase()
+  const message = String(error?.message || error || '').toLowerCase()
+  return code === 'PGRST116' ||
+    message.includes('private listing not found') ||
+    message.includes('no rows') ||
+    message.includes('0 rows')
 }
 
 function normalizeListingPerformanceOverrides(source = {}) {
@@ -3289,13 +3317,21 @@ function AgentListingDetail() {
   function patchListing(updater) {
     if (!listingRecord) return null
     let updatedListing = null
-    const nextRows = sanitizePrivateListingRows(privateListings).map((item) => {
+    const baseRows = sanitizePrivateListingRows(privateListings)
+    const nextRows = baseRows.map((item) => {
       if (String(item?.id || '') !== String(listingRecord.id)) return item
       updatedListing = updater({ ...item })
       return updatedListing
     })
-    setPrivateListings(nextRows)
-    writeAgentPrivateListings(nextRows)
+    const rowsWithListing = updatedListing ? nextRows : [
+      updater({ ...listingRecord }),
+      ...baseRows,
+    ]
+    if (!updatedListing) {
+      updatedListing = rowsWithListing[0]
+    }
+    setPrivateListings(rowsWithListing)
+    writeAgentPrivateListings(rowsWithListing)
     return updatedListing
   }
 
@@ -5889,6 +5925,15 @@ function AgentListingDetail() {
     () => listingDocumentGroups.find((group) => group.key === activeListingDocumentTab) || listingDocumentGroups[0] || null,
     [activeListingDocumentTab, listingDocumentGroups],
   )
+  useEffect(() => {
+    if (!listingDocumentGroups.length) return
+    const currentGroup = listingDocumentGroups.find((group) => group.key === activeListingDocumentTab)
+    if (currentGroup?.documents?.length) return
+    const firstPopulatedGroup = listingDocumentGroups.find((group) => group.documents?.length)
+    if (firstPopulatedGroup && firstPopulatedGroup.key !== activeListingDocumentTab) {
+      setActiveListingDocumentTab(firstPopulatedGroup.key)
+    }
+  }, [activeListingDocumentTab, listingDocumentGroups])
 
   const listingReadinessItems = useMemo(() => {
     return [
@@ -6847,24 +6892,30 @@ function AgentListingDetail() {
       expiryDate: formPatch.expiryDate || listingRecord?.expiryDate,
     }
     const nextOnboardingStatus = listingRecord?.sellerOnboardingStatus || listingRecord?.seller_onboarding_status || listingRecord?.sellerOnboarding?.status || 'in_progress'
-
-    setSellerProfileBuilderSaving(true)
-    setDetailError('')
-    setDetailMessage('')
-    try {
-      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
-        await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
-        await updatePrivateListingOnboardingFormData(listingRecord.id, nextFormData, {
-          status: nextOnboardingStatus === 'not_started' ? 'in_progress' : nextOnboardingStatus,
-          sellerType: formPatch.sellerType || 'individual',
-          ownershipStructure: formPatch.ownershipType || formPatch.ownerStructureType,
-          maritalRegime: formPatch.maritalStatus || formPatch.maritalRegime,
-          syncRequirements: true,
-          requirementSyncReason: 'listing_seller_profile_capture',
-        })
-      }
-
-      patchListing((row) => ({
+    const normalizedOnboardingStatus = nextOnboardingStatus === 'not_started' ? 'in_progress' : nextOnboardingStatus
+    const projectedDocumentRequirements = requirementProjection.allRequirementRows.map((requirement) => ({
+      ...requirement,
+      key: requirement.key || requirement.requirement_key,
+      label: requirement.label || requirement.requirement_name,
+      required: requirement.required ?? requirement.is_required !== false,
+    }))
+    const normalizeDocumentRequirements = (requirements = []) => (Array.isArray(requirements) ? requirements : [])
+      .map((requirement) => ({
+        ...requirement,
+        key: requirement.key || requirement.requirement_key || requirement.document_type,
+        label: requirement.label || requirement.requirement_name || requirement.document_name,
+        required: requirement.required ?? requirement.is_required !== false,
+      }))
+      .filter((requirement) => requirement.key || requirement.label)
+    const applySellerProfileSnapshot = ({ syncedListing = null, syncedRequirements = null } = {}) => {
+      const remoteRequirements = normalizeDocumentRequirements(syncedRequirements)
+      const remoteListingRequirements = normalizeDocumentRequirements(syncedListing?.documentRequirements)
+      const documentRequirements = remoteRequirements.length
+        ? remoteRequirements
+        : remoteListingRequirements.length
+          ? remoteListingRequirements
+          : projectedDocumentRequirements
+      return patchListing((row) => ({
         ...row,
         ...listingPatch,
         seller: {
@@ -6874,26 +6925,56 @@ function AgentListingDetail() {
           email,
           phone,
         },
-        sellerOnboardingStatus: nextOnboardingStatus === 'not_started' ? 'in_progress' : nextOnboardingStatus,
+        sellerOnboardingStatus: normalizedOnboardingStatus,
         sellerOnboarding: {
           ...(row?.sellerOnboarding || {}),
-          status: nextOnboardingStatus === 'not_started' ? 'in_progress' : nextOnboardingStatus,
+          status: normalizedOnboardingStatus,
           formData: nextFormData,
+          form_data: nextFormData,
           updatedAt: now,
         },
-        documentRequirements: requirementProjection.allRequirementRows.map((requirement) => ({
-          ...requirement,
-          key: requirement.requirement_key,
-          label: requirement.requirement_name,
-          required: requirement.is_required !== false,
+        documentRequirements,
+        requiredDocuments: documentRequirements.map((requirement) => ({
+          key: requirement.key || requirement.requirement_key,
+          label: requirement.label || requirement.requirement_name,
+          status: requirement.status || 'required',
+          fileName: requirement.fileName || requirement.file_name || '',
         })),
         updatedAt: now,
       }))
-      setSellerProfileBuilderOpen(false)
-      setDetailMessage('Seller profile captured. Document requirements have been recalculated from the saved seller model.')
+    }
+
+    setSellerProfileBuilderSaving(true)
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      applySellerProfileSnapshot()
+      let remoteListingMissing = false
       if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
-        await loadListingData()
+        try {
+          const remoteListing = await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
+          const onboardingResult = await updatePrivateListingOnboardingFormData(listingRecord.id, nextFormData, {
+            status: normalizedOnboardingStatus,
+            sellerType: formPatch.sellerType || 'individual',
+            ownershipStructure: formPatch.ownershipType || formPatch.ownerStructureType,
+            maritalRegime: formPatch.maritalStatus || formPatch.maritalRegime,
+            syncRequirements: true,
+            requirementSyncReason: 'listing_seller_profile_capture',
+          })
+          applySellerProfileSnapshot({
+            syncedListing: onboardingResult?.syncedListing || remoteListing,
+            syncedRequirements: onboardingResult?.syncedRequirements,
+          })
+        } catch (remoteError) {
+          if (!isRemoteListingMissingError(remoteError)) throw remoteError
+          remoteListingMissing = true
+          console.warn('[AgentListingDetail] seller profile saved locally because remote listing row is missing', remoteError)
+        }
       }
+      setSellerProfileBuilderOpen(false)
+      setDetailMessage(remoteListingMissing
+        ? 'Seller profile captured locally. Document requirements have been recalculated for this imported listing.'
+        : 'Seller profile captured. Document requirements have been recalculated from the saved seller model.')
     } catch (error) {
       setDetailError(error?.message || 'Unable to save the seller profile.')
     } finally {
@@ -11066,52 +11147,61 @@ function AgentListingDetail() {
                   </button>
                   <h2 className="mt-3 text-2xl font-semibold text-[#142132]">Seller Profile</h2>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-4 lg:flex lg:flex-wrap lg:justify-end">
+                <div className="flex flex-wrap gap-2 lg:justify-end">
                   <Button size="sm" onClick={() => openSellerProfileBuilder('Complete the seller profile from the listing workspace.')}>
                     <UserRound size={15} />
                     Complete Profile
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={handleEditSellerProfile}>
-                    <FileText size={15} />
-                    Edit Contact
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={handleDownloadSellerProfilePdf}>
-                    <FileText size={15} />
-                    Download PDF
-                  </Button>
-                  {!listingHasKingstonsSellerProcess ? (
-                    <Button size="sm" onClick={() => setMandateStartOpen(true)}>
-                      <FileText size={15} />
-                      Create Mandate
-                    </Button>
-                  ) : null}
                   <Button size="sm" onClick={openSellerPortalActivationModal} disabled={sellerPortalActivationSending || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
                     <Link2 size={15} />
-                    {sellerPortalActivationSending ? 'Sending...' : (resolveSellerPortalTokenFromListing(listingRecord) ? 'Resend Invitation' : 'Activate Seller Portal')}
+                    {sellerPortalActivationSending ? 'Sending...' : 'Send Portal Link'}
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={() => void handleResetSellerPortalPasswordAndResend()} disabled={resettingSellerPortalPassword || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false || !resolveSellerPortalTokenFromListing(listingRecord)}>
-                    <ShieldCheck size={15} />
-                    {resettingSellerPortalPassword ? 'Resetting...' : 'Reset Portal Password'}
-                  </Button>
+                  <details className="group relative">
+                    <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
+                      <MoreVertical size={15} />
+                      Actions
+                    </summary>
+                    <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
+                      <button
+                        type="button"
+                        onClick={handleEditSellerProfile}
+                        className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
+                      >
+                        <FileText size={15} />
+                        Edit contact
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDownloadSellerProfilePdf}
+                        className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
+                      >
+                        <Download size={15} />
+                        Download PDF
+                      </button>
+                      {!listingHasKingstonsSellerProcess ? (
+                        <button
+                          type="button"
+                          onClick={() => setMandateStartOpen(true)}
+                          className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
+                        >
+                          <FileText size={15} />
+                          Create mandate
+                        </button>
+                      ) : null}
+                      <div className="my-1 h-px bg-[#eef3f8]" />
+                      <button
+                        type="button"
+                        onClick={() => void handleResetSellerPortalPasswordAndResend()}
+                        disabled={resettingSellerPortalPassword || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false || !resolveSellerPortalTokenFromListing(listingRecord)}
+                        className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <ShieldCheck size={15} />
+                        {resettingSellerPortalPassword ? 'Resetting...' : 'Reset portal password'}
+                      </button>
+                    </div>
+                  </details>
                 </div>
               </div>
-              {sellerProfile.completionPercent < 60 ? (
-                <article data-testid="listing-seller-profile-builder-prompt" className="rounded-[24px] border border-[#cfe0ee] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Seller profile builder</p>
-                      <h3 className="mt-1 text-base font-semibold text-[#142132]">Capture the seller model for this listing</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#607387]">
-                        Profile facts are {sellerProfile.completionPercent}% complete. Save the internal profile to refresh mandate and document requirements.
-                      </p>
-                    </div>
-                    <Button type="button" size="sm" onClick={() => openSellerProfileBuilder('Complete the seller profile from the listing workspace.')}>
-                      <UserRound size={15} />
-                      Complete Profile
-                    </Button>
-                  </div>
-                </article>
-              ) : null}
 
               {directListingOperationalSummary.hasIntake ? (
                 <article data-testid="direct-listing-operational-audit" className="rounded-[24px] border border-[#dbe6f2] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
