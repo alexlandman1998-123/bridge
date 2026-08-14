@@ -1,5 +1,6 @@
 import { normalizeRoleType } from '../../src/core/transactions/permissions.js'
 import { buildRegistrationReadinessShortcut } from '../../src/core/transactions/registrationReadinessShortcut.js'
+import { resolveTransactionFacts } from '../../src/services/attorneyWorkflow/transactionFactsResolver.js'
 import { getTransactionWorkflowDefinition } from '../workflows/transactionWorkflowDefinitions.js'
 import { isGateWorkflowAction } from '../workflows/transactionWorkflowGates.js'
 import { resolveFinanceWorkflowKey } from './financeWorkflowResolver.js'
@@ -98,6 +99,10 @@ function resolveFinanceActionOwnerRole(state = {}) {
   return normalizeRoleType(stateStep?.ownerRole || definitionStep?.ownerRole || 'agent')
 }
 
+function isDevelopmentSale(state = {}) {
+  return resolveTransactionFacts(state.transaction || {}).isDevelopmentSale === true
+}
+
 const ACTION_DEFINITIONS = Object.freeze({
   RECORD_SIGNED_OTP: {
     label: 'Record Signed OTP',
@@ -107,7 +112,10 @@ const ACTION_DEFINITIONS = Object.freeze({
     ownerRole: 'agent',
     allowedRoles: ['agent', 'developer', 'internal_admin'],
     stages: ['SALES_OTP'],
-    requires: ['buyer_onboarding_complete', 'seller_onboarding_complete'],
+    requires: (state = {}) =>
+      isDevelopmentSale(state)
+        ? ['buyer_onboarding_complete']
+        : ['buyer_onboarding_complete', 'seller_onboarding_complete'],
     targetStatus: 'complete',
     actionContext: 'task_update',
   },
@@ -156,6 +164,9 @@ const ACTION_DEFINITIONS = Object.freeze({
     stages: ['SALES_OTP'],
     hideWhenStepComplete: true,
     reason(state = {}) {
+      if (isDevelopmentSale(state)) {
+        return 'Seller onboarding is not required for new development transactions.'
+      }
       const sellerEmail =
         normalizeText(state.transaction?.seller_email) ||
         normalizeText(state.transaction?.sellerEmail) ||

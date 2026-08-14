@@ -318,13 +318,15 @@ function buildAttorneyRegistrationWorkflow({
 
 function resolveSalesOtpWorkflow(context) {
   const evidence = context.evidence || {}
+  const facts = resolveTransactionFacts(context.transaction || {})
+  const isDevelopmentSale = facts.isDevelopmentSale === true
 
   const buyerDone = isEvidenceSatisfied(evidence, 'BUYER_ONBOARDING_COMPLETE')
-  const sellerDone = isEvidenceSatisfied(evidence, 'SELLER_ONBOARDING_COMPLETE')
-  const generatedOtpDone = isEvidenceSatisfied(evidence, 'GENERATED_OTP_DOCUMENT')
   const signedOtpDone = isEvidenceSatisfied(evidence, 'SIGNED_OTP_DOCUMENT')
+  const sellerDone = isDevelopmentSale || isEvidenceSatisfied(evidence, 'SELLER_ONBOARDING_COMPLETE')
+  const generatedOtpDone = isDevelopmentSale || signedOtpDone || isEvidenceSatisfied(evidence, 'GENERATED_OTP_DOCUMENT')
   const buyerFicaDone = isEvidenceSatisfied(evidence, 'BUYER_FICA_COMPLETE')
-  const sellerFicaDone = isEvidenceSatisfied(evidence, 'SELLER_FICA_COMPLETE')
+  const sellerFicaDone = isDevelopmentSale || isEvidenceSatisfied(evidence, 'SELLER_FICA_COMPLETE')
   const supportingDone = buyerFicaDone && sellerFicaDone
 
   const steps = [
@@ -338,25 +340,29 @@ function resolveSalesOtpWorkflow(context) {
     }),
     createStep({
       key: 'collect_seller_details',
-      label: 'Collect seller details',
-      status: sellerDone ? 'complete' : 'pending',
-      ownerRole: 'seller',
+      label: isDevelopmentSale ? 'Seller onboarding not required' : 'Collect seller details',
+      status: isDevelopmentSale ? 'not_applicable' : sellerDone ? 'complete' : 'pending',
+      ownerRole: isDevelopmentSale ? 'system' : 'seller',
+      required: !isDevelopmentSale,
+      blocking: !isDevelopmentSale,
       requiredEvidence: ['SELLER_ONBOARDING_COMPLETE'],
       sourceIds: evidence.SELLER_ONBOARDING_COMPLETE?.sources || [],
     }),
     createStep({
       key: 'generate_otp',
-      label: 'Generate or release OTP',
-      status: generatedOtpDone ? 'complete' : 'pending',
+      label: isDevelopmentSale ? 'OTP generated outside Arch9' : 'Generate or release OTP',
+      status: isDevelopmentSale ? 'not_applicable' : generatedOtpDone ? 'complete' : 'pending',
       ownerRole: 'agent',
+      required: !isDevelopmentSale,
+      blocking: !isDevelopmentSale,
       requiredEvidence: ['GENERATED_OTP_DOCUMENT'],
       sourceIds: evidence.GENERATED_OTP_DOCUMENT?.sources || [],
     }),
     createStep({
       key: 'sign_otp',
-      label: 'Capture signed OTP',
+      label: isDevelopmentSale ? 'Upload signed OTP' : 'Capture signed OTP',
       status: signedOtpDone ? 'complete' : 'pending',
-      ownerRole: 'buyer',
+      ownerRole: isDevelopmentSale ? 'agent' : 'buyer',
       requiredEvidence: ['SIGNED_OTP_DOCUMENT'],
       sourceIds: evidence.SIGNED_OTP_DOCUMENT?.sources || [],
     }),
@@ -365,10 +371,10 @@ function resolveSalesOtpWorkflow(context) {
       label: 'Collect supporting documents',
       status: supportingDone ? 'complete' : signedOtpDone ? 'pending' : 'not_started',
       ownerRole: 'agent',
-      requiredEvidence: ['BUYER_FICA_COMPLETE', 'SELLER_FICA_COMPLETE'],
+      requiredEvidence: isDevelopmentSale ? ['BUYER_FICA_COMPLETE'] : ['BUYER_FICA_COMPLETE', 'SELLER_FICA_COMPLETE'],
       sourceIds: [
         ...(evidence.BUYER_FICA_COMPLETE?.sources || []),
-        ...(evidence.SELLER_FICA_COMPLETE?.sources || []),
+        ...(isDevelopmentSale ? [] : evidence.SELLER_FICA_COMPLETE?.sources || []),
       ],
     }),
     createStep({
@@ -405,7 +411,7 @@ function resolveSalesOtpWorkflow(context) {
       }),
     )
   }
-  if (buyerDone && sellerDone && !generatedOtpDone) {
+  if (!isDevelopmentSale && buyerDone && sellerDone && !generatedOtpDone) {
     blockers.push(
       buildBlocker({
         code: 'OTP_GENERATION_REQUIRED',
@@ -421,8 +427,10 @@ function resolveSalesOtpWorkflow(context) {
     blockers.push(
       buildBlocker({
         code: 'SIGNED_OTP_REQUIRED',
-        message: 'Signed OTP is required before Finance can start.',
-        ownerRole: 'buyer',
+        message: isDevelopmentSale
+          ? 'Upload the manually signed OTP before Finance can start.'
+          : 'Signed OTP is required before Finance can start.',
+        ownerRole: isDevelopmentSale ? 'agent' : 'buyer',
         workflowKey: 'sales_otp',
         stepKey: 'sign_otp',
         requiredEvidence: ['SIGNED_OTP_DOCUMENT'],
@@ -433,11 +441,13 @@ function resolveSalesOtpWorkflow(context) {
     blockers.push(
       buildBlocker({
         code: 'SUPPORTING_DOCUMENTS_REQUIRED',
-        message: 'Required supporting documents must be complete before Finance can start.',
+        message: isDevelopmentSale
+          ? 'Buyer supporting documents must be complete before Finance can start.'
+          : 'Required supporting documents must be complete before Finance can start.',
         ownerRole: 'agent',
         workflowKey: 'sales_otp',
         stepKey: 'collect_supporting_documents',
-        requiredEvidence: ['BUYER_FICA_COMPLETE', 'SELLER_FICA_COMPLETE'],
+        requiredEvidence: isDevelopmentSale ? ['BUYER_FICA_COMPLETE'] : ['BUYER_FICA_COMPLETE', 'SELLER_FICA_COMPLETE'],
       }),
     )
   }

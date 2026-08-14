@@ -34,6 +34,7 @@ function buildBaseContext(overrides = {}) {
 
 try {
   const { resolveTransactionRollup, buildLegacyRollupComparison } = await server.ssrLoadModule('/server/services/transactionWorkflowRollup.js')
+  const { getWorkflowActionDescriptor } = await server.ssrLoadModule('/server/services/workflowActionAvailabilityService.js')
 
   const financeRollup = await resolveTransactionRollup(
     'tx-1',
@@ -63,6 +64,43 @@ try {
   assert.equal(comparison.differences[0].field, 'parentStage')
   assert.equal(comparison.differences[0].legacyValue, 'SALES_OTP')
   assert.equal(comparison.differences[0].rollupValue, 'FINANCE')
+
+  const developmentManualOtpRollup = await resolveTransactionRollup(
+    'tx-dev',
+    {
+      context: buildBaseContext({
+        transaction: {
+          id: 'tx-dev',
+          development_id: 'dev-1',
+          transaction_type: 'development_sale',
+          finance_type: 'cash',
+          seller_onboarding_status: '',
+          current_main_stage: 'OTP',
+          stage: 'OTP Signed',
+        },
+        documents: [
+          { id: 'doc-dev-signed-otp', document_type: 'signed_otp', status: 'completed' },
+          { id: 'doc-dev-buyer-fica', document_type: 'buyer_id_document', status: 'completed' },
+          { id: 'doc-dev-proof-of-funds', document_type: 'proof_of_funds', status: 'completed' },
+        ],
+      }),
+    },
+  )
+
+  assert.equal(developmentManualOtpRollup.parentStage, 'TRANSFER')
+  assert.equal(developmentManualOtpRollup.completedStages.includes('SALES_OTP'), true)
+  assert.equal(developmentManualOtpRollup.blockers.some((item) => item.code === 'SELLER_DETAILS_REQUIRED'), false)
+  assert.equal(developmentManualOtpRollup.blockers.some((item) => item.code === 'OTP_GENERATION_REQUIRED'), false)
+  assert.equal(
+    developmentManualOtpRollup.workflows.sales_otp.requiredSteps.find((step) => step.key === 'collect_seller_details')?.status,
+    'not_applicable',
+  )
+  assert.deepEqual(
+    getWorkflowActionDescriptor('RECORD_SIGNED_OTP', {
+      transaction: { id: 'tx-dev', development_id: 'dev-1', transaction_type: 'development_sale' },
+    }).requires,
+    ['buyer_onboarding_complete'],
+  )
 
   const transferRollup = await resolveTransactionRollup(
     'tx-2',

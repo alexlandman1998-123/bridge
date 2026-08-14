@@ -159,11 +159,27 @@ export function resolveWorkflowKeysForTransaction(transaction = {}) {
   return keys
 }
 
-export function buildWorkflowStepsForKey(workflowKey = '') {
+export function buildWorkflowStepsForKey(workflowKey = '', options = {}) {
   const definition = getTransactionWorkflowDefinition(workflowKey)
   if (!definition) return []
+  const facts = resolveTransactionFacts(options.transaction || {})
   return (definition.steps || []).map((step) => ({
     ...step,
+    ...(workflowKey === 'sales_otp' && facts.isDevelopmentSale && step.key === 'seller_onboarding_complete'
+      ? {
+          label: 'Seller onboarding not required',
+          status: 'not_applicable',
+          required: false,
+          blocking: false,
+          ownerRole: 'system',
+        }
+      : {}),
+    ...(workflowKey === 'sales_otp' && facts.isDevelopmentSale && step.key === 'signed_otp_received'
+      ? {
+          label: 'Signed OTP uploaded',
+          ownerRole: 'agent',
+        }
+      : {}),
     workflowKey,
   }))
 }

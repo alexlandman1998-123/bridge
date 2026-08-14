@@ -26,10 +26,10 @@ const ROLLUP_SELECT =
   'transaction_id, parent_stage, parent_status, progress_percent, active_workflow_key, active_step_key, completed_stages_json, blocked_stages_json, blockers_json, next_action_json, derived_from_json, derived_at, created_at, updated_at'
 
 const TRANSACTION_SELECT =
-  'id, finance_type, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, seller_has_existing_bond, existing_bond, cancellation_required, updated_at, created_at'
+  'id, finance_type, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, development_id, transaction_type, property_type, seller_has_existing_bond, existing_bond, cancellation_required, updated_at, created_at'
 
 const TRANSACTION_SELECT_FALLBACK =
-  'id, finance_type, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, updated_at, created_at'
+  'id, finance_type, current_main_stage, stage, onboarding_status, seller_onboarding_status, lifecycle_state, development_id, transaction_type, property_type, updated_at, created_at'
 
 const LEGACY_WORKFLOW_STEP_KEY_ALIAS = Object.freeze({
   sales_otp: {
@@ -289,7 +289,9 @@ export async function createWorkflowInstance(transactionId, workflowKey, options
 export async function createWorkflowSteps(workflowInstanceId, workflowKey, options = {}) {
   const client = options.client || requireClient()
   const transactionId = normalizeText(options.transactionId)
-  const steps = Array.isArray(options.steps) && options.steps.length ? options.steps : buildWorkflowStepsForKey(workflowKey)
+  const steps = Array.isArray(options.steps) && options.steps.length
+    ? options.steps
+    : buildWorkflowStepsForKey(workflowKey, { transaction: options.transaction })
   const existingQuery = await client
     .from('transaction_workflow_steps')
     .select(STEP_SELECT)
@@ -356,10 +358,11 @@ export async function ensureTransactionWorkflowInstances(transactionId, options 
     }
     instances.push(instance)
 
-    const steps = buildWorkflowStepsForKey(workflowKey)
+    const steps = buildWorkflowStepsForKey(workflowKey, { transaction })
     await createWorkflowSteps(instance.id, workflowKey, {
       client,
       transactionId,
+      transaction,
       steps,
     })
   }
@@ -676,15 +679,23 @@ export function buildWorkflowStateMap(normalizedState = {}) {
   const byKey = {}
 
   for (const instance of normalizedState.instances || []) {
-    const steps = (stepsByWorkflowKey[instance.workflow_key] || []).map((step) => ({
-      key: step.step_key,
-      label: step.step_label,
-      status: normalizeWorkflowStepStatus(step.status),
-      ownerRole: step.owner_role,
-      required: step.required !== false,
-      blocking: step.blocking === true,
-      sourceIds: (evidenceByStepId[step.id] || []).map((row) => row.evidence_id).filter(Boolean),
-    }))
+    const contextualDefinitions = new Map(
+      buildWorkflowStepsForKey(instance.workflow_key, { transaction: normalizedState.transaction || {} })
+        .map((step) => [step.key, step]),
+    )
+    const steps = (stepsByWorkflowKey[instance.workflow_key] || []).map((step) => {
+      const contextualStep = contextualDefinitions.get(step.step_key) || {}
+      const contextualNotApplicable = normalizeWorkflowStepStatus(contextualStep.status) === 'not_applicable'
+      return {
+        key: step.step_key,
+        label: contextualStep.label || step.step_label,
+        status: contextualNotApplicable ? 'not_applicable' : normalizeWorkflowStepStatus(step.status),
+        ownerRole: contextualStep.ownerRole || step.owner_role,
+        required: contextualStep.required === false ? false : step.required !== false,
+        blocking: contextualStep.blocking === false ? false : step.blocking === true,
+        sourceIds: (evidenceByStepId[step.id] || []).map((row) => row.evidence_id).filter(Boolean),
+      }
+    })
     const derivedBlockers = deriveWorkflowBlockers({
       workflowKey: instance.workflow_key,
       requiredSteps: steps,
