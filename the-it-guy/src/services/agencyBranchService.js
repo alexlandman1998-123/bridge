@@ -316,8 +316,8 @@ async function listOrganisationUsers(client, organisationId) {
 
 async function listOrganisationTransactions(client, organisationId) {
   const selectAttempts = [
-    'id, organisation_id, branch_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, status, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, created_at, updated_at',
-    'id, organisation_id, branch_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, status, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, status, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, created_at, updated_at',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, status, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
     'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
     'id, organisation_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
   ]
@@ -331,7 +331,7 @@ async function listOrganisationTransactions(client, organisationId) {
     if (!query.error) {
       return (query.data || []).map((row) => ({
         ...row,
-        assigned_branch_id: row?.assigned_branch_id || row?.branch_id || null,
+        assigned_branch_id: row?.assigned_branch_id || null,
       }))
     }
 
@@ -345,7 +345,7 @@ async function listOrganisationTransactions(client, organisationId) {
 async function listOrganisationPrivateListings(client, organisationId) {
   const query = await client
     .from('private_listings')
-    .select('id, organisation_id, branch_id, assigned_agent_id, assigned_agent_email, assigned_agent_name, listing_title, title, asking_price, estimated_value, listing_status, stage, created_at, updated_at')
+    .select('id, organisation_id, branch_id, assigned_agent_id, title, asking_price, estimated_value, listing_status, created_at, updated_at')
     .eq('organisation_id', organisationId)
     .neq('listing_status', 'withdrawn')
 
@@ -354,7 +354,7 @@ async function listOrganisationPrivateListings(client, organisationId) {
     if (isSchemaMismatchError(query.error)) {
       const fallbackQuery = await client
         .from('private_listings')
-        .select('id, organisation_id, branch_id, assigned_agent_email, assigned_agent_name, listing_title, asking_price, listing_status, stage, created_at, updated_at')
+        .select('id, organisation_id, branch_id, assigned_agent_id, title, asking_price, listing_status, created_at, updated_at')
         .eq('organisation_id', organisationId)
         .neq('listing_status', 'withdrawn')
       if (fallbackQuery.error) {

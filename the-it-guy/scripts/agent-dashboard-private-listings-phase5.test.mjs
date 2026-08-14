@@ -20,7 +20,6 @@ const OTHER_AGENT_ID = '44444444-4444-4444-8444-444444444444'
 const PROFILE_LISTING_ID = '55555555-5555-4555-8555-555555555555'
 const ALIAS_LISTING_ID = '66666666-6666-4666-8666-666666666666'
 const EMAIL_LISTING_ID = '77777777-7777-4777-8777-777777777777'
-let responseMode = 'normal'
 
 function jsonResponse(payload, { status = 200, statusText = 'OK' } = {}) {
   return new Response(JSON.stringify(payload), {
@@ -121,7 +120,7 @@ globalThis.fetch = async (input) => {
   requests.push(request)
 
   if (request.table === 'private_listings') {
-    if (responseMode === 'missing-agent-email' && request.select.includes('assigned_agent_email')) {
+    if (request.select.includes('assigned_agent_email') || String(url.search).includes('assigned_agent_email')) {
       return jsonResponse(
         {
           code: '42703',
@@ -131,10 +130,7 @@ globalThis.fetch = async (input) => {
       )
     }
 
-    const rows = responseMode === 'missing-agent-email'
-      ? privateListingRows.slice(0, 2).map(({ assigned_agent_email, ...row }) => row)
-      : privateListingRows
-    return jsonResponse(rows)
+    return jsonResponse(privateListingRows.filter((row) => [PROFILE_ID, ALIAS_ID].includes(row.assigned_agent_id)))
   }
 
   if (request.table === 'private_listing_seller_onboarding') {
@@ -167,7 +163,7 @@ function onboardingRequests() {
   return requests.filter((request) => request.table === 'private_listing_seller_onboarding')
 }
 
-function assertScopedSummaryRequest(request, { includesEmail = true } = {}) {
+function assertScopedSummaryRequest(request) {
   assert.equal(
     request.url.searchParams.get('organisation_id'),
     `eq.${ORGANISATION_ID}`,
@@ -184,17 +180,8 @@ function assertScopedSummaryRequest(request, { includesEmail = true } = {}) {
     true,
     'the compact read must include both canonical and membership alias assignment IDs',
   )
-  if (includesEmail) {
-    assert.match(request.select, /assigned_agent_email/, 'the compact read must retain legacy assignment email')
-    assert.match(
-      assignmentFilter,
-      /assigned_agent_email\.eq\."agent@example\.test"/,
-      'the compact read must retain legacy email assignments in the same query',
-    )
-  } else {
-    assert.equal(request.select.includes('assigned_agent_email'), false, 'the compatibility retry must omit the missing email column')
-    assert.equal(assignmentFilter.includes('assigned_agent_email'), false, 'the compatibility retry must remain ID-scoped')
-  }
+  assert.equal(request.select.includes('assigned_agent_email'), false, 'the compact read must omit the removed legacy email column')
+  assert.equal(assignmentFilter.includes('assigned_agent_email'), false, 'the compact read must remain ID-scoped')
 }
 
 const server = await createServer({
@@ -220,10 +207,10 @@ try {
     /assignedAgentIds:\s*assignmentIds/,
     'the compact dashboard read must retain membership alias IDs',
   )
-  assert.match(
+  assert.doesNotMatch(
     dashboardPrivateListingLoader,
     /assignedAgentEmail:\s*profile\.email/,
-    'the compact dashboard read must retain legacy email assignments',
+    'the compact dashboard read must not probe the removed private-listing assignment email',
   )
   assert.match(
     dashboardPrivateListingLoader,
@@ -250,11 +237,10 @@ try {
   const rows = await getAgentPrivateListingSummaries(PROFILE_ID, {
     organisationId: ORGANISATION_ID,
     assignedAgentIds: [ALIAS_ID],
-    assignedAgentEmail: 'Agent@Example.Test',
     includeCommissionTerms: true,
   })
 
-  assert.equal(privateListingRequests().length, 1, 'the union of ID aliases and legacy email must use one compact listing request')
+  assert.equal(privateListingRequests().length, 1, 'the union of canonical and alias IDs must use one compact listing request')
   assertScopedSummaryRequest(privateListingRequests()[0])
   assert.equal(onboardingRequests().length, 1, 'commission preservation may use one batched onboarding read')
   assert.equal(
@@ -269,29 +255,21 @@ try {
   )
 
   const rowsById = new Map(rows.map((row) => [row.id, row]))
-  assert.equal(rowsById.size, 3, 'the summary must retain canonical-ID, alias-ID, and legacy-email listing rows')
+  assert.equal(rowsById.size, 2, 'the summary must retain canonical-ID and alias-ID listing rows')
   assert.equal(rowsById.get(PROFILE_LISTING_ID)?.askingPrice, 1000000, 'the summary must retain pipeline value')
   assert.equal(rowsById.get(PROFILE_LISTING_ID)?.isActive, true, 'the summary must retain active-listing state')
-  assert.equal(rowsById.get(EMAIL_LISTING_ID)?.assignedAgentEmail, 'agent@example.test', 'the summary must retain the legacy assignment email')
+  assert.equal(rowsById.has(EMAIL_LISTING_ID), false, 'the summary must not broaden scope through legacy email assignments')
   assert.equal(rowsById.get(ALIAS_LISTING_ID)?.commission?.commission_percentage, '5', 'the summary must retain custom commission terms')
 
   requests.length = 0
-  responseMode = 'missing-agent-email'
-  const compatibilityRows = await getAgentPrivateListingSummaries(PROFILE_ID, {
+  const emailOnlyRows = await getAgentPrivateListingSummaries('', {
     organisationId: ORGANISATION_ID,
-    assignedAgentIds: [ALIAS_ID],
     assignedAgentEmail: 'agent@example.test',
   })
 
-  assert.equal(privateListingRequests().length, 2, 'a stale email column must retry once without broadening the listing scope')
-  assertScopedSummaryRequest(privateListingRequests()[0])
-  assertScopedSummaryRequest(privateListingRequests()[1], { includesEmail: false })
+  assert.equal(privateListingRequests().length, 0, 'email-only private-listing scopes must not hit the removed column')
   assert.equal(onboardingRequests().length, 0, 'the default compact summary must not load onboarding data')
-  assert.deepEqual(
-    new Set(compatibilityRows.map((row) => row.id)),
-    new Set([PROFILE_LISTING_ID, ALIAS_LISTING_ID]),
-    'the compatibility retry must retain canonical and alias ID assignments while omitting unavailable email filtering',
-  )
+  assert.deepEqual(emailOnlyRows, [], 'email-only private-listing scopes must resolve empty without broadening access')
 
   console.log('agent dashboard Phase 5 private-listing summary tests passed')
 } finally {

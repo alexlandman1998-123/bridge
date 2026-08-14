@@ -46,6 +46,8 @@ const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
 const PENDING_ORG_INVITE_EMAIL_STORAGE_KEY = 'itg:pending-org-invite-email'
 const PENDING_ORG_INVITE_MODULE_STORAGE_KEY = 'itg:pending-org-invite-module'
 const PENDING_ORG_INVITE_ROLE_STORAGE_KEY = 'itg:pending-org-invite-role'
+const AUTH_REQUEST_TIMEOUT_MS = 15000
+const FOUNDER_LOGIN_TARGET_TIMEOUT_MS = 3000
 
 function getRedirectPath(location) {
   const nextPath = new URLSearchParams(location.search).get('next')
@@ -210,6 +212,48 @@ async function resolveFounderLoginTarget(fallbackTarget = '/dashboard') {
     return hasHQMembership ? '/command-center' : target
   } catch (error) {
     console.warn('[AUTH] founder landing check skipped', error)
+    return target
+  }
+}
+
+function buildAuthRequestTimeoutError(label = 'Authentication request') {
+  const error = new Error(`${label} timed out. Please check your connection and retry.`)
+  error.code = 'AUTH_REQUEST_TIMEOUT'
+  return error
+}
+
+async function withAuthRequestTimeout(task, {
+  timeoutMs = AUTH_REQUEST_TIMEOUT_MS,
+  label = 'Authentication request',
+} = {}) {
+  const setTimer = typeof window !== 'undefined' && typeof window.setTimeout === 'function'
+    ? window.setTimeout.bind(window)
+    : setTimeout
+  const clearTimer = typeof window !== 'undefined' && typeof window.clearTimeout === 'function'
+    ? window.clearTimeout.bind(window)
+    : clearTimeout
+  let timeoutId = null
+  try {
+    return await Promise.race([
+      task,
+      new Promise((_, reject) => {
+        timeoutId = setTimer(() => reject(buildAuthRequestTimeoutError(label)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId) clearTimer(timeoutId)
+  }
+}
+
+async function resolveFounderLoginTargetSafely(fallbackTarget = '/dashboard') {
+  const target = String(fallbackTarget || '/dashboard').trim() || '/dashboard'
+  try {
+    return await withAuthRequestTimeout(resolveFounderLoginTarget(target), {
+      timeoutMs: FOUNDER_LOGIN_TARGET_TIMEOUT_MS,
+      label: 'Workspace routing check',
+    })
+  } catch (error) {
+    console.warn('[AUTH] founder landing check timed out; using fallback target', error)
     return target
   }
 }
@@ -523,9 +567,12 @@ function Auth({ onDevBypass = null }) {
         setError('')
         setMessage('')
         const redirectTo = resolvePasswordRecoveryRedirectTo()
-        const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-          redirectTo,
-        })
+        const { error: recoveryError } = await withAuthRequestTimeout(
+          supabase.auth.resetPasswordForEmail(email.trim(), {
+            redirectTo,
+          }),
+          { label: 'Password reset request' },
+        )
 
         if (recoveryError) {
           if (isAuthRateLimitError(recoveryError)) {
@@ -604,17 +651,20 @@ function Auth({ onDevBypass = null }) {
 
       if (mode === 'login') {
         console.debug('[AUTH] login:start', { email: email.trim().toLowerCase() })
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        })
+        const { error: signInError } = await withAuthRequestTimeout(
+          supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password,
+          }),
+          { label: 'Sign in request' },
+        )
 
         if (signInError) {
           throw signInError
         }
 
         const pendingInvitePath = resolvePendingInvitePath(location)
-        const target = pendingInvitePath || await resolveFounderLoginTarget(redirectTo)
+        const target = pendingInvitePath || await resolveFounderLoginTargetSafely(redirectTo)
         clearPostLoginRedirect()
         console.debug('[AUTH] login:success', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
@@ -632,18 +682,21 @@ function Auth({ onDevBypass = null }) {
         appRole: intentWithEmail.app_role,
         workspaceAction: intentWithEmail.workspace_action,
       })
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          emailRedirectTo,
-          data: createSignupUserMetadata({
-            intent: intentWithEmail,
-            fullName,
-            phone,
-          }),
-        },
-      })
+      const { data, error: signUpError } = await withAuthRequestTimeout(
+        supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            emailRedirectTo,
+            data: createSignupUserMetadata({
+              intent: intentWithEmail,
+              fullName,
+              phone,
+            }),
+          },
+        }),
+        { label: 'Account creation request' },
+      )
 
       if (signUpError) {
         const signUpMessage = String(signUpError?.message || '').toLowerCase()
@@ -726,13 +779,16 @@ function Auth({ onDevBypass = null }) {
         resolvePendingInvitePath(location) ||
           resolveSignupContinuationPath({ redirectTo, currentIntent }),
       )
-      const { error: resendError } = await supabase.auth.resend({
-        type: 'signup',
-        email: targetEmail,
-        options: {
-          emailRedirectTo,
-        },
-      })
+      const { error: resendError } = await withAuthRequestTimeout(
+        supabase.auth.resend({
+          type: 'signup',
+          email: targetEmail,
+          options: {
+            emailRedirectTo,
+          },
+        }),
+        { label: 'Verification resend request' },
+      )
       if (resendError) {
         throw resendError
       }

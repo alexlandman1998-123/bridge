@@ -81,8 +81,20 @@ const retryAttemptsIndex = source.indexOf('const retryAttemptsUsed = bridgeRetry
 assert.ok(degradedStateIndex > -1, 'retryable bridge boot failures should attempt a last-good degraded workspace recovery')
 assert.ok(retryAttemptsIndex > -1, 'retryable bridge boot failures should still keep bounded retry bookkeeping')
 assert.ok(
-  degradedStateIndex < retryAttemptsIndex,
-  'last-good degraded workspace recovery should happen before scheduling another retry',
+  retryAttemptsIndex < degradedStateIndex,
+  'last-good degraded workspace recovery should use retry bookkeeping before deciding whether to schedule recovery',
+)
+
+assert.match(
+  source,
+  /if \(degradedState\) \{[\s\S]*?setAuthState\(degradedState\)[\s\S]*?trackAuthMetric\('auth_boot_degraded'[\s\S]*?scheduleRetry\(\{ keepCurrentState: true \}\)[\s\S]*?return/,
+  'last-good degraded workspace recovery should keep cached access while scheduling a background retry',
+)
+
+assert.match(
+  source,
+  /writeAuthBootBreadcrumb\([\s\S]*?keepCurrentState \? 'bridge_boot_degraded_retry_scheduled' : 'bridge_boot_retry_scheduled'/,
+  'degraded background retries should write a distinct breadcrumb for support diagnostics',
 )
 
 assert.match(

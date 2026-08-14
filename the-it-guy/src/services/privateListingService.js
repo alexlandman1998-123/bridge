@@ -5430,7 +5430,6 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
     organisation_id: organisationId,
     branch_id: normalizeUuid(payload.branchId || payload.branch_id),
     assigned_agent_id: normalizeUuid(payload.assignedAgentId),
-    assigned_agent_email: normalizeText(payload.assignedAgentEmail).toLowerCase() || null,
     seller_lead_id: normalizeLeadLink(payload.sellerLeadId),
     originating_crm_lead_id: normalizeLeadLink(payload.originatingCrmLeadId),
     seller_profile_id: normalizeUuid(payload.sellerProfileId),
@@ -5526,7 +5525,6 @@ export async function createPrivateListing(payload = {}, options = {}) {
     isMissingColumnError(insert.error, 'property_category') ||
     isMissingColumnError(insert.error, 'listing_source') ||
     isMissingColumnError(insert.error, 'property_structure_type') ||
-    isMissingColumnError(insert.error, 'assigned_agent_email') ||
     isMissingColumnError(insert.error, 'mandate_packet_id') ||
     isMissingColumnError(insert.error, 'seller_canonical_facts_json') ||
     isMissingColumnError(insert.error, 'seller_canonical_fact_readiness_json') ||
@@ -5535,7 +5533,6 @@ export async function createPrivateListing(payload = {}, options = {}) {
     hasMissingPrivateListingPortalColumn(insert.error)
   )) {
     const fallbackPayload = { ...listingPayload }
-    if (isMissingColumnError(insert.error, 'assigned_agent_email')) delete fallbackPayload.assigned_agent_email
     if (isMissingColumnError(insert.error, 'mandate_packet_id')) delete fallbackPayload.mandate_packet_id
     if (isMissingColumnError(insert.error, 'seller_canonical_facts_json')) delete fallbackPayload.seller_canonical_facts_json
     if (isMissingColumnError(insert.error, 'seller_canonical_fact_readiness_json')) delete fallbackPayload.seller_canonical_fact_readiness_json
@@ -5622,7 +5619,6 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
 
   const patch = {}
   if (payload.assignedAgentId !== undefined) patch.assigned_agent_id = normalizeUuid(payload.assignedAgentId)
-  if (payload.assignedAgentEmail !== undefined) patch.assigned_agent_email = normalizeText(payload.assignedAgentEmail).toLowerCase() || null
   if (payload.sellerLeadId !== undefined) patch.seller_lead_id = normalizeLeadLink(payload.sellerLeadId)
   if (payload.originatingCrmLeadId !== undefined) patch.originating_crm_lead_id = normalizeLeadLink(payload.originatingCrmLeadId)
   if (payload.sellerProfileId !== undefined) patch.seller_profile_id = normalizeUuid(payload.sellerProfileId)
@@ -5695,7 +5691,6 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
     isMissingColumnError(updateQuery.error, 'property_category') ||
     isMissingColumnError(updateQuery.error, 'listing_source') ||
     isMissingColumnError(updateQuery.error, 'property_structure_type') ||
-    isMissingColumnError(updateQuery.error, 'assigned_agent_email') ||
     isMissingColumnError(updateQuery.error, 'mandate_packet_id') ||
     isMissingColumnError(updateQuery.error, 'seller_canonical_facts_json') ||
     isMissingColumnError(updateQuery.error, 'seller_canonical_fact_readiness_json') ||
@@ -5704,7 +5699,6 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
     hasMissingPrivateListingPortalColumn(updateQuery.error)
   )) {
     const compatiblePatch = { ...patch }
-    if (isMissingColumnError(updateQuery.error, 'assigned_agent_email')) delete compatiblePatch.assigned_agent_email
     if (isMissingColumnError(updateQuery.error, 'mandate_packet_id')) delete compatiblePatch.mandate_packet_id
     delete compatiblePatch.seller_canonical_facts_json
     delete compatiblePatch.seller_canonical_fact_readiness_json
@@ -6311,16 +6305,14 @@ export async function getAgentPrivateListings(
   {
     organisationId = null,
     includeAllOrganisationListings = false,
-    assignedAgentEmail = '',
     assignedAgentIds = [],
   } = {},
 ) {
   const client = requireClient()
   const normalizedAgentId = normalizeUuid(agentId)
   const normalizedOrgId = normalizeUuid(organisationId)
-  const normalizedAgentEmail = normalizeText(assignedAgentEmail).toLowerCase()
   const normalizedAgentIds = normalizeUuidList([normalizedAgentId, ...assignedAgentIds])
-  if (!includeAllOrganisationListings && !normalizedAgentIds.length && !normalizedAgentEmail) return []
+  if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
   const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
 
   if (normalizedOrgId) {
@@ -6331,42 +6323,11 @@ export async function getAgentPrivateListings(
       queryBuilder.in('assigned_agent_id', normalizedAgentIds)
     } else if (normalizedAgentIds.length === 1) {
       queryBuilder.eq('assigned_agent_id', normalizedAgentIds[0])
-    } else {
-      queryBuilder.eq('assigned_agent_email', normalizedAgentEmail)
     }
   }
 
   const query = await queryBuilder.order('updated_at', { ascending: false })
   if (query.error) {
-    if (isMissingColumnError(query.error, 'assigned_agent_email') && !normalizedAgentIds.length) {
-      return []
-    }
-    if (isMissingColumnError(query.error, 'assigned_agent_email') && normalizedOrgId && normalizedAgentIds.length) {
-      const retryQuery = await applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
-        .eq('organisation_id', normalizedOrgId)
-        .order('updated_at', { ascending: false })
-      if (normalizedAgentIds.length > 1) {
-        retryQuery.in('assigned_agent_id', normalizedAgentIds)
-      } else {
-        retryQuery.eq('assigned_agent_id', normalizedAgentIds[0])
-      }
-      if (retryQuery.error) {
-        if (isMissingTableError(retryQuery.error, 'private_listings')) return []
-        throw retryQuery.error
-      }
-      const retryRows = (Array.isArray(retryQuery.data) ? retryQuery.data : []).filter((row) => !isDeletedPrivateListingRow(row))
-      const retryListingIds = retryRows.map((row) => row.id)
-      const [retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap, retryMandatePacketsMap, retryAssignedAgentsMap] = await Promise.all([
-        fetchOnboardingRowsForListings(client, retryListingIds),
-        fetchRequirementRowsForListings(client, retryListingIds),
-        fetchDocumentRowsForListings(client, retryListingIds),
-        fetchExternalLinkRowsForListings(client, retryListingIds),
-        fetchPublicationRowsForListings(client, retryListingIds),
-        fetchMandatePacketRowsForListings(client, retryRows),
-        fetchAssignedAgentProfilesForListings(client, retryRows),
-      ])
-      return retryRows.map((row) => mapPrivateListingRow(row, retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap, retryMandatePacketsMap, retryAssignedAgentsMap)).filter(Boolean)
-    }
     if (isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }
@@ -6389,7 +6350,6 @@ export async function getAgentPrivateListingSummaries(
   {
     organisationId = null,
     includeAllOrganisationListings = false,
-    assignedAgentEmail = '',
     assignedAgentIds = [],
     includeCommissionTerms = false,
   } = {},
@@ -6397,11 +6357,10 @@ export async function getAgentPrivateListingSummaries(
   const client = requireClient()
   const normalizedAgentId = normalizeUuid(agentId)
   const normalizedOrgId = normalizeUuid(organisationId)
-  const normalizedAgentEmail = normalizeText(assignedAgentEmail).toLowerCase()
   const normalizedAgentIds = normalizeUuidList([normalizedAgentId, ...assignedAgentIds])
-  if (!includeAllOrganisationListings && !normalizedAgentIds.length && !normalizedAgentEmail) return []
+  if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
 
-  const createSummaryQuery = ({ includeAssignedAgentEmail = true, includeIsActive = true } = {}) => {
+  const createSummaryQuery = ({ includeIsActive = true } = {}) => {
     const selectColumns = [
       'id',
       'listing_reference',
@@ -6442,7 +6401,6 @@ export async function getAgentPrivateListingSummaries(
       'organisation_id',
       'branch_id',
       'assigned_agent_id',
-      ...(includeAssignedAgentEmail ? ['assigned_agent_email'] : []),
       ...(includeIsActive ? ['is_active'] : []),
       'created_at',
       'updated_at',
@@ -6463,10 +6421,6 @@ export async function getAgentPrivateListingSummaries(
       } else if (normalizedAgentIds.length === 1) {
         assignmentFilters.push(`assigned_agent_id.eq.${normalizedAgentIds[0]}`)
       }
-      if (includeAssignedAgentEmail && normalizedAgentEmail) {
-        const escapedEmail = String(normalizedAgentEmail).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-        assignmentFilters.push(`assigned_agent_email.eq."${escapedEmail}"`)
-      }
 
       if (assignmentFilters.length > 1) {
         queryBuilder.or(assignmentFilters.join(','))
@@ -6474,29 +6428,20 @@ export async function getAgentPrivateListingSummaries(
         queryBuilder.in('assigned_agent_id', normalizedAgentIds)
       } else if (normalizedAgentIds.length === 1) {
         queryBuilder.eq('assigned_agent_id', normalizedAgentIds[0])
-      } else if (includeAssignedAgentEmail && normalizedAgentEmail) {
-        queryBuilder.eq('assigned_agent_email', normalizedAgentEmail)
       }
     }
 
     return queryBuilder.order('updated_at', { ascending: false })
   }
 
-  let includeAssignedAgentEmail = true
   let includeIsActive = true
-  let query = await createSummaryQuery({ includeAssignedAgentEmail, includeIsActive })
+  let query = await createSummaryQuery({ includeIsActive })
   while (query.error) {
     const errorText = `${query.error?.message || ''} ${query.error?.details || ''} ${query.error?.hint || ''}`.toLowerCase()
 
-    if (includeAssignedAgentEmail && errorText.includes('assigned_agent_email')) {
-      if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
-      includeAssignedAgentEmail = false
-      query = await createSummaryQuery({ includeAssignedAgentEmail, includeIsActive })
-      continue
-    }
     if (includeIsActive && errorText.includes('is_active')) {
       includeIsActive = false
-      query = await createSummaryQuery({ includeAssignedAgentEmail, includeIsActive })
+      query = await createSummaryQuery({ includeIsActive })
       continue
     }
     if (isMissingTableError(query.error, 'private_listings')) return []

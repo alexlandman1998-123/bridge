@@ -1688,13 +1688,12 @@ async function enrichRowsWithBondIntakeContext(rows = []) {
   const documentsPromise = (async () => {
     let query = await client
       .from('documents')
-      .select('id, transaction_id, name, category, document_type, status, uploaded_at, created_at')
+      .select('id, transaction_id, name, category, document_type, status, created_at')
       .in('transaction_id', transactionIds)
     if (
       query.error &&
       (isMissingColumnError(query.error, 'document_type') ||
-        isMissingColumnError(query.error, 'status') ||
-        isMissingColumnError(query.error, 'uploaded_at'))
+        isMissingColumnError(query.error, 'status'))
     ) {
       query = await client.from('documents').select('id, transaction_id, name, category, created_at').in('transaction_id', transactionIds)
     }
@@ -1730,7 +1729,7 @@ async function enrichRowsWithBondIntakeContext(rows = []) {
     let query = await client
       .from('transaction_role_players')
       .select(
-        'id, transaction_id, role_type, selection_source, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, activation_trigger, removed_at, organisation_name, workspace_id, snapshot_json, created_at, updated_at',
+        'id, transaction_id, role_type, selection_source, preferred_partner_id, partner_relationship_id, organisation_id, partner_name, contact_person, email_address, phone_number, status, assignment_status, activation_trigger, removed_at, snapshot_json, created_at, updated_at',
       )
       .in('transaction_id', transactionIds)
     if (
@@ -1747,8 +1746,6 @@ async function enrichRowsWithBondIntakeContext(rows = []) {
         isMissingColumnError(query.error, 'activation_trigger') ||
         isMissingColumnError(query.error, 'removed_at') ||
         isMissingColumnError(query.error, 'organisation_id') ||
-        isMissingColumnError(query.error, 'organisation_name') ||
-        isMissingColumnError(query.error, 'workspace_id') ||
         isMissingColumnError(query.error, 'snapshot_json'))
     ) {
       query = await client

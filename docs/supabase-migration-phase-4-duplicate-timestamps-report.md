@@ -1,6 +1,6 @@
 # Supabase Migration Phase 4 Duplicate Timestamp Report
 
-Generated: 2026-07-25T13:23:28.572Z
+Generated: 2026-08-14T12:10:03.842Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -12,7 +12,7 @@ Phase 4 is local migration-file hygiene. It resolves duplicate local migration t
 | Field | Value |
 | --- | --- |
 | Status | DEDUPED |
-| Local migration files | 526 |
+| Local migration files | 681 |
 | Duplicate local timestamps | 0 |
 | Expected renames complete | 13/13 |
 

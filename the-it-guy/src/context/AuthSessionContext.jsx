@@ -610,6 +610,80 @@ export function AuthSessionProvider({ children }) {
             breadcrumbs: failureBreadcrumbs,
           },
         })
+        const retryAttemptsUsed = bridgeRetryScopeRef.current.attempts || 0
+        const canScheduleRetry = Boolean(retryReason && retryAttemptsUsed < MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS)
+        const scheduleRetry = ({ keepCurrentState = false } = {}) => {
+          if (!canScheduleRetry) return false
+          const nextRetryAttempt = retryAttemptsUsed + 1
+          const retryInMs = getBridgeBootstrapRetryDelayMs(retryAttemptsUsed)
+          bridgeRetryScopeRef.current = {
+            key: retryScopeKey,
+            attempts: nextRetryAttempt,
+          }
+          if (!keepCurrentState) {
+            bridgeOutcome = 'retrying'
+            setAuthState((previous) => ({
+              ...previous,
+              status: 'loading',
+              session,
+              user: session.user,
+              bootError: error?.message || 'Workspace bootstrap is taking longer than expected.',
+              bootRetry: {
+                attempt: nextRetryAttempt,
+                maxAttempts: MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS,
+                retryInMs,
+                reason: retryReason,
+              },
+            }))
+          }
+          const retryMetadata = buildAuthBootObservabilityMetadata({
+            selectedWorkspaceId,
+            attempt: bootAttempt + 1,
+            retry: {
+              attempt: nextRetryAttempt,
+              retryInMs,
+              reason: retryReason,
+              background: keepCurrentState,
+            },
+            bootHealth: error?.bootHealth || null,
+            outcome: keepCurrentState ? 'degraded' : 'retrying',
+            error,
+          })
+          const retryBreadcrumbs = writeAuthBootBreadcrumb(
+            keepCurrentState ? 'bridge_boot_degraded_retry_scheduled' : 'bridge_boot_retry_scheduled',
+            retryMetadata,
+          )
+          bridgeBootHealthStatus = retryMetadata.bootHealthStatus || ''
+          bridgeBreadcrumbCount = retryBreadcrumbs.length
+          retryTimerId = window.setTimeout(() => {
+            if (!active) return
+            console.warn('[AUTH] bridge-boot:retrying', {
+              userId: session.user.id,
+              selectedWorkspaceId: selectedWorkspaceId || null,
+              attempt: nextRetryAttempt,
+              maxAttempts: MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS,
+              retryInMs,
+              retryReason,
+              background: keepCurrentState,
+              previousError: error?.message || null,
+            })
+            void trackAuthMetric('auth_boot_retry_scheduled', {
+              userId: session.user.id,
+              metadata: {
+                ...retryMetadata,
+                selectedWorkspaceId: selectedWorkspaceId || null,
+                attempt: nextRetryAttempt,
+                maxAttempts: MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS,
+                retryInMs,
+                retryReason,
+                background: keepCurrentState,
+                breadcrumbCount: retryBreadcrumbs.length,
+              },
+            })
+            setBootAttempt((previous) => previous + 1)
+          }, retryInMs)
+          return true
+        }
         const degradedState = retryReason
           ? buildDegradedBridgeAuthState({ session, selectedWorkspaceId, error })
           : null
@@ -647,70 +721,10 @@ export function AuthSessionProvider({ children }) {
               breadcrumbCount: degradedBreadcrumbs.length,
             },
           })
+          scheduleRetry({ keepCurrentState: true })
           return
         }
-        const retryAttemptsUsed = bridgeRetryScopeRef.current.attempts || 0
-        if (retryReason && retryAttemptsUsed < MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS) {
-          const nextRetryAttempt = retryAttemptsUsed + 1
-          const retryInMs = getBridgeBootstrapRetryDelayMs(retryAttemptsUsed)
-          bridgeRetryScopeRef.current = {
-            key: retryScopeKey,
-            attempts: nextRetryAttempt,
-          }
-          bridgeOutcome = 'retrying'
-          setAuthState((previous) => ({
-            ...previous,
-            status: 'loading',
-            session,
-            user: session.user,
-            bootError: error?.message || 'Workspace bootstrap is taking longer than expected.',
-            bootRetry: {
-              attempt: nextRetryAttempt,
-              maxAttempts: MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS,
-              retryInMs,
-              reason: retryReason,
-            },
-          }))
-          const retryMetadata = buildAuthBootObservabilityMetadata({
-            selectedWorkspaceId,
-            attempt: bootAttempt + 1,
-            retry: {
-              attempt: nextRetryAttempt,
-              retryInMs,
-              reason: retryReason,
-            },
-            bootHealth: error?.bootHealth || null,
-            outcome: 'retrying',
-            error,
-          })
-          const retryBreadcrumbs = writeAuthBootBreadcrumb('bridge_boot_retry_scheduled', retryMetadata)
-          bridgeBootHealthStatus = retryMetadata.bootHealthStatus || ''
-          bridgeBreadcrumbCount = retryBreadcrumbs.length
-          retryTimerId = window.setTimeout(() => {
-            if (!active) return
-            console.warn('[AUTH] bridge-boot:retrying', {
-              userId: session.user.id,
-              selectedWorkspaceId: selectedWorkspaceId || null,
-              attempt: nextRetryAttempt,
-              maxAttempts: MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS,
-              retryInMs,
-              retryReason,
-              previousError: error?.message || null,
-            })
-            void trackAuthMetric('auth_boot_retry_scheduled', {
-              userId: session.user.id,
-              metadata: {
-                ...retryMetadata,
-                selectedWorkspaceId: selectedWorkspaceId || null,
-                attempt: nextRetryAttempt,
-                maxAttempts: MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS,
-                retryInMs,
-                retryReason,
-                breadcrumbCount: retryBreadcrumbs.length,
-              },
-            })
-            setBootAttempt((previous) => previous + 1)
-          }, retryInMs)
+        if (scheduleRetry()) {
           return
         }
         void trackAuthMetric('auth_boot_failed', {

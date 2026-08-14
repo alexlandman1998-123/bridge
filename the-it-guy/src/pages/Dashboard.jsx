@@ -990,7 +990,6 @@ async function fetchAgentDashboardPrivateListings({ profile = {}, organisationId
     const assignmentIds = resolveDashboardAgentAssignmentIds(profile, organisationUsers)
     const listingRows = await getAgentPrivateListingSummaries(profile.id, {
       organisationId,
-      assignedAgentEmail: profile.email,
       assignedAgentIds: assignmentIds,
       includeCommissionTerms: true,
     })
