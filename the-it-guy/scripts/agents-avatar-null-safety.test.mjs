@@ -22,8 +22,8 @@ assert.match(helperBlock, /agent\?\.avatarUrl/, 'avatar helper should handle nul
 assert.match(helperBlock, /agent\?\.avatar_url/, 'avatar helper should handle nullable snake_case avatar rows')
 assert.match(source, /getAgentAvatarUrl\(directoryMatch\) \|\| getAgentAvatarUrl\(invite\) \|\| getAgentAvatarUrl\(agent\)/, 'mapped agents should safely pass nullable directory and invite matches')
 assert.match(source, /modalMode === 'profile' \? \(/, 'Agent profile actions should render the real profile modal instead of the generic placeholder')
-assert.match(source, /<AgentAvatar[\s\S]*agent=\{agent\}[\s\S]*getAgentInitials\(agent\)/, 'Agent profile modal should render the saved avatar or initials fallback')
+assert.match(source, /<AgentAvatar[\s\S]*profileForm\.avatarUrl[\s\S]*getAgentInitials\(\{ \.\.\.agent, firstName: profileForm\.firstName, lastName: profileForm\.lastName \}\)/, 'Agent profile modal should render the saved avatar or edited initials fallback')
 assert.match(source, /<AgentManagementCard title="Contact Details">/, 'Agent profile modal should expose contact details')
-assert.match(source, /Review the saved profile photo, contact details and workspace access\./, 'Agent profile modal should not use the generic staged-workflow subtitle')
+assert.match(source, /Update the saved profile photo, contact details and workspace access\./, 'Agent profile modal should not use the generic staged-workflow subtitle')
 
 console.log('agents-avatar-null-safety tests passed')

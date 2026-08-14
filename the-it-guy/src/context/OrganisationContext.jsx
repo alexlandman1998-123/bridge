@@ -191,14 +191,14 @@ function buildImmediateOrganisationSnapshot(authState = {}) {
 }
 
 function resolveOrganisationRenderState(authState = {}, hydratedState = null) {
-  const immediateSnapshot = buildImmediateOrganisationSnapshot(authState)
-  if (immediateSnapshot) return immediateSnapshot
   if (authState.status !== 'authenticated' || !authState.user?.id) return null
 
+  const immediateSnapshot = buildImmediateOrganisationSnapshot(authState)
   const authWorkspaceId = getAuthWorkspaceId(authState)
   const hydratedWorkspaceId = getOrganisationSnapshotWorkspaceId(hydratedState)
-  if (authWorkspaceId && hydratedWorkspaceId && authWorkspaceId !== hydratedWorkspaceId) return null
-  return hydratedState
+  if (authWorkspaceId && hydratedWorkspaceId && authWorkspaceId !== hydratedWorkspaceId) return immediateSnapshot
+  if (hydratedState && !shouldUseWorkspaceBranding(authState) && !isDevAuthOrganisation(authState)) return hydratedState
+  return immediateSnapshot || hydratedState
 }
 
 function logOrganisationHydration(snapshot) {
@@ -218,8 +218,8 @@ export function OrganisationProvider({ children }) {
     [authState],
   )
   const renderState = useMemo(
-    () => immediateSnapshot || resolveOrganisationRenderState(authState, state),
-    [authState, immediateSnapshot, state],
+    () => resolveOrganisationRenderState(authState, state),
+    [authState, state],
   )
   const hasImmediateSnapshot = Boolean(immediateSnapshot)
 

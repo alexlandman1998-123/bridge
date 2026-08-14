@@ -4456,16 +4456,31 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   async function handleProfileAvatarChange(event) {
     const file = event.target.files?.[0]
     if (!file) return
+    if (!canManageSettings || profileSaving || profileUploading) return
+    if (!agent.organisationUserId) {
+      setProfileError('This agent is not linked to an organisation user row, so profile changes cannot be saved here.')
+      if (event.target) event.target.value = ''
+      return
+    }
 
     try {
       setProfileUploading(true)
       setProfileError('')
       const avatarFile = await createProfileAvatarFile(file)
       const uploaded = await uploadAccountAvatar({ file: avatarFile })
+      const nextAvatarUrl = uploaded.resolvedUrl || uploaded.publicUrl || ''
+      if (!nextAvatarUrl) {
+        throw new Error('Profile picture uploaded, but Arch9 could not resolve its public URL.')
+      }
+      await updateOrganisationUserProfile(agent.organisationUserId, {
+        avatarUrl: nextAvatarUrl,
+      })
       setProfileForm((previous) => ({
         ...previous,
-        avatarUrl: uploaded.resolvedUrl || uploaded.publicUrl || previous.avatarUrl,
+        avatarUrl: nextAvatarUrl,
       }))
+      setActionNotice('Agent profile photo updated.')
+      await onRefresh?.()
     } catch (uploadError) {
       setProfileError(getProfileAvatarErrorMessage(uploadError))
     } finally {

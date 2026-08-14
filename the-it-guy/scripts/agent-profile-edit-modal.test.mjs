@@ -25,6 +25,8 @@ const migration = fs.readFileSync(
 
 assertContains(agentsPage, 'updateOrganisationUserProfile', 'agent modal profile save helper')
 assertContains(agentsPage, 'uploadAccountAvatar', 'agent modal avatar upload helper')
+assertContains(agentsPage, 'await updateOrganisationUserProfile(agent.organisationUserId, {\n        avatarUrl: nextAvatarUrl,\n      })', 'agent modal avatar upload persistence')
+assertContains(agentsPage, "setActionNotice('Agent profile photo updated.')", 'agent modal avatar upload confirmation')
 assertContains(agentsPage, 'handleSaveProfileAssignment', 'agent modal save handler')
 assertContains(agentsPage, 'type="file"', 'agent modal profile picture input')
 assertContains(agentsPage, 'Save Profile', 'agent modal save action')

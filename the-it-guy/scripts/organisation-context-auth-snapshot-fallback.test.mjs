@@ -42,6 +42,37 @@ try {
   assert.equal(immediateSnapshot.branding.organisationLabel, 'Kingstons Property')
   assert.equal(resolveOrganisationRenderState(authState, null)?.branding?.logoUrl, immediateSnapshot.branding.logoUrl)
 
+  const hydratedState = {
+    organisation: {
+      id: 'workspace-1',
+      workspaceId: 'workspace-1',
+      name: 'Kingstons Property',
+      displayName: 'Kingstons Property',
+    },
+    onboarding: {
+      agencyInformation: {
+        agencyName: 'Kingstons Property',
+        tradingName: 'Kingstons Property Group',
+      },
+      branding: {
+        logoLight: 'https://cdn.example.test/hydrated-kingstons.svg',
+      },
+    },
+    branding: {
+      logoUrl: 'https://cdn.example.test/hydrated-kingstons.svg',
+      organisationLabel: 'Kingstons Property Group',
+      hasCustomLogo: true,
+    },
+    membershipRole: 'principal',
+    membershipStatus: 'active',
+  }
+
+  assert.equal(
+    resolveOrganisationRenderState(authState, hydratedState)?.branding?.logoUrl,
+    'https://cdn.example.test/hydrated-kingstons.svg',
+    'hydrated agency branding should replace the auth workspace fallback after load',
+  )
+
   assert.match(
     appSource,
     /shouldHydrateOrganisation && error && !organisationState/,
