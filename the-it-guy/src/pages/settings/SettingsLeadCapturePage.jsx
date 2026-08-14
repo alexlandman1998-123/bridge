@@ -6,7 +6,6 @@ import {
   ExternalLink,
   Inbox,
   IdCard,
-  Link2,
   Mail,
   Plus,
   QrCode,
@@ -333,9 +332,6 @@ function AgentCardManagementRow({
             <code className="min-w-0 truncate rounded-[10px] border border-[#e0e8f1] bg-[#fbfdff] px-3 py-2 text-xs text-[#35546c]">
               {urls.cardUrl}
             </code>
-            <code className="min-w-0 truncate rounded-[10px] border border-[#e0e8f1] bg-white px-3 py-2 text-xs text-[#6b7d93]">
-              {urls.intakeUrl}
-            </code>
           </div>
         ) : (
           <span className="text-sm text-[#8a9aab]">Generate to create URLs</span>
@@ -346,7 +342,6 @@ function AgentCardManagementRow({
           {card?.slug ? (
             <>
               <IconButton label={`Copy card link for ${getUserDisplayName(user)}`} icon={Copy} onClick={() => onCopy(urls.cardUrl)} disabled={saving} />
-              <IconButton label={`Copy intake link for ${getUserDisplayName(user)}`} icon={Link2} onClick={() => onCopy(urls.intakeUrl)} disabled={saving} />
               <IconButton label={`Open card for ${getUserDisplayName(user)}`} icon={ExternalLink} onClick={() => onOpen(urls.cardUrl)} disabled={saving} />
               <IconButton label={`Copy share message for ${getUserDisplayName(user)}`} icon={Mail} onClick={() => onCopyShareText(user, card, urls)} disabled={rowDisabled} />
               <IconButton label={`Download QR code for ${getUserDisplayName(user)}`} icon={QrCode} onClick={() => onDownloadQr(user, card, urls)} disabled={rowDisabled} />

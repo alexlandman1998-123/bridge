@@ -22,7 +22,7 @@ import {
   User,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AGENCY_PUBLIC_INTAKE_PRIVACY_VERSION,
   getOrCreateAgencyIntakeIdempotencyKey,
@@ -729,6 +729,7 @@ function PublicIntakeLanding({ intake = {}, theme = {}, enabledIntents = [], onC
 export default function PublicAgencyIntakePage() {
   const { agencySlug = '' } = useParams()
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [intake, setIntake] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -747,11 +748,14 @@ export default function PublicAgencyIntakePage() {
 
   const attribution = useMemo(() => readAgencyIntakeAttribution(searchParams), [searchParams])
   const activeAgencySlug = normalizeText(intake?.slug || agencySlug)
+  const requestedIntent = normalizeText(searchParams.get('intent')).toLowerCase()
+  const hasExplicitIntent = ['buy', 'sell'].includes(requestedIntent)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setLoadError('')
+    setQueryIntentApplied(false)
     resolveAgencyPublicIntake(agencySlug)
       .then((resolved) => {
         if (!cancelled) setIntake(resolved)
@@ -790,13 +794,17 @@ export default function PublicAgencyIntakePage() {
   const listingEnquiryLabel = normalizeText(listingEnquiry?.title || listingEnquiry?.slug || listingEnquiry?.id)
 
   useEffect(() => {
-    if (!intake || queryIntentApplied || intent) return
-    const requestedIntent = normalizeText(searchParams.get('intent')).toLowerCase()
+    if (!intake || intent) return
     if (['buy', 'sell'].includes(requestedIntent) && enabledIntents.includes(requestedIntent)) {
       setIntent(requestedIntent)
     }
     setQueryIntentApplied(true)
-  }, [enabledIntents, intake, intent, queryIntentApplied, searchParams])
+  }, [enabledIntents, intake, intent, requestedIntent])
+
+  useEffect(() => {
+    if (!intake?.card?.enabled || intent || hasExplicitIntent || !queryIntentApplied || !activeAgencySlug) return
+    navigate(`/card/${encodeURIComponent(activeAgencySlug)}`, { replace: true })
+  }, [activeAgencySlug, hasExplicitIntent, intake?.card?.enabled, intent, navigate, queryIntentApplied])
 
   useEffect(() => {
     if (intent !== 'buy' || !attribution.selectedListings.length) return
