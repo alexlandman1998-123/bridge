@@ -442,6 +442,7 @@ Deno.test("buyer viewing availability request renders company branding and prope
       },
     ],
     actionLink: "https://app.example.test/viewing-preferences/token-123",
+    agentCardUrl: "https://app.example.test/card/agent-one",
     organisationName: branding.organisationName,
     branding,
   });
@@ -453,6 +454,7 @@ Deno.test("buyer viewing availability request renders company branding and prope
     supportEmail: branding.supportEmail,
     supportPhone: branding.supportPhone,
     actionLink: "https://app.example.test/viewing-preferences/token-123",
+    agentCardUrl: "https://app.example.test/card/agent-one",
   });
 
   assertIncludes(html, "Kingstons Property");
@@ -471,11 +473,35 @@ Deno.test("buyer viewing availability request renders company branding and prope
     "https://app.example.test/viewing-preferences/token-123",
   );
   assertIncludes(html, "114 West Street");
+  assertIncludes(html, "https://cdn.example.test/listings/114.jpg");
   assertIncludes(html, "View property details");
+  assertIncludes(html, "View digital contact card");
+  assertIncludes(html, "https://app.example.test/card/agent-one");
   assertIncludes(text, "Select 3 viewing times here:");
+  assertIncludes(text, "Agent digital contact card: https://app.example.test/card/agent-one");
   assertIncludes(text, "Or reply with:");
   assertIncludes(text, "Exactly three time windows that work for you.");
   assertIncludes(text, "Support: support@example.test | +27 21 000 0000");
+});
+
+Deno.test("buyer viewing request uses a brand mark instead of agency text when no logo is provided", () => {
+  const html = buildBuyerViewingAvailabilityRequestEmailHtml({
+    buyerName: "Buyer One",
+    agentName: "Agent One",
+    properties: [{ title: "114 West Street" }],
+    organisationName: "Kingstons Real Estate",
+    branding: {
+      organisationName: "Kingstons Real Estate",
+      primaryColor: "#032b2b",
+      secondaryColor: "#d9a128",
+    },
+  });
+
+  assertIncludes(html, ">KR</div>");
+  assertNotIncludes(
+    html,
+    "font-size:24px; line-height:1.2; font-weight:800;\">Kingstons Real Estate</p>",
+  );
 });
 
 Deno.test("seller viewing availability request renders company branding and access instructions", () => {

@@ -1199,6 +1199,12 @@ export type SendBuyerViewingAvailabilityRequestPayload = {
   agent_name?: string;
   agentEmail?: string;
   agent_email?: string;
+  agentCardUrl?: string;
+  agent_card_url?: string;
+  agentDigitalCardUrl?: string;
+  agent_digital_card_url?: string;
+  digitalContactCardUrl?: string;
+  digital_contact_card_url?: string;
   note?: string;
   message?: string;
   actionLink?: string;

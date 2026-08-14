@@ -1,6 +1,6 @@
 # Supabase Migration Phase 2 Onboarding-Critical Report
 
-Generated: 2026-08-14T12:08:30.408Z
+Generated: 2026-08-14T12:16:35.756Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -11,8 +11,8 @@ Phase 2 validates onboarding-critical live objects and runtime visibility. It do
 
 | Field | Value |
 | --- | --- |
-| Status | PATCH_REQUIRED |
-| Recommendation | Stop before ledger repair. Patch the failed onboarding-critical object or schema-cache path first. |
+| Status | READY_FOR_PHASE_3 |
+| Recommendation | No Phase 2 onboarding object patch is needed. Continue to Phase 3 ledger repair planning. |
 | Patch applied | no |
 | Remote catalog fetched | yes |
 | REST RPC probes run | yes |
@@ -23,7 +23,7 @@ Phase 2 validates onboarding-critical live objects and runtime visibility. It do
 | Gate | Ready | Total | Failures |
 | --- | --- | --- | --- |
 | Local migration contracts | 3 | 3 | 0 |
-| Live object catalog | 15 | 17 | 2 |
+| Live object catalog | 17 | 17 | 0 |
 | Onboarding behavior contracts | 9 | 9 | 0 |
 | PostgREST RPC visibility | 3 | 3 | 0 |
 
@@ -46,8 +46,8 @@ Phase 2 validates onboarding-critical live objects and runtime visibility. It do
 | principal_claim_sync_trigger_function | function | yes | bridge_sync_principal_claim_membership() | public.bridge_sync_principal_claim_membership() |
 | workspace_onboarding_legacy_rpc | function | yes | bridge_complete_workspace_onboarding_legacy_20260524(payload jsonb) | public.bridge_complete_workspace_onboarding_legacy_20260524(jsonb) |
 | workspace_onboarding_rpc | function | yes | bridge_complete_workspace_onboarding(payload jsonb) | public.bridge_complete_workspace_onboarding(jsonb) |
-| workspace_onboarding_branch_scope_fix | function_body | no | bridge_complete_workspace_onboarding handles null branch_scope | public.bridge_complete_workspace_onboarding(jsonb) |
-| workspace_repair_email_claim_function | function_body | no | bridge_repair_workspace_onboarding includes email-claim repair body | public.bridge_repair_workspace_onboarding(uuid) |
+| workspace_onboarding_branch_scope_fix | function_body | yes | bridge_complete_workspace_onboarding handles null branch_scope | public.bridge_complete_workspace_onboarding(jsonb) |
+| workspace_repair_email_claim_function | function_body | yes | bridge_repair_workspace_onboarding includes email-claim repair body | public.bridge_repair_workspace_onboarding(uuid) |
 | invites_insert_member_fallback_policy | policy | yes | invites_insert_active_workspace_member_fallback | invites.invites_insert_active_workspace_member_fallback |
 | invites_insert_workspace_admin_policy | policy | yes | invites_insert_workspace_admin | invites.invites_insert_workspace_admin |
 | organisation_users_principal_claim_select_policy | policy | yes | organisation_users_agency_select | organisation_users.organisation_users_agency_select |
@@ -75,9 +75,9 @@ Phase 2 validates onboarding-critical live objects and runtime visibility. It do
 
 | Check | Ready | Expected | Observed | Details |
 | --- | --- | --- | --- | --- |
-| rest_bridge_complete_workspace_onboarding | yes | HTTP 200; success=false; code=permission_denied | HTTP 200; code=permission_denied | durationMs=1217 |
-| rest_bridge_create_principal_claim_invite | yes | HTTP 200; success=false; code=not_authenticated | HTTP 200; code=not_authenticated | durationMs=350 |
-| rest_bridge_complete_principal_claim_onboarding | yes | HTTP 200; success=false; code=not_authenticated | HTTP 200; code=not_authenticated | durationMs=242 |
+| rest_bridge_complete_workspace_onboarding | yes | HTTP 200; success=false; code=permission_denied | HTTP 200; code=permission_denied | durationMs=407 |
+| rest_bridge_create_principal_claim_invite | yes | HTTP 200; success=false; code=not_authenticated | HTTP 200; code=not_authenticated | durationMs=203 |
+| rest_bridge_complete_principal_claim_onboarding | yes | HTTP 200; success=false; code=not_authenticated | HTTP 200; code=not_authenticated | durationMs=209 |
 
 ## Command Evidence
 
@@ -88,5 +88,5 @@ Phase 2 validates onboarding-critical live objects and runtime visibility. It do
 
 ## Phase 3 Handoff
 
-Do not perform ledger repair yet. Resolve every failed Phase 2 check first, then regenerate this report.
+Onboarding-critical functions, policies, constraints, and PostgREST RPC visibility are ready. The remaining onboarding-critical work is ledger-only: prepare a reviewed `migration repair --status applied` batch for the Phase 1 candidates.
 

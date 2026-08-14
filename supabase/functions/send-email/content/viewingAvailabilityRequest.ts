@@ -33,6 +33,14 @@ function getInitials(value: string) {
   ) || "A";
 }
 
+function renderHeaderBrandMark(organisationName: string, primaryColor: string, accentColor: string) {
+  return `
+    <div style="display:inline-block; width:72px; height:72px; border:1px solid ${accentColor}; border-radius:18px; background:${primaryColor}; color:${accentColor}; font-size:34px; line-height:72px; font-weight:900; text-align:center;">${
+    escapeHtml(getInitials(organisationName))
+  }</div>
+  `;
+}
+
 function getHeaderLogoUrl(branding?: BridgeEmailLayoutBranding) {
   return normalizeText(
     branding?.logoDarkUrl || branding?.logoUrl || branding?.logoLightUrl ||
@@ -78,14 +86,27 @@ function renderPropertyCard(properties: ViewingAvailabilityRequestProperty[]) {
   return `
     <div style="margin: 0 0 22px;">
       <p style="margin: 0 0 14px; color: #00604f; font-size: 15px; line-height: 1.2; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;">Property requested</p>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid #e2e7eb; border-radius: 12px; background: #f7faf8;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid #dfe7e6; border-radius: 14px; background: #ffffff;">
         <tr>
-          <td width="168" valign="middle" style="background: radial-gradient(circle at 76% 22%, rgba(255,255,255,0.22) 0, rgba(255,255,255,0) 36%), linear-gradient(145deg, #043734 0%, #07142e 70%); padding: 18px; color: #ffffff;">
-            <div style="width: 42px; height: 42px; margin: 0 0 22px; border: 1px solid rgba(216,166,51,0.7); border-radius: 12px; color: #d8a633; font-size: 25px; line-height: 40px; font-weight: 900; text-align: center;">K</div>
-            <p style="margin: 0; color: rgba(255,255,255,0.88); font-size: 12px; line-height: 1.35; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;">Viewing<br />request</p>
+          <td style="padding:0; background:#07142e;">
+            ${
+    property.imageUrl
+      ? `<img src="${
+        escapeHtml(property.imageUrl)
+      }" alt="${escapeHtml(property.title)}" width="538" style="display:block; width:100%; max-width:538px; height:190px; object-fit:cover; border:0;" />`
+      : `<div style="height:190px; background:radial-gradient(circle at 76% 22%, rgba(255,255,255,0.22) 0, rgba(255,255,255,0) 36%), linear-gradient(145deg, #043734 0%, #07142e 70%); color:#ffffff;">
+              <div style="padding:24px;">
+                <div style="width: 42px; height: 42px; margin: 0 0 54px; border: 1px solid rgba(216,166,51,0.7); border-radius: 12px; color: #d8a633; font-size: 25px; line-height: 40px; font-weight: 900; text-align: center;">K</div>
+                <p style="margin: 0; color: rgba(255,255,255,0.88); font-size: 12px; line-height: 1.35; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;">Viewing request</p>
+              </div>
+            </div>`
+  }
           </td>
-          <td valign="middle" style="padding: 18px;">
-            <p style="margin: 0 0 8px; color: #111827; font-size: 18px; line-height: 1.25; font-weight: 800;">${
+        </tr>
+        <tr>
+          <td valign="top" style="padding: 20px 20px 22px;">
+            <span style="display: inline-block; margin:0 0 10px; padding: 7px 11px; border-radius: 999px; background: #eef7f3; color: #00604f; font-size: 12px; line-height: 1.2; font-weight: 800;">Viewing request</span>
+            <p style="margin: 0 0 8px; color: #111827; font-size: 22px; line-height: 1.18; font-weight: 850;">${
     escapeHtml(property.title)
   }</p>
             ${
@@ -102,12 +123,11 @@ function renderPropertyCard(properties: ViewingAvailabilityRequestProperty[]) {
       )
       .join("")
   }
-            <span style="display: inline-block; padding: 7px 11px; border-radius: 999px; background: #eef2f0; color: #283542; font-size: 12px; line-height: 1.2; font-weight: 750;">Buyer lead captured</span>
             ${
     property.link
-      ? `<p style="margin: 10px 0 0; font-size: 13px; line-height: 1.45;"><a href="${
+      ? `<p style="margin: 14px 0 0; font-size: 13px; line-height: 1.45;"><a href="${
         escapeHtml(property.link)
-      }" style="color: #0f2f4f; text-decoration: none; font-weight: 700;">View property details</a></p>`
+      }" style="display:inline-block; padding:10px 14px; border-radius:8px; background:#0f2f4f; color:#ffffff; text-decoration:none; font-weight:800;">View property details</a></p>`
       : ""
   }
           </td>
@@ -129,7 +149,8 @@ function renderActionButton(actionLink = "", accent = "#d9a128") {
   `;
 }
 
-function renderAgentCard(agentName: string) {
+function renderAgentCard(agentName: string, agentCardUrl = "") {
+  const cardUrl = normalizeText(agentCardUrl);
   return `
     <div style="margin: 0 0 22px;">
       <p style="margin: 0 0 14px; color: #00604f; font-size: 15px; line-height: 1.2; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;">Meet your agent</p>
@@ -148,6 +169,13 @@ function renderAgentCard(agentName: string) {
             <p style="margin: 0; color: #344154; font-size: 14px; line-height: 1.55;">${
     escapeHtml(agentName)
   } will help you arrange the viewing, answer property questions, and keep the seller coordination simple.</p>
+            ${
+    cardUrl
+      ? `<p style="margin: 12px 0 0; font-size: 13px; line-height: 1.45;"><a href="${
+        escapeHtml(cardUrl)
+      }" style="display:inline-block; color:#00604f; text-decoration:none; font-weight:800;">View digital contact card</a></p>`
+      : ""
+  }
           </td>
         </tr>
       </table>
@@ -242,6 +270,7 @@ export function buildBuyerViewingAvailabilityRequestEmailHtml({
   supportEmail = "",
   supportPhone = "",
   actionLink = "",
+  agentCardUrl = "",
   branding,
 }: {
   buyerName?: string;
@@ -252,6 +281,7 @@ export function buildBuyerViewingAvailabilityRequestEmailHtml({
   supportEmail?: string;
   supportPhone?: string;
   actionLink?: string;
+  agentCardUrl?: string;
   branding?: BridgeEmailLayoutBranding;
 }) {
   const selectedProperties = normalizeProperties(properties);
@@ -275,13 +305,13 @@ export function buildBuyerViewingAvailabilityRequestEmailHtml({
     <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">Choose three viewing times that work for you.</div>
     <div style="margin:0; padding:18px 12px 32px; background:#f5f5f3;">
       <div style="max-width:600px; margin:0 auto; overflow:hidden; border:1px solid #e4e0d7; border-radius:14px; background:#ffffff; font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
-        <div style="padding:26px 32px 22px; background:#ffffff; text-align:center;">
+        <div style="padding:24px 32px 20px; background:#ffffff; text-align:center;">
           ${
     logoUrl
       ? `<img src="${
         escapeHtml(logoUrl)
       }" alt="${safeOrganisationName}" width="286" style="display:inline-block; max-width:286px; width:100%; height:auto; border:0;" />`
-      : `<p style="margin:0; color:${primaryColor}; font-size:24px; line-height:1.2; font-weight:800;">${safeOrganisationName}</p>`
+      : renderHeaderBrandMark(pickText(organisationName || branding?.organisationName, "Arch9"), primaryColor, accentColor)
   }
         </div>
         <div style="padding:38px 38px 42px; background:radial-gradient(circle at 86% 38%, rgba(255,255,255,0.13) 0, rgba(255,255,255,0.06) 24%, rgba(255,255,255,0) 48%), linear-gradient(135deg, ${primaryColor} 0%, #05142d 100%); color:#ffffff;">
@@ -289,8 +319,8 @@ export function buildBuyerViewingAvailabilityRequestEmailHtml({
           <h1 style="margin:0; max-width:430px; color:#ffffff; font-size:38px; line-height:1.08; font-weight:800; letter-spacing:0;">Let us set up your viewing.</h1>
           <p style="margin:18px 0 0; max-width:420px; color:rgba(255,255,255,0.9); font-size:17px; line-height:1.58;">Choose three times that work for you, and we will coordinate the best option with the seller.</p>
         </div>
-        <div style="padding:0 30px 30px; background:#ffffff;">
-          <div style="margin:-28px 0 24px; padding:24px; border:1px solid #eadfcd; border-radius:12px; background:#ffffff; box-shadow:0 16px 34px rgba(8,19,38,0.14); text-align:center;">
+        <div style="padding:28px 30px 30px; background:#ffffff;">
+          <div style="margin:0 0 26px; padding:24px; border:1px solid #eadfcd; border-radius:12px; background:#ffffff; box-shadow:0 16px 34px rgba(8,19,38,0.10); text-align:center;">
             <p style="margin:0 0 8px; color:#101827; font-size:20px; line-height:1.25; font-weight:800;">Hi ${
     escapeHtml(greetingName)
   }, your enquiry is in.</p>
@@ -299,7 +329,7 @@ export function buildBuyerViewingAvailabilityRequestEmailHtml({
             <p style="margin:12px 0 0; color:#687487; font-size:12px; line-height:1.45; font-weight:600;">Secure public link. No sign-in needed.</p>
           </div>
           ${renderPropertyCard(selectedProperties)}
-          ${renderAgentCard(pickText(agentName, "your agent"))}
+          ${renderAgentCard(pickText(agentName, "your agent"), agentCardUrl)}
           ${renderRequestedSlots()}
           ${renderNextSteps(pickText(agentName, "your agent"))}
           ${
@@ -342,6 +372,7 @@ export function buildBuyerViewingAvailabilityRequestEmailText({
   supportEmail = "",
   supportPhone = "",
   actionLink = "",
+  agentCardUrl = "",
 }: {
   buyerName?: string;
   agentName?: string;
@@ -351,6 +382,7 @@ export function buildBuyerViewingAvailabilityRequestEmailText({
   supportEmail?: string;
   supportPhone?: string;
   actionLink?: string;
+  agentCardUrl?: string;
 }) {
   const selectedProperties = normalizeProperties(properties);
   const propertyLines = selectedProperties.length
@@ -383,6 +415,7 @@ export function buildBuyerViewingAvailabilityRequestEmailText({
       ? "Select 3 viewing times here:"
       : "Please reply with exactly three time windows that suit you.",
     actionLink || null,
+    agentCardUrl ? `Agent digital contact card: ${agentCardUrl}` : null,
     note ? `Agent note: ${note}` : null,
     "",
     propertyLines,
