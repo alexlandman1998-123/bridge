@@ -22533,10 +22533,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const leadPatch = {
       stage: 'Seller Pack',
       status: 'Valuation Presented',
+      nextStep: 'Seller Pack',
     }
     setAppointmentSchedulingSubmitting(true)
     setMessage('Moving seller lead to Seller Pack...')
     try {
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: currentAgent,
+        activityType: 'Valuation Presented',
+        activityNote: appointmentId
+          ? 'Valuation presentation completed from Next Best Action. Seller process moved to Seller Pack.'
+          : 'Valuation presentation completed from Next Best Action without a matching appointment record. Seller process moved to Seller Pack.',
+        outcome: 'valuation_presented',
+        activityDate: new Date().toISOString(),
+      }, { actor: currentAgent })
       if (appointmentId) {
         await addAppointmentOutcomeAsync(
           organisationId,
@@ -22549,21 +22561,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             nextStep: 'Seller Pack',
           },
           {
-            actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+            actor: { id: currentAgent?.id, name: currentAgent?.fullName, email: currentAgent?.email },
           },
-        )
+        ).catch((appointmentCompletionError) => {
+          console.warn('[Kingstons seller process] valuation presentation appointment outcome skipped.', appointmentCompletionError)
+        })
       }
-      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
-      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
-      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
-        agent: currentAgent,
-        activityType: 'Valuation Presented',
-        activityNote: appointmentId
-          ? 'Valuation presentation completed from Next Best Action. Seller process moved to Seller Pack.'
-          : 'Valuation presentation completed from Next Best Action without a matching appointment record. Seller process moved to Seller Pack.',
-        outcome: 'Seller Pack',
-        activityDate: new Date().toISOString(),
-      }, { actor: currentAgent })
       handleLeadWorkspaceTabSelection('documents')
       setAppointmentModalOpen(false)
       setError('')

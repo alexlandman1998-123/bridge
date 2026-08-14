@@ -310,7 +310,11 @@ function leadHasValuationPresentedEvidence(lead = {}) {
   return signals.some((signal) =>
     signal === 'valuation_presented' ||
       signal === 'valuation_presentation_completed' ||
-      signal === 'valuation_presentation_done'
+      signal === 'valuation_presentation_done' ||
+      signal === 'seller_pack' ||
+      signal === 'seller_pack_signed' ||
+      signal === 'listing_ready' ||
+      signal === 'listing_created'
   )
 }
 
