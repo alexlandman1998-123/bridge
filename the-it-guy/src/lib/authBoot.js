@@ -7,6 +7,7 @@ import { SIGNUP_INTENT_STATUSES } from '../constants/signupIntents'
 import { loadSignupIntentForUser, markSignupIntentReadyForOnboarding } from './signupIntent'
 import { getOnboardingState } from '../services/onboarding/onboardingEngine'
 import { resolveCurrentWorkspace } from '../services/workspaceResolutionService'
+import { clearBackendDegraded, markBackendDegraded } from '../services/observability/backendDegradation'
 
 const AUTO_REPAIRABLE_ONBOARDING_REASONS = new Set([
   ONBOARDING_REQUIRED_REASONS.missingBranch,
@@ -151,6 +152,7 @@ export function buildDegradedBridgeAuthState({ session = null, selectedWorkspace
     originalError: error?.message || '',
     warnings: ['workspace_boot_degraded_from_last_good_snapshot'],
   }
+  markBackendDegraded({ ttlMs: 120_000 })
 
   return {
     status: 'authenticated',
@@ -643,6 +645,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
   ])
 
   if (!bootHealth.ok) {
+    markBackendDegraded({ ttlMs: 120_000 })
     console.warn('[AUTH] boot health probe reported degraded backend access', {
       userId: user.id,
       status: bootHealth.status,
@@ -650,6 +653,8 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       errorCode: bootHealth.errorCode,
       errorMessage: bootHealth.errorMessage,
     })
+  } else {
+    clearBackendDegraded()
   }
 
   const signupIntent = loadedSignupIntent && loadedSignupIntent.status !== SIGNUP_INTENT_STATUSES.readyForOnboarding

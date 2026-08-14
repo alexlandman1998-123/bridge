@@ -721,7 +721,10 @@ export function AuthSessionProvider({ children }) {
               breadcrumbCount: degradedBreadcrumbs.length,
             },
           })
-          scheduleRetry({ keepCurrentState: true })
+          bridgeRetryScopeRef.current = {
+            key: retryScopeKey,
+            attempts: MAX_RETRYABLE_BRIDGE_BOOT_ATTEMPTS,
+          }
           return
         }
         if (scheduleRetry()) {

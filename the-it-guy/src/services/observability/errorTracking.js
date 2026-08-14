@@ -1,6 +1,7 @@
 import { getDeploymentEnvironment } from '../../config/productionValidation'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { recordSecurityAuditEvent } from '../auditLogService'
+import { isBackendDegraded, markBackendDegraded } from './backendDegradation'
 import { redactTelemetryMetadata, trackTelemetryEvent } from './telemetry'
 
 function normalizeText(value) {
@@ -39,6 +40,15 @@ export async function reportError(error, {
   const safeMessage = normalizeText(error?.message) || 'Unknown error'
   const safeRoute = normalizeText(route) || (typeof window !== 'undefined' ? window.location.pathname : '')
   const safeUserId = normalizeText(userId)
+  if (isBackendDegraded()) {
+    return {
+      category: safeCategory,
+      message: safeMessage,
+      userMessage: 'Something went wrong. Arch9 is reconnecting to the backend.',
+      persisted: false,
+      reason: 'backend_degraded',
+    }
+  }
 
   try {
     if (isSupabaseConfigured && supabase && safeUserId) {
@@ -61,6 +71,7 @@ export async function reportError(error, {
       if (result.error && !isMissingSchemaError(result.error, 'error_events')) throw result.error
     }
   } catch (writeError) {
+    markBackendDegraded({ ttlMs: 120_000 })
     console.warn('[ERROR_TRACKING] error event write failed.', writeError)
   }
 

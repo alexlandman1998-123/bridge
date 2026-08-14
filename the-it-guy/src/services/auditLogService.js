@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { isBackendDegraded, markBackendDegraded } from './observability/backendDegradation'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -109,6 +110,7 @@ export async function recordSecurityAuditEvent({
   metadata = {},
 } = {}) {
   if (!isSupabaseConfigured || !supabase) return { persisted: false, reason: 'supabase_not_configured' }
+  if (isBackendDegraded()) return { persisted: false, reason: 'backend_degraded' }
 
   const safeAction = normalizeText(action)
   if (!safeAction) return { persisted: false, reason: 'missing_action' }
@@ -148,6 +150,7 @@ export async function recordSecurityAuditEvent({
       })
       return { persisted: false, reason: 'permission_denied' }
     }
+    markBackendDegraded({ ttlMs: 120_000 })
     throw rpcResult.error
   }
 

@@ -2279,7 +2279,15 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'comp
 }
 
 function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransactions: canViewAllTransactionsOverride }) {
-  const { profile, currentMembership, workspaceRole, workspaceType } = useWorkspace()
+  const {
+    profile,
+    currentMembership,
+    workspaceRole,
+    workspaceType,
+    workspaceAccessDegraded,
+    workspaceDegradedMessage,
+    retryWorkspaceBootstrap,
+  } = useWorkspace()
   const navigate = useNavigate()
   const location = useLocation()
   const [dateRange, setDateRange] = useState('last_30_days')
@@ -2352,6 +2360,14 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
       return
     }
 
+    if (workspaceAccessDegraded) {
+      if (isLatestDashboardLoad()) {
+        setError('')
+        setLoading(false)
+      }
+      return
+    }
+
     setLoading(true)
     setError('')
     const isInitialDashboardLoad = !dashboardHasLoadedRef.current
@@ -2416,7 +2432,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
       })
       if (isLatestDashboardLoad()) setLoading(false)
     }
-  }, [agencyId, agencyResolutionComplete, canViewAllTransactions, dataScope, dateRange, location.pathname, overviewMode, profile?.email, profile?.id, profile?.role, profile?.userId, resolvedAgencyId, selectedWorkspaceId])
+  }, [agencyId, agencyResolutionComplete, canViewAllTransactions, dataScope, dateRange, location.pathname, overviewMode, profile?.email, profile?.id, profile?.role, profile?.userId, resolvedAgencyId, selectedWorkspaceId, workspaceAccessDegraded])
 
   useEffect(() => {
     void loadDashboard()
@@ -2503,6 +2519,24 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
             <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="inline-flex items-center gap-2"><AlertTriangle size={16} /> We couldn’t load the principal dashboard data.</span>
               <button type="button" onClick={() => void loadDashboard({ forceRefresh: true })} className="rounded-lg border border-[#f0b8b8] bg-white px-3 py-1.5 text-xs font-semibold">Retry</button>
+            </div>
+          </section>
+        ) : null}
+
+        {workspaceAccessDegraded ? (
+          <section className="rounded-[18px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-2">
+                <AlertTriangle size={16} />
+                {workspaceDegradedMessage || 'Workspace data is refreshing from your last successful session.'}
+              </span>
+              <button
+                type="button"
+                onClick={() => retryWorkspaceBootstrap?.()}
+                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold"
+              >
+                Retry
+              </button>
             </div>
           </section>
         ) : null}

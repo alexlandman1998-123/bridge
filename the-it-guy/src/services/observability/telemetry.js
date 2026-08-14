@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient.js'
+import { isBackendDegraded, markBackendDegraded } from './backendDegradation.js'
 
 const SENSITIVE_KEY_PATTERN = /(password|token|secret|key|authorization|cookie|otp|session|email|phone|name)/i
 
@@ -42,6 +43,7 @@ export async function trackTelemetryEvent({
 } = {}) {
   const safeEventName = normalizeText(eventName)
   if (!safeEventName) return { persisted: false, reason: 'missing_event_name' }
+  if (isBackendDegraded()) return { persisted: false, reason: 'backend_degraded' }
   if (!isSupabaseConfigured || !supabase || !userId) {
     if (import.meta.env.DEV) console.debug('[TELEMETRY]', { category, eventName: safeEventName, route, severity, metadata })
     return { persisted: false, reason: 'not_persisted' }
@@ -68,6 +70,7 @@ export async function trackTelemetryEvent({
     }
     return { persisted: true, id: result.data?.id || null }
   } catch (error) {
+    markBackendDegraded({ ttlMs: 120_000 })
     console.warn('[TELEMETRY] event write failed.', error)
     return { persisted: false, reason: 'write_failed' }
   }
