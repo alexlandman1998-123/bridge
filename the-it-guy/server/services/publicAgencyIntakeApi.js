@@ -12,12 +12,16 @@ const ALLOWED_SOURCE_CHANNELS = new Set([
   'linkedin',
   'website',
   'whatsapp',
-  'card',
   'email',
   'qr',
   'referral',
   'manual',
   'other',
+])
+const DATABASE_SOURCE_CHANNEL_ALIASES = new Map([
+  ['agent_card', 'website'],
+  ['card', 'website'],
+  ['digital_card', 'website'],
 ])
 const ALLOWED_INTENTS = new Set(['buy', 'sell'])
 const DEFAULT_PRIVACY_POLICY_VERSION = 'agency-public-intake-v1'
@@ -41,6 +45,15 @@ const PUBLIC_INTAKE_OWNER_ROLE_PRIORITY = new Map([
   ['agency_manager', 4],
   ['manager', 4],
 ])
+const TRANSIENT_SUPABASE_ERROR_PATTERNS = [
+  /connection timed out/i,
+  /ssl handshake failed/i,
+  /error code 522/i,
+  /error code 525/i,
+  /cloudflare/i,
+  /fetch failed/i,
+  /network/i,
+]
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -54,12 +67,44 @@ function normalizeEmail(value = '') {
   return normalizeLower(value)
 }
 
+function delay(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function normalizePhoneDigits(value = '') {
   return normalizeText(value).replace(/[^0-9]+/g, '')
 }
 
 function safeObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function isTransientSupabaseReadError(error = {}) {
+  const status = Number(error?.status || error?.statusCode || 0)
+  const message = normalizeText([error?.message, error?.details, error?.hint].filter(Boolean).join(' '))
+  return status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    TRANSIENT_SUPABASE_ERROR_PATTERNS.some((pattern) => pattern.test(message))
+}
+
+async function retryTransientSupabaseRead(operation, { label = 'supabase_read', attempts = 3 } = {}) {
+  let lastError = null
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error
+      if (attempt >= attempts || !isTransientSupabaseReadError(error)) throw error
+      console.warn('[agency-public-intake] transient Supabase read failed; retrying', {
+        label,
+        attempt,
+        message: normalizeText(error?.message).slice(0, 160),
+      })
+      await delay(180 * attempt)
+    }
+  }
+  throw lastError
 }
 
 function normalizeArray(value = []) {
@@ -460,7 +505,7 @@ async function fetchActiveAgencyPublicIntakeLink(client, slug = '') {
 }
 
 function normalizeSourceChannel(value = '', fallback = 'other') {
-  const candidate = normalizeLower(value || fallback || 'other')
+  const candidate = DATABASE_SOURCE_CHANNEL_ALIASES.get(normalizeLower(value || fallback || 'other')) || normalizeLower(value || fallback || 'other')
   return ALLOWED_SOURCE_CHANNELS.has(candidate) ? candidate : 'other'
 }
 
@@ -747,6 +792,7 @@ export function normalizeAgencyIntakeSubmissionPayload(payload = {}, link = {}) 
   const requirement = safeObject(payload.requirement)
   const seller = safeObject(payload.seller)
   const intent = normalizeLower(payload.intent || payload.type || payload.leadCategory || payload.lead_category)
+  const rawSourceChannel = normalizeLower(payload.sourceChannel || payload.source_channel || link.source_channel)
   const firstName = normalizeText(contact.firstName || contact.first_name || payload.firstName || payload.first_name)
   const lastName = normalizeText(contact.lastName || contact.last_name || payload.lastName || payload.last_name)
   const fullName = normalizeText(contact.name || contact.fullName || contact.full_name || payload.name || payload.fullName || [firstName, lastName].filter(Boolean).join(' '))
@@ -764,10 +810,13 @@ export function normalizeAgencyIntakeSubmissionPayload(payload = {}, link = {}) 
     budgetMin,
     budgetMax,
     selectedListings: normalizeSelectedListings(payload),
-    sourceChannel: normalizeSourceChannel(payload.sourceChannel || payload.source_channel, link.source_channel),
+    sourceChannel: normalizeSourceChannel(rawSourceChannel, link.source_channel),
     campaignCode: normalizeCampaignCode(payload.campaignCode || payload.campaign_code || link.campaign_code),
     utm: safeObject(payload.utm || payload.utm_json || safeObject(payload.context).utm),
-    metadata: safeObject(payload.context || payload.requestMetadata || payload.request_metadata),
+    metadata: {
+      ...safeObject(payload.context || payload.requestMetadata || payload.request_metadata),
+      ...(rawSourceChannel ? { originalSourceChannel: rawSourceChannel } : {}),
+    },
     privacyConsent: payload.privacyConsent === true || payload.privacy_consent === true,
     privacyPolicyVersion: normalizeText(payload.privacyPolicyVersion || payload.privacy_policy_version || link.privacy_policy_version) || DEFAULT_PRIVACY_POLICY_VERSION,
     seller,
@@ -1826,7 +1875,10 @@ export async function createPublicAgencyIntakeResponse({ method = 'GET', url = '
     const cardOnly = normalizedMethod !== 'POST' && normalizeLower(requestUrl.searchParams.get('surface')) === 'agent_digital_card'
 
     const client = createServiceClient()
-    const resolved = await resolveAgencyPublicIntake(client, slug, { host: getPublicHost(headers) })
+    const resolved = await retryTransientSupabaseRead(
+      () => resolveAgencyPublicIntake(client, slug, { host: getPublicHost(headers) }),
+      { label: 'resolve_agency_public_intake' },
+    )
     if (!resolved) {
       return buildJsonResponse(404, {
         error: 'agency_public_intake_not_found',

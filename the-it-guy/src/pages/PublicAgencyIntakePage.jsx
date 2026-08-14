@@ -997,11 +997,14 @@ export default function PublicAgencyIntakePage() {
         privacyConsent: true,
         privacyPolicyVersion: intake?.intake?.privacyPolicyVersion || AGENCY_PUBLIC_INTAKE_PRIVACY_VERSION,
         website: form.website,
-        sourceChannel: attribution.sourceChannel,
+        sourceChannel: attribution.sourceChannel === 'card' ? 'website' : attribution.sourceChannel,
         campaignCode: attribution.campaignCode,
         utm: attribution.utm,
         selectedListings: mergeSelectedListings(attribution.selectedListings, form.selectedListings),
-        context: attribution.context,
+        context: {
+          ...attribution.context,
+          originalSourceChannel: attribution.sourceChannel,
+        },
       }
 
       if (intent === 'buy') {
