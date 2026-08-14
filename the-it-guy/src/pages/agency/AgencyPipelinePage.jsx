@@ -8572,6 +8572,15 @@ function isValuationPresentationDraft(source = {}, template = null) {
     templateLabel.includes('valuation_presentation')
 }
 
+function isViewingAppointmentDraft(source = {}, template = null) {
+  const appointmentType = normalizeKey(source?.appointmentType || source?.type || source?.title)
+  const workflowStage = normalizeKey(source?.linkedWorkflowStage || source?.linked_workflow_stage)
+  const templateLabel = normalizeKey(template?.label)
+  return appointmentType.includes('viewing') ||
+    workflowStage === 'viewing' ||
+    templateLabel.includes('viewing')
+}
+
 function getAppointmentSchedulingConflictMessage(integrity = null) {
   const hardConflicts = Array.isArray(integrity?.hardConflicts) ? integrity.hardConflicts : []
   const firstMessage = normalizeText(hardConflicts[0]?.message)
@@ -16307,6 +16316,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (selectedAppointmentId) return false
     if (!appointmentModalOpen) return false
     if (isValuationPresentationDraft(appointmentForm, selectedAppointmentTemplate)) return true
+    if (!selectedLeadIsSeller && isViewingAppointmentDraft(appointmentForm, selectedAppointmentTemplate)) return true
     return selectedLeadIsSeller && isValuationAppointmentDraft(appointmentForm, selectedAppointmentTemplate)
   }, [appointmentForm, appointmentModalOpen, selectedAppointmentId, selectedAppointmentTemplate, selectedLeadIsSeller])
 
@@ -18127,6 +18137,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           sendInviteEmails: true,
           attachCalendarInvite: true,
           notifyCreatorOnRsvp: true,
+          deferNotificationSideEffects: true,
         })
         const created = await createAppointmentAsync(
           organisationId,
@@ -20125,9 +20136,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (appointmentCreateRunsInBackground) {
         setAppointmentModalOpen(false)
         setAppointmentSchedulingSubmitting(false)
-        setMessage(isValuationPresentationDraft(appointmentForm, selectedAppointmentTemplate)
-          ? 'Scheduling presentation in the background...'
-          : 'Scheduling valuation in the background...')
+        const backgroundAppointmentLabel = isValuationPresentationDraft(appointmentForm, selectedAppointmentTemplate)
+          ? 'presentation'
+          : isViewingAppointmentDraft(appointmentForm, selectedAppointmentTemplate)
+            ? 'viewing'
+            : isValuationAppointmentDraft(appointmentForm, selectedAppointmentTemplate)
+              ? 'valuation'
+              : 'appointment'
+        setMessage(`Scheduling ${backgroundAppointmentLabel} in the background...`)
       }
       if (linkedLead && resolveLeadCategoryView(linkedLead) !== 'seller') {
         const linkedContact =
