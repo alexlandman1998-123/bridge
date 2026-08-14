@@ -8859,6 +8859,7 @@ function getLeadViewingCompletionBlockers(form = {}, {
   leadPhone = '',
   contactEmail = '',
   contactPhone = '',
+  requiresBuyerOnboardingContact = true,
 } = {}) {
   const blockers = []
   const nextStep = normalizeViewingNextStep(form?.nextStep)
@@ -8897,9 +8898,12 @@ function getLeadViewingCompletionBlockers(form = {}, {
   if (nextStep === 'send_buyer_onboarding_link') {
     const hasOfferReadyProperty = viewedListings.some((row) => VIEWING_POSITIVE_OUTCOMES.includes(row.outcome))
     if (!hasOfferReadyProperty) {
-      blockers.push('Mark at least one viewed property as interested, wants to offer, or needs follow-up before sending the buyer onboarding link.')
+      blockers.push(requiresBuyerOnboardingContact
+        ? 'Mark at least one viewed property as interested, wants to offer, or needs follow-up before sending the buyer onboarding link.'
+        : 'Mark at least one viewed property as interested, wants to offer, or needs follow-up before capturing the signed OTP.')
     }
     if (
+      requiresBuyerOnboardingContact &&
       intakePreference === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL &&
       !normalizeText(buyerEmail || contactEmail || leadEmail) &&
       !normalizeText(buyerPhone || contactPhone || leadPhone)
@@ -14691,6 +14695,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [selectedKingstonsListingTerms],
   )
   const selectedKingstonsTermsContextIsBuyerOtp = selectedLeadHasKingstonsPipelineSignal && !selectedLeadIsSeller
+  const selectedLeadUsesKingstonsInPersonOtpFlow = selectedKingstonsTermsContextIsBuyerOtp
   const selectedKingstonsAttorneyPipelineVerification = useMemo(
     () => buildKingstonsAttorneyPipelineVerification({
       listingId: selectedKingstonsLinkedListingId,
@@ -15974,6 +15979,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           leadPhone: selectedLead?.phone,
           contactEmail: selectedLeadContact?.email,
           contactPhone: selectedLeadContact?.phone,
+          requiresBuyerOnboardingContact: !selectedLeadUsesKingstonsInPersonOtpFlow,
         })
       : []),
     [
@@ -15981,6 +15987,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       leadViewingCompletionForm,
       offerLinkForm.buyerEmail,
       offerLinkForm.buyerPhone,
+      selectedLeadUsesKingstonsInPersonOtpFlow,
       selectedLead?.email,
       selectedLead?.phone,
       selectedLeadContact?.email,
@@ -15991,7 +15998,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const leadViewingCompletionReadyMessage = leadViewingCompletionBlockers.length
     ? `${leadViewingCompletionBlockers.length} item${leadViewingCompletionBlockers.length === 1 ? '' : 's'} still need attention`
     : isViewingOnboardingNextStep(leadViewingCompletionNextStep)
-      ? 'Ready to complete the viewing and send the buyer onboarding link.'
+      ? selectedLeadUsesKingstonsInPersonOtpFlow
+        ? 'Ready to complete the viewing and upload the signed OTP completed in person.'
+        : 'Ready to complete the viewing and send the buyer onboarding link.'
       : leadViewingCompletionNextStep === 'mark_lost'
         ? 'Ready to complete the viewing and mark this buyer as lost.'
         : leadViewingCompletionNextStep === 'follow_up'
@@ -16002,7 +16011,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const leadViewingCompletionSubmitLabel = isOfferLinkSending && isViewingOnboardingNextStep(leadViewingCompletionNextStep)
     ? 'Completing & Sending...'
     : isViewingOnboardingNextStep(leadViewingCompletionNextStep)
-      ? 'Complete & Send Onboarding'
+      ? selectedLeadUsesKingstonsInPersonOtpFlow
+        ? 'Complete & Upload OTP'
+        : 'Complete & Send Onboarding'
       : leadViewingCompletionNextStep === 'mark_lost'
         ? 'Complete & Mark Lost'
         : 'Save Completion'
@@ -16158,7 +16169,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     {
       key: 'otp',
       label: 'OTP',
-      value: selectedLeadBuyerOfferDocumentUploaded ? 'Uploaded' : selectedLeadBuyerOnboardingSubmitted ? 'Waiting for OTP upload' : 'Buyer onboarding pending',
+      value: selectedLeadBuyerOfferDocumentUploaded
+        ? 'Uploaded'
+        : selectedLeadUsesKingstonsInPersonOtpFlow
+          ? 'Signed OTP pending'
+          : selectedLeadBuyerOnboardingSubmitted
+            ? 'Waiting for OTP upload'
+            : 'Buyer onboarding pending',
       icon: FileText,
     },
     {
@@ -16178,6 +16195,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadFinanceReadinessSummary.nextRecommendedAction,
       selectedLeadBuyerOfferDocumentUploaded,
       selectedLeadBuyerOnboardingSubmitted,
+      selectedLeadUsesKingstonsInPersonOtpFlow,
 	    selectedLeadLinkedAppointment,
 	    selectedLeadLinkedTransactionId,
 	    selectedLeadPropertyLabel,
@@ -24513,12 +24531,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleBuyerJourneyMakeOfferAction() {
     if (!organisationId || !selectedLead || selectedLeadIsSeller) return
     if (!selectedLeadViewingAppointments.length) {
-      setError('Schedule the first viewing before sending buyer onboarding.')
+      setError(selectedLeadUsesKingstonsInPersonOtpFlow
+        ? 'Schedule the first viewing before uploading the signed OTP.'
+        : 'Schedule the first viewing before sending buyer onboarding.')
       handleBuyerJourneyScheduleViewingAction()
       return
     }
     setBuyerJourneyActionStage(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
     setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+    if (selectedLeadUsesKingstonsInPersonOtpFlow) {
+      setMessage('Upload the signed OTP captured in person with the buyer.')
+      setError('')
+      return
+    }
     await handleSendBuyerOnboardingFromLead()
     setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
   }
@@ -24582,6 +24607,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       leadPhone: selectedLead?.phone,
       contactEmail: selectedLeadContact?.email,
       contactPhone: selectedLeadContact?.phone,
+      requiresBuyerOnboardingContact: !selectedLeadUsesKingstonsInPersonOtpFlow,
     })
     if (blockers.length) {
       setError(blockers[0])
@@ -24589,7 +24615,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     const outcome = normalizeText(leadViewingCompletionForm.outcome) || VIEWING_OUTCOME_OPTIONS[0]
     const normalizedNextStep = normalizeViewingNextStep(leadViewingCompletionForm.nextStep)
-    const nextStepLabel = getViewingNextStepLabel(normalizedNextStep)
+    const nextStepLabel = selectedLeadUsesKingstonsInPersonOtpFlow && isViewingOnboardingNextStep(normalizedNextStep)
+      ? 'Upload signed OTP'
+      : getViewingNextStepLabel(normalizedNextStep)
     const viewedListings = (leadViewingCompletionForm.viewedListings || [])
       .map((row) => ({
         ...row,
@@ -24601,7 +24629,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }))
       .filter((row) => row.listingId)
     try {
-      setIsOfferLinkSending(isViewingOnboardingNextStep(normalizedNextStep))
+      setIsOfferLinkSending(isViewingOnboardingNextStep(normalizedNextStep) && !selectedLeadUsesKingstonsInPersonOtpFlow)
       const persistedLead = await ensureBuyerLeadPersistedForLifecycle(selectedLead, selectedLeadContact)
       const canonicalBuyerLeadId = normalizeText(persistedLead?.leadId || selectedLead.leadId)
       await addAppointmentOutcomeAsync(
@@ -24685,6 +24713,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }, { actor: currentAgent })
         setMessage('Viewing completed and buyer marked as lost.')
       } else if (isViewingOnboardingNextStep(normalizedNextStep)) {
+        if (selectedLeadUsesKingstonsInPersonOtpFlow) {
+          setBuyerJourneyActionStage(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+          setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+          setMessage('Viewing completed. Upload the signed OTP captured in person with the buyer.')
+        } else {
         const onboardingResult = await createAndSendBuyerOnboardingForLead({
           listingId: nextListingId,
           buyerName: normalizeText(offerLinkForm.buyerName || selectedLeadContactName),
@@ -24696,6 +24729,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           successPrefix: 'Viewing completed and ',
         })
         setMessage(onboardingResult?.successMessage || 'Viewing completed and buyer onboarding sent.')
+        }
       } else if (normalizedNextStep === 'follow_up') {
         setMessage('Viewing completed and follow-up captured.')
       } else if (normalizedNextStep === 'continue_viewing') {
@@ -25314,6 +25348,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     successPrefix = '',
   } = {}) {
     if (!organisationId || !selectedLead || selectedLeadIsSeller) return null
+    if (selectedLeadUsesKingstonsInPersonOtpFlow) {
+      setBuyerJourneyActionStage(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+      setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+      throw new Error('Kingstons completes buyer OTPs in person. Upload the signed OTP instead of sending buyer onboarding.')
+    }
     const resolvedIntakePreference = normalizeClientIntakePreference(clientIntakePreference || offerLinkForm.clientIntakePreference)
     const resolvedBuyerName = normalizeText(buyerName || offerLinkForm.buyerName) || selectedLeadContactName
     const resolvedBuyerEmail = normalizeText(buyerEmail || offerLinkForm.buyerEmail || selectedLeadContact?.email || selectedLead?.email)
@@ -30282,9 +30321,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               : {
                                   icon: CalendarDays,
                                   title: 'Viewing scheduled',
-                                  description: 'Keep the buyer in Viewing until you send buyer onboarding or set another viewing.',
+                                  description: selectedLeadUsesKingstonsInPersonOtpFlow
+                                    ? 'Keep the buyer in Viewing until you upload the signed OTP or set another viewing.'
+                                    : 'Keep the buyer in Viewing until you send buyer onboarding or set another viewing.',
                                   actions: [
-                                    { key: 'make-offer', label: 'Send onboarding', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
+                                    { key: 'make-offer', label: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload OTP' : 'Send onboarding', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
                                     { key: 'another-viewing', label: 'Set another viewing', icon: CalendarDays, primary: false, onClick: () => handleBuyerJourneyScheduleViewingAction({ another: true }) },
                                   ],
                                 }
@@ -33213,10 +33254,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <Upload className="h-4 w-4" />
                         {buyerOfferDocumentUploading ? 'Uploading OTP...' : 'Upload Signed OTP'}
                       </Button>
-                      <Button type="submit" size="sm" form="buyer-onboarding-otp-send-form" className="rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]" disabled={isOfferLinkSending || !selectedLeadOfferCentreProperty}>
-                        <Send className="h-4 w-4" />
-                        {isOfferLinkSending ? 'Sending...' : 'Send Buyer Onboarding'}
-                      </Button>
+                      {!selectedLeadUsesKingstonsInPersonOtpFlow ? (
+                        <Button type="submit" size="sm" form="buyer-onboarding-otp-send-form" className="rounded-[12px] bg-[#061d3b] hover:bg-[#0a2a52]" disabled={isOfferLinkSending || !selectedLeadOfferCentreProperty}>
+                          <Send className="h-4 w-4" />
+                          {isOfferLinkSending ? 'Sending...' : 'Send Buyer Onboarding'}
+                        </Button>
+                      ) : null}
                     </div>
 
                     <div className="grid gap-5">
@@ -33301,7 +33344,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </div>
                           ) : (
                             <div className="mt-4 rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-5 text-sm text-[#6a8098]">
-	                              Select a property before sending onboarding or uploading the OTP.
+	                              {selectedLeadUsesKingstonsInPersonOtpFlow
+                                  ? 'Select a property before uploading the signed OTP.'
+                                  : 'Select a property before sending onboarding or uploading the OTP.'}
                             </div>
                           )}
 
@@ -33329,6 +33374,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           />
                         ) : null}
 
+                        {!selectedLeadUsesKingstonsInPersonOtpFlow ? (
                         <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
                           <div className="flex items-center gap-2">
                             <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">2</span>
@@ -33422,14 +33468,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                            </div>
 	                          </form>
 	                        </section>
+                        ) : null}
 
 	                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
 	                          <div className="flex items-center gap-2">
-	                            <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">3</span>
-	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Upload OTP</h4>
+	                            <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">
+                                {selectedLeadUsesKingstonsInPersonOtpFlow ? '2' : '3'}
+                              </span>
+	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">
+                                {selectedLeadUsesKingstonsInPersonOtpFlow ? 'In-Person OTP' : 'Upload OTP'}
+                              </h4>
 	                          </div>
 	                          <p className="mt-2 text-sm leading-6 text-[#607891]">
-	                            Upload the OTP once it is available. This keeps the transaction evidence attached to the buyer onboarding context.
+	                            {selectedLeadUsesKingstonsInPersonOtpFlow
+                                ? 'Kingstons completes the OTP in person while with the buyer. Upload the signed OTP here once it is complete.'
+                                : 'Upload the OTP once it is available. This keeps the transaction evidence attached to the buyer onboarding context.'}
 	                          </p>
 	                          <div className="mt-4 grid gap-4 lg:grid-cols-2">
 	                            <label className="grid gap-1">
@@ -33483,7 +33536,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 onClick={openBuyerOtpUploadPicker}
                               >
 	                              <Upload className="h-4 w-4" />
-	                              {buyerOfferDocumentUploading ? 'Uploading OTP...' : 'Upload OTP'}
+	                              {buyerOfferDocumentUploading ? 'Uploading OTP...' : selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload Signed OTP' : 'Upload OTP'}
 	                            </button>
                               <input
                                 ref={buyerOtpUploadInputRef}
