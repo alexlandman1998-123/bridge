@@ -20093,6 +20093,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       sendInviteEmails: appointmentForm.sendInviteEmails !== false,
       attachCalendarInvite: appointmentForm.attachCalendarInvite !== false,
       notifyCreatorOnRsvp: appointmentForm.notifyCreatorOnRsvp !== false,
+      deferNotificationSideEffects: appointmentCreateRunsInBackground,
     })
     const appointmentThemeTypeKey = normalizeKey(appointmentPayload.appointmentType)
     const appointmentHasKingstonsValuationTheme =

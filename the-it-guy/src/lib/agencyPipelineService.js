@@ -2670,32 +2670,48 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
   let reminderResults = []
   let notificationsQueued = false
   if (payload?.sendInviteEmails !== false) {
-    const sideEffectResults = await runAppointmentNotificationTask(
-      'appointment_created',
-      () => runAppointmentCreateNotificationSideEffects(
-        notificationSource,
-        {
-          ...payload,
-          participants: defaultParticipants,
-        },
-        actor,
-      ),
-      { softTimeoutMs: APPOINTMENT_CREATE_NOTIFICATION_SOFT_TIMEOUT_MS },
+    const runCreateNotificationSideEffects = () => runAppointmentCreateNotificationSideEffects(
+      notificationSource,
+      {
+        ...payload,
+        participants: defaultParticipants,
+      },
+      actor,
     )
-    if (sideEffectResults?.timedOut) {
+
+    if (payload?.deferNotificationSideEffects === true) {
       notificationsQueued = true
-    } else if (sideEffectResults) {
-      notificationResults = Array.isArray(sideEffectResults.inviteNotificationResults)
-        ? sideEffectResults.inviteNotificationResults
-        : []
-      documentNotificationResults = Array.isArray(sideEffectResults.documentNotificationResults)
-        ? sideEffectResults.documentNotificationResults
-        : []
-      reminderResults = Array.isArray(sideEffectResults.reminderResults)
-        ? sideEffectResults.reminderResults
-        : []
+      void runAppointmentNotificationTask(
+        'appointment_created_background',
+        runCreateNotificationSideEffects,
+      ).then((sideEffectResults) => {
+        if (sideEffectResults) {
+          console.info('[appointments][notifications] appointment_created_background completed', {
+            appointmentId: notificationSource.appointmentId,
+          })
+        }
+      })
     } else {
-      notificationError = 'appointment_notification_task_failed'
+      const sideEffectResults = await runAppointmentNotificationTask(
+        'appointment_created',
+        runCreateNotificationSideEffects,
+        { softTimeoutMs: APPOINTMENT_CREATE_NOTIFICATION_SOFT_TIMEOUT_MS },
+      )
+      if (sideEffectResults?.timedOut) {
+        notificationsQueued = true
+      } else if (sideEffectResults) {
+        notificationResults = Array.isArray(sideEffectResults.inviteNotificationResults)
+          ? sideEffectResults.inviteNotificationResults
+          : []
+        documentNotificationResults = Array.isArray(sideEffectResults.documentNotificationResults)
+          ? sideEffectResults.documentNotificationResults
+          : []
+        reminderResults = Array.isArray(sideEffectResults.reminderResults)
+          ? sideEffectResults.reminderResults
+          : []
+      } else {
+        notificationError = 'appointment_notification_task_failed'
+      }
     }
   }
   emitAgencyCrmUpdated()
