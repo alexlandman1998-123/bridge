@@ -79,6 +79,15 @@ export const SETTINGS_NAV_GROUPS = [
         keywords: 'legal templates document builder signing documents contracts mandate otp publish save wording clauses',
       },
       {
+        to: '/settings/communications/templates',
+        label: 'Communications',
+        description: 'Preview client-facing email templates and manage communications copy.',
+        icon: Mail,
+        roles: ['developer', 'agent'],
+        permission: PERMISSIONS.manageWorkspaceSettings,
+        keywords: 'communications email templates preview buyer seller viewing appointment valuation notifications',
+      },
+      {
         to: '/settings/roles',
         label: 'Roles & Permissions',
         description: 'User roles, permission groups, and access control.',

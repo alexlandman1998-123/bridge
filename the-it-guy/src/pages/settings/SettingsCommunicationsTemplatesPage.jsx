@@ -1,9 +1,10 @@
-import { BellRing, CheckCircle2, Clock3, MailWarning, MessageSquareText, Route, Send } from 'lucide-react'
+import { BellRing, CheckCircle2, Clock3, Eye, MailWarning, MessageSquareText, Monitor, RefreshCw, Route, Send, Smartphone } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { EMAIL_TEMPLATE_KEYS, getDefaultEmailTemplateSettings, sanitizeEmailTemplateSettings } from '../../lib/emailTemplateSettings'
 import { canManageOrganisationSettings, getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchEmailTemplateSettings, updateEmailTemplateSettings } from '../../lib/settingsApi'
+import { assertEdgeFunctionSuccess, invokeEdgeFunction } from '../../lib/supabaseClient'
 import {
   CLIENT_COMMUNICATION_CANONICAL_DECISION,
   CLIENT_COMMUNICATION_EMAIL_POLICY,
@@ -94,6 +95,29 @@ const TRIGGER_OWNER_LABELS = {
   [CLIENT_COMMUNICATION_TRIGGER_OWNER.TO_BE_CONFIRMED]: 'To be confirmed',
 }
 
+const EMAIL_PREVIEW_TEMPLATES = [
+  {
+    key: 'buyer_viewing_availability_request',
+    label: 'Buyer Viewing Times Intro',
+    description: 'Sent to buyer leads so they can choose exactly 3 viewing times.',
+  },
+  {
+    key: 'lead_acknowledgement',
+    label: 'Legacy Lead Acknowledgement',
+    description: 'Fallback/passive enquiry acknowledgement.',
+  },
+  {
+    key: 'kingstons_valuation_appointment',
+    label: 'Kingstons Valuation Appointment',
+    description: 'Seller valuation appointment request/confirmation design.',
+  },
+  {
+    key: 'kingstons_valuation_download',
+    label: 'Kingstons Valuation Download',
+    description: 'Public PDF valuation download email.',
+  },
+]
+
 function formatCatalogLabel(value = '') {
   return String(value || '')
     .split('_')
@@ -107,6 +131,135 @@ function StatusBadge({ status }) {
     <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${STATUS_CLASSES[status] || STATUS_CLASSES[CLIENT_COMMUNICATION_IMPLEMENTATION_STATUS.PARTIAL]}`}>
       {STATUS_LABELS[status] || formatCatalogLabel(status)}
     </span>
+  )
+}
+
+function EmailTemplatePreviewPanel({ organisationId = '', organisationName = '' }) {
+  const [selectedPreviewKey, setSelectedPreviewKey] = useState(EMAIL_PREVIEW_TEMPLATES[0].key)
+  const [preview, setPreview] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [viewport, setViewport] = useState('mobile')
+  const selectedPreview = EMAIL_PREVIEW_TEMPLATES.find((template) => template.key === selectedPreviewKey) || EMAIL_PREVIEW_TEMPLATES[0]
+
+  async function loadPreview(templateKey = selectedPreviewKey) {
+    try {
+      setLoading(true)
+      setError('')
+      const response = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'template_preview',
+          templateKey,
+          organisationId,
+          organisationName,
+        },
+      })
+      assertEdgeFunctionSuccess(response, 'Unable to render email preview.')
+      setPreview(response?.data || null)
+    } catch (previewError) {
+      setPreview(null)
+      setError(previewError?.message || 'Unable to render email preview.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadPreview(selectedPreviewKey)
+  }, [selectedPreviewKey, organisationId])
+
+  return (
+    <SettingsSectionCard
+      title="Rendered Email Preview"
+      description="Preview the production email templates with safe sample data, without creating a lead, appointment, or delivery record."
+      actions={(
+        <button type="button" className="auth-secondary-cta" onClick={() => void loadPreview(selectedPreviewKey)} disabled={loading}>
+          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+          Refresh
+        </button>
+      )}
+    >
+      <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+        <div className="space-y-3">
+          {EMAIL_PREVIEW_TEMPLATES.map((template) => {
+            const active = template.key === selectedPreviewKey
+            return (
+              <button
+                key={template.key}
+                type="button"
+                onClick={() => setSelectedPreviewKey(template.key)}
+                className={[
+                  'w-full rounded-[8px] border p-4 text-left transition',
+                  active
+                    ? 'border-[#c8d7e6] bg-[#edf3f8] text-[#14243a]'
+                    : 'border-[#e2eaf3] bg-[#fbfdff] text-[#4f637a] hover:border-[#cfdbe8] hover:bg-white',
+                ].join(' ')}
+              >
+                <div className="flex items-start gap-3">
+                  <Eye size={16} className="mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold">{template.label}</p>
+                    <p className="mt-1 text-xs leading-5 text-[#60758d]">{template.description}</p>
+                  </div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="min-w-0 rounded-[8px] border border-[#dfe8f1] bg-[#f4f7fb] p-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#60758d]">Previewing</p>
+              <p className="truncate text-sm font-semibold text-[#14243a]">{selectedPreview.label}</p>
+              {preview?.subject ? <p className="mt-1 truncate text-xs text-[#60758d]">Subject: {preview.subject}</p> : null}
+            </div>
+            <div className="inline-flex rounded-[8px] border border-[#dbe4ee] bg-white p-1">
+              {[
+                ['mobile', Smartphone, 'Mobile'],
+                ['desktop', Monitor, 'Desktop'],
+              ].map(([key, Icon, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setViewport(key)}
+                  className={`inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-xs font-semibold ${viewport === key ? 'bg-[#10233b] text-white' : 'text-[#60758d]'}`}
+                >
+                  <Icon size={14} />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
+
+          <div className="overflow-auto rounded-[8px] bg-[#e6edf4] p-4">
+            <div className={`${viewport === 'mobile' ? 'max-w-[390px]' : 'max-w-[760px]'} mx-auto rounded-[10px] bg-white shadow-sm`}>
+              {loading ? (
+                <div className="flex h-[620px] items-center justify-center text-sm font-semibold text-[#60758d]">Rendering preview…</div>
+              ) : preview?.html ? (
+                <iframe
+                  title={`${selectedPreview.label} preview`}
+                  srcDoc={preview.html}
+                  sandbox=""
+                  className="h-[720px] w-full rounded-[10px] border-0 bg-white"
+                />
+              ) : (
+                <div className="flex h-[620px] items-center justify-center text-sm font-semibold text-[#60758d]">Select a template to render.</div>
+              )}
+            </div>
+          </div>
+
+          {preview?.text ? (
+            <details className="mt-3 rounded-[8px] border border-[#dfe8f1] bg-white p-3">
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.08em] text-[#60758d]">Plain text version</summary>
+              <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap text-xs leading-5 text-[#40566d]">{preview.text}</pre>
+            </details>
+          ) : null}
+        </div>
+      </div>
+    </SettingsSectionCard>
   )
 }
 
@@ -340,6 +493,11 @@ export default function SettingsCommunicationsTemplatesPage() {
           Read-only for your role. Only {administratorLabel} can edit communications templates.
         </SettingsBanner>
       ) : null}
+
+      <EmailTemplatePreviewPanel
+        organisationId={currentWorkspace?.id || currentWorkspace?.organisationId || ''}
+        organisationName={currentWorkspace?.name || currentWorkspace?.displayName || ''}
+      />
 
       <JourneyCoveragePanel />
 

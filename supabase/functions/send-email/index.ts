@@ -15,6 +15,7 @@ import { handleSellerViewingAvailabilityRequestEmail } from "./handlers/sellerVi
 import { handleLeadAcknowledgementEmail } from "./handlers/leadAcknowledgement.ts";
 import { handleKingstonsValuationDownloadEmail } from "./handlers/kingstonsValuationDownload.ts";
 import { handleLeadOperationsNotificationEmail } from "./handlers/leadOperationsNotification.ts";
+import { handleTemplatePreviewEmail } from "./handlers/templatePreview.ts";
 import { handleAdditionalDocumentRequestEmail } from "./handlers/additionalDocumentRequest.ts";
 import {
   handleArch9LaunchConfirmationEmail,
@@ -174,6 +175,16 @@ Deno.serve(async (req: Request) => {
       transactionId: transactionId || null,
       payloadKeys,
     });
+
+    if (["template_preview", "email_template_preview"].includes(type)) {
+      console.log("[send-email] routing template", {
+        route: "template_preview",
+        templateKey: normalizeText(
+          payload.templateKey ?? payload.template_key ?? payload.previewTemplate,
+        ) || null,
+      });
+      return await handleTemplatePreviewEmail(payload);
+    }
 
     if (recipientSafety.suppressed) {
       console.log("[send-email] controlled test recipient suppressed", {
