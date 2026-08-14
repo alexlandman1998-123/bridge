@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { ArrowRight, CalendarDays, CheckCircle2, CheckSquare, ChevronDown, Clock3, Eye, X } from 'lucide-react'
 
 const TERMINAL_STATUSES = new Set(['completed', 'cancelled', 'declined', 'no_show'])
@@ -109,7 +109,7 @@ function AppointmentMetricCard({ metric }) {
   )
 }
 
-function AppointmentActionButton({ title, children, tone = 'default', onClick }) {
+function AppointmentActionButton({ title, children, tone = 'default', onClick, disabled = false }) {
   const toneClass = tone === 'danger'
     ? 'text-[#b42318] hover:border-[#f3cfcb] hover:bg-[#fff5f3]'
     : tone === 'success'
@@ -122,7 +122,8 @@ function AppointmentActionButton({ title, children, tone = 'default', onClick })
       title={title}
       aria-label={title}
       onClick={onClick}
-      className={`inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#dbe6f0] bg-white transition ${toneClass}`}
+      disabled={disabled}
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#dbe6f0] bg-white transition disabled:cursor-wait disabled:opacity-60 ${toneClass}`}
     >
       {children}
     </button>
@@ -144,7 +145,18 @@ function KingstonsSellerAppointmentsWorkspace({
   handleMarkAppointmentComplete = () => {},
 }) {
   const now = useMemo(() => new Date(), [])
+  const [pendingActionKey, setPendingActionKey] = useState('')
   const { start: weekStart, end: weekEnd } = useMemo(() => getCurrentWeekRange(now), [now])
+
+  async function runAppointmentAction(appointment, action, handler) {
+    const key = `${getAppointmentIdentity(appointment)}:${action}`
+    setPendingActionKey(key)
+    try {
+      await handler(appointment)
+    } finally {
+      setPendingActionKey((current) => current === key ? '' : current)
+    }
+  }
 
   const activeAppointments = useMemo(
     () =>
@@ -301,6 +313,8 @@ function KingstonsSellerAppointmentsWorkspace({
                       'Property TBC'
                     const appointmentDate = getAppointmentStartDate(appointment)
                     const isTerminal = TERMINAL_STATUSES.has(normalizeStatus(appointment.status))
+                    const completePending = pendingActionKey === `${appointmentId}:complete`
+                    const cancelPending = pendingActionKey === `${appointmentId}:cancel`
 
                     return (
                       <tr key={appointmentId} className="text-sm">
@@ -324,12 +338,22 @@ function KingstonsSellerAppointmentsWorkspace({
                               <Eye className="h-4 w-4" />
                             </AppointmentActionButton>
                             {!isTerminal ? (
-                              <AppointmentActionButton title="Mark complete" tone="success" onClick={() => void handleMarkAppointmentComplete(appointment)}>
+                              <AppointmentActionButton
+                                title={completePending ? 'Completing appointment' : 'Mark complete'}
+                                tone="success"
+                                disabled={completePending || cancelPending}
+                                onClick={() => void runAppointmentAction(appointment, 'complete', handleMarkAppointmentComplete)}
+                              >
                                 <CheckSquare className="h-4 w-4" />
                               </AppointmentActionButton>
                             ) : null}
                             {!isTerminal ? (
-                              <AppointmentActionButton title="Cancel appointment" tone="danger" onClick={() => void handleCancelAppointment(appointment)}>
+                              <AppointmentActionButton
+                                title={cancelPending ? 'Cancelling appointment' : 'Cancel appointment'}
+                                tone="danger"
+                                disabled={completePending || cancelPending}
+                                onClick={() => void runAppointmentAction(appointment, 'cancel', handleCancelAppointment)}
+                              >
                                 <X className="h-4 w-4" />
                               </AppointmentActionButton>
                             ) : null}

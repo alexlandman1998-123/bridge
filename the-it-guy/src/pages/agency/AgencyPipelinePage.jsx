@@ -12950,6 +12950,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }))
   }, [selectedLeadRecordId])
 
+  const patchAppointmentRecord = useCallback((appointmentId, patch = {}) => {
+    const targetAppointmentId = normalizeText(appointmentId)
+    if (!targetAppointmentId || !patch || typeof patch !== 'object') return
+    const patchedUpdatedAt = patch.updatedAt || new Date().toISOString()
+    const applyAppointmentPatch = (appointment) => {
+      const rowAppointmentId = normalizeText(appointment?.appointmentId || appointment?.appointment_id || appointment?.id)
+      return rowAppointmentId === targetAppointmentId
+        ? { ...appointment, ...patch, updatedAt: patchedUpdatedAt, updated_at: patchedUpdatedAt }
+        : appointment
+    }
+    const routeSnapshot = routeLeadWorkspaceSnapshotRef.current
+    if (routeSnapshot && Array.isArray(routeSnapshot.appointments)) {
+      routeLeadWorkspaceSnapshotRef.current = {
+        ...routeSnapshot,
+        appointments: routeSnapshot.appointments.map(applyAppointmentPatch),
+      }
+    }
+    setRecords((previous) => ({
+      ...previous,
+      appointments: (Array.isArray(previous.appointments) ? previous.appointments : []).map(applyAppointmentPatch),
+    }))
+  }, [])
+
   async function refreshSelectedLeadMandateTarget({
     packetId = selectedLeadMandatePacketId,
     leadId = selectedLeadRecordId,
@@ -26168,28 +26191,41 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleCancelAppointment(appointment = null) {
     const targetAppointmentId = normalizeText(appointment?.appointmentId || appointment?.appointment_id || appointment?.id || selectedAppointmentId)
     if (!organisationId || !targetAppointmentId) return
+    const cancellationReason = normalizeText(
+      appointment?.cancellationReason
+      || appointmentOutcomeForm.agentNotes
+      || appointmentForm.notes
+      || appointment?.notes,
+    ) || 'Cancelled from Arch9 appointment detail.'
+    patchAppointmentRecord(targetAppointmentId, {
+      status: 'cancelled',
+      statusLabel: 'Cancelled',
+      cancellationReason,
+    })
+    setMessage('Appointment cancelling in the background.')
+    setError('')
+    if (normalizeText(selectedAppointmentId) === targetAppointmentId) {
+      setAppointmentModalOpen(false)
+    }
     try {
       await updateAppointmentAsync(
         organisationId,
         targetAppointmentId,
         {
           status: 'cancelled',
-          cancellationReason: normalizeText(
-            appointment?.cancellationReason
-            || appointmentOutcomeForm.agentNotes
-            || appointmentForm.notes
-            || appointment?.notes,
-          ) || 'Cancelled from Arch9 appointment detail.',
+          cancellationReason,
         },
         {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         },
       )
       setMessage('Appointment cancelled.')
-      setAppointmentModalOpen(false)
-      await reloadRecords(organisationId)
+      void reloadRecords(organisationId).catch((reloadError) => {
+        console.warn('[appointments] background reload after cancellation failed', reloadError)
+      })
     } catch (cancelError) {
       setError(cancelError?.message || 'Unable to cancel appointment right now.')
+      void reloadRecords(organisationId).catch(() => null)
     }
   }
 
@@ -26203,6 +26239,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       || appointmentOutcomeForm.agentNotes
       || 'Appointment completed.',
     )
+    patchAppointmentRecord(targetAppointmentId, {
+      status: 'completed',
+      statusLabel: 'Completed',
+      outcomeSummary: completionSummary,
+    })
+    setMessage('Appointment completing in the background.')
+    setError('')
+    if (normalizeText(selectedAppointmentId) === targetAppointmentId) {
+      setAppointmentModalOpen(false)
+    }
     try {
       const updated = await addAppointmentOutcomeAsync(
         organisationId,
@@ -26240,6 +26286,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               stage: 'Appointment Completed',
               status: 'Valuation Completed',
             }
+        patchSelectedLeadRecord(completedLeadPatch, selectedLead.leadId)
         await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, completedLeadPatch)
         await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
           agent: currentAgent,
@@ -26252,12 +26299,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         }, { actor: currentAgent })
       }
       setMessage('Appointment marked complete.')
-      if (normalizeText(selectedAppointmentId) === targetAppointmentId) {
-        setAppointmentModalOpen(false)
-      }
-      await reloadRecords(organisationId)
+      void reloadRecords(organisationId).catch((reloadError) => {
+        console.warn('[appointments] background reload after completion failed', reloadError)
+      })
     } catch (completionError) {
       setError(completionError?.message || 'Unable to complete appointment right now.')
+      void reloadRecords(organisationId).catch(() => null)
     }
   }
 
@@ -32627,6 +32674,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   const isSystemActivity = item.sourceType === 'system'
                                   const note = normalizeText(item.description)
                                   const isTaskItem = item.sourceType === 'task' || item.sourceType === 'follow_up'
+                                  const isAppointmentItem = item.sourceType === 'appointment'
+                                  const appointmentIsTerminal = isAppointmentItem && ['completed', 'cancelled', 'canceled', 'declined', 'no_show', 'no-show'].includes(normalizeKey(item.status || item.original?.status))
                                   const taskRecord = isTaskItem ? item.original : null
                                   return (
                                     <article key={item.id || `${group.key}-${index}`} className="relative grid grid-cols-[42px_minmax(0,1fr)] gap-4 pb-6 last:pb-0">
@@ -32660,9 +32709,67 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                                 </Button>
                                               </>
                                             ) : null}
-                                            <Button type="button" variant="ghost" size="sm" className="h-8 px-2" title="More activity actions">
-                                              <MoreHorizontal className="h-4 w-4" />
-                                            </Button>
+                                            {isAppointmentItem || isTaskItem ? (
+                                              <details className="group relative">
+                                                <summary className="inline-flex h-8 cursor-pointer list-none items-center justify-center rounded-lg px-2 text-[#516982] transition hover:bg-[#f3f7fb] [&::-webkit-details-marker]:hidden" title="More activity actions" aria-label="More activity actions">
+                                                  <MoreHorizontal className="h-4 w-4" />
+                                                </summary>
+                                                <div className="absolute right-0 z-30 mt-2 w-48 overflow-hidden rounded-[14px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
+                                                  {isAppointmentItem ? (
+                                                    <>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleLeadActivityRowAction(item, 'open')}
+                                                        className="flex min-h-9 w-full items-center gap-2 rounded-[10px] px-3 text-left text-xs font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
+                                                      >
+                                                        <Eye className="h-3.5 w-3.5" />
+                                                        Open appointment
+                                                      </button>
+                                                      {!appointmentIsTerminal ? (
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => handleLeadActivityRowAction(item, 'complete')}
+                                                          className="flex min-h-9 w-full items-center gap-2 rounded-[10px] px-3 text-left text-xs font-semibold text-[#13784f] transition hover:bg-[#f4faf5]"
+                                                        >
+                                                          <CheckSquare className="h-3.5 w-3.5" />
+                                                          Mark complete
+                                                        </button>
+                                                      ) : null}
+                                                      {!appointmentIsTerminal ? (
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => handleLeadActivityRowAction(item, 'cancel')}
+                                                          className="flex min-h-9 w-full items-center gap-2 rounded-[10px] px-3 text-left text-xs font-semibold text-[#a94442] transition hover:bg-[#fff5f3]"
+                                                        >
+                                                          <X className="h-3.5 w-3.5" />
+                                                          Cancel appointment
+                                                        </button>
+                                                      ) : null}
+                                                    </>
+                                                  ) : null}
+                                                  {isTaskItem ? (
+                                                    <>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleLeadActivityRowAction(item, 'toggle-task')}
+                                                        className="flex min-h-9 w-full items-center gap-2 rounded-[10px] px-3 text-left text-xs font-semibold text-[#13784f] transition hover:bg-[#f4faf5]"
+                                                      >
+                                                        <CheckSquare className="h-3.5 w-3.5" />
+                                                        {normalizeText(taskRecord?.status) === 'Completed' ? 'Reopen task' : 'Complete task'}
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleEditTask(taskRecord)}
+                                                        className="flex min-h-9 w-full items-center gap-2 rounded-[10px] px-3 text-left text-xs font-semibold text-[#243d56] transition hover:bg-[#f7fbff]"
+                                                      >
+                                                        <Pencil className="h-3.5 w-3.5" />
+                                                        Edit task
+                                                      </button>
+                                                    </>
+                                                  ) : null}
+                                                </div>
+                                              </details>
+                                            ) : null}
                                           </div>
                                         </div>
                                         {note ? (
