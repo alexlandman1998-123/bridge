@@ -4274,6 +4274,32 @@ function buildBuyerProfileHydrationFormData({ lead = {}, diagnostic = {} } = {})
   ])
 }
 
+function buyerOnboardingSnapshotHasSubmission(candidate = {}) {
+  if (!isPlainObject(candidate)) return false
+  const status = normalizeText(candidate.status || candidate.onboarding_status || candidate.buyerOnboardingStatus || candidate.buyer_onboarding_status).toLowerCase()
+  return Boolean(
+    candidate.submitted_at ||
+      candidate.submittedAt ||
+      candidate.completed_at ||
+      candidate.completedAt ||
+      status.includes('submitted') ||
+      status.includes('completed') ||
+      status.includes('complete'),
+  )
+}
+
+function buildBuyerProfileSubmittedFormData({ lead = {}, diagnostic = {}, onboardingSubmitted = false } = {}) {
+  const rawPayload = parseLeadRawEnquiryPayload(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
+  const snapshots = [
+    diagnostic?.onboarding,
+    getMigrationGuardedBuyerOnboardingSnapshot(rawPayload?.buyerOnboarding),
+    getMigrationGuardedBuyerOnboardingSnapshot(rawPayload?.buyer_onboarding),
+    getMigrationGuardedBuyerOnboardingSnapshot(lead?.buyerOnboarding),
+    getMigrationGuardedBuyerOnboardingSnapshot(lead?.buyer_onboarding),
+  ].filter((candidate) => onboardingSubmitted || buyerOnboardingSnapshotHasSubmission(candidate))
+  return mergeBuyerOnboardingFormDataSources(snapshots)
+}
+
 function isOptionalOnboardingFormDataTableMissing(error = {}) {
   const message = normalizeText(error?.message || error?.details || error?.hint).toLowerCase()
   const code = normalizeText(error?.code).toUpperCase()
@@ -4299,12 +4325,16 @@ function buildBuyerOnboardingSectionRows(sections = [], formData = {}) {
               const value = readBuyerOnboardingFieldValue(entry, field.key)
               const required = Boolean(field.required || (typeof field.requiredWhen === 'function' && field.requiredWhen(entry)))
               return {
+                ...field,
                 key: field.key,
                 label: field.label || titleCaseWorkspaceValue(field.key),
                 required,
                 value,
                 displayValue: formatBuyerOnboardingFieldValue(field, value),
                 complete: !required || isBuyerOnboardingValueFilled(value),
+                sourceKey: field.key,
+                sourceSectionKey: section.key,
+                sourceEntryIndex: index,
               }
             }),
           }))
@@ -4315,12 +4345,16 @@ function buildBuyerOnboardingSectionRows(sections = [], formData = {}) {
             fields: fields.map((field) => {
               const required = Boolean(field.required)
               return {
+                ...field,
                 key: field.key,
                 label: field.label || titleCaseWorkspaceValue(field.key),
                 required,
                 value: '',
                 displayValue: 'Not captured',
                 complete: !required,
+                sourceKey: field.key,
+                sourceSectionKey: section.key,
+                sourceEntryIndex: 0,
               }
             }),
           }]
@@ -4338,12 +4372,14 @@ function buildBuyerOnboardingSectionRows(sections = [], formData = {}) {
       const value = readBuyerOnboardingFieldValue(formData, field.key)
       const required = Boolean(field.required || (typeof field.requiredWhen === 'function' && field.requiredWhen(formData)))
       return {
+        ...field,
         key: field.key,
         label: field.label || titleCaseWorkspaceValue(field.key),
         required,
         value,
         displayValue: formatBuyerOnboardingFieldValue(field, value),
         complete: !required || isBuyerOnboardingValueFilled(value),
+        sourceKey: field.key,
       }
     })
     return {
@@ -4356,7 +4392,299 @@ function buildBuyerOnboardingSectionRows(sections = [], formData = {}) {
   })
 }
 
-function buildBuyerOnboardingProfileModel({ lead = {}, contact = {}, formData = {}, transaction = {}, onboarding = {}, onboardingSubmitted = false, branding = {}, agent = {} } = {}) {
+const BUYER_PROFILE_ADAPTIVE_SECTION_GROUPS = {
+  personal_details: [
+    {
+      key: 'personal_identity',
+      title: 'Personal Details',
+      description: 'Identify the primary buyer for the offer, onboarding, and transfer record.',
+      groupLabel: 'Buyer Details',
+      fieldKeys: ['first_name', 'last_name', 'date_of_birth', 'identity_number'],
+    },
+    {
+      key: 'contact_details',
+      title: 'Contact Details',
+      description: 'Keep the buyer reachable for onboarding, signatures, and viewing follow-ups.',
+      groupLabel: 'Buyer Details',
+      fieldKeys: ['email', 'phone'],
+    },
+    {
+      key: 'address_compliance',
+      title: 'Address & Compliance',
+      description: 'Capture residency, address, tax, and occupation context needed for compliance.',
+      groupLabel: 'Buyer Details',
+      fieldKeys: ['residency_status', 'nationality', 'residential_address', 'postal_address', 'tax_number', 'occupation', 'income_source'],
+    },
+  ],
+  company_entity: [
+    {
+      key: 'company_details',
+      title: 'Company Details',
+      description: 'Capture the legal entity details the transaction and document pack depend on.',
+      groupLabel: 'Company Buyer',
+      fieldKeys: ['company_name', 'company_registration_number', 'vat_number', 'company_registered_address', 'company_business_address', 'nature_of_business', 'company_tax_number'],
+    },
+    {
+      key: 'company_representative',
+      title: 'Representative',
+      description: 'Identify the primary company contact and the capacity they sign in.',
+      groupLabel: 'Company Buyer',
+      fieldKeys: ['company_contact_name', 'company_contact_email', 'company_contact_phone', 'authorised_signatory_capacity'],
+    },
+    {
+      key: 'company_authority',
+      title: 'Authority',
+      description: 'Confirm the company authority needed before offer and transfer work proceeds.',
+      groupLabel: 'Company Buyer',
+      fieldKeys: ['board_resolution_available'],
+    },
+  ],
+  trust_entity: [
+    {
+      key: 'trust_details',
+      title: 'Trust Details',
+      description: 'Capture the trust entity and primary contact details for verification.',
+      groupLabel: 'Trust Buyer',
+      fieldKeys: ['trust_name', 'trust_registration_number', 'trust_type', 'masters_office_reference', 'trust_registered_address', 'trust_tax_number', 'trust_contact_name', 'trust_contact_email', 'trust_contact_phone'],
+    },
+    {
+      key: 'trust_authority',
+      title: 'Authority',
+      description: 'Confirm the trust documents and signing authority needed for the purchase.',
+      groupLabel: 'Trust Buyer',
+      fieldKeys: ['trust_deed_available', 'letters_of_authority_available', 'trust_resolution_available', 'all_trustees_signing'],
+    },
+  ],
+}
+
+const BUYER_PROFILE_ADAPTIVE_SECTION_PRESENTATION = {
+  co_purchaser_details: {
+    title: 'Co-Buyer Details',
+    description: 'Capture the second buyer when the purchase is joint or jointly financed.',
+    groupLabel: 'Buyer Details',
+  },
+  married_coc_details: {
+    title: 'Spouse Details',
+    description: 'Capture spouse details where the marriage structure affects signatures or FICA.',
+    groupLabel: 'Buyer Details',
+  },
+  married_anc_details: {
+    title: 'Marital Structure',
+    description: 'Confirm spouse and ANC details that may affect who signs and what documents are needed.',
+    groupLabel: 'Buyer Details',
+  },
+  trustees: {
+    title: 'Trustees',
+    description: 'Capture every trustee involved and identify who is authorised to sign.',
+    groupLabel: 'Trust Buyer',
+  },
+  directors: {
+    title: 'Directors & Signatories',
+    description: 'Capture relevant directors and identify who is authorised to sign.',
+    groupLabel: 'Company Buyer',
+  },
+  finance_totals: {
+    title: 'Funding Summary',
+    description: 'Confirm the purchase price and funding split for this buyer profile.',
+    groupLabel: 'Funding',
+  },
+  cash_funding: {
+    title: 'Proof of Funds',
+    description: 'Capture source-of-funds readiness for cash or hybrid purchases.',
+    groupLabel: 'Funding',
+  },
+  employment_type: {
+    title: 'Finance Readiness',
+    description: 'Choose the income profile so the right finance questions and documents appear.',
+    groupLabel: 'Funding',
+  },
+  affordability_snapshot: {
+    title: 'Income & Affordability',
+    description: 'Capture the core income and expense snapshot for bond readiness.',
+    groupLabel: 'Funding',
+  },
+  employment_profile_salaried: {
+    title: 'Employment Details',
+    description: 'Capture salaried or regular employment details for the bond application.',
+    groupLabel: 'Funding',
+  },
+  employment_profile_self_employed: {
+    title: 'Business Income Details',
+    description: 'Capture business-led income details for self-employed or director applicants.',
+    groupLabel: 'Funding',
+  },
+  employment_profile_retired: {
+    title: 'Retirement Income',
+    description: 'Capture pension or annuity income details for affordability support.',
+    groupLabel: 'Funding',
+  },
+  employment_profile_other: {
+    title: 'Other Income',
+    description: 'Capture non-standard income details so finance support can prepare the right documents.',
+    groupLabel: 'Funding',
+  },
+  bond_readiness_declarations: {
+    title: 'Bond Risk Declarations',
+    description: 'Flag any finance risks before the buyer moves into bank submission.',
+    groupLabel: 'Funding',
+  },
+  bond_preapproval: {
+    title: 'Pre-Approval & Consent',
+    description: 'Confirm pre-approval, bank, deposit, statement, and credit-check readiness.',
+    groupLabel: 'Funding',
+  },
+}
+
+function withBuyerProfileSectionCounts(section = {}) {
+  const fields = Array.isArray(section.fields) ? section.fields : []
+  return {
+    ...section,
+    requiredCount: fields.filter((field) => field.required).length,
+    completedRequiredCount: fields.filter((field) => field.required && field.complete).length,
+  }
+}
+
+function buildBuyerProfileDisplaySection(sourceSection = {}, group = {}) {
+  const sourceFields = Array.isArray(sourceSection.fields) ? sourceSection.fields : []
+  const groupedFields = (Array.isArray(group.fieldKeys) ? group.fieldKeys : [])
+    .map((fieldKey) => sourceFields.find((field) => field.key === fieldKey))
+    .filter(Boolean)
+  if (!groupedFields.length) return null
+  return withBuyerProfileSectionCounts({
+    ...sourceSection,
+    key: `${sourceSection.key}:${group.key}`,
+    title: group.title || sourceSection.title,
+    description: group.description || sourceSection.description,
+    groupLabel: group.groupLabel || sourceSection.groupLabel,
+    repeatable: false,
+    rows: [{ key: `${sourceSection.key}-${group.key}`, title: group.title || sourceSection.title, fields: groupedFields }],
+    fields: groupedFields,
+  })
+}
+
+function buildBuyerProfileAdaptiveSections(sections = []) {
+  return (Array.isArray(sections) ? sections : []).flatMap((section) => {
+    const groups = BUYER_PROFILE_ADAPTIVE_SECTION_GROUPS[section?.key]
+    if (Array.isArray(groups) && groups.length) {
+      const groupedSections = groups.map((group) => buildBuyerProfileDisplaySection(section, group)).filter(Boolean)
+      const groupedFieldKeys = new Set(groups.flatMap((group) => group.fieldKeys || []))
+      const remainingFields = (Array.isArray(section.fields) ? section.fields : []).filter((field) => !groupedFieldKeys.has(field.key))
+      if (remainingFields.length) {
+        groupedSections.push(withBuyerProfileSectionCounts({
+          ...section,
+          key: `${section.key}:additional`,
+          title: 'Additional Details',
+          description: section.description,
+          groupLabel: groups[0]?.groupLabel || section.groupLabel,
+          repeatable: false,
+          rows: [{ key: `${section.key}-additional`, title: 'Additional Details', fields: remainingFields }],
+          fields: remainingFields,
+        }))
+      }
+      return groupedSections
+    }
+
+    const presentation = BUYER_PROFILE_ADAPTIVE_SECTION_PRESENTATION[section?.key]
+    if (!presentation) return [section]
+    return [{
+      ...section,
+      title: presentation.title || section.title,
+      description: presentation.description || section.description,
+      groupLabel: presentation.groupLabel || section.groupLabel,
+      rows: (Array.isArray(section.rows) ? section.rows : []).map((row) => ({
+        ...row,
+        title: row.title === section.title ? (presentation.title || section.title) : row.title,
+      })),
+    }]
+  })
+}
+
+function normalizeBuyerProfileComparableValue(value) {
+  if (!isBuyerOnboardingValueFilled(value)) return ''
+  if (Array.isArray(value)) return JSON.stringify(value.map((item) => normalizeBuyerProfileComparableValue(item)))
+  if (isPlainObject(value)) {
+    return JSON.stringify(Object.keys(value).sort().reduce((normalized, key) => {
+      normalized[key] = normalizeBuyerProfileComparableValue(value[key])
+      return normalized
+    }, {}))
+  }
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  return normalizeText(value).toLowerCase()
+}
+
+function readBuyerProfileSourceFieldValue(formData = {}, field = {}) {
+  if (!isPlainObject(formData)) return ''
+  const sectionKey = normalizeText(field.sourceSectionKey)
+  const entryIndex = Number(field.sourceEntryIndex)
+  if (sectionKey && Number.isFinite(entryIndex)) {
+    const entries = Array.isArray(formData[sectionKey]) ? formData[sectionKey] : []
+    return readBuyerOnboardingFieldValue(entries[Math.max(0, entryIndex)] || {}, field.sourceKey || field.key)
+  }
+  return readBuyerOnboardingFieldValue(formData, field.sourceKey || field.key)
+}
+
+function buildBuyerProfileFieldSourceMeta(field = {}, {
+  buyerSubmittedFormData = {},
+  hasBuyerSubmittedProfile = false,
+  agentUpdatedAfterSubmission = false,
+} = {}) {
+  const currentFilled = isBuyerOnboardingValueFilled(field.value)
+  const buyerValue = readBuyerProfileSourceFieldValue(buyerSubmittedFormData, field)
+  const buyerFilled = isBuyerOnboardingValueFilled(buyerValue)
+  const buyerDisplayValue = formatBuyerOnboardingFieldValue(field, buyerValue)
+  const currentComparable = normalizeBuyerProfileComparableValue(field.value)
+  const buyerComparable = normalizeBuyerProfileComparableValue(buyerValue)
+  const conflict = Boolean(hasBuyerSubmittedProfile && buyerFilled && currentFilled && buyerComparable !== currentComparable)
+
+  if (conflict) {
+    return {
+      badge: 'Edited by agent',
+      tone: 'amber',
+      conflict: true,
+      conflictLabel: 'Buyer submitted a different value',
+      buyerValue,
+      buyerDisplayValue,
+    }
+  }
+  if (hasBuyerSubmittedProfile && buyerFilled && buyerComparable === currentComparable) {
+    return {
+      badge: 'From buyer',
+      tone: 'green',
+      conflict: false,
+      buyerValue,
+      buyerDisplayValue,
+    }
+  }
+  if (currentFilled && agentUpdatedAfterSubmission) {
+    return {
+      badge: 'Edited by agent',
+      tone: 'amber',
+      conflict: false,
+      buyerValue,
+      buyerDisplayValue,
+    }
+  }
+  return null
+}
+
+function applyBuyerProfileFieldSourceMetaToSections(sections = [], sourceContext = {}) {
+  return (Array.isArray(sections) ? sections : []).map((section) => {
+    const rows = (Array.isArray(section.rows) ? section.rows : []).map((row) => ({
+      ...row,
+      fields: (Array.isArray(row.fields) ? row.fields : []).map((field) => ({
+        ...field,
+        sourceMeta: buildBuyerProfileFieldSourceMeta(field, sourceContext),
+      })),
+    }))
+    return {
+      ...section,
+      rows,
+      fields: rows.flatMap((row) => row.fields),
+    }
+  })
+}
+
+function buildBuyerOnboardingProfileModel({ lead = {}, contact = {}, formData = {}, buyerSubmittedFormData = {}, transaction = {}, onboarding = {}, onboardingSubmitted = false, branding = {}, agent = {} } = {}) {
   const normalizedFormData = isPlainObject(formData) ? formData : {}
   const enrichedFormData = {
     purchaser_entity_type: normalizeText(normalizedFormData.purchaser_entity_type || normalizedFormData.purchaser_type || transaction?.purchaser_type || lead?.purchaserType || lead?.buyerType) || 'individual',
@@ -4374,11 +4702,11 @@ function buildBuyerOnboardingProfileModel({ lead = {}, contact = {}, formData = 
     purchaserType: enrichedFormData.purchaser_type,
     financeType: enrichedFormData.purchase_finance_type,
   }).find((step) => step.key === 'details')
-  const onboardingSections = buildBuyerOnboardingSectionRows(detailStep?.sections || [], enrichedFormData)
+  const onboardingSections = buildBuyerProfileAdaptiveSections(buildBuyerOnboardingSectionRows(detailStep?.sections || [], enrichedFormData))
   const routeFields = [
-    { key: 'purchaser_entity_type', label: 'Purchaser Type', required: true, type: 'select', options: [{ value: '', label: 'Select buyer type' }, ...PURCHASER_ENTITY_OPTIONS] },
-    { key: 'purchase_finance_type', label: 'Finance Type', required: true, type: 'select', options: [{ value: '', label: 'Select finance type' }, ...BUYER_PROFILE_FINANCE_TYPE_OPTIONS] },
-    { key: 'bridge_client_intake_preference', label: 'Buyer Intake Mode', type: 'select', options: [{ value: '', label: 'Select intake mode' }, ...CLIENT_INTAKE_PREFERENCE_OPTIONS] },
+    { key: 'purchaser_entity_type', label: 'Buyer Type', required: true, type: 'select', options: [{ value: '', label: 'Select buyer type' }, ...PURCHASER_ENTITY_OPTIONS] },
+    { key: 'purchase_finance_type', label: 'Funding', required: true, type: 'select', options: [{ value: '', label: 'Select funding' }, ...BUYER_PROFILE_FINANCE_TYPE_OPTIONS] },
+    { key: 'bridge_client_intake_preference', label: 'Capture Method', type: 'select', options: [{ value: '', label: 'Select capture method' }, ...CLIENT_INTAKE_PREFERENCE_OPTIONS] },
   ].map((field) => {
     const value = readBuyerOnboardingFieldValue(enrichedFormData, field.key)
     return {
@@ -4391,19 +4719,37 @@ function buildBuyerOnboardingProfileModel({ lead = {}, contact = {}, formData = 
   const sections = [
     {
       key: 'routing',
-      title: 'Onboarding Routing',
-      description: 'These fields decide which buyer onboarding questions and document requirements apply.',
-      rows: [{ key: 'routing', title: 'Onboarding Routing', fields: routeFields }],
+      title: 'Profile Setup',
+      description: 'Set the buyer profile type so Arch9 shows the right details, documents, and offer requirements.',
+      rows: [{ key: 'routing', title: 'Profile Setup', fields: routeFields }],
       fields: routeFields,
       requiredCount: routeFields.filter((field) => field.required).length,
       completedRequiredCount: routeFields.filter((field) => field.required && field.complete).length,
     },
     ...onboardingSections,
-  ]
+  ].map((section) => ({
+    ...section,
+    sectionId: formatBuyerProfileSectionDomId(section.key),
+  }))
   const requiredCount = sections.reduce((total, section) => total + section.requiredCount, 0)
   const completedRequiredCount = sections.reduce((total, section) => total + section.completedRequiredCount, 0)
   const capturedCount = sections.reduce((total, section) => total + section.fields.filter((field) => isBuyerOnboardingValueFilled(field.value)).length, 0)
   const totalFieldCount = sections.reduce((total, section) => total + section.fields.length, 0)
+  const missingRequiredSections = sections
+    .map((section) => {
+      const missingFields = (Array.isArray(section.fields) ? section.fields : []).filter((field) => field.required && !field.complete)
+      return {
+        sectionId: section.sectionId,
+        sectionKey: section.key,
+        title: section.title,
+        groupLabel: section.groupLabel || '',
+        missingCount: missingFields.length,
+        missingFields: missingFields.map((field) => field.label || titleCaseWorkspaceValue(field.key)),
+      }
+    })
+    .filter((section) => section.missingCount > 0)
+  const requiredRemainingCount = missingRequiredSections.reduce((total, section) => total + section.missingCount, 0)
+  const isReadyForOnboardingOtp = requiredCount > 0 && requiredRemainingCount === 0
   const buyerName = normalizeText(
     [enrichedFormData.first_name, enrichedFormData.last_name].filter(Boolean).join(' ') ||
       enrichedFormData.fullName ||
@@ -4411,19 +4757,58 @@ function buildBuyerOnboardingProfileModel({ lead = {}, contact = {}, formData = 
       enrichedFormData.trust_name ||
       getLeadPrimaryPersonName(lead, contact),
   ) || 'Buyer'
+  const submittedAt = normalizeText(onboarding?.submitted_at || onboarding?.submittedAt || transaction?.onboarding_completed_at)
+  const updatedAt = normalizeText(onboarding?.updated_at || onboarding?.updatedAt || transaction?.updated_at || lead?.updatedAt)
+  const hasBuyerSubmittedProfile = Boolean(onboardingSubmitted || submittedAt)
+  const sourceLabel = hasBuyerSubmittedProfile
+    ? 'Buyer onboarding'
+    : capturedCount
+      ? 'Agent captured'
+      : 'Not captured'
+  const sourceDetailLabel = hasBuyerSubmittedProfile && submittedAt
+    ? `Submitted ${formatDateTime(submittedAt)}`
+    : capturedCount && updatedAt
+      ? `Last edited by agent ${formatDateTime(updatedAt)}`
+      : capturedCount
+        ? 'Profile started by agent'
+        : 'No profile data captured yet'
+  const sourceRevisionLabel = hasBuyerSubmittedProfile && isLaterBuyerProfileTimestamp(updatedAt, submittedAt)
+    ? `Last edited by agent ${formatDateTime(updatedAt)}`
+    : ''
+  const agentUpdatedAfterSubmission = hasBuyerSubmittedProfile && isLaterBuyerProfileTimestamp(updatedAt, submittedAt)
+  const sectionsWithSourceMeta = applyBuyerProfileFieldSourceMetaToSections(sections, {
+    buyerSubmittedFormData,
+    hasBuyerSubmittedProfile,
+    agentUpdatedAfterSubmission,
+  })
+  const sourceConflictFields = sectionsWithSourceMeta.flatMap((section) =>
+    (Array.isArray(section.fields) ? section.fields : []).filter((field) => field.sourceMeta?.conflict),
+  )
 
   return {
     buyerName,
     formData: enrichedFormData,
-    sections,
+    sections: sectionsWithSourceMeta,
     totalFieldCount,
     capturedCount,
     requiredCount,
     completedRequiredCount,
+    requiredRemainingCount,
     completionPercent: requiredCount ? Math.round((completedRequiredCount / requiredCount) * 100) : 0,
+    isReadyForOnboardingOtp,
+    completionActionLabel: isReadyForOnboardingOtp ? 'Ready for Onboarding / OTP' : 'Complete Profile',
+    missingRequiredSections,
+    nextIncompleteSectionId: missingRequiredSections[0]?.sectionId || '',
     statusLabel: onboardingSubmitted ? 'Submitted' : capturedCount ? 'In progress' : 'Not started',
-    submittedAt: normalizeText(onboarding?.submitted_at || onboarding?.submittedAt || transaction?.onboarding_completed_at),
-    updatedAt: normalizeText(onboarding?.updated_at || onboarding?.updatedAt || transaction?.updated_at || lead?.updatedAt),
+    sourceLabel,
+    sourceDetailLabel,
+    sourceRevisionLabel,
+    sourceConflictCount: sourceConflictFields.length,
+    sourceMergeSummaryLabel: sourceConflictFields.length
+      ? `${sourceConflictFields.length} buyer/agent difference${sourceConflictFields.length === 1 ? '' : 's'}`
+      : '',
+    submittedAt,
+    updatedAt,
     branding,
     agent,
   }
@@ -6090,6 +6475,50 @@ function formatDateShort(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function formatBuyerViewingSummaryTimestamp(value, prefix = 'Submitted') {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${prefix} ${date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })} at ${date.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}`
+}
+
+function formatBuyerViewingTimeTile(value = '', index = 0) {
+  const raw = normalizeText(value)
+  const withoutPropertyPrefix = raw.replace(/^[^:\n]{1,90}:\s*(?=\d{4}-\d{2}-\d{2}\b)/, '')
+  const dateMatch = withoutPropertyPrefix.match(/\b(\d{4}-\d{2}-\d{2})\b/)
+  const parsedDate = dateMatch ? new Date(`${dateMatch[1]}T00:00:00`) : null
+  const hasDate = parsedDate && !Number.isNaN(parsedDate.getTime())
+  const timeMatch = withoutPropertyPrefix.match(/\b(?:[01]?\d|2[0-3])(?::[0-5]\d)?\s*(?:am|pm)?\s*(?:-|to|until|till)\s*(?:[01]?\d|2[0-3])(?::[0-5]\d)?\s*(?:am|pm)?\b/i)
+  const timeLabel = normalizeText(
+    timeMatch?.[0]?.replace(/\s*(?:-|to|until|till)\s*/i, ' - ') ||
+      withoutPropertyPrefix.replace(dateMatch?.[0] || '', ''),
+  ) || raw || `Option ${index + 1}`
+
+  return {
+    day: hasDate ? parsedDate.toLocaleDateString('en-ZA', { weekday: 'short' }).toUpperCase() : `OPT ${index + 1}`,
+    date: hasDate ? parsedDate.toLocaleDateString('en-ZA', { day: '2-digit' }) : String(index + 1),
+    month: hasDate ? parsedDate.toLocaleDateString('en-ZA', { month: 'short' }).toUpperCase() : 'TIME',
+    time: timeLabel,
+    raw,
+  }
+}
+
+function isLaterBuyerProfileTimestamp(candidate = '', baseline = '') {
+  if (!candidate || !baseline) return false
+  const candidateDate = new Date(candidate)
+  const baselineDate = new Date(baseline)
+  if (Number.isNaN(candidateDate.getTime()) || Number.isNaN(baselineDate.getTime())) return false
+  return candidateDate.getTime() > baselineDate.getTime() + 1000
+}
+
+function formatBuyerProfileSectionDomId(key = '') {
+  const normalizedKey = normalizeText(key)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return `buyer-profile-section-${normalizedKey || 'section'}`
 }
 
 function formatViewingRequestUserError(error, fallback = "We couldn't send the availability request.") {
@@ -9435,6 +9864,9 @@ const BUYER_SELLER_COORDINATION_DEFAULTS = {
 const BUYER_QUALIFICATION_LABEL_CLASS = 'grid gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.07em] text-[#60758b]'
 const BUYER_QUALIFICATION_FIELD_CLASS = 'h-11 rounded-[12px] px-3 text-sm font-medium tracking-normal placeholder:font-medium placeholder:tracking-normal'
 const BUYER_QUALIFICATION_TEXTAREA_CLASS = 'min-h-[132px] rounded-[12px] px-3 py-3 text-sm font-medium leading-6 tracking-normal placeholder:font-medium placeholder:tracking-normal'
+const BUYER_PROFILE_FIELD_LABEL_CLASS = 'min-w-0 text-[0.68rem] font-semibold uppercase tracking-normal text-[#6f8398]'
+const BUYER_PROFILE_FIELD_CLASS = 'mt-1.5 h-11 rounded-[10px] border-[#dce7f2] bg-white px-3 text-sm font-medium tracking-normal text-[#102033] shadow-none placeholder:font-medium placeholder:tracking-normal placeholder:text-[#9aacbf]'
+const BUYER_PROFILE_TEXTAREA_CLASS = 'mt-1.5 min-h-[96px] rounded-[10px] border-[#dce7f2] bg-white px-3 py-2.5 text-sm font-medium leading-6 tracking-normal text-[#102033] shadow-none placeholder:font-medium placeholder:tracking-normal placeholder:text-[#9aacbf]'
 
 function stripLeadNoteBlock(notes = '', startMarker = '', endMarker = '') {
   const raw = String(notes || '').trim()
@@ -13055,6 +13487,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     lead: selectedLead,
     diagnostic: selectedLeadLifecycleDiagnostic,
   }), [selectedLead, selectedLeadLifecycleDiagnostic?.onboarding, selectedLeadLifecycleDiagnostic?.onboardingPrefill])
+  const selectedLeadBuyerSubmittedFormData = useMemo(() => buildBuyerProfileSubmittedFormData({
+    lead: selectedLead,
+    diagnostic: selectedLeadLifecycleDiagnostic,
+    onboardingSubmitted: selectedLeadBuyerOnboardingSubmitted,
+  }), [selectedLead, selectedLeadLifecycleDiagnostic?.onboarding, selectedLeadBuyerOnboardingSubmitted])
   useEffect(() => {
     if (!selectedLead) {
       setBuyerProfileForm({})
@@ -13064,6 +13501,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       lead: selectedLead || {},
       contact: selectedLeadContact || {},
       formData: selectedLeadFinanceFormData,
+      buyerSubmittedFormData: selectedLeadBuyerSubmittedFormData,
       transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {
         id: selectedLeadLinkedTransactionId,
         finance_type: selectedLead?.financeType || selectedLead?.finance_type,
@@ -13097,6 +13535,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadBuyerOnboardingSubmitted,
     selectedLeadContact,
     selectedLeadFinanceFormData,
+    selectedLeadBuyerSubmittedFormData,
     selectedLeadLifecycleDiagnostic?.onboarding,
     selectedLeadLifecycleDiagnostic?.onboardingPrefill,
     selectedLeadLinkedTransaction,
@@ -13110,6 +13549,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     lead: selectedLead || {},
     contact: selectedLeadContact || {},
     formData: selectedLeadBuyerProfileFormData,
+    buyerSubmittedFormData: selectedLeadBuyerSubmittedFormData,
     transaction: selectedLeadLinkedTransaction?.transaction || selectedLeadLinkedTransaction || {
       id: selectedLeadLinkedTransactionId,
       finance_type: selectedLead?.financeType || selectedLead?.finance_type,
@@ -13139,6 +13579,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLead?.financeType,
     selectedLead?.finance_type,
     selectedLeadBuyerProfileFormData,
+    selectedLeadBuyerSubmittedFormData,
     selectedLeadBuyerOnboardingSubmitted,
     selectedLeadContact,
     selectedLeadLifecycleDiagnostic?.onboarding,
@@ -15598,15 +16039,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     )
     const listingTitle = normalizeText(linkedListing?.label || linkedListing?.title || linkedListing?.address)
     const listingAddress = normalizeText(linkedListing?.address || linkedListing?.property_address || linkedListing?.address_line_1)
+    const listingPrice = Number(linkedListing?.askingPrice || linkedListing?.asking_price || linkedListing?.price || linkedListing?.estimatedValue || linkedListing?.estimated_value || 0) || 0
+    const displayTitle = listingTitle || enquiryTitle || 'Property context needed'
+    const displayAddress = listingAddress || enquiryAddress
+    const originalKey = normalizeText([enquiryTitle, enquiryAddress].filter(Boolean).join(' ')).toLowerCase()
+    const linkedKey = normalizeText([listingTitle, listingAddress].filter(Boolean).join(' ')).toLowerCase()
+    const linkedDiffersFromOriginal = Boolean(originalKey && linkedKey && originalKey !== linkedKey)
     return {
       linkedListingId,
       linkedListing,
-      title: enquiryTitle || listingTitle || 'Property context needed',
-      address: enquiryAddress || listingAddress,
-      priceLabel: priceAmount > 0 ? formatCurrency(priceAmount) : '',
+      title: displayTitle,
+      address: displayAddress,
+      priceLabel: priceAmount > 0 ? formatCurrency(priceAmount) : listingPrice > 0 ? formatCurrency(listingPrice) : '',
+      originalTitle: enquiryTitle,
+      originalAddress: enquiryAddress,
       reference: normalizeText(selectedLead?.sourceReferenceId || selectedLead?.source_reference_id || selectedLead?.listingReference || selectedLead?.listing_reference),
       hasOriginalEnquiry: Boolean(enquiryTitle || enquiryAddress || priceAmount > 0),
       hasLinkedListing: Boolean(linkedListingId),
+      linkedDiffersFromOriginal,
     }
   }, [
     appointmentListingById,
@@ -30040,6 +30490,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ? normalizeText(latestBuyerViewingPreferenceResponse?.responseNotes)
                           : viewingPlannerBuyerNotes
                         const buyerViewingTimesSummaryTimestamp = latestBuyerViewingPreferenceResponse?.submittedAt || savedViewingPlan.respondedAt || savedViewingPlan.updatedAt
+                        const buyerViewingTimesSummaryTimestampLabel = formatBuyerViewingSummaryTimestamp(
+                          buyerViewingTimesSummaryTimestamp,
+                          latestBuyerViewingPreferenceLink ? 'Submitted' : 'Recorded',
+                        )
+                        const buyerViewingTimesSummaryTiles = buyerViewingTimesSummaryWindows.map((windowLabel, index) => formatBuyerViewingTimeTile(windowLabel, index))
                         const showBuyerViewingTimesSummary = Boolean(
                           latestBuyerViewingPreferenceLink ||
                             buyerViewingPreferenceLinksLoading ||
@@ -30346,16 +30801,39 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   ],
                                 }
 	                        const showViewingCompletedFeedbackOverride = false
+                        const buyerQualificationIconByLabel = {
+                          Budget: Tag,
+                          'Preferred areas': MapPin,
+                          'Move timeframe': CalendarDays,
+                          'Cash or bond': Building2,
+                          'Subject to finance': FileText,
+                          'Deposit available': Box,
+                          'Pre-approval status': ShieldCheck,
+                          'Property to sell first': Home,
+                          'Property need': UserRound,
+                          'Call notes': MessageCircle,
+                        }
+                        const buyerQualificationCapturedCount = qualificationQuestionRows.filter((row) => row.value !== 'Not captured').length
+                        const buyerQualificationTotalCount = qualificationQuestionRows.length
+                        const buyerQualificationDisplayProgressLabel = `${buyerQualificationCapturedCount} / ${buyerQualificationTotalCount} captured`
+                        const buyerQualificationProgressPercent = buyerQualificationTotalCount
+                          ? Math.round((buyerQualificationCapturedCount / buyerQualificationTotalCount) * 100)
+                          : 0
 
 	                        return (
                           <>
-                            <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)]">
-                              <form className="flex h-full flex-col rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" onSubmit={handleSaveBuyerQualification}>
+                            <div className="grid items-start gap-5 xl:grid-cols-[minmax(460px,0.55fr)_minmax(0,0.45fr)]">
+                              <form className="flex flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)] sm:p-5" onSubmit={handleSaveBuyerQualification}>
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Buyer Qualification</p>
                                     <h3 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[#102033]">Phone qualification questions</h3>
-                                    <p className="mt-1 text-sm leading-5 text-[#60758b]">{buyerQualificationProgressLabel}</p>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                      <span className="h-2 w-24 overflow-hidden rounded-full bg-[#e8eef5]">
+                                        <span className="block h-full rounded-full bg-[#157aaf]" style={{ width: `${buyerQualificationProgressPercent}%` }} />
+                                      </span>
+                                      <span className="text-xs font-semibold text-[#60758b]">{buyerQualificationDisplayProgressLabel}</span>
+                                    </div>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2">
                                     <span className="rounded-full border border-[#d7e6f2] bg-[#f8fbfd] px-3 py-1 text-xs font-semibold text-[#60758b]">
@@ -30462,13 +30940,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   </>
                                 ) : (
                                   <>
-                                    <div className="mt-4 grid gap-2.5 md:grid-cols-2">
+                                    <div className="mt-3 grid gap-2 lg:grid-cols-3">
                                       {qualificationQuestionRows.map((row) => {
                                         const isMissing = row.value === 'Not captured'
+                                        const QualificationIcon = buyerQualificationIconByLabel[row.label] || Columns3
                                         return (
-                                          <div key={row.label} className={`rounded-[12px] border border-[#edf3f8] bg-[#fbfdff] px-3.5 py-2.5 ${row.wide ? 'md:col-span-2' : ''}`}>
-                                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7c91a8]">{row.label}</p>
-                                            <p className={`mt-1 whitespace-pre-wrap text-sm leading-5 tracking-normal ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`}>{row.value}</p>
+                                          <div key={row.label} className={`grid min-h-[48px] grid-cols-[34px_minmax(0,1fr)] items-center gap-2 rounded-[12px] bg-[#f8fbfd] px-2.5 py-2 ring-1 ring-[#edf3f8] ${row.wide ? 'lg:col-span-3' : ''}`}>
+                                            <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#eef5fb] text-[#1d65a6]">
+                                              <QualificationIcon className="h-4 w-4" />
+                                            </span>
+                                            <span className="min-w-0">
+                                              <span className="block truncate text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7c91a8]">{row.label}</span>
+                                              <span className={`mt-0.5 block line-clamp-2 text-sm leading-5 tracking-normal ${isMissing ? 'font-medium text-[#9aa9b8]' : 'font-semibold text-[#102033]'}`}>{row.value}</span>
+                                            </span>
                                           </div>
                                         )
                                       })}
@@ -30486,7 +30970,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 )}
                               </form>
 
-                              <div className="flex h-full min-w-0 flex-col gap-4">
+                              <div className="flex min-w-0 flex-col gap-4 self-start">
                               <section className="rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)]">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
                                   <div className="min-w-0">
@@ -30514,7 +30998,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                </div>
 	                              </section>
 
-                              <section className="flex flex-col rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                              <section className="flex flex-col self-start rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Activity Logger</p>
@@ -30617,101 +31101,114 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </div>
                             </div>
 
-                            <section className="rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
-                              <div className="flex flex-wrap items-start justify-between gap-4">
-                                <div className="flex min-w-0 items-start gap-3">
-                                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[14px] ${selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'bg-[#eaf7f0] text-[#157a4d]' : 'bg-[#fff7ed] text-[#b45309]'}`}>
+                            <section className="relative overflow-hidden rounded-[20px] border border-[#dce7f2] bg-white px-4 py-3 shadow-[0_12px_34px_rgba(31,54,78,0.045)]">
+                              <span className="absolute inset-y-0 left-0 w-1 bg-[#157a4d]" aria-hidden="true" />
+                              <div className="flex flex-wrap items-center justify-between gap-4 pl-1">
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[13px] bg-[#eef8f3] text-[#157a4d]">
                                     <Home className="h-5 w-5" />
                                   </span>
                                   <div className="min-w-0">
-                                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Property enquiry</p>
-                                    <h3 className="mt-1 truncate text-lg font-semibold tracking-[-0.02em] text-[#102033]">{selectedLeadEnquiryPropertyContext.title}</h3>
-                                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#60758b]">
+                                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Property enquiry</p>
+                                    <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                                      <h3 className="truncate text-base font-semibold tracking-[-0.02em] text-[#102033]">{selectedLeadEnquiryPropertyContext.title}</h3>
+                                      {selectedLeadEnquiryPropertyContext.priceLabel ? (
+                                        <span className="shrink-0 text-base font-semibold text-[#102033]">{selectedLeadEnquiryPropertyContext.priceLabel}</span>
+                                      ) : null}
+                                    </div>
+                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[#60758b]">
                                       {selectedLeadEnquiryPropertyContext.address ? (
                                         <span className="inline-flex min-w-0 items-center gap-1.5">
-                                          <MapPin className="h-4 w-4 shrink-0 text-[#2f7b9e]" />
+                                          <MapPin className="h-4 w-4 shrink-0 text-[#157a4d]" />
                                           <span className="truncate">{selectedLeadEnquiryPropertyContext.address}</span>
                                         </span>
                                       ) : null}
-                                      {selectedLeadEnquiryPropertyContext.priceLabel ? (
-                                        <span className="inline-flex items-center gap-1.5">
-                                          <Tag className="h-4 w-4 text-[#2f7b9e]" />
-                                          {selectedLeadEnquiryPropertyContext.priceLabel}
-                                        </span>
-                                      ) : null}
-                                      {selectedLeadEnquiryPropertyContext.reference ? (
-                                        <span className="inline-flex items-center gap-1.5">
-                                          <Link2 className="h-4 w-4 text-[#2f7b9e]" />
-                                          {selectedLeadEnquiryPropertyContext.reference}
+                                      {selectedLeadEnquiryPropertyContext.linkedDiffersFromOriginal ? (
+                                        <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-medium text-[#7c91a8]">
+                                          <Link2 className="h-3.5 w-3.5 shrink-0" />
+                                          <span className="truncate">Originally enquired about {selectedLeadEnquiryPropertyContext.originalTitle || selectedLeadEnquiryPropertyContext.originalAddress}</span>
                                         </span>
                                       ) : null}
                                     </div>
                                   </div>
                                 </div>
-                                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'border-[#bfe5cf] bg-[#f1fbf5] text-[#157a4d]' : 'border-[#fed7aa] bg-[#fff7ed] text-[#b45309]'}`}>
-                                  {selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'Linked listing' : 'Needs listing link'}
-                                </span>
-                              </div>
-
-                              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.75fr)_minmax(300px,0.25fr)] lg:items-end">
-                                <div className="rounded-[14px] border border-[#edf3f8] bg-[#fbfdff] px-4 py-3">
-                                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.11em] text-[#7c91a8]">Original enquiry</p>
-                                  <p className="mt-1 text-sm font-semibold leading-5 text-[#102033]">
-                                    {selectedLeadEnquiryPropertyContext.hasOriginalEnquiry
-                                      ? selectedLeadEnquiryPropertyContext.title
-                                      : 'No original property text was captured.'}
-                                  </p>
-                                  {selectedLeadEnquiryPropertyContext.address ? (
-                                    <p className="mt-1 text-sm leading-5 text-[#60758b]">{selectedLeadEnquiryPropertyContext.address}</p>
-                                  ) : null}
+                                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                  <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'border-[#bfe5cf] bg-[#f7fcf9] text-[#157a4d]' : 'border-[#fed7aa] bg-[#fffaf2] text-[#b45309]'}`}>
+                                    {selectedLeadEnquiryPropertyContext.hasLinkedListing ? (
+                                      <>
+                                        <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                                        Linked listing
+                                      </>
+                                    ) : 'Needs listing link'}
+                                  </span>
+                                  {selectedLeadEnquiryPropertyContext.hasLinkedListing ? (
+                                    <button
+                                      type="button"
+                                      className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold text-[#17643a] transition hover:bg-[#f0f8f4]"
+                                      onClick={() => navigate(`/listings/${selectedLeadEnquiryPropertyContext.linkedListingId}`)}
+                                    >
+                                      View listing
+                                      <ArrowUpRight className="h-3.5 w-3.5" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold text-[#17643a] transition hover:bg-[#f0f8f4]"
+                                      onClick={() => handleLeadWorkspaceTabSelection('properties')}
+                                    >
+                                      Link listing
+                                      <ArrowUpRight className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
                                 </div>
-                                <ListingPicker
-                                  listings={leadAppointmentOfferListingOptions}
-                                  value={selectedLeadEnquiryPropertyContext.linkedListingId}
-                                  onChange={(listingId) => void handleLinkBuyerEnquiryListing(listingId)}
-                                  label="Link to listing"
-                                  className="min-w-0"
-                                />
                               </div>
                             </section>
 
                             {showBuyerViewingTimesSummary ? (
-                              <section className="rounded-[20px] border border-[#cbe7d7] bg-[#f4fbf7] p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="buyer-submitted-viewing-times">
+                              <section className="mt-4 rounded-[20px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="buyer-submitted-viewing-times">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
-                                  <div className="min-w-0">
-                                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#317255]">Client Requested Viewing Times</p>
-                                    <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#102033]">
-                                      {latestBuyerViewingPreferenceLink ? 'Buyer submitted 3 preferred options' : buyerViewingTimesSummaryWindows.length ? 'Buyer requested viewing times captured' : 'Checking submitted buyer options'}
-                                    </h3>
-                                    <p className="mt-1 text-sm leading-6 text-[#4f6b5d]">
-                                      {buyerViewingTimesSummaryTimestamp
-                                        ? `${latestBuyerViewingPreferenceLink ? 'Submitted' : 'Recorded'} ${formatDateTime(buyerViewingTimesSummaryTimestamp)}`
-                                        : buyerViewingPreferenceLinksLoading
-                                          ? 'Refreshing buyer viewing preference responses.'
-                                          : buyerViewingPreferenceLinksError || 'No submitted buyer viewing response is loaded yet.'}
-                                    </p>
+                                  <div className="flex min-w-0 items-start gap-3">
+                                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[13px] bg-[#eef8f3] text-[#157a4d]">
+                                      <CalendarDays className="h-5 w-5" />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Client requested viewing times</p>
+                                      <h3 className="mt-1 text-base font-semibold tracking-[-0.02em] text-[#102033]">
+                                        {latestBuyerViewingPreferenceLink ? 'Buyer requested 3 possible times' : buyerViewingTimesSummaryWindows.length ? 'Buyer requested viewing times captured' : 'Checking submitted buyer options'}
+                                      </h3>
+                                      <p className="mt-1 text-sm leading-5 text-[#60758b]">
+                                        {buyerViewingTimesSummaryTimestampLabel ||
+                                          (buyerViewingPreferenceLinksLoading
+                                            ? 'Refreshing buyer viewing preference responses.'
+                                            : buyerViewingPreferenceLinksError || 'No submitted buyer viewing response is loaded yet.')}
+                                      </p>
+                                    </div>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2">
                                     {latestBuyerViewingPreferenceLink ? (
-                                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${latestBuyerViewingPreferenceApplied ? 'bg-white text-[#17643a] ring-1 ring-[#b9dbc9]' : 'bg-[#fff8ec] text-[#8a5b1f] ring-1 ring-[#f0dfb7]'}`}>
-                                        {latestBuyerViewingPreferenceApplied ? 'Applied to plan' : 'Ready to apply'}
+                                      <span className={`inline-flex h-8 items-center rounded-full px-3 text-xs font-semibold ${latestBuyerViewingPreferenceApplied ? 'bg-[#f1fbf5] text-[#17643a] ring-1 ring-[#d8eadf]' : 'bg-[#fff8ec] text-[#8a5b1f] ring-1 ring-[#f0dfb7]'}`}>
+                                        {latestBuyerViewingPreferenceApplied ? (
+                                          <>
+                                            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                                            Added to Viewing Planner
+                                          </>
+                                        ) : 'Ready to apply'}
                                       </span>
                                     ) : buyerViewingTimesSummaryWindows.length ? (
-                                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#17643a] ring-1 ring-[#b9dbc9]">
-                                        Saved to plan
+                                      <span className="inline-flex h-8 items-center rounded-full bg-[#f1fbf5] px-3 text-xs font-semibold text-[#17643a] ring-1 ring-[#d8eadf]">
+                                        <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                                        Added to Viewing Planner
                                       </span>
                                     ) : null}
-                                    <Button
+                                    <button
                                       type="button"
-                                      size="sm"
-                                      variant="secondary"
-                                      className="rounded-[12px] border-[#b9dbc9] bg-white text-[#17643a] hover:bg-[#f8fcfa]"
+                                      className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold text-[#20364c] transition hover:bg-[#f3f7fb]"
                                       disabled={buyerViewingPreferenceLinksLoading}
                                       onClick={() => void reloadBuyerViewingPreferenceLinks({ showMessage: true })}
                                     >
                                       <RefreshCw className={`h-4 w-4 ${buyerViewingPreferenceLinksLoading ? 'animate-spin' : ''}`} />
                                       Refresh
-                                    </Button>
+                                    </button>
                                     {latestBuyerViewingPreferenceLink && !latestBuyerViewingPreferenceApplied ? (
                                       <Button
                                         type="button"
@@ -30730,27 +31227,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 {buyerViewingTimesSummaryWindows.length ? (
                                   <>
                                     <div className="mt-4 grid gap-3 md:grid-cols-3">
-                                      {buyerViewingTimesSummaryWindows.slice(0, 3).map((windowLabel, index) => (
-                                        <div key={`buyer-submitted-window-${index}`} className="min-h-[92px] rounded-[14px] border border-[#cbe7d7] bg-white px-4 py-3">
-                                          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#6f8e7f]">Option {index + 1}</p>
-                                          <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-[#102033]">{windowLabel}</p>
+                                      {buyerViewingTimesSummaryTiles.slice(0, 3).map((tile, index) => (
+                                        <div key={`buyer-submitted-window-${index}`} className="grid min-h-[76px] grid-cols-[58px_minmax(0,1fr)] items-center gap-3 rounded-[12px] border border-[#b9dbc9] bg-[#fbfefc] px-3 py-2">
+                                          <div className="text-center">
+                                            <p className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-[#17643a]">{tile.day}</p>
+                                            <p className="text-2xl font-semibold leading-none tracking-[-0.03em] text-[#102033]">{tile.date}</p>
+                                            <p className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-[#60758b]">{tile.month}</p>
+                                          </div>
+                                          <p className="min-w-0 truncate text-sm font-semibold leading-5 text-[#102033]" title={tile.raw}>{tile.time}</p>
                                         </div>
                                       ))}
                                     </div>
-                                    <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)]">
-                                      <div className="rounded-[14px] border border-[#cbe7d7] bg-white px-4 py-3">
-                                        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#6f8e7f]">Selected properties</p>
-                                        <p className="mt-2 text-sm font-semibold leading-6 text-[#102033]">
+                                    <div className="mt-3 grid gap-3 rounded-[12px] border border-[#edf3f8] bg-[#fbfdff] px-4 py-3 lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.48fr)]">
+                                      <div className="min-w-0">
+                                        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7c91a8]">Property</p>
+                                        <p className="mt-1 inline-flex min-w-0 items-center gap-1.5 text-sm font-semibold leading-5 text-[#102033]">
+                                          <Home className="h-4 w-4 shrink-0 text-[#526a85]" />
+                                          <span className="truncate">
                                           {buyerViewingTimesSummaryConfirmedNames.length
                                             ? buyerViewingTimesSummaryConfirmedNames.join(', ')
                                             : 'No property selection was included.'}
+                                          </span>
                                         </p>
                                       </div>
-                                      <div className="rounded-[14px] border border-[#cbe7d7] bg-white px-4 py-3">
-                                        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#6f8e7f]">Buyer notes</p>
-                                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#29435d]">
-                                          {buyerViewingTimesSummaryNotes || 'No extra notes submitted.'}
-                                        </p>
+                                      <div className="min-w-0 border-t border-[#edf3f8] pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
+                                        <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#7c91a8]">Buyer note</p>
+                                        <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-[#60758b]">{buyerViewingTimesSummaryNotes || 'No note provided'}</p>
                                       </div>
                                     </div>
                                   </>
@@ -32167,69 +32669,187 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === BUYER_PROFILE_WORKSPACE_TAB_KEY && !selectedLeadIsSeller ? (
-                    <div className="space-y-5" data-testid="buyer-profile-onboarding-fields">
-                      <section className="overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_16px_42px_rgba(31,54,78,0.06)]">
-                        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-6 py-5 sm:px-8">
+                    <div className="space-y-4" data-testid="buyer-profile-onboarding-fields">
+                      <section className="overflow-hidden rounded-[18px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_12px_30px_rgba(31,54,78,0.05)]">
+                        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#edf3f8] px-5 py-4 sm:px-6">
                           <div>
-                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#6d839b]">Buyer Profile</p>
-                            <h2 className="mt-2 text-2xl font-semibold text-[#102033]">{selectedLeadBuyerProfileModel.buyerName}</h2>
-                            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#60758b]">
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-normal text-[#6d839b]">Buyer Profile</p>
+                            <h2 className="mt-1.5 text-2xl font-semibold text-[#102033]">{selectedLeadBuyerProfileModel.buyerName}</h2>
+                            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-[#60758b]">
                               This profile mirrors the buyer onboarding form fields, including the purchaser route, finance route, and conditional sections.
                             </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-[#60758b]" data-testid="buyer-profile-source-awareness">
+                              <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[#dce7f2] bg-[#fbfdff] px-2.5">
+                                <UserRound className="h-3.5 w-3.5 text-[#2f6f8f]" />
+                                Source: {selectedLeadBuyerProfileModel.sourceLabel}
+                              </span>
+                              {selectedLeadBuyerProfileModel.sourceDetailLabel ? (
+                                <span className="inline-flex h-7 items-center rounded-full border border-[#e8eef5] bg-white px-2.5 text-[#6f8398]">
+                                  {selectedLeadBuyerProfileModel.sourceDetailLabel}
+                                </span>
+                              ) : null}
+                              {selectedLeadBuyerProfileModel.sourceRevisionLabel ? (
+                                <span className="inline-flex h-7 items-center rounded-full border border-[#f0dfb8] bg-[#fffaf0] px-2.5 text-[#8a5b1f]">
+                                  {selectedLeadBuyerProfileModel.sourceRevisionLabel}
+                                </span>
+                              ) : null}
+                              {selectedLeadBuyerProfileModel.sourceMergeSummaryLabel ? (
+                                <span className="inline-flex h-7 items-center rounded-full border border-[#f0dfb8] bg-[#fffaf0] px-2.5 text-[#8a5b1f]" data-testid="buyer-profile-source-merge-summary">
+                                  {selectedLeadBuyerProfileModel.sourceMergeSummaryLabel}
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="rounded-full border border-[#cfe4db] bg-[#f4fbf7] px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#17643a]">
-                              {selectedLeadBuyerProfileModel.statusLabel}
+                            <span className="rounded-full border border-[#cfe4db] bg-[#f4fbf7] px-3 py-1 text-xs font-bold uppercase tracking-normal text-[#17643a]">
+                              {titleCaseWorkspaceValue(selectedLeadBuyerProfileModel.statusLabel)}
                             </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={selectedLeadBuyerProfileModel.isReadyForOnboardingOtp ? 'accent' : 'primary'}
+                              onClick={() => {
+                                const targetId = selectedLeadBuyerProfileModel.nextIncompleteSectionId || 'buyer-profile-completion-panel'
+                                document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                              }}
+                            >
+                              {selectedLeadBuyerProfileModel.isReadyForOnboardingOtp ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}
+                              {selectedLeadBuyerProfileModel.completionActionLabel}
+                            </Button>
                             <Button type="submit" size="sm" form="buyer-profile-onboarding-form" disabled={isLeadDetailSaving}>
-                              {isLeadDetailSaving ? 'Saving...' : 'Save profile'}
+                              {isLeadDetailSaving ? 'Saving...' : 'Save Profile'}
                             </Button>
                             <Button type="button" size="sm" variant="secondary" onClick={() => void downloadBuyerOnboardingForm(selectedLeadBuyerProfileModel)}>
                               <Download className="h-4 w-4" />
-                              Download onboarding form
+                              Download Onboarding Form
                             </Button>
                           </div>
                         </div>
 
-                        <div className="grid gap-4 px-6 py-5 sm:px-8 lg:grid-cols-4">
-                          {[
-                            ['Required fields', `${selectedLeadBuyerProfileModel.completedRequiredCount}/${selectedLeadBuyerProfileModel.requiredCount}`],
-                            ['Fields captured', `${selectedLeadBuyerProfileModel.capturedCount}/${selectedLeadBuyerProfileModel.totalFieldCount}`],
-                            ['Completion', `${selectedLeadBuyerProfileModel.completionPercent}%`],
-                            ['Last updated', selectedLeadBuyerProfileModel.updatedAt ? formatDateTime(selectedLeadBuyerProfileModel.updatedAt) : 'Not captured'],
-                          ].map(([label, value]) => (
-                            <div key={label} className="rounded-[16px] border border-[#e1eaf4] bg-[#fbfdff] px-4 py-3">
-                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7d93aa]">{label}</p>
-                              <p className="mt-2 text-sm font-semibold text-[#20364c]">{value}</p>
+                        <div
+                          className="mx-5 my-4 grid overflow-hidden rounded-[14px] border border-[#e1eaf4] bg-[#fbfdff] sm:mx-6 md:grid-cols-4"
+                          data-testid="buyer-profile-summary-strip"
+                        >
+                          <div className="border-b border-[#e1eaf4] px-4 py-3 md:border-b-0 md:border-r">
+                            <p className="text-[0.66rem] font-semibold uppercase tracking-normal text-[#7d93aa]">Required Fields</p>
+                            <p className="mt-1.5 text-sm font-semibold text-[#20364c]">
+                              {selectedLeadBuyerProfileModel.completedRequiredCount} of {selectedLeadBuyerProfileModel.requiredCount}
+                            </p>
+                            <p className="mt-1 text-xs font-semibold text-[#9a711c]">
+                              {selectedLeadBuyerProfileModel.requiredRemainingCount} remaining
+                            </p>
+                          </div>
+                          <div className="border-b border-[#e1eaf4] px-4 py-3 md:border-b-0 md:border-r">
+                            <p className="text-[0.66rem] font-semibold uppercase tracking-normal text-[#7d93aa]">Fields Captured</p>
+                            <p className="mt-1.5 text-sm font-semibold text-[#20364c]">
+                              {selectedLeadBuyerProfileModel.capturedCount} of {selectedLeadBuyerProfileModel.totalFieldCount}
+                            </p>
+                          </div>
+                          <div className="border-b border-[#e1eaf4] px-4 py-3 md:border-b-0 md:border-r">
+                            <p className="text-[0.66rem] font-semibold uppercase tracking-normal text-[#7d93aa]">Completion</p>
+                            <p className="mt-1.5 text-sm font-semibold text-[#20364c]">{selectedLeadBuyerProfileModel.completionPercent}%</p>
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#dce7f2]">
+                              <div className="h-full rounded-full bg-[#1f7ea8]" style={{ width: `${selectedLeadBuyerProfileModel.completionPercent}%` }} />
                             </div>
-                          ))}
+                          </div>
+                          <div className="px-4 py-3">
+                            <p className="text-[0.66rem] font-semibold uppercase tracking-normal text-[#7d93aa]">Last Updated</p>
+                            <p className="mt-1.5 text-sm font-semibold text-[#20364c]">
+                              {selectedLeadBuyerProfileModel.updatedAt ? formatDateTime(selectedLeadBuyerProfileModel.updatedAt) : 'Not captured'}
+                            </p>
+                          </div>
                         </div>
 
                         {selectedLeadBuyerProfileModel.submittedAt ? (
-                          <div className="mx-6 mb-5 rounded-[16px] border border-[#cfe4db] bg-[#f4fbf7] px-4 py-3 text-sm font-semibold text-[#17643a] sm:mx-8">
+                          <div className="mx-5 mb-4 rounded-[12px] border border-[#cfe4db] bg-[#f4fbf7] px-4 py-2.5 text-sm font-semibold text-[#17643a] sm:mx-6">
                             Buyer onboarding submitted {formatDateTime(selectedLeadBuyerProfileModel.submittedAt)}.
                           </div>
                         ) : null}
                       </section>
 
-                      <form id="buyer-profile-onboarding-form" className="grid gap-5" onSubmit={handleSaveBuyerProfile}>
+                      <section
+                        id="buyer-profile-completion-panel"
+                        className={`rounded-[18px] border p-4 shadow-[0_10px_26px_rgba(31,54,78,0.04)] sm:p-5 ${
+                          selectedLeadBuyerProfileModel.isReadyForOnboardingOtp
+                            ? 'border-[#bfe5cf] bg-[#f5fbf7]'
+                            : 'border-[#f0dfb8] bg-[#fffaf0]'
+                        }`}
+                        data-testid="buyer-profile-completion-panel"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div>
+                            <p className={`text-[0.66rem] font-semibold uppercase tracking-normal ${selectedLeadBuyerProfileModel.isReadyForOnboardingOtp ? 'text-[#17643a]' : 'text-[#8a5b1f]'}`}>
+                              Profile Readiness
+                            </p>
+                            <h3 className="mt-1 text-lg font-semibold text-[#102033]">
+                              {selectedLeadBuyerProfileModel.isReadyForOnboardingOtp ? 'Ready for Onboarding / OTP' : 'Complete buyer profile'}
+                            </h3>
+                            <p className="mt-1 text-sm leading-6 text-[#60758b]">
+                              {selectedLeadBuyerProfileModel.isReadyForOnboardingOtp
+                                ? 'All required profile fields are captured.'
+                                : `${selectedLeadBuyerProfileModel.requiredRemainingCount} required field${selectedLeadBuyerProfileModel.requiredRemainingCount === 1 ? '' : 's'} remaining before onboarding / OTP readiness.`}
+                            </p>
+                          </div>
+                          <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${selectedLeadBuyerProfileModel.isReadyForOnboardingOtp ? 'border-[#bfe5cf] bg-white text-[#17643a]' : 'border-[#f0dfb8] bg-white text-[#8a5b1f]'}`}>
+                            {selectedLeadBuyerProfileModel.completedRequiredCount}/{selectedLeadBuyerProfileModel.requiredCount} required
+                          </span>
+                        </div>
+
+                        {selectedLeadBuyerProfileModel.missingRequiredSections.length ? (
+                          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="buyer-profile-missing-required-sections">
+                            {selectedLeadBuyerProfileModel.missingRequiredSections.map((section) => (
+                              <button
+                                key={section.sectionId}
+                                type="button"
+                                className="rounded-[12px] border border-[#ecdcb8] bg-white px-3 py-3 text-left transition hover:border-[#d5b56f] hover:bg-[#fffdf8]"
+                                onClick={() => document.getElementById(section.sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                              >
+                                <span className="flex items-start justify-between gap-3">
+                                  <span className="min-w-0">
+                                    {section.groupLabel ? <span className="block text-[0.64rem] font-semibold uppercase tracking-normal text-[#9a711c]">{section.groupLabel}</span> : null}
+                                    <span className="mt-1 block text-sm font-semibold text-[#102033]">{section.title}</span>
+                                  </span>
+                                  <span className="shrink-0 rounded-full bg-[#fff4dc] px-2 py-0.5 text-[0.66rem] font-semibold text-[#8a5b1f]">
+                                    {section.missingCount}
+                                  </span>
+                                </span>
+                                <span className="mt-2 block line-clamp-2 text-xs leading-5 text-[#60758b]">
+                                  {section.missingFields.slice(0, 4).join(', ')}
+                                  {section.missingFields.length > 4 ? ` +${section.missingFields.length - 4} more` : ''}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </section>
+
+                      <form id="buyer-profile-onboarding-form" className="grid gap-4" onSubmit={handleSaveBuyerProfile}>
                         {selectedLeadBuyerProfileModel.sections.map((section) => (
-                          <section key={section.key} className="rounded-[22px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_30px_rgba(31,54,78,0.045)] sm:p-6">
+                          <section id={section.sectionId} key={section.key} className="scroll-mt-24 rounded-[18px] border border-[#dce7f2] bg-white p-5 shadow-[0_10px_26px_rgba(31,54,78,0.04)] sm:p-6">
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div>
+                                {section.groupLabel ? (
+                                  <p className="mb-1 text-[0.66rem] font-semibold uppercase tracking-normal text-[#7d93aa]">{section.groupLabel}</p>
+                                ) : null}
                                 <h3 className="text-lg font-semibold text-[#102033]">{section.title}</h3>
-                                {section.description ? <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758b]">{section.description}</p> : null}
+                                {section.description ? (
+                                  <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758b]">
+                                    {section.key === 'personal_details'
+                                      ? 'Use these details to identify the purchaser and prepare the transaction correctly.'
+                                      : section.description}
+                                  </p>
+                                ) : null}
                               </div>
                               <span className="rounded-full border border-[#dce7f2] bg-[#fbfdff] px-3 py-1 text-xs font-semibold text-[#60758b]">
                                 {section.completedRequiredCount}/{section.requiredCount} required
                               </span>
                             </div>
 
-                            <div className="mt-5 space-y-4">
+                            <div className="mt-4 grid gap-5">
                               {section.rows.map((row) => (
-                                <div key={row.key} className="rounded-[16px] border border-[#edf3f8] bg-[#fbfdff] p-4">
+                                <div key={row.key} className="min-w-0" data-testid="buyer-profile-field-row">
                                   {row.title && row.title !== section.title ? (
-                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-[#edf3f8] pb-3">
                                       <p className="text-sm font-semibold text-[#20364c]">{row.title}</p>
                                       {section.repeatable && Array.isArray(buyerProfileForm?.[section.key]) && buyerProfileForm[section.key].length > 1 ? (
                                         <Button type="button" size="sm" variant="ghost" onClick={() => handleRemoveBuyerProfileRepeatableRow(section, row)}>
@@ -32239,7 +32859,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       ) : null}
                                     </div>
                                   ) : null}
-                                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                  <div className="grid gap-x-4 gap-y-4 md:grid-cols-2 lg:grid-cols-3">
                                     {row.fields.map((field) => {
                                       const fieldId = `buyer-profile-${section.key}-${row.key}-${field.key}`.replace(/[^a-zA-Z0-9_-]+/g, '-')
                                       const value = field.type === 'multi_select'
@@ -32254,23 +32874,59 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         }
                                         updateBuyerProfileOnboardingField(field, nextValue)
                                       }
-                                      const commonFieldClass = field.fullWidth || field.type === 'textarea' ? 'md:col-span-2 xl:col-span-3' : ''
+                                      const isProfileSetupChoiceField = section.key === 'routing' && field.type === 'select'
+                                      const profileSetupChoiceOptions = isProfileSetupChoiceField
+                                        ? (Array.isArray(field.options) ? field.options : []).filter((option) => normalizeText(option.value))
+                                        : []
+                                      const commonFieldClass = field.fullWidth || field.type === 'textarea' ? 'md:col-span-2 lg:col-span-3' : ''
+                                      const sourceBadgeClass = field.sourceMeta?.tone === 'green'
+                                        ? 'border-[#cfe4db] bg-[#f4fbf7] text-[#17643a]'
+                                        : field.sourceMeta?.tone === 'amber'
+                                          ? 'border-[#f0dfb8] bg-[#fffaf0] text-[#8a5b1f]'
+                                          : 'border-[#dce7f2] bg-[#fbfdff] text-[#60758b]'
                                       return (
-                                        <div key={`${row.key}-${field.key}`} className={`min-w-0 rounded-[14px] border border-[#e4edf6] bg-white px-3 py-3 ${commonFieldClass}`}>
-                                          <div className="flex items-start justify-between gap-3">
-                                            <span className="min-w-0 text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7d93aa]">
+                                        <div key={`${row.key}-${field.key}`} className={`min-w-0 ${commonFieldClass}`} data-testid="buyer-profile-field">
+                                          <div className="flex min-h-[18px] items-center justify-between gap-3">
+                                            <span className={BUYER_PROFILE_FIELD_LABEL_CLASS}>
                                               <span className="break-words">{field.label}</span>
                                               {field.required ? <span className="text-[#b7791f]"> *</span> : null}
                                             </span>
-                                            {field.required ? (
-                                              field.complete
-                                                ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#157a4d]" />
-                                                : <Clock3 className="h-4 w-4 shrink-0 text-[#b7791f]" />
-                                            ) : null}
+                                            <span className="flex shrink-0 items-center gap-1.5">
+                                              {field.sourceMeta?.badge ? (
+                                                <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[0.62rem] font-semibold normal-case tracking-normal ${sourceBadgeClass}`} data-testid="buyer-profile-field-source-badge">
+                                                  {field.sourceMeta.badge}
+                                                </span>
+                                              ) : null}
+                                              {field.required ? (
+                                                field.complete
+                                                  ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#157a4d]" />
+                                                  : <Clock3 className="h-4 w-4 shrink-0 text-[#b7791f]" />
+                                              ) : null}
+                                            </span>
                                           </div>
 
-                                          {field.type === 'select' ? (
-                                            <Field id={fieldId} as="select" className="mt-2" value={normalizeText(value)} onChange={(event) => handleChange(event.target.value)}>
+                                          {isProfileSetupChoiceField ? (
+                                            <div className="mt-1.5 grid gap-2 sm:grid-cols-2" data-testid="buyer-profile-setup-choice-group">
+                                              {profileSetupChoiceOptions.map((option) => {
+                                                const selected = normalizeText(value) === normalizeText(option.value)
+                                                return (
+                                                  <button
+                                                    key={`${field.key}-${option.value}`}
+                                                    type="button"
+                                                    aria-pressed={selected}
+                                                    className={`min-h-11 rounded-[10px] border px-3 py-2 text-left transition ${selected ? 'border-[#17764f] bg-[#edf8f2] text-[#17643a] shadow-[0_6px_16px_rgba(23,118,79,0.08)]' : 'border-[#dce7f2] bg-white text-[#29435d] hover:border-[#b9cbdd] hover:bg-[#fbfdff]'}`}
+                                                    onClick={() => handleChange(option.value)}
+                                                  >
+                                                    <span className="flex items-center justify-between gap-2">
+                                                      <span className="min-w-0 text-sm font-semibold leading-5">{option.label}</span>
+                                                      {selected ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : null}
+                                                    </span>
+                                                  </button>
+                                                )
+                                              })}
+                                            </div>
+                                          ) : field.type === 'select' ? (
+                                            <Field id={fieldId} as="select" className={BUYER_PROFILE_FIELD_CLASS} value={normalizeText(value)} onChange={(event) => handleChange(event.target.value)}>
                                               {(Array.isArray(field.options) ? field.options : []).map((option) => (
                                                 <option key={`${field.key}-${option.value}`} value={option.value}>
                                                   {option.label}
@@ -32278,12 +32934,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                               ))}
                                             </Field>
                                           ) : field.type === 'radio' ? (
-                                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                            <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
                                               {(Array.isArray(field.options) ? field.options : []).map((option) => (
                                                 <button
                                                   key={`${field.key}-${option.value}`}
                                                   type="button"
-                                                  className={`rounded-[12px] border px-3 py-2 text-left text-sm font-semibold transition ${normalizeText(value) === normalizeText(option.value) ? 'border-[#17764f] bg-[#edf8f2] text-[#17643a]' : 'border-[#dce7f2] bg-[#fbfdff] text-[#29435d] hover:border-[#b9cbdd]'}`}
+                                                  className={`h-11 rounded-[10px] border px-3 text-left text-sm font-semibold transition ${normalizeText(value) === normalizeText(option.value) ? 'border-[#17764f] bg-[#edf8f2] text-[#17643a]' : 'border-[#dce7f2] bg-white text-[#29435d] hover:border-[#b9cbdd]'}`}
                                                   onClick={() => handleChange(option.value)}
                                                 >
                                                   {option.label}
@@ -32291,11 +32947,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                               ))}
                                             </div>
                                           ) : field.type === 'multi_select' ? (
-                                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                            <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
                                               {(Array.isArray(field.options) ? field.options : []).map((option) => {
                                                 const checked = value.includes(normalizeText(option.value))
                                                 return (
-                                                  <label key={`${field.key}-${option.value}`} className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 text-sm font-semibold transition ${checked ? 'border-[#17764f] bg-[#edf8f2] text-[#17643a]' : 'border-[#dce7f2] bg-[#fbfdff] text-[#29435d]'}`}>
+                                                  <label key={`${field.key}-${option.value}`} className={`flex min-h-11 items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-semibold transition ${checked ? 'border-[#17764f] bg-[#edf8f2] text-[#17643a]' : 'border-[#dce7f2] bg-white text-[#29435d]'}`}>
                                                     <input
                                                       type="checkbox"
                                                       className="h-4 w-4 rounded border-[#b9cbdd] text-[#17764f]"
@@ -32308,7 +32964,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                               })}
                                             </div>
                                           ) : field.type === 'checkbox' ? (
-                                            <label className="mt-2 flex items-center gap-2 rounded-[12px] border border-[#dce7f2] bg-[#fbfdff] px-3 py-2 text-sm font-semibold text-[#29435d]">
+                                            <label className="mt-1.5 flex h-11 items-center gap-2 rounded-[10px] border border-[#dce7f2] bg-white px-3 text-sm font-semibold text-[#29435d]">
                                               <input
                                                 id={fieldId}
                                                 type="checkbox"
@@ -32319,18 +32975,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                               <span>Yes</span>
                                             </label>
                                           ) : field.type === 'textarea' ? (
-                                            <Field id={fieldId} as="textarea" rows={3} className="mt-2" value={normalizeText(value)} onChange={(event) => handleChange(event.target.value)} />
+                                            <Field id={fieldId} as="textarea" rows={3} className={BUYER_PROFILE_TEXTAREA_CLASS} value={normalizeText(value)} onChange={(event) => handleChange(event.target.value)} />
                                           ) : (
                                             <Field
                                               id={fieldId}
                                               type={field.type === 'currency' ? 'number' : field.type || 'text'}
                                               min={field.min}
                                               step={field.step}
-                                              className="mt-2"
+                                              className={BUYER_PROFILE_FIELD_CLASS}
                                               value={normalizeText(value)}
                                               onChange={(event) => handleChange(event.target.value)}
                                             />
                                           )}
+                                          {field.sourceMeta?.conflict ? (
+                                            <div className="mt-2 rounded-[10px] border border-[#f0dfb8] bg-[#fffaf0] px-3 py-2 text-xs leading-5 text-[#8a5b1f]" data-testid="buyer-profile-field-source-conflict">
+                                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <span>
+                                                  {field.sourceMeta.conflictLabel}: <span className="font-semibold">{field.sourceMeta.buyerDisplayValue}</span>
+                                                </span>
+                                                <span className="flex shrink-0 items-center gap-1.5">
+                                                  <button
+                                                    type="button"
+                                                    className="rounded-full border border-[#e5c985] bg-white px-2.5 py-1 font-semibold text-[#7a541d] hover:border-[#d5b56f]"
+                                                    onClick={() => handleChange(field.sourceMeta.buyerValue)}
+                                                  >
+                                                    Use buyer value
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    className="rounded-full border border-transparent px-2.5 py-1 font-semibold text-[#7a541d] hover:bg-white"
+                                                    onClick={() => handleChange(value)}
+                                                  >
+                                                    Keep agent value
+                                                  </button>
+                                                </span>
+                                              </div>
+                                            </div>
+                                          ) : null}
                                         </div>
                                       )
                                     })}

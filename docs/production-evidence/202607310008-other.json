@@ -1,0 +1,44 @@
+{
+  "version": "202607310008",
+  "stream": "other",
+  "file": "202607310008_buyer_onboarding_projection_recovery_events.sql",
+  "productionRoute": "production_no_sql_record_after_smoke",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": false,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "ledgerRecordedAt": "2026-08-14T13:23:11Z",
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex 2026-08-14 production read-only review",
+  "capturedAt": "2026-08-14T13:18:40Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Production already has the scoped buyer onboarding projection recovery insert policy and required table grants.",
+    "No production SQL was applied while preparing this evidence.",
+    "Production ledger repair succeeded for exactly this version after dependency, staging evidence, production target-state evidence, recovery evidence, and backup checks passed."
+  ],
+  "verification": {
+    "source": "linked_production_read_only_query",
+    "productionProjectRef": "isdowlnollckzvltkasn",
+    "dependencyVersion": "202607310007",
+    "dependencyRecorded": true,
+    "stagingEvidenceFile": "docs/staging-evidence/202607310008-other.json",
+    "policyExists": true,
+    "anonInsert": true,
+    "authenticatedInsert": true,
+    "policyName": "transaction_events_insert_buyer_onboarding_projection_recovery",
+    "policyCommand": "INSERT",
+    "policyRoles": [
+      "anon",
+      "authenticated"
+    ],
+    "behaviorEvidence": [
+      "npm run reconcile:verify -- recover-buyer-onboarding-projection: pass"
+    ],
+    "rollbackOrNoResidue": "No SQL replay occurred for production evidence capture; target-state check was read-only."
+  }
+}

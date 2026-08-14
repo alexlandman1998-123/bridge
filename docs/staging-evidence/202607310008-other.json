@@ -1,0 +1,53 @@
+{
+  "version": "202607310008",
+  "stream": "other",
+  "file": "202607310008_buyer_onboarding_projection_recovery_events.sql",
+  "route": "staging_apply_then_repair",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "ledgerRecordedAt": "2026-08-14T13:22:00Z",
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex staging evidence run",
+  "approvedBy": "Alexander Landman instruction to continue to 202607310008 after 202607310007",
+  "capturedAt": "2026-08-14T13:18:40Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Staging SQL was applied as individual guarded statements because staging did not already have the projection recovery insert policy.",
+    "The policy and anon/authenticated insert grants were verified on the guarded staging project.",
+    "The live rollback-backed staging smoke could not run because the app does not currently resolve the pg package for that script; static contract, catalog checks, and build smoke passed."
+  ],
+  "commands": [
+    "npm run reconcile:verify -- recover-buyer-onboarding-projection",
+    "node scripts/run-with-staging-env.mjs -- npx --yes supabase@2.109.1 db query --db-url <staging-db-url> <grant/policy statements>"
+  ],
+  "verification": {
+    "source": "staging_catalog_and_contract_smoke",
+    "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+    "policyExists": true,
+    "anonInsert": true,
+    "authenticatedInsert": true,
+    "policyName": "transaction_events_insert_buyer_onboarding_projection_recovery",
+    "policyCommand": "INSERT",
+    "policyRoles": [
+      "anon",
+      "authenticated"
+    ],
+    "behaviorEvidence": [
+      "node scripts/buyer-onboarding-projection-recovery-contract.test.mjs: pass",
+      "node scripts/mandate-readiness-canonical-facts.test.mjs: pass",
+      "node scripts/seller-onboarding-progress-serialization.test.mjs: pass",
+      "npm run build: pass"
+    ],
+    "liveStagingSmoke": {
+      "status": "not_run",
+      "reason": "node scripts/buyer-onboarding-projection-recovery-staging-smoke.mjs --environment staging failed before connecting because package pg is not resolvable in the app runtime."
+    },
+    "rollbackOrNoResidue": "No production mutation occurred. Staging-only target confirmed by run-with-staging-env and project ref guards."
+  }
+}
