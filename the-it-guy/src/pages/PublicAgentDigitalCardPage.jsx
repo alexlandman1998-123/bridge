@@ -2,28 +2,24 @@ import {
   Bath,
   BedDouble,
   Building2,
-  Copy,
-  Download,
+  ChevronRight,
   ExternalLink,
   Home,
   LoaderCircle,
   Mail,
   MessageCircle,
   Phone,
-  Share2,
+  Tag,
 } from 'lucide-react'
 import { createElement, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   recordAgentDigitalCardEventSoon,
+  resolveAgencyPublicAgentCard,
   resolveAgencyPublicCardListings,
-  resolveAgencyPublicIntake,
 } from '../services/agencyPublicIntakeService'
 import {
-  buildAgentDigitalCardFileBaseName,
   buildAgentDigitalCardShareText,
-  buildAgentDigitalCardVcard,
-  downloadAgentDigitalCardTextFile,
 } from '../services/agentDigitalCardShareService'
 
 function normalizeText(value = '') {
@@ -86,13 +82,6 @@ function buildTheme(agency = {}) {
   }
 }
 
-function normalizeExternalUrl(value = '') {
-  const text = normalizeText(value)
-  if (!text) return ''
-  if (/^https?:\/\//i.test(text)) return text
-  return `https://${text}`
-}
-
 function normalizePhoneHref(value = '') {
   const text = normalizeText(value).replace(/[^\d+]/g, '')
   return text ? `tel:${text}` : ''
@@ -104,36 +93,49 @@ function normalizeWhatsAppHref(value = '', fallbackText = '') {
   return fallbackText ? `https://wa.me/?text=${encodeURIComponent(fallbackText)}` : ''
 }
 
-async function copyText(value = '') {
-  const text = normalizeText(value)
-  if (!text) return false
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
-    return true
-  }
-  return false
-}
-
-function ContactButton({ icon: Icon, label, href, onClick = null, accent = false }) {
-  const icon = Icon ? createElement(Icon, { size: 16 }) : null
-  const className = `inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition focus:outline-none focus:ring-4 ${
-    accent
-      ? 'border border-transparent bg-[var(--card-accent)] text-[var(--card-accent-text)] shadow-[0_16px_34px_rgba(15,23,42,0.16)] hover:brightness-95 focus:ring-[var(--card-accent)]/25'
-      : 'border border-slate-200 bg-white text-slate-800 shadow-[0_10px_24px_rgba(15,23,42,0.06)] hover:border-slate-300 hover:bg-slate-50 focus:ring-slate-200'
-  }`
-
-  if (href) {
-    return (
-      <a className={className} href={href} target={href.startsWith('http') ? '_blank' : undefined} rel={href.startsWith('http') ? 'noreferrer' : undefined} onClick={onClick || undefined}>
-        {icon} {label}
-      </a>
-    )
-  }
+function RoundContactLink({ icon: Icon, label, href, onClick = null }) {
+  const icon = Icon ? createElement(Icon, { size: 22, strokeWidth: 2.4 }) : null
+  const disabled = !href
+  const className = `group flex min-w-0 flex-col items-center gap-2 text-center ${disabled ? 'pointer-events-none opacity-45' : ''}`
+  const content = (
+    <>
+      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--card-primary)] text-white shadow-[0_12px_26px_rgba(15,23,42,0.2)] ring-1 ring-white/70 transition group-hover:-translate-y-0.5 group-hover:brightness-110">
+        {icon}
+      </span>
+      <span className="text-[0.82rem] font-semibold text-slate-950">{label}</span>
+    </>
+  )
 
   return (
-    <button type="button" className={className} onClick={onClick}>
-      {icon} {label}
-    </button>
+    <a className={className} href={href || undefined} target={href?.startsWith('http') ? '_blank' : undefined} rel={href?.startsWith('http') ? 'noreferrer' : undefined} onClick={disabled ? undefined : onClick || undefined}>
+      {content}
+    </a>
+  )
+}
+
+function IntentCta({ icon: Icon, title, subtitle, href, onClick = null, tone = 'primary', stagger = false }) {
+  const icon = Icon ? createElement(Icon, { size: 27, strokeWidth: 1.9 }) : null
+  const toneClass = tone === 'accent'
+    ? 'bg-[linear-gradient(135deg,var(--card-accent)_0%,rgba(184,134,28,0.96)_100%)] text-[var(--card-accent-text)] shadow-[0_16px_34px_rgba(184,134,28,0.24)]'
+    : 'bg-[linear-gradient(135deg,var(--card-primary)_0%,var(--card-secondary)_100%)] text-white shadow-[0_16px_34px_rgba(15,23,42,0.22)]'
+  const secondaryTextClass = tone === 'accent' ? 'text-[var(--card-accent-text)]/78' : 'text-white/78'
+  const iconBorderClass = tone === 'accent' ? 'border-[var(--card-accent-text)]/72 text-[var(--card-accent-text)]' : 'border-white/78 text-white'
+
+  return (
+    <a
+      href={href}
+      onClick={onClick || undefined}
+      className={`group flex min-h-[86px] items-center gap-4 rounded-lg px-5 py-4 transition hover:-translate-y-0.5 hover:brightness-105 focus:outline-none focus:ring-4 focus:ring-[var(--card-primary)]/20 ${toneClass} ${stagger ? 'sm:ml-4' : ''}`}
+    >
+      <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 ${iconBorderClass}`}>
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[1.15rem] font-semibold leading-6">{title}</span>
+        <span className={`mt-1 block text-[0.86rem] leading-5 ${secondaryTextClass}`}>{subtitle}</span>
+      </span>
+      <ChevronRight className="shrink-0 transition group-hover:translate-x-1" size={28} strokeWidth={2.2} />
+    </a>
   )
 }
 
@@ -185,7 +187,6 @@ export default function PublicAgentDigitalCardPage() {
   const [loading, setLoading] = useState(true)
   const [listingLoading, setListingLoading] = useState(false)
   const [error, setError] = useState('')
-  const [feedback, setFeedback] = useState('')
   const trackedViewRef = useRef('')
 
   useEffect(() => {
@@ -195,7 +196,7 @@ export default function PublicAgentDigitalCardPage() {
         if (cancelled) return null
         setLoading(true)
         setError('')
-        return resolveAgencyPublicIntake(cardSlug)
+        return resolveAgencyPublicAgentCard(cardSlug)
       })
       .then((resolved) => {
         if (!cancelled && resolved) setIntake(resolved)
@@ -276,6 +277,7 @@ export default function PublicAgentDigitalCardPage() {
     organisationName: agencyName,
     shareUrl,
   })
+  const heroLogoUrl = normalizeText(agency.logoLightUrl || agency.logoUrl || agency.logoDarkUrl || agency.logoIconUrl)
 
   function trackCardEvent(eventType, metadata = {}) {
     recordAgentDigitalCardEventSoon({
@@ -287,30 +289,6 @@ export default function PublicAgentDigitalCardPage() {
         referrer: typeof document !== 'undefined' ? document.referrer : '',
       },
     })
-  }
-
-  function showFeedback(message) {
-    setFeedback(message)
-    window.setTimeout(() => setFeedback(''), 2200)
-  }
-
-  function downloadVcard() {
-    trackCardEvent('vcf_download')
-    const fileBaseName = buildAgentDigitalCardFileBaseName({ agentName, organisationName: agencyName })
-    const vcard = buildAgentDigitalCardVcard({
-      agentName,
-      agentEmail: email,
-      agentPhone: phone || whatsapp,
-      agentJobTitle: jobTitle,
-      organisationName: agencyName,
-      shareUrl,
-    })
-    const downloaded = downloadAgentDigitalCardTextFile({
-      fileName: `${fileBaseName}.vcf`,
-      text: vcard,
-      mimeType: 'text/vcard;charset=utf-8',
-    })
-    showFeedback(downloaded ? 'Contact downloaded' : 'Download unavailable')
   }
 
   if (loading) {
@@ -337,6 +315,7 @@ export default function PublicAgentDigitalCardPage() {
       className="min-h-screen bg-slate-50 text-slate-950"
       style={{
         '--card-primary': theme.primary,
+        '--card-secondary': theme.secondary,
         '--card-accent': theme.accent,
         '--card-accent-text': theme.accentText,
         background: theme.page,
@@ -344,52 +323,58 @@ export default function PublicAgentDigitalCardPage() {
     >
       <section className="mx-auto grid min-h-screen w-full max-w-6xl gap-6 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(320px,420px)_1fr] lg:items-start lg:py-10">
         <aside className="overflow-hidden rounded-lg border border-white/15 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.22)] lg:sticky lg:top-8">
-          <div className="px-6 pb-6 pt-7 text-white" style={{ background: theme.hero }}>
-            <div className="flex items-start justify-between gap-4">
-              {agency.logoUrl || agency.logoDarkUrl || agency.logoLightUrl ? (
-                <img src={agency.logoUrl || agency.logoDarkUrl || agency.logoLightUrl} alt={agencyName} className="max-h-14 max-w-[190px] object-contain" />
+          <div className="px-6 pb-24 pt-7 text-white" style={{ background: theme.hero }}>
+            <div className="flex items-center justify-center">
+              {heroLogoUrl ? (
+                <img src={heroLogoUrl} alt={agencyName} className="max-h-20 max-w-[260px] object-contain" />
               ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-lg font-semibold">
+                <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-2xl font-semibold text-white">
                   {agencyName.slice(0, 1).toUpperCase()}
                 </div>
               )}
-              {feedback ? <span className="rounded-full bg-white/14 px-3 py-1 text-xs font-semibold text-white">{feedback}</span> : null}
-            </div>
-
-            <div className="mt-7 flex flex-col items-center text-center">
-              {agent.avatarUrl ? (
-                <img src={agent.avatarUrl} alt="" className="h-32 w-32 rounded-full border-4 border-white object-cover shadow-[0_18px_38px_rgba(0,0,0,0.24)]" />
-              ) : (
-                <div className="flex h-32 w-32 items-center justify-center rounded-full border-4 border-white bg-white/12 text-4xl font-semibold shadow-[0_18px_38px_rgba(0,0,0,0.24)]">
-                  {agentName.slice(0, 1).toUpperCase()}
-                </div>
-              )}
-              <h1 className="mt-5 text-3xl font-semibold tracking-[-0.03em]">{agentName}</h1>
-              <p className="mt-1 text-base font-medium text-white/78">{jobTitle}</p>
-              <p className="mt-1 text-sm text-white/68">{agencyName}</p>
             </div>
           </div>
 
-          <div className="space-y-5 p-5">
-            <div className="grid grid-cols-3 gap-2">
-              <ContactButton icon={Phone} label="Call" href={normalizePhoneHref(phone)} onClick={() => trackCardEvent('call_click')} />
-              <ContactButton icon={MessageCircle} label="WhatsApp" href={normalizeWhatsAppHref(whatsapp, shareText)} onClick={() => trackCardEvent('whatsapp_click')} />
-              <ContactButton icon={Mail} label="Email" href={email ? `mailto:${email}` : ''} onClick={() => trackCardEvent('email_click')} />
+          <div className="px-6 pb-6">
+            <div className="-mt-20 flex flex-col items-center text-center">
+              {agent.avatarUrl ? (
+                <img src={agent.avatarUrl} alt="" className="h-40 w-40 rounded-full border-[6px] border-white object-cover shadow-[0_20px_44px_rgba(15,23,42,0.24)]" />
+              ) : (
+                <div className="flex h-40 w-40 items-center justify-center rounded-full border-[6px] border-white bg-slate-100 text-5xl font-semibold text-[var(--card-primary)] shadow-[0_20px_44px_rgba(15,23,42,0.24)]">
+                  {agentName.slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <h1 className="mt-5 text-[2.15rem] font-semibold leading-none text-slate-950">{agentName}</h1>
+              <p className="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-base">
+                <span className="font-semibold text-[var(--card-accent)]">{jobTitle}</span>
+                <span className="text-slate-300">|</span>
+                <span className="font-medium text-slate-950">{agencyName}</span>
+              </p>
             </div>
 
-            <div className="grid gap-3">
-              <ContactButton icon={Home} label={intake.intake?.buyerCtaLabel || 'I am looking to buy'} href={buyerUrl} onClick={() => trackCardEvent('buyer_cta_click')} accent />
-              <ContactButton icon={Building2} label={intake.intake?.sellerCtaLabel || 'I am looking to sell'} href={sellerUrl} onClick={() => trackCardEvent('seller_cta_click')} />
+            <div className="mt-7 grid grid-cols-3 gap-3">
+              <RoundContactLink icon={Phone} label="Call" href={normalizePhoneHref(phone)} onClick={() => trackCardEvent('call_click')} />
+              <RoundContactLink icon={MessageCircle} label="WhatsApp" href={normalizeWhatsAppHref(whatsapp, shareText)} onClick={() => trackCardEvent('whatsapp_click')} />
+              <RoundContactLink icon={Mail} label="Email" href={email ? `mailto:${email}` : ''} onClick={() => trackCardEvent('email_click')} />
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-              <ContactButton icon={Download} label="Save Contact" onClick={downloadVcard} />
-              <ContactButton icon={Share2} label="Share" href={normalizeWhatsAppHref('', shareText)} onClick={() => trackCardEvent('share_click')} />
-              <ContactButton icon={Copy} label="Copy Link" onClick={() => {
-                trackCardEvent('copy_link')
-                copyText(shareUrl).then((copied) => showFeedback(copied ? 'Link copied' : 'Copy unavailable'))
-              }} />
-              {agency.website ? <ContactButton icon={ExternalLink} label="Website" href={normalizeExternalUrl(agency.website)} onClick={() => trackCardEvent('website_click')} /> : null}
+            <div className="mt-6 grid gap-3">
+              <IntentCta
+                icon={Home}
+                title={intake.intake?.buyerCtaLabel || 'I am looking to buy'}
+                subtitle="Let me help you find your perfect home"
+                href={buyerUrl}
+                onClick={() => trackCardEvent('buyer_cta_click')}
+              />
+              <IntentCta
+                icon={Tag}
+                title={intake.intake?.sellerCtaLabel || 'I am looking to sell'}
+                subtitle="Get a free market assessment"
+                href={sellerUrl}
+                onClick={() => trackCardEvent('seller_cta_click')}
+                tone="accent"
+                stagger
+              />
             </div>
           </div>
         </aside>
@@ -398,7 +383,7 @@ export default function PublicAgentDigitalCardPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">My Listings</p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-slate-950">Featured Properties</h2>
+              <h2 className="mt-1 text-2xl font-semibold text-slate-950">Featured Properties</h2>
             </div>
             <a href={buyerUrl} onClick={() => trackCardEvent('buyer_cta_click', { placement: 'listings_header' })} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50">
               Buyer enquiry

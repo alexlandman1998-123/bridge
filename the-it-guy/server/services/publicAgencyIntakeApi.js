@@ -1665,6 +1665,7 @@ export async function createPublicAgencyIntakeResponse({ method = 'GET', url = '
         message: 'Agency intake slug is required.',
       })
     }
+    const cardOnly = normalizedMethod !== 'POST' && normalizeLower(requestUrl.searchParams.get('surface')) === 'agent_digital_card'
 
     const client = createServiceClient()
     const resolved = await resolveAgencyPublicIntake(client, slug, { host: getPublicHost(headers) })
@@ -1672,6 +1673,12 @@ export async function createPublicAgencyIntakeResponse({ method = 'GET', url = '
       return buildJsonResponse(404, {
         error: 'agency_public_intake_not_found',
         message: 'This agency intake link is not available.',
+      })
+    }
+    if (cardOnly && !resolved.publicIntake?.card?.enabled) {
+      return buildJsonResponse(404, {
+        error: 'agent_digital_card_not_found',
+        message: 'This digital card is not available.',
       })
     }
 

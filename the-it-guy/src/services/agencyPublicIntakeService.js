@@ -98,6 +98,17 @@ export async function resolveAgencyPublicIntake(slug = '') {
   return payload?.intake || null
 }
 
+export async function resolveAgencyPublicAgentCard(slug = '') {
+  const safeSlug = normalizeSlug(slug)
+  if (!safeSlug) throw new Error('Agent digital card link is missing.')
+  const params = new URLSearchParams({ slug: safeSlug, surface: 'agent_digital_card' })
+  const response = await fetch(`/api/public/agency-intake?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
+  })
+  const payload = await readJsonResponse(response, 'This digital card is not available.')
+  return payload?.intake || null
+}
+
 export async function resolveAgencyPublicListings(slug = '', filters = {}) {
   const safeSlug = normalizeSlug(slug)
   if (!safeSlug) return []
