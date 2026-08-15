@@ -696,6 +696,9 @@ function buildRemoteLeadUpdatePayload(patch = {}) {
   if (hasOwn(patch, 'enquiredPropertyPrice')) corePayload.enquired_property_price = patch.enquiredPropertyPrice == null || patch.enquiredPropertyPrice === '' ? null : Number(patch.enquiredPropertyPrice) || null
   if (hasOwn(patch, 'sourceReferenceId')) corePayload.source_reference_id = normalizeText(patch.sourceReferenceId) || null
   if (hasOwn(patch, 'rawEnquiryPayload')) corePayload.raw_enquiry_payload = patch.rawEnquiryPayload ?? null
+  if (hasOwn(patch, 'convertedTransactionId') || hasOwn(patch, 'convertedDealId')) {
+    corePayload.converted_transaction_id = normalizeNullableUuid(patch.convertedTransactionId || patch.convertedDealId)
+  }
 
   if (hasOwn(patch, 'listingId')) bridgePayload.listing_id = normalizeText(patch.listingId) || null
   if (hasOwn(patch, 'mandatePacketId')) {

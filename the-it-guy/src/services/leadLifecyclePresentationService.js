@@ -240,6 +240,7 @@ function resolveReportingFlags(label = '', { category = 'buyer' } = {}) {
   const buyerStageKey = category !== 'seller' ? normalizeKnownBuyerProcessStageKey(label) : ''
   if (buyerStageKey) {
     const contactedStages = new Set([
+      BUYER_PROCESS_STAGE_KEYS.contacted,
       BUYER_PROCESS_STAGE_KEYS.qualification,
       BUYER_PROCESS_STAGE_KEYS.viewing,
       BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,

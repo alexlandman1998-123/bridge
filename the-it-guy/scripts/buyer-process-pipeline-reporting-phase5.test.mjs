@@ -16,10 +16,11 @@ assert.equal(
 
 const canonicalBuyerStages = [
   'Captured',
+  'Contacted',
   'Qualification',
   'Viewing',
-  'Buyer onboarding sent',
-  'OTP Transaction',
+  'Transaction Setup',
+  'Offer',
   'Transaction',
   'On hold',
   'Lost',
@@ -33,8 +34,9 @@ const buyerKanbanBlock = agencyPipelinePageSource.slice(
 )
 
 assert.match(buyerKanbanBlock, /getBuyerProcessDefinition\(\)\.stages\.map/)
-assert.match(buyerKanbanBlock, /buyer_onboarding_sent/)
-assert.match(buyerKanbanBlock, /offer_received/)
+assert.match(buyerKanbanBlock, /contacted/)
+assert.match(buyerKanbanBlock, /transaction_setup/)
+assert.match(buyerKanbanBlock, /offer/)
 assert.match(buyerKanbanBlock, /transaction/)
 assert.doesNotMatch(buyerKanbanBlock, /Deal \/ OTP/)
 assert.doesNotMatch(buyerKanbanBlock, /stageValue: 'Finance'/)
@@ -66,17 +68,17 @@ try {
     leadCategory: 'buyer',
     stage: 'Offer + Onboarding Link Sent',
   })
-  assert.equal(onboardingPresentation.key, 'buyer_onboarding_sent')
-  assert.equal(onboardingPresentation.label, 'Buyer onboarding sent')
-  assert.equal(onboardingPresentation.columnId, 'buyer_onboarding_sent')
+  assert.equal(onboardingPresentation.key, 'transaction_setup')
+  assert.equal(onboardingPresentation.label, 'Transaction Setup')
+  assert.equal(onboardingPresentation.columnId, 'transaction_setup')
 
   const legacyOtpPresentation = lifecycleService.resolveLeadLifecyclePresentation({
     leadCategory: 'buyer',
     stage: 'Ready to Generate OTP',
   })
-  assert.equal(legacyOtpPresentation.key, 'offer_received')
-  assert.equal(legacyOtpPresentation.label, 'OTP Transaction')
-  assert.equal(legacyOtpPresentation.columnId, 'offer_received')
+  assert.equal(legacyOtpPresentation.key, 'offer')
+  assert.equal(legacyOtpPresentation.label, 'Offer')
+  assert.equal(legacyOtpPresentation.columnId, 'offer')
 
   const legacyFinancePresentation = lifecycleService.resolveLeadLifecyclePresentation({
     leadCategory: 'buyer',
@@ -97,7 +99,7 @@ try {
 
   const buyerStageCounts = Object.fromEntries(reporting.buyerStageRows.map((row) => [row.key, row.count]))
   assert.equal(buyerStageCounts.captured, 1)
-  assert.equal(buyerStageCounts.offer_received, 1)
+  assert.equal(buyerStageCounts.offer, 1)
   assert.equal(buyerStageCounts.transaction, 1)
   assert.equal(buyerStageCounts.lost, 0)
   assert.equal(reporting.conversion.dealsCreated, 1)

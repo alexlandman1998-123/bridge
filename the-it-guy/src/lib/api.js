@@ -6808,6 +6808,331 @@ export async function uploadTransactionBondCloseoutDocument({
   return fetchTransactionBondCloseout(transactionId)
 }
 
+const REFERRAL_INCENTIVE_SELECT =
+  'id, organisation_id, transaction_id, incentive_type, referring_agency_id, referring_agency_name, referring_agent_id, referring_agent_name, referring_agent_email, amount_excl_vat, vat_rate, vat_amount, amount_incl_vat, qualifying_event, status, invoice_status, invoice_trigger_event, invoice_ready_at, invoice_ready_by, invoice_ready_reason, invoice_issued_at, invoice_reference, invoice_notes, expected_payout_date, payout_method, payable_to, account_holder, bank_name, account_number, branch_code, payment_reference, paid_amount, paid_at, approved_at, approved_by, reconciled_at, reconciled_by, notes, created_at, updated_at'
+
+const REFERRAL_INCENTIVE_EVENT_SELECT =
+  'id, incentive_id, transaction_id, event_type, previous_status, new_status, previous_value, new_value, actor_user_id, actor_display_name, actor_role, note, created_at'
+
+function normalizeReferralIncentiveStatus(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['pending', 'eligible', 'approved', 'paid', 'reconciled', 'cancelled'].includes(normalized)) return normalized
+  return 'pending'
+}
+
+function normalizeReferralIncentiveEvent(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['application_submitted', 'quote_received', 'grant_issued', 'grant_accepted', 'attorney_instructed', 'bond_lodged', 'bond_registered', 'manual'].includes(normalized)) return normalized
+  return 'grant_accepted'
+}
+
+function normalizeReferralInvoiceStatus(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (['not_ready', 'ready_to_invoice', 'invoiced', 'cancelled'].includes(normalized)) return normalized
+  return 'not_ready'
+}
+
+function normalizeReferralIncentiveRow(row = null) {
+  if (!row) return null
+  return {
+    id: row.id || null,
+    organisationId: row.organisation_id || row.organisationId || null,
+    transactionId: row.transaction_id || row.transactionId || null,
+    incentiveType: row.incentive_type || row.incentiveType || 'referral_incentive',
+    referringAgencyId: row.referring_agency_id || row.referringAgencyId || null,
+    referringAgencyName: row.referring_agency_name || row.referringAgencyName || '',
+    referringAgentId: row.referring_agent_id || row.referringAgentId || null,
+    referringAgentName: row.referring_agent_name || row.referringAgentName || '',
+    referringAgentEmail: row.referring_agent_email || row.referringAgentEmail || '',
+    amountExclVat: normalizeOptionalNumber(row.amount_excl_vat ?? row.amountExclVat),
+    vatRate: normalizeOptionalNumber(row.vat_rate ?? row.vatRate) ?? 15,
+    vatAmount: normalizeOptionalNumber(row.vat_amount ?? row.vatAmount),
+    amountInclVat: normalizeOptionalNumber(row.amount_incl_vat ?? row.amountInclVat),
+    qualifyingEvent: normalizeReferralIncentiveEvent(row.qualifying_event || row.qualifyingEvent),
+    status: normalizeReferralIncentiveStatus(row.status),
+    invoiceStatus: normalizeReferralInvoiceStatus(row.invoice_status || row.invoiceStatus),
+    invoiceTriggerEvent: normalizeReferralIncentiveEvent(row.invoice_trigger_event || row.invoiceTriggerEvent || 'bond_lodged'),
+    invoiceReadyAt: row.invoice_ready_at || row.invoiceReadyAt || '',
+    invoiceReadyBy: row.invoice_ready_by || row.invoiceReadyBy || '',
+    invoiceReadyReason: row.invoice_ready_reason || row.invoiceReadyReason || '',
+    invoiceIssuedAt: row.invoice_issued_at || row.invoiceIssuedAt || '',
+    invoiceReference: row.invoice_reference || row.invoiceReference || '',
+    invoiceNotes: row.invoice_notes || row.invoiceNotes || '',
+    expectedPayoutDate: normalizeOptionalDate(row.expected_payout_date ?? row.expectedPayoutDate) || '',
+    payoutMethod: row.payout_method || row.payoutMethod || 'EFT',
+    payableTo: row.payable_to || row.payableTo || '',
+    accountHolder: row.account_holder || row.accountHolder || '',
+    bankName: row.bank_name || row.bankName || '',
+    accountNumber: row.account_number || row.accountNumber || '',
+    branchCode: row.branch_code || row.branchCode || '',
+    paymentReference: row.payment_reference || row.paymentReference || '',
+    paidAmount: normalizeOptionalNumber(row.paid_amount ?? row.paidAmount),
+    paidAt: row.paid_at || row.paidAt || '',
+    approvedAt: row.approved_at || row.approvedAt || '',
+    approvedBy: row.approved_by || row.approvedBy || '',
+    reconciledAt: row.reconciled_at || row.reconciledAt || '',
+    reconciledBy: row.reconciled_by || row.reconciledBy || '',
+    notes: row.notes || '',
+    createdAt: row.created_at || row.createdAt || '',
+    updatedAt: row.updated_at || row.updatedAt || '',
+  }
+}
+
+function normalizeReferralIncentiveEventRow(row = {}) {
+  return {
+    id: row.id || null,
+    incentiveId: row.incentive_id || row.incentiveId || null,
+    transactionId: row.transaction_id || row.transactionId || null,
+    eventType: row.event_type || row.eventType || 'updated',
+    previousStatus: row.previous_status || row.previousStatus || '',
+    newStatus: row.new_status || row.newStatus || '',
+    previousValue: row.previous_value || row.previousValue || null,
+    newValue: row.new_value || row.newValue || null,
+    actorUserId: row.actor_user_id || row.actorUserId || '',
+    actorDisplayName: row.actor_display_name || row.actorDisplayName || '',
+    actorRole: row.actor_role || row.actorRole || '',
+    note: row.note || '',
+    createdAt: row.created_at || row.createdAt || '',
+  }
+}
+
+function buildReferralIncentiveMoney(input = {}) {
+  const amountExclVat = normalizeOptionalNumber(input.amountExclVat ?? input.amount_excl_vat)
+  const vatRate = normalizeOptionalNumber(input.vatRate ?? input.vat_rate) ?? 15
+  const vatAmount = amountExclVat !== null ? Number(((amountExclVat * vatRate) / 100).toFixed(2)) : null
+  const amountInclVat = amountExclVat !== null && vatAmount !== null ? Number((amountExclVat + vatAmount).toFixed(2)) : null
+  return { amountExclVat, vatRate, vatAmount, amountInclVat }
+}
+
+async function logReferralIncentiveEvent(client, { incentiveId, transactionId, eventType, previousStatus = '', newStatus = '', previousValue = null, newValue = null, note = '', actorProfile = {} } = {}) {
+  if (!incentiveId || !transactionId) return null
+  const payload = {
+    incentive_id: incentiveId,
+    transaction_id: transactionId,
+    event_type: eventType || 'updated',
+    previous_status: previousStatus || null,
+    new_status: newStatus || null,
+    previous_value: previousValue || null,
+    new_value: newValue || null,
+    actor_user_id: actorProfile.userId || null,
+    actor_display_name: actorProfile.displayName || actorProfile.email || null,
+    actor_role: actorProfile.role || null,
+    note: normalizeNullableText(note),
+  }
+  const { error } = await client.from('transaction_referral_incentive_events').insert(payload)
+  if (error && !isMissingSchemaError(error) && !isMissingTableError(error, 'transaction_referral_incentive_events')) {
+    throw error
+  }
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    createdBy: actorProfile.userId || null,
+    createdByRole: actorProfile.role || 'bond_originator',
+    eventType: 'TransactionUpdated',
+    eventData: { source: 'referral_incentive', eventType, previousStatus, newStatus, note },
+  })
+  return payload
+}
+
+export async function fetchTransactionReferralIncentive(transactionId) {
+  const client = requireClient()
+  if (!transactionId) return { incentive: null, events: [], schemaAvailable: false }
+
+  const { data, error } = await client
+    .from('transaction_referral_incentives')
+    .select(REFERRAL_INCENTIVE_SELECT)
+    .eq('transaction_id', transactionId)
+    .maybeSingle()
+
+  if (error) {
+    if (isMissingSchemaError(error) || isMissingTableError(error, 'transaction_referral_incentives') || isPermissionDeniedError(error)) {
+      return { incentive: null, events: [], schemaAvailable: false }
+    }
+    throw error
+  }
+
+  const incentive = normalizeReferralIncentiveRow(data)
+  if (!incentive?.id) return { incentive: null, events: [], schemaAvailable: true }
+
+  const { data: eventRows, error: eventsError } = await client
+    .from('transaction_referral_incentive_events')
+    .select(REFERRAL_INCENTIVE_EVENT_SELECT)
+    .eq('incentive_id', incentive.id)
+    .order('created_at', { ascending: false })
+
+  if (eventsError && !isMissingSchemaError(eventsError) && !isMissingTableError(eventsError, 'transaction_referral_incentive_events') && !isPermissionDeniedError(eventsError)) {
+    throw eventsError
+  }
+
+  return {
+    incentive,
+    events: (eventRows || []).map(normalizeReferralIncentiveEventRow),
+    schemaAvailable: true,
+  }
+}
+
+export async function saveTransactionReferralIncentive(transactionId, input = {}, options = {}) {
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  if (!transactionId) throw new Error('Transaction is required.')
+
+  const { data: transaction, error: transactionError } = await client
+    .from('transactions')
+    .select('id, organisation_id, transaction_reference, agency_commission_amount')
+    .eq('id', transactionId)
+    .maybeSingle()
+  if (transactionError) throw transactionError
+  if (!transaction) throw new Error('Transaction not found.')
+
+  const existingResult = await fetchTransactionReferralIncentive(transactionId)
+  const existing = existingResult.incentive
+  const money = buildReferralIncentiveMoney({
+    amountExclVat: input.amountExclVat ?? input.amount_excl_vat ?? existing?.amountExclVat,
+    vatRate: input.vatRate ?? input.vat_rate ?? existing?.vatRate,
+  })
+  const payload = {
+    organisation_id: input.organisationId || input.organisation_id || transaction.organisation_id || null,
+    transaction_id: transactionId,
+    incentive_type: input.incentiveType || input.incentive_type || existing?.incentiveType || 'referral_incentive',
+    referring_agency_id: input.referringAgencyId || input.referring_agency_id || existing?.referringAgencyId || null,
+    referring_agency_name: normalizeNullableText(input.referringAgencyName ?? input.referring_agency_name ?? existing?.referringAgencyName),
+    referring_agent_id: input.referringAgentId || input.referring_agent_id || existing?.referringAgentId || null,
+    referring_agent_name: normalizeNullableText(input.referringAgentName ?? input.referring_agent_name ?? existing?.referringAgentName),
+    referring_agent_email: normalizeNullableText(input.referringAgentEmail ?? input.referring_agent_email ?? existing?.referringAgentEmail)?.toLowerCase() || null,
+    amount_excl_vat: money.amountExclVat,
+    vat_rate: money.vatRate,
+    vat_amount: money.vatAmount,
+    amount_incl_vat: money.amountInclVat,
+    qualifying_event: normalizeReferralIncentiveEvent(input.qualifyingEvent || input.qualifying_event || existing?.qualifyingEvent),
+    status: normalizeReferralIncentiveStatus(input.status || existing?.status || 'pending'),
+    invoice_status: normalizeReferralInvoiceStatus(input.invoiceStatus || input.invoice_status || existing?.invoiceStatus),
+    invoice_trigger_event: normalizeReferralIncentiveEvent(input.invoiceTriggerEvent || input.invoice_trigger_event || existing?.invoiceTriggerEvent || 'bond_lodged'),
+    invoice_ready_reason: normalizeNullableText(input.invoiceReadyReason ?? input.invoice_ready_reason ?? existing?.invoiceReadyReason),
+    invoice_reference: normalizeNullableText(input.invoiceReference ?? input.invoice_reference ?? existing?.invoiceReference),
+    invoice_notes: normalizeNullableText(input.invoiceNotes ?? input.invoice_notes ?? existing?.invoiceNotes),
+    expected_payout_date: normalizeOptionalDate(input.expectedPayoutDate ?? input.expected_payout_date ?? existing?.expectedPayoutDate),
+    payout_method: normalizeNullableText(input.payoutMethod ?? input.payout_method ?? existing?.payoutMethod) || 'EFT',
+    payable_to: normalizeNullableText(input.payableTo ?? input.payable_to ?? existing?.payableTo),
+    account_holder: normalizeNullableText(input.accountHolder ?? input.account_holder ?? existing?.accountHolder),
+    bank_name: normalizeNullableText(input.bankName ?? input.bank_name ?? existing?.bankName),
+    account_number: normalizeNullableText(input.accountNumber ?? input.account_number ?? existing?.accountNumber),
+    branch_code: normalizeNullableText(input.branchCode ?? input.branch_code ?? existing?.branchCode),
+    payment_reference: normalizeNullableText(input.paymentReference ?? input.payment_reference ?? existing?.paymentReference ?? transaction.transaction_reference),
+    notes: normalizeNullableText(input.notes ?? existing?.notes),
+    updated_at: new Date().toISOString(),
+  }
+
+  const { data, error } = await client
+    .from('transaction_referral_incentives')
+    .upsert(payload, { onConflict: 'transaction_id' })
+    .select(REFERRAL_INCENTIVE_SELECT)
+    .single()
+
+  if (error) {
+    if (isMissingSchemaError(error) || isMissingTableError(error, 'transaction_referral_incentives')) {
+      throw new Error('Referral incentive tables are not set up yet. Run the referral incentive migration first.')
+    }
+    throw error
+  }
+
+  const incentive = normalizeReferralIncentiveRow(data)
+  await logReferralIncentiveEvent(client, {
+    incentiveId: incentive.id,
+    transactionId,
+    eventType: existing ? 'incentive_updated' : 'incentive_created',
+    previousStatus: existing?.status || '',
+    newStatus: incentive.status,
+    previousValue: existing,
+    newValue: incentive,
+    note: input.auditNote || input.notes || '',
+    actorProfile: { ...actorProfile, role: options.actorRole || actorProfile.role },
+  })
+
+  return fetchTransactionReferralIncentive(transactionId)
+}
+
+export async function transitionTransactionReferralIncentive(transactionId, input = {}, options = {}) {
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const current = await fetchTransactionReferralIncentive(transactionId)
+  const incentive = current.incentive
+  if (!incentive?.id) throw new Error('Create the incentive before changing status.')
+
+  const previousStatus = normalizeReferralIncentiveStatus(incentive.status)
+  const hasStatusTransition = input.status !== undefined && input.status !== null && String(input.status).trim() !== ''
+  const nextStatus = hasStatusTransition ? normalizeReferralIncentiveStatus(input.status) : previousStatus
+  const allowed = {
+    pending: ['eligible', 'cancelled'],
+    eligible: ['approved', 'pending', 'cancelled'],
+    approved: ['paid', 'eligible', 'cancelled'],
+    paid: ['reconciled', 'approved'],
+    reconciled: ['paid'],
+    cancelled: ['pending'],
+  }
+  if (hasStatusTransition && previousStatus !== nextStatus && !allowed[previousStatus]?.includes(nextStatus)) {
+    throw new Error(`Cannot move incentive from ${previousStatus} to ${nextStatus}.`)
+  }
+
+  const updates = {
+    notes: normalizeNullableText(input.notes ?? incentive.notes),
+    updated_at: new Date().toISOString(),
+  }
+  if (hasStatusTransition) {
+    updates.status = nextStatus
+  }
+  const hasInvoiceTransition = input.invoiceStatus !== undefined || input.invoice_status !== undefined
+  if (hasInvoiceTransition) {
+    const nextInvoiceStatus = normalizeReferralInvoiceStatus(input.invoiceStatus ?? input.invoice_status)
+    updates.invoice_status = nextInvoiceStatus
+    updates.invoice_trigger_event = normalizeReferralIncentiveEvent(input.invoiceTriggerEvent || input.invoice_trigger_event || incentive.invoiceTriggerEvent || 'bond_lodged')
+    updates.invoice_ready_reason = normalizeNullableText(input.invoiceReadyReason ?? input.invoice_ready_reason ?? input.note ?? input.notes ?? incentive.invoiceReadyReason)
+    updates.invoice_notes = normalizeNullableText(input.invoiceNotes ?? input.invoice_notes ?? input.notes ?? incentive.invoiceNotes)
+    if (nextInvoiceStatus === 'ready_to_invoice') {
+      updates.invoice_ready_at = new Date().toISOString()
+      updates.invoice_ready_by = actorProfile.userId || null
+    }
+    if (nextInvoiceStatus === 'invoiced') {
+      updates.invoice_issued_at = normalizeOptionalDate(input.invoiceIssuedAt ?? input.invoice_issued_at) || new Date().toISOString()
+      updates.invoice_reference = normalizeNullableText(input.invoiceReference ?? input.invoice_reference ?? incentive.invoiceReference)
+    }
+  }
+  if (hasStatusTransition && nextStatus === 'approved') {
+    updates.approved_at = new Date().toISOString()
+    updates.approved_by = actorProfile.userId || null
+  }
+  if (hasStatusTransition && nextStatus === 'paid') {
+    updates.paid_at = normalizeOptionalDate(input.paidAt ?? input.paymentDate) || new Date().toISOString()
+    updates.paid_amount = normalizeOptionalNumber(input.paidAmount ?? input.amountPaid ?? incentive.amountExclVat)
+    updates.payout_method = normalizeNullableText(input.payoutMethod ?? incentive.payoutMethod) || 'EFT'
+    updates.payment_reference = normalizeNullableText(input.paymentReference ?? incentive.paymentReference)
+  }
+  if (hasStatusTransition && nextStatus === 'reconciled') {
+    updates.reconciled_at = new Date().toISOString()
+    updates.reconciled_by = actorProfile.userId || null
+  }
+
+  const { data, error } = await client
+    .from('transaction_referral_incentives')
+    .update(updates)
+    .eq('id', incentive.id)
+    .select(REFERRAL_INCENTIVE_SELECT)
+    .single()
+  if (error) throw error
+
+  await logReferralIncentiveEvent(client, {
+    incentiveId: incentive.id,
+    transactionId,
+    eventType: input.eventType || (hasInvoiceTransition ? `invoice_${normalizeReferralInvoiceStatus(input.invoiceStatus ?? input.invoice_status)}` : `status_${nextStatus}`),
+    previousStatus,
+    newStatus: nextStatus,
+    previousValue: incentive,
+    newValue: normalizeReferralIncentiveRow(data),
+    note: input.note || input.notes || '',
+    actorProfile: { ...actorProfile, role: options.actorRole || actorProfile.role },
+  })
+
+  return fetchTransactionReferralIncentive(transactionId)
+}
+
 export async function fetchDevelopmentBondReconciliationReport(developmentId) {
   const client = requireClient()
   if (!developmentId) {
@@ -16574,6 +16899,48 @@ async function fetchTransactionRowById(client, transactionId) {
   }
 
   return query.data || null
+}
+
+async function fetchBuyerProcessLeadHandoffForTransaction(client, transactionId) {
+  if (!transactionId) return null
+
+  let query = await client
+    .from('leads')
+    .select('lead_id, converted_transaction_id, stage, status, raw_enquiry_payload, updated_at')
+    .eq('converted_transaction_id', transactionId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  if (query.error && isMissingColumnError(query.error, 'raw_enquiry_payload')) {
+    query = await client
+      .from('leads')
+      .select('lead_id, converted_transaction_id, stage, status, updated_at')
+      .eq('converted_transaction_id', transactionId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+  }
+
+  if (
+    query.error &&
+    (isMissingSchemaError(query.error) || isPermissionDeniedError(query.error))
+  ) {
+    return null
+  }
+
+  if (query.error) {
+    throw query.error
+  }
+
+  const row = Array.isArray(query.data) ? query.data[0] || null : null
+  if (!row) return null
+  return {
+    leadId: row.lead_id || '',
+    convertedTransactionId: row.converted_transaction_id || '',
+    stage: row.stage || '',
+    status: row.status || '',
+    rawEnquiryPayload: row.raw_enquiry_payload || null,
+    updatedAt: row.updated_at || null,
+  }
 }
 
 function isStorageBucketNotFoundError(error) {
@@ -32068,9 +32435,11 @@ export async function fetchTransactionById(transactionId) {
       const appointmentsByTransactionId = await fetchTransactionAppointments(client, [transactionId], {
         viewer: 'internal',
       })
+      const buyerProcessLeadHandoff = await fetchBuyerProcessLeadHandoffForTransaction(client, transactionId)
       const bondOriginatorAgentProgressView = await fetchAgentBondOriginatorProgressView(client, transactionId)
       const bondOriginatorAttorneyHandoffView = await fetchAttorneyBondOriginatorHandoffView(client, transactionId)
       const rolePlayers = await fetchTransactionRolePlayersIfPossible(client, transactionId)
+      const bondApplication = await fetchNormalizedBondApplicationBundle(client, transactionId)
       const liveChecklist = await buildLiveTransactionChecklistData(client, {
         transaction: unitDetail.transaction,
         onboardingFormData: unitDetail.onboardingFormData || null,
@@ -32089,8 +32458,11 @@ export async function fetchTransactionById(transactionId) {
         transactionEvents,
         transactionProxyUpdates,
         appointments: appointmentsByTransactionId[transactionId] || [],
+        buyerProcessLeadHandoff,
         bondOriginatorAgentProgressView,
         bondOriginatorAttorneyHandoffView,
+        bondApplication,
+        normalizedBondApplication: bondApplication,
       }
     }
   }
@@ -32105,6 +32477,7 @@ export async function fetchTransactionById(transactionId) {
     transactionProxyUpdates,
     onboardingFormData,
     appointmentsByTransactionId,
+    buyerProcessLeadHandoff,
   ] = await Promise.all([
     transaction.unit_id
       ? client
@@ -32137,6 +32510,7 @@ export async function fetchTransactionById(transactionId) {
     fetchTransactionAppointments(client, [transactionId], {
       viewer: 'internal',
     }),
+    fetchBuyerProcessLeadHandoffForTransaction(client, transactionId),
   ])
 
   if (unitQuery.error && !isMissingSchemaError(unitQuery.error)) {
@@ -32240,6 +32614,7 @@ export async function fetchTransactionById(transactionId) {
   const stageKey = resolveAttorneyOperationalStageKey({ transaction })
   const bondOriginatorAgentProgressView = await fetchAgentBondOriginatorProgressView(client, transactionId)
   const bondOriginatorAttorneyHandoffView = await fetchAttorneyBondOriginatorHandoffView(client, transactionId)
+  const bondApplication = await fetchNormalizedBondApplicationBundle(client, transactionId)
 
   return {
     unit: unitQuery.data || null,
@@ -32307,8 +32682,11 @@ export async function fetchTransactionById(transactionId) {
     transactionEvents,
     transactionProxyUpdates,
     appointments: appointmentsByTransactionId[transactionId] || [],
+    buyerProcessLeadHandoff,
     bondOriginatorAgentProgressView,
     bondOriginatorAttorneyHandoffView,
+    bondApplication,
+    normalizedBondApplication: bondApplication,
   }
 }
 

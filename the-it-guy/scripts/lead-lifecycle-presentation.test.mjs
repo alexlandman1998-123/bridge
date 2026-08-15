@@ -24,16 +24,16 @@ const offerLinkSent = resolveLeadLifecyclePresentation({
   leadCategory: 'buyer',
   stage: 'Offer Link Sent',
 })
-assert.equal(offerLinkSent.label, 'Buyer onboarding sent')
-assert.equal(offerLinkSent.funnelStage, 'Buyer onboarding sent')
-assert.equal(offerLinkSent.columnId, 'buyer_onboarding_sent')
+assert.equal(offerLinkSent.label, 'Transaction Setup')
+assert.equal(offerLinkSent.funnelStage, 'Transaction Setup')
+assert.equal(offerLinkSent.columnId, 'transaction_setup')
 
 const otpReady = resolveLeadLifecyclePresentation({
   leadCategory: 'buyer',
   stage: 'Ready to Generate OTP',
 })
-assert.equal(otpReady.columnId, 'offer_received')
-assert.equal(otpReady.funnelStage, 'OTP Transaction')
+assert.equal(otpReady.columnId, 'offer')
+assert.equal(otpReady.funnelStage, 'Offer')
 
 const sellerMandate = resolveLeadLifecyclePresentation({
   leadCategory: 'seller',
@@ -76,6 +76,6 @@ const agentLeadsSource = await fs.readFile(new URL('../src/pages/AgentLeadsPage.
 assert.match(agencyPipelineSource, /resolveLeadLifecyclePresentation\(lead, \{ linkedDeal/, 'pipeline/table rows should use shared lead lifecycle presentation')
 assert.match(agencyPipelineSource, /resolveLeadLifecyclePresentation\(selectedLead\)\.label/, 'selected lead workspace should use shared lead lifecycle presentation')
 assert.match(agencyPipelineServiceSource, /resolveLeadLifecyclePresentation\(lead\)/, 'principal reporting should use shared lead lifecycle presentation')
-assert.match(agentLeadsSource, /resolveLeadLifecyclePresentation\(row\)/, 'standalone lead workspace and table should use shared lead lifecycle presentation')
+assert.match(agentLeadsSource, /<AgencyPipelinePage initialViewMode="leads" \/>/, 'standalone lead workspace should delegate to the shared agency pipeline page')
 
 console.log('lead lifecycle presentation tests passed')

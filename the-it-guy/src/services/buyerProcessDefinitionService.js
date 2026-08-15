@@ -7,10 +7,15 @@ import {
 
 export const BUYER_PROCESS_STAGE_KEYS = Object.freeze({
   captured: 'captured',
+  contacted: 'contacted',
   qualification: 'qualification',
   viewing: 'viewing',
-  buyerOnboardingSent: 'buyer_onboarding_sent',
-  offerReceived: 'offer_received',
+  transactionSetup: 'transaction_setup',
+  offer: 'offer',
+  buyerOnboardingSent: 'transaction_setup',
+  offerReceived: 'offer',
+  legacyBuyerOnboardingSent: 'buyer_onboarding_sent',
+  legacyOfferReceived: 'offer_received',
   transaction: 'transaction',
   onHold: 'on_hold',
   lost: 'lost',
@@ -19,6 +24,7 @@ export const BUYER_PROCESS_STAGE_KEYS = Object.freeze({
 })
 
 export const BUYER_PROCESS_ACTION_KEYS = Object.freeze({
+  logContact: 'log_contact',
   qualify: 'qualify',
   scheduleViewing: 'schedule_viewing',
   recordViewingOutcome: 'record_viewing_outcome',
@@ -32,12 +38,23 @@ export const BUYER_PROCESS_ACTION_KEYS = Object.freeze({
   closeLost: 'close_lost',
 })
 
-const ACTIVE_STAGE_KEYS = Object.freeze([
+const DEFAULT_ACTIVE_STAGE_KEYS = Object.freeze([
   BUYER_PROCESS_STAGE_KEYS.captured,
+  BUYER_PROCESS_STAGE_KEYS.contacted,
   BUYER_PROCESS_STAGE_KEYS.qualification,
   BUYER_PROCESS_STAGE_KEYS.viewing,
-  BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
-  BUYER_PROCESS_STAGE_KEYS.offerReceived,
+  BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  BUYER_PROCESS_STAGE_KEYS.offer,
+  BUYER_PROCESS_STAGE_KEYS.transaction,
+])
+
+const KINGSTONS_ACTIVE_STAGE_KEYS = Object.freeze([
+  BUYER_PROCESS_STAGE_KEYS.captured,
+  BUYER_PROCESS_STAGE_KEYS.contacted,
+  BUYER_PROCESS_STAGE_KEYS.qualification,
+  BUYER_PROCESS_STAGE_KEYS.viewing,
+  BUYER_PROCESS_STAGE_KEYS.offer,
+  BUYER_PROCESS_STAGE_KEYS.transactionSetup,
   BUYER_PROCESS_STAGE_KEYS.transaction,
 ])
 
@@ -59,8 +76,20 @@ const BUYER_PROCESS_STAGES = Object.freeze([
     key: BUYER_PROCESS_STAGE_KEYS.captured,
     label: 'Captured',
     phase: 'capture',
-    description: 'Buyer lead has been captured and is ready for qualification.',
+    description: 'Buyer lead has been captured and is ready for first contact.',
     requiredEvidenceKeys: Object.freeze(['buyer_lead_captured']),
+    allowedActionKeys: Object.freeze([
+      BUYER_PROCESS_ACTION_KEYS.logContact,
+      BUYER_PROCESS_ACTION_KEYS.qualify,
+      ...UNIVERSAL_ACTIVE_ACTIONS,
+    ]),
+  }),
+  Object.freeze({
+    key: BUYER_PROCESS_STAGE_KEYS.contacted,
+    label: 'Contacted',
+    phase: 'contact',
+    description: 'Buyer has been contacted and is ready for qualification capture.',
+    requiredEvidenceKeys: Object.freeze(['buyer_contact_logged']),
     allowedActionKeys: Object.freeze([
       BUYER_PROCESS_ACTION_KEYS.qualify,
       ...UNIVERSAL_ACTIVE_ACTIONS,
@@ -90,22 +119,23 @@ const BUYER_PROCESS_STAGES = Object.freeze([
     ]),
   }),
   Object.freeze({
-    key: BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
-    label: 'Buyer onboarding sent',
-    phase: 'onboarding',
-    description: 'Buyer onboarding link has been sent and completion is being monitored.',
-    requiredEvidenceKeys: Object.freeze(['buyer_onboarding_link_sent']),
+    key: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+    label: 'Transaction Setup',
+    phase: 'transaction_setup',
+    description: 'Buyer profile, finance route, roleplayers, and portal handoff are being captured before formal transaction progression.',
+    requiredEvidenceKeys: Object.freeze(['buyer_profile_captured']),
     allowedActionKeys: Object.freeze([
       BUYER_PROCESS_ACTION_KEYS.sendBuyerOnboardingLink,
       BUYER_PROCESS_ACTION_KEYS.uploadOfferDocument,
+      BUYER_PROCESS_ACTION_KEYS.createTransaction,
       ...UNIVERSAL_ACTIVE_ACTIONS,
     ]),
   }),
   Object.freeze({
-    key: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-    label: 'OTP Transaction',
-    phase: 'otp_transaction',
-    description: 'Buyer onboarding has been captured and the signed OTP is ready for transaction review or handoff.',
+    key: BUYER_PROCESS_STAGE_KEYS.offer,
+    label: 'Offer',
+    phase: 'offer',
+    description: 'The signed offer to purchase is being captured, confirmed, and attached as transaction evidence.',
     requiredEvidenceKeys: Object.freeze(['otp_document_uploaded']),
     allowedActionKeys: Object.freeze([
       BUYER_PROCESS_ACTION_KEYS.uploadOfferDocument,
@@ -162,30 +192,33 @@ const BUYER_PROCESS_STAGES = Object.freeze([
   }),
 ])
 
-const BUYER_STAGE_TRANSITIONS = Object.freeze({
+const DEFAULT_BUYER_STAGE_TRANSITIONS = Object.freeze({
   [BUYER_PROCESS_STAGE_KEYS.captured]: Object.freeze([
+    BUYER_PROCESS_STAGE_KEYS.contacted,
+    BUYER_PROCESS_STAGE_KEYS.onHold,
+    BUYER_PROCESS_STAGE_KEYS.lost,
+  ]),
+  [BUYER_PROCESS_STAGE_KEYS.contacted]: Object.freeze([
     BUYER_PROCESS_STAGE_KEYS.qualification,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ]),
   [BUYER_PROCESS_STAGE_KEYS.qualification]: Object.freeze([
     BUYER_PROCESS_STAGE_KEYS.viewing,
-    BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ]),
   [BUYER_PROCESS_STAGE_KEYS.viewing]: Object.freeze([
-    BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
-    BUYER_PROCESS_STAGE_KEYS.offerReceived,
+    BUYER_PROCESS_STAGE_KEYS.transactionSetup,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ]),
-  [BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent]: Object.freeze([
-    BUYER_PROCESS_STAGE_KEYS.offerReceived,
+  [BUYER_PROCESS_STAGE_KEYS.transactionSetup]: Object.freeze([
+    BUYER_PROCESS_STAGE_KEYS.offer,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ]),
-  [BUYER_PROCESS_STAGE_KEYS.offerReceived]: Object.freeze([
+  [BUYER_PROCESS_STAGE_KEYS.offer]: Object.freeze([
     BUYER_PROCESS_STAGE_KEYS.transaction,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
@@ -198,10 +231,11 @@ const BUYER_STAGE_TRANSITIONS = Object.freeze({
   ]),
   [BUYER_PROCESS_STAGE_KEYS.onHold]: Object.freeze([
     BUYER_PROCESS_STAGE_KEYS.captured,
+    BUYER_PROCESS_STAGE_KEYS.contacted,
     BUYER_PROCESS_STAGE_KEYS.qualification,
     BUYER_PROCESS_STAGE_KEYS.viewing,
-    BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
-    BUYER_PROCESS_STAGE_KEYS.offerReceived,
+    BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+    BUYER_PROCESS_STAGE_KEYS.offer,
     BUYER_PROCESS_STAGE_KEYS.transaction,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ]),
@@ -210,11 +244,35 @@ const BUYER_STAGE_TRANSITIONS = Object.freeze({
   [BUYER_PROCESS_STAGE_KEYS.closedLost]: Object.freeze([]),
 })
 
+const KINGSTONS_BUYER_STAGE_TRANSITIONS = Object.freeze({
+  ...DEFAULT_BUYER_STAGE_TRANSITIONS,
+  [BUYER_PROCESS_STAGE_KEYS.viewing]: Object.freeze([
+    BUYER_PROCESS_STAGE_KEYS.offer,
+    BUYER_PROCESS_STAGE_KEYS.onHold,
+    BUYER_PROCESS_STAGE_KEYS.lost,
+  ]),
+  [BUYER_PROCESS_STAGE_KEYS.offer]: Object.freeze([
+    BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+    BUYER_PROCESS_STAGE_KEYS.onHold,
+    BUYER_PROCESS_STAGE_KEYS.lost,
+  ]),
+  [BUYER_PROCESS_STAGE_KEYS.transactionSetup]: Object.freeze([
+    BUYER_PROCESS_STAGE_KEYS.transaction,
+    BUYER_PROCESS_STAGE_KEYS.onHold,
+    BUYER_PROCESS_STAGE_KEYS.lost,
+  ]),
+})
+
 const BUYER_PROCESS_EVIDENCE_GATES = Object.freeze([
   Object.freeze({
     key: 'buyer_lead_captured',
     source: 'lead',
     requiredForStage: BUYER_PROCESS_STAGE_KEYS.captured,
+  }),
+  Object.freeze({
+    key: 'buyer_contact_logged',
+    source: 'activity',
+    requiredForStage: BUYER_PROCESS_STAGE_KEYS.contacted,
   }),
   Object.freeze({
     key: 'buyer_qualified',
@@ -231,15 +289,20 @@ const BUYER_PROCESS_EVIDENCE_GATES = Object.freeze([
   Object.freeze({
     key: 'buyer_onboarding_link_sent',
     source: 'notification',
-    requiredForStage: BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
+    requiredForStage: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
     communicationType: 'client_onboarding',
     recipientRole: 'buyer',
     acceptedStatuses: Object.freeze(['prepared', 'queued', 'sent', 'delivered', 'handoff_required']),
   }),
   Object.freeze({
+    key: 'buyer_profile_captured',
+    source: 'buyer_profile',
+    requiredForStage: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  }),
+  Object.freeze({
     key: 'otp_document_uploaded',
     source: 'document',
-    requiredForStage: BUYER_PROCESS_STAGE_KEYS.offerReceived,
+    requiredForStage: BUYER_PROCESS_STAGE_KEYS.offer,
     documentTypes: Object.freeze(['uploaded_otp', 'buyer_otp', 'signed_otp', 'otp', 'buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer']),
     acceptedStatuses: Object.freeze(['uploaded', 'under_review', 'approved', 'accepted', 'completed']),
   }),
@@ -274,6 +337,11 @@ const BUYER_PROCESS_EVIDENCE_GATES = Object.freeze([
 
 const BUYER_PROCESS_ACTIONS = Object.freeze([
   Object.freeze({
+    key: BUYER_PROCESS_ACTION_KEYS.logContact,
+    label: 'Log contact',
+    outcomeStageKey: BUYER_PROCESS_STAGE_KEYS.contacted,
+  }),
+  Object.freeze({
     key: BUYER_PROCESS_ACTION_KEYS.qualify,
     label: 'Qualify buyer',
     outcomeStageKey: BUYER_PROCESS_STAGE_KEYS.qualification,
@@ -295,8 +363,8 @@ const BUYER_PROCESS_ACTIONS = Object.freeze([
   }),
   Object.freeze({
     key: BUYER_PROCESS_ACTION_KEYS.uploadOfferDocument,
-    label: 'Upload OTP',
-    outcomeStageKey: BUYER_PROCESS_STAGE_KEYS.offerReceived,
+    label: 'Upload signed OTP',
+    outcomeStageKey: BUYER_PROCESS_STAGE_KEYS.offer,
   }),
   Object.freeze({
     key: BUYER_PROCESS_ACTION_KEYS.createTransaction,
@@ -335,10 +403,13 @@ const DEFAULT_BUYER_PROCESS_DEFINITION = Object.freeze({
   label: 'Default Residential Buyer Process',
   runtimeEnabled: false,
   phase: 'phase1_definition_only',
-  stages: BUYER_PROCESS_STAGES,
-  activeStageKeys: ACTIVE_STAGE_KEYS,
+  stages: [
+    ...DEFAULT_ACTIVE_STAGE_KEYS,
+    ...OUTCOME_STAGE_KEYS,
+  ].map((stageKey) => BUYER_PROCESS_STAGES.find((stage) => stage.key === stageKey)).filter(Boolean),
+  activeStageKeys: DEFAULT_ACTIVE_STAGE_KEYS,
   outcomeStageKeys: OUTCOME_STAGE_KEYS,
-  transitions: BUYER_STAGE_TRANSITIONS,
+  transitions: DEFAULT_BUYER_STAGE_TRANSITIONS,
   evidenceGates: BUYER_PROCESS_EVIDENCE_GATES,
   actions: BUYER_PROCESS_ACTIONS,
 })
@@ -347,6 +418,12 @@ const KINGSTONS_BUYER_PROCESS_DEFINITION = Object.freeze({
   ...DEFAULT_BUYER_PROCESS_DEFINITION,
   profile: KINGSTONS_BUYER_PROCESS_PROFILE,
   label: 'Kingstons Residential Buyer Process',
+  stages: [
+    ...KINGSTONS_ACTIVE_STAGE_KEYS,
+    ...OUTCOME_STAGE_KEYS,
+  ].map((stageKey) => BUYER_PROCESS_STAGES.find((stage) => stage.key === stageKey)).filter(Boolean),
+  activeStageKeys: KINGSTONS_ACTIVE_STAGE_KEYS,
+  transitions: KINGSTONS_BUYER_STAGE_TRANSITIONS,
 })
 
 const BUYER_PROCESS_DEFINITIONS = Object.freeze({
@@ -378,10 +455,12 @@ const BUYER_STAGE_ALIASES = Object.freeze({
   lead: BUYER_PROCESS_STAGE_KEYS.captured,
   new_lead: BUYER_PROCESS_STAGE_KEYS.captured,
   captured: BUYER_PROCESS_STAGE_KEYS.captured,
-  contact: BUYER_PROCESS_STAGE_KEYS.captured,
-  contacted: BUYER_PROCESS_STAGE_KEYS.captured,
-  first_contact: BUYER_PROCESS_STAGE_KEYS.captured,
-  follow_up: BUYER_PROCESS_STAGE_KEYS.captured,
+  contact: BUYER_PROCESS_STAGE_KEYS.contacted,
+  contacted: BUYER_PROCESS_STAGE_KEYS.contacted,
+  first_contact: BUYER_PROCESS_STAGE_KEYS.contacted,
+  first_contacted: BUYER_PROCESS_STAGE_KEYS.contacted,
+  buyer_contacted: BUYER_PROCESS_STAGE_KEYS.contacted,
+  follow_up: BUYER_PROCESS_STAGE_KEYS.contacted,
   qualified: BUYER_PROCESS_STAGE_KEYS.qualification,
   qualification: BUYER_PROCESS_STAGE_KEYS.qualification,
   qualifying: BUYER_PROCESS_STAGE_KEYS.qualification,
@@ -390,40 +469,47 @@ const BUYER_STAGE_ALIASES = Object.freeze({
   appointment_scheduled: BUYER_PROCESS_STAGE_KEYS.viewing,
   viewing_completed: BUYER_PROCESS_STAGE_KEYS.viewing,
   appointment_completed: BUYER_PROCESS_STAGE_KEYS.viewing,
-  buyer_onboarding_sent: BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
-  onboarding_sent: BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
-  offer_link_sent: BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
-  offer_onboarding_link_sent: BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
-  offer_and_onboarding_link_sent: BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
-  make_an_offer_link_sent: BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
-  onboarding: BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent,
-  offer_received: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  otp_transaction: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  uploaded_otp: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  otp_uploaded: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  signed_otp_uploaded: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  offer_submitted: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  buyer_offer_submitted: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  offer_draft: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  negotiating: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  agent_review: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  agent_review_required: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  agent_condition_review: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  ready_to_generate_otp: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  otp_ready: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  ready_for_otp_generation: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  otp_generated: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  generated_otp: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  buyer_signed: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  purchaser_signed: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  agent_signed: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  principal_signed: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  sent_to_seller: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  seller_signed: BUYER_PROCESS_STAGE_KEYS.offerReceived,
-  signed_by_all_parties: BUYER_PROCESS_STAGE_KEYS.transaction,
-  all_parties_signed: BUYER_PROCESS_STAGE_KEYS.transaction,
-  offer_accepted: BUYER_PROCESS_STAGE_KEYS.transaction,
-  accepted: BUYER_PROCESS_STAGE_KEYS.transaction,
+  buyer_onboarding_sent: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  onboarding_sent: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  offer_link_sent: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  offer_onboarding_link_sent: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  offer_and_onboarding_link_sent: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  make_an_offer_link_sent: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  onboarding: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  buyer_onboarding: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  transaction_setup: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  setup: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  buyer_profile: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  buyer_profile_captured: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+  offer_received: BUYER_PROCESS_STAGE_KEYS.offer,
+  offer: BUYER_PROCESS_STAGE_KEYS.offer,
+  otp_transaction: BUYER_PROCESS_STAGE_KEYS.offer,
+  uploaded_otp: BUYER_PROCESS_STAGE_KEYS.offer,
+  otp_uploaded: BUYER_PROCESS_STAGE_KEYS.offer,
+  signed_otp_uploaded: BUYER_PROCESS_STAGE_KEYS.offer,
+  signed_otp_received: BUYER_PROCESS_STAGE_KEYS.offer,
+  offer_submitted: BUYER_PROCESS_STAGE_KEYS.offer,
+  buyer_offer_submitted: BUYER_PROCESS_STAGE_KEYS.offer,
+  offer_draft: BUYER_PROCESS_STAGE_KEYS.offer,
+  negotiating: BUYER_PROCESS_STAGE_KEYS.offer,
+  agent_review: BUYER_PROCESS_STAGE_KEYS.offer,
+  agent_review_required: BUYER_PROCESS_STAGE_KEYS.offer,
+  agent_condition_review: BUYER_PROCESS_STAGE_KEYS.offer,
+  ready_to_generate_otp: BUYER_PROCESS_STAGE_KEYS.offer,
+  otp_ready: BUYER_PROCESS_STAGE_KEYS.offer,
+  ready_for_otp_generation: BUYER_PROCESS_STAGE_KEYS.offer,
+  otp_generated: BUYER_PROCESS_STAGE_KEYS.offer,
+  generated_otp: BUYER_PROCESS_STAGE_KEYS.offer,
+  buyer_signed: BUYER_PROCESS_STAGE_KEYS.offer,
+  purchaser_signed: BUYER_PROCESS_STAGE_KEYS.offer,
+  agent_signed: BUYER_PROCESS_STAGE_KEYS.offer,
+  principal_signed: BUYER_PROCESS_STAGE_KEYS.offer,
+  sent_to_seller: BUYER_PROCESS_STAGE_KEYS.offer,
+  seller_signed: BUYER_PROCESS_STAGE_KEYS.offer,
+  signed_by_all_parties: BUYER_PROCESS_STAGE_KEYS.offer,
+  all_parties_signed: BUYER_PROCESS_STAGE_KEYS.offer,
+  offer_accepted: BUYER_PROCESS_STAGE_KEYS.offer,
+  accepted: BUYER_PROCESS_STAGE_KEYS.offer,
   transaction: BUYER_PROCESS_STAGE_KEYS.transaction,
   transaction_live: BUYER_PROCESS_STAGE_KEYS.transaction,
   converted_to_transaction: BUYER_PROCESS_STAGE_KEYS.transaction,

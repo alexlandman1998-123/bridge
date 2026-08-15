@@ -47,7 +47,7 @@ const STAGE_REQUIREMENTS = {
     {
       type: 'document',
       key: 'otp_document_uploaded',
-      message: 'Upload the signed OTP before moving to OTP Transaction.',
+      message: 'Upload the signed OTP before moving to Offer.',
       documentTypes: ['uploaded_otp', 'buyer_otp', 'signed_otp', 'otp', 'buyer_offer', 'offer_document', 'offer_to_purchase', 'uploaded_offer', 'signed_offer'],
       acceptedStatuses: ['uploaded', 'under_review', 'approved', 'accepted', 'completed'],
       legacyOfferStatuses: ['submitted', 'agent_review', 'changes_requested', 'sent_to_seller', 'seller_viewed', 'countered', 'accepted', 'converted_to_transaction'],

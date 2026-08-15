@@ -1,3 +1,6 @@
+import { buildApplicationStateFromNormalizedApplication } from '../application/index.js'
+import { buildBondApplicationState as buildLegacyBondApplicationState } from '../application/legacy/bondApplicationLegacyAdapter.js'
+
 const CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
   currency: 'ZAR',
@@ -78,6 +81,8 @@ function getNested(source, paths = []) {
 function lookup(data, paths = []) {
   return valueFrom(
     getNested(data?.onboardingFormData, paths),
+    getNested(data?.onboardingFormData?.formData, paths),
+    getNested(data?.onboardingFormData?.form_data, paths),
     getNested(data?.bondApplication, paths),
     getNested(data?.transaction, paths),
     getNested(data?.buyer, paths),
@@ -168,6 +173,156 @@ function buildDocumentTiles(documentRows = [], requiredDocumentRows = []) {
   })
 
   return tiles
+}
+
+function getFormData(onboardingFormData = {}) {
+  if (onboardingFormData?.formData && typeof onboardingFormData.formData === 'object') return onboardingFormData.formData
+  if (onboardingFormData?.form_data && typeof onboardingFormData.form_data === 'object') return onboardingFormData.form_data
+  return onboardingFormData && typeof onboardingFormData === 'object' ? onboardingFormData : {}
+}
+
+function resolveCanonicalApplicationState({
+  transaction = {},
+  buyer = {},
+  development = {},
+  unit = {},
+  onboarding = {},
+  onboardingFormData = {},
+  bondApplication = null,
+} = {}) {
+  if (
+    bondApplication?.storageMode ||
+    bondApplication?.sharedSections ||
+    bondApplication?.participantSections ||
+    Array.isArray(bondApplication?.participants)
+  ) {
+    return {
+      state: buildApplicationStateFromNormalizedApplication(bondApplication),
+      storageMode: bondApplication.storageMode || 'normalized_v1',
+      normalizedApplicationId: bondApplication.id || null,
+    }
+  }
+
+  const formData = getFormData(onboardingFormData)
+  return {
+    state: buildLegacyBondApplicationState({
+      transaction,
+      buyer,
+      development,
+      unit,
+      onboarding,
+      onboardingFormData: {
+        ...(onboardingFormData || {}),
+        formData,
+      },
+    }),
+    storageMode: 'legacy_projection',
+    normalizedApplicationId: null,
+  }
+}
+
+function sumListAmounts(rows = [], paths = []) {
+  return (rows || []).reduce((total, rowItem) => total + number(valueFrom(...paths.map((path) => getNested(rowItem, [path])))), 0)
+}
+
+function sumExpenseFields(expenses = {}) {
+  const explicitTotal = number(valueFrom(expenses.total_expenses, expenses.totalExpenses))
+  if (explicitTotal) return explicitTotal
+  return [
+    'maintenance_amount',
+    'rental_expense',
+    'groceries',
+    'transport',
+    'medical_aid',
+    'education',
+    'insurance',
+    'utilities',
+  ].reduce((total, key) => total + number(expenses?.[key]), 0)
+}
+
+function participantDisplayName(participant = {}, fallback = '') {
+  const personal = participant.personal || {}
+  const contact = participant.contact || {}
+  return text(valueFrom(
+    personal.fullName,
+    personal.full_name,
+    contact.displayName,
+    contact.display_name,
+    [personal.first_name || personal.firstName, personal.last_name || personal.surname || personal.lastName].filter(Boolean).join(' '),
+    fallback,
+  )) || 'Applicant not captured'
+}
+
+function formatEmploymentDuration(years, months, fallback = '') {
+  const yearCount = number(years)
+  const monthCount = number(months)
+  if (!yearCount && !monthCount) return text(fallback) || 'Not captured'
+  const parts = []
+  if (yearCount) parts.push(`${yearCount} year${yearCount === 1 ? '' : 's'}`)
+  if (monthCount) parts.push(`${monthCount} month${monthCount === 1 ? '' : 's'}`)
+  return parts.join(' ')
+}
+
+function buildApplicantViewModel(participant = {}, role = 'primary_applicant', fallbackName = '') {
+  const personal = participant.personal || {}
+  const contact = participant.contact || {}
+  const marital = participant.marital || {}
+  const employment = participant.employment || {}
+  const expenses = participant.expenses || {}
+  const bankAccounts = Array.isArray(participant.bankAccounts) ? participant.bankAccounts : []
+  const assets = Array.isArray(participant.assets) ? participant.assets : []
+  const liabilities = Array.isArray(participant.liabilities) ? participant.liabilities : []
+  const debts = Array.isArray(participant.debts) ? participant.debts : []
+  const incomeSources = Array.isArray(participant.incomeSources) ? participant.incomeSources : []
+  const monthlyCommitments = Array.isArray(participant.monthlyCommitments) ? participant.monthlyCommitments : []
+  const grossIncome = number(valueFrom(employment.gross_salary, employment.grossMonthlyIncome, employment.gross_monthly_income, employment.monthly_income, employment.monthlyIncome))
+  const otherIncome = sumListAmounts(incomeSources, ['monthlyAmount', 'monthly_amount', 'amount'])
+  const totalIncome = number(valueFrom(employment.total_income, employment.totalIncome)) || grossIncome + otherIncome
+  const monthlyExpenses = sumExpenseFields(expenses)
+  const monthlyCommitmentTotal = sumListAmounts(monthlyCommitments, ['monthlyAmount', 'monthly_amount', 'amount'])
+  const debtTotal = sumListAmounts(debts, ['outstandingBalance', 'outstanding_balance', 'currentBalance', 'current_balance'])
+  const liabilityTotal = sumListAmounts(liabilities, ['value', 'amount', 'balance'])
+  const assetTotal = sumListAmounts(assets, ['value', 'amount'])
+  const existingDebt = debtTotal + liabilityTotal
+  const name = participantDisplayName(participant, fallbackName)
+
+  return {
+    role,
+    roleLabel: role === 'co_applicant' ? 'Co-applicant' : role === 'surety' ? 'Surety' : 'Primary applicant',
+    fullName: name,
+    initials: initialsFor(name),
+    idNumber: text(valueFrom(personal.id_number, personal.idNumber, personal.identity_number, personal.passport_number, personal.passportNumber)) || 'Not captured',
+    email: text(valueFrom(contact.email_address, contact.email, personal.email)) || 'Not captured',
+    phone: text(valueFrom(contact.cellphone_number, contact.phone, contact.mobile, personal.phone)) || 'Not captured',
+    maritalStatus: text(valueFrom(marital.marital_status, marital.maritalStatus, personal.marital_status, personal.maritalStatus)) || 'Not captured',
+    dependants: text(valueFrom(personal.number_of_dependants, personal.numberOfDependants, personal.dependants, marital.dependants)) || 'Not captured',
+    employmentStatus: text(valueFrom(employment.occupation_status, employment.employment_status, employment.employmentStatus)) || 'Not captured',
+    employer: text(valueFrom(employment.employer_name, employment.employerName, employment.employer)) || 'Not captured',
+    occupation: text(valueFrom(employment.nature_of_occupation, employment.occupation, employment.occupational_level)) || 'Not captured',
+    employmentDuration: formatEmploymentDuration(
+      valueFrom(employment.employment_years, employment.employmentYears),
+      valueFrom(employment.employment_months, employment.employmentMonths),
+      valueFrom(employment.employment_duration, employment.employmentDuration),
+    ),
+    banking: {
+      accountCount: bankAccounts.length,
+      primaryBank: text(valueFrom(bankAccounts[0]?.bankName, bankAccounts[0]?.bank_name, bankAccounts[0]?.bank)) || 'Not captured',
+    },
+    financials: {
+      grossIncome: { raw: grossIncome, display: formatCurrency(grossIncome) },
+      otherIncome: { raw: otherIncome, display: formatCurrency(otherIncome) },
+      totalIncome: { raw: totalIncome, display: formatCurrency(totalIncome) },
+      monthlyExpenses: { raw: monthlyExpenses, display: formatCurrency(monthlyExpenses) },
+      monthlyCommitments: { raw: monthlyCommitmentTotal, display: formatCurrency(monthlyCommitmentTotal) },
+      existingDebt: { raw: existingDebt, display: formatCurrency(existingDebt) },
+      assets: { raw: assetTotal, display: formatCurrency(assetTotal) },
+      disposableIncome: {
+        raw: Math.max(0, totalIncome - monthlyExpenses - monthlyCommitmentTotal),
+        display: formatCurrency(Math.max(0, totalIncome - monthlyExpenses - monthlyCommitmentTotal)),
+      },
+    },
+    declarations: participant.declarations || {},
+  }
 }
 
 function buildReadinessItems({ applicant, property, financials, documents, consentCaptured }) {
@@ -314,6 +469,7 @@ export function buildBondApplicationViewModel({
   unit = {},
   onboarding = {},
   onboardingFormData = {},
+  bondApplication = null,
   documentRows = [],
   requiredDocumentRows = [],
   documentReadiness = {},
@@ -322,27 +478,60 @@ export function buildBondApplicationViewModel({
   statusLabel = '',
   assignedConsultant = '',
 } = {}) {
-  const data = { transaction, buyer, development, unit, onboarding, onboardingFormData }
-  const firstName = lookup(data, ['firstName', 'first_name', 'buyerFirstName', 'buyer_first_name', 'personal_details.primary.first_name'])
-  const surname = lookup(data, ['surname', 'lastName', 'last_name', 'buyerSurname', 'buyer_surname', 'personal_details.primary.surname'])
-  const fullName = text(valueFrom(
-    lookup(data, ['fullName', 'full_name', 'buyerName', 'buyer_name', 'clientName', 'client_name', 'name']),
-    [firstName, surname].filter(Boolean).join(' '),
-  )) || 'Applicant not captured'
-  const email = text(lookup(data, ['email', 'buyerEmail', 'buyer_email', 'clientEmail', 'client_email', 'personal_details.primary.email'])) || 'Not captured'
-  const phone = text(lookup(data, ['phone', 'phoneNumber', 'phone_number', 'mobile', 'mobileNumber', 'personal_details.primary.cellphone_number'])) || 'Not captured'
-  const employmentStatus = text(lookup(data, ['employmentStatus', 'employment_status', 'employment.primary.occupation_status', 'personal_details.primary.employment_status'])) || 'Not captured'
+  const data = { transaction, buyer, development, unit, onboarding, onboardingFormData, bondApplication }
+  const canonical = resolveCanonicalApplicationState({
+    transaction,
+    buyer,
+    development,
+    unit,
+    onboarding,
+    onboardingFormData,
+    bondApplication,
+  })
+  const applicationState = canonical.state || {}
+  const primaryApplicant = buildApplicantViewModel(
+    applicationState?.participants?.primaryApplicant || {},
+    'primary_applicant',
+    buyer?.name || lookup(data, ['fullName', 'full_name', 'buyerName', 'buyer_name', 'clientName', 'client_name', 'name']),
+  )
+  const applicants = [
+    primaryApplicant,
+    applicationState?.participants?.coApplicant
+      ? buildApplicantViewModel(applicationState.participants.coApplicant, 'co_applicant')
+      : null,
+    ...(Array.isArray(applicationState?.participants?.sureties)
+      ? applicationState.participants.sureties.map((surety) => buildApplicantViewModel(surety, 'surety'))
+      : []),
+  ].filter(Boolean)
+  const fullName = primaryApplicant.fullName
+  const email = primaryApplicant.email
+  const phone = primaryApplicant.phone
+  const employmentStatus = primaryApplicant.employmentStatus
 
   const purchasePrice = number(valueFrom(
+    applicationState?.application?.finance?.purchasePrice,
+    applicationState?.application?.finance?.purchase_price,
     lookup(data, ['purchase_price', 'sales_price', 'purchasePrice', 'loan_details.purchase_price']),
     transaction?.purchase_price,
     transaction?.sales_price,
   ))
-  const deposit = number(valueFrom(lookup(data, ['deposit', 'deposit_amount', 'loan_details.deposit_amount']), transaction?.deposit_amount))
-  const grossIncome = number(lookup(data, ['grossMonthlyIncome', 'gross_monthly_income', 'monthlyIncome', 'income_deductions_expenses.primary.gross_salary']))
-  const monthlyExpenses = number(lookup(data, ['monthlyExpenses', 'monthly_expenses', 'income_deductions_expenses.primary.total_expenses']))
-  const existingDebt = number(lookup(data, ['existingDebt', 'existing_debt', 'assets_liabilities.total_liabilities']))
+  const deposit = number(valueFrom(
+    applicationState?.application?.finance?.depositAmount,
+    applicationState?.application?.finance?.deposit_amount,
+    lookup(data, ['deposit', 'deposit_amount', 'loan_details.deposit_amount']),
+    transaction?.deposit_amount,
+  ))
+  const grossIncome = applicants.reduce((total, applicant) => total + number(applicant.financials.grossIncome.raw), 0) ||
+    number(lookup(data, ['grossMonthlyIncome', 'gross_monthly_income', 'monthlyIncome', 'income_deductions_expenses.primary.gross_salary']))
+  const monthlyExpenses = applicants.reduce((total, applicant) => total + number(applicant.financials.monthlyExpenses.raw), 0) ||
+    number(lookup(data, ['monthlyExpenses', 'monthly_expenses', 'income_deductions_expenses.primary.total_expenses']))
+  const existingDebt = applicants.reduce((total, applicant) => total + number(applicant.financials.existingDebt.raw), 0) ||
+    number(lookup(data, ['existingDebt', 'existing_debt', 'assets_liabilities.total_liabilities']))
+  const monthlyCommitments = applicants.reduce((total, applicant) => total + number(applicant.financials.monthlyCommitments.raw), 0)
+  const totalIncome = applicants.reduce((total, applicant) => total + number(applicant.financials.totalIncome.raw), 0) || grossIncome
   const bondAmountRequired = number(valueFrom(
+    applicationState?.application?.finance?.requestedBondAmount,
+    applicationState?.application?.finance?.requested_bond_amount,
     lookup(data, ['bondAmount', 'bond_amount', 'amount_to_be_registered', 'loan_details.amount_to_be_registered']),
     transaction?.bond_amount,
     purchasePrice && deposit ? purchasePrice - deposit : 0,
@@ -351,6 +540,8 @@ export function buildBondApplicationViewModel({
   const expenseRatio = grossIncome && monthlyExpenses ? Math.round((monthlyExpenses / grossIncome) * 1000) / 10 : 0
 
   const propertyLabel = text(valueFrom(
+    applicationState?.application?.property?.propertyReference,
+    applicationState?.application?.property?.property_reference,
     unit?.unit_number ? `${development?.name || 'Development'} • Unit ${unit.unit_number}` : '',
     transaction?.property_description,
     transaction?.property_address_line_1,
@@ -370,6 +561,9 @@ export function buildBondApplicationViewModel({
   const applicationStatus = normalizeStatusLabel(valueFrom(statusLabel, transaction?.bond_application_status, transaction?.status, onboarding?.status))
   const documents = buildDocumentTiles(documentRows, requiredDocumentRows)
   const consentCaptured = Boolean(valueFrom(
+    primaryApplicant.declarations?.loan_processing_consent,
+    primaryApplicant.declarations?.credit_bureau_fraud_bank_data_consent,
+    primaryApplicant.declarations?.declaration_accepted,
     onboardingFormData?.creditConsent,
     onboardingFormData?.credit_consent,
     onboardingFormData?.declarations_consents?.loan_processing_consent,
@@ -392,8 +586,36 @@ export function buildBondApplicationViewModel({
   const completionPercent = number(transaction?.completion_percent || onboardingFormData?.completionPercent || onboardingFormData?.completion_percent || documentReadiness?.score) || readinessPercent
   const readiness = classifyReadiness(readinessPercent)
   const risk = buildRisk({ readinessPercent, transaction, onboardingFormData, financials: { deposit: { raw: deposit }, expenseRatio: { raw: expenseRatio } }, documents })
+  const disposableIncome = Math.max(0, totalIncome - monthlyExpenses - monthlyCommitments)
+  const ltv = purchasePrice && bondAmountRequired ? Math.round((bondAmountRequired / purchasePrice) * 1000) / 10 : 0
+  const primaryApplicantDetail = {
+    idNumber: primaryApplicant.idNumber,
+    maritalStatus: primaryApplicant.maritalStatus,
+    dependants: primaryApplicant.dependants,
+    employer: primaryApplicant.employer,
+    occupation: primaryApplicant.occupation,
+    employmentDuration: primaryApplicant.employmentDuration,
+    otherIncome: applicants.reduce((total, applicant) => total + number(applicant.financials.otherIncome.raw), 0)
+      ? formatCurrency(applicants.reduce((total, applicant) => total + number(applicant.financials.otherIncome.raw), 0))
+      : 'Not captured',
+    totalIncome: formatCurrency(totalIncome),
+    disposableIncome: formatCurrency(disposableIncome),
+    monthlyCommitments: formatCurrency(monthlyCommitments),
+    ltv: ltv ? `${ltv}%` : 'Not captured',
+    loanPurpose: text(valueFrom(applicationState?.application?.finance?.loanPurpose, applicationState?.application?.finance?.loan_purpose, lookup(data, ['loan_details.loan_purpose', 'loanPurpose', 'loan_purpose', 'purpose']))) || 'Not captured',
+    preferredTerm: text(valueFrom(applicationState?.application?.finance?.preferredTerm, applicationState?.application?.finance?.preferred_term, lookup(data, ['loan_details.preferred_term', 'preferredTerm', 'preferred_term', 'loan_term_months', 'loanTermMonths']))) || 'Not captured',
+  }
 
   return {
+    canonical: {
+      storageMode: canonical.storageMode,
+      normalizedApplicationId: canonical.normalizedApplicationId,
+      schemaVersion: applicationState?.schemaVersion || null,
+      applicantStructure: applicationState?.application?.applicantStructure || (applicants.length > 1 ? 'joint' : 'sole'),
+      selectedBankIds: applicationState?.application?.selectedBankIds || [],
+    },
+    applicants,
+    primaryApplicantDetail,
     applicant: {
       fullName,
       initials: initialsFor(fullName),
@@ -428,6 +650,9 @@ export function buildBondApplicationViewModel({
       monthlyExpenses: { raw: monthlyExpenses, display: formatCurrency(monthlyExpenses), secondary: expenseRatio ? `${expenseRatio}%` : '' },
       expenseRatio: { raw: expenseRatio, display: expenseRatio ? `${expenseRatio}%` : 'Not captured' },
       existingDebt: { raw: existingDebt, display: formatCurrency(existingDebt) },
+      monthlyCommitments: { raw: monthlyCommitments, display: formatCurrency(monthlyCommitments) },
+      totalIncome: { raw: totalIncome, display: formatCurrency(totalIncome) },
+      disposableIncome: { raw: disposableIncome, display: formatCurrency(disposableIncome) },
       bondAmountRequired: { raw: bondAmountRequired, display: formatCurrency(bondAmountRequired) },
     },
     documents,

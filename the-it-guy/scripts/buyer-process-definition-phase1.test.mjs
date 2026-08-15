@@ -34,12 +34,23 @@ import {
 const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 
-const activeStageKeys = [
+const defaultActiveStageKeys = [
   'captured',
+  'contacted',
   'qualification',
   'viewing',
-  'buyer_onboarding_sent',
-  'offer_received',
+  'transaction_setup',
+  'offer',
+  'transaction',
+]
+
+const kingstonsActiveStageKeys = [
+  'captured',
+  'contacted',
+  'qualification',
+  'viewing',
+  'offer',
+  'transaction_setup',
   'transaction',
 ]
 
@@ -52,9 +63,11 @@ const outcomeStageKeys = [
 
 const evidenceKeys = [
   'buyer_lead_captured',
+  'buyer_contact_logged',
   'buyer_qualified',
   'viewing_recorded',
   'buyer_onboarding_link_sent',
+  'buyer_profile_captured',
   'otp_document_uploaded',
   'transaction_created',
   'hold_reason_captured',
@@ -142,11 +155,11 @@ const evidenceKeys = [
   assert.equal(definition.profile, DEFAULT_BUYER_PROCESS_PROFILE)
   assert.equal(definition.runtimeEnabled, false)
   assert.equal(definition.phase, 'phase1_definition_only')
-  assert.deepEqual(definition.activeStageKeys, activeStageKeys)
+  assert.deepEqual(definition.activeStageKeys, defaultActiveStageKeys)
   assert.deepEqual(definition.outcomeStageKeys, outcomeStageKeys)
-  assert.deepEqual(definition.stages.map((stage) => stage.key), [...activeStageKeys, ...outcomeStageKeys])
-  assert.deepEqual(getBuyerProcessStageKeys({}), [...activeStageKeys, ...outcomeStageKeys])
-  assert.deepEqual(getBuyerProcessActiveStageKeys({}), activeStageKeys)
+  assert.deepEqual(definition.stages.map((stage) => stage.key), [...defaultActiveStageKeys, ...outcomeStageKeys])
+  assert.deepEqual(getBuyerProcessStageKeys({}), [...defaultActiveStageKeys, ...outcomeStageKeys])
+  assert.deepEqual(getBuyerProcessActiveStageKeys({}), defaultActiveStageKeys)
   assert.deepEqual(getBuyerProcessOutcomeStageKeys({}), outcomeStageKeys)
   assert.deepEqual(getBuyerProcessEvidenceKeys({}), evidenceKeys)
 }
@@ -157,11 +170,13 @@ const evidenceKeys = [
   assert.equal(definition.label, 'Kingstons Residential Buyer Process')
   assert.equal(definition.runtimeEnabled, false)
   assert.equal(definition.phase, 'phase1_definition_only')
-  assert.deepEqual(definition.activeStageKeys, activeStageKeys)
+  assert.deepEqual(definition.activeStageKeys, kingstonsActiveStageKeys)
+  assert.deepEqual(definition.stages.map((stage) => stage.key), [...kingstonsActiveStageKeys, ...outcomeStageKeys])
 }
 
 {
   assert.equal(normalizeBuyerProcessStageKey('New Lead'), BUYER_PROCESS_STAGE_KEYS.captured)
+  assert.equal(normalizeBuyerProcessStageKey('Contacted'), BUYER_PROCESS_STAGE_KEYS.contacted)
   assert.equal(normalizeBuyerProcessStageKey('Qualified'), BUYER_PROCESS_STAGE_KEYS.qualification)
   assert.equal(normalizeBuyerProcessStageKey('Viewing Completed'), BUYER_PROCESS_STAGE_KEYS.viewing)
   assert.equal(normalizeBuyerProcessStageKey('Offer + Onboarding Link Sent'), BUYER_PROCESS_STAGE_KEYS.buyerOnboardingSent)
@@ -169,25 +184,32 @@ const evidenceKeys = [
   assert.equal(normalizeBuyerProcessStageKey('Ready to Generate OTP'), BUYER_PROCESS_STAGE_KEYS.offerReceived)
   assert.equal(normalizeBuyerProcessStageKey('OTP Generated'), BUYER_PROCESS_STAGE_KEYS.offerReceived)
   assert.equal(normalizeBuyerProcessStageKey('Buyer Signed'), BUYER_PROCESS_STAGE_KEYS.offerReceived)
-  assert.equal(normalizeBuyerProcessStageKey('Signed by All Parties'), BUYER_PROCESS_STAGE_KEYS.transaction)
+  assert.equal(normalizeBuyerProcessStageKey('Signed by All Parties'), BUYER_PROCESS_STAGE_KEYS.offer)
   assert.equal(normalizeBuyerProcessStageKey('Transaction Live'), BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.equal(normalizeBuyerProcessStageKey('Finance'), BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.equal(normalizeBuyerProcessStageKey('Transfer'), BUYER_PROCESS_STAGE_KEYS.transaction)
   assert.equal(normalizeBuyerProcessStageKey('Lost'), BUYER_PROCESS_STAGE_KEYS.lost)
-  assert.equal(getBuyerProcessStageLabel('offer_submitted'), 'OTP Transaction')
-  assert.equal(getBuyerProcessStageLabel('OTP Transaction'), 'OTP Transaction')
+  assert.equal(getBuyerProcessStageLabel('buyer_onboarding_sent'), 'Transaction Setup')
+  assert.equal(getBuyerProcessStageLabel('offer_submitted'), 'Offer')
+  assert.equal(getBuyerProcessStageLabel('OTP Transaction'), 'Offer')
 }
 
 {
   assert.deepEqual(getBuyerProcessAllowedNextStageKeys('Captured'), [
-    BUYER_PROCESS_STAGE_KEYS.qualification,
+    BUYER_PROCESS_STAGE_KEYS.contacted,
     BUYER_PROCESS_STAGE_KEYS.onHold,
     BUYER_PROCESS_STAGE_KEYS.lost,
   ])
-  assert.equal(canTransitionBuyerProcessStage('Captured', 'Qualification'), true)
-  assert.equal(canTransitionBuyerProcessStage('Captured', 'OTP Transaction'), false)
-  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Buyer onboarding sent'), true)
-  assert.equal(canTransitionBuyerProcessStage('OTP Transaction', 'Transaction'), true)
+  assert.equal(canTransitionBuyerProcessStage('Captured', 'Contacted'), true)
+  assert.equal(canTransitionBuyerProcessStage('Captured', 'Qualification'), false)
+  assert.equal(canTransitionBuyerProcessStage('Contacted', 'Qualification'), true)
+  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Transaction Setup'), true)
+  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer'), false)
+  assert.equal(canTransitionBuyerProcessStage('Transaction Setup', 'Offer'), true)
+  assert.equal(canTransitionBuyerProcessStage('Offer', 'Transaction'), true)
+  assert.equal(canTransitionBuyerProcessStage('Viewing', 'Offer', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
+  assert.equal(canTransitionBuyerProcessStage('Offer', 'Transaction Setup', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
+  assert.equal(canTransitionBuyerProcessStage('Transaction Setup', 'Transaction', { buyerProcessProfile: KINGSTONS_BUYER_PROCESS_PROFILE }), true)
   assert.equal(canTransitionBuyerProcessStage('Lost', 'Captured'), false)
 }
 

@@ -357,17 +357,20 @@ const BUYER_LEAD_KANBAN_STAGE_META = {
   captured: {
     emptyState: 'New buyer leads will appear here once captured or converted from canvassing.',
   },
+  contacted: {
+    emptyState: 'Buyers with logged contact will appear here before qualification.',
+  },
   qualification: {
     emptyState: 'Move buyers here while intent, budget, finance readiness, and timing are confirmed.',
   },
   viewing: {
     emptyState: 'Move buyers here once viewings are planned, completed, or awaiting an outcome.',
   },
-  buyer_onboarding_sent: {
-    emptyState: 'Buyer onboarding links that have been sent will appear here.',
+  transaction_setup: {
+    emptyState: 'Buyer profiles, finance route, roleplayers, and portal handoffs will appear here.',
   },
-  offer_received: {
-    emptyState: 'Uploaded OTP documents will appear here for transaction review.',
+  offer: {
+    emptyState: 'Signed offer to purchase documents will appear here for review.',
   },
   transaction: {
     emptyState: 'Buyer transactions opened from accepted offers will appear here.',
@@ -7544,11 +7547,11 @@ function resolveMandateQuickStartIntro(actionKey = '', step = 'details', signing
 }
 
 function resolveOtpQuickStartPrimaryLabel() {
-  return 'Upload OTP'
+  return 'Upload Signed OTP'
 }
 
 function resolveOtpQuickStartIntro() {
-  return 'Upload or attach the signed OTP once buyer onboarding has been captured. This keeps the transaction evidence in one place.'
+  return 'Upload or attach the signed OTP once the buyer process is ready for the Offer stage. This keeps the transaction evidence in one place.'
 }
 
 function dedupeByKey(rows = [], resolveKey) {
@@ -10444,6 +10447,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     listingId: '',
     offerAmount: '',
     financeType: '',
+    confirmedSignedByAllParties: false,
+    confirmedArch9TermsIncluded: false,
     note: '',
   })
   const [offerPropertySelectorOpen, setOfferPropertySelectorOpen] = useState(false)
@@ -10454,6 +10459,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     whatsapp: false,
   })
   const [isOfferLinkSending, setIsOfferLinkSending] = useState(false)
+  const [buyerTransactionSetupActionId, setBuyerTransactionSetupActionId] = useState('')
   const [otpQuickStartOpen, setOtpQuickStartOpen] = useState(false)
   const [otpQuickStartBusy, setOtpQuickStartBusy] = useState(false)
   const [otpQuickStartProgress, setOtpQuickStartProgress] = useState('')
@@ -12196,6 +12202,31 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLead,
     selectedLeadAssignedAgentLabel,
     selectedLeadIsSeller,
+    workspace,
+  ])
+  const selectedLeadHasKingstonsBuyerSignal = useMemo(() => {
+    if (selectedLeadIsSeller) return false
+    return hasKingstonsPipelineSignal({
+      organisationId,
+      selectedLead,
+      selectedLeadAssignedAgentLabel,
+      currentAgent,
+      currentMembership,
+      currentWorkspace,
+      listing: selectedLeadLinkedListing,
+      profile,
+      workspace,
+    })
+  }, [
+    currentAgent,
+    currentMembership,
+    currentWorkspace,
+    organisationId,
+    profile,
+    selectedLead,
+    selectedLeadAssignedAgentLabel,
+    selectedLeadIsSeller,
+    selectedLeadLinkedListing,
     workspace,
   ])
   const selectedLeadKingstonsDigitalSigningDecision = useMemo(
@@ -14683,18 +14714,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [selectedLead, selectedLeadHasKingstonsPipelineSignal],
   )
   const selectedKingstonsListingTerms = useMemo(
-    () => selectedLeadHasKingstonsPipelineSignal
-      ? selectedLeadIsSeller
-        ? getKingstonsListingTermsState(selectedLead || {}, selectedLeadLinkedListing || {})
-        : getKingstonsBuyerOtpTermsState(selectedLead || {})
-      : {},
-    [selectedLead, selectedLeadHasKingstonsPipelineSignal, selectedLeadIsSeller, selectedLeadLinkedListing],
+    () => selectedLeadIsSeller && selectedLeadHasKingstonsPipelineSignal
+      ? getKingstonsListingTermsState(selectedLead || {}, selectedLeadLinkedListing || {})
+      : selectedLeadHasKingstonsBuyerSignal
+        ? getKingstonsBuyerOtpTermsState(selectedLead || {})
+        : {},
+    [
+      selectedLead,
+      selectedLeadHasKingstonsBuyerSignal,
+      selectedLeadHasKingstonsPipelineSignal,
+      selectedLeadIsSeller,
+      selectedLeadLinkedListing,
+    ],
   )
   const selectedKingstonsListingTermsSummary = useMemo(
     () => summarizeKingstonsListingTerms(selectedKingstonsListingTerms),
     [selectedKingstonsListingTerms],
   )
-  const selectedKingstonsTermsContextIsBuyerOtp = selectedLeadHasKingstonsPipelineSignal && !selectedLeadIsSeller
+  const selectedKingstonsTermsContextIsBuyerOtp = selectedLeadHasKingstonsBuyerSignal
   const selectedLeadUsesKingstonsInPersonOtpFlow = selectedKingstonsTermsContextIsBuyerOtp
   const selectedKingstonsAttorneyPipelineVerification = useMemo(
     () => buildKingstonsAttorneyPipelineVerification({
@@ -15885,6 +15922,115 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadOffers,
   ])
 
+	  const selectedLeadTransactionSetupChecklist = useMemo(() => {
+	    const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+	    const setupState = asRecord(selectedLead?.buyerTransactionSetup || selectedLead?.buyer_transaction_setup || rawPayload.buyerTransactionSetup || rawPayload.buyer_transaction_setup)
+	    const setupActions = asRecord(setupState.actions || setupState.handoffs)
+	    const bondOriginatorSetup = asRecord(setupActions.bondOriginator || setupActions.bond_originator)
+	    const transferAttorneySetup = asRecord(setupActions.transferAttorney || setupActions.transfer_attorney)
+	    const buyerPortalSetup = asRecord(setupActions.buyerPortal || setupActions.buyer_portal)
+	    const financeType = normalizeText(
+	      selectedLeadBuyerProfileModel.formData?.purchase_finance_type ||
+	        buyerOfferUploadForm.financeType ||
+        selectedLead?.financeType ||
+        selectedLead?.preferredFinanceType ||
+        selectedLeadLinkedTransaction?.finance_type ||
+        selectedLeadLinkedTransaction?.financeType,
+    )
+    const financeKey = normalizeKey(financeType)
+    const needsBondOriginator = ['bond', 'hybrid', 'cash_and_bond', 'cash_bond'].some((token) => financeKey.includes(token))
+    const buyerProfileComplete = selectedLeadBuyerProfileModel.requiredCount > 0 &&
+      selectedLeadBuyerProfileModel.completedRequiredCount >= selectedLeadBuyerProfileModel.requiredCount
+	    const transferAttorneyCaptured = Boolean(
+	      selectedKingstonsListingTermsSummary.transferAttorneyComplete ||
+	        selectedKingstonsListingTermsSummary.transferAttorneyLabel ||
+	        selectedKingstonsListingTerms?.transferAttorney?.companyName ||
+	        selectedKingstonsListingTerms?.transferAttorney?.email ||
+	        transferAttorneySetup.status,
+	    )
+	    const bondOriginatorQueued = ['queued', 'sent', 'allocated', 'not_required'].includes(normalizeKey(bondOriginatorSetup.status))
+	    const transferAttorneyQueued = ['queued', 'sent', 'allocated', 'instruction_requested'].includes(normalizeKey(transferAttorneySetup.status))
+	    const buyerPortalReady = ['prepared', 'sent', 'manual_recorded'].includes(normalizeKey(buyerPortalSetup.status))
+	    return [
+      {
+        key: 'buyer_profile',
+        label: 'Buyer profile',
+        detail: buyerProfileComplete
+          ? `${selectedLeadBuyerProfileModel.completedRequiredCount}/${selectedLeadBuyerProfileModel.requiredCount} required captured`
+          : 'Capture purchaser type, contact, finance route, and FICA facts',
+        done: buyerProfileComplete,
+        actionLabel: 'Capture profile',
+        onClick: () => setLeadWorkspaceTab(BUYER_PROFILE_WORKSPACE_TAB_KEY),
+      },
+      {
+        key: 'finance_route',
+        label: 'Finance route',
+        detail: financeType || 'Cash, bond, or hybrid still needs confirmation',
+        done: Boolean(financeType),
+        actionLabel: 'Open profile',
+        onClick: () => setLeadWorkspaceTab(BUYER_PROFILE_WORKSPACE_TAB_KEY),
+      },
+	      {
+	        key: 'bond_originator',
+	        label: 'Bond originator',
+	        detail: needsBondOriginator
+	          ? selectedLeadLinkedTransactionId
+	            ? 'Allocate the bond originator from the transaction finance lane'
+	            : 'Create the transaction setup context and queue the bond application handoff'
+	          : 'Not required for cash purchase',
+	        done: !needsBondOriginator || bondOriginatorQueued,
+	        actionLabel: needsBondOriginator
+	          ? selectedLeadLinkedTransactionId ? 'Open bond workflow' : 'Queue bond handoff'
+	          : 'Cash buyer',
+	        onClick: () => void handleBuyerTransactionSetupChecklistAction('bond_originator'),
+	      },
+      {
+        key: 'transfer_attorney',
+        label: 'Transfer attorney',
+        detail: transferAttorneyCaptured
+          ? selectedKingstonsListingTermsSummary.transferAttorneyLabel || selectedKingstonsListingTerms?.transferAttorney?.companyName || 'Captured'
+          : selectedLeadUsesKingstonsInPersonOtpFlow
+            ? 'Select the transfer attorney before the signed OTP upload'
+            : 'Allocate from the transaction roleplayer lane after setup',
+	        done: selectedLeadUsesKingstonsInPersonOtpFlow ? transferAttorneyCaptured : Boolean(selectedLeadLinkedTransactionId || transferAttorneyQueued),
+	        actionLabel: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Select attorney' : 'Queue instruction',
+	        onClick: () => void handleBuyerTransactionSetupChecklistAction('transfer_attorney'),
+	      },
+      {
+        key: 'buyer_portal',
+        label: 'Buyer portal',
+        detail: selectedLeadUsesKingstonsInPersonOtpFlow
+          ? 'Kingstons buyer portal links stay off for manual OTP'
+          : selectedLeadBuyerOnboardingSubmitted
+            ? 'Buyer onboarding has been submitted'
+            : offerLinkForm.lastBuyerOnboardingLink
+              ? 'Buyer onboarding link sent'
+              : 'Send onboarding or capture the profile manually',
+	        done: selectedLeadUsesKingstonsInPersonOtpFlow
+	          ? buyerPortalReady
+	          : Boolean(selectedLeadBuyerOnboardingSubmitted || offerLinkForm.lastBuyerOnboardingLink || buyerPortalReady),
+	        actionLabel: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Record manual portal' : 'Send portal',
+	        onClick: () => void handleBuyerTransactionSetupChecklistAction('buyer_portal'),
+	      },
+    ]
+  }, [
+    buyerOfferUploadForm.financeType,
+    navigate,
+    offerLinkForm.lastBuyerOnboardingLink,
+    selectedKingstonsListingTerms,
+    selectedKingstonsListingTermsSummary,
+    selectedLead,
+    selectedLeadBuyerOnboardingSubmitted,
+    selectedLeadBuyerProfileModel,
+    selectedLeadLinkedTransaction,
+    selectedLeadLinkedTransactionId,
+    selectedLeadUsesKingstonsInPersonOtpFlow,
+  ])
+  const selectedLeadTransactionSetupComplete = selectedLeadTransactionSetupChecklist.every((item) => item.done)
+  const selectedLeadTransactionSetupStarted = selectedLeadTransactionSetupChecklist.some((item) => item.done) ||
+    selectedLeadBuyerProfileModel.capturedCount > 0 ||
+    Boolean(offerLinkForm.lastBuyerOnboardingLink)
+
   const selectedLeadTransactionHandoffHealth = useMemo(() => {
     const diagnosticTransaction = selectedLeadLifecycleDiagnostic?.transaction || {}
     const hasTransactionContext = Boolean(selectedLeadLinkedTransaction || selectedLeadLifecycleDiagnostic?.transaction)
@@ -16021,7 +16167,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ? 'Completing & Sending...'
     : isViewingOnboardingNextStep(leadViewingCompletionNextStep)
       ? selectedLeadUsesKingstonsInPersonOtpFlow
-        ? 'Complete & Upload OTP'
+        ? 'Complete & Upload Signed OTP'
         : 'Complete & Send Onboarding'
       : leadViewingCompletionNextStep === 'mark_lost'
         ? 'Complete & Mark Lost'
@@ -16041,9 +16187,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const qualified = selectedLeadBuyerQualificationEvidence.complete
     const viewingStarted = selectedLeadViewingAppointments.length > 0 || stageKey.includes('viewing')
     const viewingCompleted = selectedLeadViewingAppointments.some((appointment) => normalizeText(appointment?.status).toLowerCase() === 'completed') || stageKey.includes('viewing completed')
-    const onboardingOtpStarted = selectedLeadBuyerOnboardingSubmitted || selectedLeadBuyerOfferDocumentUploaded || selectedLeadOfferSummary.total > 0 || stageKey.includes('onboarding') || stageKey.includes('offer') || stageKey.includes('otp')
-    const onboardingOtpComplete = selectedLeadBuyerOfferDocumentUploaded || Boolean(selectedLeadAcceptedOffer) || stageKey.includes('otp transaction')
-    const transactionDone = Boolean(selectedLeadLinkedTransactionId)
+    const offerStarted = selectedLeadBuyerOfferDocumentUploaded || selectedLeadOfferSummary.total > 0 || stageKey.includes('offer') || stageKey.includes('otp')
+    const offerComplete = selectedLeadBuyerOfferDocumentUploaded || Boolean(selectedLeadAcceptedOffer) || stageKey.includes('offer')
+	    const transactionDone = Boolean(selectedLeadLinkedTransactionId) && (stageKey.includes('transaction') || stageKey.includes('converted'))
+    const transactionSetupStage = {
+      key: BUYER_PROCESS_STAGE_KEYS.transactionSetup,
+      label: 'Transaction Setup',
+      detail: selectedLeadTransactionSetupComplete
+        ? 'Setup complete'
+        : selectedLeadTransactionSetupStarted
+          ? 'In progress'
+          : 'Not started',
+      done: selectedLeadTransactionSetupComplete,
+      started: selectedLeadTransactionSetupStarted,
+    }
+    const offerStage = {
+      key: BUYER_PROCESS_STAGE_KEYS.offer,
+      label: 'Offer',
+      detail: offerComplete ? 'Signed OTP uploaded' : offerStarted ? 'In progress' : 'Not uploaded',
+      done: offerComplete,
+      started: offerStarted,
+    }
     const rawStages = [
       { key: 'captured', label: 'Captured', detail: formatDateShort(selectedLead?.createdAt), done: Boolean(selectedLead) },
       { key: 'contacted', label: 'Contacted', detail: contacted ? formatDateShort(selectedLeadLastContactedAt || selectedLeadLastActiveAt || selectedLead?.updatedAt) : 'Not reached', done: contacted },
@@ -16059,7 +16223,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         started: qualificationStarted,
       },
       { key: 'viewing', label: 'Viewing', detail: viewingCompleted ? 'Completed' : viewingStarted ? 'Upcoming' : 'Not booked', done: viewingCompleted, started: viewingStarted },
-      { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Onboarding / OTP', detail: onboardingOtpComplete ? 'OTP uploaded' : onboardingOtpStarted ? 'In progress' : 'Not started', done: onboardingOtpComplete, started: onboardingOtpStarted },
+      ...(selectedLeadUsesKingstonsInPersonOtpFlow
+        ? [offerStage, transactionSetupStage]
+        : [transactionSetupStage, offerStage]),
       { key: 'transaction', label: 'Transaction', detail: transactionDone ? 'Created' : 'Not started', done: transactionDone },
     ]
     const firstIncompleteIndex = rawStages.findIndex((stage) => !stage.done)
@@ -16073,13 +16239,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	    selectedLeadAcceptedOffer,
       selectedLeadBuyerOfferDocumentUploaded,
       selectedLeadBuyerOnboardingSubmitted,
-	    selectedLeadContactActivities.length,
+	      selectedLeadContactActivities.length,
     selectedLeadBuyerQualificationEvidence,
+    selectedLeadTransactionSetupComplete,
+    selectedLeadTransactionSetupStarted,
     selectedLeadEffectiveLifecycleStage,
     selectedLeadLastActiveAt,
     selectedLeadLastContactedAt,
     selectedLeadLinkedTransactionId,
     selectedLeadOfferSummary.total,
+    selectedLeadUsesKingstonsInPersonOtpFlow,
     selectedLeadViewingAppointments,
   ])
 
@@ -17167,7 +17336,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function handleUpdateLeadStage(leadId, stage, options = {}) {
     if (!organisationId || !leadId) return
-    const targetLead = records.leads.find((lead) => normalizeText(lead?.leadId) === normalizeText(leadId)) || selectedLead || null
+    const targetLead = options.lead || records.leads.find((lead) => normalizeText(lead?.leadId) === normalizeText(leadId)) || selectedLead || null
     const nextStage = normalizeText(stage)
     const movedAt = new Date().toISOString()
     const isBuyerLead = resolveLeadCategoryView(targetLead) === 'buyer'
@@ -24439,8 +24608,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         { actor: currentAgent },
       ).catch(() => null)
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      let workflowLead = selectedLead
+      if (currentStageKey === BUYER_PROCESS_STAGE_KEYS.captured) {
+        const contactMove = await handleUpdateLeadStage(selectedLead.leadId, 'Contacted', {
+          lead: workflowLead,
+          successMessage: '',
+          activityNote: 'Buyer journey override logged buyer contact.',
+          metadata: { source: 'buyer_journey_whats_next', action: 'mark_contacted' },
+        })
+        if (!contactMove) return
+        workflowLead = {
+          ...workflowLead,
+          stage: contactMove.stage,
+          status: contactMove.stage,
+        }
+      }
       if (!advancedStageKeys.has(currentStageKey) && currentStageKey !== BUYER_PROCESS_STAGE_KEYS.qualification) {
         await handleUpdateLeadStage(selectedLead.leadId, 'Qualification', {
+          lead: workflowLead,
           override: true,
           successMessage: '',
           activityNote: 'Buyer journey override moved the contacted buyer into qualification.',
@@ -24483,7 +24668,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       handleBuyerJourneyScheduleViewingAction()
       return
     }
-    setBuyerJourneyActionStage(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+    setBuyerJourneyActionStage(selectedLeadUsesKingstonsInPersonOtpFlow
+      ? BUYER_PROCESS_STAGE_KEYS.offer
+      : BUYER_PROCESS_STAGE_KEYS.transactionSetup)
     setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
     if (selectedLeadUsesKingstonsInPersonOtpFlow) {
       setMessage('Upload the signed OTP captured in person with the buyer.')
@@ -25203,24 +25390,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function ensureBuyerOnboardingTransactionForLead({
-    listingId = '',
-    buyerName = '',
-    buyerEmail = '',
-    buyerPhone = '',
-    clientIntakePreference = '',
-    source = 'buyer_lead_workspace',
-  } = {}) {
+	  async function ensureBuyerOnboardingTransactionForLead({
+	    listingId = '',
+	    buyerName = '',
+	    buyerEmail = '',
+	    buyerPhone = '',
+	    clientIntakePreference = '',
+	    source = 'buyer_lead_workspace',
+	    missingListingMessage = 'Select the property before sending buyer onboarding.',
+	    transactionStage = 'Buyer Onboarding Pending',
+	    creationMode = 'onboarding_capture',
+	    idempotencyPrefix = 'buyer-onboarding',
+	  } = {}) {
     const existingTransactionId = normalizeText(selectedLeadLinkedTransactionId)
     if (existingTransactionId) {
       return { transactionId: existingTransactionId, existing: true, onboardingUrl: '' }
     }
 
     const listingContext = resolveBuyerOnboardingListingContext(listingId)
-    if (!listingContext.listingId) {
-      setOfferPropertySelectorOpen(true)
-      throw new Error('Select the property before sending buyer onboarding.')
-    }
+	    if (!listingContext.listingId) {
+	      setOfferPropertySelectorOpen(true)
+	      throw new Error(missingListingMessage)
+	    }
 
     const persistedLead = await ensureBuyerLeadPersistedForLifecycle(selectedLead, selectedLeadContact)
     const canonicalBuyerLeadId = normalizeText(persistedLead?.leadId || selectedLead.leadId)
@@ -25258,32 +25449,227 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         assignedAgentName: currentAgent.fullName,
         assignedAgentEmail: currentAgent.email,
         clientIntakePreference: resolvedIntakePreference,
-        creationMode: 'onboarding_capture',
-        allowIncompleteRoutingFacts: true,
-        stage: 'Buyer Onboarding Pending',
-        idempotencyKey: `buyer-onboarding:${organisationId}:${canonicalBuyerLeadId || selectedLead.leadId}:${listingContext.listingId}`,
-        source,
-      },
-      options: {
-        allowDirectLeadConversion: true,
-        allowIncompleteRoutingFacts: true,
-        creationMode: 'onboarding_capture',
-        allowRuntimeFallback: !isSupabaseConfigured,
-      },
+	        creationMode,
+	        allowIncompleteRoutingFacts: true,
+	        stage: transactionStage,
+	        idempotencyKey: `${idempotencyPrefix}:${organisationId}:${canonicalBuyerLeadId || selectedLead.leadId}:${listingContext.listingId}`,
+	        source,
+	      },
+	      options: {
+	        allowDirectLeadConversion: true,
+	        allowIncompleteRoutingFacts: true,
+	        creationMode,
+	        allowRuntimeFallback: !isSupabaseConfigured,
+	      },
     })
     const transactionId = normalizeText(createdTransaction?.transactionId || createdTransaction?.transactionRow?.transaction?.id)
     if (!transactionId) {
       throw new Error('Transaction context could not be created for buyer onboarding.')
     }
-    return {
-      transactionId,
-      existing: Boolean(createdTransaction?.existing),
-      onboardingUrl: normalizeText(createdTransaction?.onboardingUrl),
-      warning: normalizeText(createdTransaction?.warning),
-    }
-  }
+	    return {
+	      transactionId,
+	      existing: Boolean(createdTransaction?.existing),
+	      onboardingUrl: normalizeText(createdTransaction?.onboardingUrl),
+	      warning: normalizeText(createdTransaction?.warning),
+	    }
+	  }
 
-  async function createAndSendBuyerOnboardingForLead({
+	  function resolveBuyerTransactionSetupListingId() {
+	    return normalizeText(
+	      offerLinkForm.listingId ||
+	        buyerOfferUploadForm.listingId ||
+	        selectedLeadActiveViewing?.listingId ||
+	        selectedLeadOfferCentreProperty?.id ||
+	        selectedLead?.listingId,
+	    )
+	  }
+
+	  async function recordBuyerTransactionSetupAction(actionKey, {
+	    status = 'queued',
+	    transactionId = '',
+	    detail = '',
+	    source = 'buyer_transaction_setup',
+	    metadata = {},
+	    moveToSetupStage = true,
+	  } = {}) {
+	    if (!organisationId || !selectedLead || selectedLeadIsSeller) return null
+	    const normalizedActionKey = normalizeKey(actionKey)
+	    const actionField = {
+	      bond_originator: 'bondOriginator',
+	      transfer_attorney: 'transferAttorney',
+	      buyer_portal: 'buyerPortal',
+	    }[normalizedActionKey] || normalizedActionKey
+	    const nowIso = new Date().toISOString()
+	    const actorLabel = normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id)
+	    const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+	    const existingSetup = asRecord(selectedLead?.buyerTransactionSetup || selectedLead?.buyer_transaction_setup || rawPayload.buyerTransactionSetup || rawPayload.buyer_transaction_setup)
+	    const existingActions = asRecord(existingSetup.actions || existingSetup.handoffs)
+	    const actionPayload = {
+	      key: normalizedActionKey,
+	      status,
+	      transactionId: normalizeText(transactionId || selectedLeadLinkedTransactionId),
+	      detail,
+	      source,
+	      recordedAt: nowIso,
+	      recordedBy: actorLabel,
+	      ...metadata,
+	    }
+	    const buyerTransactionSetup = {
+	      ...existingSetup,
+	      transactionId: actionPayload.transactionId || existingSetup.transactionId || '',
+	      stage: selectedLeadUsesKingstonsInPersonOtpFlow ? 'kingstons_manual_setup' : 'global_transaction_setup',
+	      updatedAt: nowIso,
+	      updatedBy: actorLabel,
+	      actions: {
+	        ...existingActions,
+	        [actionField]: actionPayload,
+	        [normalizedActionKey]: actionPayload,
+	      },
+	    }
+	    const rawEnquiryPayload = {
+	      ...rawPayload,
+	      buyerTransactionSetup,
+	    }
+	    const leadPatch = {
+	      buyerTransactionSetup,
+	      rawEnquiryPayload,
+	      ...(normalizedActionKey === 'transaction' && actionPayload.transactionId ? {
+	        convertedTransactionId: selectedLead.convertedTransactionId || actionPayload.transactionId,
+	        convertedDealId: selectedLead.convertedDealId || actionPayload.transactionId,
+	      } : {}),
+	    }
+	    patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+	    await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+	    await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+	      agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+	      activityType: 'Transaction Setup',
+	      activityNote: `${normalizedActionKey}:${status}`,
+	      outcome: detail || status,
+	      activityDate: nowIso,
+	      metadata: {
+	        source,
+	        transactionId: actionPayload.transactionId,
+	        actionKey: normalizedActionKey,
+	      },
+	    }, { actor: currentAgent })
+	    const currentStageKey = normalizeKey(selectedLead?.stage || selectedLead?.status)
+	    if (moveToSetupStage && !['transaction_setup', 'transaction', 'converted'].includes(currentStageKey)) {
+	      await handleUpdateLeadStage(selectedLead.leadId, 'Transaction Setup', {
+	        successMessage: '',
+	        activityNote: `Buyer transaction setup action recorded: ${normalizedActionKey}.`,
+	        metadata: { source, transactionId: actionPayload.transactionId, actionKey: normalizedActionKey },
+	      })
+	    }
+	    return buyerTransactionSetup
+	  }
+
+	  async function ensureBuyerTransactionSetupContext(actionKey = 'transaction_setup') {
+	    const transactionContext = await ensureBuyerOnboardingTransactionForLead({
+	      listingId: resolveBuyerTransactionSetupListingId(),
+	      buyerName: offerLinkForm.buyerName,
+	      buyerEmail: offerLinkForm.buyerEmail,
+	      buyerPhone: offerLinkForm.buyerPhone,
+	      clientIntakePreference: selectedLeadClientIntakePreference,
+	      source: `buyer_transaction_setup_${normalizeKey(actionKey) || 'manual'}`,
+	      missingListingMessage: 'Select the property before creating the transaction setup context.',
+	      transactionStage: 'Transaction Setup',
+	      creationMode: 'manual_capture',
+	      idempotencyPrefix: `buyer-transaction-setup-${normalizeKey(actionKey) || 'manual'}`,
+	    })
+	    await recordBuyerTransactionSetupAction('transaction_setup', {
+	      status: transactionContext.existing ? 'existing' : 'created',
+	      transactionId: transactionContext.transactionId,
+	      detail: transactionContext.existing ? 'Existing transaction setup context confirmed.' : 'Transaction setup context created.',
+	      source: `buyer_transaction_setup_${normalizeKey(actionKey) || 'manual'}`,
+	    })
+	    return transactionContext
+	  }
+
+	  function buyerFinanceNeedsBondOriginator() {
+	    const financeType = normalizeText(
+	      selectedLeadBuyerProfileModel.formData?.purchase_finance_type ||
+	        buyerOfferUploadForm.financeType ||
+	        selectedLead?.financeType ||
+	        selectedLead?.preferredFinanceType ||
+	        selectedLeadLinkedTransaction?.finance_type ||
+	        selectedLeadLinkedTransaction?.financeType,
+	    )
+	    const financeKey = normalizeKey(financeType)
+	    return ['bond', 'hybrid', 'cash_and_bond', 'cash_bond'].some((token) => financeKey.includes(token))
+	  }
+
+	  async function handleBuyerTransactionSetupChecklistAction(actionKey) {
+	    if (!organisationId || !selectedLead || selectedLeadIsSeller) return
+	    const normalizedActionKey = normalizeKey(actionKey)
+	    if (buyerTransactionSetupActionId) return
+	    if (['buyer_profile', 'finance_route'].includes(normalizedActionKey)) {
+	      setLeadWorkspaceTab(BUYER_PROFILE_WORKSPACE_TAB_KEY)
+	      setError('')
+	      return
+	    }
+	    try {
+	      setBuyerTransactionSetupActionId(normalizedActionKey)
+	      setError('')
+	      if (normalizedActionKey === 'buyer_portal' && !selectedLeadUsesKingstonsInPersonOtpFlow) {
+	        await handleSendBuyerOnboardingFromLead()
+	        return
+	      }
+	      if (normalizedActionKey === 'buyer_portal' && selectedLeadUsesKingstonsInPersonOtpFlow) {
+	        await recordBuyerTransactionSetupAction('buyer_portal', {
+	          status: 'manual_recorded',
+	          transactionId: selectedLeadLinkedTransactionId,
+	          detail: 'Kingstons manual buyer portal instructions recorded.',
+	          source: 'kingstons_manual_buyer_portal_handoff',
+	        })
+	        setMessage('Manual buyer portal instructions recorded for Kingstons.')
+	        setLeadWorkspaceTab(BUYER_PROFILE_WORKSPACE_TAB_KEY)
+	        return
+	      }
+	      if (normalizedActionKey === 'transfer_attorney' && selectedLeadUsesKingstonsInPersonOtpFlow) {
+	        openKingstonsListingTermsModal()
+	        return
+	      }
+	      if (normalizedActionKey === 'bond_originator' && !buyerFinanceNeedsBondOriginator()) {
+	        await recordBuyerTransactionSetupAction('bond_originator', {
+	          status: 'not_required',
+	          transactionId: selectedLeadLinkedTransactionId,
+	          detail: 'Bond originator not required for the captured finance route.',
+	          source: 'buyer_transaction_setup_finance_route',
+	        })
+	        setMessage('Bond originator marked not required for this buyer.')
+	        return
+	      }
+	      const transactionContext = await ensureBuyerTransactionSetupContext(normalizedActionKey)
+	      if (normalizedActionKey === 'bond_originator') {
+	        await recordBuyerTransactionSetupAction('bond_originator', {
+	          status: 'queued',
+	          transactionId: transactionContext.transactionId,
+	          detail: 'Bond application handoff queued from buyer Transaction Setup.',
+	          source: 'buyer_transaction_setup_bond_originator',
+	        })
+	        setMessage('Transaction setup created. Bond originator handoff is queued.')
+	        navigate('/bond/pipeline?view=new')
+	        return
+	      }
+	      if (normalizedActionKey === 'transfer_attorney') {
+	        await recordBuyerTransactionSetupAction('transfer_attorney', {
+	          status: 'queued',
+	          transactionId: transactionContext.transactionId,
+	          detail: 'Transfer attorney instruction queued from buyer Transaction Setup.',
+	          source: 'buyer_transaction_setup_transfer_attorney',
+	        })
+	        setMessage('Transaction setup created. Transfer attorney instruction is queued.')
+	        return
+	      }
+	      setMessage('Transaction setup context confirmed.')
+	    } catch (setupError) {
+	      setError(setupError?.message || 'Unable to complete this transaction setup action.')
+	    } finally {
+	      setBuyerTransactionSetupActionId('')
+	    }
+	  }
+
+	  async function createAndSendBuyerOnboardingForLead({
     listingId = '',
     buyerName = '',
     buyerEmail = '',
@@ -25365,7 +25751,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       outcome: onboardingEmail?.data?.manualHandoff ? 'Prepared' : 'Sent',
       actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
     }).catch(() => null)
-    await handleUpdateLeadStage(selectedLead.leadId, 'Buyer onboarding sent', {
+    await handleUpdateLeadStage(selectedLead.leadId, 'Transaction Setup', {
       successMessage: '',
       activityNote: 'Buyer onboarding link sent from the buyer process.',
       metadata: { source },
@@ -25477,7 +25863,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('Select the property before uploading the OTP.')
       return
     }
-    if (selectedLeadHasKingstonsPipelineSignal) {
+    if (buyerOfferUploadForm.confirmedSignedByAllParties !== true) {
+      setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+      setError('Confirm the signed OTP is signed by all parties before uploading it.')
+      return
+    }
+    if (buyerOfferUploadForm.confirmedArch9TermsIncluded !== true) {
+      setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+      setError('Confirm the Arch9 terms and conditions are included in the OTP before uploading it.')
+      return
+    }
+    if (selectedLeadUsesKingstonsInPersonOtpFlow) {
       const existingInstruction = asRecord(selectedKingstonsListingTerms?.attorneyInstruction || selectedKingstonsListingTerms?.attorney_instruction)
       setBuyerOtpAttorneyPromptDraft({
         ...buildKingstonsListingTermsDraft(selectedKingstonsListingTerms),
@@ -25540,10 +25936,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('Select the property before uploading the OTP.')
       return
     }
-    const otpAttorneyInstructionContext = selectedLeadHasKingstonsPipelineSignal
+    const otpAttorneyInstructionContext = selectedLeadUsesKingstonsInPersonOtpFlow
       ? buyerOtpAttorneyInstructionContext
       : null
-    if (selectedLeadHasKingstonsPipelineSignal && !otpAttorneyInstructionContext?.transferAttorney) {
+    if (selectedLeadUsesKingstonsInPersonOtpFlow && !otpAttorneyInstructionContext?.transferAttorney) {
       setError('Choose the transferring attorney before uploading the OTP.')
       setBuyerOtpAttorneyPromptOpen(true)
       return
@@ -25587,6 +25983,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         storagePath: upload.storagePath,
         url: upload.url,
         metadata: {
+          signedByAllPartiesConfirmed: buyerOfferUploadForm.confirmedSignedByAllParties === true,
+          arch9TermsIncludedConfirmed: buyerOfferUploadForm.confirmedArch9TermsIncluded === true,
           kingstonsBuyerOtpTerms: otpAttorneyInstructionContext?.terms || null,
           transferAttorney: otpAttorneyInstructionContext?.transferAttorney || null,
           attorneyInstruction: otpAttorneyInstructionContext?.instruction || null,
@@ -25654,7 +26052,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
 
       let attorneyInstructionResult = null
-      if (otpAttorneyInstructionContext?.transferAttorney && selectedLeadHasKingstonsPipelineSignal && isUuidLike(selectedListingId)) {
+      if (otpAttorneyInstructionContext?.transferAttorney && selectedLeadUsesKingstonsInPersonOtpFlow && isUuidLike(selectedListingId)) {
         try {
           const allocationSync = await syncKingstonsTransferAttorneyPreInstruction(
             selectedListingId,
@@ -25726,6 +26124,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
         buyerOtpDocuments,
         otpDocumentUploadedAt: uploadedAt,
+        buyerOtpSignedByAllPartiesConfirmed: buyerOfferUploadForm.confirmedSignedByAllParties === true,
+        buyerOtpArch9TermsIncludedConfirmed: buyerOfferUploadForm.confirmedArch9TermsIncluded === true,
         otpTransactionId: transactionId,
       }
       const leadPatch = {
@@ -25733,6 +26133,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         buyerOtpDocument: rawEnquiryPayload.buyerOtpDocument,
         buyerOtpDocuments,
         otpDocumentUploadedAt: uploadedAt,
+        buyerOtpSignedByAllPartiesConfirmed: buyerOfferUploadForm.confirmedSignedByAllParties === true,
+        buyerOtpArch9TermsIncludedConfirmed: buyerOfferUploadForm.confirmedArch9TermsIncluded === true,
         convertedTransactionId: transactionId || selectedLead.convertedTransactionId || selectedLead.convertedDealId || '',
         convertedDealId: transactionId || selectedLead.convertedDealId || selectedLead.convertedTransactionId || '',
         ...(otpAttorneyInstructionContext?.terms ? {
@@ -25757,9 +26159,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         listingId: selectedListingId,
         offerAmount: '',
         note: '',
+        confirmedSignedByAllParties: false,
+        confirmedArch9TermsIncluded: false,
       }))
-      const stageMoveResult = await handleUpdateLeadStage(selectedLead.leadId, 'OTP Transaction', {
-        successMessage: 'OTP uploaded and buyer moved to OTP transaction.',
+      const stageMoveResult = await handleUpdateLeadStage(selectedLead.leadId, 'Offer', {
+        successMessage: 'OTP uploaded and buyer moved to Offer.',
         activityNote: 'Buyer OTP uploaded.',
         metadata: { source: 'buyer_process_phase4_otp_upload', transactionId },
       })
@@ -25768,11 +26172,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       } else if (attorneyInstructionWarning) {
         setError(`OTP uploaded, but the transfer instruction needs attention: ${attorneyInstructionWarning}`)
       } else if (!stageMoveResult) {
-        setMessage('OTP uploaded. The buyer stage still needs workflow review before moving to OTP transaction.')
+        setMessage('OTP uploaded. The buyer stage still needs workflow review before moving to Offer.')
       } else {
         setMessage(otpAttorneyInstructionContext?.sendInstruction
           ? 'OTP uploaded. Transfer instruction request captured for the nominated attorney.'
-          : transactionId ? 'OTP uploaded. Buyer process moved to OTP transaction.' : 'OTP uploaded. Buyer process updated.')
+          : transactionId ? 'OTP uploaded. Buyer process moved to Offer.' : 'OTP uploaded. Buyer process updated.')
       }
       setBuyerOtpAttorneyInstructionContext(null)
       await reloadRecords(organisationId)
@@ -26555,14 +26959,58 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setMessage('Recommended listings are open in the Properties workspace.')
   }
 
-  function handleBuyerCommandConvertToTransaction() {
-    if (selectedLeadAcceptedOffer && !OFFER_WORKFLOW_RETIRED) {
-      void handleLeadCanonicalOfferConversion(selectedLeadAcceptedOffer)
-      return
-    }
-    setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
-    setMessage('Use buyer onboarding to capture OTP details and open the transaction context.')
-  }
+	  async function handleBuyerCommandConvertToTransaction() {
+	    if (selectedLeadAcceptedOffer && !OFFER_WORKFLOW_RETIRED) {
+	      void handleLeadCanonicalOfferConversion(selectedLeadAcceptedOffer)
+	      return
+	    }
+	    if (!organisationId || !selectedLead || selectedLeadIsSeller) return
+	    if (!selectedLeadBuyerOfferDocumentUploaded && !selectedLeadAcceptedOffer) {
+	      setBuyerJourneyActionStage(BUYER_PROCESS_STAGE_KEYS.offer)
+	      setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+	      setError('Upload the signed OTP before moving the buyer to Transaction.')
+	      return
+	    }
+	    if (!selectedLeadTransactionSetupComplete) {
+	      setBuyerJourneyActionStage(BUYER_PROCESS_STAGE_KEYS.transactionSetup)
+	      setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)
+	      setError('Complete Transaction Setup before moving the buyer to Transaction.')
+	      return
+	    }
+	    try {
+	      setBuyerTransactionSetupActionId('transaction')
+	      setError('')
+	      const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
+	      const setupState = asRecord(selectedLead?.buyerTransactionSetup || selectedLead?.buyer_transaction_setup || rawPayload.buyerTransactionSetup || rawPayload.buyer_transaction_setup)
+	      const setupTransactionId = normalizeText(setupState.transactionId || setupState.transaction_id)
+	      const transactionContext = selectedLeadLinkedTransactionId
+	        ? { transactionId: selectedLeadLinkedTransactionId, existing: true }
+	        : setupTransactionId
+	          ? { transactionId: setupTransactionId, existing: true }
+	        : await ensureBuyerTransactionSetupContext('transaction')
+	      await recordBuyerTransactionSetupAction('transaction', {
+	        status: 'finalized',
+	        transactionId: transactionContext.transactionId,
+	        detail: 'Buyer transaction setup finalized and handed over to Transaction.',
+	        source: 'buyer_transaction_setup_finalize',
+	        moveToSetupStage: false,
+	      })
+	      const stageMoveResult = await handleUpdateLeadStage(selectedLead.leadId, 'Transaction', {
+	        successMessage: 'Buyer moved to Transaction.',
+	        activityNote: 'Buyer transaction setup and signed OTP completed.',
+	        metadata: { source: 'buyer_transaction_setup_finalize', transactionId: transactionContext.transactionId },
+	      })
+	      if (stageMoveResult) {
+	        setMessage('Buyer moved to Transaction. Transaction workspace is ready.')
+	        if (transactionContext.transactionId) navigate(`/transactions/${transactionContext.transactionId}`)
+	      }
+	      await reloadRecords(organisationId)
+	    } catch (conversionError) {
+	      setError(conversionError?.message || 'Unable to move this buyer to Transaction.')
+	    } finally {
+	      setBuyerTransactionSetupActionId('')
+	    }
+	  }
 
   function handleBuyerJourneyQuickActivity(activityType) {
     setLeadWorkspaceTab('activity')
@@ -26875,7 +27323,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                      <span className="rounded-full border border-[#cfe8dc] bg-[#effaf3] px-2.5 py-1 text-xs font-semibold text-[#26724c]">Onboarding Ready</span>
 	                    ) : null}
 	                    <Button type="button" size="sm" variant="secondary" className="rounded-[10px]" onClick={() => openShowDayLead(row, 'activity')}>Open Lead</Button>
-	                    <Button type="button" size="sm" className="rounded-[10px]" onClick={() => openShowDayLead(row, BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)}>Open Onboarding / OTP</Button>
+		                    <Button type="button" size="sm" className="rounded-[10px]" onClick={() => openShowDayLead(row, BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)}>Open Setup / Offer</Button>
                   </div>
                 </div>
               ))
@@ -27178,7 +27626,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                        <td className="px-3 py-2">{row.overdue ? 'Overdue' : row.offerReady ? 'Onboarding ready' : 'Follow-up due'}</td>
                         <td className="px-3 py-2">
                           <button type="button" className="text-xs font-semibold text-[#0b63f6]" onClick={() => openShowDayLead(row, row.offerReady ? BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY : 'activity')}>
-	                            {row.offerReady ? 'Open Onboarding / OTP' : 'Open Lead'}
+		                            {row.offerReady ? 'Open Setup / Offer' : 'Open Lead'}
                           </button>
                         </td>
                       </tr>
@@ -28225,7 +28673,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     },
                                   },
                                   {
-                                    label: 'Upload OTP',
+	                                    label: 'Upload Signed OTP',
                                     Icon: CheckSquare,
                                     disabled: otpQuickStartBusy || isOfferLinkSending,
                                     onClick: () => {
@@ -28238,7 +28686,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     Icon: ArrowUpRight,
                                     onClick: () => {
                                       setLeadActionsMenuOpen(false)
-                                      handleBuyerCommandConvertToTransaction()
+	                                      void handleBuyerCommandConvertToTransaction()
                                     },
                                   },
                                   {
@@ -28322,7 +28770,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <h3 className="mt-1 text-base font-semibold text-[#17334f]">This buyer has already viewed the property.</h3>
                               <p className="mt-1 text-sm text-[#60758d]">
                                 {selectedLeadShowDayQueueItem?.offerReady
-	                                  ? 'Feedback is onboarding-ready. Open the onboarding and OTP workspace when the buyer confirms intent.'
+		                                  ? 'Feedback is onboarding-ready. Open the setup and offer workspace when the buyer confirms intent.'
                                   : SHOW_DAY_FOLLOW_UP_PROMPT}
                               </p>
                             </div>
@@ -28333,7 +28781,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </Button>
 	                              <Button type="button" size="sm" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)}>
 	                                <Send className="h-4 w-4" />
-	                                Open Onboarding / OTP
+		                                Open Setup / Offer
 	                              </Button>
                             </div>
                           </div>
@@ -28497,7 +28945,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                          },
 	                                        },
 	                                        {
-	                                          label: 'Upload OTP',
+		                                          label: 'Upload Signed OTP',
 	                                          Icon: CheckSquare,
 	                                          tone: 'text-[#29435d]',
 	                                          disabled: otpQuickStartBusy || isOfferLinkSending,
@@ -28512,7 +28960,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                          tone: 'text-[#29435d]',
 	                                          onClick: () => {
 	                                            setLeadActionsMenuOpen(false)
-	                                            handleBuyerCommandConvertToTransaction()
+		                                            void handleBuyerCommandConvertToTransaction()
 	                                          },
 	                                        },
 	                                        {
@@ -28866,7 +29314,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
-                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Onboarding / OTP', meta: selectedLeadBuyerOnboardingSubmitted ? 'Ready' : '' },
+                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Transaction Setup / Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
@@ -29013,21 +29461,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ) : buyerJourneyActionStage === 'viewing' ? (
                             selectedLeadViewingAppointments.length ? (
                               <>
-                                <Button type="button" size="sm" onClick={() => void handleBuyerJourneyMakeOfferAction()}>Send onboarding</Button>
+	                                <Button type="button" size="sm" onClick={() => void handleBuyerJourneyMakeOfferAction()}>
+                                    {selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload signed OTP' : 'Open transaction setup'}
+                                  </Button>
                                 <Button type="button" size="sm" variant="secondary" onClick={() => handleBuyerJourneyScheduleViewingAction({ another: true })}>Set another viewing</Button>
                                 <Button type="button" size="sm" variant="secondary" onClick={() => handleLeadWorkspaceTabSelection('appointments')}>Manage viewings</Button>
                               </>
                             ) : (
                               <Button type="button" size="sm" onClick={() => handleBuyerJourneyScheduleViewingAction()}>Schedule viewing</Button>
                             )
-                          ) : buyerJourneyActionStage === BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY ? (
+                          ) : buyerJourneyActionStage === BUYER_PROCESS_STAGE_KEYS.transactionSetup ? (
+	                            <>
+	                              <Button type="button" size="sm" onClick={() => setLeadWorkspaceTab(BUYER_PROFILE_WORKSPACE_TAB_KEY)}>Capture buyer profile</Button>
+	                              {!selectedLeadUsesKingstonsInPersonOtpFlow ? (
+                                  <Button type="button" size="sm" variant="secondary" onClick={() => void handleSendBuyerOnboardingFromLead()}>Send onboarding</Button>
+                                ) : null}
+	                              <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)}>Open setup</Button>
+	                            </>
+                          ) : buyerJourneyActionStage === BUYER_PROCESS_STAGE_KEYS.offer ? (
                             <>
-                              <Button type="button" size="sm" onClick={() => void handleBuyerJourneyMakeOfferAction()}>Send onboarding</Button>
-                              <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)}>Open onboarding / OTP</Button>
+                              <Button type="button" size="sm" onClick={openBuyerOtpUploadPicker}>Upload signed OTP</Button>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)}>Open offer</Button>
                             </>
                           ) : buyerJourneyActionStage === 'transaction' ? (
                             <>
-                              <Button type="button" size="sm" onClick={handleBuyerCommandConvertToTransaction}>Convert To Transaction</Button>
+	                              <Button type="button" size="sm" onClick={() => void handleBuyerCommandConvertToTransaction()} disabled={buyerTransactionSetupActionId === 'transaction'}>
+                                  {buyerTransactionSetupActionId === 'transaction' ? 'Moving...' : 'Move to Transaction'}
+                                </Button>
                               {selectedLeadLinkedTransactionId ? (
                                 <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/transactions/${selectedLeadLinkedTransactionId}`)}>Open Transaction</Button>
                               ) : null}
@@ -29151,7 +29611,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
-                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Onboarding / OTP', meta: selectedLeadBuyerOnboardingSubmitted ? 'Ready' : '' },
+	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Transaction Setup / Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
                         { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
                         { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
@@ -30270,7 +30730,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     ? 'Keep the buyer in Viewing until you upload the signed OTP or set another viewing.'
                                     : 'Keep the buyer in Viewing until you send buyer onboarding or set another viewing.',
                                   actions: [
-                                    { key: 'make-offer', label: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload OTP' : 'Send onboarding', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
+	                                    { key: 'make-offer', label: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload signed OTP' : 'Open transaction setup', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
                                     { key: 'another-viewing', label: 'Set another viewing', icon: CalendarDays, primary: false, onClick: () => handleBuyerJourneyScheduleViewingAction({ another: true }) },
                                   ],
                                 }
@@ -33344,21 +33804,70 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </div>
                         </section>
 
-                        {selectedLeadHasKingstonsPipelineSignal ? (
-                          <KingstonsListingTermsSummaryCard
-                            terms={selectedKingstonsListingTerms}
-                            summary={selectedKingstonsListingTermsSummary}
+	                        {selectedLeadUsesKingstonsInPersonOtpFlow ? (
+	                          <KingstonsListingTermsSummaryCard
+	                            terms={selectedKingstonsListingTerms}
+	                            summary={selectedKingstonsListingTermsSummary}
                             onEdit={openKingstonsListingTermsModal}
                             compact
                             context="buyer_otp"
                             testId="kingstons-buyer-otp-terms-summary"
-                          />
-                        ) : null}
+	                          />
+	                        ) : null}
 
-                        {!selectedLeadUsesKingstonsInPersonOtpFlow ? (
-                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
+	                        {!selectedLeadUsesKingstonsInPersonOtpFlow ? (
+	                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]" data-testid="buyer-transaction-setup-checklist">
+	                          <div className="flex flex-wrap items-start justify-between gap-3">
+	                            <div className="flex items-center gap-2">
+	                              <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">2</span>
+	                              <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Transaction Setup</h4>
+	                            </div>
+	                            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+	                              selectedLeadTransactionSetupComplete
+	                                ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]'
+	                                : selectedLeadTransactionSetupStarted
+	                                  ? 'border-[#f1dfbd] bg-[#fff9ec] text-[#8a641d]'
+	                                  : 'border-[#dbe6f2] bg-[#f8fbff] text-[#607891]'
+	                            }`}>
+	                              {selectedLeadTransactionSetupComplete ? 'Ready' : selectedLeadTransactionSetupStarted ? 'In progress' : 'Not started'}
+	                            </span>
+	                          </div>
+	                          <p className="mt-2 text-sm leading-6 text-[#607891]">
+	                            {selectedLeadUsesKingstonsInPersonOtpFlow
+	                              ? 'After the signed OTP is uploaded, capture the buyer profile and role-player setup manually for the transaction handoff.'
+	                              : 'Capture the buyer onboarding details manually or send the onboarding link, then line up the role-player handoff.'}
+	                          </p>
+	                          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+	                            {selectedLeadTransactionSetupChecklist.map((item) => (
+	                              <button
+	                                key={item.key}
+	                                type="button"
+	                                disabled={Boolean(buyerTransactionSetupActionId)}
+	                                className={`min-h-[148px] rounded-[14px] border p-4 text-left transition hover:border-[#b9cadd] ${
+	                                  item.done
+	                                    ? 'border-[#cfe8dc] bg-[#f5fcf8]'
+	                                    : 'border-[#e2ebf4] bg-[#fbfdff]'
+	                                } disabled:cursor-not-allowed disabled:opacity-60`}
+	                                onClick={item.onClick}
+	                              >
+	                                <span className={`inline-flex h-9 w-9 items-center justify-center rounded-[12px] ${
+	                                  item.done ? 'bg-[#e6f7ee] text-[#1d7f4a]' : 'bg-[#eef5ff] text-[#0b63f6]'
+	                                }`}>
+	                                  {item.done ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}
+	                                </span>
+	                                <p className="mt-3 text-sm font-semibold text-[#18324b]">{item.label}</p>
+	                                <p className="mt-1 min-h-[38px] text-xs leading-5 text-[#607891]">{item.detail}</p>
+	                                <span className="mt-3 inline-flex text-xs font-semibold text-[#0b63f6]">{item.actionLabel}</span>
+	                              </button>
+	                            ))}
+	                          </div>
+	                        </section>
+	                        ) : null}
+
+	                        {!selectedLeadUsesKingstonsInPersonOtpFlow ? (
+	                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]">
                           <div className="flex items-center gap-2">
-                            <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">2</span>
+	                            <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">2A</span>
 	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Send Buyer Onboarding</h4>
 	                          </div>
 	                          <form id="buyer-onboarding-otp-send-form" className="mt-4 grid gap-4" data-offer-centre="true" onSubmit={handleSendBuyerOnboardingFromAppointment}>
@@ -33456,15 +33965,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                            <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">
                                 {selectedLeadUsesKingstonsInPersonOtpFlow ? '2' : '3'}
                               </span>
-	                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">
-                                {selectedLeadUsesKingstonsInPersonOtpFlow ? 'In-Person OTP' : 'Upload OTP'}
-                              </h4>
-	                          </div>
-	                          <p className="mt-2 text-sm leading-6 text-[#607891]">
-	                            {selectedLeadUsesKingstonsInPersonOtpFlow
-                                ? 'Kingstons completes the OTP in person while with the buyer. Upload the signed OTP here once it is complete.'
-                                : 'Upload the OTP once it is available. This keeps the transaction evidence attached to the buyer onboarding context.'}
-	                          </p>
+		                            <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">
+	                                {selectedLeadUsesKingstonsInPersonOtpFlow ? 'Offer: In-Person Signed OTP' : 'Offer: Upload Signed OTP'}
+	                              </h4>
+		                          </div>
+		                          <p className="mt-2 text-sm leading-6 text-[#607891]">
+		                            {selectedLeadUsesKingstonsInPersonOtpFlow
+	                                ? 'Kingstons completes the OTP in person while with the buyer. Confirm the signature pack and Arch9 terms before uploading the signed OTP.'
+	                                : 'Upload the signed OTP once it is available. This keeps the transaction evidence attached to the buyer onboarding context.'}
+		                          </p>
 	                          <div className="mt-4 grid gap-4 lg:grid-cols-2">
 	                            <label className="grid gap-1">
 	                              <span className="text-xs font-semibold text-[#6f849b]">Property/listing</span>
@@ -33506,19 +34015,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                placeholder="Add context for reviewing this uploaded offer..."
 	                                value={buyerOfferUploadForm.note}
 	                                onChange={(event) => setBuyerOfferUploadForm((previous) => ({ ...previous, note: event.target.value }))}
-	                              />
-	                            </label>
-	                          </div>
-	                          <div className="mt-4 flex flex-wrap items-center gap-3">
-	                            <button
+		                              />
+		                            </label>
+		                          </div>
+		                          <div className="mt-4 grid gap-3 sm:grid-cols-2" data-testid="buyer-offer-upload-confirmations">
+		                            <label className="flex min-h-[104px] items-start gap-3 rounded-[14px] border border-[#dfe9f4] bg-[#fbfdff] p-4">
+		                              <input
+		                                type="checkbox"
+		                                checked={buyerOfferUploadForm.confirmedSignedByAllParties === true}
+		                                onChange={(event) => setBuyerOfferUploadForm((previous) => ({ ...previous, confirmedSignedByAllParties: event.target.checked }))}
+		                                className="mt-0.5 h-4 w-4 rounded border-[#cbd8e6] text-[#0b63f6]"
+		                              />
+		                              <span className="min-w-0">
+		                                <span className="block text-sm font-semibold text-[#18324b]">Signed by all parties</span>
+		                                <span className="mt-1 block text-xs leading-5 text-[#607891]">The OTP has every required buyer, seller, and witness signature.</span>
+		                              </span>
+		                            </label>
+		                            <label className="flex min-h-[104px] items-start gap-3 rounded-[14px] border border-[#dfe9f4] bg-[#fbfdff] p-4">
+		                              <input
+		                                type="checkbox"
+		                                checked={buyerOfferUploadForm.confirmedArch9TermsIncluded === true}
+		                                onChange={(event) => setBuyerOfferUploadForm((previous) => ({ ...previous, confirmedArch9TermsIncluded: event.target.checked }))}
+		                                className="mt-0.5 h-4 w-4 rounded border-[#cbd8e6] text-[#0b63f6]"
+		                              />
+		                              <span className="min-w-0">
+		                                <span className="block text-sm font-semibold text-[#18324b]">Arch9 terms included</span>
+		                                <span className="mt-1 block text-xs leading-5 text-[#607891]">The signed OTP includes the required Arch9 terms and conditions.</span>
+		                              </span>
+		                            </label>
+		                          </div>
+		                          <div className="mt-4 flex flex-wrap items-center gap-3">
+		                            <button
                                 type="button"
                                 className={`inline-flex min-h-10 items-center gap-2 rounded-[12px] px-4 text-sm font-semibold text-white shadow-[0_12px_22px_rgba(6,29,59,0.18)] ${buyerOfferDocumentUploading ? 'cursor-not-allowed bg-[#8290a0]' : 'bg-[#061d3b] hover:bg-[#0a2a52]'}`}
                                 disabled={buyerOfferDocumentUploading}
                                 onClick={openBuyerOtpUploadPicker}
-                              >
-	                              <Upload className="h-4 w-4" />
-	                              {buyerOfferDocumentUploading ? 'Uploading OTP...' : selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload Signed OTP' : 'Upload OTP'}
-	                            </button>
+		                              >
+		                              <Upload className="h-4 w-4" />
+		                              {buyerOfferDocumentUploading ? 'Uploading OTP...' : 'Upload Signed OTP'}
+		                            </button>
                               <input
                                 ref={buyerOtpUploadInputRef}
                                 type="file"
@@ -33530,10 +34065,57 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                            <span className="text-xs font-semibold text-[#7b8fa5]">
 	                              Accepted: PDF, images, Word documents
 	                            </span>
+		                          </div>
+		                        </section>
+
+	                        {selectedLeadUsesKingstonsInPersonOtpFlow ? (
+	                        <section className="rounded-[20px] border border-[#dfe9f4] bg-white p-5 shadow-[0_16px_34px_rgba(31,54,78,0.05)]" data-testid="buyer-transaction-setup-checklist">
+	                          <div className="flex flex-wrap items-start justify-between gap-3">
+	                            <div className="flex items-center gap-2">
+	                              <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-[#edf5ff] text-sm font-semibold text-[#0b63f6]">3</span>
+	                              <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#18324b]">Transaction Setup</h4>
+	                            </div>
+	                            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+	                              selectedLeadTransactionSetupComplete
+	                                ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]'
+	                                : selectedLeadTransactionSetupStarted
+	                                  ? 'border-[#f1dfbd] bg-[#fff9ec] text-[#8a641d]'
+	                                  : 'border-[#dbe6f2] bg-[#f8fbff] text-[#607891]'
+	                            }`}>
+	                              {selectedLeadTransactionSetupComplete ? 'Ready' : selectedLeadTransactionSetupStarted ? 'In progress' : 'Not started'}
+	                            </span>
+	                          </div>
+	                          <p className="mt-2 text-sm leading-6 text-[#607891]">
+	                            After the signed OTP is uploaded, capture the buyer profile and role-player setup manually for the transaction handoff.
+	                          </p>
+	                          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+	                            {selectedLeadTransactionSetupChecklist.map((item) => (
+	                              <button
+	                                key={item.key}
+	                                type="button"
+	                                disabled={Boolean(buyerTransactionSetupActionId)}
+	                                className={`min-h-[148px] rounded-[14px] border p-4 text-left transition hover:border-[#b9cadd] ${
+	                                  item.done
+	                                    ? 'border-[#cfe8dc] bg-[#f5fcf8]'
+	                                    : 'border-[#e2ebf4] bg-[#fbfdff]'
+	                                } disabled:cursor-not-allowed disabled:opacity-60`}
+	                                onClick={item.onClick}
+	                              >
+	                                <span className={`inline-flex h-9 w-9 items-center justify-center rounded-[12px] ${
+	                                  item.done ? 'bg-[#e6f7ee] text-[#1d7f4a]' : 'bg-[#eef5ff] text-[#0b63f6]'
+	                                }`}>
+	                                  {item.done ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}
+	                                </span>
+	                                <p className="mt-3 text-sm font-semibold text-[#18324b]">{item.label}</p>
+	                                <p className="mt-1 min-h-[38px] text-xs leading-5 text-[#607891]">{item.detail}</p>
+	                                <span className="mt-3 inline-flex text-xs font-semibold text-[#0b63f6]">{item.actionLabel}</span>
+	                              </button>
+	                            ))}
 	                          </div>
 	                        </section>
+	                        ) : null}
 
-	                      </div>
+		                      </div>
 
                     </div>
                   </div>
@@ -35169,7 +35751,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	      <Modal
 	        open={buyerOtpAttorneyPromptOpen}
 	        onClose={closeBuyerOtpAttorneyPrompt}
-	        title="Upload OTP"
+	        title="Upload Signed OTP"
 	        subtitle="Choose the transferring attorney before attaching the signed OTP."
 	        className="max-w-2xl"
 	      >

@@ -45,14 +45,16 @@ assert.match(agencyPipelinePageSource, /function normalizeLeadWorkspaceTabKey/)
 assert.match(agencyPipelinePageSource, /'offers'[\s\S]*return BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY/)
 assert.match(
   agencyPipelinePageSource,
-  /\{ key: 'overview', label: 'Overview', meta: '' \},\s*\{ key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' \},\s*\{ key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Onboarding \/ OTP'[\s\S]*?\{ key: 'properties', label: 'Properties'[\s\S]*?\{ key: 'appointments', label: 'Appointments'[\s\S]*?\{ key: 'activity', label: 'Activity'/,
+  /\{ key: 'overview', label: 'Overview', meta: '' \},\s*\{ key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' \},\s*\{ key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Transaction Setup \/ Offer'[\s\S]*?\{ key: 'properties', label: 'Properties'[\s\S]*?\{ key: 'appointments', label: 'Appointments'[\s\S]*?\{ key: 'activity', label: 'Activity'/,
 )
 assert.match(agencyPipelinePageSource, /BUYER_PROFILE_WORKSPACE_TAB_KEY = 'buyer_profile'/)
 assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === 'overview' && !selectedLeadIsSeller \? \(/)
 assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === BUYER_PROFILE_WORKSPACE_TAB_KEY && !selectedLeadIsSeller \? \(/)
 assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY/)
-assert.match(agencyPipelinePageSource, /Open Onboarding \/ OTP/)
+assert.match(agencyPipelinePageSource, /Open Setup \/ Offer/)
 assert.match(agencyPipelinePageSource, /Upload Signed OTP/)
+assert.match(agencyPipelinePageSource, /buyer-transaction-setup-checklist/)
+assert.match(agencyPipelinePageSource, /buyer-offer-upload-confirmations/)
 assert.match(agencyPipelinePageSource, /onClick=\{openBuyerOtpUploadPicker\}/)
 assert.match(agencyPipelinePageSource, /ref=\{buyerOtpUploadInputRef\}/)
 assert.match(agencyPipelinePageSource, /form="buyer-onboarding-otp-send-form"/)

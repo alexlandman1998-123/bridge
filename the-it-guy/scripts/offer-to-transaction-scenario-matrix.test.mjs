@@ -4,6 +4,8 @@ import { createServer } from 'vite'
 
 const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8')
 const agentLeadsPageSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
+const agencyPipelinePageSource = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+const agentLeadWorkspaceServiceSource = await readFile(new URL('../src/services/agentLeadWorkspaceService.js', import.meta.url), 'utf8')
 const buyerOfferSubmissionSource = await readFile(new URL('../src/pages/BuyerOfferSubmission.jsx', import.meta.url), 'utf8')
 const postViewingOfferPortalSource = await readFile(new URL('../src/pages/PostViewingOfferPortal.jsx', import.meta.url), 'utf8')
 
@@ -13,23 +15,36 @@ assert.match(
   'package.json should expose the offer-to-transaction scenario matrix test.',
 )
 
-for (const signal of [
-  'function LeadOfferEdgeCasesPanel',
-  'Mark Accepted (Offline)',
-  'Mark Deal Fell Through',
-  'Buyer withdrew offer',
-  'Offer expired',
-  'Offer rejected',
-  'Deal fell through',
-  'Signed OTP outstanding',
-]) {
-  assert.ok(agentLeadsPageSource.includes(signal), `Agent lead workspace should include "${signal}".`)
-}
+assert.match(
+  agentLeadsPageSource,
+  /<AgencyPipelinePage initialViewMode="leads" \/>/,
+  'Agent lead workspace should route to the agency pipeline leads workspace.',
+)
 
 for (const signal of [
-  'Submit Revised Offer',
+  'async function handleLeadCanonicalOfferAccept',
+  'async function handleLeadCanonicalOfferConversion',
+  'accepted_offer_conversion',
+  'Upload Signed OTP',
+  'Signed by all parties',
+  'Arch9 terms included',
+  'Complete Transaction Setup before moving the buyer to Transaction.',
+  'Upload the signed OTP before moving the buyer to Transaction.',
+  'Move to Transaction',
+]) {
+  assert.ok(agencyPipelinePageSource.includes(signal), `Agency pipeline lead workspace should include "${signal}".`)
+}
+
+assert.ok(
+  agentLeadWorkspaceServiceSource.includes('communicationDeliveries'),
+  'Agent lead workspace model should keep failed onboarding delivery evidence visible.',
+)
+
+for (const signal of [
+  'Submit Buyer Onboarding',
+  'countered',
   'canonicalBanner',
-  'This offer is already under review',
+  'This buyer onboarding is already under review',
 ]) {
   assert.ok(buyerOfferSubmissionSource.includes(signal), `Buyer offer submission should include "${signal}".`)
 }

@@ -1,0 +1,85 @@
+{
+  "contract": "buyer-process-phase6-release-readiness-v1",
+  "collectedAt": "2026-08-14T00:00:00.000Z",
+  "environment": "staging",
+  "projectRef": "redacted-project-ref",
+  "releaseSource": {
+    "commitSha": "redacted-commit-sha",
+    "globalDiagnosticCommand": "npm run test:buyer-process-global-diagnostic",
+    "globalDiagnosticPassed": false,
+    "buildCommand": "npm run build",
+    "buildPassed": false
+  },
+  "operator": {
+    "reference": "operator-ref",
+    "confirmation": "BUYER_PROCESS_PHASE6_REDACTED_RELEASE_EVIDENCE"
+  },
+  "testLeads": {
+    "globalBuyerRef": "buyer-lead-ref-global",
+    "kingstonsBuyerRef": "buyer-lead-ref-kingstons",
+    "globalProfileConfirmed": false,
+    "kingstonsManualOtpProfileConfirmed": false,
+    "profilesStayedSeparated": false
+  },
+  "checks": {
+    "globalStageOrder": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-global-stage-order"
+    },
+    "kingstonsStageOrder": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-kingstons-stage-order"
+    },
+    "noGlobalOtpGeneration": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-no-global-otp-generation"
+    },
+    "kingstonsManualOtpOnly": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-kingstons-manual-otp"
+    },
+    "signedOtpUploadConfirmations": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-signed-otp-confirmations"
+    },
+    "buyerProfileCaptured": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-buyer-profile-captured"
+    },
+    "bondOriginatorHandoff": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-bond-originator-handoff"
+    },
+    "transferAttorneyHandoff": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-transfer-attorney-handoff"
+    },
+    "globalBuyerOnboardingLink": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-global-buyer-onboarding"
+    },
+    "kingstonsManualBuyerInstructions": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-kingstons-manual-instructions"
+    },
+    "transactionMoveGate": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-transaction-move-gate"
+    },
+    "transactionHandoffPanel": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-transaction-handoff-panel"
+    },
+    "convertedTransactionIdPersisted": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-converted-transaction-id"
+    },
+    "offerToTransactionMatrix": {
+      "passed": false,
+      "evidenceRef": "evidence-ref-offer-to-transaction-matrix"
+    }
+  },
+  "notes": [
+    "Use only opaque references. Do not paste buyer names, seller names, addresses, emails, phone numbers, portal tokens, signed URLs, OTP file names from real clients, provider logs, or raw profile facts."
+  ]
+}

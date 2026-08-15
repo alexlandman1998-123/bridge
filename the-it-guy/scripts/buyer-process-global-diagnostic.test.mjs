@@ -14,13 +14,16 @@ const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
 const requiredScripts = Object.freeze({
   'test:buyer-process-global-diagnostic': 'node scripts/buyer-process-global-diagnostic.test.mjs',
-  'verify:buyer-process-global-diagnostic': 'npm run test:buyer-process-global-diagnostic',
+  'verify:buyer-process-global-diagnostic': 'npm run test:buyer-process-global-diagnostic && npm run test:buyer-process-release-readiness-phase6 && npm run test:buyer-process-release-decision-phase7 && npm run test:buyer-process-controlled-smoke-phase8',
+  'verify:buyer-process-release-readiness': 'npm run test:buyer-process-global-diagnostic && node scripts/buyer-process-release-readiness-phase6.test.mjs --require-evidence',
+  'verify:buyer-process-release-decision': 'node scripts/buyer-process-release-decision-phase7.test.mjs --require-release',
+  'verify:buyer-process-controlled-smoke': 'node scripts/buyer-process-controlled-smoke-phase8.test.mjs --require-observation',
   'test:transaction-roleplayer-notifications-phase4': 'node scripts/transaction-roleplayer-notifications-phase4.test.mjs',
 })
 
 const diagnosticChecks = Object.freeze([
   ['test:buyer-process-definition-phase1', 'global and Kingstons buyer profiles stay split'],
-  ['test:buyer-process-workflow-engine-phase2', 'buyer workflow maps legacy OTP stages into OTP Transaction'],
+  ['test:buyer-process-workflow-engine-phase2', 'buyer workflow maps legacy OTP stages into Offer'],
   ['test:buyer-process-viewing-actions-phase3', 'viewing actions feed buyer onboarding'],
   ['test:buyer-process-onboarding-offer-upload-phase4', 'buyer onboarding and OTP upload are wired'],
   ['test:buyer-process-pipeline-reporting-phase5', 'pipeline reporting keeps buyer stage evidence visible'],
@@ -40,6 +43,9 @@ const diagnosticChecks = Object.freeze([
   ['test:transaction-roleplayer-notifications-phase4', 'transaction roleplayer notifications are registered'],
   ['test:transaction-propagation-assurance-phase6', 'transaction propagation assurance passes'],
   ['test:listing-to-transaction-routing-propagation', 'listing-to-transaction routing facts propagate'],
+  ['test:buyer-process-release-readiness-phase6', 'release-readiness evidence gate is documented'],
+  ['test:buyer-process-release-decision-phase7', 'release decision gate is documented'],
+  ['test:buyer-process-controlled-smoke-phase8', 'controlled smoke observation gate is documented'],
 ])
 
 for (const [scriptName, expectedCommand] of Object.entries(requiredScripts)) {
@@ -59,14 +65,18 @@ for (const requiredText of [
   'transfer attorney',
   'bond originator',
   'listing-to-transaction routing propagation',
+  'release-readiness evidence gate',
+  'release decision gate',
+  'controlled smoke observation gate',
+  'Buyer Process Handoff',
 ]) {
   assert.match(runbook.toLowerCase(), new RegExp(requiredText.toLowerCase()), `Buyer diagnostic runbook must mention ${requiredText}`)
 }
 
-assert.match(agencyPipelinePage, /Upload OTP/)
+assert.match(agencyPipelinePage, /Upload Signed OTP/)
 assert.match(agencyPipelinePage, /OTP workspace ready/)
 assert.doesNotMatch(agencyPipelinePage, /label: 'Generate OTP'/)
-assert.match(buyerOfferPage, /Manual OTP Upload/)
+assert.match(buyerOfferPage, /OTP prepared or uploaded/)
 assert.doesNotMatch(buyerOfferPage, /OTP Generated/)
 assert.doesNotMatch(buyerOfferPage, /before OTP generation/)
 assert.match(postViewingPortal, /manual signed OTP upload/)

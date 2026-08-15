@@ -34,9 +34,9 @@ const legacyOtpMigration = resolveBuyerProcessStageMigration({
 })
 
 assert.equal(legacyOtpMigration.migrated, true)
-assert.equal(legacyOtpMigration.stageKey, 'offer_received')
-assert.equal(legacyOtpMigration.stageLabel, 'OTP Transaction')
-assert.equal(legacyOtpMigration.statusLabel, 'OTP Transaction')
+assert.equal(legacyOtpMigration.stageKey, 'offer')
+assert.equal(legacyOtpMigration.stageLabel, 'Offer')
+assert.equal(legacyOtpMigration.statusLabel, 'Offer')
 assert.equal(legacyOtpMigration.previousStage, 'Ready to Generate OTP')
 assert.equal(legacyOtpMigration.previousStatus, 'OTP Generated')
 assert.equal(legacyOtpMigration.deprecatedOtpStage, true)
@@ -48,9 +48,9 @@ const migratedLegacyOtpLead = migrateBuyerProcessLeadRecord({
   status: 'OTP Generated',
 })
 
-assert.equal(migratedLegacyOtpLead.stage, 'OTP Transaction')
-assert.equal(migratedLegacyOtpLead.status, 'OTP Transaction')
-assert.equal(migratedLegacyOtpLead.buyerProcessStageKey, 'offer_received')
+assert.equal(migratedLegacyOtpLead.stage, 'Offer')
+assert.equal(migratedLegacyOtpLead.status, 'Offer')
+assert.equal(migratedLegacyOtpLead.buyerProcessStageKey, 'offer')
 assert.equal(migratedLegacyOtpLead.buyerProcessMigrationVersion, BUYER_PROCESS_MIGRATION_VERSION)
 assert.equal(migratedLegacyOtpLead.buyerProcessOtpDeprecated, true)
 assert.equal(migratedLegacyOtpLead.legacyBuyerProcessStage, 'Ready to Generate OTP')
@@ -88,9 +88,9 @@ assert.match(agencyCrmRepositorySource, /return migrateBuyerProcessLeadRecord\(l
 
 assert.doesNotMatch(agencyPipelinePageSource, /BUYER_OTP_DEPRECATION_NOTICE/)
 assert.doesNotMatch(agencyPipelinePageSource, /OTP generator deprecated/)
-assert.match(agencyPipelinePageSource, /label: 'Upload OTP'/)
+assert.match(agencyPipelinePageSource, /label: 'Upload Signed OTP'/)
 assert.match(agencyPipelinePageSource, /BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY = 'onboarding_otp'/)
-assert.match(agencyPipelinePageSource, /Open Onboarding \/ OTP/)
+assert.match(agencyPipelinePageSource, /Open Setup \/ Offer/)
 assert.doesNotMatch(agencyPipelinePageSource, /key: 'offers'/)
 assert.doesNotMatch(agencyPipelinePageSource, /Open Offer Centre/)
 assert.doesNotMatch(agencyPipelinePageSource, /label: 'Generate OTP'/)

@@ -104,6 +104,7 @@ import {
   declineBondQuote,
   fetchTransactionCoreById,
   fetchTransactionById,
+  fetchTransactionReferralIncentive,
   getCompletionBlockers,
   getFinalReportData,
   getTransactionRollup,
@@ -118,7 +119,9 @@ import {
   runWorkflowAction,
   saveTransactionRoleplayerSelections,
   saveTransactionRoutingProfile,
+  saveTransactionReferralIncentive,
   undoTransactionRegistration,
+  transitionTransactionReferralIncentive,
   unarchiveTransactionLifecycle,
   updateBondApplication,
   updateBondHybridFinanceStage,
@@ -193,12 +196,13 @@ const AGENT_WORKSPACE_TABS = [
 ]
 
 const BOND_ORIGINATOR_WORKSPACE_TABS = [
-  { id: 'overview', label: 'Today' },
-  { id: 'workflow', label: 'Work Queue' },
+  { id: 'overview', label: 'Overview' },
   { id: 'application', label: 'Application' },
   { id: 'documents', label: 'Documents' },
-  { id: 'activity', label: 'Activity' },
+  { id: 'quotes_grant', label: 'Quotes & Grant' },
+  { id: 'reconciliation', label: 'Reconciliation' },
 ]
+const BOND_ORIGINATOR_HIDDEN_WORKSPACE_TABS = new Set(['activity'])
 
 const ROUTING_FINANCE_TYPE_OPTIONS = [
   { value: 'cash', label: 'Cash' },
@@ -4641,6 +4645,378 @@ function getParticipantDisplayName(participant) {
   )
 }
 
+function getContactInitials(value = '') {
+  const textValue = String(value || '').trim()
+  if (!textValue) return 'NA'
+  const parts = textValue.split(/\s+/).filter(Boolean)
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase()
+}
+
+function firstPresent(...values) {
+  return values.find((value) => value !== undefined && value !== null && String(value).trim() !== '') || ''
+}
+
+function getParticipantMediaUrl(participant = {}, type = 'avatar') {
+  const snapshot = participant?.snapshot || participant?.snapshotJson || participant?.snapshot_json || {}
+  const organisation = participant?.organisation || participant?.organization || {}
+  if (type === 'logo') {
+    return firstPresent(
+      participant?.organisationLogoUrl,
+      participant?.organisation_logo_url,
+      participant?.organizationLogoUrl,
+      participant?.organization_logo_url,
+      participant?.logoUrl,
+      participant?.logo_url,
+      organisation?.logoUrl,
+      organisation?.logo_url,
+      snapshot?.organisationLogoUrl,
+      snapshot?.organisation_logo_url,
+      snapshot?.logoUrl,
+      snapshot?.logo_url,
+    )
+  }
+  return firstPresent(
+    participant?.avatarUrl,
+    participant?.avatar_url,
+    participant?.profileImageUrl,
+    participant?.profile_image_url,
+    participant?.photoUrl,
+    participant?.photo_url,
+    snapshot?.avatarUrl,
+    snapshot?.avatar_url,
+    snapshot?.profileImageUrl,
+    snapshot?.profile_image_url,
+    snapshot?.photoUrl,
+    snapshot?.photo_url,
+  )
+}
+
+function ProfileAvatar({ name = '', imageUrl = '', className = '', imageClassName = '' }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-primarySoft text-sm font-semibold text-primary ${className}`}>
+      {imageUrl ? <img src={imageUrl} alt="" className={`h-full w-full object-cover ${imageClassName}`} /> : getContactInitials(name)}
+    </span>
+  )
+}
+
+function asDetailRecord(value) {
+  if (!value) return {}
+  if (typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string') return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function asDetailArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function getDetailAction(actions = {}, ...keys) {
+  const record = asDetailRecord(actions)
+  return keys
+    .map((key) => record[key] || record[normalizeDetailKey(key)])
+    .find((value) => value && typeof value === 'object') || {}
+}
+
+function hasAffirmativeDetailFlag(value) {
+  if (value === true) return true
+  const normalized = normalizeDetailKey(value)
+  return ['yes', 'true', 'confirmed', 'included', 'signed', 'complete', 'completed', 'ready'].includes(normalized)
+}
+
+function isCompletedHandoffAction(action = {}) {
+  const normalized = normalizeDetailKey(action.status || action.state || action.outcome)
+  return ['complete', 'completed', 'confirmed', 'created', 'existing', 'finalized', 'manual_recorded', 'not_required', 'queued', 'sent', 'submitted'].includes(normalized)
+}
+
+function getHandoffActionStatus(action = {}, fallback = 'Pending') {
+  const rawStatus = action.status || action.state || action.outcome
+  if (!rawStatus) return fallback
+  return toTitle(rawStatus)
+}
+
+function getBuyerProcessDocumentText(document = {}) {
+  const metadata = asDetailRecord(document.metadata || document.meta || document.document_metadata)
+  return normalizeDetailKey([
+    document.documentType,
+    document.document_type,
+    document.documentKey,
+    document.document_key,
+    document.category,
+    document.document_category,
+    document.name,
+    document.fileName,
+    document.file_name,
+    document.label,
+    metadata.source,
+    metadata.uploadSource,
+    metadata.documentType,
+    metadata.document_type,
+  ].filter(Boolean).join(' '))
+}
+
+function isBuyerSignedOtpDocument(document = {}) {
+  const text = getBuyerProcessDocumentText(document)
+  if (!text) return false
+  if (text.includes('agent_otp_upload') || text.includes('uploaded_otp') || text.includes('signed_otp')) return true
+  return (text.includes('otp') || text.includes('offer_to_purchase') || text.includes('sale_agreement')) &&
+    (text.includes('signed') || text.includes('uploaded') || text.includes('agent'))
+}
+
+function getBuyerHandoffRowTone(row = {}) {
+  if (row.optional) return 'border-slate-200 bg-slate-50 text-slate-700'
+  if (row.complete) return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (row.warning) return 'border-amber-200 bg-amber-50 text-amber-700'
+  return 'border-red-100 bg-red-50 text-red-700'
+}
+
+function buildBuyerProcessHandoffModel({
+  transaction = {},
+  onboardingFormData = null,
+  documents = [],
+  buyerProcessLeadHandoff = null,
+  transferAttorney = null,
+  assignedBondOriginator = null,
+  onboardingCompleted = false,
+} = {}) {
+  const leadPayload = asDetailRecord(
+    buyerProcessLeadHandoff?.rawEnquiryPayload ||
+      buyerProcessLeadHandoff?.raw_enquiry_payload ||
+      transaction?.rawEnquiryPayload ||
+      transaction?.raw_enquiry_payload,
+  )
+  const setup = asDetailRecord(
+    buyerProcessLeadHandoff?.buyerTransactionSetup ||
+      buyerProcessLeadHandoff?.buyer_transaction_setup ||
+      transaction?.buyerTransactionSetup ||
+      transaction?.buyer_transaction_setup ||
+      leadPayload.buyerTransactionSetup ||
+      leadPayload.buyer_transaction_setup,
+  )
+  const setupActions = asDetailRecord(setup.actions || setup.handoffs)
+  const formData = asDetailRecord(onboardingFormData?.formData || onboardingFormData?.form_data || onboardingFormData)
+  const buyerOtpDocuments = [
+    leadPayload.buyerOtpDocument,
+    leadPayload.buyer_otp_document,
+    ...asDetailArray(leadPayload.buyerOtpDocuments),
+    ...asDetailArray(leadPayload.buyer_otp_documents),
+    ...asDetailArray(documents),
+  ].filter(Boolean)
+  const signedOtpDocument = buyerOtpDocuments.find((document) => isBuyerSignedOtpDocument(document)) || null
+  const signedOtpMetadata = asDetailRecord(signedOtpDocument?.metadata || signedOtpDocument?.meta || signedOtpDocument?.document_metadata)
+  const signedByAllPartiesConfirmed = hasAffirmativeDetailFlag(
+    leadPayload.buyerOtpSignedByAllPartiesConfirmed ??
+      leadPayload.buyer_otp_signed_by_all_parties_confirmed ??
+      signedOtpDocument?.signedByAllPartiesConfirmed ??
+      signedOtpDocument?.signed_by_all_parties_confirmed ??
+      signedOtpMetadata.signedByAllPartiesConfirmed ??
+      signedOtpMetadata.signed_by_all_parties_confirmed,
+  )
+  const arch9TermsIncludedConfirmed = hasAffirmativeDetailFlag(
+    leadPayload.buyerOtpArch9TermsIncludedConfirmed ??
+      leadPayload.buyer_otp_arch9_terms_included_confirmed ??
+      signedOtpDocument?.arch9TermsIncludedConfirmed ??
+      signedOtpDocument?.arch9_terms_included_confirmed ??
+      signedOtpMetadata.arch9TermsIncludedConfirmed ??
+      signedOtpMetadata.arch9_terms_included_confirmed,
+  )
+  const profileAction = getDetailAction(setupActions, 'buyerProfile', 'buyer_profile')
+  const financeAction = getDetailAction(setupActions, 'financeRoute', 'finance_route')
+  const bondOriginatorAction = getDetailAction(setupActions, 'bondOriginator', 'bond_originator')
+  const transferAttorneyAction = getDetailAction(setupActions, 'transferAttorney', 'transfer_attorney')
+  const buyerPortalAction = getDetailAction(setupActions, 'buyerPortal', 'buyer_portal')
+  const transactionAction = getDetailAction(setupActions, 'transaction')
+  const formDataCaptured = Object.keys(formData).length > 0
+  const capturedFinanceType = firstPresent(
+    formData.purchase_finance_type,
+    formData.finance_type,
+    formData.finance?.purchase_finance_type,
+    formData.finance?.finance_type,
+    transaction.finance_type,
+    setup.financeType,
+    setup.finance_type,
+  )
+  const normalizedHandoffFinanceType = normalizeFinanceType(capturedFinanceType, { allowUnknown: true })
+  const bondOriginatorRequired = isBondFinanceType(normalizedHandoffFinanceType)
+  const transferAttorneyAssigned = Boolean(
+    transferAttorney ||
+      transaction?.attorney ||
+      transaction?.assigned_attorney_email ||
+      transferAttorneyAction.transferAttorney ||
+      transferAttorneyAction.transferAttorneyId ||
+      transferAttorneyAction.assignedTo,
+  )
+  const bondOriginatorAssigned = Boolean(
+    assignedBondOriginator ||
+      transaction?.bond_originator ||
+      transaction?.assigned_bond_originator_email ||
+      bondOriginatorAction.bondOriginator ||
+      bondOriginatorAction.bondOriginatorId ||
+      bondOriginatorAction.assignedTo,
+  )
+  const buyerPortalComplete = onboardingCompleted || isCompletedHandoffAction(buyerPortalAction)
+  const signedOtpComplete = Boolean(signedOtpDocument) && signedByAllPartiesConfirmed && arch9TermsIncludedConfirmed
+  const transactionFinalized = isCompletedHandoffAction(transactionAction) || normalizeDetailKey(setup.stage).includes('transaction') || Boolean(buyerProcessLeadHandoff?.convertedTransactionId)
+  const rows = [
+    {
+      key: 'signed_otp',
+      label: 'Signed OTP',
+      status: signedOtpComplete ? 'Confirmed' : signedOtpDocument ? 'Review confirmations' : 'Missing',
+      detail: signedOtpDocument ? firstPresent(signedOtpDocument.name, signedOtpDocument.fileName, signedOtpDocument.file_name, 'Uploaded OTP') : 'Upload the Signed Offer to Purchase',
+      complete: signedOtpComplete,
+      warning: Boolean(signedOtpDocument),
+    },
+    {
+      key: 'signed_by_all_parties',
+      label: 'Signed by all parties',
+      status: signedByAllPartiesConfirmed ? 'Confirmed' : 'Needs confirmation',
+      detail: 'Agent confirmation from Offer step',
+      complete: signedByAllPartiesConfirmed,
+    },
+    {
+      key: 'arch9_terms',
+      label: 'Arch9 terms',
+      status: arch9TermsIncludedConfirmed ? 'Included' : 'Needs confirmation',
+      detail: 'Arch9 terms and conditions included in the OTP',
+      complete: arch9TermsIncludedConfirmed,
+    },
+    {
+      key: 'buyer_profile',
+      label: 'Buyer profile',
+      status: formDataCaptured || isCompletedHandoffAction(profileAction) ? 'Captured' : 'Pending',
+      detail: toTitle(firstPresent(formData.purchaser_type, formData.buyerType, transaction.purchaser_type, 'Buyer details')),
+      complete: formDataCaptured || isCompletedHandoffAction(profileAction),
+    },
+    {
+      key: 'finance_route',
+      label: 'Finance route',
+      status: normalizedHandoffFinanceType === 'unknown' ? getHandoffActionStatus(financeAction, 'Pending') : toTitle(normalizedHandoffFinanceType),
+      detail: bondOriginatorRequired ? 'Bond originator decision required' : 'No bond originator required for cash finance',
+      complete: normalizedHandoffFinanceType !== 'unknown' || isCompletedHandoffAction(financeAction),
+    },
+    {
+      key: 'bond_originator',
+      label: 'Bond originator',
+      status: bondOriginatorRequired ? (bondOriginatorAssigned ? 'Assigned' : getHandoffActionStatus(bondOriginatorAction, 'Pending')) : 'Not required',
+      detail: bondOriginatorAction.detail || (bondOriginatorRequired ? 'Allocate bond originator and send application' : 'Cash finance route'),
+      complete: !bondOriginatorRequired || bondOriginatorAssigned || isCompletedHandoffAction(bondOriginatorAction),
+      optional: !bondOriginatorRequired,
+    },
+    {
+      key: 'transfer_attorney',
+      label: 'Transfer attorney',
+      status: transferAttorneyAssigned ? 'Assigned' : getHandoffActionStatus(transferAttorneyAction, 'Pending'),
+      detail: transferAttorneyAction.detail || 'Allocate transfer attorney and send instruction',
+      complete: transferAttorneyAssigned || isCompletedHandoffAction(transferAttorneyAction),
+    },
+    {
+      key: 'buyer_portal',
+      label: 'Buyer portal',
+      status: buyerPortalComplete ? 'Sent / recorded' : getHandoffActionStatus(buyerPortalAction, 'Pending'),
+      detail: buyerPortalAction.detail || 'Buyer portal and next-step instructions',
+      complete: buyerPortalComplete,
+    },
+    {
+      key: 'transaction',
+      label: 'Transaction',
+      status: transactionFinalized ? 'Finalized' : 'Pending',
+      detail: 'Lead moved over to Transaction',
+      complete: transactionFinalized,
+    },
+  ]
+  const requiredRows = rows.filter((row) => !row.optional)
+  const incompleteRows = requiredRows.filter((row) => !row.complete)
+  const readyCount = rows.filter((row) => row.complete || row.optional).length
+
+  return {
+    hasLeadHandoff: Boolean(buyerProcessLeadHandoff?.leadId || setup.transactionId || Object.keys(setupActions).length || signedOtpDocument || formDataCaptured),
+    setup,
+    rows,
+    readyCount,
+    totalCount: rows.length,
+    incompleteCount: incompleteRows.length,
+    statusLabel: incompleteRows.length ? `${incompleteRows.length} setup item${incompleteRows.length === 1 ? '' : 's'} pending` : 'Handoff ready',
+    statusTone: incompleteRows.length ? 'warning' : 'success',
+    leadId: buyerProcessLeadHandoff?.leadId || '',
+    updatedAt: setup.updatedAt || buyerProcessLeadHandoff?.updatedAt || signedOtpDocument?.uploadedAt || signedOtpDocument?.uploaded_at || '',
+    signedOtpDocument,
+  }
+}
+
+function BuyerProcessHandoffPanel({
+  handoff = null,
+  compact = false,
+  onOpenBuyer,
+  onOpenDocuments,
+  onOpenRoleplayers,
+}) {
+  if (!handoff?.hasLeadHandoff) return null
+  const statusTone = handoff.statusTone === 'success'
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    : 'border-amber-200 bg-amber-50 text-amber-700'
+  const visibleRows = compact ? handoff.rows.slice(0, 6) : handoff.rows
+
+  return (
+    <section className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold text-textStrong">Buyer Process Handoff</h3>
+          <p className="mt-1 text-sm leading-6 text-textMuted">
+            Offer and Transaction Setup evidence carried over from the buyer journey.
+          </p>
+        </div>
+        <span className={`inline-flex w-fit shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${statusTone}`}>
+          {handoff.statusLabel}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {visibleRows.map((row) => {
+          const rowTone = getBuyerHandoffRowTone(row)
+          return (
+            <article key={row.key} className={`min-w-0 rounded-[14px] border px-3 py-3 ${rowTone}`}>
+              <div className="flex items-start gap-2">
+                {row.complete || row.optional ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> : row.warning ? <AlertTriangle size={16} className="mt-0.5 shrink-0" /> : <Clock3 size={16} className="mt-0.5 shrink-0" />}
+                <div className="min-w-0">
+                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.06em]">{row.label}</span>
+                  <strong className="mt-1 block truncate text-sm">{row.status}</strong>
+                  <span className="mt-1 line-clamp-2 text-xs leading-5 opacity-80">{row.detail}</span>
+                </div>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+
+      {compact && handoff.rows.length > visibleRows.length ? (
+        <p className="mt-3 text-xs font-semibold text-textMuted">
+          {handoff.rows.length - visibleRows.length} more handoff item{handoff.rows.length - visibleRows.length === 1 ? '' : 's'} tracked in the transaction overview.
+        </p>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-borderSoft pt-4">
+        <Button type="button" variant="secondary" size="sm" onClick={onOpenBuyer}>
+          <UserRound size={14} />
+          Buyer Profile
+        </Button>
+        <Button type="button" variant="secondary" size="sm" onClick={onOpenDocuments}>
+          <FileText size={14} />
+          Documents
+        </Button>
+        <Button type="button" variant="secondary" size="sm" onClick={onOpenRoleplayers}>
+          <UsersRound size={14} />
+          Roleplayers
+        </Button>
+      </div>
+    </section>
+  )
+}
+
 const MATTER_STAGE_MILESTONES = [
   { key: 'instruction', label: 'Instruction' },
   { key: 'fica', label: 'FICA' },
@@ -5809,11 +6185,13 @@ function buildMatterPreviewShell(matterPreview, transactionId) {
   }
 }
 
-function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = false, spread = false }) {
+function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = false, spread = false, minimal = false }) {
   const iconByTab = {
     overview: Workflow,
     application: FileText,
     banks_quotes: Landmark,
+    quotes_grant: CircleDollarSign,
+    reconciliation: Landmark,
     transfer: Workflow,
     parties: UsersRound,
     stakeholders: UsersRound,
@@ -5823,6 +6201,34 @@ function MatterWorkspaceTabs({ tabs = [], activeTab = '', onChange, premium = fa
     activity: Activity,
   }
   const minTabWidth = premium ? '132px' : '118px'
+
+  if (minimal) {
+    return (
+      <nav className="no-print w-full overflow-x-auto border-b border-borderSoft bg-white/95 px-4 sm:px-6" aria-label="Transaction workspace tabs">
+        <div className="flex min-w-max items-center gap-8">
+          {tabs.map((tab) => {
+            const active = activeTab === tab.id
+            const Icon = iconByTab[tab.id] || FileText
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                className={`inline-flex h-14 items-center gap-2 border-b-2 text-sm font-semibold transition ${
+                  active
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-textMuted hover:border-borderStrong hover:text-textStrong'
+                }`}
+                onClick={() => onChange?.(tab.id)}
+              >
+                <Icon size={16} className="shrink-0" />
+                <span className="whitespace-nowrap">{tab.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </nav>
+    )
+  }
 
   return (
     <nav
@@ -8163,45 +8569,104 @@ function ArchlineRolePlayersWorkspace({ contacts = [], teamCards = [], onOpenAss
 }
 
 function BondApplicationHeader({
+  backPath = '',
+  backLabel = 'Back to Applications',
   reference = '',
   buyerName = '',
   propertyLabel = '',
   purchasePrice = '',
-  ageLabel = '',
-  consultant = '',
+  applicationType = 'Bond Application',
+  receivedAt = '',
+  referringAgency = {},
+  referringAgent = {},
+  consultantProfile = {},
   statusLabel = '',
 }) {
+  const receivedLabel = receivedAt ? `Received ${formatDate(receivedAt)}` : 'Received date pending'
+  const agencyName = referringAgency?.name || 'Referring agency'
+  const agentName = referringAgent?.name || 'Agent not assigned'
+  const consultantName = consultantProfile?.name || 'Consultant not assigned'
+
   return (
-    <section className="rounded-[18px] border border-borderDefault bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+    <section className="relative overflow-hidden rounded-t-[22px] bg-[#00362f] px-5 py-6 text-white shadow-[0_18px_38px_rgba(0,40,34,0.18)] sm:px-7 lg:px-8">
+      <div className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border border-white/10" />
+      <div className="pointer-events-none absolute right-16 top-7 h-44 w-44 rounded-full border border-white/10" />
+      <div className="relative grid gap-8 xl:grid-cols-[minmax(0,1.1fr)_minmax(520px,0.9fr)] xl:items-center">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-textMuted">
-            <span>Bond workspace</span>
-            <ChevronRight size={14} />
-            <strong className="text-textStrong">{reference}</strong>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-textStrong">{buyerName || 'Bond Applicant'}</h1>
+          {backPath ? (
+            <Link to={backPath} className="inline-flex items-center gap-2 text-sm font-semibold text-white/90 transition hover:text-white">
+              <ChevronRight size={15} className="rotate-180" />
+              {backLabel}
+            </Link>
+          ) : null}
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <h1 className="text-3xl font-semibold tracking-[-0.03em] text-white sm:text-4xl">{buyerName || 'Bond Applicant'}</h1>
             {statusLabel ? (
-              <span className="inline-flex rounded-full border border-success/25 bg-successSoft px-3 py-1 text-xs font-semibold text-success">
+              <span className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-white">
                 {statusLabel}
               </span>
             ) : null}
           </div>
-          <p className="mt-2 text-base text-[#243b5a]">{[propertyLabel, purchasePrice].filter(Boolean).join(' • ')}</p>
+          <p className="mt-3 text-base font-medium text-white/85 sm:text-lg">{[propertyLabel, purchasePrice].filter(Boolean).join('  |  ')}</p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {reference ? (
+              <span className="inline-flex items-center rounded-[10px] border border-white/15 bg-white/5 px-3.5 py-2 text-xs font-semibold text-white">
+                {reference}
+              </span>
+            ) : null}
+            <span className="inline-flex items-center rounded-[10px] border border-white/15 bg-white/5 px-3.5 py-2 text-xs font-semibold text-white">
+              {applicationType || 'Bond Application'}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-[10px] border border-white/15 bg-white/5 px-3.5 py-2 text-xs font-semibold text-white">
+              <CalendarDays size={14} />
+              {receivedLabel}
+            </span>
+          </div>
         </div>
 
-        <div className="grid min-w-0 gap-3 sm:grid-cols-3 xl:min-w-[520px]">
-          {[
-            ['Application Age', ageLabel],
-            ['Consultant', consultant],
-            ['Status', statusLabel],
-          ].map(([label, value]) => (
-            <article key={label} className="min-w-0 border-l border-borderSoft pl-4 first:border-l-0 first:pl-0">
-              <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
-              <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{value || 'Not assigned'}</strong>
-            </article>
-          ))}
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(230px,0.78fr)] lg:items-center">
+          <article className="min-w-0">
+            <span className="text-xs font-semibold text-white/75">Referred by</span>
+            <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="flex h-20 w-36 shrink-0 items-center justify-center rounded-[12px] border border-white/15 bg-white p-3 shadow-[0_14px_28px_rgba(0,0,0,0.16)]">
+                {referringAgency?.logoUrl ? (
+                  <img src={referringAgency.logoUrl} alt="" className="max-h-full max-w-full object-contain" />
+                ) : (
+                  <span className="text-center text-sm font-bold tracking-[0.06em] text-[#00362f]">{getContactInitials(agencyName)}</span>
+                )}
+              </div>
+              <div className="flex min-w-0 items-center gap-3">
+                <ProfileAvatar name={agentName} imageUrl={referringAgent?.avatarUrl} className="size-16 border-2 border-white/15 bg-white/15 text-white" />
+                <div className="min-w-0">
+                  <strong className="block truncate text-base font-semibold text-white">{agentName}</strong>
+                  <span className="mt-1 block text-sm text-white/80">{referringAgent?.role || 'Agent'}</span>
+                  {referringAgent?.phone ? (
+                    <span className="mt-1 flex items-center gap-1.5 text-sm text-white/80">
+                      <Phone size={13} />
+                      {referringAgent.phone}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article className="min-w-0 border-white/15 lg:border-l lg:pl-8">
+            <span className="text-xs font-semibold text-white/75">Bond Consultant</span>
+            <div className="mt-4 flex min-w-0 items-center gap-4">
+              <ProfileAvatar name={consultantName} imageUrl={consultantProfile?.avatarUrl} className="size-16 border-2 border-white/15 bg-white/15 text-white" />
+              <div className="min-w-0">
+                <strong className="block truncate text-base font-semibold text-white">{consultantName}</strong>
+                <span className="mt-1 block truncate text-sm text-white/80">{consultantProfile?.organisationName || 'Bond organisation'}</span>
+                {consultantProfile?.phone ? (
+                  <span className="mt-1 flex items-center gap-1.5 text-sm text-white/80">
+                    <Phone size={13} />
+                    {consultantProfile.phone}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </article>
         </div>
       </div>
     </section>
@@ -8843,241 +9308,2338 @@ function BondMatterConversationPanel({
   )
 }
 
-function getBondConsultantStatusTone(status = '') {
-  const normalized = String(status || '').trim().toLowerCase()
-  if (normalized === 'complete') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
-  if (normalized === 'active') return 'border-blue-200 bg-blue-50 text-blue-700'
-  if (normalized === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700'
-  return 'border-borderSoft bg-surfaceAlt text-textMuted'
+function getBondOverviewDocumentLabel(row = {}) {
+  return firstPresent(row.displayName, row.label, row.documentLabel, row.document_label, row.name, row.title, row.key, 'Required document')
 }
 
-function BondConsultantProcessStep({ step }) {
-  const Icon = step.icon || CheckCircle2
+function getOverviewBankStatus(row = {}, quoteRows = [], acceptedQuote = null) {
+  const bankName = String(row.bankName || row.bank_name || '').trim().toLowerCase()
+  const matchedQuote = quoteRows.find((quote) => String(getQuoteBankName(quote) || '').trim().toLowerCase() === bankName)
+  const acceptedBank = acceptedQuote ? String(getQuoteBankName(acceptedQuote) || '').trim().toLowerCase() : ''
+  const normalized = String(row.status || '').trim().toLowerCase()
+  if (acceptedBank && acceptedBank === bankName) return { label: 'Accepted', tone: 'border-success/25 bg-successSoft text-success' }
+  if (matchedQuote) return { label: 'Quote received', tone: 'border-success/25 bg-successSoft text-success' }
+  if (['approved', 'buyer_approved'].includes(normalized)) return { label: 'Approved', tone: 'border-success/25 bg-successSoft text-success' }
+  if (['declined', 'expired'].includes(normalized)) return { label: toTitle(normalized), tone: 'border-danger/25 bg-dangerSoft text-danger' }
+  if (normalized === 'additional_documents_required') return { label: 'Docs requested', tone: 'border-warning/25 bg-warningSoft text-warning' }
+  if (row.submittedAt || normalized === 'submitted') return { label: 'Awaiting response', tone: 'border-[#ffd6a7] bg-[#fff7ed] text-[#c2410c]' }
+  return { label: 'Selected', tone: 'border-borderSoft bg-surfaceAlt text-textMuted' }
+}
+
+function parseCurrencyNumber(value) {
+  if (Number.isFinite(Number(value))) return Number(value)
+  const cleaned = String(value || '').replace(/[^0-9.-]/g, '')
+  const parsed = Number(cleaned)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function formatApplicationValue(value, fallback = 'Not provided') {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback
+  const normalized = String(value).trim()
+  if (normalized.toLowerCase() === 'not captured') return fallback
+  return toTitle(normalized)
+}
+
+function isMissingApplicationValue(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return !normalized || ['not provided', 'not captured', 'pending'].includes(normalized)
+}
+
+function ApplicationDetailField({ label, value, required = false, emphasis = false }) {
+  const missing = isMissingApplicationValue(value)
   return (
-    <button
-      type="button"
-      onClick={step.onOpen}
-      className="flex min-w-0 items-start gap-3 rounded-[14px] border border-borderSoft bg-white px-4 py-3 text-left transition hover:border-borderStrong hover:bg-surfaceAlt"
-    >
-      <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-[12px] border ${getBondConsultantStatusTone(step.status)}`}>
-        {createElement(Icon, { size: 16 })}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-2">
-          <strong className="text-sm font-semibold text-textStrong">{step.label}</strong>
-          <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${getBondConsultantStatusTone(step.status)}`}>
-            {step.statusLabel}
-          </span>
-        </span>
-        <span className="mt-1 block text-xs leading-5 text-textMuted">{step.detail}</span>
-      </span>
-    </button>
+    <div className="grid grid-cols-[minmax(120px,0.42fr)_minmax(0,1fr)] gap-4 py-1.5">
+      <dt className="text-xs font-medium text-textMuted">{label}</dt>
+      <dd className={`min-w-0 truncate text-sm ${missing ? 'font-medium text-textMuted' : emphasis ? 'font-semibold text-success' : 'font-semibold text-textStrong'}`}>
+        {missing ? 'Not provided' : value}
+        {missing && required ? <span className="ml-1 text-warning">!</span> : null}
+      </dd>
+    </div>
   )
+}
+
+function buildBondOverviewJourney({ action = {}, applicationViewModel = null, documentHealthSummary = {}, submissionRows = [], quoteRows = [], acceptedQuote = null } = {}) {
+  const submittedBanks = submissionRows.filter((row) => row.submittedAt).length
+  const quoteCount = quoteRows.length
+  const attorneyInstructionSent = ['instruction_sent', 'registered', 'complete', 'completed'].includes(String(action.stage || '').toLowerCase())
+  const registered = ['registered', 'complete', 'completed'].includes(String(action.stage || '').toLowerCase())
+  const stages = [
+    { key: 'received', label: 'Application Received', icon: CheckCircle2, done: true, date: applicationViewModel?.application?.createdAtDisplay || '' },
+    { key: 'documents', label: 'Documents Received', icon: FileText, done: Boolean(documentHealthSummary.submissionReady) },
+    { key: 'banks', label: 'Submitted to Banks', icon: Landmark, done: submittedBanks > 0 },
+    { key: 'quotes', label: 'Quotes Received', icon: FileCheck2, done: quoteCount > 0 },
+    { key: 'grant', label: 'Grant Accepted', icon: CircleDollarSign, done: Boolean(acceptedQuote) },
+    { key: 'instruction', label: 'Attorney Instruction', icon: UsersRound, done: attorneyInstructionSent },
+    { key: 'complete', label: 'Complete', icon: CheckCircle2, done: registered },
+  ]
+  const firstOpenIndex = stages.findIndex((stage) => !stage.done)
+  return stages.map((stage, index) => ({
+    ...stage,
+    state: stage.done ? 'completed' : index === firstOpenIndex ? 'current' : 'pending',
+    statusLabel: stage.done ? (stage.date || 'Completed') : index === firstOpenIndex ? 'In progress' : 'Pending',
+  }))
+}
+
+function buildBondCurrentStage({ action = {}, documentHealthSummary = {}, submissionRows = [], quoteRows = [], acceptedQuote = null, missingDocuments = [] } = {}) {
+  const missingDocs = Number(documentHealthSummary.missingCount || missingDocuments.length || 0)
+  const submittedBanks = submissionRows.filter((row) => row.submittedAt).length
+  const selectedBanks = submissionRows.length
+  const quoteCount = quoteRows.length
+  const acceptedBank = acceptedQuote ? getQuoteBankName(acceptedQuote) : ''
+  const targetAction = action.targetAction || action.key || ''
+  if (missingDocs > 0 || targetAction === 'request-docs') {
+    return {
+      eyebrow: 'Current stage',
+      title: 'Documents outstanding',
+      description: `${missingDocs || 'Some'} document${missingDocs === 1 ? '' : 's'} ${missingDocs === 1 ? 'is' : 'are'} still required before this application can be submitted to the banks.`,
+      ctaLabel: 'View outstanding documents',
+      onOpen: 'documents',
+      documents: missingDocuments.slice(0, 4),
+      icon: FileText,
+    }
+  }
+  if (!submittedBanks) {
+    return {
+      eyebrow: 'Current stage',
+      title: 'Ready to submit',
+      description: `The application and supporting documents are complete. ${selectedBanks || 0} bank${selectedBanks === 1 ? '' : 's'} selected.`,
+      ctaLabel: 'Submit to banks',
+      onOpen: 'quotes',
+      documents: [],
+      icon: Landmark,
+    }
+  }
+  if (!quoteCount) {
+    return {
+      eyebrow: 'Current stage',
+      title: 'Awaiting bank responses',
+      description: `${submittedBanks} bank submission${submittedBanks === 1 ? '' : 's'} sent. Track responses and capture quote outcomes as they arrive.`,
+      ctaLabel: 'View submissions',
+      onOpen: 'quotes',
+      documents: [],
+      icon: Clock3,
+    }
+  }
+  if (!acceptedQuote) {
+    return {
+      eyebrow: 'Current stage',
+      title: 'Quotes available',
+      description: `${quoteCount} quote${quoteCount === 1 ? '' : 's'} received. Compare offers and record the buyer decision.`,
+      ctaLabel: 'Review quotes',
+      onOpen: 'quotes',
+      documents: [],
+      icon: CircleDollarSign,
+    }
+  }
+  if (!['instruction_sent', 'registered', 'complete', 'completed'].includes(String(action.stage || '').toLowerCase())) {
+    return {
+      eyebrow: 'Current stage',
+      title: 'Attorney instruction pending',
+      description: `${acceptedBank || 'The selected bank'} has an accepted grant. Prepare and send the attorney instruction.`,
+      ctaLabel: 'Issue instruction',
+      onOpen: 'quotes',
+      documents: [],
+      icon: Send,
+    }
+  }
+  return {
+    eyebrow: 'Current stage',
+    title: 'Grant accepted',
+    description: `${acceptedBank || 'The selected grant'} has been accepted and the handoff can be monitored through completion.`,
+    ctaLabel: 'View quotes and grant',
+    onOpen: 'quotes',
+    documents: [],
+    icon: CheckCircle2,
+  }
 }
 
 function BondConsultantOverviewWorkspace({
   consultantAction = null,
   applicationViewModel = null,
+  applicationType = 'Bond Application',
   documentHealthSummary = {},
+  missingDocuments = [],
   submissionRows = [],
   quoteRows = [],
   acceptedQuote = null,
+  teamMembers = [],
   activityFeed = [],
   loadingAction = '',
-  onPrimaryAction,
-  onOpenApplication,
   onOpenDocuments,
-  onOpenWorkflow,
+  onOpenQuotesGrant,
   onOpenActivity,
+  onOpenContacts,
 }) {
   const action = consultantAction || {}
-  const completionPercent = Number(applicationViewModel?.application?.completionPercent || 0)
-  const requiredDocs = Number(documentHealthSummary.requiredCount || 0)
-  const receivedDocs = Number(documentHealthSummary.uploadedCount || 0)
-  const missingDocs = Number(documentHealthSummary.missingCount || 0)
-  const submittedBanks = submissionRows.filter((row) => row.submittedAt).length
-  const respondedBanks = submissionRows.filter((row) => {
-    const status = String(row.status || '').toLowerCase()
-    return row.quoteReceived || ['feedback_received', 'additional_documents_required', 'approved', 'declined', 'buyer_approved'].includes(status)
-  }).length
-  const quoteCount = quoteRows.length
-  const acceptedBank = acceptedQuote ? getQuoteBankName(acceptedQuote) : ''
-  const recentActivity = activityFeed.slice(0, 3)
-  const actionBlockers = Array.isArray(action.blockers) ? action.blockers : []
-
-  const isActionFor = (keys = []) => keys.includes(action.targetAction || action.key)
-  const processSteps = [
-    {
-      key: 'application',
-      label: 'Review application',
-      status: completionPercent >= 85 ? 'complete' : isActionFor(['review-application']) ? 'active' : 'pending',
-      statusLabel: completionPercent >= 85 ? 'Ready' : isActionFor(['review-application']) ? 'Now' : 'Pending',
-      detail: `${completionPercent || 0}% complete`,
-      icon: FileCheck2,
-      onOpen: onOpenApplication,
-    },
-    {
-      key: 'documents',
-      label: 'Collect finance docs',
-      status: documentHealthSummary.submissionReady ? 'complete' : missingDocs ? 'attention' : isActionFor(['request-docs', 'review-docs']) ? 'active' : 'pending',
-      statusLabel: documentHealthSummary.submissionReady ? 'Ready' : missingDocs ? `${missingDocs} missing` : isActionFor(['request-docs', 'review-docs']) ? 'Now' : 'Pending',
-      detail: requiredDocs ? `${receivedDocs}/${requiredDocs} received` : 'Document checklist pending',
-      icon: FileText,
-      onOpen: onOpenDocuments,
-    },
-    {
-      key: 'banks',
-      label: 'Submit to banks',
-      status: submittedBanks ? 'complete' : isActionFor(['submit-bank', 'update-bank-feedback']) ? 'active' : 'pending',
-      statusLabel: submittedBanks ? `${submittedBanks} sent` : isActionFor(['submit-bank', 'update-bank-feedback']) ? 'Now' : 'Pending',
-      detail: respondedBanks ? `${respondedBanks} bank response${respondedBanks === 1 ? '' : 's'}` : 'No bank response yet',
-      icon: Landmark,
-      onOpen: onOpenWorkflow,
-    },
-    {
-      key: 'offers',
-      label: 'Capture offers',
-      status: quoteCount ? 'complete' : isActionFor(['capture-offer']) ? 'active' : 'pending',
-      statusLabel: quoteCount ? `${quoteCount} offer${quoteCount === 1 ? '' : 's'}` : isActionFor(['capture-offer']) ? 'Now' : 'Pending',
-      detail: acceptedBank ? `${acceptedBank} accepted` : 'Waiting for accepted offer',
-      icon: CircleDollarSign,
-      onOpen: onOpenWorkflow,
-    },
-    {
-      key: 'decision',
-      label: 'Record buyer decision',
-      status: acceptedQuote ? 'complete' : isActionFor(['record-buyer-decision']) ? 'active' : 'pending',
-      statusLabel: acceptedQuote ? 'Recorded' : isActionFor(['record-buyer-decision']) ? 'Now' : 'Pending',
-      detail: acceptedQuote ? `${acceptedBank || 'Selected quote'} accepted` : 'Buyer decision outstanding',
-      icon: CheckCircle2,
-      onOpen: onOpenWorkflow,
-    },
-    {
-      key: 'instruction',
-      label: 'Issue instruction',
-      status: ['instruction_sent', 'registered'].includes(action.stage) ? 'complete' : isActionFor(['record-grant-received', 'record-grant-signed', 'submit-grant', 'send-attorney-instruction']) ? 'active' : 'pending',
-      statusLabel: ['instruction_sent', 'registered'].includes(action.stage) ? 'Sent' : isActionFor(['record-grant-received', 'record-grant-signed', 'submit-grant', 'send-attorney-instruction']) ? 'Now' : 'Pending',
-      detail: ['instruction_sent', 'registered'].includes(action.stage) ? 'Attorney handoff in progress' : 'Grant and instruction still pending',
-      icon: Send,
-      onOpen: onOpenWorkflow,
-    },
-  ]
-
-  const statusMetrics = [
-    {
-      label: 'Application',
-      value: `${completionPercent || 0}%`,
-      helper: applicationViewModel?.application?.readinessLabel || applicationViewModel?.application?.onboardingStatus || 'Review pending',
-      icon: FileCheck2,
-      onOpen: onOpenApplication,
-    },
-    {
-      label: 'Documents',
-      value: requiredDocs ? `${receivedDocs}/${requiredDocs}` : `${receivedDocs}`,
-      helper: documentHealthSummary.submissionReady ? 'Ready for banks' : missingDocs ? `${missingDocs} outstanding` : 'Checklist pending',
-      icon: FileText,
-      onOpen: onOpenDocuments,
-    },
-    {
-      label: 'Banks',
-      value: `${submittedBanks}/${submissionRows.length || 0}`,
-      helper: respondedBanks ? `${respondedBanks} response${respondedBanks === 1 ? '' : 's'}` : 'Awaiting submissions',
-      icon: Landmark,
-      onOpen: onOpenWorkflow,
-    },
-    {
-      label: 'Offers',
-      value: String(quoteCount),
-      helper: acceptedBank ? `${acceptedBank} accepted` : 'No accepted quote',
-      icon: CircleDollarSign,
-      onOpen: onOpenWorkflow,
-    },
-  ]
+  const journeyStages = buildBondOverviewJourney({ action, applicationViewModel, documentHealthSummary, submissionRows, quoteRows, acceptedQuote })
+  const currentStage = buildBondCurrentStage({ action, documentHealthSummary, submissionRows, quoteRows, acceptedQuote, missingDocuments })
+  const CurrentIcon = currentStage.icon || FileText
+  const purchasePrice = applicationViewModel?.financials?.purchasePrice?.display || 'Not captured'
+  const loanRequired = applicationViewModel?.financials?.bondAmountRequired?.display || 'Not captured'
+  const deposit = applicationViewModel?.financials?.deposit?.display || 'Not captured'
+  const purchaseRaw = Number(applicationViewModel?.financials?.purchasePrice?.raw || parseCurrencyNumber(purchasePrice))
+  const loanRaw = Number(applicationViewModel?.financials?.bondAmountRequired?.raw || parseCurrencyNumber(loanRequired))
+  const ltvLabel = purchaseRaw && loanRaw ? `${Math.round((loanRaw / purchaseRaw) * 100)}%` : 'Not captured'
+  const snapshotRows = [
+    ['Purchase price', purchasePrice],
+    ['Loan required', loanRequired],
+    ['Deposit', deposit],
+    ['Loan to value (LTV)', ltvLabel],
+    ['Application type', applicationType],
+    ['Employment', applicationViewModel?.applicant?.employmentStatus || 'Not captured'],
+    ['Dependants', firstPresent(applicationViewModel?.applicant?.dependants, applicationViewModel?.applicant?.numberOfDependants)],
+  ].filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')
+  const bankRows = submissionRows.slice(0, 4)
+  const recentActivity = activityFeed.slice(0, 8)
+  const openCurrentStage = () => {
+    if (currentStage.onOpen === 'documents') {
+      onOpenDocuments?.()
+      return
+    }
+    onOpenQuotesGrant?.()
+  }
 
   return (
     <section className="space-y-5">
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                {action.stageLabel || 'Bond application'}
-              </span>
-              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-textStrong">{action.label || 'Review application'}</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-textBody">
-                {action.reason || 'Open the next bond consultant workspace action for this application.'}
-              </p>
-              {actionBlockers.length ? (
-                <div className="mt-4 rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  <strong className="block font-semibold">Blocked by</strong>
-                  <span className="mt-1 block">{actionBlockers.join(', ')}</span>
+      <section className="rounded-[18px] border border-borderDefault bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+        <h2 className="text-base font-semibold text-textStrong">Application journey</h2>
+        <ol className="mt-5 grid gap-4 lg:grid-cols-7">
+          {journeyStages.map((stage, index) => {
+            const Icon = stage.icon || FileText
+            const completed = stage.state === 'completed'
+            const current = stage.state === 'current'
+            return (
+              <li key={stage.key} className="relative min-w-0">
+                {index > 0 ? <span className="absolute left-[-50%] top-6 hidden h-px w-full bg-borderDefault lg:block" /> : null}
+                <div className="relative z-10 flex flex-col items-start gap-2 lg:items-center lg:text-center">
+                  <span className={`inline-flex size-12 items-center justify-center rounded-full border ${
+                    completed
+                      ? 'border-success bg-success text-white'
+                      : current
+                        ? 'border-primary bg-primarySoft text-primary ring-4 ring-primary/10'
+                        : 'border-borderSoft bg-surfaceAlt text-textMuted'
+                  }`}>
+                    {completed ? <CheckCircle2 size={20} /> : <Icon size={19} />}
+                  </span>
+                  <span className="block min-h-[38px] text-sm font-semibold leading-5 text-textStrong">{stage.label}</span>
+                  <span className={`text-xs ${completed ? 'text-primary' : current ? 'font-semibold text-success' : 'text-textMuted'}`}>{stage.statusLabel}</span>
                 </div>
-              ) : null}
+              </li>
+            )
+          })}
+        </ol>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)_minmax(320px,0.95fr)]">
+        <article className="relative overflow-hidden rounded-[18px] border border-primary/15 bg-[#f5fbf8] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <div className="flex min-w-0 items-start justify-between gap-4">
+            <div className="min-w-0">
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-primary">{currentStage.eyebrow}</span>
+              <h3 className="mt-3 text-xl font-semibold tracking-[-0.02em] text-textStrong">{currentStage.title}</h3>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-textBody">{currentStage.description}</p>
             </div>
-            <Button type="button" onClick={() => onPrimaryAction?.(action)} disabled={Boolean(loadingAction)}>
-              {loadingAction ? 'Working...' : action.label || 'Open'}
-              <ChevronRight size={15} />
-            </Button>
+            <span className="hidden size-16 shrink-0 items-center justify-center rounded-[18px] bg-white text-primary shadow-[0_12px_24px_rgba(0,85,71,0.12)] sm:inline-flex">
+              <CurrentIcon size={28} />
+            </span>
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {statusMetrics.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                onClick={item.onOpen}
-                className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-left transition hover:border-borderStrong hover:bg-white"
-              >
-                <span className="flex items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">
-                  {createElement(item.icon, { size: 14 })}
-                  {item.label}
-                </span>
-                <strong className="mt-2 block truncate text-lg font-semibold text-textStrong">{item.value}</strong>
-                <span className="mt-1 block truncate text-xs text-textMuted">{item.helper}</span>
-              </button>
-            ))}
-          </div>
+          {currentStage.documents.length ? (
+            <ul className="mt-4 space-y-2">
+              {currentStage.documents.map((document) => (
+                <li key={document.id || getBondOverviewDocumentLabel(document)} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="flex min-w-0 items-center gap-2 text-textStrong">
+                    <FileText size={14} className="shrink-0 text-primary" />
+                    <span className="truncate">{getBondOverviewDocumentLabel(document)}</span>
+                  </span>
+                  <span className="shrink-0 rounded-full border border-success/20 bg-successSoft px-2.5 py-1 text-[0.68rem] font-semibold text-success">
+                    Outstanding
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <Button type="button" className="mt-5" onClick={openCurrentStage} disabled={Boolean(loadingAction)}>
+            {loadingAction ? 'Working...' : currentStage.ctaLabel}
+            <ChevronRight size={15} />
+          </Button>
         </article>
 
-        <aside className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-textStrong">Recent activity</h3>
-            <Button type="button" variant="ghost" size="sm" onClick={onOpenActivity}>View all</Button>
+        <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex size-9 items-center justify-center rounded-[11px] bg-primarySoft text-primary">
+              <FileCheck2 size={17} />
+            </span>
+            <h3 className="text-base font-semibold text-textStrong">Application snapshot</h3>
+          </div>
+          <dl className="mt-4 divide-y divide-borderSoft text-sm">
+            {snapshotRows.map(([label, value]) => (
+              <div key={label} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2.5">
+                <dt className="text-textMuted">{label}</dt>
+                <dd className="max-w-[145px] truncate text-right font-semibold text-textStrong">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </article>
+
+        <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex size-9 items-center justify-center rounded-[11px] bg-primarySoft text-primary">
+              <Landmark size={17} />
+            </span>
+            <h3 className="text-base font-semibold text-textStrong">Bank submissions</h3>
           </div>
           <div className="mt-4 space-y-3">
-            {recentActivity.map((entry) => (
-              <article key={entry.id} className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <strong className="block truncate text-sm text-textStrong">{entry.authorName || entry.title || 'Update'}</strong>
-                    <p className="mt-1 line-clamp-2 text-sm leading-5 text-textMuted">{entry.body || entry.title || 'Activity recorded'}</p>
+            {bankRows.length ? bankRows.map((row) => {
+              const status = getOverviewBankStatus(row, quoteRows, acceptedQuote)
+              const bankName = row.bankName || row.bank_name || 'Bank'
+              return (
+                <article key={bankName} className="flex items-center justify-between gap-3 rounded-[14px] border border-borderSoft bg-white px-3 py-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-[#f0faf6] text-xs font-bold text-primary">
+                      {getContactInitials(bankName)}
+                    </span>
+                    <span className="min-w-0">
+                      <strong className="block truncate text-sm text-textStrong">{bankName}</strong>
+                      <span className="mt-0.5 block truncate text-xs text-textMuted">
+                        {row.submittedAt ? `Submitted ${formatDate(row.submittedAt)}` : 'Selected for submission'}
+                      </span>
+                    </span>
                   </div>
-                  <span className="shrink-0 text-xs text-textMuted">{formatDateTime(entry.createdAt, '')}</span>
+                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${status.tone}`}>{status.label}</span>
+                </article>
+              )
+            }) : (
+              <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
+                No banks have been selected yet. Selected banks will appear here before submission.
+              </p>
+            )}
+          </div>
+          <button type="button" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-borderSoft px-3 py-2 text-sm font-semibold text-primary transition hover:border-primary/40 hover:bg-primarySoft" onClick={onOpenQuotesGrant}>
+            View all quotes
+            <ChevronRight size={14} />
+          </button>
+        </article>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+        <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <h3 className="text-base font-semibold text-textStrong">Application team</h3>
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            {teamMembers.map((member) => (
+              <article key={member.key || `${member.role}:${member.name}`} className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <ProfileAvatar name={member.name || member.contact || member.organisation} imageUrl={member.avatarUrl || member.logoUrl} className="size-11 bg-surfaceAlt text-textBody" imageClassName={member.logoUrl ? 'object-contain bg-white p-1' : ''} />
+                  <div className="min-w-0">
+                    <span className="block text-xs text-textMuted">{member.role}</span>
+                    <strong className="mt-0.5 block truncate text-sm text-textStrong">{member.name || member.contact || 'Not assigned'}</strong>
+                    <span className="mt-0.5 block truncate text-xs text-textMuted">{member.organisation || member.company || member.status || ''}</span>
+                  </div>
                 </div>
               </article>
             ))}
-            {!recentActivity.length ? (
-              <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
-                No activity yet. Updates and bank notes will appear here.
-              </p>
-            ) : null}
           </div>
+          <button type="button" className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-borderSoft px-3 py-2 text-sm font-semibold text-primary transition hover:border-primary/40 hover:bg-primarySoft" onClick={onOpenContacts || onOpenActivity}>
+            View all roles & contacts
+            <ChevronRight size={14} />
+          </button>
+        </article>
+
+        <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-textStrong">Recent activity</h3>
+            <button type="button" className="text-sm font-semibold text-primary hover:text-primaryDark" onClick={onOpenActivity}>View all</button>
+          </div>
+          <div className="mt-4 max-h-[280px] space-y-3 overflow-y-auto pr-1">
+            {recentActivity.length ? recentActivity.map((entry) => (
+              <article key={entry.id || `${entry.createdAt}:${entry.title}`} className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3">
+                <span className="inline-flex size-8 items-center justify-center rounded-[10px] bg-primarySoft text-primary">
+                  <FileText size={15} />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-textStrong">{entry.body || entry.title || 'Activity recorded'}</p>
+                  <span className="mt-0.5 block text-xs text-textMuted">{formatDateTime(entry.createdAt || entry.timestamp, '')}</span>
+                </div>
+                <span className="max-w-[95px] truncate text-right text-xs text-textMuted">{entry.authorName ? `By ${entry.authorName}` : 'By System'}</span>
+              </article>
+            )) : (
+              <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
+                No activity yet. Document requests, bank submissions, quotes, and consultant notes will appear here.
+              </p>
+            )}
+          </div>
+        </article>
+      </section>
+    </section>
+  )
+}
+
+const BOND_DOCUMENT_CENTRE_CATEGORIES = [
+  { key: 'identity', label: 'Identity Documents', icon: UserRound, tone: 'bg-emerald-50 text-primary', tokens: ['identity', 'id document', ' id ', '_id', 'passport', 'fica'] },
+  { key: 'residence', label: 'Proof of Residence', icon: Building2, tone: 'bg-orange-50 text-orange-700', tokens: ['residence', 'address', 'utility', 'municipal', 'lease'] },
+  { key: 'income', label: 'Income Verification', icon: BriefcaseBusiness, tone: 'bg-violet-50 text-violet-700', tokens: ['income', 'payslip', 'salary', 'irp5', 'tax', 'employment', 'employer'] },
+  { key: 'bank', label: 'Bank Statements', icon: CreditCard, tone: 'bg-blue-50 text-blue-700', tokens: ['bank statement', 'statement', 'banking'] },
+  { key: 'application', label: 'Application Documents', icon: FileCheck2, tone: 'bg-emerald-50 text-emerald-700', tokens: ['application', 'consent', 'form', 'declaration', 'mandate'] },
+  { key: 'supporting', label: 'Supporting Documents', icon: FileText, tone: 'bg-slate-100 text-slate-600', tokens: [] },
+]
+
+const BOND_DOCUMENT_STATUS_META = {
+  outstanding: { label: 'Outstanding', tone: 'border-red-100 bg-red-50 text-red-700', icon: AlertTriangle },
+  not_uploaded: { label: 'Not uploaded', tone: 'border-slate-200 bg-slate-100 text-slate-600', icon: Clock3 },
+  uploaded: { label: 'Uploaded', tone: 'border-emerald-100 bg-emerald-50 text-emerald-700', icon: Upload },
+  verified: { label: 'Verified', tone: 'border-emerald-100 bg-emerald-50 text-emerald-700', icon: CheckCircle2 },
+  rejected: { label: 'Rejected', tone: 'border-red-100 bg-red-50 text-red-700', icon: X },
+  expired: { label: 'Expired', tone: 'border-red-100 bg-red-50 text-red-700', icon: AlertTriangle },
+  reupload_required: { label: 'Re-upload required', tone: 'border-orange-100 bg-orange-50 text-orange-700', icon: Upload },
+  not_required: { label: 'Not required', tone: 'border-slate-200 bg-slate-50 text-slate-500', icon: Clock3 },
+}
+
+function getBondDocumentRequirement(row = {}) {
+  return row.requirement || row.requiredDocument || row.rawRequirement || row.raw?.requiredDocument || {}
+}
+
+function getBondDocumentLinkedDocument(row = {}) {
+  const requirement = getBondDocumentRequirement(row)
+  return row.linkedDocument || row.raw || row.document || row.matchedDocument || requirement?.matchedDocument || {}
+}
+
+function getBondDocumentRequirementKey(row = {}) {
+  const requirement = getBondDocumentRequirement(row)
+  const document = getBondDocumentLinkedDocument(row)
+  return String(
+    row.canonicalRequirementInstanceId ||
+      row.requiredDocumentCanonicalId ||
+      row.requiredDocumentId ||
+      getRequirementCanonicalId(requirement) ||
+      getDocumentCanonicalId(document) ||
+      requirement?.id ||
+      row.requiredDocumentKey ||
+      row.documentType ||
+      '',
+  )
+}
+
+function isBondDocumentRequired(row = {}) {
+  const requirement = getBondDocumentRequirement(row)
+  const raw = String(
+    row.requirementLevel ||
+      row.requirement_level ||
+      row.priority ||
+      requirement?.requirementLevel ||
+      requirement?.requirement_level ||
+      requirement?.priority ||
+      requirement?.priorityLevel ||
+      '',
+  ).trim().toLowerCase()
+  if (row.isOptional || requirement?.isOptional || raw === 'optional' || raw === 'recommended' || raw === 'low') return false
+  if (row.notRequired || requirement?.notRequired || raw === 'not_required') return false
+  return Boolean(row.isRequired ?? requirement?.isRequired ?? requirement?.required ?? true)
+}
+
+function getBondDocumentCategory(row = {}) {
+  const requirement = getBondDocumentRequirement(row)
+  const haystack = [
+    row.displayName,
+    row.name,
+    row.label,
+    row.category,
+    row.categoryLabel,
+    row.categoryGroup,
+    row.categoryGroupLabel,
+    row.documentType,
+    row.documentTypeLabel,
+    row.requiredDocumentKey,
+    requirement?.key,
+    requirement?.label,
+    requirement?.documentLabel,
+    requirement?.groupKey,
+  ].map((value) => ` ${String(value || '').toLowerCase()} `).join(' ')
+  return BOND_DOCUMENT_CENTRE_CATEGORIES.find((category) =>
+    category.tokens.length && category.tokens.some((token) => haystack.includes(token))
+  ) || BOND_DOCUMENT_CENTRE_CATEGORIES.at(-1)
+}
+
+function getBondDocumentFileUrl(row = {}) {
+  const document = getBondDocumentLinkedDocument(row)
+  return row.fileUrl || row.url || document?.url || document?.publicUrl || document?.downloadUrl || document?.file_url || document?.fileUrl || ''
+}
+
+function getBondDocumentStatus(row = {}) {
+  const required = isBondDocumentRequired(row)
+  const fileUrl = getBondDocumentFileUrl(row)
+  const document = getBondDocumentLinkedDocument(row)
+  const rawStatus = String(row.status || row.requiredDocumentStatus || document?.review_status || document?.status || '').trim().toLowerCase()
+  if (rawStatus === 'not_required' || rawStatus === 'not applicable' || rawStatus === 'not_applicable') return 'not_required'
+  if (rawStatus === 'reupload_required' || rawStatus === 'replacement_requested') return 'reupload_required'
+  const normalized = normalizeDocumentCommandStatus(rawStatus, { hasDocument: Boolean(fileUrl || document?.id) })
+  if (normalized === 'missing' || normalized === 'requested') return required ? 'outstanding' : 'not_uploaded'
+  if (normalized === 'pending_review' || normalized === 'uploaded' || normalized === 'generated') return 'uploaded'
+  if (normalized === 'verified') return 'verified'
+  if (normalized === 'expired') return 'expired'
+  if (normalized === 'rejected') return 'rejected'
+  return fileUrl ? 'uploaded' : required ? 'outstanding' : 'not_uploaded'
+}
+
+function getBondDocumentUploadedBy(row = {}) {
+  const document = getBondDocumentLinkedDocument(row)
+  const uploadedBy = row.uploadedBy || row.uploadedByName || document?.uploaded_by_name || document?.uploadedByName || document?.uploaded_by || document?.created_by_name || ''
+  return uploadedBy && String(uploadedBy).toLowerCase() !== 'not captured' ? uploadedBy : ''
+}
+
+function getBondDocumentUploadedAt(row = {}) {
+  const document = getBondDocumentLinkedDocument(row)
+  return row.uploadedAt || row.uploadedOn || row.updatedAt || document?.uploaded_at || document?.uploadedAt || document?.created_at || document?.createdAt || document?.updated_at || ''
+}
+
+function buildBondDocumentCentreRows({ requiredRows = [], libraryRows = [] } = {}) {
+  const requirementKeys = new Set()
+  const rows = []
+  requiredRows.forEach((row) => {
+    const requirementKey = getBondDocumentRequirementKey(row)
+    if (requirementKey) requirementKeys.add(requirementKey)
+    rows.push(row)
+  })
+  libraryRows.forEach((row) => {
+    const requirementKey = getBondDocumentRequirementKey(row)
+    if (requirementKey && requirementKeys.has(requirementKey)) return
+    if (!getBondDocumentFileUrl(row) && row.source !== 'document_request') return
+    rows.push(row)
+  })
+
+  const seen = new Set()
+  return rows.map((row, index) => {
+    const requirement = getBondDocumentRequirement(row)
+    const document = getBondDocumentLinkedDocument(row)
+    const fileUrl = getBondDocumentFileUrl(row)
+    const status = getBondDocumentStatus(row)
+    const category = getBondDocumentCategory(row)
+    const required = isBondDocumentRequired(row)
+    const uploadedAt = getBondDocumentUploadedAt(row)
+    const stableKey = String(
+      getBondDocumentRequirementKey(row) ||
+        row.id ||
+        document?.id ||
+        `${row.displayName || row.name || row.label || 'document'}:${index}`,
+    )
+    return {
+      key: stableKey,
+      id: row.id || stableKey,
+      displayName: row.displayName || row.name || row.label || requirement?.label || requirement?.documentLabel || 'Document',
+      required,
+      importanceLabel: required ? 'Required' : 'Recommended',
+      status,
+      statusMeta: BOND_DOCUMENT_STATUS_META[status] || BOND_DOCUMENT_STATUS_META.outstanding,
+      category,
+      uploadedBy: fileUrl ? getBondDocumentUploadedBy(row) : '',
+      uploadedAt: fileUrl ? uploadedAt : '',
+      uploadedAtLabel: fileUrl && uploadedAt ? formatDate(uploadedAt, '') : '',
+      fileUrl,
+      requirement,
+      requiredDocument: row.requiredDocument || requirement,
+      linkedDocument: document,
+      raw: row.raw || row,
+      canReview: fileUrl ? canReviewDocumentRequirement(requirement, document) : false,
+      canReplace: fileUrl ? canReplaceDocumentRequirement(requirement, document) : false,
+    }
+  }).filter((row) => {
+    if (!row.key || seen.has(row.key)) return false
+    seen.add(row.key)
+    return true
+  })
+}
+
+function normalizeBondDocumentFilter(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'critical') return 'required'
+  if (normalized === 'missing') return 'outstanding'
+  if (['all', 'required', 'uploaded', 'outstanding', 'verified'].includes(normalized)) return normalized
+  return 'all'
+}
+
+function getBondDocumentCentreSummary(rows = []) {
+  const uploaded = rows.filter((row) => ['uploaded', 'verified'].includes(row.status)).length
+  const verified = rows.filter((row) => row.status === 'verified').length
+  const outstanding = rows.filter((row) => ['outstanding', 'rejected', 'expired', 'reupload_required'].includes(row.status)).length
+  const notRequired = rows.filter((row) => row.status === 'not_required').length
+  return {
+    total: rows.length,
+    required: rows.filter((row) => row.required).length,
+    uploaded,
+    verified,
+    outstanding,
+    notRequired,
+  }
+}
+
+function filterBondDocumentRows(rows = [], filter = 'all') {
+  const activeFilter = normalizeBondDocumentFilter(filter)
+  if (activeFilter === 'required') return rows.filter((row) => row.required)
+  if (activeFilter === 'uploaded') return rows.filter((row) => ['uploaded', 'verified'].includes(row.status))
+  if (activeFilter === 'outstanding') return rows.filter((row) => ['outstanding', 'rejected', 'expired', 'reupload_required'].includes(row.status))
+  if (activeFilter === 'verified') return rows.filter((row) => row.status === 'verified')
+  return rows
+}
+
+function groupBondDocumentCentreRows(rows = []) {
+  const groups = BOND_DOCUMENT_CENTRE_CATEGORIES.map((category) => ({ ...category, rows: [] }))
+  rows.forEach((row) => {
+    const categoryKey = row.category?.key || 'supporting'
+    const group = groups.find((item) => item.key === categoryKey) || groups.at(-1)
+    group.rows.push(row)
+  })
+  return groups.filter((group) => group.rows.length)
+}
+
+function BondDocumentCentre({
+  requiredRows = [],
+  libraryRows = [],
+  documentHealthSummary = {},
+  activeFilter = 'all',
+  onFilterChange,
+  onUpload,
+  onUploadRequirement,
+  onOpenDocument,
+  onReplaceDocument,
+  onVerifyDocument,
+  onRejectDocument,
+  onRequestDocuments,
+}) {
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
+  const rows = useMemo(
+    () => buildBondDocumentCentreRows({ requiredRows, libraryRows }),
+    [libraryRows, requiredRows],
+  )
+  const activeFilterKey = normalizeBondDocumentFilter(activeFilter)
+  const summary = getBondDocumentCentreSummary(rows)
+  const visibleRows = filterBondDocumentRows(rows, activeFilterKey)
+  const groups = groupBondDocumentCentreRows(visibleRows)
+  const receivedPercent = summary.total ? Math.round((summary.uploaded / summary.total) * 100) : 0
+  const verifiedPercent = summary.total ? Math.round((summary.verified / summary.total) * 100) : 0
+  const outstandingPercent = summary.total ? Math.round((summary.outstanding / summary.total) * 100) : 0
+  const ringGradient = summary.total
+    ? `conic-gradient(#16a34a 0 ${verifiedPercent}%, #22c55e ${verifiedPercent}% ${receivedPercent}%, #ef4444 ${receivedPercent}% ${receivedPercent + outstandingPercent}%, #e2e8f0 ${receivedPercent + outstandingPercent}% 100%)`
+    : 'conic-gradient(#e2e8f0 0 100%)'
+  const readinessOutstanding = Number(documentHealthSummary.blockerCount || documentHealthSummary.missingCount || summary.outstanding || 0)
+  const activityRows = (documentHealthSummary.recentActivity || []).slice(0, 4)
+  const filters = [
+    ['all', 'All', summary.total],
+    ['required', 'Required', summary.required],
+    ['uploaded', 'Uploaded', summary.uploaded],
+    ['outstanding', 'Outstanding', summary.outstanding],
+    ['verified', 'Verified', summary.verified],
+  ]
+  const toggleGroup = (key) => {
+    setCollapsedGroups((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+  const showEmptyUploadedState = !rows.some((row) => row.fileUrl)
+  const showCompleteState = rows.length > 0 && !summary.outstanding
+
+  return (
+    <section className="space-y-5">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold tracking-[-0.02em] text-textStrong">Document Centre</h2>
+          <p className="mt-1 text-sm leading-6 text-textMuted">Manage application and supporting documents. Track requirements, uploads and verification status.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" onClick={onUpload}>
+            <Upload size={14} />
+            Upload Document
+          </Button>
+          <details className="relative">
+            <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-[10px] border border-borderSoft bg-white px-3 text-sm font-semibold text-textStrong transition hover:border-primary/40 hover:bg-primarySoft">
+              <MoreHorizontal size={15} />
+              More
+            </summary>
+            <div className="absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-[12px] border border-borderSoft bg-white py-1 shadow-[0_18px_38px_rgba(15,23,42,0.14)]">
+              <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-textBody hover:bg-surfaceAlt" onClick={onRequestDocuments}>
+                <FileText size={14} />
+                Request documents
+              </button>
+              <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onFilterChange?.('outstanding')}>
+                <AlertTriangle size={14} />
+                View outstanding
+              </button>
+              <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onFilterChange?.('all')}>
+                <ListChecks size={14} />
+                View checklist
+              </button>
+            </div>
+          </details>
+        </div>
+      </header>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.38fr)]">
+        <article className="min-w-0 overflow-hidden rounded-[18px] border border-borderDefault bg-white shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <div className="flex flex-col gap-3 border-b border-borderSoft px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {filters.map(([key, label, count]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`inline-flex h-8 items-center gap-2 rounded-[9px] border px-3 text-xs font-semibold transition ${
+                    activeFilterKey === key
+                      ? 'border-primary/20 bg-primarySoft text-primary'
+                      : 'border-borderSoft bg-white text-textMuted hover:border-primary/30 hover:text-primary'
+                  }`}
+                  onClick={() => onFilterChange?.(key)}
+                >
+                  {label}
+                  <span>{count}</span>
+                </button>
+              ))}
+            </div>
+            <label className="flex w-fit items-center gap-2 text-xs font-medium text-textMuted">
+              Group by
+              <select className="h-8 rounded-[9px] border border-borderSoft bg-white px-3 text-xs font-semibold text-textStrong outline-none">
+                <option>Document type</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="hidden grid-cols-[minmax(260px,1.25fr)_160px_160px_135px_110px] border-b border-borderSoft bg-surfaceAlt px-4 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted lg:grid">
+            <span>Document</span>
+            <span>Status</span>
+            <span>Uploaded By</span>
+            <span>Uploaded On</span>
+            <span className="text-right">Actions</span>
+          </div>
+
+          {rows.length ? (
+            <div className="divide-y divide-borderSoft">
+              {groups.map((group) => {
+                const Icon = group.icon || FileText
+                const collapsed = collapsedGroups.has(group.key)
+                return (
+                  <section key={group.key}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 bg-surfaceAlt/70 px-4 py-3 text-left transition hover:bg-surfaceAlt"
+                      onClick={() => toggleGroup(group.key)}
+                    >
+                      <span className="flex min-w-0 items-center gap-3">
+                        <span className={`inline-flex size-7 shrink-0 items-center justify-center rounded-[9px] ${group.tone}`}>
+                          <Icon size={15} />
+                        </span>
+                        <strong className="truncate text-sm font-semibold text-textStrong">{group.label} ({group.rows.length})</strong>
+                      </span>
+                      <ChevronRight size={15} className={`shrink-0 text-textMuted transition ${collapsed ? '' : 'rotate-90'}`} />
+                    </button>
+                    {!collapsed ? (
+                      <div className="divide-y divide-borderSoft">
+                        {group.rows.map((row) => (
+                          <article key={row.key} className="grid gap-3 px-4 py-3 text-sm lg:min-h-[54px] lg:grid-cols-[minmax(260px,1.25fr)_160px_160px_135px_110px] lg:items-center">
+                            <div className="min-w-0">
+                              {row.fileUrl ? (
+                                <button type="button" className="block max-w-full truncate text-left font-semibold text-textStrong hover:text-primary" onClick={() => onOpenDocument?.(row)}>
+                                  {row.displayName}
+                                </button>
+                              ) : (
+                                <strong className="block truncate font-semibold text-textStrong">{row.displayName}</strong>
+                              )}
+                              <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${row.required ? 'border-red-100 bg-red-50 text-red-600' : 'border-slate-200 bg-slate-100 text-slate-600'}`}>
+                                {row.importanceLabel}
+                              </span>
+                            </div>
+                            <div>
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${row.statusMeta.tone}`}>{row.statusMeta.label}</span>
+                            </div>
+                            <span className="min-w-0 truncate text-textMuted">{row.uploadedBy || '-'}</span>
+                            <span className="text-textMuted">{row.uploadedAtLabel || '-'}</span>
+                            <div className="flex items-center gap-2 lg:justify-end">
+                              {!row.fileUrl ? (
+                                <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}>
+                                  <Upload size={14} />
+                                  Upload
+                                </Button>
+                              ) : (
+                                <details className="relative">
+                                  <summary className="inline-flex size-8 cursor-pointer list-none items-center justify-center rounded-[8px] border border-borderSoft bg-white text-textMuted transition hover:border-primary/40 hover:text-primary">
+                                    <MoreHorizontal size={15} />
+                                  </summary>
+                                  <div className="absolute right-0 z-20 mt-2 w-40 overflow-hidden rounded-[12px] border border-borderSoft bg-white py-1 text-left shadow-[0_16px_34px_rgba(15,23,42,0.14)]">
+                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onOpenDocument?.(row)}>
+                                      <ExternalLink size={14} />
+                                      View
+                                    </button>
+                                    {row.fileUrl ? (
+                                      <a href={row.fileUrl} download className="flex w-full items-center gap-2 px-3 py-2 text-sm text-textBody hover:bg-surfaceAlt">
+                                        <Download size={14} />
+                                        Download
+                                      </a>
+                                    ) : null}
+                                    {row.canReplace ? (
+                                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onReplaceDocument?.(row)}>
+                                        <Upload size={14} />
+                                        Replace
+                                      </button>
+                                    ) : null}
+                                    {row.canReview ? (
+                                      <>
+                                        <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onVerifyDocument?.(row)}>
+                                          <CheckCircle2 size={14} />
+                                          Verify
+                                        </button>
+                                        <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-700 hover:bg-red-50" onClick={() => onRejectDocument?.(row)}>
+                                          <X size={14} />
+                                          Reject
+                                        </button>
+                                      </>
+                                    ) : null}
+                                  </div>
+                                </details>
+                              )}
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+                )
+              })}
+              {!visibleRows.length ? (
+                <div className="px-4 py-10 text-center">
+                  <strong className="text-sm font-semibold text-textStrong">No documents match this filter.</strong>
+                  <p className="mt-1 text-sm text-textMuted">Switch filters to view the full application checklist.</p>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="px-4 py-12 text-center">
+              <strong className="text-base font-semibold text-textStrong">No documents uploaded yet</strong>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-textMuted">Required documents will appear here as they are received.</p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <Button type="button" variant="secondary" onClick={onRequestDocuments}>Request Documents</Button>
+                <Button type="button" onClick={onUpload}>Upload Document</Button>
+              </div>
+            </div>
+          )}
+
+          {showEmptyUploadedState && rows.length ? (
+            <div className="border-t border-borderSoft bg-surfaceAlt px-4 py-3 text-sm text-textMuted">
+              No documents uploaded yet. Request documents from the applicant or upload a file against a requirement.
+            </div>
+          ) : null}
+          {showCompleteState ? (
+            <div className="border-t border-success/20 bg-successSoft px-4 py-3 text-sm font-semibold text-success">
+              All required documents received. Ready for bank submission when the application checks are complete.
+            </div>
+          ) : null}
+        </article>
+
+        <aside className="space-y-4 xl:order-none">
+          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+            <h3 className="text-sm font-semibold text-textStrong">Document Summary</h3>
+            <div className="mt-4 flex items-center gap-4">
+              <div className="relative flex size-24 shrink-0 items-center justify-center rounded-full" style={{ background: ringGradient }}>
+                <div className="flex size-16 flex-col items-center justify-center rounded-full bg-white shadow-inner">
+                  <strong className="text-xl font-semibold text-textStrong">{summary.total}</strong>
+                  <span className="text-[0.68rem] font-semibold uppercase text-textMuted">Total</span>
+                </div>
+              </div>
+              <dl className="grid flex-1 gap-2 text-sm">
+                {[
+                  ['Uploaded', summary.uploaded, 'bg-emerald-500'],
+                  ['Verified', summary.verified, 'bg-emerald-600'],
+                  ['Outstanding', summary.outstanding, 'bg-red-500'],
+                  ['Not Required', summary.notRequired, 'bg-slate-300'],
+                ].map(([label, value, dot]) => (
+                  <div key={label} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+                    <span className={`size-2 rounded-full ${dot}`} />
+                    <dt className="truncate text-xs text-textMuted">{label}</dt>
+                    <dd className="text-sm font-semibold text-textStrong">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </article>
+
+          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+            <h3 className="text-sm font-semibold text-textStrong">Submission Impact</h3>
+            <div className={`mt-4 rounded-[13px] border px-3 py-3 ${documentHealthSummary.submissionReady ? 'border-success/20 bg-successSoft text-success' : 'border-red-100 bg-red-50 text-red-700'}`}>
+              <div className="flex items-start gap-3">
+                {documentHealthSummary.submissionReady ? <CheckCircle2 size={18} className="mt-0.5 shrink-0" /> : <AlertTriangle size={18} className="mt-0.5 shrink-0" />}
+                <div>
+                  <strong className="block text-sm">{documentHealthSummary.submissionReady ? 'Ready to Submit' : 'Not Ready to Submit'}</strong>
+                  <p className="mt-1 text-xs leading-5">
+                    {documentHealthSummary.submissionReady
+                      ? 'All required application documents have been received.'
+                      : `${readinessOutstanding} required document${readinessOutstanding === 1 ? '' : 's'} outstanding. Please complete all required documents before submitting to banks.`}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+            <h3 className="text-sm font-semibold text-textStrong">Quick Actions</h3>
+            <div className="mt-3 divide-y divide-borderSoft">
+              {[
+                ['Request Documents from Applicant', 'Send document request for outstanding items', FileText, onRequestDocuments],
+                ['Upload Documents', 'Add files to the application document pack', Upload, onUpload],
+                ['View Document Checklist', 'See all document requirements', ListChecks, () => onFilterChange?.('all')],
+              ].map(([label, helper, Icon, action]) => (
+                <button key={label} type="button" className="flex w-full items-center gap-3 py-3 text-left" onClick={action}>
+                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-primarySoft text-primary">
+                    {createElement(Icon, { size: 15 })}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <strong className="block truncate text-sm text-textStrong">{label}</strong>
+                    <span className="mt-0.5 block truncate text-xs text-textMuted">{helper}</span>
+                  </span>
+                  <ChevronRight size={15} className="shrink-0 text-primary" />
+                </button>
+              ))}
+            </div>
+          </article>
+
+          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-textStrong">Recent Activity</h3>
+              <button type="button" className="text-xs font-semibold text-primary hover:text-primaryDark" onClick={() => onFilterChange?.('all')}>View all</button>
+            </div>
+            <div className="mt-3 max-h-[260px] divide-y divide-borderSoft overflow-y-auto pr-1">
+              {activityRows.length ? activityRows.map((row) => (
+                <article key={row.id || `${row.label}:${row.timestamp}`} className="flex gap-3 py-3">
+                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-red-50 text-red-600">
+                    <FileText size={15} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <strong className="block truncate text-sm text-textStrong">{row.label || 'Document activity'}</strong>
+                    <span className="mt-0.5 block truncate text-xs text-textMuted">{row.detail || 'Updated'} {row.timestamp ? `- ${formatDateTime(row.timestamp, '')}` : ''}</span>
+                  </span>
+                </article>
+              )) : (
+                <p className="rounded-[12px] border border-dashed border-borderDefault bg-surfaceAlt px-3 py-6 text-sm text-textMuted">No document activity yet.</p>
+              )}
+            </div>
+          </article>
+        </aside>
+      </section>
+    </section>
+  )
+}
+
+function getQuoteTermLabel(quote = {}) {
+  const months = Number(quote.termMonths ?? quote.term_months ?? quote.term ?? quote.maxTermMonths ?? quote.max_term_months)
+  if (!Number.isFinite(months) || months <= 0) return '-'
+  if (months > 40) return `${Math.round(months / 12)} years`
+  return `${months} year${months === 1 ? '' : 's'}`
+}
+
+function getQuoteRateDisplay(quote = {}) {
+  const rate = getQuoteRate(quote)
+  return rate ? `${rate}%` : quote.interestRateDisplay || quote.interest_rate_display || '-'
+}
+
+function getQuoteRateSubtitle(quote = {}) {
+  const margin = quote.primeMargin ?? quote.prime_margin ?? quote.rateMargin ?? quote.rate_margin
+  if (margin !== undefined && margin !== null && String(margin).trim() !== '') {
+    const amount = Number(margin)
+    if (Number.isFinite(amount)) return `Prime ${amount >= 0 ? '+' : '-'} ${Math.abs(amount)}%`
+    return String(margin)
+  }
+  return quote.rateBasis || quote.rate_basis || quote.interestRateBasis || quote.interest_rate_basis || ''
+}
+
+function getQuoteConditions(quote = {}) {
+  const rawConditions = quote.conditions || quote.conditionsList || quote.conditions_list || quote.approvalConditions || quote.approval_conditions || []
+  if (Array.isArray(rawConditions)) {
+    return rawConditions.map((item) => typeof item === 'string' ? item : item?.label || item?.title || item?.description || '').filter(Boolean)
+  }
+  return String(rawConditions || '')
+    .split(/\n|;/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function getQuoteDocumentUrl(quote = {}) {
+  return quote.url || quote.publicUrl || quote.public_url || quote.downloadUrl || quote.download_url || quote.documentUrl || quote.document_url || quote.quoteDocumentUrl || quote.quote_document_url || ''
+}
+
+function getBankSubmissionState(row = {}) {
+  const quote = row.quote || null
+  const rawStatus = String(row.status || quote?.quoteStatus || quote?.quote_status || quote?.status || '').trim().toLowerCase()
+  if (quote) {
+    if (['approved', 'pre_approved', 'pre-approved', 'accepted', 'approved_by_buyer'].includes(rawStatus)) return 'quote_received'
+    return 'quote_received'
+  }
+  if (rawStatus === 'additional_documents_required') return 'additional_info'
+  if (['approved', 'buyer_approved'].includes(rawStatus)) return 'approved'
+  if (['declined', 'expired'].includes(rawStatus)) return 'declined'
+  if (rawStatus === 'withdrawn') return 'withdrawn'
+  if (!row.submittedAt && ['pending', 'not_submitted', ''].includes(rawStatus)) return 'not_submitted'
+  if (row.submittedAt || rawStatus === 'submitted' || rawStatus === 'feedback_received') return 'awaiting_response'
+  return 'no_response'
+}
+
+function getBankSubmissionStateMeta(row = {}) {
+  const state = getBankSubmissionState(row)
+  const quoteStatus = String(row.quote?.quoteStatus || row.quote?.quote_status || row.quote?.status || '').trim().toLowerCase()
+  if (state === 'quote_received') {
+    if (['approved', 'pre_approved', 'pre-approved'].includes(quoteStatus)) {
+      return { label: quoteStatus.includes('pre') ? 'Pre-Approved' : 'Approved', tone: 'border-success/25 bg-successSoft text-success' }
+    }
+    if (['accepted', 'approved_by_buyer'].includes(quoteStatus)) return { label: 'Selected Offer', tone: 'border-success/25 bg-successSoft text-success' }
+    return { label: 'Quote Received', tone: 'border-success/25 bg-successSoft text-success' }
+  }
+  if (state === 'additional_info') return { label: 'Additional Information Required', tone: 'border-warning/25 bg-warningSoft text-warning' }
+  if (state === 'approved') return { label: 'Approved', tone: 'border-success/25 bg-successSoft text-success' }
+  if (state === 'declined') return { label: 'Declined', tone: 'border-danger/25 bg-dangerSoft text-danger' }
+  if (state === 'withdrawn') return { label: 'Withdrawn', tone: 'border-borderSoft bg-surfaceAlt text-textMuted' }
+  if (state === 'not_submitted') return { label: 'Not Submitted', tone: 'border-borderSoft bg-surfaceAlt text-textMuted' }
+  if (state === 'no_response') return { label: 'No Response', tone: 'border-orange-100 bg-orange-50 text-orange-700' }
+  return { label: 'Awaiting Response', tone: 'border-blue-100 bg-blue-50 text-blue-700' }
+}
+
+function getBondQuotesSummary(rows = []) {
+  return {
+    banks: rows.length,
+    quotesReceived: rows.filter((row) => getBankSubmissionState(row) === 'quote_received').length,
+    awaitingResponse: rows.filter((row) => getBankSubmissionState(row) === 'awaiting_response').length,
+    declined: rows.filter((row) => getBankSubmissionState(row) === 'declined').length,
+    noResponse: rows.filter((row) => getBankSubmissionState(row) === 'no_response').length,
+  }
+}
+
+function getBondGrantInfo(workflowData = {}, acceptedQuote = null) {
+  const instruction = workflowData?.instruction || workflowData?.grant || {}
+  const grantIssuedAt = firstPresent(
+    instruction.grantIssuedAt,
+    instruction.grant_issued_at,
+    instruction.grantReceivedAt,
+    instruction.grant_received_at,
+    workflowData?.grantIssuedAt,
+    workflowData?.grant_issued_at,
+  )
+  const grantAcceptedAt = firstPresent(
+    instruction.grantAcceptedAt,
+    instruction.grant_accepted_at,
+    instruction.grantSignedAt,
+    instruction.grant_signed_at,
+    workflowData?.grantAcceptedAt,
+    workflowData?.grant_accepted_at,
+  )
+  const instructionSentAt = firstPresent(
+    instruction.instructionSentAt,
+    instruction.instruction_sent_at,
+    workflowData?.instructionSentAt,
+    workflowData?.instruction_sent_at,
+  )
+  const state = grantAcceptedAt
+    ? 'grant_accepted'
+    : grantIssuedAt
+      ? 'grant_issued'
+      : acceptedQuote
+        ? 'awaiting_grant'
+        : 'awaiting_selection'
+  const label = {
+    awaiting_selection: 'Awaiting Offer Selection',
+    awaiting_grant: 'Awaiting Grant',
+    grant_issued: 'Grant Issued',
+    grant_accepted: 'Grant Accepted',
+  }[state]
+  return { state, label, grantIssuedAt, grantAcceptedAt, instructionSentAt }
+}
+
+function BondQuotesGrantWorkspace({
+  applicationViewModel = null,
+  consultantAction = null,
+  documentHealthSummary = {},
+  submissionRows = [],
+  quoteRows = [],
+  recommendedQuote = null,
+  acceptedQuote = null,
+  workflowData = {},
+  loadingAction = '',
+  canEdit = false,
+  onSubmitBank,
+  onCompareQuotes,
+  onViewQuote,
+  onSelectOffer,
+  onRequestRevision,
+  onDeclineAll,
+  onOpenDocuments,
+  onOpenActivity,
+  onMarkGrantMilestone,
+}) {
+  const [filter, setFilter] = useState('all')
+  const [compareOpen, setCompareOpen] = useState(false)
+  const [conditionsRow, setConditionsRow] = useState(null)
+  const [addBankOpen, setAddBankOpen] = useState(false)
+  const [selectedBank, setSelectedBank] = useState('')
+  const [submittedAt, setSubmittedAt] = useState(() => new Date().toISOString().slice(0, 10))
+  const journeyStages = buildBondOverviewJourney({ action: consultantAction, applicationViewModel, documentHealthSummary, submissionRows, quoteRows, acceptedQuote })
+  const summary = getBondQuotesSummary(submissionRows)
+  const grantInfo = getBondGrantInfo(workflowData, acceptedQuote)
+  const requestedLoan = applicationViewModel?.financials?.bondAmountRequired?.display || applicationViewModel?.financials?.purchasePrice?.display || '-'
+  const notSubmittedRows = submissionRows.filter((row) => getBankSubmissionState(row) === 'not_submitted')
+  const activeBankName = selectedBank || notSubmittedRows[0]?.bankName || ''
+  const visibleRows = submissionRows.filter((row) => {
+    const state = getBankSubmissionState(row)
+    if (filter === 'quote_received') return state === 'quote_received'
+    if (filter === 'awaiting_response') return state === 'awaiting_response'
+    if (filter === 'approved') return state === 'approved' || ['accepted', 'approved_by_buyer'].includes(String(row.quote?.quoteStatus || row.quote?.quote_status || '').toLowerCase())
+    if (filter === 'declined') return state === 'declined'
+    return true
+  })
+  const selectedQuoteId = String(acceptedQuote?.id || '')
+  const ringTotal = Math.max(summary.banks, 1)
+  const quotePercent = Math.round((summary.quotesReceived / ringTotal) * 100)
+  const awaitingPercent = Math.round((summary.awaitingResponse / ringTotal) * 100)
+  const declinedPercent = Math.round((summary.declined / ringTotal) * 100)
+  const quoteRing = `conic-gradient(#16a34a 0 ${quotePercent}%, #3b82f6 ${quotePercent}% ${quotePercent + awaitingPercent}%, #f59e0b ${quotePercent + awaitingPercent}% ${quotePercent + awaitingPercent + declinedPercent}%, #e2e8f0 ${quotePercent + awaitingPercent + declinedPercent}% 100%)`
+
+  function submitSelectedBank(event) {
+    event.preventDefault()
+    if (!activeBankName) return
+    onSubmitBank?.({ bankName: activeBankName, status: 'submitted', submittedAt, notes: 'Submitted from Quotes & Grant workspace.' })
+    setAddBankOpen(false)
+  }
+
+  function selectOffer(quote) {
+    if (!quote?.id) return
+    const bankName = getQuoteBankName(quote) || 'this bank'
+    if (typeof window !== 'undefined' && !window.confirm(`Select ${bankName} as the preferred offer?`)) return
+    onSelectOffer?.(quote)
+  }
+
+  const nextSteps = [
+    {
+      label: 'Review and compare bank quotes',
+      helper: `${summary.quotesReceived} quote${summary.quotesReceived === 1 ? '' : 's'} received, ${summary.awaitingResponse} pending`,
+      state: summary.quotesReceived ? 'complete' : submissionRows.some((row) => row.submittedAt) ? 'current' : 'locked',
+    },
+    {
+      label: 'Select preferred offer',
+      helper: acceptedQuote ? `${getQuoteBankName(acceptedQuote)} selected` : 'Choose the preferred option for the applicant',
+      state: acceptedQuote ? 'complete' : summary.quotesReceived ? 'current' : 'locked',
+    },
+    {
+      label: grantInfo.state === 'awaiting_selection' ? 'Submit grant application' : grantInfo.label,
+      helper: grantInfo.state === 'grant_accepted' ? 'Next: attorney instruction' : 'Available after offer acceptance',
+      state: grantInfo.state === 'grant_accepted' ? 'complete' : acceptedQuote ? 'current' : 'locked',
+    },
+  ]
+  const grantMilestones = [
+    ['not_submitted', 'Not Submitted'],
+    ['submitted', 'Submitted to Bank'],
+    ['issued', 'Grant Issued'],
+    ['accepted', 'Grant Accepted'],
+  ]
+  const activeGrantIndex = grantInfo.state === 'grant_accepted' ? 3 : grantInfo.state === 'grant_issued' ? 2 : acceptedQuote ? 1 : 0
+
+  return (
+    <section className="space-y-5">
+      <section className="rounded-[18px] border border-borderDefault bg-white px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+        <h2 className="text-base font-semibold text-textStrong">Application Journey</h2>
+        <ol className="mt-5 grid gap-4 lg:grid-cols-6">
+          {journeyStages.slice(0, 6).map((stage, index) => {
+            const Icon = stage.icon || FileText
+            const completed = stage.state === 'completed'
+            const current = stage.state === 'current'
+            return (
+              <li key={stage.key} className="relative min-w-0">
+                {index > 0 ? <span className={`absolute left-[-50%] top-5 hidden h-px w-full lg:block ${completed || current ? 'bg-primary' : 'bg-borderDefault'}`} /> : null}
+                <div className="relative z-10 flex flex-col items-start gap-2 lg:items-center lg:text-center">
+                  <span className={`inline-flex size-10 items-center justify-center rounded-full border ${
+                    completed
+                      ? 'border-success bg-success text-white'
+                      : current
+                        ? 'border-primary bg-primarySoft text-primary ring-4 ring-primary/10'
+                        : 'border-borderSoft bg-surfaceAlt text-textMuted'
+                  }`}>
+                    {completed ? <CheckCircle2 size={18} /> : <Icon size={17} />}
+                  </span>
+                  <strong className="block min-h-[34px] text-xs leading-4 text-textStrong">{stage.label}</strong>
+                  <span className={`text-xs ${completed ? 'text-primary' : current ? 'font-semibold text-success' : 'text-textMuted'}`}>{stage.statusLabel}</span>
+                </div>
+              </li>
+            )
+          })}
+        </ol>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.36fr)]">
+        <article className="min-w-0 overflow-hidden rounded-[18px] border border-borderDefault bg-white shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <div className="flex flex-col gap-4 border-b border-borderSoft px-5 py-5 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-textStrong">Bank Submissions & Quotes</h2>
+              <p className="mt-1 text-sm leading-6 text-textMuted">Track bank responses, compare quotes and manage offers.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" size="sm" disabled={!quoteRows.length} onClick={() => { setCompareOpen(true); onCompareQuotes?.() }}>
+                <ListChecks size={14} />
+                Compare Quotes
+              </Button>
+              <details className="relative">
+                <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-[10px] border border-borderSoft bg-white px-3 text-sm font-semibold text-textStrong transition hover:border-primary/40 hover:bg-primarySoft">
+                  <Filter size={14} />
+                  Filters
+                </summary>
+                <div className="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-[12px] border border-borderSoft bg-white py-1 shadow-[0_18px_38px_rgba(15,23,42,0.14)]">
+                  {[
+                    ['all', 'All Banks'],
+                    ['quote_received', 'Quote Received'],
+                    ['awaiting_response', 'Awaiting Response'],
+                    ['approved', 'Approved / Selected'],
+                    ['declined', 'Declined'],
+                  ].map(([key, label]) => (
+                    <button key={key} type="button" className={`block w-full px-3 py-2 text-left text-sm hover:bg-surfaceAlt ${filter === key ? 'font-semibold text-primary' : 'text-textBody'}`} onClick={() => setFilter(key)}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </details>
+            </div>
+          </div>
+
+          {submissionRows.length ? (
+            <div className="divide-y divide-borderSoft px-4 py-3">
+              {visibleRows.map((row) => {
+                const quote = row.quote || null
+                const quoteId = String(quote?.id || '')
+                const selected = quoteId && quoteId === selectedQuoteId
+                const stateMeta = getBankSubmissionStateMeta(row)
+                const conditions = getQuoteConditions(quote || {})
+                const approvalAmount = getQuoteApprovalAmount(quote || {})
+                const quoteUrl = getQuoteDocumentUrl(quote || {})
+                return (
+                  <article key={row.bankName} className={`grid gap-4 py-4 lg:grid-cols-[220px_minmax(0,1fr)] ${selected ? 'rounded-[16px] border border-success/25 bg-successSoft/40 px-4' : ''}`}>
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-surfaceAlt text-sm font-bold text-primary">
+                        {getContactInitials(row.bankName)}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong className="block truncate text-base text-textStrong">{row.bankName}</strong>
+                          {selected ? <span className="rounded-full border border-success/20 bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-success">Selected Offer</span> : null}
+                        </div>
+                        <span className="mt-1 block text-xs text-textMuted">{row.submittedAt ? `Submitted ${formatDate(row.submittedAt, '')}` : 'Not submitted'}</span>
+                        <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${stateMeta.tone}`}>{stateMeta.label}</span>
+                      </div>
+                    </div>
+                    <div className="min-w-0 rounded-[14px] border border-borderSoft bg-white">
+                      <div className="grid gap-0 divide-y divide-borderSoft px-4 py-4 sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-5">
+                        {[
+                          ['Loan Amount', approvalAmount ? formatCurrencyValue(approvalAmount, '-') : requestedLoan, ''],
+                          ['Interest Rate', getQuoteRateDisplay(quote || {}), getQuoteRateSubtitle(quote || {})],
+                          ['Monthly Repayment', formatCurrencyValue(getQuoteRepayment(quote || {}), '-'), ''],
+                          ['Max Term', getQuoteTermLabel(quote || {}), ''],
+                          ['Status', quote ? getQuoteStatusLabel(quote) : stateMeta.label, ''],
+                        ].map(([label, value, helper]) => (
+                          <div key={label} className="min-w-0 px-0 py-2 first:pt-0 last:pb-0 sm:px-4 sm:py-0 sm:first:pl-0 sm:last:pr-0">
+                            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+                            <strong className="mt-1 block truncate text-sm text-textStrong">{value || '-'}</strong>
+                            {helper ? <span className="mt-0.5 block truncate text-xs text-textMuted">{helper}</span> : null}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid divide-y divide-borderSoft border-t border-borderSoft text-sm sm:grid-cols-4 sm:divide-x sm:divide-y-0">
+                        {quote ? (
+                          <button type="button" className="inline-flex h-11 items-center justify-center gap-2 font-semibold text-textStrong transition hover:bg-surfaceAlt" onClick={() => onViewQuote?.(quote)} disabled={!quoteUrl}>
+                            View Quote
+                            <ExternalLink size={14} />
+                          </button>
+                        ) : (
+                          <button type="button" className="inline-flex h-11 items-center justify-center gap-2 font-semibold text-textStrong transition hover:bg-surfaceAlt" onClick={() => null}>
+                            View Details
+                            <ExternalLink size={14} />
+                          </button>
+                        )}
+                        {conditions.length ? (
+                          <button type="button" className="inline-flex h-11 items-center justify-center gap-2 font-semibold text-textStrong transition hover:bg-surfaceAlt" onClick={() => setConditionsRow({ bankName: row.bankName, conditions })}>
+                            <FileText size={14} />
+                            Conditions ({conditions.length})
+                          </button>
+                        ) : null}
+                        <button type="button" className="inline-flex h-11 items-center justify-center gap-2 font-semibold text-textStrong transition hover:bg-surfaceAlt" onClick={() => { onRequestRevision?.(quote || { bankName: row.bankName }); onOpenActivity?.() }}>
+                          <Send size={14} />
+                          Message Bank
+                        </button>
+                        {quote && !selected ? (
+                          <button type="button" className="inline-flex h-11 items-center justify-center gap-2 font-semibold text-primary transition hover:bg-primarySoft" onClick={() => selectOffer(quote)} disabled={Boolean(loadingAction || acceptedQuote)}>
+                            <CheckCircle2 size={14} />
+                            Select Offer
+                          </button>
+                        ) : (
+                          <span className="inline-flex h-11 items-center justify-center text-textMuted">
+                            <MoreHorizontal size={16} />
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+              {!visibleRows.length ? (
+                <div className="px-4 py-10 text-center text-sm text-textMuted">No bank submissions match this filter.</div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="px-5 py-10">
+              <div className="rounded-[16px] border border-dashed border-borderDefault bg-surfaceAlt px-5 py-8 text-center">
+                <strong className="text-base font-semibold text-textStrong">{documentHealthSummary.submissionReady ? 'Application ready for submission' : 'Application not yet submitted'}</strong>
+                <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-textMuted">
+                  {documentHealthSummary.submissionReady
+                    ? 'Select configured banks and submit the application to start collecting responses.'
+                    : 'Complete all application and document requirements before submitting to banks.'}
+                </p>
+                {documentHealthSummary.submissionReady ? (
+                  <Button type="button" className="mt-4" onClick={() => setAddBankOpen(true)}>Select Banks</Button>
+                ) : (
+                  <Button type="button" variant="secondary" className="mt-4" onClick={onOpenDocuments}>Review Requirements</Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {canEdit && notSubmittedRows.length ? (
+            <div className="border-t border-borderSoft px-4 py-4">
+              {addBankOpen ? (
+                <form onSubmit={submitSelectedBank} className="grid gap-3 rounded-[14px] border border-borderSoft bg-surfaceAlt p-3 sm:grid-cols-[minmax(0,1fr)_170px_auto]">
+                  <Field as="select" value={activeBankName} onChange={(event) => setSelectedBank(event.target.value)} required>
+                    {notSubmittedRows.map((row) => <option key={row.bankName} value={row.bankName}>{row.bankName}</option>)}
+                  </Field>
+                  <Field type="date" value={submittedAt} onChange={(event) => setSubmittedAt(event.target.value)} />
+                  <Button type="submit" disabled={Boolean(loadingAction)}>
+                    <Send size={14} />
+                    Submit
+                  </Button>
+                </form>
+              ) : (
+                <button type="button" className="flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] border border-dashed border-borderDefault text-sm font-semibold text-primary transition hover:border-primary/40 hover:bg-primarySoft" onClick={() => setAddBankOpen(true)}>
+                  +
+                  Add Another Bank
+                </button>
+              )}
+            </div>
+          ) : null}
+        </article>
+
+        <aside className="space-y-4">
+          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+            <h3 className="text-sm font-semibold text-textStrong">Quote Summary</h3>
+            <div className="mt-4 flex items-center gap-4">
+              <div className="relative flex size-24 shrink-0 items-center justify-center rounded-full" style={{ background: quoteRing }}>
+                <div className="flex size-16 flex-col items-center justify-center rounded-full bg-white shadow-inner">
+                  <strong className="text-xl font-semibold text-textStrong">{summary.banks}</strong>
+                  <span className="text-[0.68rem] font-semibold uppercase text-textMuted">Banks</span>
+                </div>
+              </div>
+              <dl className="grid flex-1 gap-2 text-sm">
+                {[
+                  ['Quotes Received', summary.quotesReceived, 'bg-emerald-500'],
+                  ['Awaiting Response', summary.awaitingResponse, 'bg-blue-500'],
+                  ['Declined', summary.declined, 'bg-orange-500'],
+                  ['No Response', summary.noResponse, 'bg-slate-300'],
+                ].map(([label, value, dot]) => (
+                  <div key={label} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+                    <span className={`size-2 rounded-full ${dot}`} />
+                    <dt className="truncate text-xs text-textMuted">{label}</dt>
+                    <dd className="text-sm font-semibold text-textStrong">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <Button type="button" variant="secondary" size="sm" className="mt-4 w-full" disabled={!quoteRows.length} onClick={() => setCompareOpen(true)}>
+              Compare All Quotes
+              <ChevronRight size={14} />
+            </Button>
+          </article>
+
+          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+            <h3 className="text-sm font-semibold text-textStrong">Grant Status</h3>
+            <div className={`mt-4 rounded-[13px] border px-3 py-3 ${grantInfo.state === 'grant_accepted' ? 'border-success/20 bg-successSoft text-success' : 'border-orange-100 bg-orange-50 text-orange-700'}`}>
+              <div className="flex items-start gap-3">
+                {grantInfo.state === 'grant_accepted' ? <CheckCircle2 size={18} className="mt-0.5 shrink-0" /> : <Clock3 size={18} className="mt-0.5 shrink-0" />}
+                <div>
+                  <strong className="block text-sm">{grantInfo.label}</strong>
+                  <p className="mt-1 text-xs leading-5">{acceptedQuote ? 'Grant application can progress from the selected offer.' : 'Select a preferred offer before progressing the grant.'}</p>
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 grid grid-cols-4 gap-2">
+              {grantMilestones.map(([, label], index) => (
+                <div key={label} className="min-w-0 text-center">
+                  <span className={`mx-auto block size-4 rounded-full border-2 ${index <= activeGrantIndex ? 'border-primary bg-primary' : 'border-borderStrong bg-white'}`} />
+                  <span className={`mt-2 block text-[0.68rem] leading-4 ${index <= activeGrantIndex ? 'font-semibold text-textStrong' : 'text-textMuted'}`}>{label}</span>
+                </div>
+              ))}
+            </div>
+            {acceptedQuote ? (
+              <dl className="mt-4 divide-y divide-borderSoft text-sm">
+                {[
+                  ['Bank', getQuoteBankName(acceptedQuote)],
+                  ['Granted Amount', formatCurrencyValue(getQuoteApprovalAmount(acceptedQuote), '-')],
+                  ['Interest Rate', getQuoteRateDisplay(acceptedQuote)],
+                  ['Term', getQuoteTermLabel(acceptedQuote)],
+                  ['Grant Date', formatDate(grantInfo.grantIssuedAt, '-')],
+                  ['Accepted', formatDate(grantInfo.grantAcceptedAt, '-')],
+                ].map(([label, value]) => (
+                  <div key={label} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2">
+                    <dt className="text-textMuted">{label}</dt>
+                    <dd className="max-w-[140px] truncate text-right font-semibold text-textStrong">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+            {acceptedQuote && grantInfo.state === 'awaiting_grant' ? (
+              <Button type="button" size="sm" className="mt-4 w-full" disabled={Boolean(loadingAction)} onClick={() => onMarkGrantMilestone?.({ stage: 'grant_received', milestone: 'grant_received' })}>
+                Record Grant Issued
+              </Button>
+            ) : null}
+            {grantInfo.state === 'grant_issued' ? (
+              <Button type="button" size="sm" className="mt-4 w-full" disabled={Boolean(loadingAction)} onClick={() => onMarkGrantMilestone?.({ stage: 'grant_signed', milestone: 'grant_signed' })}>
+                Mark Grant Accepted
+              </Button>
+            ) : null}
+          </article>
+
+          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+            <h3 className="text-sm font-semibold text-textStrong">Next Steps</h3>
+            <div className="mt-3 divide-y divide-borderSoft">
+              {nextSteps.map((step) => {
+                const Icon = step.state === 'complete' ? CheckCircle2 : step.state === 'current' ? AlertTriangle : Clock3
+                const tone = step.state === 'complete' ? 'bg-successSoft text-success' : step.state === 'current' ? 'bg-orange-50 text-orange-700' : 'bg-surfaceAlt text-textMuted'
+                return (
+                  <div key={step.label} className="flex gap-3 py-3">
+                    <span className={`inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] ${tone}`}>
+                      <Icon size={15} />
+                    </span>
+                    <div className="min-w-0">
+                      <strong className="block text-sm text-textStrong">{step.label}</strong>
+                      <span className="mt-0.5 block text-xs leading-5 text-textMuted">{step.helper}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <Button type="button" variant="secondary" size="sm" className="mt-3 w-full" onClick={onOpenActivity}>
+              View Full Timeline
+              <ChevronRight size={14} />
+            </Button>
+          </article>
         </aside>
       </section>
 
-      <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="text-base font-semibold text-textStrong">Bond process</h3>
-            <p className="mt-1 text-sm text-textMuted">Follow the file from application review through attorney instruction.</p>
-          </div>
-          <Button type="button" variant="secondary" size="sm" onClick={onOpenWorkflow}>
-            Open work queue
-          </Button>
+      <Modal open={compareOpen} onClose={() => setCompareOpen(false)} title="Compare Quotes" subtitle="Compare offers returned by the submitted banks." className="max-w-5xl">
+        {quoteRows.length ? (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-[860px] w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-borderSoft text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+                    <th className="py-3 pr-4">Bank</th>
+                    <th className="px-4 py-3">Loan Amount</th>
+                    <th className="px-4 py-3">Interest Rate</th>
+                    <th className="px-4 py-3">Monthly Repayment</th>
+                    <th className="px-4 py-3">Term</th>
+                    <th className="px-4 py-3">Fees</th>
+                    <th className="py-3 pl-4">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-borderSoft">
+                  {quoteRows.map((quote) => {
+                    const recommended = String(quote.id || '') === String(recommendedQuote?.id || '')
+                    return (
+                      <tr key={quote.id || getQuoteBankName(quote)}>
+                        <td className="py-4 pr-4">
+                          <strong className="text-textStrong">{getQuoteBankName(quote)}</strong>
+                          {recommended ? <span className="ml-2 rounded-full bg-successSoft px-2 py-0.5 text-[0.68rem] font-semibold text-success">Recommended</span> : null}
+                        </td>
+                        <td className="px-4 py-4 font-semibold text-textStrong">{formatCurrencyValue(getQuoteApprovalAmount(quote), '-')}</td>
+                        <td className="px-4 py-4">
+                          <strong className="block text-textStrong">{getQuoteRateDisplay(quote)}</strong>
+                          {getQuoteRateSubtitle(quote) ? <span className="text-xs text-textMuted">{getQuoteRateSubtitle(quote)}</span> : null}
+                        </td>
+                        <td className="px-4 py-4 font-semibold text-textStrong">{formatCurrencyValue(getQuoteRepayment(quote), '-')}</td>
+                        <td className="px-4 py-4 font-semibold text-textStrong">{getQuoteTermLabel(quote)}</td>
+                        <td className="px-4 py-4 font-semibold text-textStrong">{formatCurrencyValue(getQuoteFees(quote), 'R0')}</td>
+                        <td className="py-4 pl-4">
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getBankSubmissionTone(quote.quoteStatus || quote.quote_status || quote.status)}`}>
+                            {getQuoteStatusLabel(quote)}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="secondary" disabled={Boolean(loadingAction)} onClick={onDeclineAll}>
+                <X size={14} />
+                Decline All Quotes
+              </Button>
+            </div>
+          </>
+        ) : (
+          <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-8 text-sm text-textMuted">No bank quotes have been received yet.</p>
+        )}
+      </Modal>
+
+      <Modal open={Boolean(conditionsRow)} onClose={() => setConditionsRow(null)} title={`${conditionsRow?.bankName || 'Bank'} Conditions`} className="max-w-xl">
+        <ul className="space-y-2">
+          {(conditionsRow?.conditions || []).map((condition) => (
+            <li key={condition} className="flex items-start gap-2 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2 text-sm text-textBody">
+              <FileText size={15} className="mt-0.5 shrink-0 text-primary" />
+              <span>{condition}</span>
+            </li>
+          ))}
+        </ul>
+      </Modal>
+    </section>
+  )
+}
+
+const BOND_REFERRAL_INCENTIVE_EVENT_OPTIONS = [
+  { value: 'application_submitted', label: 'Application Submitted' },
+  { value: 'quote_received', label: 'Quote Received' },
+  { value: 'grant_issued', label: 'Grant Issued' },
+  { value: 'grant_accepted', label: 'Grant Accepted' },
+  { value: 'attorney_instructed', label: 'Attorney Instructed' },
+  { value: 'bond_lodged', label: 'Bond Lodged' },
+  { value: 'bond_registered', label: 'Bond Registered' },
+  { value: 'manual', label: 'Manual Review' },
+]
+
+const BOND_REFERRAL_STATUS_ORDER = ['pending', 'eligible', 'approved', 'paid', 'reconciled']
+
+function getBondReferralEventLabel(value = '') {
+  return BOND_REFERRAL_INCENTIVE_EVENT_OPTIONS.find((item) => item.value === value)?.label || toTitle(value || 'manual')
+}
+
+function getBondReferralStatusMeta(status = '') {
+  const normalized = String(status || 'pending').toLowerCase()
+  if (normalized === 'reconciled') return { label: 'Reconciled', tone: 'border-success/25 bg-successSoft text-success', icon: CheckCircle2 }
+  if (normalized === 'paid') return { label: 'Paid', tone: 'border-primary/20 bg-primarySoft text-primary', icon: CreditCard }
+  if (normalized === 'approved') return { label: 'Approved', tone: 'border-blue-100 bg-blue-50 text-blue-700', icon: CheckCircle2 }
+  if (normalized === 'eligible') return { label: 'Eligible', tone: 'border-success/25 bg-successSoft text-success', icon: CheckCircle2 }
+  if (normalized === 'cancelled') return { label: 'Cancelled', tone: 'border-danger/20 bg-dangerSoft text-danger', icon: X }
+  return { label: 'Pending', tone: 'border-warning/25 bg-warningSoft text-warning', icon: Clock3 }
+}
+
+function getBondReferralInvoiceStatusMeta(status = '') {
+  const normalized = String(status || 'not_ready').toLowerCase()
+  if (normalized === 'invoiced') return { label: 'Invoiced', tone: 'border-primary/20 bg-primarySoft text-primary', icon: FileText }
+  if (normalized === 'ready_to_invoice') return { label: 'Ready to Invoice', tone: 'border-success/25 bg-successSoft text-success', icon: CheckCircle2 }
+  if (normalized === 'cancelled') return { label: 'Invoice Cancelled', tone: 'border-danger/20 bg-dangerSoft text-danger', icon: X }
+  return { label: 'Not Ready', tone: 'border-warning/25 bg-warningSoft text-warning', icon: Clock3 }
+}
+
+function getBondReferralEventFacts({ submissionRows = [], quoteRows = [], workflowData = {}, acceptedQuote = null, transaction = {} } = {}) {
+  const grantInfo = getBondGrantInfo(workflowData, acceptedQuote)
+  const acceptedQuoteStatus = String(acceptedQuote?.quoteStatus || acceptedQuote?.quote_status || '').toLowerCase()
+  const acceptedQuoteCreatedAt = acceptedQuote?.updatedAt || acceptedQuote?.updated_at || acceptedQuote?.createdAt || acceptedQuote?.created_at || ''
+  const mainStage = String(transaction?.current_main_stage || transaction?.stage || transaction?.status || '').toLowerCase()
+  const detailedStage = String(transaction?.current_detailed_stage || transaction?.detailed_stage || '').toLowerCase()
+  const stageSignal = [
+    mainStage,
+    detailedStage,
+    transaction?.current_sub_stage_summary,
+    transaction?.finance_status,
+    transaction?.transfer_status,
+    workflowData?.currentStage,
+    workflowData?.current_stage,
+    workflowData?.currentStageLabel,
+    workflowData?.summary?.currentStage,
+    workflowData?.summary?.currentStageLabel,
+  ].map((value) => String(value || '').toLowerCase()).join(' ')
+  const attorneyInstructionAt = firstPresent(
+    grantInfo.instructionSentAt,
+    transaction?.bond_attorney_instruction_sent_at,
+    transaction?.attorney_instruction_sent_at,
+  )
+  const lodgedAt = firstPresent(
+    transaction?.bond_lodged_at,
+    transaction?.lodged_at,
+    transaction?.lodgement_date,
+    transaction?.lodgementDate,
+    workflowData?.bond_lodged_at,
+    workflowData?.bondLodgedAt,
+  )
+  const registeredAt = firstPresent(transaction?.registered_at, transaction?.registeredAt, transaction?.registration_date, transaction?.registrationDate)
+  return {
+    application_submitted: {
+      complete: submissionRows.some((row) => row.submittedAt),
+      date: submissionRows.find((row) => row.submittedAt)?.submittedAt || '',
+      label: 'Application submitted to bank',
+    },
+    quote_received: {
+      complete: quoteRows.length > 0,
+      date: quoteRows.find((quote) => quote?.createdAt || quote?.created_at)?.createdAt || quoteRows.find((quote) => quote?.created_at)?.created_at || '',
+      label: 'Quote received from bank',
+    },
+    grant_issued: {
+      complete: Boolean(grantInfo.grantIssuedAt || acceptedQuote),
+      date: grantInfo.grantIssuedAt || acceptedQuoteCreatedAt,
+      label: 'Grant issued by bank',
+    },
+    grant_accepted: {
+      complete: Boolean(grantInfo.grantAcceptedAt || ['accepted', 'approved_by_buyer'].includes(acceptedQuoteStatus)),
+      date: grantInfo.grantAcceptedAt || acceptedQuoteCreatedAt,
+      label: 'Grant accepted by applicant',
+    },
+    attorney_instructed: {
+      complete: Boolean(attorneyInstructionAt || ['instruction_sent', 'registered', 'complete', 'completed'].includes(mainStage) || ['instruction_sent', 'registered'].includes(detailedStage)),
+      date: attorneyInstructionAt,
+      label: 'Attorney instructed',
+    },
+    bond_lodged: {
+      complete: Boolean(lodgedAt || /(bond_)?lodged|lodgement|deeds/.test(stageSignal)),
+      date: lodgedAt,
+      label: 'Bond lodged',
+    },
+    bond_registered: {
+      complete: Boolean(registeredAt || ['registered', 'complete', 'completed'].includes(mainStage) || detailedStage === 'registered'),
+      date: registeredAt,
+      label: 'Bond registered',
+    },
+    manual: {
+      complete: false,
+      date: '',
+      label: 'Manual finance review',
+    },
+  }
+}
+
+function buildBondReferralCriteria({ incentive = null, submissionRows = [], quoteRows = [], workflowData = {}, acceptedQuote = null, transaction = {} } = {}) {
+  const facts = getBondReferralEventFacts({ submissionRows, quoteRows, workflowData, acceptedQuote, transaction })
+  const qualifyingEvent = incentive?.qualifyingEvent || 'grant_accepted'
+  return BOND_REFERRAL_INCENTIVE_EVENT_OPTIONS
+    .filter((option) => option.value !== 'manual')
+    .map((option) => {
+      const fact = facts[option.value] || {}
+      const required = option.value === qualifyingEvent || BOND_REFERRAL_INCENTIVE_EVENT_OPTIONS.findIndex((item) => item.value === option.value) <= BOND_REFERRAL_INCENTIVE_EVENT_OPTIONS.findIndex((item) => item.value === qualifyingEvent)
+      return {
+        key: option.value,
+        label: fact.label || option.label,
+        required,
+        complete: Boolean(fact.complete),
+        date: fact.date || '',
+      }
+    })
+}
+
+function getBondReferralEffectiveStatus(incentive = null, qualifyingMet = false) {
+  if (!incentive) return 'not_configured'
+  const status = String(incentive.status || 'pending').toLowerCase()
+  if (status === 'pending' && qualifyingMet) return 'eligible'
+  return status
+}
+
+function maskBondReferralAccountNumber(value = '') {
+  const normalized = String(value || '').replace(/\s+/g, '')
+  if (!normalized) return 'Not captured'
+  return normalized.length <= 4 ? '****' : `**** ${normalized.slice(-4)}`
+}
+
+function buildBondReferralDraft({ incentive = null, referringAgency = {}, referringAgent = {}, transaction = {} } = {}) {
+  const defaultAmount = parseCurrencyNumber(transaction?.referral_incentive_amount || transaction?.agency_incentive_amount || transaction?.agency_commission_amount)
+  return {
+    incentiveType: incentive?.incentiveType || 'referral_incentive',
+    referringAgencyId: incentive?.referringAgencyId || referringAgency?.id || '',
+    referringAgencyName: incentive?.referringAgencyName || referringAgency?.name || '',
+    referringAgentId: incentive?.referringAgentId || referringAgent?.id || '',
+    referringAgentName: incentive?.referringAgentName || referringAgent?.name || '',
+    referringAgentEmail: incentive?.referringAgentEmail || referringAgent?.email || '',
+    amountExclVat: incentive?.amountExclVat ?? (defaultAmount || ''),
+    vatRate: incentive?.vatRate ?? 15,
+    qualifyingEvent: incentive?.qualifyingEvent || 'grant_accepted',
+    invoiceTriggerEvent: incentive?.invoiceTriggerEvent || 'bond_lodged',
+    invoiceStatus: incentive?.invoiceStatus || 'not_ready',
+    invoiceReference: incentive?.invoiceReference || '',
+    invoiceNotes: incentive?.invoiceNotes || '',
+    expectedPayoutDate: incentive?.expectedPayoutDate || '',
+    payoutMethod: incentive?.payoutMethod || 'EFT',
+    payableTo: incentive?.payableTo || referringAgency?.name || '',
+    accountHolder: incentive?.accountHolder || referringAgency?.name || '',
+    bankName: incentive?.bankName || '',
+    accountNumber: incentive?.accountNumber || '',
+    branchCode: incentive?.branchCode || '',
+    paymentReference: incentive?.paymentReference || transaction?.transaction_reference || '',
+    notes: incentive?.notes || '',
+  }
+}
+
+function buildBondReferralHistory({ incentive = null, events = [], criteria = [] } = {}) {
+  const persisted = (events || []).map((event) => ({
+    id: event.id || `${event.eventType}-${event.createdAt}`,
+    title: toTitle(String(event.eventType || 'Updated').replace(/^status_/, '').replace(/_/g, ' ')),
+    date: event.createdAt,
+    actor: event.actorDisplayName || event.actorRole || 'System',
+    note: event.note,
+    state: ['paid', 'reconciled', 'approved', 'eligible'].includes(event.newStatus) ? 'complete' : 'pending',
+  }))
+  const derived = criteria
+    .filter((item) => item.complete && item.date)
+    .map((item) => ({
+      id: `derived-${item.key}`,
+      title: item.label,
+      date: item.date,
+      actor: 'System',
+      note: 'Recognised from application workflow.',
+      state: 'complete',
+    }))
+  const created = incentive?.createdAt
+    ? [{ id: 'incentive-created', title: 'Incentive created', date: incentive.createdAt, actor: 'System', note: '', state: 'complete' }]
+    : []
+  return [...persisted, ...derived, ...created]
+    .filter((item) => item.date)
+    .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
+}
+
+function BondReconciliationWorkspace({
+  transaction = {},
+  applicationViewModel = null,
+  applicationReference = '',
+  propertyLabel = '',
+  purchasePrice = '',
+  referringAgency = {},
+  referringAgent = {},
+  incentive = null,
+  incentiveEvents = [],
+  schemaAvailable = true,
+  submissionRows = [],
+  quoteRows = [],
+  acceptedQuote = null,
+  workflowData = {},
+  loadingAction = '',
+  canEdit = false,
+  onSaveIncentive,
+  onTransition,
+}) {
+  const [editOpen, setEditOpen] = useState(false)
+  const [paymentOpen, setPaymentOpen] = useState(false)
+  const [invoiceOpen, setInvoiceOpen] = useState(false)
+  const [agencyQuery, setAgencyQuery] = useState('')
+  const [agentQuery, setAgentQuery] = useState('')
+  const [draft, setDraft] = useState(() => buildBondReferralDraft({ incentive, referringAgency, referringAgent, transaction }))
+  const [paymentDraft, setPaymentDraft] = useState({
+    paidAt: new Date().toISOString().slice(0, 10),
+    paidAmount: incentive?.amountExclVat ?? '',
+    payoutMethod: incentive?.payoutMethod || 'EFT',
+    paymentReference: incentive?.paymentReference || applicationReference,
+    notes: '',
+  })
+  const [invoiceDraft, setInvoiceDraft] = useState({
+    invoiceIssuedAt: new Date().toISOString().slice(0, 10),
+    invoiceReference: incentive?.invoiceReference || applicationReference,
+    invoiceNotes: '',
+  })
+
+  const criteria = buildBondReferralCriteria({ incentive, submissionRows, quoteRows, workflowData, acceptedQuote, transaction })
+  const qualifyingEvent = incentive?.qualifyingEvent || draft.qualifyingEvent || 'grant_accepted'
+  const qualifyingCriteria = criteria.find((item) => item.key === qualifyingEvent)
+  const qualifyingMet = Boolean(qualifyingCriteria?.complete) || qualifyingEvent === 'manual'
+  const invoiceTriggerEvent = incentive?.invoiceTriggerEvent || draft.invoiceTriggerEvent || 'bond_lodged'
+  const invoiceTriggerCriteria = criteria.find((item) => item.key === invoiceTriggerEvent)
+  const invoiceTriggerMet = Boolean(invoiceTriggerCriteria?.complete) || invoiceTriggerEvent === 'manual'
+  const effectiveStatus = getBondReferralEffectiveStatus(incentive, qualifyingMet)
+  const statusMeta = getBondReferralStatusMeta(effectiveStatus)
+  const StatusIcon = statusMeta.icon
+  const invoiceStatus = incentive?.invoiceStatus || 'not_ready'
+  const invoiceStatusMeta = getBondReferralInvoiceStatusMeta(invoiceStatus)
+  const InvoiceStatusIcon = invoiceStatusMeta.icon
+  const amountExclVat = Number(incentive?.amountExclVat ?? draft.amountExclVat ?? 0)
+  const vatRate = Number(incentive?.vatRate ?? draft.vatRate ?? 15)
+  const vatAmount = Number(incentive?.vatAmount ?? (Number.isFinite(amountExclVat) ? amountExclVat * (vatRate / 100) : 0))
+  const amountInclVat = Number(incentive?.amountInclVat ?? amountExclVat + vatAmount)
+  const selectedBank = acceptedQuote ? getQuoteBankName(acceptedQuote) : ''
+  const grantAmount = getQuoteApprovalAmount(acceptedQuote || {}) || applicationViewModel?.financials?.bondAmountRequired?.raw || null
+  const history = buildBondReferralHistory({ incentive, events: incentiveEvents, criteria })
+  const statusIndex = Math.max(0, BOND_REFERRAL_STATUS_ORDER.indexOf(effectiveStatus))
+  const busy = Boolean(loadingAction)
+  const agencyOptions = [
+    {
+      id: referringAgency?.id || incentive?.referringAgencyId || '',
+      name: referringAgency?.name || incentive?.referringAgencyName || 'Current referring agency',
+    },
+  ].filter((item) => item.name)
+  const agentOptions = [
+    {
+      id: referringAgent?.id || incentive?.referringAgentId || '',
+      name: referringAgent?.name || incentive?.referringAgentName || 'Current referring agent',
+      email: referringAgent?.email || incentive?.referringAgentEmail || '',
+    },
+  ].filter((item) => item.name)
+  const filteredAgencyOptions = agencyOptions.filter((item) => String(item.name || '').toLowerCase().includes(agencyQuery.trim().toLowerCase()))
+  const filteredAgentOptions = agentOptions.filter((item) => {
+    const query = agentQuery.trim().toLowerCase()
+    return !query || String(`${item.name || ''} ${item.email || ''}`).toLowerCase().includes(query)
+  })
+
+  function openIncentiveEditor() {
+    setDraft(buildBondReferralDraft({ incentive, referringAgency, referringAgent, transaction }))
+    setAgencyQuery('')
+    setAgentQuery('')
+    setEditOpen(true)
+  }
+
+  function openPaymentCapture() {
+    setPaymentDraft({
+      paidAt: new Date().toISOString().slice(0, 10),
+      paidAmount: incentive?.amountExclVat ?? '',
+      payoutMethod: incentive?.payoutMethod || 'EFT',
+      paymentReference: incentive?.paymentReference || applicationReference,
+      notes: '',
+    })
+    setPaymentOpen(true)
+  }
+
+  function openInvoiceCapture() {
+    setInvoiceDraft({
+      invoiceIssuedAt: new Date().toISOString().slice(0, 10),
+      invoiceReference: incentive?.invoiceReference || applicationReference,
+      invoiceNotes: '',
+    })
+    setInvoiceOpen(true)
+  }
+
+  async function submitIncentive(event) {
+    event.preventDefault()
+    await onSaveIncentive?.(draft)
+    setEditOpen(false)
+  }
+
+  async function approveIncentive() {
+    if (!incentive || busy) return
+    if (typeof window !== 'undefined' && !window.confirm('Approve this referral incentive for payout?')) return
+    if (String(incentive.status || '').toLowerCase() === 'pending' && qualifyingMet) {
+      await onTransition?.({ status: 'eligible', eventType: 'qualification_met', note: `${getBondReferralEventLabel(qualifyingEvent)} has been met.` })
+    }
+    await onTransition?.({ status: 'approved', eventType: 'incentive_approved', note: 'Approved from the Reconciliation workspace.' })
+  }
+
+  async function recordPayment(event) {
+    event.preventDefault()
+    await onTransition?.({
+      status: 'paid',
+      eventType: 'payment_recorded',
+      paidAt: paymentDraft.paidAt,
+      paidAmount: paymentDraft.paidAmount,
+      payoutMethod: paymentDraft.payoutMethod,
+      paymentReference: paymentDraft.paymentReference,
+      notes: paymentDraft.notes || 'Payment captured from the Reconciliation workspace.',
+    })
+    setPaymentOpen(false)
+  }
+
+  async function markReadyToInvoice() {
+    if (!incentive || busy) return
+    const triggerLabel = getBondReferralEventLabel(invoiceTriggerEvent)
+    const message = invoiceTriggerMet
+      ? `Mark this application ready to invoice because ${triggerLabel.toLowerCase()} is complete?`
+      : `${triggerLabel} has not been detected yet. Mark this application ready to invoice manually?`
+    if (typeof window !== 'undefined' && !window.confirm(message)) return
+    await onTransition?.({
+      invoiceStatus: 'ready_to_invoice',
+      invoiceTriggerEvent,
+      eventType: 'invoice_ready',
+      invoiceReadyReason: invoiceTriggerMet
+        ? `${triggerLabel} completed.`
+        : `Manual invoice readiness override before detected ${triggerLabel.toLowerCase()}.`,
+      notes: incentive.notes || '',
+    })
+  }
+
+  async function recordInvoice(event) {
+    event.preventDefault()
+    await onTransition?.({
+      invoiceStatus: 'invoiced',
+      invoiceTriggerEvent,
+      eventType: 'invoice_issued',
+      invoiceIssuedAt: invoiceDraft.invoiceIssuedAt,
+      invoiceReference: invoiceDraft.invoiceReference,
+      invoiceNotes: invoiceDraft.invoiceNotes || 'Invoice issued from the Reconciliation workspace.',
+      notes: incentive?.notes || '',
+    })
+    setInvoiceOpen(false)
+  }
+
+  async function markReconciled() {
+    if (typeof window !== 'undefined' && !window.confirm('Mark this referral incentive as reconciled?')) return
+    await onTransition?.({ status: 'reconciled', eventType: 'incentive_reconciled', note: 'Reconciled from the application workspace.' })
+  }
+
+  function renderInvoiceAction() {
+    if (!canEdit || !incentive) return null
+    if (invoiceStatus === 'invoiced') {
+      return (
+        <Button type="button" variant="secondary" size="sm" onClick={openInvoiceCapture} disabled={busy}>
+          <FileText size={14} />
+          Update Invoice
+        </Button>
+      )
+    }
+    if (invoiceStatus === 'ready_to_invoice') {
+      return (
+        <Button type="button" size="sm" onClick={openInvoiceCapture} disabled={busy}>
+          <FileText size={14} />
+          Record Invoice Issued
+        </Button>
+      )
+    }
+    return (
+      <Button type="button" size="sm" onClick={markReadyToInvoice} disabled={busy}>
+        <CheckCircle2 size={14} />
+        Mark Ready to Invoice
+      </Button>
+    )
+  }
+
+  function renderPrimaryAction() {
+    if (!canEdit) return null
+    if (!incentive) {
+      return (
+        <Button type="button" onClick={openIncentiveEditor} disabled={!schemaAvailable || busy}>
+          <CircleDollarSign size={14} />
+          Create Incentive
+        </Button>
+      )
+    }
+    if (effectiveStatus === 'eligible') {
+      return (
+        <Button type="button" onClick={approveIncentive} disabled={busy}>
+          <CheckCircle2 size={14} />
+          Approve Incentive
+        </Button>
+      )
+    }
+    if (effectiveStatus === 'approved') {
+      return (
+        <Button type="button" onClick={openPaymentCapture} disabled={busy}>
+          <CreditCard size={14} />
+          Record Payment
+        </Button>
+      )
+    }
+    if (effectiveStatus === 'paid') {
+      return (
+        <Button type="button" onClick={markReconciled} disabled={busy}>
+          <CheckCircle2 size={14} />
+          Mark Reconciled
+        </Button>
+      )
+    }
+    return (
+      <Button type="button" variant="secondary" onClick={openIncentiveEditor} disabled={busy}>
+        <FileText size={14} />
+        Edit Incentive
+      </Button>
+    )
+  }
+
+  return (
+    <section className="space-y-5">
+      <header>
+        <h2 className="text-2xl font-semibold tracking-[-0.02em] text-textStrong">Reconciliation</h2>
+        <p className="mt-1 text-sm leading-6 text-textMuted">Track and manage agency incentives and referral earnings for this application.</p>
+      </header>
+
+      {!schemaAvailable ? (
+        <div className="rounded-[16px] border border-warning/25 bg-warningSoft px-4 py-3 text-sm text-warning">
+          Referral incentive tables are not available yet. Run the referral incentive migration before saving changes.
         </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-          {processSteps.map((step) => <BondConsultantProcessStep key={step.key} step={step} />)}
+      ) : null}
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.34fr)]">
+        <div className="space-y-5">
+          <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-textStrong">Incentive Overview</h3>
+                <p className="mt-1 text-sm leading-6 text-textMuted">
+                  {incentive ? 'Referral incentive linked to this bond application.' : 'No referral incentive has been configured for this application yet.'}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {incentive && canEdit ? (
+                  <Button type="button" variant="secondary" size="sm" onClick={openIncentiveEditor} disabled={busy}>
+                    <FileText size={14} />
+                    Edit Incentive
+                  </Button>
+                ) : null}
+                {renderPrimaryAction()}
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              {[
+                ['Incentive Type', toTitle(String(incentive?.incentiveType || draft.incentiveType || 'referral_incentive').replace(/_/g, ' ')), CircleDollarSign],
+                ['Referring Agency', incentive?.referringAgencyName || referringAgency?.name || 'Not assigned', Building2],
+                ['Referring Agent', incentive?.referringAgentName || referringAgent?.name || 'Not assigned', UserRound],
+                ['Incentive Amount', formatCurrencyValue(amountExclVat, 'Not captured'), CreditCard, 'Excl. VAT'],
+                ['Status', statusMeta.label, StatusIcon],
+                ['Qualifying Event', getBondReferralEventLabel(qualifyingEvent), Landmark],
+                ['Invoice Status', invoiceStatusMeta.label, InvoiceStatusIcon, getBondReferralEventLabel(invoiceTriggerEvent)],
+              ].map(([label, value, Icon, helper]) => (
+                <div key={label} className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3.5 py-3">
+                  <span className="flex items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+                    {createElement(Icon, { size: 14 })}
+                    {label}
+                  </span>
+                  <strong className="mt-2 block truncate text-sm text-textStrong">{value}</strong>
+                  {helper ? <span className="mt-0.5 block text-xs text-textMuted">{helper}</span> : null}
+                </div>
+              ))}
+            </div>
+
+            <ol className="mt-6 grid gap-4 md:grid-cols-5">
+              {BOND_REFERRAL_STATUS_ORDER.map((status, index) => {
+                const meta = getBondReferralStatusMeta(status)
+                const complete = index < statusIndex || effectiveStatus === 'reconciled'
+                const active = index === statusIndex && effectiveStatus !== 'reconciled'
+                return (
+                  <li key={status} className="relative">
+                    {index > 0 ? <span className={`absolute left-[-50%] top-5 hidden h-px w-full md:block ${complete || active ? 'bg-primary' : 'bg-borderDefault'}`} /> : null}
+                    <div className="relative z-10 flex flex-col items-start gap-2 md:items-center md:text-center">
+                      <span className={`inline-flex size-10 items-center justify-center rounded-full border ${
+                        complete ? 'border-success bg-success text-white' : active ? 'border-primary bg-primarySoft text-primary ring-4 ring-primary/10' : 'border-borderSoft bg-surfaceAlt text-textMuted'
+                      }`}>
+                        {complete ? <CheckCircle2 size={17} /> : createElement(meta.icon, { size: 17 })}
+                      </span>
+                      <strong className="text-xs text-textStrong">{meta.label}</strong>
+                      <span className="text-xs text-textMuted">{active ? (qualifyingMet ? 'Current' : 'Awaiting event') : complete ? 'Done' : 'Pending'}</span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+          </article>
+
+          <section className="grid gap-5 xl:grid-cols-2">
+            <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+              <h3 className="text-base font-semibold text-textStrong">Qualifying Criteria</h3>
+              <p className="mt-1 text-sm leading-6 text-textMuted">Criteria are read from the live bond application workflow.</p>
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-[520px] w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-borderSoft text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+                      <th className="py-3 pr-3">Criteria</th>
+                      <th className="px-3 py-3">Required</th>
+                      <th className="py-3 pl-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-borderSoft">
+                    {criteria.map((item) => (
+                      <tr key={item.key}>
+                        <td className="py-3 pr-3">
+                          <strong className="text-textStrong">{item.label}</strong>
+                          {item.date ? <span className="mt-0.5 block text-xs text-textMuted">{formatDate(item.date, '')}</span> : null}
+                        </td>
+                        <td className="px-3 py-3 text-textMuted">{item.required ? 'Yes' : 'No'}</td>
+                        <td className="py-3 pl-3">
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${item.complete ? 'border-success/25 bg-successSoft text-success' : item.required ? 'border-warning/25 bg-warningSoft text-warning' : 'border-borderSoft bg-surfaceAlt text-textMuted'}`}>
+                            {item.complete ? 'Completed' : item.required ? 'Pending' : 'Optional'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-textStrong">Payment Details</h3>
+                  <p className="mt-1 text-sm leading-6 text-textMuted">Banking and payout details for this incentive.</p>
+                </div>
+                {canEdit && incentive ? (
+                  <Button type="button" variant="ghost" size="sm" onClick={openIncentiveEditor}>Edit</Button>
+                ) : null}
+              </div>
+              <dl className="mt-4 grid gap-3 text-sm">
+                {[
+                  ['Payout Method', incentive?.payoutMethod || draft.payoutMethod || 'EFT'],
+                  ['Payable To', incentive?.payableTo || draft.payableTo || 'Not captured'],
+                  ['Account Holder', incentive?.accountHolder || draft.accountHolder || 'Not captured'],
+                  ['Bank', incentive?.bankName || draft.bankName || 'Not captured'],
+                  ['Account Number', maskBondReferralAccountNumber(incentive?.accountNumber || draft.accountNumber)],
+                  ['Branch Code', incentive?.branchCode || draft.branchCode || 'Not captured'],
+                  ['Reference', incentive?.paymentReference || draft.paymentReference || applicationReference],
+                ].map(([label, value]) => (
+                  <div key={label} className="grid grid-cols-[150px_minmax(0,1fr)] gap-4 border-b border-borderSoft pb-2 last:border-0 last:pb-0">
+                    <dt className="text-textMuted">{label}</dt>
+                    <dd className="truncate font-semibold text-textStrong">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </article>
+          </section>
+
+          <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+            <h3 className="text-base font-semibold text-textStrong">Related Transaction</h3>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              {[
+                ['Application', applicationReference, FileText],
+                ['Property', propertyLabel, Building2],
+                ['Purchase Price', purchasePrice, CircleDollarSign],
+                ['Grant Amount', formatCurrencyValue(grantAmount, 'Not captured'), Landmark],
+                ['Selected Bank', selectedBank || 'Not selected', CreditCard],
+              ].map(([label, value, Icon]) => (
+                <div key={label} className="min-w-0 rounded-[13px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                  <span className="flex items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{createElement(Icon, { size: 14 })}{label}</span>
+                  <strong className="mt-2 block truncate text-sm text-textStrong">{value || 'Not captured'}</strong>
+                </div>
+              ))}
+            </div>
+          </article>
         </div>
+
+        <aside className="space-y-4">
+          <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+            <h3 className="text-base font-semibold text-textStrong">Incentive Summary</h3>
+            <div className="mt-4 rounded-[14px] border border-warning/25 bg-[#fffaf0] px-4 py-3">
+              <strong className="block text-2xl text-textStrong">{formatCurrencyValue(amountExclVat, 'R0')}</strong>
+              <span className="mt-1 block text-xs font-semibold text-textMuted">Incentive Amount (Excl. VAT)</span>
+            </div>
+            <dl className="mt-4 space-y-2 text-sm">
+              {[
+                ['VAT', formatCurrencyValue(vatAmount, 'R0')],
+                ['Total Incl. VAT', formatCurrencyValue(amountInclVat, 'R0')],
+                ['Referring Agency', incentive?.referringAgencyName || referringAgency?.name || 'Not assigned'],
+                ['Referring Agent', incentive?.referringAgentName || referringAgent?.name || 'Not assigned'],
+                ['Qualifying Event', getBondReferralEventLabel(qualifyingEvent)],
+                ['Invoice Trigger', getBondReferralEventLabel(invoiceTriggerEvent)],
+                ['Invoice Status', invoiceStatusMeta.label],
+                ['Expected Payout', incentive?.expectedPayoutDate ? formatDate(incentive.expectedPayoutDate, '') : 'TBD'],
+                ['Status', statusMeta.label],
+              ].map(([label, value]) => (
+                <div key={label} className="flex items-center justify-between gap-3">
+                  <dt className="text-textMuted">{label}</dt>
+                  <dd className="truncate font-semibold text-textStrong">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <div className="mt-5 flex flex-col gap-2">
+              {renderPrimaryAction()}
+            </div>
+          </article>
+
+          <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-textStrong">Invoice Readiness</h3>
+                <p className="mt-1 text-sm leading-6 text-textMuted">Originator confirmation that this application can be invoiced.</p>
+              </div>
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${invoiceStatusMeta.tone}`}>
+                <InvoiceStatusIcon size={13} />
+                {invoiceStatusMeta.label}
+              </span>
+            </div>
+            <dl className="mt-4 space-y-2 text-sm">
+              {[
+                ['Trigger', getBondReferralEventLabel(invoiceTriggerEvent)],
+                ['Trigger State', invoiceTriggerMet ? 'Met' : 'Not detected'],
+                ['Ready At', incentive?.invoiceReadyAt ? formatDateTime(incentive.invoiceReadyAt, '') : 'Not marked'],
+                ['Reason', incentive?.invoiceReadyReason || (invoiceTriggerMet ? `${getBondReferralEventLabel(invoiceTriggerEvent)} is complete.` : 'Awaiting trigger or manual approval.')],
+                ['Invoice Reference', incentive?.invoiceReference || 'Not captured'],
+                ['Invoice Issued', incentive?.invoiceIssuedAt ? formatDate(incentive.invoiceIssuedAt, '') : 'Not issued'],
+              ].map(([label, value]) => (
+                <div key={label} className="grid grid-cols-[120px_minmax(0,1fr)] gap-3">
+                  <dt className="text-textMuted">{label}</dt>
+                  <dd className="truncate font-semibold text-textStrong">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            {incentive ? (
+              <div className="mt-4 flex flex-col gap-2">
+                {renderInvoiceAction()}
+              </div>
+            ) : (
+              <p className="mt-4 rounded-[12px] border border-dashed border-borderDefault bg-surfaceAlt px-3 py-3 text-sm text-textMuted">
+                Create the incentive before marking invoice readiness.
+              </p>
+            )}
+          </article>
+
+          <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+            <h3 className="text-base font-semibold text-textStrong">Reconciliation History</h3>
+            <div className="mt-4 space-y-4">
+              {history.slice(0, 8).map((item) => (
+                <div key={item.id} className="flex gap-3">
+                  <span className={`mt-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full border ${item.state === 'complete' ? 'border-success/25 bg-successSoft text-success' : 'border-warning/25 bg-warningSoft text-warning'}`}>
+                    {item.state === 'complete' ? <CheckCircle2 size={14} /> : <Clock3 size={14} />}
+                  </span>
+                  <div className="min-w-0 flex-1 border-b border-borderSoft pb-3 last:border-0 last:pb-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <strong className="text-sm text-textStrong">{item.title}</strong>
+                      <span className="shrink-0 text-xs text-textMuted">{formatDateTime(item.date, '')}</span>
+                    </div>
+                    {item.note ? <p className="mt-1 text-xs leading-5 text-textMuted">{item.note}</p> : null}
+                    <span className="mt-1 block text-xs text-textMuted">{item.actor}</span>
+                  </div>
+                </div>
+              ))}
+              {!history.length ? (
+                <p className="rounded-[13px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
+                  Incentive history will appear once the incentive is created or the qualifying event is reached.
+                </p>
+              ) : null}
+            </div>
+          </article>
+        </aside>
       </section>
+
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title={incentive ? 'Edit Incentive' : 'Create Incentive'} className="max-w-2xl">
+        <form onSubmit={submitIncentive} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium text-textStrong">
+              Incentive Type
+              <Field as="select" className="mt-1" value={draft.incentiveType} onChange={(event) => setDraft((previous) => ({ ...previous, incentiveType: event.target.value }))}>
+                <option value="referral_incentive">Referral Incentive</option>
+                <option value="agency_incentive">Agency Incentive</option>
+              </Field>
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Qualifying Event
+              <Field as="select" className="mt-1" value={draft.qualifyingEvent} onChange={(event) => setDraft((previous) => ({ ...previous, qualifyingEvent: event.target.value }))}>
+                {BOND_REFERRAL_INCENTIVE_EVENT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </Field>
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Invoice Trigger
+              <Field as="select" className="mt-1" value={draft.invoiceTriggerEvent} onChange={(event) => setDraft((previous) => ({ ...previous, invoiceTriggerEvent: event.target.value }))}>
+                {BOND_REFERRAL_INCENTIVE_EVENT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </Field>
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Referring Agency
+              <Field className="mt-1" value={agencyQuery} onChange={(event) => setAgencyQuery(event.target.value)} placeholder="Search existing agencies" />
+              <Field as="select" className="mt-2" value={draft.referringAgencyId || agencyOptions[0]?.id || ''} onChange={(event) => {
+                const selected = agencyOptions.find((item) => item.id === event.target.value) || filteredAgencyOptions[0] || agencyOptions[0]
+                setDraft((previous) => ({ ...previous, referringAgencyId: selected?.id || '', referringAgencyName: selected?.name || '' }))
+              }}>
+                {(filteredAgencyOptions.length ? filteredAgencyOptions : agencyOptions).map((option) => <option key={option.id || option.name} value={option.id}>{option.name}</option>)}
+              </Field>
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Referring Agent
+              <Field className="mt-1" value={agentQuery} onChange={(event) => setAgentQuery(event.target.value)} placeholder="Search existing agents" />
+              <Field as="select" className="mt-2" value={draft.referringAgentId || agentOptions[0]?.id || ''} onChange={(event) => {
+                const selected = agentOptions.find((item) => item.id === event.target.value) || filteredAgentOptions[0] || agentOptions[0]
+                setDraft((previous) => ({ ...previous, referringAgentId: selected?.id || '', referringAgentName: selected?.name || '', referringAgentEmail: selected?.email || previous.referringAgentEmail }))
+              }}>
+                {(filteredAgentOptions.length ? filteredAgentOptions : agentOptions).map((option) => <option key={option.id || option.name} value={option.id}>{option.name}</option>)}
+              </Field>
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Amount Excl. VAT
+              <Field type="number" min="0" step="0.01" className="mt-1" value={draft.amountExclVat} onChange={(event) => setDraft((previous) => ({ ...previous, amountExclVat: event.target.value }))} />
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Expected Payout Date
+              <Field type="date" className="mt-1" value={draft.expectedPayoutDate || ''} onChange={(event) => setDraft((previous) => ({ ...previous, expectedPayoutDate: event.target.value }))} />
+            </label>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium text-textStrong">
+              Payable To
+              <Field className="mt-1" value={draft.payableTo} onChange={(event) => setDraft((previous) => ({ ...previous, payableTo: event.target.value }))} />
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Account Holder
+              <Field className="mt-1" value={draft.accountHolder} onChange={(event) => setDraft((previous) => ({ ...previous, accountHolder: event.target.value }))} />
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Bank
+              <Field className="mt-1" value={draft.bankName} onChange={(event) => setDraft((previous) => ({ ...previous, bankName: event.target.value }))} />
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Account Number
+              <Field className="mt-1" value={draft.accountNumber} onChange={(event) => setDraft((previous) => ({ ...previous, accountNumber: event.target.value }))} />
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Branch Code
+              <Field className="mt-1" value={draft.branchCode} onChange={(event) => setDraft((previous) => ({ ...previous, branchCode: event.target.value }))} />
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Payment Reference
+              <Field className="mt-1" value={draft.paymentReference} onChange={(event) => setDraft((previous) => ({ ...previous, paymentReference: event.target.value }))} />
+            </label>
+          </div>
+          <label className="block text-sm font-medium text-textStrong">
+            Notes
+            <Field as="textarea" rows={3} className="mt-1" value={draft.notes} onChange={(event) => setDraft((previous) => ({ ...previous, notes: event.target.value }))} />
+          </label>
+          <div className="rounded-[13px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-sm">
+            <div className="flex items-center justify-between"><span className="text-textMuted">VAT ({vatRate}%)</span><strong className="text-textStrong">{formatCurrencyValue(Number(draft.amountExclVat || 0) * (vatRate / 100), 'R0')}</strong></div>
+            <div className="mt-1 flex items-center justify-between"><span className="text-textMuted">Total Incl. VAT</span><strong className="text-textStrong">{formatCurrencyValue(Number(draft.amountExclVat || 0) * (1 + vatRate / 100), 'R0')}</strong></div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={busy}>{busy ? 'Saving...' : 'Save Incentive'}</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={paymentOpen} onClose={() => setPaymentOpen(false)} title="Record Payment" className="max-w-lg">
+        <form onSubmit={recordPayment} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium text-textStrong">
+              Payment Date
+              <Field type="date" className="mt-1" value={paymentDraft.paidAt} onChange={(event) => setPaymentDraft((previous) => ({ ...previous, paidAt: event.target.value }))} required />
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Amount Paid
+              <Field type="number" min="0" step="0.01" className="mt-1" value={paymentDraft.paidAmount} onChange={(event) => setPaymentDraft((previous) => ({ ...previous, paidAmount: event.target.value }))} required />
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Method
+              <Field as="select" className="mt-1" value={paymentDraft.payoutMethod} onChange={(event) => setPaymentDraft((previous) => ({ ...previous, payoutMethod: event.target.value }))}>
+                <option value="EFT">EFT</option>
+                <option value="Manual EFT">Manual EFT</option>
+                <option value="Internal Transfer">Internal Transfer</option>
+              </Field>
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Reference
+              <Field className="mt-1" value={paymentDraft.paymentReference} onChange={(event) => setPaymentDraft((previous) => ({ ...previous, paymentReference: event.target.value }))} />
+            </label>
+          </div>
+          <label className="block text-sm font-medium text-textStrong">
+            Payment Note
+            <Field as="textarea" rows={3} className="mt-1" value={paymentDraft.notes} onChange={(event) => setPaymentDraft((previous) => ({ ...previous, notes: event.target.value }))} />
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setPaymentOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={busy}>{busy ? 'Recording...' : 'Record Payment'}</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={invoiceOpen} onClose={() => setInvoiceOpen(false)} title="Record Invoice Issued" className="max-w-lg">
+        <form onSubmit={recordInvoice} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium text-textStrong">
+              Invoice Date
+              <Field type="date" className="mt-1" value={invoiceDraft.invoiceIssuedAt} onChange={(event) => setInvoiceDraft((previous) => ({ ...previous, invoiceIssuedAt: event.target.value }))} required />
+            </label>
+            <label className="text-sm font-medium text-textStrong">
+              Invoice Reference
+              <Field className="mt-1" value={invoiceDraft.invoiceReference} onChange={(event) => setInvoiceDraft((previous) => ({ ...previous, invoiceReference: event.target.value }))} placeholder={applicationReference} required />
+            </label>
+          </div>
+          <label className="block text-sm font-medium text-textStrong">
+            Invoice Note
+            <Field as="textarea" rows={3} className="mt-1" value={invoiceDraft.invoiceNotes} onChange={(event) => setInvoiceDraft((previous) => ({ ...previous, invoiceNotes: event.target.value }))} placeholder="Optional invoice note" />
+          </label>
+          <div className="rounded-[13px] border border-success/20 bg-successSoft px-4 py-3 text-sm text-success">
+            This records the invoice against the application reconciliation record. Payment and final reconciliation remain separate steps.
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setInvoiceOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={busy}>{busy ? 'Recording...' : 'Record Invoice'}</Button>
+          </div>
+        </form>
+      </Modal>
     </section>
   )
 }
@@ -9813,10 +12375,12 @@ function AgentTransactionOverview({
   documentRows = [],
   partyRows = [],
   financialRows = [],
+  buyerProcessHandoff = null,
   onOpenDocuments,
   onOpenFinance,
   onOpenTimeline,
   onOpenStakeholders,
+  onOpenBuyer,
   onSendBuyerReminder,
   onSendSellerReminder,
 }) {
@@ -9910,6 +12474,13 @@ function AgentTransactionOverview({
           </Button>
         </div>
       </section>
+
+      <BuyerProcessHandoffPanel
+        handoff={buyerProcessHandoff}
+        onOpenBuyer={onOpenBuyer}
+        onOpenDocuments={onOpenDocuments}
+        onOpenRoleplayers={onOpenStakeholders}
+      />
 
       <section className="grid gap-5 xl:grid-cols-3">
         <article className="rounded-[20px] border border-borderDefault bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
@@ -11465,6 +14036,12 @@ function AttorneyTransactionDetail() {
   const [notificationResendFeedback, setNotificationResendFeedback] = useState('')
   const [notificationResendError, setNotificationResendError] = useState('')
   const [bondHybridFinanceActionLoading, setBondHybridFinanceActionLoading] = useState('')
+  const [bondReferralIncentiveData, setBondReferralIncentiveData] = useState({
+    incentive: null,
+    events: [],
+    schemaAvailable: true,
+  })
+  const [bondReferralIncentiveLoading, setBondReferralIncentiveLoading] = useState(false)
   const [bondApplicationPdfBusy, setBondApplicationPdfBusy] = useState(false)
   const [activityFilter, setActivityFilter] = useState('all')
   const processedBondConsultantDeepLinkRef = useRef('')
@@ -11673,6 +14250,34 @@ function AttorneyTransactionDetail() {
   const development = data?.development || null
   const unit = data?.unit || null
 
+  useEffect(() => {
+    let active = true
+    if (workspaceRole !== 'bond_originator' || !transaction?.id) {
+      setBondReferralIncentiveData({ incentive: null, events: [], schemaAvailable: true })
+      setBondReferralIncentiveLoading(false)
+      return () => {
+        active = false
+      }
+    }
+
+    setBondReferralIncentiveLoading(true)
+    fetchTransactionReferralIncentive(transaction.id)
+      .then((result) => {
+        if (active) setBondReferralIncentiveData(result)
+      })
+      .catch((incentiveError) => {
+        console.warn('[bond-reconciliation] referral incentive load deferred', incentiveError)
+        if (active) setBondReferralIncentiveData({ incentive: null, events: [], schemaAvailable: false })
+      })
+      .finally(() => {
+        if (active) setBondReferralIncentiveLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [transaction?.id, transaction?.updated_at, transaction?.updatedAt, workspaceRole])
+
   const transactionLiveState = useTransactionLiveRefresh({
     transactionId: transaction?.id || transactionId,
     enabled: workspaceRole !== 'attorney' || matterAccessAllowed,
@@ -11858,7 +14463,8 @@ function AttorneyTransactionDetail() {
   const canViewPartnerInvitations = canManageTransactionRoleplayers || canCreateLegalPartnerInvites
   const requestedWorkspaceMenu = useMemo(() => {
     if (activeLegalWorkflowDetailKey) return 'transfer'
-    if (workspaceRole === 'bond_originator' && ['finance', 'bond', 'banks_quotes', 'tasks', 'stakeholders'].includes(workspaceMenu)) return 'workflow'
+    if (workspaceRole === 'bond_originator' && ['finance', 'bond', 'banks_quotes', 'workflow'].includes(workspaceMenu)) return 'quotes_grant'
+    if (workspaceRole === 'bond_originator' && ['tasks', 'stakeholders'].includes(workspaceMenu)) return 'overview'
     if (workspaceMenu === 'financials' || workspaceMenu === 'bond') return 'finance'
     if (workspaceMenu === 'cancellation') return 'transfer'
     if (isAgentTransactionView && (workspaceMenu === 'parties' || workspaceMenu === 'tasks' || workspaceMenu === 'buyer' || workspaceMenu === 'seller')) {
@@ -11871,7 +14477,7 @@ function AttorneyTransactionDetail() {
     : isAgentTransactionView
       ? AGENT_WORKSPACE_TABS
       : ATTORNEY_WORKSPACE_TABS
-  const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu)
+  const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu) || (workspaceRole === 'bond_originator' && BOND_ORIGINATOR_HIDDEN_WORKSPACE_TABS.has(requestedWorkspaceMenu))
     ? requestedWorkspaceMenu
     : workspaceRole === 'attorney'
       ? 'today'
@@ -11883,10 +14489,11 @@ function AttorneyTransactionDetail() {
     const requestedTab = params.get(BOND_CONSULTANT_TAB_PARAM) || ''
     if (!requestedAction && !requestedTab) return null
     const actionState = getBondConsultantActionDeepLinkState(requestedAction)
-    const tab = normalizeDetailKey(requestedTab || actionState.targetWorkspaceTab || 'overview')
+    const rawTab = normalizeDetailKey(requestedTab || actionState.targetWorkspaceTab || 'overview')
+    const tab = ['finance', 'bond', 'banks_quotes', 'workflow'].includes(rawTab) ? 'quotes_grant' : rawTab
     return {
       ...actionState,
-      targetWorkspaceTab: BOND_ORIGINATOR_WORKSPACE_TABS.some((item) => item.id === tab) ? tab : actionState.targetWorkspaceTab || 'overview',
+      targetWorkspaceTab: BOND_ORIGINATOR_WORKSPACE_TABS.some((item) => item.id === tab) ? tab : 'overview',
       requestKey: `${transactionId || ''}:${requestedTab}:${requestedAction}:${location.search || ''}`,
     }
   }, [location.search, transactionId, workspaceRole])
@@ -12319,8 +14926,11 @@ function AttorneyTransactionDetail() {
     if (tab.id === 'application') {
       return { ...tab, meta: onboardingCompleted ? 'Onboarding complete' : 'Review' }
     }
-    if (tab.id === 'workflow') {
+    if (tab.id === 'quotes_grant') {
       return { ...tab, meta: `${transactionFinanceWorkflow?.applications?.length || 0} banks` }
+    }
+    if (tab.id === 'reconciliation') {
+      return { ...tab, meta: 'Referral' }
     }
     if (tab.id === 'finance') {
       return { ...tab, meta: financeTypeLabel }
@@ -12443,6 +15053,27 @@ function AttorneyTransactionDetail() {
   const assignedBondOriginator = useMemo(
     () => activeStakeholders.find((item) => item?.roleType === 'bond_originator') || null,
     [activeStakeholders],
+  )
+  const buyerProcessHandoff = useMemo(
+    () =>
+      buildBuyerProcessHandoffModel({
+        transaction,
+        onboardingFormData: data?.onboardingFormData,
+        documents,
+        buyerProcessLeadHandoff: data?.buyerProcessLeadHandoff,
+        transferAttorney,
+        assignedBondOriginator,
+        onboardingCompleted,
+      }),
+    [
+      assignedBondOriginator,
+      data?.buyerProcessLeadHandoff,
+      data?.onboardingFormData,
+      documents,
+      onboardingCompleted,
+      transaction,
+      transferAttorney,
+    ],
   )
   const savedTransferRoleplayer = useMemo(
     () => transactionRolePlayers.find((item) => item?.roleType === 'transfer_attorney' || item?.role_type === 'transfer_attorney') || null,
@@ -13302,6 +15933,55 @@ function AttorneyTransactionDetail() {
     }
   }
 
+  async function handleSaveBondReferralIncentive(payload = {}) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for referral incentives.')
+      return null
+    }
+
+    try {
+      setBondHybridFinanceActionLoading('referral_incentive_save')
+      setError('')
+      const result = await saveTransactionReferralIncentive(
+        transaction.id,
+        {
+          ...payload,
+          organisationId: workspaceOrganisationId || transaction.organisation_id,
+        },
+        { actorRole: workspaceRole },
+      )
+      setBondReferralIncentiveData(result)
+      await loadData({ background: true })
+      return result
+    } catch (incentiveError) {
+      setError(incentiveError?.message || 'Unable to save the referral incentive.')
+      return null
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
+  async function handleTransitionBondReferralIncentive(payload = {}) {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for referral incentive updates.')
+      return null
+    }
+
+    try {
+      setBondHybridFinanceActionLoading(`referral_incentive_${payload.status || 'transition'}`)
+      setError('')
+      const result = await transitionTransactionReferralIncentive(transaction.id, payload, { actorRole: workspaceRole })
+      setBondReferralIncentiveData(result)
+      await loadData({ background: true })
+      return result
+    } catch (incentiveError) {
+      setError(incentiveError?.message || 'Unable to update the referral incentive.')
+      return null
+    } finally {
+      setBondHybridFinanceActionLoading('')
+    }
+  }
+
   async function handleMarkBondHybridInstructionSent(payload = {}) {
     if (!transaction?.id) {
       setError('Transaction data is not available for instruction updates.')
@@ -13912,6 +16592,7 @@ function AttorneyTransactionDetail() {
         unit,
         onboarding: data?.onboarding || {},
         onboardingFormData: data?.onboardingFormData || {},
+        bondApplication: data?.bondApplication || data?.normalizedBondApplication || null,
         documentRows: allDocumentLibraryRows,
         requiredDocumentRows,
         documentReadiness,
@@ -13931,6 +16612,8 @@ function AttorneyTransactionDetail() {
       buyer,
       data?.onboarding,
       data?.onboardingFormData,
+      data?.bondApplication,
+      data?.normalizedBondApplication,
       development,
       displayedLifecycleLabel,
       documentReadiness,
@@ -13941,7 +16624,9 @@ function AttorneyTransactionDetail() {
     ],
   )
   const bondApplicationOutstandingCount = bondApplicationViewModel.readinessItems.filter((item) => !item.complete).length
-  const bondApplicationUploadedCount = bondApplicationViewModel.documents.reduce((total, item) => total + (item.uploadedCount || 0), 0)
+  const bondApplicationDetailModel = useMemo(() => {
+    return bondApplicationViewModel.primaryApplicantDetail || {}
+  }, [bondApplicationViewModel])
   const bondConsultantWorkspaceAction = useMemo(
     () =>
       resolveBondConsultantAction({
@@ -13981,33 +16666,6 @@ function AttorneyTransactionDetail() {
       transferStageLabel,
     ],
   )
-  const handleBondConsultantPrimaryAction = useCallback((action = null) => {
-    const resolvedAction = action || bondConsultantWorkspaceAction
-    const targetAction = resolvedAction?.targetAction || resolvedAction?.key || ''
-    const targetTab = normalizeDetailKey(resolvedAction?.targetWorkspaceTab || '')
-
-    if (targetAction === 'request-docs') {
-      handleQuickRequestDocuments()
-      return
-    }
-    if (targetTab === 'application') {
-      setWorkspaceMenu('application')
-      return
-    }
-    if (targetTab === 'documents') {
-      setWorkspaceMenu('documents')
-      return
-    }
-    if (targetTab === 'workflow') {
-      setWorkspaceMenu('workflow')
-      return
-    }
-    if (targetTab === 'activity') {
-      setWorkspaceMenu('activity')
-      return
-    }
-    setWorkspaceMenu('overview')
-  }, [bondConsultantWorkspaceAction, handleQuickRequestDocuments])
   const displayedMatterHealthLabel = usingTransactionRollupOverview
     ? getRollupHealthLabel(transactionRollup?.parentStatus)
     : matterHealthLabel
@@ -14810,6 +17468,102 @@ function AttorneyTransactionDetail() {
       visible: requiresCancellationAttorneyCard,
     },
   ].filter((item) => item.visible !== false)
+  const bondApplicationTypeLabel = financeTypeLabel && financeTypeLabel !== 'Not captured'
+    ? `${financeTypeLabel} Application`
+    : 'Bond Application'
+  const bondHeaderReferringAgency = {
+    id: firstPresent(
+      assignedAgent?.organisationId,
+      assignedAgent?.organisation_id,
+      transaction?.referring_agency_id,
+      transaction?.agency_id,
+      development?.organisation_id,
+    ),
+    name: firstPresent(
+      assignedAgent?.organisationName,
+      assignedAgent?.firmName,
+      transaction?.referring_agency_name,
+      transaction?.agency_name,
+      development?.name,
+      'Referring agency',
+    ),
+    logoUrl: firstPresent(
+      getParticipantMediaUrl(assignedAgent, 'logo'),
+      transaction?.referring_agency_logo_url,
+      transaction?.agency_logo_url,
+      development?.logo_url,
+      development?.brand_logo_url,
+    ),
+  }
+  const bondHeaderReferringAgent = {
+    id: firstPresent(assignedAgent?.profileId, assignedAgent?.profile_id, assignedAgent?.participantId, assignedAgent?.participant_id, transaction?.assigned_agent_id),
+    name: firstPresent(roleplayerForm.agentName, assignedAgent?.participantName, transaction?.assigned_agent, assignedAgent?.participantEmail, 'Agent not assigned'),
+    role: 'Agent',
+    email: firstPresent(roleplayerForm.agentEmail, assignedAgent?.participantEmail, transaction?.assigned_agent_email),
+    phone: firstPresent(roleplayerForm.agentPhone, assignedAgent?.participantPhone, transaction?.assigned_agent_phone),
+    avatarUrl: getParticipantMediaUrl(assignedAgent),
+  }
+  const bondHeaderConsultant = {
+    name: firstPresent(
+      assignedBondOriginator?.participantName,
+      transaction?.assigned_bond_originator_name,
+      transaction?.bond_originator,
+      assignedBondOriginator?.participantEmail,
+      'Consultant not assigned',
+    ),
+    organisationName: firstPresent(assignedBondOriginator?.organisationName, workspace?.name, transaction?.bond_originator_company, transaction?.bond_originator, 'Bond organisation'),
+    phone: firstPresent(assignedBondOriginator?.participantPhone, transaction?.assigned_bond_originator_phone),
+    avatarUrl: getParticipantMediaUrl(assignedBondOriginator),
+  }
+  const bondOverviewTeamMembers = transactionContactRows
+    .filter((row) => ['buyer', 'agent', 'bond_originator', 'transfer_attorney', 'bond_attorney'].includes(row.key))
+    .map((row) => {
+      if (row.key === 'agent') {
+        return {
+          key: 'referring_agent',
+          role: 'Referring Agent',
+          name: row.contact,
+          organisation: row.company,
+          status: row.status,
+          avatarUrl: getParticipantMediaUrl(assignedAgent),
+          logoUrl: '',
+        }
+      }
+      if (row.key === 'bond_originator') {
+        return {
+          key: 'bond_consultant',
+          role: 'Bond Consultant',
+          name: row.contact,
+          organisation: row.company,
+          status: row.status,
+          avatarUrl: getParticipantMediaUrl(assignedBondOriginator),
+          logoUrl: '',
+        }
+      }
+      if (row.key === 'transfer_attorney') {
+        return {
+          ...row,
+          name: row.contact,
+          organisation: row.company,
+          avatarUrl: getParticipantMediaUrl(transferAttorney),
+          logoUrl: getParticipantMediaUrl(transferAttorney, 'logo'),
+        }
+      }
+      if (row.key === 'bond_attorney') {
+        return {
+          ...row,
+          name: row.contact,
+          organisation: row.company,
+          avatarUrl: getParticipantMediaUrl(bondAttorney),
+          logoUrl: getParticipantMediaUrl(bondAttorney, 'logo'),
+        }
+      }
+      return {
+        ...row,
+        name: row.contact,
+        organisation: row.company,
+      }
+    })
   const agentOverviewOutstandingItems = useMemo(
     () =>
       buildAgentOutstandingItems({
@@ -16349,21 +19103,28 @@ function AttorneyTransactionDetail() {
         </div>
       ) : (
         <div className="space-y-4">
-          <Link
-            to={workspaceBackPath}
-            className="no-print inline-flex w-fit items-center gap-2 rounded-[12px] border border-borderDefault bg-white px-3.5 py-2 text-sm font-semibold text-textBody shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-borderStrong hover:bg-surfaceAlt hover:text-textStrong"
-          >
-            <ChevronRight size={15} className="rotate-180" />
-            {workspaceBackLabel}
-          </Link>
+          {workspaceRole !== 'bond_originator' ? (
+            <Link
+              to={workspaceBackPath}
+              className="no-print inline-flex w-fit items-center gap-2 rounded-[12px] border border-borderDefault bg-white px-3.5 py-2 text-sm font-semibold text-textBody shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:border-borderStrong hover:bg-surfaceAlt hover:text-textStrong"
+            >
+              <ChevronRight size={15} className="rotate-180" />
+              {workspaceBackLabel}
+            </Link>
+          ) : null}
           {workspaceRole === 'bond_originator' ? (
             <BondApplicationHeader
+              backPath={workspaceBackPath}
+              backLabel={workspaceBackLabel}
               reference={workspaceReference}
               buyerName={buyerDisplayName}
               propertyLabel={matterHeadline}
               purchasePrice={formatCurrencyValue(transaction?.purchase_price || transaction?.sales_price, '')}
-              ageLabel={daysBetween(transaction?.created_at)}
-              consultant={transaction?.bond_originator || transaction?.assigned_bond_originator_name || getParticipantDisplayName(assignedBondOriginator) || 'Unassigned'}
+              applicationType={bondApplicationTypeLabel}
+              receivedAt={transaction?.created_at}
+              referringAgency={bondHeaderReferringAgency}
+              referringAgent={bondHeaderReferringAgent}
+              consultantProfile={bondHeaderConsultant}
               statusLabel={hydratingDetail ? 'Refreshing' : displayedLifecycleLabel}
             />
           ) : (
@@ -16396,6 +19157,7 @@ function AttorneyTransactionDetail() {
             onChange={openWorkspaceMenu}
             premium={isAgentTransactionView}
             spread={workspaceRole === 'bond_originator'}
+            minimal={workspaceRole === 'bond_originator'}
           />
           {onboardingActionMessage ? (
             <p className="rounded-[14px] border border-borderDefault bg-surfaceAlt px-4 py-2.5 text-helper text-textMuted">
@@ -16410,36 +19172,47 @@ function AttorneyTransactionDetail() {
           <BondConsultantOverviewWorkspace
             consultantAction={bondConsultantWorkspaceAction}
             applicationViewModel={bondApplicationViewModel}
+            applicationType={bondApplicationTypeLabel}
             documentHealthSummary={documentHealthSummary}
+            missingDocuments={documentReadiness.missingDocuments || []}
             submissionRows={bondBankCommandRows}
             quoteRows={sortedBondQuoteRows}
             acceptedQuote={acceptedBondQuote}
+            teamMembers={bondOverviewTeamMembers}
             activityFeed={overviewConversationEntries}
             loadingAction={bondHybridFinanceActionLoading}
-            onPrimaryAction={handleBondConsultantPrimaryAction}
-            onOpenApplication={() => openWorkspaceMenu('application')}
             onOpenDocuments={() => openWorkspaceMenu('documents')}
-            onOpenWorkflow={() => openWorkspaceMenu('workflow')}
+            onOpenQuotesGrant={() => openWorkspaceMenu('quotes_grant')}
             onOpenActivity={() => openWorkspaceMenu('activity')}
+            onOpenContacts={() => openWorkspaceMenu('activity')}
           />
         ) : null}
 
         {workspaceRole === 'attorney' && ['today', 'overview'].includes(activeWorkspaceMenu) ? (
-          <ArchlineOverviewWorkspace
-            lifecycleProgress={displayedLifecycleProgress}
-            overviewNextActions={overviewNextActions}
-            contactRows={transactionContactRows}
-            requiredDocuments={requiredDocumentRows}
-            documentHealthSummary={documentHealthSummary}
-            activityFeed={overviewConversationEntries}
-            keyDates={archlineKeyDates}
-            financialRows={archlineFinancialRows}
-            taskItems={archlineTaskQueueItems}
-            workflows={legalWorkflowModels}
-            onOpenWorkspace={openWorkspaceMenu}
-            onAddNote={handleQuickAddWorkflowNote}
-            onRunTask={handleArchlineTaskCommand}
-          />
+          <>
+            <BuyerProcessHandoffPanel
+              handoff={buyerProcessHandoff}
+              compact
+              onOpenBuyer={() => openWorkspaceMenu('buyer')}
+              onOpenDocuments={() => openWorkspaceMenu('documents')}
+              onOpenRoleplayers={() => openWorkspaceMenu('stakeholders')}
+            />
+            <ArchlineOverviewWorkspace
+              lifecycleProgress={displayedLifecycleProgress}
+              overviewNextActions={overviewNextActions}
+              contactRows={transactionContactRows}
+              requiredDocuments={requiredDocumentRows}
+              documentHealthSummary={documentHealthSummary}
+              activityFeed={overviewConversationEntries}
+              keyDates={archlineKeyDates}
+              financialRows={archlineFinancialRows}
+              taskItems={archlineTaskQueueItems}
+              workflows={legalWorkflowModels}
+              onOpenWorkspace={openWorkspaceMenu}
+              onAddNote={handleQuickAddWorkflowNote}
+              onRunTask={handleArchlineTaskCommand}
+            />
+          </>
         ) : null}
 
         {isAgentTransactionView && activeWorkspaceMenu === 'transfer' ? (
@@ -16698,12 +19471,21 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {(workspaceRole === 'attorney' || isAgentTransactionView) && activeWorkspaceMenu === 'stakeholders' ? (
-          <ArchlineRolePlayersWorkspace
-            contacts={transactionContactRows}
-            teamCards={transactionTeamCards}
-            onOpenAssignments={openRoleplayerConfirmation}
-            onOpenActivity={openRoleplayerActivityFeed}
-          />
+          <section className="space-y-5">
+            <BuyerProcessHandoffPanel
+              handoff={buyerProcessHandoff}
+              compact
+              onOpenBuyer={() => openWorkspaceMenu('buyer')}
+              onOpenDocuments={() => openWorkspaceMenu('documents')}
+              onOpenRoleplayers={() => openWorkspaceMenu('stakeholders')}
+            />
+            <ArchlineRolePlayersWorkspace
+              contacts={transactionContactRows}
+              teamCards={transactionTeamCards}
+              onOpenAssignments={openRoleplayerConfirmation}
+              onOpenActivity={openRoleplayerActivityFeed}
+            />
+          </section>
         ) : null}
 
         {!isAgentTransactionView && workspaceRole !== 'attorney' && workspaceRole !== 'bond_originator' && activeWorkspaceMenu === 'today' ? (
@@ -16729,10 +19511,12 @@ function AttorneyTransactionDetail() {
                       documentRows={agentOverviewDocumentRows}
                       partyRows={agentOverviewPartyRows}
                       financialRows={agentOverviewFinancialRows}
+                      buyerProcessHandoff={buyerProcessHandoff}
                       onOpenDocuments={() => openWorkspaceMenu('documents')}
                       onOpenFinance={() => openWorkspaceMenu('finance')}
                       onOpenTimeline={() => openWorkspaceMenu('activity')}
                       onOpenStakeholders={() => openWorkspaceMenu('stakeholders')}
+                      onOpenBuyer={() => openWorkspaceMenu('buyer')}
                       onSendBuyerReminder={() => void handleAgentHeaderOnboardingAction()}
                       onSendSellerReminder={() => void handleSendSellerPortalLink()}
                     />
@@ -16942,6 +19726,14 @@ function AttorneyTransactionDetail() {
               </div>
             </section>
 
+            <BuyerProcessHandoffPanel
+              handoff={buyerProcessHandoff}
+              compact
+              onOpenBuyer={() => openWorkspaceMenu('buyer')}
+              onOpenDocuments={() => openWorkspaceMenu('documents')}
+              onOpenRoleplayers={() => openWorkspaceMenu('stakeholders')}
+            />
+
             <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
               <h3 className="text-section-title font-semibold text-textStrong">Buyer Documents</h3>
               <p className="mt-1 text-secondary text-textMuted">Buyer-facing files remain separated from seller and internal legal documents.</p>
@@ -17053,6 +19845,23 @@ function AttorneyTransactionDetail() {
 
         {activeWorkspaceMenu === 'documents' && workspaceRole !== 'attorney' && !isAgentTransactionView ? (
           <section className="space-y-5">
+            {workspaceRole === 'bond_originator' ? (
+              <BondDocumentCentre
+                requiredRows={documentHealthSummary.requiredDocuments.length ? documentHealthSummary.requiredDocuments : requiredDocumentRows}
+                libraryRows={allDocumentLibraryRows.length ? allDocumentLibraryRows : documentLibraryRows}
+                documentHealthSummary={documentHealthSummary}
+                activeFilter={activeDocumentLibraryCategory}
+                onFilterChange={setActiveDocumentLibraryCategory}
+                onUpload={() => openDocumentUploadModal()}
+                onUploadRequirement={(row) => openDocumentUploadModal({ requirement: row.requirement || row.requiredDocument })}
+                onOpenDocument={(row) => handleOpenFinanceDocument({ ...(row.linkedDocument || row.raw || {}), url: row.fileUrl })}
+                onReplaceDocument={(row) => handleReplaceDocument(row.linkedDocument || row.raw || {}, row.requirement || row.requiredDocument)}
+                onVerifyDocument={(row) => openReviewAction('approve', row.linkedDocument || row.raw || {}, row.requirement || row.requiredDocument)}
+                onRejectDocument={(row) => openReviewAction('reject', row.linkedDocument || row.raw || {}, row.requirement || row.requiredDocument)}
+                onRequestDocuments={handleQuickRequestDocuments}
+              />
+            ) : (
+              <>
             <header className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -17521,6 +20330,8 @@ function AttorneyTransactionDetail() {
 
               </>
             ) : null}
+              </>
+            )}
 
             <Modal
               open={requestDocumentModalOpen}
@@ -17778,416 +20589,317 @@ function AttorneyTransactionDetail() {
 
         {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'application' ? (
           <section className="space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-section-title font-semibold text-textStrong">Application Review Workspace</h3>
-                <p className="mt-1 text-secondary text-textMuted">
-                  Buyer onboarding remains the source of truth. This workspace reviews the live application data without recapturing it.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="secondary" size="sm" onClick={handleDownloadBondApplicationForm} disabled={bondApplicationPdfBusy}>
-                  <Download size={14} />
-                  {bondApplicationPdfBusy ? 'Preparing PDF...' : 'Download Form'}
-                </Button>
-                <Button type="button" variant="secondary" size="sm" onClick={() => void handleShareBondApplication()}>
-                  <Send size={14} />
-                  Share Application
-                </Button>
-              </div>
-            </div>
-
-            <section className="grid gap-4 md:grid-cols-3">
-              {[
-                {
-                  label: 'Application Completion',
-                  value: `${bondApplicationViewModel.application.completionPercent}%`,
-                  helper: bondApplicationOutstandingCount ? 'Nearly there! Just a few things left.' : 'Application is complete.',
-                  icon: CheckCircle2,
-                  tone: bondApplicationViewModel.application.completionPercent >= 85 ? 'emerald' : bondApplicationViewModel.application.completionPercent >= 65 ? 'amber' : 'slate',
-                },
-                {
-                  label: bondApplicationViewModel.application.onboardingStatus,
-                  value: 'Onboarding Status',
-                  helper: bondApplicationOutstandingCount ? 'Complete outstanding items to proceed.' : 'Ready for the next workflow step.',
-                  icon: Clock3,
-                  tone: bondApplicationOutstandingCount ? 'amber' : 'emerald',
-                },
-                {
-                  label: bondApplicationViewModel.risk.level,
-                  value: 'Risk Status',
-                  helper: bondApplicationViewModel.risk.factors[0] || 'Risk view pending.',
-                  icon: AlertTriangle,
-                  tone: bondApplicationViewModel.risk.tone === 'success' ? 'emerald' : bondApplicationViewModel.risk.tone === 'danger' ? 'red' : bondApplicationViewModel.risk.tone === 'warning' ? 'amber' : 'slate',
-                },
-              ].map((item) => {
-                const Icon = item.icon
-                const toneClass = item.tone === 'emerald'
-                  ? 'border-emerald-200 bg-emerald-50/70 text-emerald-700'
-                  : item.tone === 'amber'
-                    ? 'border-amber-200 bg-amber-50/75 text-amber-700'
-                    : item.tone === 'red'
-                      ? 'border-red-200 bg-red-50/75 text-red-700'
-                      : 'border-borderDefault bg-white text-textMuted'
-                return (
-                  <article key={`${item.label}-${item.value}`} className={`rounded-[18px] border p-4 shadow-[0_16px_45px_rgba(15,23,42,0.06)] ${toneClass}`}>
-                    <div className="flex items-center gap-3">
-                      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-current/15 bg-white/70">
-                        <Icon size={20} />
-                      </span>
-                      <div className="min-w-0">
-                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em]">{item.value}</span>
-                        <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{item.label}</strong>
-                      </div>
-                    </div>
-                    <p className="mt-3 text-sm leading-5 text-textMuted">{item.helper}</p>
-                  </article>
-                )
-              })}
-            </section>
-
-            <section className="rounded-[22px] border border-borderDefault bg-white p-5 shadow-surface">
-              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(260px,0.7fr)_minmax(260px,0.95fr)]">
-                <div className="flex min-w-0 items-center gap-4">
-                  <span className="relative grid h-24 w-24 shrink-0 place-items-center rounded-full bg-slate-100 text-3xl font-semibold text-textStrong">
-                    {bondApplicationViewModel.applicant.initials}
-                    <span className="absolute -bottom-1 -right-1 grid h-8 w-8 place-items-center rounded-full border-4 border-white bg-emerald-600 text-white">
-                      <UserCircle size={16} />
+            <section className="rounded-[18px] border border-borderDefault bg-white px-5 py-4 shadow-surface">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-center">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span
+                      className="grid size-12 shrink-0 place-items-center rounded-full"
+                      style={{ background: `conic-gradient(#0f8f68 ${bondApplicationViewModel.application.completionPercent}%, #edf2f7 0)` }}
+                    >
+                      <span className="grid size-9 place-items-center rounded-full bg-white" />
                     </span>
-                  </span>
-                  <div className="min-w-0">
-                    <h4 className="truncate text-[1.65rem] font-semibold leading-tight tracking-[-0.035em] text-textStrong">
-                      {bondApplicationViewModel.applicant.fullName}
-                    </h4>
-                    <p className="mt-1 text-lg font-semibold text-success">{bondApplicationViewModel.financials.purchasePrice.display} Purchase</p>
-                    <p className="mt-1 truncate text-sm font-semibold text-textMuted">{bondApplicationViewModel.property.label}</p>
-                    <span className="mt-3 inline-flex max-w-full items-center gap-2 rounded-full border border-borderSoft bg-white px-3 py-1.5 text-xs font-semibold text-textBody">
-                      Application ID: <span className="truncate text-textStrong">{bondApplicationViewModel.application.id}</span>
-                      <Copy size={13} className="text-textMuted" />
+                    <span className="min-w-0">
+                      <strong className="block text-lg font-semibold text-textStrong">{bondApplicationViewModel.application.completionPercent}%</strong>
+                      <span className="block text-xs text-textMuted">Completion</span>
+                    </span>
+                  </div>
+                  <div className="flex min-w-0 items-center gap-3 border-borderSoft md:border-l md:pl-6">
+                    <Clock3 size={22} className={bondApplicationOutstandingCount ? 'text-warning' : 'text-success'} />
+                    <span className="min-w-0">
+                      <strong className={`block text-sm font-semibold ${bondApplicationOutstandingCount ? 'text-warning' : 'text-success'}`}>{bondApplicationViewModel.application.readinessLabel}</strong>
+                      <span className="block truncate text-xs text-textMuted">
+                        {bondApplicationOutstandingCount ? `${bondApplicationOutstandingCount} item${bondApplicationOutstandingCount === 1 ? '' : 's'} outstanding` : 'Ready for bank submission'}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="flex min-w-0 items-center gap-3 border-borderSoft md:border-l md:pl-6">
+                    <AlertTriangle size={22} className={bondApplicationViewModel.risk.tone === 'danger' ? 'text-red-600' : bondApplicationViewModel.risk.tone === 'warning' ? 'text-warning' : 'text-success'} />
+                    <span className="min-w-0">
+                      <strong className="block text-sm font-semibold text-textStrong">{bondApplicationViewModel.risk.level}</strong>
+                      <span className="block truncate text-xs text-textMuted">See risk factors</span>
                     </span>
                   </div>
                 </div>
+                <details className="relative shrink-0">
+                  <summary className="inline-flex h-10 cursor-pointer list-none items-center gap-2 rounded-[10px] border border-borderDefault bg-white px-4 text-sm font-semibold text-textStrong shadow-surface transition hover:border-borderStrong [&::-webkit-details-marker]:hidden">
+                    <MoreHorizontal size={16} />
+                    Actions
+                    <ChevronRight size={14} className="rotate-90" />
+                  </summary>
+                  <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-[12px] border border-borderDefault bg-white py-1 shadow-[0_18px_40px_rgba(15,23,42,0.14)]">
+                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-textBody hover:bg-surfaceAlt" onClick={handleDownloadBondApplicationForm} disabled={bondApplicationPdfBusy}>
+                      <Download size={14} />
+                      {bondApplicationPdfBusy ? 'Preparing PDF...' : 'Download Application'}
+                    </button>
+                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-textBody hover:bg-surfaceAlt" onClick={() => void handleShareBondApplication()}>
+                      <Send size={14} />
+                      Share Application
+                    </button>
+                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-textBody hover:bg-surfaceAlt" onClick={() => openWorkspaceMenu('application')}>
+                      <FileCheck2 size={14} />
+                      Edit Application
+                    </button>
+                  </div>
+                </details>
+              </div>
+            </section>
 
-                <div className="min-h-[150px] overflow-hidden rounded-[18px] border border-borderSoft bg-slate-100">
-                  {bondApplicationViewModel.property.imageUrl ? (
-                    <img
-                      src={bondApplicationViewModel.property.imageUrl}
-                      alt={bondApplicationViewModel.property.label}
-                      className="h-full min-h-[150px] w-full object-cover"
-                    />
-                  ) : (
-                    <div className="grid h-full min-h-[150px] place-items-center bg-[radial-gradient(circle_at_30%_20%,rgba(47,179,68,0.22),transparent_34%),linear-gradient(135deg,#ecfdf3,#e8f0f7)] p-4 text-center">
-                      <div>
-                        <Building2 size={28} className="mx-auto text-success" />
-                        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.12em] text-textMuted">Property image pending</p>
-                      </div>
+            <section className="rounded-[18px] border border-borderDefault bg-white px-4 py-4 shadow-surface">
+              <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+                {[
+                  ['Applicants', `${bondApplicationViewModel.applicants.length || 1} ${bondApplicationViewModel.canonical.applicantStructure || 'sole'}`, bondApplicationViewModel.applicant.fullName, UserRound],
+                  ['Property', bondApplicationViewModel.property.label, '', Building2],
+                  ['Purchase Price', bondApplicationViewModel.financials.purchasePrice.display, '', CircleDollarSign],
+                  ['Deposit', bondApplicationViewModel.financials.deposit.display, bondApplicationViewModel.financials.deposit.secondary, CreditCard],
+                  ['Bond Required', bondApplicationViewModel.financials.bondAmountRequired.display, '', Landmark],
+                  ['LTV', bondApplicationDetailModel.ltv, '', CircleDollarSign],
+                ].map(([label, value, secondary, Icon], index) => (
+                  <article key={label} className={`min-w-0 px-2 ${index ? 'xl:border-l xl:border-borderSoft' : ''}`}>
+                    <div className="flex items-center gap-2">
+                      {createElement(Icon, { size: 17, className: 'shrink-0 text-primary' })}
+                      <span className="truncate text-xs font-medium text-textMuted">{label}</span>
                     </div>
-                  )}
-                </div>
+                    <strong className="mt-2 block truncate text-sm font-semibold text-textStrong">{formatApplicationValue(value)}</strong>
+                    {secondary ? <span className="mt-1 block text-xs font-medium text-textMuted">{secondary}</span> : null}
+                  </article>
+                ))}
+              </div>
+            </section>
 
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                  {[
-                    ['Property / Unit', bondApplicationViewModel.property.label, Building2],
-                    ['Stage', bondApplicationViewModel.application.stage, Workflow],
-                    ['Application Date', bondApplicationViewModel.application.createdAtDisplay, CalendarDays],
-                    ['Last Updated', bondApplicationViewModel.application.updatedAtDisplay, Clock3],
-                    ['Assigned Consultant', bondApplicationViewModel.consultant, UserCircle],
-                  ].map(([label, value, Icon]) => (
-                    <div key={label} className="flex min-w-0 items-start gap-3">
-                      {createElement(Icon, { size: 15, className: 'mt-0.5 shrink-0 text-textMuted' })}
-                      <div className="min-w-0">
-                        <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-textMuted">{label}</span>
-                        <strong className="mt-0.5 block truncate text-sm font-semibold text-textStrong">{value || 'Pending'}</strong>
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,0.7fr)_minmax(340px,0.3fr)]">
+              <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                <h3 className="text-base font-semibold text-textStrong">Application Details</h3>
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {bondApplicationViewModel.applicants.map((applicant) => (
+                    <article key={`${applicant.role}-${applicant.fullName}`} className="rounded-[12px] border border-borderSoft bg-surfaceSubtle p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primarySoft text-sm font-semibold text-primary">
+                          {applicant.initials}
+                        </span>
+                        <span className="min-w-0">
+                          <strong className="block truncate text-sm font-semibold text-textStrong">{applicant.fullName}</strong>
+                          <span className="block text-xs font-medium text-textMuted">{applicant.roleLabel}</span>
+                        </span>
                       </div>
-                    </div>
+                      <dl className="mt-4 grid gap-x-5 gap-y-1.5 sm:grid-cols-2">
+                        {[
+                          ['ID / Passport', applicant.idNumber, true],
+                          ['Email', applicant.email, true],
+                          ['Phone', applicant.phone, true],
+                          ['Marital Status', applicant.maritalStatus],
+                          ['Employment', applicant.employmentStatus, true],
+                          ['Employer', applicant.employer],
+                          ['Gross Income', applicant.financials.grossIncome.display],
+                          ['Total Income', applicant.financials.totalIncome.display, false, true],
+                          ['Monthly Expenses', applicant.financials.monthlyExpenses.display],
+                          ['Commitments', applicant.financials.monthlyCommitments.display],
+                        ].map(([label, value, required, emphasis]) => (
+                          <ApplicationDetailField key={`${applicant.role}-${label}`} label={label} value={formatApplicationValue(value)} required={Boolean(required)} emphasis={Boolean(emphasis)} />
+                        ))}
+                      </dl>
+                    </article>
                   ))}
                 </div>
-              </div>
-            </section>
+                {[
+                  {
+                    title: 'Primary Applicant Details',
+                    rows: [
+                      ['ID Number', bondApplicationDetailModel.idNumber, true],
+                      ['Marital Status', bondApplicationDetailModel.maritalStatus],
+                      ['Email', bondApplicationViewModel.applicant.email, true],
+                      ['Dependants', bondApplicationDetailModel.dependants],
+                      ['Phone', bondApplicationViewModel.applicant.phone, true],
+                    ],
+                  },
+                  {
+                    title: 'Employment & Income',
+                    rows: [
+                      ['Employment Status', bondApplicationViewModel.applicant.employmentStatus, true],
+                      ['Gross Monthly Income', bondApplicationViewModel.financials.grossIncome.display, true],
+                      ['Employer', bondApplicationDetailModel.employer],
+                      ['Other Monthly Income', bondApplicationDetailModel.otherIncome],
+                      ['Occupation', bondApplicationDetailModel.occupation],
+                      ['Total Monthly Income', bondApplicationDetailModel.totalIncome, false, true],
+                      ['Employment Duration', bondApplicationDetailModel.employmentDuration],
+                    ],
+                  },
+                  {
+                    title: 'Financial Position',
+                    rows: [
+                      ['Monthly Expenses', bondApplicationViewModel.financials.monthlyExpenses.display],
+                      ['Disposable Income', bondApplicationDetailModel.disposableIncome, false, true],
+                      ['Existing Debt', bondApplicationViewModel.financials.existingDebt.display],
+                      ['Deposit Available', bondApplicationViewModel.financials.deposit.display],
+                      ['Monthly Commitments', bondApplicationDetailModel.monthlyCommitments],
+                      ['Loan to Value (LTV)', bondApplicationDetailModel.ltv],
+                    ],
+                  },
+                  {
+                    title: 'Property & Loan',
+                    rows: [
+                      ['Property / Unit', bondApplicationViewModel.property.label, true],
+                      ['Loan Amount Requested', bondApplicationViewModel.financials.bondAmountRequired.display, true],
+                      ['Loan Purpose', bondApplicationDetailModel.loanPurpose],
+                      ['Preferred Term', bondApplicationDetailModel.preferredTerm],
+                    ],
+                  },
+                ].map((section) => (
+                  <section key={section.title} className="mt-5 border-t border-borderSoft pt-5">
+                    <div className="grid gap-4 lg:grid-cols-[170px_minmax(0,1fr)]">
+                      <h4 className="text-sm font-semibold text-[#263a59]">{section.title}</h4>
+                      <dl className="grid gap-x-8 sm:grid-cols-2">
+                        {section.rows.map(([label, value, required, emphasis]) => (
+                          <ApplicationDetailField key={`${section.title}-${label}`} label={label} value={formatApplicationValue(value)} required={Boolean(required)} emphasis={Boolean(emphasis)} />
+                        ))}
+                      </dl>
+                    </div>
+                  </section>
+                ))}
+                <button type="button" className="mt-5 flex w-full items-center justify-center gap-2 rounded-[10px] border border-borderSoft px-3 py-2.5 text-sm font-semibold text-primary transition hover:border-primary/40 hover:bg-primarySoft" onClick={() => openWorkspaceMenu('application')}>
+                  <FileCheck2 size={15} />
+                  Edit Application
+                </button>
+              </article>
 
-            <section className="grid gap-3 rounded-[18px] border border-borderDefault bg-white p-4 shadow-surface md:grid-cols-2 xl:grid-cols-5">
-              {[
-                ['Purchase Price', bondApplicationViewModel.financials.purchasePrice.display, '', CircleDollarSign, 'bg-emerald-600 text-white'],
-                ['Deposit', bondApplicationViewModel.financials.deposit.display, bondApplicationViewModel.financials.deposit.secondary, FileCheck2, 'bg-blue-600 text-white'],
-                ['Monthly Income', bondApplicationViewModel.financials.grossIncome.display, '', Landmark, 'bg-violet-600 text-white'],
-                ['Monthly Expenses', bondApplicationViewModel.financials.monthlyExpenses.display, bondApplicationViewModel.financials.monthlyExpenses.secondary, CreditCard, 'bg-orange-500 text-white'],
-                ['Bond Amount Required', bondApplicationViewModel.financials.bondAmountRequired.display, '', Building2, 'bg-green-600 text-white'],
-              ].map(([label, value, secondary, Icon, tone]) => (
-                <article key={label} className="flex min-w-0 items-center gap-3 border-borderSoft px-2 py-2 xl:border-r last:xl:border-r-0">
-                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[12px] ${tone}`}>
-                    {createElement(Icon, { size: 18 })}
-                  </span>
-                  <div className="min-w-0">
-                    <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-textMuted">{label}</span>
-                    <strong className="mt-1 block truncate text-sm font-semibold text-textStrong">{value}</strong>
-                    {secondary ? <span className="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[0.68rem] font-semibold text-success">{secondary}</span> : null}
-                  </div>
-                </article>
-              ))}
-            </section>
-
-            <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.68fr)_minmax(360px,0.32fr)]">
-              <div className="space-y-5">
-                <section className="grid items-stretch gap-5 lg:grid-cols-[minmax(0,0.96fr)_minmax(0,1.04fr)]">
-                  <article className="flex h-full min-h-[430px] flex-col rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
-                    <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Application Overview</h4>
-                    <div className="mt-4 divide-y divide-borderSoft">
-                      {[
-                        ['Applicant', bondApplicationViewModel.applicant.fullName, UserCircle],
-                        ['Email', bondApplicationViewModel.applicant.email, AtSign],
-                        ['Phone', bondApplicationViewModel.applicant.phone, Bell],
-                        ['Employment', bondApplicationViewModel.applicant.employmentStatus, Building2],
-                        ['Gross Income', bondApplicationViewModel.financials.grossIncome.display, CircleDollarSign],
-                        ['Monthly Expenses', bondApplicationViewModel.financials.monthlyExpenses.display, CreditCard],
-                        ['Existing Debt', bondApplicationViewModel.financials.existingDebt.display, Landmark],
-                        ['Property / Unit', bondApplicationViewModel.property.label, Building2],
-                        ['Affordability / Risk', bondApplicationViewModel.risk.level, AlertTriangle],
-                        ['Consent Status', bondApplicationViewModel.readinessItems.find((item) => item.key === 'consent')?.complete ? 'Captured' : 'Not captured', FileCheck2],
-                      ].map(([label, value, Icon]) => (
-                        <div key={label} className="grid grid-cols-[22px_minmax(106px,0.42fr)_minmax(0,1fr)] items-center gap-3 py-2">
-                          {createElement(Icon, { size: 15, className: 'text-textMuted' })}
-                          <span className="text-xs font-semibold text-textMuted">{label}</span>
-                          <strong className="min-w-0 truncate text-right text-sm font-semibold text-textStrong">{value || 'Not captured'}</strong>
+              <aside className="space-y-5">
+                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                  <h3 className="text-base font-semibold text-textStrong">Submission Readiness</h3>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-[112px_minmax(0,1fr)] xl:grid-cols-1">
+                    <div className="flex items-center gap-4">
+                      <div
+                        className="grid size-24 shrink-0 place-items-center rounded-full"
+                        style={{ background: `conic-gradient(#0f8f68 ${bondApplicationViewModel.application.readinessPercent}%, #edf2f7 0)` }}
+                      >
+                        <div className="grid size-16 place-items-center rounded-full bg-white text-center shadow-inner">
+                          <div>
+                            <strong className="block text-xl font-semibold leading-none text-textStrong">{bondApplicationViewModel.application.readinessPercent}%</strong>
+                            <span className="mt-1 block text-[0.56rem] font-semibold uppercase tracking-[0.08em] text-success">Complete</span>
+                          </div>
+                        </div>
+                      </div>
+                      <strong className={bondApplicationOutstandingCount ? 'text-sm font-semibold text-warning' : 'text-sm font-semibold text-success'}>
+                        {bondApplicationOutstandingCount ? `${bondApplicationOutstandingCount} item${bondApplicationOutstandingCount === 1 ? '' : 's'} outstanding` : 'Ready for submission'}
+                      </strong>
+                    </div>
+                    <div className="space-y-1.5">
+                      {bondApplicationViewModel.readinessItems.map((item) => (
+                        <div key={item.key} className="flex items-center gap-2 text-sm leading-5">
+                          {item.complete ? <CheckCircle2 size={14} className="shrink-0 text-success" /> : <AlertTriangle size={14} className="shrink-0 text-warning" />}
+                          <span className="min-w-0 truncate text-textBody">{item.label}</span>
                         </div>
                       ))}
                     </div>
-                    <button type="button" className="mt-auto flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('overview')}>
-                      View Full Details
-                      <ChevronRight size={16} />
-                    </button>
-                  </article>
-
-                  <article className="flex h-full min-h-[430px] flex-col rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
-                    <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Submission Readiness</h4>
-                    <div className="mt-5 grid items-start gap-4 md:grid-cols-[132px_minmax(0,1fr)]">
-                      <div
-                        className="mx-auto grid h-32 w-32 place-items-center rounded-full"
-                        style={{ background: `conic-gradient(#2fb344 ${bondApplicationViewModel.application.readinessPercent}%, #edf2f7 0)` }}
-                      >
-                        <div className="grid h-[88px] w-[88px] place-items-center rounded-full bg-white text-center shadow-inner">
-                          <div>
-                            <strong className="block text-[1.7rem] font-semibold leading-none text-textStrong">{bondApplicationViewModel.application.readinessPercent}%</strong>
-                            <span className="mt-1 block text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-success">
-                              {bondApplicationOutstandingCount ? 'In Review' : 'Ready'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Required before submission</span>
-                        {bondApplicationViewModel.readinessItems.map((item) => (
-                          <div key={item.key} className="flex items-center gap-2 text-[0.84rem] leading-5">
-                            {item.complete ? <CheckCircle2 size={13} className="shrink-0 text-success" /> : <AlertTriangle size={13} className="shrink-0 text-warning" />}
-                            <span className={item.complete ? 'min-w-0 truncate text-textBody' : 'min-w-0 truncate font-semibold text-textStrong'}>{item.label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className={`mt-auto flex items-center justify-between rounded-[14px] border px-4 py-3 ${bondApplicationOutstandingCount ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-success'}`}>
-                      <div className="flex items-center gap-3">
-                        {bondApplicationOutstandingCount ? <Clock3 size={18} /> : <CheckCircle2 size={18} />}
-                        <div>
-                          <strong className="block text-sm font-semibold">{bondApplicationViewModel.application.readinessLabel}</strong>
-                          <span className="text-xs">{bondApplicationOutstandingCount ? `${bondApplicationOutstandingCount} item${bondApplicationOutstandingCount === 1 ? '' : 's'} outstanding before submission` : 'No outstanding required items'}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                </section>
+                  </div>
+                  <div className={`mt-4 rounded-[10px] px-3 py-2 text-sm font-semibold ${bondApplicationOutstandingCount ? 'bg-[#fff4e6] text-warning' : 'bg-successSoft text-success'}`}>
+                    Status: {bondApplicationOutstandingCount ? bondApplicationViewModel.application.readinessLabel : 'Ready for Bank Submission'}
+                  </div>
+                </article>
 
                 <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Uploaded Documents</h4>
-                      <p className="mt-1 text-sm text-textMuted">Documents uploaded through onboarding and the transaction document centre.</p>
-                    </div>
-                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-success">
-                      {bondApplicationUploadedCount} uploaded
-                    </span>
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {bondApplicationViewModel.documents.map((document) => (
-                      <article key={document.key} className="rounded-[14px] border border-borderSoft bg-white p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[12px] ${document.isUploaded ? 'bg-emerald-50 text-success' : 'bg-orange-50 text-warning'}`}>
-                            <FileText size={17} />
-                          </span>
-                          {document.isUploaded ? <CheckCircle2 size={15} className="text-success" /> : <AlertTriangle size={15} className="text-warning" />}
-                        </div>
-                        <strong className="mt-3 block truncate text-sm font-semibold text-textStrong">{document.label}</strong>
-                        <p className={`mt-2 text-xs font-semibold ${document.isUploaded ? 'text-success' : 'text-textMuted'}`}>{document.status}</p>
-                      </article>
-                    ))}
-                  </div>
-                  <button type="button" className="mt-4 flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('documents')}>
-                    View Document Centre
-                    <ChevronRight size={16} />
-                  </button>
-                </article>
-              </div>
-
-              <aside className="grid gap-5 xl:h-full xl:grid-rows-[auto_minmax(0,1fr)_auto]">
-                <article className="flex min-h-[220px] flex-col rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
-                  <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Action Centre</h4>
-                  <div className="mt-4 space-y-3">
-                    {bondApplicationViewModel.actions.length ? bondApplicationViewModel.actions.map((action) => (
-                      <button
-                        key={action.id}
-                        type="button"
-                        className="flex w-full items-center justify-between gap-3 rounded-[14px] border border-borderSoft bg-white p-3 text-left transition hover:-translate-y-0.5 hover:shadow-surface"
-                        onClick={() => openWorkspaceMenu(action.target || 'tasks')}
-                      >
+                  <h3 className="text-base font-semibold text-textStrong">Action Centre</h3>
+                  <div className="mt-3 max-h-[300px] divide-y divide-borderSoft overflow-y-auto">
+                    {bondApplicationViewModel.actions.length ? bondApplicationViewModel.actions.slice(0, 5).map((action) => (
+                      <button key={action.id} type="button" className="flex w-full items-center justify-between gap-3 py-3 text-left" onClick={() => openWorkspaceMenu(action.target || 'application')}>
                         <span className="flex min-w-0 items-center gap-3">
-                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[12px] ${action.priority === 'High' ? 'bg-red-50 text-red-600' : action.priority === 'Medium' ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-textMuted'}`}>
-                            <FileText size={17} />
+                          <span className={`grid size-8 shrink-0 place-items-center rounded-[9px] ${action.priority === 'High' ? 'bg-red-50 text-red-600' : action.priority === 'Medium' ? 'bg-amber-50 text-amber-600' : 'bg-surfaceAlt text-textMuted'}`}>
+                            <FileText size={15} />
                           </span>
                           <span className="min-w-0">
                             <strong className="block truncate text-sm font-semibold text-textStrong">{action.title}</strong>
                             <span className="mt-0.5 block truncate text-xs text-textMuted">{action.description}</span>
                           </span>
                         </span>
-                        <span className={`shrink-0 rounded-full px-2 py-1 text-[0.68rem] font-semibold ${action.priority === 'High' ? 'bg-red-50 text-red-600' : action.priority === 'Medium' ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-textMuted'}`}>
-                          {action.priority}
-                        </span>
+                        <span className={`shrink-0 rounded-full px-2 py-1 text-[0.68rem] font-semibold ${action.priority === 'High' ? 'bg-red-50 text-red-600' : action.priority === 'Medium' ? 'bg-amber-50 text-amber-600' : 'bg-surfaceAlt text-textMuted'}`}>{action.priority}</span>
                       </button>
                     )) : (
-                      <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 p-4 text-sm text-success">
-                        <strong className="block font-semibold">No outstanding actions</strong>
-                        <span>Application is ready for the next step.</span>
-                      </div>
+                      <p className="rounded-[12px] border border-success/20 bg-successSoft px-3 py-4 text-sm text-success">No outstanding actions. Application is ready for the next step.</p>
                     )}
                   </div>
-                  <button type="button" className="mt-auto flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('tasks')}>
-                    View All Tasks ({bondApplicationViewModel.actions.length})
-                    <ChevronRight size={16} />
-                  </button>
-                </article>
-
-                <article className="flex min-h-[320px] flex-col rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
-                  <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Recent Activity</h4>
-                  <div className="mt-4 flex-1 space-y-4">
-                    {bondApplicationViewModel.activity.length ? bondApplicationViewModel.activity.map((entry, index) => (
-                      <div key={entry.id || index} className="flex gap-3">
-                        <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-emerald-50 text-success">
-                          <Activity size={16} />
-                        </span>
-                        <div className="min-w-0">
-                          <strong className="block truncate text-sm font-semibold text-textStrong">{entry.title}</strong>
-                          <span className="text-xs text-textMuted">{entry.displayDate}</span>
-                        </div>
-                      </div>
-                    )) : (
-                      <p className="rounded-[14px] border border-dashed border-borderDefault bg-slate-50 px-4 py-6 text-sm text-textMuted">No recent activity yet</p>
-                    )}
-                  </div>
-                  <button type="button" className="mt-auto flex w-full items-center justify-between border-t border-borderSoft pt-4 text-sm font-semibold text-success" onClick={() => openWorkspaceMenu('activity')}>
-                    View All Activity
-                    <ChevronRight size={16} />
+                  <button type="button" className="mt-3 flex w-full items-center justify-between border-t border-borderSoft pt-3 text-sm font-semibold text-primary" onClick={() => openWorkspaceMenu(bondApplicationViewModel.actions[0]?.target || 'documents')}>
+                    View all tasks ({bondApplicationViewModel.actions.length})
+                    <ChevronRight size={15} />
                   </button>
                 </article>
 
                 <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
-                  <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-base font-semibold text-textStrong">Risk Assessment</h3>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] xl:grid-cols-1">
                     <div>
-                      <h4 className="text-lg font-semibold tracking-[-0.025em] text-textStrong">Risk Assessment</h4>
-                      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-textMuted">{bondApplicationViewModel.risk.scoreLabel}</p>
+                      <strong className={`block text-xl font-semibold uppercase ${bondApplicationViewModel.risk.tone === 'danger' ? 'text-red-600' : bondApplicationViewModel.risk.tone === 'warning' ? 'text-warning' : 'text-success'}`}>
+                        {bondApplicationViewModel.risk.level}
+                      </strong>
+                      <p className="mt-2 text-sm text-textStrong">Risk Score: <strong>{bondApplicationViewModel.risk.score} / 100</strong></p>
                     </div>
-                  </div>
-                  <div className="mt-5 grid gap-4 sm:grid-cols-[132px_minmax(0,1fr)] xl:grid-cols-1">
-                    <div
-                      className="grid h-32 w-32 place-items-center rounded-full"
-                      style={{
-                        background: `conic-gradient(${bondApplicationViewModel.risk.tone === 'success' ? '#2fb344' : bondApplicationViewModel.risk.tone === 'danger' ? '#e03131' : '#f59f00'} ${bondApplicationViewModel.risk.score}%, #e5f1e8 0)`,
-                      }}
-                    >
-                      <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center shadow-inner">
-                        <div>
-                          <strong className="block text-3xl font-semibold text-textStrong">{bondApplicationViewModel.risk.score}</strong>
-                          <span className="text-xs font-semibold text-textMuted">/100</span>
-                          <span className={`mt-1 block text-xs font-semibold uppercase tracking-[0.12em] ${bondApplicationViewModel.risk.tone === 'danger' ? 'text-red-600' : bondApplicationViewModel.risk.tone === 'success' ? 'text-success' : 'text-warning'}`}>
-                            {bondApplicationViewModel.risk.level}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="min-w-0">
+                    <div>
                       <span className="text-xs font-semibold text-textStrong">Key Risk Factors</span>
                       <ul className="mt-2 space-y-1.5 text-sm text-textMuted">
-                        {bondApplicationViewModel.risk.factors.map((factor) => (
+                        {bondApplicationViewModel.risk.factors.slice(0, 4).map((factor) => (
                           <li key={factor} className="flex gap-2">
                             <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
                             <span>{factor}</span>
                           </li>
                         ))}
                       </ul>
-                      <div className="mt-4 border-t border-borderSoft pt-3">
-                        <span className="text-xs font-semibold text-textStrong">Recommendation</span>
-                        <p className="mt-1 text-sm leading-5 text-textMuted">{bondApplicationViewModel.risk.recommendation}</p>
-                      </div>
                     </div>
                   </div>
+                  {bondApplicationViewModel.risk.recommendation ? (
+                    <div className="mt-4 border-t border-borderSoft pt-3">
+                      <span className="text-xs font-semibold text-textStrong">Recommendation</span>
+                      <p className="mt-1 text-sm leading-5 text-textMuted">{bondApplicationViewModel.risk.recommendation}</p>
+                    </div>
+                  ) : null}
                 </article>
               </aside>
             </section>
           </section>
         ) : null}
 
-        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'workflow' ? (
-          <section className="space-y-7">
-            <BondBankSubmissionCommandCenter
-              rows={bondBankCommandRows}
-              loadingAction={bondHybridFinanceActionLoading}
-              onSubmitBank={(payload) => void handleAddBondHybridApplication(payload)}
-              onUploadDocs={() => openWorkspaceMenu('documents')}
-              onViewQuote={(quote) => handleOpenFinanceDocument(quote)}
-            />
+        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'quotes_grant' ? (
+          <BondQuotesGrantWorkspace
+            applicationViewModel={bondApplicationViewModel}
+            consultantAction={bondConsultantWorkspaceAction}
+            documentHealthSummary={documentHealthSummary}
+            submissionRows={bondBankCommandRows}
+            quoteRows={sortedBondQuoteRows}
+            recommendedQuote={recommendedBondQuote}
+            acceptedQuote={acceptedBondQuote}
+            workflowData={transactionFinanceWorkflow}
+            loadingAction={bondHybridFinanceActionLoading}
+            canEdit={canEditBondHybridFinanceWorkflow}
+            onSubmitBank={(payload) => void handleAddBondHybridApplication(payload)}
+            onCompareQuotes={() => null}
+            onViewQuote={(quote) => handleOpenFinanceDocument(quote)}
+            onSelectOffer={(quote) => quote?.id ? void handleApproveBondHybridQuote(quote.id) : null}
+            onRequestRevision={handleRequestBondQuoteRevision}
+            onDeclineAll={() => void handleDeclineAllBondHybridQuotes()}
+            onOpenDocuments={() => openWorkspaceMenu('documents')}
+            onOpenActivity={() => openWorkspaceMenu('activity')}
+            onMarkGrantMilestone={(payload) => void handleMarkBondHybridGrantMilestone(payload)}
+          />
+        ) : null}
 
-            <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-              <QuoteComparisonCommandCenter
-                quotes={sortedBondQuoteRows}
-                recommendedQuote={recommendedBondQuote}
-                loadingAction={bondHybridFinanceActionLoading}
-                onAcceptQuote={(quote) => quote?.id ? void handleApproveBondHybridQuote(quote.id) : null}
-                onRequestRevision={handleRequestBondQuoteRevision}
-                onDeclineAll={() => void handleDeclineAllBondHybridQuotes()}
-                onViewAll={() => openWorkspaceMenu('banks_quotes')}
-              />
-              <BuyerDecisionPanel
-                acceptedQuote={acceptedBondQuote}
-                quotes={sortedBondQuoteRows}
-                onRecordDecision={(quote) => quote?.id ? void handleApproveBondHybridQuote(quote.id) : null}
-                onAddNote={() => {
-                  setDiscussionType('internal_note')
-                  setDiscussionActionKey('quick_professional_update')
-                  setDiscussionVisibility('shared')
-                  setDiscussionBody('Buyer decision note: ')
-                }}
-              />
-            </section>
-
-            <BondMatterConversationPanel
-              discussionBody={discussionBody}
-              setDiscussionBody={setDiscussionBody}
-              handleAddDiscussion={handleAddDiscussion}
-              discussionType={discussionType}
-              setDiscussionType={setDiscussionType}
-              discussionVisibility={discussionVisibility}
-              setDiscussionVisibility={setDiscussionVisibility}
-              availableDiscussionVisibilityOptions={effectiveDiscussionVisibilityOptions}
-              structuredDiscussionComposer={structuredDiscussionComposer}
-              discussionLaneKey={activeDiscussionLane?.laneKey || discussionLaneKey}
-              setDiscussionLaneKey={setDiscussionLaneKey}
-              discussionLaneOptions={discussionLaneOptions}
-              discussionActionKey={selectedDiscussionAction?.key || discussionActionKey}
-              setDiscussionActionKey={setDiscussionActionKey}
-              discussionActionOptions={discussionActionOptions}
-              discussionSubmitDisabled={discussionSubmitDisabled}
-              overviewConversationEntries={overviewConversationEntries}
-              saving={saving}
-              onAttachDocument={() => openWorkspaceMenu('documents')}
-              onViewActivity={() => openWorkspaceMenu('activity')}
-            />
-          </section>
+        {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'reconciliation' ? (
+          <BondReconciliationWorkspace
+            transaction={transaction || {}}
+            applicationViewModel={bondApplicationViewModel}
+            applicationReference={workspaceReference}
+            propertyLabel={matterHeadline}
+            purchasePrice={formatCurrencyValue(transaction?.purchase_price || transaction?.sales_price, 'Not captured')}
+            referringAgency={bondHeaderReferringAgency}
+            referringAgent={bondHeaderReferringAgent}
+            incentive={bondReferralIncentiveData.incentive}
+            incentiveEvents={bondReferralIncentiveData.events}
+            schemaAvailable={bondReferralIncentiveData.schemaAvailable}
+            submissionRows={bondBankCommandRows}
+            quoteRows={sortedBondQuoteRows}
+            acceptedQuote={acceptedBondQuote}
+            workflowData={transactionFinanceWorkflow}
+            loadingAction={bondReferralIncentiveLoading ? 'referral_incentive_load' : bondHybridFinanceActionLoading}
+            canEdit={canEditBondHybridFinanceWorkflow}
+            onSaveIncentive={handleSaveBondReferralIncentive}
+            onTransition={handleTransitionBondReferralIncentive}
+          />
         ) : null}
 
         {activeWorkspaceMenu === 'finance' && workspaceRole !== 'attorney' ? (

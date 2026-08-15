@@ -1,0 +1,59 @@
+{
+  "contract": "buyer-process-phase7-release-decision-v1",
+  "decidedAt": "REPLACE_WITH_ISO_TIMESTAMP",
+  "environment": "staging",
+  "projectRef": "REPLACE_WITH_SAFE_PROJECT_REF",
+  "releaseSource": {
+    "commitSha": "REPLACE_WITH_COMMIT_SHA_OR_SOURCE_REF",
+    "globalDiagnosticCommand": "npm run test:buyer-process-global-diagnostic",
+    "globalDiagnosticPassed": false,
+    "phase6Command": "npm run verify:buyer-process-release-readiness",
+    "buildPassed": false
+  },
+  "phase6Evidence": {
+    "contract": "buyer-process-phase6-release-readiness-v1",
+    "evidenceRef": "REPLACE_WITH_REDACTED_PHASE6_EVIDENCE_REFERENCE",
+    "projectRef": "REPLACE_WITH_SAFE_PROJECT_REF",
+    "collectedAt": "REPLACE_WITH_PHASE6_COLLECTED_AT"
+  },
+  "operator": {
+    "reference": "REPLACE_WITH_OPAQUE_OPERATOR_REFERENCE",
+    "confirmation": "BUYER_PROCESS_PHASE7_RELEASE_DECISION_CONFIRMED"
+  },
+  "releaseDecision": {
+    "status": "pending",
+    "decisionRef": "REPLACE_WITH_REDACTED_DECISION_REFERENCE"
+  },
+  "safeguards": {
+    "phase6EvidenceAccepted": false,
+    "globalStageOrderAccepted": false,
+    "kingstonsStageOrderAccepted": false,
+    "noGlobalOtpGeneration": false,
+    "kingstonsManualOtpOnly": false,
+    "signedOtpConfirmationsAccepted": false,
+    "buyerProfileAccepted": false,
+    "bondOriginatorHandoffAccepted": false,
+    "transferAttorneyHandoffAccepted": false,
+    "buyerPortalInstructionsAccepted": false,
+    "transactionMoveGateAccepted": false,
+    "transactionHandoffAccepted": false,
+    "convertedTransactionIdPersisted": false,
+    "offerToTransactionMatrixAccepted": false,
+    "noLiveMutationFromGate": false,
+    "evidenceRedacted": false,
+    "supportBriefed": false,
+    "rollbackReady": false
+  },
+  "rollback": {
+    "ownerRef": "REPLACE_WITH_OPAQUE_ROLLBACK_OWNER_REFERENCE",
+    "planRef": "REPLACE_WITH_REDACTED_ROLLBACK_PLAN_REFERENCE",
+    "lastKnownGoodSourceRef": "REPLACE_WITH_LAST_KNOWN_GOOD_SOURCE_REFERENCE",
+    "validated": false
+  },
+  "approvals": {
+    "qaOwnerRef": "REPLACE_WITH_OPAQUE_QA_OWNER_REFERENCE",
+    "releaseOwnerRef": "REPLACE_WITH_OPAQUE_RELEASE_OWNER_REFERENCE",
+    "operationsOwnerRef": "REPLACE_WITH_OPAQUE_OPERATIONS_OWNER_REFERENCE"
+  },
+  "notes": "Replace placeholders only with redacted operational references. Do not include emails, names, phone numbers, URLs, property addresses, portal tokens, signed URLs, OTP files, document contents, credentials, or raw logs."
+}

@@ -1,0 +1,66 @@
+{
+  "contract": "buyer-process-phase8-controlled-smoke-v1",
+  "observedAt": "REPLACE_WITH_ISO_TIMESTAMP",
+  "environment": "staging",
+  "projectRef": "REPLACE_WITH_SAFE_PROJECT_REF",
+  "releaseSource": {
+    "commitSha": "REPLACE_WITH_COMMIT_SHA_OR_SOURCE_REF",
+    "globalDiagnosticCommand": "npm run test:buyer-process-global-diagnostic",
+    "globalDiagnosticPassed": false,
+    "phase6Command": "npm run verify:buyer-process-release-readiness",
+    "phase7Command": "npm run verify:buyer-process-release-decision",
+    "buildPassed": false
+  },
+  "phase6Evidence": {
+    "contract": "buyer-process-phase6-release-readiness-v1",
+    "evidenceRef": "REPLACE_WITH_REDACTED_PHASE6_EVIDENCE_REFERENCE"
+  },
+  "phase7Decision": {
+    "contract": "buyer-process-phase7-release-decision-v1",
+    "decisionRef": "REPLACE_WITH_REDACTED_PHASE7_DECISION_REFERENCE"
+  },
+  "operator": {
+    "reference": "REPLACE_WITH_OPAQUE_OPERATOR_REFERENCE",
+    "confirmation": "BUYER_PROCESS_PHASE8_CONTROLLED_SMOKE_COMPLETE"
+  },
+  "smokeResult": {
+    "status": "pending",
+    "runRef": "REPLACE_WITH_REDACTED_CONTROLLED_SMOKE_REFERENCE"
+  },
+  "observations": {
+    "changeWindowApproved": false,
+    "phase7DecisionAccepted": false,
+    "globalTestLeadIsolated": false,
+    "kingstonsTestLeadIsolated": false,
+    "globalOnboardingLinkControlled": false,
+    "globalBuyerOnboardingSubmitted": false,
+    "globalTransactionSetupCompleted": false,
+    "globalSignedOfferUploaded": false,
+    "kingstonsManualOtpUploaded": false,
+    "kingstonsSignedOtpConfirmations": false,
+    "buyerProfileCapturedBeforeTransaction": false,
+    "bondOriginatorHandoffObserved": false,
+    "transferAttorneyHandoffObserved": false,
+    "buyerPortalInstructionsSent": false,
+    "moveToTransactionGateObserved": false,
+    "transactionCreated": false,
+    "buyerProcessHandoffVisible": false,
+    "convertedTransactionIdPersisted": false,
+    "globalOnlyNoKingstonsLeak": false,
+    "kingstonsOnlyNoGlobalOnboardingLeak": false,
+    "rollbackReadyAndUnused": false,
+    "supportMonitoringClear": false
+  },
+  "rollback": {
+    "ownerRef": "REPLACE_WITH_OPAQUE_ROLLBACK_OWNER_REFERENCE",
+    "planRef": "REPLACE_WITH_REDACTED_ROLLBACK_PLAN_REFERENCE",
+    "validatedBeforeSmoke": false,
+    "activated": false
+  },
+  "closeout": {
+    "testLeadsArchivedOrMarked": false,
+    "supportHandoffComplete": false,
+    "crossProfileRegressionTicketOpened": false
+  },
+  "notes": "Replace placeholders only with redacted operational references. Do not include emails, names, phone numbers, URLs, property addresses, private portal access material, signed URLs, OTP files, document contents, credentials, or raw logs."
+}
