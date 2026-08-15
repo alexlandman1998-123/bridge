@@ -1,4 +1,8 @@
-import { buildApplicationStateFromNormalizedApplication } from '../application/index.js'
+import {
+  BOND_APPLICATION_PREFILL_CONFIRMATION_CARD_DEFINITIONS,
+  buildApplicationStateFromNormalizedApplication,
+  buildBondApplicationPrefillReviewModel,
+} from '../application/index.js'
 import { buildBondApplicationState as buildLegacyBondApplicationState } from '../application/legacy/bondApplicationLegacyAdapter.js'
 
 const CURRENCY = new Intl.NumberFormat('en-ZA', {
@@ -233,6 +237,115 @@ function buildOriginatorFieldAlignment(applicationState = {}) {
     capturedCount: fields.filter((field) => field.captured).length,
     totalCount: fields.length,
     missingKeys: fields.filter((field) => !field.captured).map((field) => field.key),
+  }
+}
+
+function getSupportedBuyerConfirmationSections() {
+  const sections = new Map()
+  for (const card of BOND_APPLICATION_PREFILL_CONFIRMATION_CARD_DEFINITIONS) {
+    const key = text(card.section)
+    if (!key || sections.has(key)) continue
+    sections.set(key, {
+      key,
+      label: toTitle(key),
+      cardKeys: [card.key],
+    })
+  }
+  return Array.from(sections.values())
+}
+
+function resolveBondApplicationPrefillMetadata({
+  bondApplication = null,
+  onboardingFormData = {},
+} = {}) {
+  const formData = getFormData(onboardingFormData)
+  const candidates = [
+    bondApplication?.prefill_metadata,
+    bondApplication?.prefillMetadata,
+    bondApplication?.metadata?.prefill_metadata,
+    bondApplication?.metadata?.prefillMetadata,
+    bondApplication?.meta?.prefill_metadata,
+    bondApplication?.meta?.prefillMetadata,
+    bondApplication?.bond_application?.prefill_metadata,
+    bondApplication?.bondApplication?.prefill_metadata,
+    formData?.bond_application?.prefill_metadata,
+    formData?.bondApplication?.prefill_metadata,
+    formData?.prefill_metadata,
+  ]
+  return candidates.find((candidate) => candidate && typeof candidate === 'object' && !Array.isArray(candidate)) || {}
+}
+
+function latestTimestamp(values = []) {
+  return values
+    .filter(Boolean)
+    .map((value) => ({ value, time: new Date(value).getTime() }))
+    .filter((item) => Number.isFinite(item.time))
+    .sort((left, right) => right.time - left.time)[0]?.value || ''
+}
+
+function buildBuyerConfirmationConfidence(data = {}, originatorFieldAlignment = {}) {
+  const metadata = resolveBondApplicationPrefillMetadata(data)
+  const confirmations = metadata?.confirmations && typeof metadata.confirmations === 'object' ? metadata.confirmations : {}
+  const confirmationSections = confirmations.sections && typeof confirmations.sections === 'object' && !Array.isArray(confirmations.sections)
+    ? confirmations.sections
+    : {}
+  const review = buildBondApplicationPrefillReviewModel(metadata)
+  const supportedSections = getSupportedBuyerConfirmationSections()
+  const supportedSectionKeys = supportedSections.map((section) => section.key)
+  const supportedSectionByKey = new Map(supportedSections.map((section) => [section.key, section]))
+  const confirmedSectionKeys = Array.from(new Set([
+    ...(Array.isArray(confirmations.confirmedSectionKeys) ? confirmations.confirmedSectionKeys : []),
+    ...(Array.isArray(review.confirmedSectionKeys) ? review.confirmedSectionKeys : []),
+  ].map((key) => text(key)).filter((key) => supportedSectionByKey.has(key))))
+  const confirmedSectionSet = new Set(confirmedSectionKeys)
+  const sections = confirmedSectionKeys.map((key) => {
+    const confirmation = confirmationSections[key] || {}
+    const supportedSection = supportedSectionByKey.get(key) || { key, label: toTitle(key), cardKeys: [] }
+    return {
+      key,
+      label: supportedSection.label,
+      confidence: confirmation.confidence || review.confirmationConfidenceBySection?.[key] || 'buyer_confirmed_prefill',
+      confirmedAt: confirmation.confirmedAt || '',
+      updatedAt: confirmation.updatedAt || '',
+      confirmedFields: Number(confirmation.confirmedFields || 0),
+      totalFields: Number(confirmation.totalFields || 0),
+      missingFields: Number(confirmation.missingFields || 0),
+      fieldPaths: Array.isArray(confirmation.fieldPaths) ? confirmation.fieldPaths : [],
+      cardKeys: Array.isArray(confirmation.cardKeys) && confirmation.cardKeys.length ? confirmation.cardKeys : supportedSection.cardKeys,
+    }
+  })
+  const missingSections = supportedSections
+    .filter((section) => !confirmedSectionSet.has(section.key))
+    .map((section) => ({
+      key: section.key,
+      label: section.label,
+    }))
+  const confirmedCount = sections.length
+  const totalSupportedSections = supportedSections.length
+  const percent = totalSupportedSections ? Math.round((confirmedCount / totalSupportedSections) * 100) : 0
+  const fieldAlignmentPercent = originatorFieldAlignment?.totalCount
+    ? Math.round((Number(originatorFieldAlignment.capturedCount || 0) / Number(originatorFieldAlignment.totalCount || 1)) * 100)
+    : 0
+
+  return {
+    source: 'buyer_portal_prefill_confirmation_metadata',
+    target: 'bond_originator_view_model',
+    version: confirmations.version || '',
+    hasMetadata: Boolean(confirmations.version || sections.length),
+    confirmedCount,
+    totalSupportedSections,
+    percent,
+    fieldAlignmentPercent,
+    confidenceLevel: confirmedCount === totalSupportedSections && totalSupportedSections > 0 ? 'high' : confirmedCount > 0 ? 'partial' : 'none',
+    summary: confirmedCount
+      ? `${confirmedCount} of ${totalSupportedSections} buyer sections confirmed`
+      : 'No buyer confirmation metadata yet',
+    sections,
+    confirmedSectionKeys: sections.map((section) => section.key),
+    missingSections,
+    missingSectionKeys: missingSections.map((section) => section.key),
+    supportedSectionKeys,
+    lastConfirmedAt: latestTimestamp(sections.map((section) => section.confirmedAt || section.updatedAt)),
   }
 }
 
@@ -646,6 +759,7 @@ export function buildBondApplicationViewModel({
   })
   const applicationState = canonical.state || {}
   const fieldAlignment = buildOriginatorFieldAlignment(applicationState)
+  const buyerConfirmationConfidence = buildBuyerConfirmationConfidence(data, fieldAlignment)
   const primaryApplicant = buildApplicantViewModel(
     applicationState?.participants?.primaryApplicant || {},
     'primary_applicant',
@@ -823,6 +937,8 @@ export function buildBondApplicationViewModel({
     }),
     fieldAlignment,
     originatorFieldAlignment: fieldAlignment,
+    buyerConfirmationConfidence,
+    confirmationConfidence: buyerConfirmationConfidence,
     activity: buildActivity({ activityFeed, transaction, onboarding, documents }),
     risk,
     consultant: text(assignedConsultant) || 'Unassigned',
@@ -865,6 +981,16 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
   const fieldAlignmentPercent = fieldAlignment.totalCount
     ? Math.round((Number(fieldAlignment.capturedCount || 0) / Number(fieldAlignment.totalCount || 1)) * 100)
     : 0
+  const buyerConfirmationConfidence = vm.buyerConfirmationConfidence || vm.confirmationConfidence || {}
+  const buyerConfirmationSectionRows = (Array.isArray(buyerConfirmationConfidence.sections) ? buyerConfirmationConfidence.sections : [])
+    .map((section) => row(
+      section.label || section.key,
+      `${section.confirmedFields || 0}/${section.totalFields || 0} fields · ${toTitle(section.confidence || 'buyer confirmed prefill')}`,
+    ))
+    .join('')
+  const buyerConfirmationMissingRows = (Array.isArray(buyerConfirmationConfidence.missingSections) ? buyerConfirmationConfidence.missingSections : [])
+    .map((section) => row(section.label || section.key, 'Not confirmed'))
+    .join('')
   const documentRows = (vm.documents || [])
     .map((item) => row(item.label, item.status || (item.isUploaded ? 'Uploaded' : 'Missing')))
     .join('')
@@ -979,6 +1105,21 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
         <article class="card">
           <h2>Outstanding Items</h2>
           <table><tbody>${actionRows || row('Status', 'No outstanding actions')}</tbody></table>
+        </article>
+      </div>
+      <div class="section grid two">
+        <article class="card">
+          <h2>Buyer Section Confirmations</h2>
+          <table><tbody>
+            ${row('Confirmation Coverage', buyerConfirmationConfidence.totalSupportedSections ? `${buyerConfirmationConfidence.confirmedCount || 0}/${buyerConfirmationConfidence.totalSupportedSections} buyer sections confirmed (${buyerConfirmationConfidence.percent || 0}%)` : 'Not available')}
+            ${row('Confidence Level', toTitle(buyerConfirmationConfidence.confidenceLevel || 'none'))}
+            ${row('Last Confirmed', formatDateTime(buyerConfirmationConfidence.lastConfirmedAt, 'Not confirmed'))}
+            ${buyerConfirmationSectionRows || row('Confirmed Sections', 'No buyer-confirmed prefill sections yet')}
+          </tbody></table>
+        </article>
+        <article class="card">
+          <h2>Unconfirmed Buyer Sections</h2>
+          <table><tbody>${buyerConfirmationMissingRows || row('Status', 'All supported buyer sections were confirmed')}</tbody></table>
         </article>
       </div>
       <div class="section grid two">

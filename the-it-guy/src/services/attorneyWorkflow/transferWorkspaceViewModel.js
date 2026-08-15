@@ -4,6 +4,10 @@ import {
   getAttorneyStageDefinitionsForLane,
   normalizeAttorneyStageKey,
 } from '../../constants/attorneyWorkflowStages.js'
+import {
+  buildAttorneyWorkflowActionCommand,
+  buildAttorneyWorkflowFollowUpCommand,
+} from '../../constants/attorneyWorkflowUsability.js'
 
 export const TRANSFER_WORKSPACE_PHASES = Object.freeze(getAttorneyJourneyPhasesForLane('transfer'))
 
@@ -655,16 +659,31 @@ function buildAvailableActions(task = null, permissions = {}) {
           status: 'completed',
           disabled: task.completionReadiness?.canComplete === false,
           reason: task.completionReadiness?.warnings?.[0] || '',
+          command: buildTransferStatusActionCommand(task, 'completed'),
         }
       : null,
     task.displayStatus !== 'in_progress'
       ? { id: 'mark_in_progress', label: 'Mark In Progress', status: 'in_progress', disabled: false }
       : null,
     task.displayStatus !== 'blocked'
-      ? { id: 'mark_blocked', label: 'Mark Blocked', status: 'blocked', requiresNote: true, disabled: false }
+      ? {
+          id: 'mark_blocked',
+          label: 'Mark Blocked',
+          status: 'blocked',
+          requiresNote: true,
+          disabled: false,
+          command: buildTransferStatusActionCommand(task, 'blocked'),
+        }
       : null,
     task.displayStatus !== 'waiting'
-      ? { id: 'mark_waiting', label: 'Mark Waiting', status: 'waiting', requiresNote: true, disabled: false }
+      ? {
+          id: 'mark_waiting',
+          label: 'Mark Waiting',
+          status: 'waiting',
+          requiresNote: true,
+          disabled: false,
+          command: buildTransferStatusActionCommand(task, 'waiting'),
+        }
       : null,
   ].filter(Boolean)
 
@@ -673,6 +692,129 @@ function buildAvailableActions(task = null, permissions = {}) {
     unsupported: UNSUPPORTED_ACTIONS,
     readOnlyReason: '',
   }
+}
+
+function documentDisplayName(document = null, fallback = 'Required Document') {
+  return text(document?.displayName || document?.label || document?.name || document?.sourceRequirementKey || document?.key || fallback)
+}
+
+function inferTaskAudience(task = {}, document = null) {
+  const explicit = text(document?.requiredFrom || document?.required_from || document?.requiredParty || document?.uploadedByRole || document?.ownerLabel)
+  if (explicit) return explicit
+  const taskKey = key(task.key)
+  if (taskKey.includes('buyer')) return 'buyer'
+  if (taskKey.includes('seller')) return 'seller'
+  if (taskKey.includes('guarantee') || taskKey.includes('bond')) return 'bank'
+  if (taskKey.includes('rates') || taskKey.includes('levy') || taskKey.includes('clearance') || taskKey.includes('compliance')) return 'agent'
+  return 'attorney'
+}
+
+function buildTransferWorkflowActionForTask(task = {}, action = {}) {
+  const missingDocument =
+    task.completionReadiness?.missingRequiredDocuments?.[0] ||
+    (task.relatedDocuments || []).find((document) => document.missing || document.ready === false) ||
+    null
+  const documentName = documentDisplayName(missingDocument, task.label || 'Required Document')
+  const taskLabel = text(task.label || task.key || 'Transfer task')
+  const taskKey = key(task.key)
+  const target = inferTaskAudience(task, missingDocument)
+  const base = {
+    id: `${task.key}_${action.id}`,
+    laneKey: 'transfer',
+    stageKey: task.key,
+    relatedId: missingDocument?.id || missingDocument?.requestId || missingDocument?.sourceRequirementKey || '',
+    target,
+  }
+
+  if (action.id === 'request_document') {
+    return {
+      ...base,
+      type: 'request_document',
+      label: `Request ${documentName}`,
+      description: missingDocument?.reason || `Request the evidence needed for ${taskLabel}.`,
+      priority: task.missingDocumentCount > 0 ? 'high' : 'medium',
+    }
+  }
+
+  if (action.id === 'schedule_signing') {
+    return {
+      ...base,
+      type: 'manage_signing',
+      label: `Follow up ${taskLabel}`,
+      description: `Confirm the signing appointment, signer, and transfer document pack for ${taskLabel}.`,
+      priority: task.displayStatus === 'waiting' ? 'high' : 'medium',
+      target: taskKey.includes('seller') ? 'seller' : taskKey.includes('buyer') ? 'buyer' : 'client',
+    }
+  }
+
+  if (action.id === 'add_note') {
+    return {
+      ...base,
+      type: task.displayStatus === 'blocked' ? 'resolve_blocker' : 'update_matter_data',
+      label: task.displayStatus === 'blocked' ? `Resolve ${taskLabel} blocker` : `Capture ${taskLabel} update`,
+      description: task.displayStatus === 'blocked'
+        ? `Record what is blocking ${taskLabel} and the next follow-up.`
+        : `Record the current outcome or data point for ${taskLabel}.`,
+      priority: task.displayStatus === 'blocked' ? 'high' : 'medium',
+      target: 'attorney',
+    }
+  }
+
+  if (action.id === 'open_finance') {
+    return {
+      ...base,
+      type: 'update_matter_data',
+      label: `Review ${taskLabel} financials`,
+      description: `Check the financial dependency and record any update needed for ${taskLabel}.`,
+      priority: task.displayStatus === 'blocked' ? 'high' : 'medium',
+      target: 'attorney',
+    }
+  }
+
+  return null
+}
+
+function buildTransferActionCommand(task = {}, action = {}) {
+  const workflowAction = buildTransferWorkflowActionForTask(task, action)
+  if (!workflowAction) return { workflowAction: null, command: null }
+  return {
+    workflowAction,
+    command: buildAttorneyWorkflowActionCommand(workflowAction, {
+      laneKey: 'transfer',
+      stageKey: task.key,
+    }),
+  }
+}
+
+function buildTransferStatusActionCommand(task = {}, status = 'completed') {
+  const taskLabel = text(task.label || task.key || 'Transfer task')
+  const statusKey = key(status)
+  const action = statusKey === 'completed'
+    ? {
+        id: `${task.key}_complete_evidence`,
+        type: 'complete_stage_evidence',
+        label: `Complete ${taskLabel}`,
+        description: (task.evidenceRequirements || []).slice(0, 2).join(' ') || `Capture completion evidence for ${taskLabel}.`,
+        target: 'attorney',
+        priority: 'medium',
+        laneKey: 'transfer',
+        stageKey: task.key,
+      }
+    : {
+        id: `${task.key}_${statusKey}_status`,
+        type: 'resolve_blocker',
+        label: `${statusKey === 'blocked' ? 'Blocker' : 'Waiting'} update for ${taskLabel}`,
+        description: `Record why ${taskLabel} is ${statusKey === 'blocked' ? 'blocked' : 'waiting'} and what must happen next.`,
+        target: 'attorney',
+        priority: statusKey === 'blocked' ? 'high' : 'medium',
+        laneKey: 'transfer',
+        stageKey: task.key,
+      }
+
+  return buildAttorneyWorkflowActionCommand(action, {
+    laneKey: 'transfer',
+    stageKey: task.key,
+  })
 }
 
 export function buildTransferTaskWorkActions(task = null, permissions = {}) {
@@ -758,6 +900,15 @@ export function buildTransferTaskWorkActions(task = null, permissions = {}) {
       disabled: false,
       reason: '',
     })
+    actions.push({
+      id: 'schedule_signing',
+      label: 'Schedule Signing',
+      description: 'Prepare a signing follow-up with the appointment checklist.',
+      target: 'signing',
+      disabled: !canAddNote,
+      reason: canAddNote ? '' : 'You do not have permission to add signing updates on this lane.',
+      primary: task.displayStatus !== 'completed',
+    })
   }
 
   actions.push({
@@ -774,7 +925,343 @@ export function buildTransferTaskWorkActions(task = null, permissions = {}) {
     if (!action.id || seen.has(action.id)) return false
     seen.add(action.id)
     return true
+  }).map((action) => {
+    const { workflowAction, command } = buildTransferActionCommand(task, action)
+    return {
+      ...action,
+      workflowAction,
+      command,
+      workPacket: command?.workPacket || null,
+    }
   })
+}
+
+function buildTaskOutcomeSummary(task = null) {
+  if (!task) {
+    return {
+      label: 'No task selected',
+      tone: 'waiting',
+      canWorkAhead: true,
+      completionBlocked: true,
+      message: 'Select a transfer task to see the expected outcome.',
+      items: [],
+    }
+  }
+
+  const missingDocuments = task.completionReadiness?.missingRequiredDocuments || []
+  const dependencyBlockers = task.dependencySummary?.blockers || []
+  const completionBlocked = task.completionReadiness?.canComplete === false
+  const canWorkAhead = task.dependencySummary?.blocksWork !== true
+  const tone = task.displayStatus === 'blocked'
+    ? 'blocked'
+    : completionBlocked
+      ? 'waiting'
+      : task.displayStatus === 'completed'
+        ? 'completed'
+        : 'in_progress'
+  const items = [
+    {
+      key: 'work_ahead',
+      label: canWorkAhead ? 'Concurrent work allowed' : 'Sequence locked',
+      value: canWorkAhead ? 'Work can continue before earlier tasks are closed.' : 'Earlier task completion is required first.',
+      status: canWorkAhead ? 'ready' : 'blocked',
+    },
+    {
+      key: 'completion',
+      label: completionBlocked ? 'Completion evidence missing' : 'Completion evidence ready',
+      value: completionBlocked
+        ? `${missingDocuments.length} document${missingDocuments.length === 1 ? '' : 's'} still need evidence.`
+        : 'The task can be completed from the status actions.',
+      status: completionBlocked ? 'waiting' : 'ready',
+    },
+    dependencyBlockers.length
+      ? {
+          key: 'earlier_tasks',
+          label: 'Earlier open tasks',
+          value: `${dependencyBlockers.length} earlier task${dependencyBlockers.length === 1 ? '' : 's'} need review, but do not block work.`,
+          status: 'waiting',
+        }
+      : null,
+  ].filter(Boolean)
+
+  return {
+    label: completionBlocked ? 'Workable, not complete-ready' : 'Ready for outcome update',
+    tone,
+    canWorkAhead,
+    completionBlocked,
+    missingDocumentCount: missingDocuments.length,
+    dependencyBlockerCount: dependencyBlockers.length,
+    message: completionBlocked
+      ? 'The attorney can keep working this task, but must capture the missing evidence before marking it complete.'
+      : 'The expected evidence is present for this task.',
+    items,
+  }
+}
+
+function commandQueueStatusForTask(task = {}, action = {}) {
+  if (task.displayStatus === 'blocked') return 'blocked'
+  if (task.displayStatus === 'waiting') return 'waiting'
+  if (action.id === 'request_document' && task.missingDocumentCount > 0) return 'missing_documents'
+  if (action.id === 'schedule_signing') return 'signing'
+  if (action.id === 'complete_evidence') return 'complete_ready'
+  return 'open'
+}
+
+function rankCommandQueueItem(item = {}) {
+  const statusOrder = {
+    needs_correction: 0,
+    overdue: 1,
+    blocked: 2,
+    due_today: 3,
+    review_pending: 4,
+    due_soon: 5,
+    missing_documents: 6,
+    waiting: 7,
+    urgent: 8,
+    signing: 9,
+    complete_ready: 10,
+    open: 11,
+    unscheduled: 12,
+  }
+  const kindOrder = {
+    document: 0,
+    signing: 1,
+    evidence: 2,
+    finance: 3,
+    note: 4,
+    workflow: 5,
+  }
+  return (statusOrder[item.status] ?? 9) * 10 + (kindOrder[item.kind] ?? 9)
+}
+
+function selectCommandQueueItems(sorted = [], limit = 12) {
+  const selected = []
+  const selectedIds = new Set()
+
+  function add(item = null) {
+    if (!item?.id || selectedIds.has(item.id) || selected.length >= limit) return
+    selectedIds.add(item.id)
+    selected.push(item)
+  }
+
+  sorted.slice(0, Math.min(8, limit)).forEach(add)
+  add(sorted.find((item) => item.source === 'lane_follow_up'))
+  ;['document', 'signing', 'evidence', 'note'].forEach((kind) => {
+    add(sorted.find((item) => item.kind === kind))
+  })
+  sorted.forEach(add)
+
+  return selected.sort((left, right) => rankCommandQueueItem(left) - rankCommandQueueItem(right))
+}
+
+function buildTransferCommandQueue({ tasks = [], workActionsByTaskKey = {}, laneFollowUpSummary = null } = {}) {
+  const items = []
+  const seen = new Set()
+
+  function add(item = null) {
+    if (!item?.id || seen.has(item.id)) return
+    seen.add(item.id)
+    items.push(item)
+  }
+
+  const laneFollowUps = Array.isArray(laneFollowUpSummary?.items) ? laneFollowUpSummary.items : []
+  laneFollowUps.forEach((followUp) => {
+    const command = buildAttorneyWorkflowFollowUpCommand(followUp, {
+      laneKey: followUp.laneKey || 'transfer',
+      stageKey: followUp.stageKey || '',
+    })
+    add({
+      id: `lane_follow_up:${followUp.id}`,
+      source: 'lane_follow_up',
+      kind: followUp.commandType === 'schedule_signing' ? 'signing' : followUp.commandType === 'request_document' ? 'document' : 'workflow',
+      status: followUp.status || 'open',
+      title: followUp.title || 'Workflow follow-up',
+      description: followUp.description || followUp.statusLabel || '',
+      phaseKey: '',
+      phaseLabel: '',
+      taskKey: followUp.stageKey || '',
+      taskLabel: followUp.stageLabel || '',
+      audienceLabel: followUp.audienceLabel || '',
+      priority: followUp.priority || 'required',
+      dueDate: followUp.dueDate || '',
+      workPacket: command.workPacket || null,
+      command,
+      workflowAction: {
+        id: command.actionId || followUp.id || '',
+        type: command.actionType || 'review_workflow',
+        label: followUp.title || command.workPacket?.title || command.label,
+        description: followUp.description || command.description,
+        laneKey: followUp.laneKey || 'transfer',
+        stageKey: followUp.stageKey || command.stageKey || '',
+        target: followUp.audience || command.workPacket?.audience || 'attorney',
+        priority: followUp.priority === 'urgent' ? 'high' : followUp.priority === 'optional' ? 'low' : 'medium',
+        relatedId: followUp.relatedId || command.relatedId || '',
+      },
+      followUp,
+    })
+  })
+
+  tasks
+    .filter((task) => task.displayStatus !== 'completed')
+    .forEach((task) => {
+      const actions = workActionsByTaskKey[task.key] || []
+      const requestAction = actions.find((action) => action.id === 'request_document' && task.missingDocumentCount > 0 && action.command)
+      if (requestAction) {
+        add({
+          id: `task:${task.key}:request_document`,
+          source: 'task_action',
+          kind: 'document',
+          status: commandQueueStatusForTask(task, requestAction),
+          title: requestAction.command?.workPacket?.title || requestAction.workflowAction?.label || requestAction.label,
+          description: requestAction.workflowAction?.description || requestAction.description || task.description,
+          phaseKey: task.phaseKey,
+          phaseLabel: task.phaseLabel,
+          taskKey: task.key,
+          taskLabel: task.label,
+          audienceLabel: requestAction.command?.workPacket?.audienceLabel || '',
+          priority: requestAction.command?.workPacket?.priority || 'required',
+          dueDate: requestAction.command?.workPacket?.dueDate || '',
+          workPacket: requestAction.workPacket || null,
+          command: requestAction.command,
+          workflowAction: requestAction.workflowAction,
+          action: requestAction,
+        })
+      }
+
+      if (task.displayStatus === 'blocked' || task.displayStatus === 'waiting') {
+        const noteAction = actions.find((action) => action.id === 'add_note' && action.command)
+        if (noteAction) {
+          add({
+            id: `task:${task.key}:status_note`,
+            source: 'task_action',
+            kind: 'note',
+            status: commandQueueStatusForTask(task, noteAction),
+            title: noteAction.command?.workPacket?.title || noteAction.workflowAction?.label || noteAction.label,
+            description: noteAction.workflowAction?.description || noteAction.description || task.comment || task.description,
+            phaseKey: task.phaseKey,
+            phaseLabel: task.phaseLabel,
+            taskKey: task.key,
+            taskLabel: task.label,
+            audienceLabel: noteAction.command?.workPacket?.audienceLabel || '',
+            priority: noteAction.command?.workPacket?.priority || (task.displayStatus === 'blocked' ? 'urgent' : 'required'),
+            dueDate: noteAction.command?.workPacket?.dueDate || '',
+            workPacket: noteAction.workPacket || null,
+            command: noteAction.command,
+            workflowAction: noteAction.workflowAction,
+            action: noteAction,
+          })
+        }
+      }
+
+      const signingAction = actions.find((action) => action.id === 'schedule_signing' && action.command)
+      if (signingAction) {
+        add({
+          id: `task:${task.key}:schedule_signing`,
+          source: 'task_action',
+          kind: 'signing',
+          status: commandQueueStatusForTask(task, signingAction),
+          title: signingAction.command?.workPacket?.title || signingAction.workflowAction?.label || signingAction.label,
+          description: signingAction.workflowAction?.description || signingAction.description || task.description,
+          phaseKey: task.phaseKey,
+          phaseLabel: task.phaseLabel,
+          taskKey: task.key,
+          taskLabel: task.label,
+          audienceLabel: signingAction.command?.workPacket?.audienceLabel || '',
+          priority: signingAction.command?.workPacket?.priority || 'required',
+          dueDate: signingAction.command?.workPacket?.dueDate || '',
+          workPacket: signingAction.workPacket || null,
+          command: signingAction.command,
+          workflowAction: signingAction.workflowAction,
+          action: signingAction,
+        })
+      }
+
+      if (task.completionReadiness?.canComplete && task.displayStatus !== 'completed') {
+        const command = buildTransferStatusActionCommand(task, 'completed')
+        add({
+          id: `task:${task.key}:complete_evidence`,
+          source: 'status_action',
+          kind: 'evidence',
+          status: 'complete_ready',
+          title: command.workPacket?.title || `Complete ${task.label}`,
+          description: command.description || `Capture completion evidence for ${task.label}.`,
+          phaseKey: task.phaseKey,
+          phaseLabel: task.phaseLabel,
+          taskKey: task.key,
+          taskLabel: task.label,
+          audienceLabel: command.workPacket?.audienceLabel || '',
+          priority: command.workPacket?.priority || 'required',
+          dueDate: command.workPacket?.dueDate || '',
+          workPacket: command.workPacket || null,
+          command,
+          workflowAction: {
+            id: `${task.key}_complete_evidence`,
+            type: 'complete_stage_evidence',
+            label: `Complete ${task.label}`,
+            laneKey: 'transfer',
+            stageKey: task.key,
+            target: 'attorney',
+            priority: 'medium',
+          },
+          action: { id: 'complete_evidence', label: 'Complete Evidence', command },
+        })
+      }
+    })
+
+  const sorted = items.sort((left, right) => rankCommandQueueItem(left) - rankCommandQueueItem(right))
+  const visibleItems = selectCommandQueueItems(sorted, 12)
+  const counts = sorted.reduce((accumulator, item) => {
+    accumulator.total += 1
+    if (item.kind === 'document') accumulator.documents += 1
+    if (item.kind === 'signing') accumulator.signing += 1
+    if (item.kind === 'evidence') accumulator.evidence += 1
+    if (item.status === 'needs_correction') accumulator.needsCorrection += 1
+    if (item.status === 'overdue') accumulator.overdue += 1
+    if (item.status === 'due_today') accumulator.dueToday += 1
+    if (item.status === 'due_soon') accumulator.dueSoon += 1
+    if (item.status === 'review_pending') accumulator.reviewPending += 1
+    if (item.status === 'blocked') accumulator.blocked += 1
+    if (item.status === 'waiting') accumulator.waiting += 1
+    if (item.status === 'missing_documents') accumulator.missingDocuments += 1
+    if (item.priority === 'urgent') accumulator.urgent += 1
+    if (['buyer', 'seller', 'client'].includes(key(item.workPacket?.audience || item.followUp?.audience))) accumulator.clientFacing += 1
+    if (['bank', 'agent', 'attorney'].includes(key(item.workPacket?.audience || item.followUp?.audience))) accumulator.professionalFacing += 1
+    if (item.source === 'lane_follow_up') accumulator.persistedFollowUps += 1
+    return accumulator
+  }, {
+    total: 0,
+    documents: 0,
+    signing: 0,
+    evidence: 0,
+    needsCorrection: 0,
+    overdue: 0,
+    dueToday: 0,
+    dueSoon: 0,
+    reviewPending: 0,
+    blocked: 0,
+    waiting: 0,
+    missingDocuments: 0,
+    urgent: 0,
+    clientFacing: 0,
+    professionalFacing: 0,
+    persistedFollowUps: 0,
+  })
+
+  const health = counts.needsCorrection || counts.overdue || counts.blocked
+    ? 'blocked'
+    : counts.dueToday || counts.dueSoon || counts.reviewPending || counts.missingDocuments || counts.waiting || counts.urgent
+      ? 'attention'
+      : counts.total
+        ? 'open'
+        : 'clear'
+
+  return {
+    laneKey: 'transfer',
+    health,
+    counts,
+    primaryItem: sorted[0] || null,
+    items: visibleItems,
+  }
 }
 
 export function buildTransferWorkspaceViewModel({
@@ -835,9 +1322,15 @@ export function buildTransferWorkspaceViewModel({
   const selectedKeyDates = normalizeKeyDateRows(keyDates)
   const selectedParties = normalizePartyRows({ parties, workflow, selectedTask })
   const selectedDocumentSummary = buildDocumentSummary(selectedRelatedDocuments)
+  const selectedOutcomeSummary = buildTaskOutcomeSummary(selectedTask)
   const workActionsByTaskKey = Object.fromEntries(
     tasks.map((task) => [task.key, buildTransferTaskWorkActions(task, permissions)]),
   )
+  const commandQueue = buildTransferCommandQueue({
+    tasks,
+    workActionsByTaskKey,
+    laneFollowUpSummary: lane?.followUpSummary,
+  })
   const selectedWorkActions = selectedTask ? workActionsByTaskKey[selectedTask.key] || [] : []
   const selectedTabs = buildTaskTabs({
     checklistItems: selectedChecklistItems,
@@ -884,10 +1377,12 @@ export function buildTransferWorkspaceViewModel({
       activityFeed: selectedActivityFeed,
       tabs: selectedTabs,
       workActions: selectedWorkActions,
+      outcomeSummary: selectedOutcomeSummary,
     },
     permissions,
     availableActions: buildAvailableActions(selectedTask, permissions),
     workActionsByTaskKey,
+    commandQueue,
     unsupportedCapabilities: {
       delayedStatus: true,
       notApplicableStatus: true,

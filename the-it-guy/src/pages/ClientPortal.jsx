@@ -54,7 +54,11 @@ import {
 import { buildBondApplicationPrefillDraft } from '../modules/bond/application/prefill/bondApplicationPrefillBuilder'
 import { getBondApplicationOtpUnlockState } from '../modules/bond/application/prefill/bondApplicationOtpUnlockGate'
 import {
+  buildBondApplicationPrefillConfirmationCards,
+  buildBondApplicationPrefillConfirmationMetadata,
   buildBondApplicationPrefillReviewModel,
+  clearBondApplicationPrefillSectionConfirmation,
+  getBondApplicationPrefillConfirmedSectionKeys,
   getBondApplicationPrefillFieldReview,
 } from '../modules/bond/application/prefill/bondApplicationPrefillReviewModel'
 import { buildBondOriginatorBuyerOfferGrantViewModel } from '../modules/bond/integrations'
@@ -8032,6 +8036,8 @@ function ClientPortal() {
   const [activeBondApplicationSectionTab, setActiveBondApplicationSectionTab] = useState('summary')
   const [activeBondApplicantKey, setActiveBondApplicantKey] = useState('primary')
   const [guidedBondApplicationSuppressed, setGuidedBondApplicationSuppressed] = useState(false)
+  const [bondApplicationConfirmedSectionKeys, setBondApplicationConfirmedSectionKeys] = useState([])
+  const [bondApplicationExpandedSectionKeys, setBondApplicationExpandedSectionKeys] = useState([])
   const [bondApplicationDraft, setBondApplicationDraft] = useState(null)
   const [bondApplicationDirty, setBondApplicationDirty] = useState(false)
   const [bondApplicationSaving, setBondApplicationSaving] = useState(false)
@@ -8519,9 +8525,12 @@ function ClientPortal() {
     setMyDetailsDraft(cloneMyDetailsFormData(portal?.onboardingFormData?.formData || {}))
     setMyDetailsEditingSection('')
     setMyDetailsSavingSection('')
-    setBondApplicationDraft(buildBondApplicationPrefillDraft(portal).application)
+    const nextBondApplicationDraft = buildBondApplicationPrefillDraft(portal).application
+    setBondApplicationDraft(nextBondApplicationDraft)
     setBondApplicationDirty(false)
     setActiveBondApplicantKey('primary')
+    setBondApplicationConfirmedSectionKeys(getBondApplicationPrefillConfirmedSectionKeys(nextBondApplicationDraft?.prefill_metadata))
+    setBondApplicationExpandedSectionKeys([])
   }, [portal])
 
   useEffect(() => {
@@ -8645,11 +8654,32 @@ function ClientPortal() {
     }
   }
 
+  function withBondApplicationConfirmationMetadata(draft, confirmedSectionKeys = bondApplicationConfirmedSectionKeys) {
+    if (!draft) return draft
+    const metadata = draft?.prefill_metadata || {}
+    const cards = buildBondApplicationPrefillConfirmationCards(draft, metadata)
+    return {
+      ...draft,
+      prefill_metadata: buildBondApplicationPrefillConfirmationMetadata(metadata, cards, {
+        confirmedSectionKeys,
+      }),
+    }
+  }
+
+  function clearBondApplicationSectionConfirmationFromDraft(draft, sectionKey = activeBondApplicationSectionTab) {
+    if (!draft) return draft
+    return {
+      ...draft,
+      prefill_metadata: clearBondApplicationPrefillSectionConfirmation(draft?.prefill_metadata || {}, sectionKey),
+    }
+  }
+
   function updateBondApplicationField(path, value) {
     setBondApplicationDraft((previous) => {
       if (!previous) return previous
-      return setNestedPortalValue(previous, path, value)
+      return clearBondApplicationSectionConfirmationFromDraft(setNestedPortalValue(previous, path, value))
     })
+    setBondApplicationConfirmedSectionKeys((previous) => previous.filter((key) => key !== activeBondApplicationSectionTab))
     setBondApplicationDirty(true)
   }
 
@@ -8662,10 +8692,11 @@ function ClientPortal() {
           )
         : []
       return {
-        ...previous,
+        ...clearBondApplicationSectionConfirmationFromDraft(previous),
         applicants: nextApplicants,
       }
     })
+    setBondApplicationConfirmedSectionKeys((previous) => previous.filter((key) => key !== activeBondApplicationSectionTab))
     setBondApplicationDirty(true)
   }
 
@@ -8684,8 +8715,40 @@ function ClientPortal() {
     setBondApplicationDirty(true)
   }
 
+  function confirmActiveBondApplicationSection() {
+    const nextConfirmedSectionKeys = bondApplicationConfirmedSectionKeys.includes(activeBondApplicationSectionTab)
+      ? bondApplicationConfirmedSectionKeys
+      : [...bondApplicationConfirmedSectionKeys, activeBondApplicationSectionTab]
+    setBondApplicationConfirmedSectionKeys((previous) =>
+      previous.includes(activeBondApplicationSectionTab)
+        ? previous
+        : [...previous, activeBondApplicationSectionTab],
+    )
+    setBondApplicationDraft((previous) => withBondApplicationConfirmationMetadata(previous, nextConfirmedSectionKeys))
+    setBondApplicationExpandedSectionKeys((previous) => previous.filter((key) => key !== activeBondApplicationSectionTab))
+    setBondApplicationDirty(true)
+  }
+
+  function expandActiveBondApplicationSection() {
+    setBondApplicationExpandedSectionKeys((previous) =>
+      previous.includes(activeBondApplicationSectionTab)
+        ? previous
+        : [...previous, activeBondApplicationSectionTab],
+    )
+  }
+
+  function scrollToBondApplicationField(path = '') {
+    const targetId = `bond-${String(path || '').replaceAll('.', '-')}`
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById(targetId)
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target?.focus?.({ preventScroll: true })
+    })
+  }
+
   async function persistBondApplicationDraft(nextDraft = bondApplicationDraft, { submitted = false } = {}) {
     if (!nextDraft) return
+    const draftWithConfirmationMetadata = withBondApplicationConfirmationMetadata(nextDraft)
 
     try {
       setBondApplicationSaving(true)
@@ -8693,7 +8756,7 @@ function ClientPortal() {
 
       const { draftToPersist, formData: nextFormData } = buildLegacyBondApplicationPersistencePayload({
         existingFormData: portal?.onboardingFormData?.formData || {},
-        legacyBondApplication: nextDraft,
+        legacyBondApplication: draftWithConfirmationMetadata,
         submitted,
       })
 
@@ -11805,6 +11868,23 @@ function ClientPortal() {
   })
   const activeBondApplicationPrefillSummary = bondApplicationPrefillReview.activeSectionSummary
   const visibleBondApplicationPrefillSources = bondApplicationPrefillReview.sourceCounts.slice(0, 4)
+  const activeBondApplicationConfirmationCards = buildBondApplicationPrefillConfirmationCards(
+    bondApplicationData,
+    bondApplicationPrefillMetadata,
+    { activeSection: activeBondApplicationSectionTab },
+  )
+  const activeBondApplicationCardsComplete =
+    activeBondApplicationConfirmationCards.length > 0 &&
+    activeBondApplicationConfirmationCards.every((card) => card.complete)
+  const activeBondApplicationFirstMissingCard =
+    activeBondApplicationConfirmationCards.find((card) => !card.complete && card.firstMissingFieldPath) || null
+  const activeBondApplicationSectionConfirmed = bondApplicationConfirmedSectionKeys.includes(activeBondApplicationSectionTab)
+  const activeBondApplicationSectionExpanded = bondApplicationExpandedSectionKeys.includes(activeBondApplicationSectionTab)
+  const shouldCollapseBondApplicationDetails =
+    activeBondApplicationConfirmationCards.length > 0 &&
+    activeBondApplicationCardsComplete &&
+    activeBondApplicationSectionConfirmed &&
+    !activeBondApplicationSectionExpanded
 
   const readBondField = (path, fallback = '') => {
     const value = getNestedPortalValue(bondApplicationData, path.split('.'))
@@ -11832,6 +11912,83 @@ function ClientPortal() {
         <span className="truncate">{review.label}</span>
         <span className="max-w-[150px] truncate font-medium opacity-80">{review.detail}</span>
       </span>
+    )
+  }
+
+  const renderBondConfirmationCards = (cards = []) => {
+    if (!cards.length) return null
+    return (
+      <section className="space-y-3" data-bond-prefill-confirmation-cards="true">
+        <div className="grid gap-3 xl:grid-cols-2">
+          {cards.map((card) => (
+            <article key={card.key} className="rounded-[16px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#718196]">Review and confirm</span>
+                  <h6 className="mt-1 text-sm font-semibold text-[#142132]">{card.title}</h6>
+                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{card.description}</p>
+                </div>
+                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+                  card.complete
+                    ? 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]'
+                    : 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
+                }`}>
+                  {card.confirmedFields}/{card.totalFields} confirmed
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {card.fields.map((field) => (
+                  <div key={`${card.key}-${field.path}`} className="min-w-0 rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2.5">
+                    <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">{field.label}</span>
+                    <strong className={`mt-1 block min-h-[20px] truncate text-sm ${field.hasValue ? 'text-[#142132]' : 'text-[#a15b31]'}`}>
+                      {field.hasValue ? field.valueLabel : 'Still needed'}
+                    </strong>
+                    {renderBondPrefillBadge(field.review)}
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-3" data-bond-prefill-section-actions="true">
+          <span className="text-sm font-medium text-[#5f7288]">
+            {activeBondApplicationCardsComplete
+              ? activeBondApplicationSectionConfirmed
+                ? 'Section confirmed. Detailed fields are collapsed.'
+                : 'Everything in this section has a value.'
+              : `${activeBondApplicationFirstMissingCard?.firstMissingFieldLabel || 'A required detail'} is still needed.`}
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {activeBondApplicationCardsComplete ? (
+              <button
+                type="button"
+                onClick={confirmActiveBondApplicationSection}
+                disabled={activeBondApplicationSectionConfirmed}
+                className="inline-flex min-h-[38px] items-center rounded-[11px] bg-[#2f5478] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#244463] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+              >
+                {activeBondApplicationSectionConfirmed ? 'Section Confirmed' : 'Confirm Section'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => scrollToBondApplicationField(activeBondApplicationFirstMissingCard?.firstMissingFieldPath)}
+                className="inline-flex min-h-[38px] items-center rounded-[11px] bg-[#a15b31] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#864924]"
+              >
+                Complete Missing Field
+              </button>
+            )}
+            {activeBondApplicationCardsComplete && activeBondApplicationSectionConfirmed ? (
+              <button
+                type="button"
+                onClick={activeBondApplicationSectionExpanded ? confirmActiveBondApplicationSection : expandActiveBondApplicationSection}
+                className="inline-flex min-h-[38px] items-center rounded-[11px] border border-[#d1deeb] bg-white px-3.5 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+              >
+                {activeBondApplicationSectionExpanded ? 'Hide Detailed Fields' : 'Edit Detailed Fields'}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </section>
     )
   }
 
@@ -11927,6 +12084,7 @@ function ClientPortal() {
 
     const applicantField = ({ key, label, type = 'text', options = null, required = false, helper = '', hidden = false }) => {
       const path = `applicants.${applicantKey}.${key}`
+      const fieldId = `bond-${path.replaceAll('.', '-')}`
       const prefillReview = hidden
         ? null
         : getBondApplicationPrefillFieldReview(bondApplicationPrefillMetadata, path, {
@@ -11937,7 +12095,7 @@ function ClientPortal() {
           })
 
       return (
-        <label key={`${applicantKey}-${key}`} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+        <label key={`${applicantKey}-${key}`} htmlFor={fieldId} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3 py-2.5">
           <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">
             {label}{required ? ' *' : ''}
           </span>
@@ -11945,6 +12103,7 @@ function ClientPortal() {
           {helper ? <span className="mt-1 block text-xs leading-5 text-[#7b8ca2]">{helper}</span> : null}
           {hidden ? null : type === 'select' ? (
             <select
+              id={fieldId}
               value={String(applicant?.[key] || '')}
               onChange={(event) => updateBondApplicationApplicantField(applicantKey, key, event.target.value)}
               className="mt-2 w-full rounded-[10px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12"
@@ -11957,6 +12116,7 @@ function ClientPortal() {
             </select>
           ) : (
             <input
+              id={fieldId}
               type={type}
               value={String(applicant?.[key] || '')}
               onChange={(event) => updateBondApplicationApplicantField(applicantKey, key, event.target.value)}
@@ -13469,7 +13629,9 @@ function ClientPortal() {
                           </section>
                         ) : null}
 
-                        {activeBondApplicationSectionTab === 'summary' ? (
+                        {renderBondConfirmationCards(activeBondApplicationConfirmationCards)}
+
+                        {!shouldCollapseBondApplicationDetails && activeBondApplicationSectionTab === 'summary' ? (
                           <div className="space-y-4">
                             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                               {renderBondInputField({ path: 'summary.applicant_name', label: 'Applicant name', required: true, helperText: 'Pre-filled from onboarding.' })}
@@ -13494,14 +13656,14 @@ function ClientPortal() {
                           </div>
                         ) : null}
 
-                        {activeBondApplicationSectionTab === 'personal_details' ? (
+                        {!shouldCollapseBondApplicationDetails && activeBondApplicationSectionTab === 'personal_details' ? (
                           <div className="space-y-4">
                             {renderBondApplicantSection('primary', 'Primary Applicant', 'Required personal data based on OOBA Section A.')}
                             {hasCoApplicantProfile ? renderBondApplicantSection('co_applicant', 'Co-applicant / Surety') : null}
                           </div>
                         ) : null}
 
-                        {activeBondApplicationSectionTab === 'contact_address' ? (
+                        {!shouldCollapseBondApplicationDetails && activeBondApplicationSectionTab === 'contact_address' ? (
                           <div className="space-y-4">
                             <div className="grid gap-3 md:grid-cols-2">
                               {renderBondInputField({ path: 'contact_address.home_number', label: 'Home number' })}
@@ -13636,7 +13798,7 @@ function ClientPortal() {
                           </div>
                         ) : null}
 
-                        {activeBondApplicationSectionTab === 'loan_details' ? (
+                        {!shouldCollapseBondApplicationDetails && activeBondApplicationSectionTab === 'loan_details' ? (
                           <div className="space-y-4">
                             <div className="grid gap-3 md:grid-cols-2">
                               {renderBondInputField({ path: 'loan_details.erf_or_section_number', label: 'Erf / section number' })}

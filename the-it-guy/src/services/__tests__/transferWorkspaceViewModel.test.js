@@ -142,6 +142,30 @@ assert.ok(viewModel.selectedTaskContext.workActions.some((action) => action.id =
 assert.ok(viewModel.selectedTaskContext.workActions.some((action) => action.id === 'upload_document'))
 assert.ok(viewModel.selectedTaskContext.workActions.some((action) => action.id === 'open_parties'))
 assert.ok(viewModel.workActionsByTaskKey.entity_authority_checked.length > 0)
+assert.equal(viewModel.selectedTaskContext.outcomeSummary.canWorkAhead, true)
+assert.equal(viewModel.selectedTaskContext.outcomeSummary.completionBlocked, true)
+assert.ok(viewModel.selectedTaskContext.outcomeSummary.items.some((item) => item.key === 'completion'))
+
+const requestDocumentAction = viewModel.selectedTaskContext.workActions.find((action) => action.id === 'request_document')
+assert.equal(requestDocumentAction.command.commandType, 'request_document')
+assert.equal(requestDocumentAction.command.stageKey, 'entity_authority_checked')
+assert.equal(requestDocumentAction.command.workPacket.commandType, 'request_document')
+assert.equal(requestDocumentAction.command.workPacket.laneKey, 'transfer')
+
+const noteAction = viewModel.selectedTaskContext.workActions.find((action) => action.id === 'add_note')
+assert.equal(noteAction.command.commandType, 'add_note')
+assert.equal(noteAction.command.workPacket.stageKey, 'entity_authority_checked')
+
+const completeAction = viewModel.availableActions.primary.find((action) => action.id === 'mark_complete')
+assert.equal(completeAction.command.commandType, 'complete_step')
+assert.equal(completeAction.command.workPacket.stageKey, 'entity_authority_checked')
+assert.ok(viewModel.commandQueue.items.length > 0)
+assert.equal(viewModel.commandQueue.laneKey, 'transfer')
+assert.ok(viewModel.commandQueue.counts.documents > 0)
+assert.ok(viewModel.commandQueue.items.some((item) => item.kind === 'document' && item.command?.commandType === 'request_document'))
+assert.ok(viewModel.commandQueue.items.some((item) => item.kind === 'signing' && item.command?.commandType === 'schedule_signing'))
+assert.ok(viewModel.commandQueue.items.some((item) => item.kind === 'evidence' && item.command?.commandType === 'complete_step'))
+assert.equal(viewModel.commandQueue.primaryItem.status, 'missing_documents')
 
 viewModel.tasks.forEach((task) => {
   const taskActions = buildTransferTaskWorkActions(task, workflow.lane.permissions)
@@ -160,6 +184,10 @@ assert.ok(
 assert.ok(
   viewModel.workActionsByTaskKey.buyer_signed_transfer_documents.some((action) => action.id === 'open_documents'),
   'signing tasks expose document actions',
+)
+assert.ok(
+  viewModel.workActionsByTaskKey.buyer_signed_transfer_documents.some((action) => action.id === 'schedule_signing' && action.command?.commandType === 'schedule_signing'),
+  'signing tasks expose a command-backed signing follow-up',
 )
 assert.ok(
   viewModel.workActionsByTaskKey.buyer_fica_requested.some((action) => action.id === 'open_parties'),
@@ -314,5 +342,76 @@ const readOnlyModel = buildTransferWorkspaceViewModel({
 
 assert.equal(readOnlyModel.availableActions.primary.length, 0)
 assert.equal(readOnlyModel.availableActions.readOnlyReason, 'view_only')
+
+const persistedFollowUpModel = buildTransferWorkspaceViewModel({
+  workflow: {
+    ...workflow,
+    lane: {
+      ...workflow.lane,
+      followUpSummary: {
+        items: [
+          {
+            id: 'follow-up-1',
+            title: 'Existing seller FICA request',
+            description: 'Already requested from seller.',
+            commandType: 'request_document',
+            status: 'due_soon',
+            priority: 'required',
+            dueDate: '2026-07-09',
+            audience: 'seller',
+            audienceLabel: 'Seller',
+            stageKey: 'seller_fica_received',
+            stageLabel: 'Seller FICA Received',
+          },
+          {
+            id: 'follow-up-2',
+            title: 'Correct Buyer FICA Pack',
+            description: 'Proof of address is expired.',
+            commandType: 'request_document',
+            source: 'document_request',
+            status: 'needs_correction',
+            priority: 'urgent',
+            dueDate: '2026-07-07',
+            audience: 'buyer',
+            audienceLabel: 'Buyer',
+            stageKey: 'buyer_fica_received',
+            stageLabel: 'Buyer FICA Received',
+            relatedId: 'buyer-fica',
+          },
+          {
+            id: 'follow-up-3',
+            title: 'Review Bank Guarantee',
+            description: 'Uploaded guarantee needs review.',
+            commandType: 'request_document',
+            status: 'review_pending',
+            priority: 'required',
+            dueDate: '2026-07-06',
+            audience: 'bank',
+            audienceLabel: 'Bank',
+            stageKey: 'guarantees_received',
+            stageLabel: 'Guarantees Received',
+          },
+        ],
+      },
+    },
+  },
+})
+
+assert.ok(persistedFollowUpModel.commandQueue.items.some((item) => item.source === 'lane_follow_up'))
+assert.equal(persistedFollowUpModel.commandQueue.counts.persistedFollowUps, 3)
+assert.equal(persistedFollowUpModel.commandQueue.counts.needsCorrection, 1)
+assert.equal(persistedFollowUpModel.commandQueue.counts.dueSoon, 1)
+assert.equal(persistedFollowUpModel.commandQueue.counts.reviewPending, 1)
+assert.ok(persistedFollowUpModel.commandQueue.counts.clientFacing >= 2)
+assert.ok(persistedFollowUpModel.commandQueue.counts.professionalFacing >= 1)
+assert.equal(persistedFollowUpModel.commandQueue.primaryItem.status, 'needs_correction')
+const persistedFollowUpQueueItem = persistedFollowUpModel.commandQueue.items.find((item) => item.id === 'lane_follow_up:follow-up-1')
+assert.equal(persistedFollowUpQueueItem.command.commandType, 'request_document')
+assert.equal(persistedFollowUpQueueItem.workPacket.sourceFollowUpId, 'follow-up-1')
+assert.equal(persistedFollowUpQueueItem.workPacket.sourceFollowUpStatus, 'due_soon')
+assert.equal(persistedFollowUpQueueItem.command.draft.workPacket, persistedFollowUpQueueItem.workPacket)
+const correctionQueueItem = persistedFollowUpModel.commandQueue.items.find((item) => item.id === 'lane_follow_up:follow-up-2')
+assert.equal(correctionQueueItem.command.label, 'Request Correction')
+assert.equal(correctionQueueItem.workPacket.sourceFollowUpRelatedId, 'buyer-fica')
 
 console.log('transferWorkspaceViewModel tests passed')

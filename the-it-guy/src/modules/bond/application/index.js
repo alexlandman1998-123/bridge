@@ -53,6 +53,12 @@ export {
   getBondApplicationPrefillSourceForPath,
 } from './prefill/bondApplicationPrefillBuilder.js'
 export {
+  BOND_APPLICATION_PREFILL_CONFIRMATION_CARD_DEFINITIONS,
+  BOND_APPLICATION_PREFILL_CONFIRMATION_VERSION,
+  buildBondApplicationPrefillConfirmationCards,
+  buildBondApplicationPrefillConfirmationMetadata,
+  clearBondApplicationPrefillSectionConfirmation,
+  getBondApplicationPrefillConfirmedSectionKeys,
   buildBondApplicationPrefillReviewModel,
   getBondApplicationPrefillFieldReview,
   normalizeBondApplicationPrefillSectionKey,

@@ -7147,6 +7147,7 @@ function ArchlineTransferWorkspace({
   onOpenDocuments,
   onOpenParties,
   onOpenFinance,
+  onExecuteCommand,
 }) {
   const [selectedTaskKey, setSelectedTaskKey] = useState('')
   const [search, setSearch] = useState('')
@@ -7168,6 +7169,7 @@ function ArchlineTransferWorkspace({
     linkedDocumentKey: '',
     requiresReason: false,
     requiresNote: false,
+    workPacket: null,
   })
   const selectedTaskButtonRef = useRef(null)
   const canUpdateSteps = typeof onUpdateStep === 'function'
@@ -7195,6 +7197,8 @@ function ArchlineTransferWorkspace({
   const documentSummary = viewModel.selectedTaskContext.documentSummary || { required: 0, received: 0, missing: 0, label: 'No required documents' }
   const checklistItems = viewModel.selectedTaskContext.checklistItems || []
   const taskWorkActions = viewModel.selectedTaskContext.workActions || []
+  const outcomeSummary = viewModel.selectedTaskContext.outcomeSummary || null
+  const commandQueue = viewModel.commandQueue || { counts: {}, items: [] }
   const taskTabs = useMemo(() => {
     const rawTaskTabs = viewModel.selectedTaskContext.tabs || []
     return [
@@ -7313,6 +7317,7 @@ function ArchlineTransferWorkspace({
       linkedDocumentKey: '',
       requiresReason: ['blocked', 'waiting'].includes(action?.status),
       requiresNote: Boolean(action?.requiresNote),
+      workPacket: action?.command?.draft?.workPacket || action?.command?.workPacket || null,
     })
   }
 
@@ -7329,6 +7334,7 @@ function ArchlineTransferWorkspace({
       linkedDocumentKey: '',
       requiresReason: false,
       requiresNote: false,
+      workPacket: null,
     })
   }
 
@@ -7349,6 +7355,7 @@ function ArchlineTransferWorkspace({
     if (action.id === 'open_documents') return typeof onOpenDocuments === 'function'
     if (action.id === 'open_parties') return typeof onOpenParties === 'function'
     if (action.id === 'open_finance') return typeof onOpenFinance === 'function'
+    if (action.id === 'schedule_signing') return typeof onExecuteCommand === 'function' || typeof onAddNote === 'function'
     if (action.id === 'add_note') return typeof onAddNote === 'function'
     return false
   }
@@ -7362,6 +7369,10 @@ function ArchlineTransferWorkspace({
   function handleTaskWorkAction(action = {}) {
     if (!selectedTask || !canRunTaskWorkAction(action)) return
     if (action.id === 'request_document') {
+      if (action.command && typeof onExecuteCommand === 'function') {
+        onExecuteCommand(action.workflowAction, action.command)
+        return
+      }
       onRequestDocument?.(selectedTask, selectedDocuments)
       return
     }
@@ -7381,8 +7392,33 @@ function ArchlineTransferWorkspace({
       onOpenFinance?.(selectedTask)
       return
     }
-    if (action.id === 'add_note') {
+    if (action.id === 'schedule_signing') {
+      if (action.command && typeof onExecuteCommand === 'function') {
+        onExecuteCommand(action.workflowAction, action.command)
+        return
+      }
       onAddNote?.(selectedTask)
+      return
+    }
+    if (action.id === 'add_note') {
+      if (action.command && typeof onExecuteCommand === 'function') {
+        onExecuteCommand(action.workflowAction, action.command)
+        return
+      }
+      onAddNote?.(selectedTask)
+    }
+  }
+
+  function handleCommandQueueItem(item = {}) {
+    if (item.command && item.workflowAction && typeof onExecuteCommand === 'function') {
+      onExecuteCommand(item.workflowAction, item.command)
+      return
+    }
+    if (item.taskKey) {
+      setSelectedTaskKey(item.taskKey)
+      if (item.phaseKey) {
+        setExpandedPhaseKeys((previous) => ({ ...previous, [item.phaseKey]: true }))
+      }
     }
   }
 
@@ -7393,16 +7429,64 @@ function ArchlineTransferWorkspace({
       open_documents: FileText,
       open_parties: UsersRound,
       open_finance: CircleDollarSign,
+      schedule_signing: CalendarDays,
       add_note: MessageSquarePlus,
     }
     return icons[actionId] || MoreHorizontal
+  }
+
+  function getCommandQueueIcon(kind = '') {
+    const icons = {
+      document: FileText,
+      signing: CalendarDays,
+      evidence: CheckCircle2,
+      finance: CircleDollarSign,
+      note: MessageSquarePlus,
+    }
+    return icons[kind] || Workflow
+  }
+
+  function getCommandQueueStatusLabel(status = '') {
+    if (status === 'missing_documents') return 'Missing Docs'
+    if (status === 'needs_correction') return 'Correction'
+    if (status === 'review_pending') return 'Review'
+    if (status === 'due_today') return 'Due Today'
+    if (status === 'due_soon') return 'Due Soon'
+    if (status === 'complete_ready') return 'Ready'
+    if (status === 'blocked') return 'Blocked'
+    if (status === 'overdue') return 'Overdue'
+    if (status === 'waiting') return 'Waiting'
+    if (status === 'signing') return 'Signing'
+    return toTitle(status || 'Open')
+  }
+
+  function getCommandQueueTone(status = '') {
+    if (['needs_correction', 'overdue', 'blocked'].includes(status)) {
+      return {
+        card: 'border-red-200 bg-red-50',
+        icon: 'text-red-700',
+        badge: 'bg-red-100 text-red-800',
+      }
+    }
+    if (['missing_documents', 'due_today', 'due_soon', 'review_pending', 'waiting'].includes(status)) {
+      return {
+        card: 'border-amber-200 bg-amber-50',
+        icon: 'text-amber-700',
+        badge: 'bg-amber-100 text-amber-800',
+      }
+    }
+    return {
+      card: 'border-slate-200 bg-slate-50',
+      icon: 'text-slate-600',
+      badge: 'bg-white text-slate-600',
+    }
   }
 
   async function submitStatusDraft(event) {
     event.preventDefault()
     if (!statusDraft.task) return
     const nextTaskKey = statusDraft.status === 'completed' ? viewModel.nextActionableTask?.key : ''
-    const updateSucceeded = await onUpdateStep?.(statusDraft.task, statusDraft.status, buildStatusDraftNote())
+    const updateSucceeded = await onUpdateStep?.(statusDraft.task, statusDraft.status, buildStatusDraftNote(), statusDraft.workPacket || null)
     if (updateSucceeded === false) return
     if (nextTaskKey) {
       setSelectedTaskKey(nextTaskKey)
@@ -7621,6 +7705,80 @@ function ArchlineTransferWorkspace({
                   ))}
                 </div>
 
+                {commandQueue.items?.length ? (
+                  <section className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-sm font-semibold text-slate-950">Lane Command Queue</h3>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[0.68rem] font-semibold text-slate-600">
+                            {commandQueue.counts.total || commandQueue.items.length} open
+                          </span>
+                          {commandQueue.counts.needsCorrection || commandQueue.counts.overdue || commandQueue.counts.dueToday || commandQueue.counts.dueSoon ? (
+                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[0.68rem] font-semibold text-amber-700">
+                              {(commandQueue.counts.needsCorrection || 0) + (commandQueue.counts.overdue || 0) + (commandQueue.counts.dueToday || 0) + (commandQueue.counts.dueSoon || 0)} attention
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          Outstanding document, signing, evidence, and blocker commands across the transfer lane.
+                        </p>
+                      </div>
+                      <div className="grid w-full gap-2 lg:max-w-3xl xl:grid-cols-3">
+                        {commandQueue.items.slice(0, 3).map((item) => {
+                          const Icon = getCommandQueueIcon(item.kind)
+                          const tone = getCommandQueueTone(item.status)
+                          return (
+                            <article key={item.id} className={`rounded-lg border px-3 py-3 ${tone.card}`}>
+                              <div className="flex items-start gap-2">
+                                <span className={`mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-white ${tone.icon}`}>
+                                  <Icon size={15} />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <strong className="line-clamp-2 text-sm font-semibold text-slate-950">{item.title}</strong>
+                                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.64rem] font-semibold ${tone.badge}`}>
+                                      {getCommandQueueStatusLabel(item.status)}
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{item.taskLabel || item.phaseLabel || item.description}</p>
+                                  {item.workPacket ? (
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                      {[
+                                        ['Audience', item.workPacket.audienceLabel],
+                                        ['Priority', item.workPacket.priorityLabel],
+                                        ['Due', formatDate(item.workPacket.dueDate, '')],
+                                      ].filter(([, value]) => value).map(([label, value]) => (
+                                        <span key={label} className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[0.62rem] font-semibold text-slate-500">
+                                          {label}: {value}
+                                        </span>
+                                      ))}
+                                      {item.workPacket.sourceFollowUpId ? (
+                                        <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[0.62rem] font-semibold text-emerald-700">
+                                          Follow-up audit
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="mt-2"
+                                    onClick={() => handleCommandQueueItem(item)}
+                                  >
+                                    {item.command ? item.command.label || 'Open' : 'View Task'}
+                                  </Button>
+                                </div>
+                              </div>
+                            </article>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
+
                 {!completionReadiness.canComplete && completionReadiness.warnings?.length ? (
                   <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -7636,6 +7794,29 @@ function ArchlineTransferWorkspace({
                       </Button>
                     </div>
                   </div>
+                ) : null}
+
+                {outcomeSummary ? (
+                  <section className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Outcome Checkpoint</span>
+                        <h3 className="mt-1 text-sm font-semibold text-slate-950">{outcomeSummary.label}</h3>
+                        <p className="mt-1 text-sm leading-6 text-slate-600">{outcomeSummary.message}</p>
+                      </div>
+                      <div className="grid min-w-[260px] gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+                        {(outcomeSummary.items || []).map((item) => {
+                          const ready = item.status === 'ready'
+                          return (
+                            <div key={item.key} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                              <span className={`text-xs font-semibold ${ready ? 'text-emerald-700' : 'text-amber-700'}`}>{item.label}</span>
+                              <p className="mt-1 text-xs leading-5 text-slate-500">{item.value}</p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </section>
                 ) : null}
 
                 {taskWorkActions.length ? (
@@ -7867,6 +8048,7 @@ function ArchlineTransferWorkspace({
                             <span className="min-w-0 flex-1">
                               <strong className="block text-sm font-semibold text-slate-950">{entry.title || entry.label || 'Matter update'}</strong>
                               <span className="mt-1 block text-sm leading-6 text-slate-600">{entry.body || entry.message || 'Activity recorded.'}</span>
+                              <WorkflowActivityPacketMeta item={entry} />
                               <span className="mt-2 block text-xs text-slate-500">{entry.authorName || entry.actor || 'Matter team'} · {formatDateTime(entry.createdAt || entry.timestamp, '')}</span>
                             </span>
                           </article>
@@ -7929,6 +8111,7 @@ function ArchlineTransferWorkspace({
             <span className="text-xs font-medium text-slate-500">Task</span>
             <strong className="mt-1 block text-sm font-semibold text-slate-950">{statusDraft.task?.label || 'Workflow task'}</strong>
           </div>
+          <WorkflowWorkPacketSummary packet={statusDraft.workPacket} />
           {statusDraft.requiresReason ? (
             <label className="grid gap-2 text-sm font-medium text-slate-700">
               Reason <span className="text-red-600">*</span>
@@ -17028,6 +17211,13 @@ function AttorneyTransactionDetail() {
   const bondApplicationFieldAlignmentPercent = bondApplicationFieldAlignment.totalCount
     ? Math.round((Number(bondApplicationFieldAlignment.capturedCount || 0) / Number(bondApplicationFieldAlignment.totalCount || 1)) * 100)
     : 0
+  const bondApplicationConfirmationConfidence = bondApplicationViewModel.buyerConfirmationConfidence || bondApplicationViewModel.confirmationConfidence || {}
+  const bondApplicationConfirmedSections = Array.isArray(bondApplicationConfirmationConfidence.sections)
+    ? bondApplicationConfirmationConfidence.sections
+    : []
+  const bondApplicationUnconfirmedSections = Array.isArray(bondApplicationConfirmationConfidence.missingSections)
+    ? bondApplicationConfirmationConfidence.missingSections
+    : []
   const bondConsultantWorkspaceAction = useMemo(
     () =>
       resolveBondConsultantAction({
@@ -17770,13 +17960,14 @@ function AttorneyTransactionDetail() {
     () => buildAttorneyDailyActionQueueItems(legalWorkflowModels),
     [legalWorkflowModels],
   )
-  async function handleArchlineLegalWorkflowStepUpdate(workflow, step, status, note) {
+  async function handleArchlineLegalWorkflowStepUpdate(workflow, step, status, note, workPacket = null) {
     const lane = workflow?.lane || null
     if (!lane) return false
     const draft = buildWorkflowInlineStepDraft(lane, step, status)
     return submitWorkflowStepUpdate({
       ...draft,
       note: typeof note === 'string' ? note : draft.note,
+      workPacket,
     })
   }
 
@@ -19661,7 +19852,7 @@ function AttorneyTransactionDetail() {
               parties={archlinePartyItems}
               activityFeed={overviewConversationEntries}
               saving={workflowSaving}
-              onUpdateStep={(step, status, note) => handleArchlineLegalWorkflowStepUpdate(archlineTransferWorkflow, step, status, note)}
+              onUpdateStep={(step, status, note, workPacket) => handleArchlineLegalWorkflowStepUpdate(archlineTransferWorkflow, step, status, note, workPacket)}
               onUploadDocument={(task, documents = []) => {
                 const targetDocument = (documents || []).find((document) => !document?.missing && (document?.requirement || document?.requiredDocument || document?.id)) || null
                 if (targetDocument?.requirement || targetDocument?.requiredDocument) {
@@ -19688,6 +19879,7 @@ function AttorneyTransactionDetail() {
               onOpenDocuments={() => openWorkspaceMenu('documents')}
               onOpenParties={() => openWorkspaceMenu('stakeholders')}
               onOpenFinance={() => openWorkspaceMenu('finance')}
+              onExecuteCommand={(action, command) => handleWorkflowActionCommand(archlineTransferWorkflow?.lane, action, command)}
             />
           )
         ) : null}
@@ -21188,6 +21380,57 @@ function AttorneyTransactionDetail() {
               </article>
 
               <aside className="space-y-5">
+                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+                  <div className="flex items-start justify-between gap-4">
+                    <span className="flex min-w-0 items-start gap-3">
+                      <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-successSoft text-success">
+                        <CheckCircle2 size={17} />
+                      </span>
+                      <span className="min-w-0">
+                        <h3 className="text-base font-semibold text-textStrong">Buyer Section Confirmations</h3>
+                        <span className="mt-1 block text-xs text-textMuted">
+                          {Number(bondApplicationConfirmationConfidence.confirmedCount || 0)} of {Number(bondApplicationConfirmationConfidence.totalSupportedSections || 0)} buyer sections confirmed
+                        </span>
+                      </span>
+                    </span>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${Number(bondApplicationConfirmationConfidence.percent || 0) >= 100 ? 'bg-successSoft text-success' : Number(bondApplicationConfirmationConfidence.percent || 0) > 0 ? 'bg-[#fff4e6] text-warning' : 'bg-red-50 text-red-600'}`}>
+                      {Number(bondApplicationConfirmationConfidence.percent || 0)}%
+                    </span>
+                  </div>
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-surfaceAlt">
+                    <div
+                      className={`h-full rounded-full ${Number(bondApplicationConfirmationConfidence.percent || 0) >= 100 ? 'bg-success' : Number(bondApplicationConfirmationConfidence.percent || 0) > 0 ? 'bg-warning' : 'bg-red-500'}`}
+                      style={{ width: `${Math.min(100, Math.max(0, Number(bondApplicationConfirmationConfidence.percent || 0)))}%` }}
+                    />
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {bondApplicationConfirmedSections.length ? bondApplicationConfirmedSections.map((section) => (
+                      <div key={section.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-sm">
+                        <span className="min-w-0 truncate text-textBody">{section.label}</span>
+                        <span className="shrink-0 rounded-full bg-successSoft px-2 py-0.5 text-[0.68rem] font-semibold text-success">
+                          {Number(section.confirmedFields || 0)}/{Number(section.totalFields || 0)}
+                        </span>
+                      </div>
+                    )) : (
+                      <p className="rounded-[10px] bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
+                        No buyer-confirmed prefill sections yet.
+                      </p>
+                    )}
+                  </div>
+                  {bondApplicationUnconfirmedSections.length ? (
+                    <div className="mt-4 border-t border-borderSoft pt-3">
+                      <span className="text-xs font-semibold text-textStrong">Unconfirmed Sections</span>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {bondApplicationUnconfirmedSections.map((section) => (
+                          <span key={section.key} className="max-w-full truncate rounded-full bg-[#fff4e6] px-2 py-1 text-[0.68rem] font-semibold text-warning">
+                            {section.label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+
                 <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
                   <div className="flex items-start justify-between gap-4">
                     <span className="flex min-w-0 items-start gap-3">
