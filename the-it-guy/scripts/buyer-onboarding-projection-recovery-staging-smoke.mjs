@@ -20,6 +20,7 @@ const STAGING_PROJECT = Object.freeze({
 const RECOVERY_EVENT_TYPES = Object.freeze([
   'buyer_onboarding_required_documents_projection_failed',
   'buyer_onboarding_platform_fee_consent_projection_failed',
+  'buyer_onboarding_buyer_participant_projection_failed',
   'buyer_onboarding_information_sheet_projection_failed',
   'buyer_onboarding_roleplayer_projection_failed',
   'buyer_onboarding_workflow_evidence_projection_failed',
@@ -229,6 +230,7 @@ begin
   foreach v_event_type in array array[
     'buyer_onboarding_required_documents_projection_failed',
     'buyer_onboarding_platform_fee_consent_projection_failed',
+    'buyer_onboarding_buyer_participant_projection_failed',
     'buyer_onboarding_information_sheet_projection_failed',
     'buyer_onboarding_roleplayer_projection_failed',
     'buyer_onboarding_workflow_evidence_projection_failed',

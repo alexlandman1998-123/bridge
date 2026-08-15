@@ -18,6 +18,7 @@ import {
   FileText,
   Filter,
   ExternalLink,
+  Home,
   Landmark,
   Link2,
   Mail,
@@ -28,6 +29,7 @@ import {
   MessageSquarePlus,
   MoreHorizontal,
   Paperclip,
+  PenLine,
   Phone,
   Search,
   Send,
@@ -63,6 +65,7 @@ import {
   summarizeBondHybridFinanceWorkflow,
 } from '../core/transactions/bondHybridFinanceWorkflow'
 import { buildFinanceReadinessHandoffPacket } from '../core/finance/financeReadinessSelectors'
+import { getClientAccessPolicyMessage } from '../core/clientAccess/clientAccessPolicy'
 import { getAttorneyTransferStage, stageLabelFromAttorneyKey } from '../core/transactions/attorneySelectors'
 import { buildAttorneyMatterToday } from '../core/transactions/attorneyMatterToday'
 import {
@@ -72,12 +75,18 @@ import {
 import { buildAttorneyCommunicationControl } from '../core/transactions/attorneyCommunicationControl'
 import { deriveFinanceManagedBy, isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
 import {
+  TRANSACTION_BUYER_DELIVERY_ACTIONS,
+  buildTransactionBuyerDeliveryPayload,
+  normalizeTransactionBuyerDeliveryTarget,
+} from '../core/transactions/transactionBuyerDelivery'
+import {
   buildTransactionLifecycleSummaryFromRollup,
   formatTransactionRollupStatusLabel,
   TRANSACTION_LIFECYCLE_STAGE_LABELS,
   TRANSACTION_LIFECYCLE_STAGE_ORDER,
   USE_TRANSACTION_ROLLUP_OVERVIEW,
 } from '../core/transactions/transactionLifecycle'
+import { resolveTransactionBuyerAccessPolicy } from '../core/transactions/transactionBuyersPolicy'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
@@ -3513,26 +3522,26 @@ function LegalWorkflowCoordinationPanel({ summary = null, compact = false, stage
                       {item.escalatedAt ? <span>Escalated {formatShortDayMonth(item.escalatedAt)}</span> : null}
                     </div>
                   </div>
-                  {onExecuteCoordination && item.status !== 'ready' && (!item.actioned || item.escalationNeeded) ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className="shrink-0"
-                      onClick={() => onExecuteCoordination(item, command)}
-                    >
-                      {command.label}
-                    </Button>
-                  ) : null}
-                </div>
-              </article>
-            )
-          })}
-        </div>
-      ) : null}
-    </section>
-  )
-}
+	                  {onExecuteCoordination && item.status !== 'ready' && (!item.actioned || item.escalationNeeded) ? (
+	                    <Button
+	                      type="button"
+	                      size="sm"
+	                      variant="secondary"
+	                      className="shrink-0"
+	                      onClick={() => onExecuteCoordination(item, command)}
+	                    >
+	                      {command.label}
+	                    </Button>
+	                  ) : null}
+	                </div>
+	              </article>
+	            )
+	          })}
+	        </div>
+	      ) : null}
+	    </section>
+	  )
+	}
 
 function normalizeLegalWorkflowDetailKey(value = '') {
   const normalized = String(value || '').trim().toLowerCase()
@@ -5017,6 +5026,127 @@ function BuyerProcessHandoffPanel({
           <UsersRound size={14} />
           Roleplayers
         </Button>
+      </div>
+    </section>
+  )
+}
+
+function getBuyerPartyDecisionTone(decision = {}) {
+  if (!decision?.active) return 'border-borderSoft bg-surfaceAlt text-textMuted'
+  if (decision.portalAlreadySent || decision.actions?.sendPortalLink?.enabled) return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (decision.onboardingSatisfied) return 'border-sky-200 bg-sky-50 text-sky-700'
+  if (decision.contactable && decision.actions?.sendOnboarding?.enabled) return 'border-blue-200 bg-blue-50 text-blue-700'
+  return 'border-amber-200 bg-amber-50 text-amber-700'
+}
+
+function getBuyerPartyStatusLabel(decision = {}) {
+  if (!decision?.active) return 'Inactive'
+  if (decision.portalAlreadySent) return 'Portal sent'
+  if (decision.actions?.sendPortalLink?.enabled) return 'Portal ready'
+  if (decision.onboardingSatisfied) return 'Onboarding captured'
+  if (decision.actions?.sendOnboarding?.enabled) return 'Onboarding ready'
+  if (decision.actions?.manualCapture?.enabled) return 'Manual capture available'
+  return 'Details pending'
+}
+
+function getBuyerPartyReasonLabel(reason = '') {
+  if (reason === 'buyer_portal_already_sent') return 'Buyer portal link already sent.'
+  return getClientAccessPolicyMessage(reason, reason ? toTitle(reason) : '')
+}
+
+function BuyerPartyRosterPanel({
+  policy = null,
+  onboardingBusy = false,
+  onManageBuyers,
+  onSendBuyer,
+} = {}) {
+  const decisions = Array.isArray(policy?.buyerDecisions) ? policy.buyerDecisions : []
+  const summary = policy?.summary || {}
+  if (!decisions.length) return null
+
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="text-section-title font-semibold text-textStrong">Buyer Parties</h3>
+          <p className="mt-1 text-secondary text-textMuted">
+            {summary.activeBuyerCount || decisions.length} buyer{(summary.activeBuyerCount || decisions.length) === 1 ? '' : 's'} linked to this transaction.
+          </p>
+        </div>
+        <Button type="button" variant="secondary" size="sm" onClick={onManageBuyers}>
+          <UsersRound size={14} />
+          Manage Buyers
+        </Button>
+      </div>
+
+      <div className="mt-4 grid gap-3">
+        {decisions.map((decision, index) => {
+          const buyer = decision.buyer || {}
+          const tone = getBuyerPartyDecisionTone(decision)
+          const name = buyer.name || decision.email || `Buyer ${index + 1}`
+          const statusLabel = getBuyerPartyStatusLabel(decision)
+          const portalReason = getBuyerPartyReasonLabel(decision.actions?.sendPortalLink?.reason)
+          const onboardingReason = getBuyerPartyReasonLabel(decision.actions?.sendOnboarding?.reason)
+          const isPrimary = decision.isPrimary
+
+          return (
+            <article key={decision.targetId || `${name}:${index}`} className={`rounded-control border px-4 py-3 ${tone}`}>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <strong className="break-words text-sm text-textStrong">{name}</strong>
+                    {isPrimary ? (
+                      <span className="rounded-full border border-primary/20 bg-primarySoft px-2 py-0.5 text-[0.64rem] font-semibold text-primary">
+                        Primary
+                      </span>
+                    ) : null}
+                    <span className="rounded-full border border-current/20 bg-white/70 px-2 py-0.5 text-[0.64rem] font-semibold">
+                      {statusLabel}
+                    </span>
+                  </div>
+                  <div className="mt-2 grid gap-1 text-xs leading-5 text-textMuted sm:grid-cols-2">
+                    <span className="break-words">{decision.email || 'Email not captured'}</span>
+                    <span>{buyer.phone || 'Phone not captured'}</span>
+                    <span>{decision.onboardingSatisfied ? 'Onboarding satisfied' : onboardingReason}</span>
+                    <span>{decision.portalAlreadySent || decision.actions?.sendPortalLink?.enabled ? 'Portal delivery clear' : portalReason}</span>
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {decision.actions?.sendOnboarding?.enabled ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={onboardingBusy}
+                      onClick={() => onSendBuyer?.(decision, TRANSACTION_BUYER_DELIVERY_ACTIONS.sendOnboarding)}
+                    >
+                      <Send size={14} />
+                      Send Onboarding
+                    </Button>
+                  ) : null}
+                  {decision.actions?.sendPortalLink?.enabled ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={onboardingBusy}
+                      onClick={() => onSendBuyer?.(decision, TRANSACTION_BUYER_DELIVERY_ACTIONS.sendPortalLink)}
+                    >
+                      <Mail size={14} />
+                      Send Portal
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+
+      <div className="mt-4 grid gap-2 border-t border-borderSoft pt-4 text-xs font-semibold text-textMuted sm:grid-cols-3">
+        <span>{summary.contactableBuyerCount || 0} contactable</span>
+        <span>{summary.onboardingSatisfiedBuyerCount || 0} onboarding satisfied</span>
+        <span>{summary.portalReadyBuyerCount || summary.portalAlreadySentBuyerCount || 0} portal clear</span>
       </div>
     </section>
   )
@@ -9729,6 +9859,243 @@ function ApplicationDetailField({ label, value, required = false, emphasis = fal
   )
 }
 
+function getBondApplicationAlignmentFields(applicationViewModel = {}) {
+  const fields = applicationViewModel?.fieldAlignment?.fields || applicationViewModel?.originatorFieldAlignment?.fields || []
+  return Array.isArray(fields) ? fields : []
+}
+
+function buildBondApplicationSectionMetrics(applicationViewModel = {}) {
+  const fields = getBondApplicationAlignmentFields(applicationViewModel)
+  const countFields = (tokens = []) => {
+    const matches = fields.filter((field) => tokens.some((token) => String(field.group || field.key || '').toLowerCase().includes(token)))
+    const total = matches.length
+    const complete = matches.filter((field) => field.captured || field.complete).length
+    return { total, complete, missing: Math.max(0, total - complete) }
+  }
+  const documents = Array.isArray(applicationViewModel?.documents) ? applicationViewModel.documents : []
+  const documentTotal = documents.filter((item) => item.key !== 'additionalDocuments').length
+  const documentComplete = documents.filter((item) => item.key !== 'additionalDocuments' && item.isUploaded).length
+  return {
+    applicants: countFields(['primary applicant', 'co-applicant', 'surety']),
+    contact: countFields(['contact', 'address']),
+    employment: countFields(['employment']),
+    income: countFields(['income', 'expenses', 'banking', 'liabilities', 'assets']),
+    property: countFields(['property', 'finance']),
+    declarations: countFields(['declarations']),
+    documents: {
+      total: documentTotal,
+      complete: documentComplete,
+      missing: Math.max(0, documentTotal - documentComplete),
+    },
+  }
+}
+
+function buildBondApplicationSubmissionBlockers(applicationViewModel = {}) {
+  const readinessItems = Array.isArray(applicationViewModel?.readinessItems) ? applicationViewModel.readinessItems : []
+  return readinessItems
+    .filter((item) => !item.complete)
+    .map((item) => ({
+      key: item.key || item.label,
+      label: item.label || item.title || 'Required item',
+      section: item.section || item.group || 'application',
+    }))
+}
+
+function BondApplicationDetailsWorkspace({
+  viewModel = {},
+  detailModel = {},
+  sectionMetrics = {},
+  activeSection = 'applicants',
+  blockers = [],
+  loadingAction = '',
+  onSectionChange,
+  onEditApplication,
+  onOpenDocuments,
+}) {
+  const applicants = Array.isArray(viewModel?.applicants) && viewModel.applicants.length ? viewModel.applicants : [viewModel?.applicant || {}]
+  const sections = [
+    {
+      key: 'applicants',
+      label: 'Applicants',
+      icon: UserRound,
+      rows: [
+        ['Full Name', viewModel?.applicant?.fullName, true],
+        ['ID Number', detailModel.idNumber, true],
+        ['Marital Status', detailModel.maritalStatus],
+        ['Dependants', detailModel.dependants],
+      ],
+    },
+    {
+      key: 'contact',
+      label: 'Contact & Address',
+      icon: Home,
+      rows: [
+        ['Email Address', viewModel?.applicant?.email, true],
+        ['Phone Number', viewModel?.applicant?.phone, true],
+        ['Property', viewModel?.property?.label, true],
+        ['Development', viewModel?.property?.developmentName],
+      ],
+    },
+    {
+      key: 'employment',
+      label: 'Employment',
+      icon: BriefcaseBusiness,
+      rows: [
+        ['Employment Status', viewModel?.applicant?.employmentStatus, true],
+        ['Employer', detailModel.employer],
+        ['Occupation', detailModel.occupation],
+        ['Employment Duration', detailModel.employmentDuration],
+      ],
+    },
+    {
+      key: 'income',
+      label: 'Income & Expenses',
+      icon: CreditCard,
+      rows: [
+        ['Gross Monthly Income', viewModel?.financials?.grossIncome?.display, true],
+        ['Other Monthly Income', detailModel.otherIncome],
+        ['Monthly Expenses', viewModel?.financials?.monthlyExpenses?.display, true],
+        ['Disposable Income', detailModel.disposableIncome, false, true],
+        ['Monthly Commitments', detailModel.monthlyCommitments],
+      ],
+    },
+    {
+      key: 'property',
+      label: 'Property & Loan',
+      icon: Building2,
+      rows: [
+        ['Property / Unit', viewModel?.property?.label, true],
+        ['Purchase Price', viewModel?.financials?.purchasePrice?.display, true],
+        ['Deposit', viewModel?.financials?.deposit?.display],
+        ['Bond Required', viewModel?.financials?.bondAmountRequired?.display, true],
+        ['Loan to Value', detailModel.ltv],
+        ['Preferred Term', detailModel.preferredTerm],
+      ],
+    },
+    {
+      key: 'declarations',
+      label: 'Declarations',
+      icon: FileCheck2,
+      rows: [
+        ['Application Status', viewModel?.application?.status, true],
+        ['Readiness', viewModel?.application?.readinessLabel],
+        ['Last Updated', viewModel?.application?.updatedAtDisplay],
+      ],
+    },
+  ]
+  const active = sections.find((section) => section.key === activeSection) || sections[0]
+  const activeMetric = sectionMetrics[active.key] || { total: active.rows.length, complete: active.rows.filter(([, value]) => !isMissingApplicationValue(value)).length }
+  const totalForActive = activeMetric.total || active.rows.length || 1
+  const completeForActive = activeMetric.complete || active.rows.filter(([, value]) => !isMissingApplicationValue(value)).length
+  const reviewPercent = viewModel?.application?.completionPercent || 0
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-base font-semibold text-textStrong">Application Details</h3>
+          <span className="text-xs font-semibold text-primary">{completeForActive}/{totalForActive}</span>
+        </div>
+        <nav className="mt-4 flex gap-6 overflow-x-auto border-b border-borderSoft">
+          {sections.map((section) => (
+            <button
+              key={section.key}
+              type="button"
+              className={`relative h-10 whitespace-nowrap px-1 text-sm font-semibold transition ${active.key === section.key ? 'text-primary' : 'text-textMuted hover:text-primary'}`}
+              onClick={() => onSectionChange?.(section.key)}
+            >
+              {section.label}
+              {active.key === section.key ? <span className="absolute inset-x-0 bottom-[-1px] h-0.5 rounded-full bg-primary" /> : null}
+            </button>
+          ))}
+        </nav>
+        <div className="mt-5">
+          <div className="mb-4 flex items-center gap-2">
+            {createElement(active.icon || FileText, { size: 17, className: 'text-primary' })}
+            <h4 className="text-sm font-semibold text-textStrong">{active.label}</h4>
+          </div>
+          {active.key === 'applicants' && applicants.length > 1 ? (
+            <div className="mb-4 grid gap-3 md:grid-cols-2">
+              {applicants.map((applicant) => (
+                <article key={applicant.role || applicant.fullName} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                  <strong className="block text-sm text-textStrong">{applicant.fullName || 'Applicant'}</strong>
+                  <span className="mt-1 block text-xs text-textMuted">{applicant.roleLabel || applicant.role || 'Applicant'}</span>
+                </article>
+              ))}
+            </div>
+          ) : null}
+          <dl className="grid gap-x-8 gap-y-1 md:grid-cols-2">
+            {active.rows.map(([label, value, required, emphasis]) => (
+              <ApplicationDetailField key={label} label={label} value={formatApplicationValue(value)} required={required} emphasis={emphasis} />
+            ))}
+          </dl>
+        </div>
+        <div className="mt-6 flex justify-end">
+          <Button type="button" onClick={onEditApplication} disabled={Boolean(loadingAction)}>
+            {loadingAction ? 'Working...' : 'Save Changes'}
+          </Button>
+        </div>
+      </article>
+
+      <aside className="space-y-4">
+        <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-surface">
+          <h3 className="text-sm font-semibold text-textStrong">Application Review</h3>
+          <div className="mt-4 flex items-center gap-4">
+            <span className="grid size-20 place-items-center rounded-full" style={{ background: `conic-gradient(#0f8f68 ${reviewPercent}%, #edf2f7 0)` }}>
+              <span className="grid size-14 place-items-center rounded-full bg-white text-center">
+                <strong className="text-lg text-textStrong">{reviewPercent}%</strong>
+              </span>
+            </span>
+            <div>
+              <strong className="text-sm text-warning">{blockers.length} item{blockers.length === 1 ? '' : 's'} outstanding</strong>
+              <p className="mt-1 text-xs leading-5 text-textMuted">Use the sections to complete required information.</p>
+            </div>
+          </div>
+          <div className="mt-4 divide-y divide-borderSoft">
+            {sections.map((section) => {
+              const metric = sectionMetrics[section.key] || { total: section.rows.length, complete: section.rows.filter(([, value]) => !isMissingApplicationValue(value)).length }
+              const complete = metric.complete || 0
+              const total = metric.total || section.rows.length
+              const missing = Math.max(0, total - complete)
+              return (
+                <button key={section.key} type="button" className="flex w-full items-center justify-between gap-3 py-2 text-left text-sm" onClick={() => onSectionChange?.(section.key)}>
+                  <span className="flex min-w-0 items-center gap-2">
+                    {createElement(section.icon, { size: 15, className: 'shrink-0 text-textMuted' })}
+                    <span className="truncate font-medium text-textStrong">{section.label}</span>
+                  </span>
+                  <span className="shrink-0 text-xs font-semibold text-textStrong">{complete}/{total}</span>
+                  <span className={`size-2 shrink-0 rounded-full ${missing ? 'bg-orange-500' : 'bg-success'}`} />
+                </button>
+              )
+            })}
+          </div>
+          {blockers.length ? (
+            <div className="mt-4 rounded-[13px] border border-red-100 bg-red-50 p-3">
+              <h4 className="text-sm font-semibold text-red-700">Required before submission</h4>
+              <div className="mt-2 space-y-1">
+                {blockers.slice(0, 6).map((blocker) => (
+                  <p key={blocker.key || blocker.label} className="flex items-center gap-2 text-xs font-medium text-red-700">
+                    <AlertTriangle size={13} />
+                    <span className="min-w-0 truncate">{blocker.label}</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </article>
+        <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-surface">
+          <h3 className="text-sm font-semibold text-textStrong">Need Help?</h3>
+          <p className="mt-1 text-xs leading-5 text-textMuted">Contact your bond consultant for assistance.</p>
+          <Button type="button" variant="secondary" size="sm" className="mt-4 w-full justify-center" onClick={onOpenDocuments}>
+            View Documents
+            <ChevronRight size={14} />
+          </Button>
+        </article>
+      </aside>
+    </section>
+  )
+}
+
 const BOND_JOURNEY_ICON_BY_KEY = {
   received: CheckCircle2,
   documents: FileText,
@@ -9776,7 +10143,6 @@ function BondConsultantOverviewWorkspace({
   quoteRows = [],
   acceptedQuote = null,
   teamMembers = [],
-  activityFeed = [],
   loadingAction = '',
   onOpenDocuments,
   onOpenQuotesGrant,
@@ -9819,7 +10185,6 @@ function BondConsultantOverviewWorkspace({
         ['Dependants', firstPresent(applicationViewModel?.applicant?.dependants, applicationViewModel?.applicant?.numberOfDependants)],
       ]).filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')
   const bankRows = submissionRows.slice(0, 4)
-  const recentActivity = activityFeed.slice(0, 8)
   const openCurrentStage = () => {
     if (currentStage.onOpen === 'documents') {
       onOpenDocuments?.()
@@ -9953,10 +10318,10 @@ function BondConsultantOverviewWorkspace({
         </article>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+      <section>
         <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
           <h3 className="text-base font-semibold text-textStrong">Application team</h3>
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {teamMembers.map((member) => (
               <article key={member.key || `${member.role}:${member.name}`} className="min-w-0">
                 <div className="flex items-center gap-3">
@@ -9975,55 +10340,43 @@ function BondConsultantOverviewWorkspace({
             <ChevronRight size={14} />
           </button>
         </article>
-
-        <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-textStrong">Recent activity</h3>
-            <button type="button" className="text-sm font-semibold text-primary hover:text-primaryDark" onClick={onOpenActivity}>View all</button>
-          </div>
-          <div className="mt-4 max-h-[280px] space-y-3 overflow-y-auto pr-1">
-            {recentActivity.length ? recentActivity.map((entry) => (
-              <article key={entry.id || `${entry.createdAt}:${entry.title}`} className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3">
-                <span className="inline-flex size-8 items-center justify-center rounded-[10px] bg-primarySoft text-primary">
-                  <FileText size={15} />
-                </span>
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-textStrong">{entry.body || entry.title || 'Activity recorded'}</p>
-                  <span className="mt-0.5 block text-xs text-textMuted">{formatDateTime(entry.createdAt || entry.timestamp, '')}</span>
-                </div>
-                <span className="max-w-[95px] truncate text-right text-xs text-textMuted">{entry.authorName ? `By ${entry.authorName}` : 'By System'}</span>
-              </article>
-            )) : (
-              <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
-                No activity yet. Document requests, bank submissions, quotes, and consultant notes will appear here.
-              </p>
-            )}
-          </div>
-        </article>
       </section>
     </section>
   )
 }
 
 const BOND_DOCUMENT_CENTRE_CATEGORIES = [
-  { key: 'identity', label: 'Identity Documents', icon: UserRound, tone: 'bg-emerald-50 text-primary', tokens: ['identity', 'id document', ' id ', '_id', 'passport', 'fica'] },
-  { key: 'residence', label: 'Proof of Residence', icon: Building2, tone: 'bg-orange-50 text-orange-700', tokens: ['residence', 'address', 'utility', 'municipal', 'lease'] },
-  { key: 'income', label: 'Income Verification', icon: BriefcaseBusiness, tone: 'bg-violet-50 text-violet-700', tokens: ['income', 'payslip', 'salary', 'irp5', 'tax', 'employment', 'employer'] },
-  { key: 'bank', label: 'Bank Statements', icon: CreditCard, tone: 'bg-blue-50 text-blue-700', tokens: ['bank statement', 'statement', 'banking'] },
-  { key: 'application', label: 'Application Documents', icon: FileCheck2, tone: 'bg-emerald-50 text-emerald-700', tokens: ['application', 'consent', 'form', 'declaration', 'mandate'] },
-  { key: 'supporting', label: 'Supporting Documents', icon: FileText, tone: 'bg-slate-100 text-slate-600', tokens: [] },
+  { key: 'identity', label: 'Identity', icon: UserRound, tone: 'bg-emerald-50 text-primary', tokens: ['identity', 'id document', ' id ', '_id', 'passport', 'fica'] },
+  { key: 'income', label: 'Income', icon: BriefcaseBusiness, tone: 'bg-violet-50 text-violet-700', tokens: ['income', 'payslip', 'salary', 'bank statement', 'statements', 'irp5', 'tax'] },
+  { key: 'address', label: 'Address', icon: Home, tone: 'bg-orange-50 text-orange-700', tokens: ['residence', 'address', 'utility', 'municipal', 'lease'] },
+  { key: 'application', label: 'Application', icon: FileCheck2, tone: 'bg-emerald-50 text-emerald-700', tokens: ['application', 'consent', 'form', 'declaration', 'signature'] },
+  { key: 'property_deposit', label: 'Property / Deposit', icon: Building2, tone: 'bg-blue-50 text-blue-700', tokens: ['deposit', 'property', 'purchase', 'offer', 'otp', 'sale agreement'] },
+  { key: 'self_employed_business', label: 'Self-Employed / Business', icon: BriefcaseBusiness, tone: 'bg-amber-50 text-amber-700', tokens: ['self employed', 'self-employed', 'business', 'company', 'financial statements', 'management accounts'] },
+  { key: 'other', label: 'Other', icon: FileText, tone: 'bg-slate-100 text-slate-600', tokens: [] },
 ]
 
 const BOND_DOCUMENT_STATUS_META = {
-  outstanding: { label: 'Outstanding', tone: 'border-red-100 bg-red-50 text-red-700', icon: AlertTriangle },
-  not_uploaded: { label: 'Not uploaded', tone: 'border-slate-200 bg-slate-100 text-slate-600', icon: Clock3 },
-  uploaded: { label: 'Uploaded', tone: 'border-emerald-100 bg-emerald-50 text-emerald-700', icon: Upload },
-  verified: { label: 'Verified', tone: 'border-emerald-100 bg-emerald-50 text-emerald-700', icon: CheckCircle2 },
-  rejected: { label: 'Rejected', tone: 'border-red-100 bg-red-50 text-red-700', icon: X },
-  expired: { label: 'Expired', tone: 'border-red-100 bg-red-50 text-red-700', icon: AlertTriangle },
-  reupload_required: { label: 'Re-upload required', tone: 'border-orange-100 bg-orange-50 text-orange-700', icon: Upload },
-  not_required: { label: 'Not required', tone: 'border-slate-200 bg-slate-50 text-slate-500', icon: Clock3 },
+  missing: { label: 'Missing', tone: 'text-red-700', icon: AlertTriangle },
+  uploaded: { label: 'Uploaded', tone: 'text-emerald-700', icon: Upload },
+  pending_verification: { label: 'Pending Verification', tone: 'text-orange-700', icon: Clock3 },
+  verified: { label: 'Verified', tone: 'text-emerald-700', icon: CheckCircle2 },
+  rejected: { label: 'Rejected', tone: 'text-red-700', icon: X },
+  replacement_required: { label: 'Replacement Required', tone: 'text-orange-700', icon: Upload },
+  pending_signature: { label: 'Pending Signature', tone: 'text-orange-700', icon: PenLine },
+  not_required: { label: 'Not Required', tone: 'text-slate-500', icon: Clock3 },
 }
+
+const BOND_DERIVED_DOCUMENT_REQUIREMENTS = [
+  { key: 'idDocument', categoryKey: 'identity', displayName: 'South African ID (Certified Copy)', scope: 'applicant', keywords: ['id document', 'identity', 'id copy', 'passport', 'fica'] },
+  { key: 'incomeProof', categoryKey: 'income', displayName: 'Latest Payslip', scope: 'applicant', keywords: ['payslip', 'income proof', 'salary'], excludeWhenSelfEmployed: true },
+  { key: 'bankStatement', categoryKey: 'income', displayName: 'Latest 3 Months Bank Statements', scope: 'applicant', keywords: ['bank statement', 'statements'] },
+  { key: 'proofOfResidence', categoryKey: 'address', displayName: 'Proof of Residence', scope: 'applicant', keywords: ['proof of residence', 'residence', 'address', 'utility'] },
+  { key: 'businessBankStatements', categoryKey: 'self_employed_business', displayName: 'Latest 6 Months Business Bank Statements', scope: 'applicant', keywords: ['business bank statement', '6 months business'], selfEmployedOnly: true },
+  { key: 'financialStatements', categoryKey: 'self_employed_business', displayName: 'Signed Financial Statements / Management Accounts', scope: 'applicant', keywords: ['financial statements', 'management accounts'], selfEmployedOnly: true },
+  { key: 'businessRegistration', categoryKey: 'self_employed_business', displayName: 'Company / Business Registration Documents', scope: 'applicant', keywords: ['company registration', 'business registration', 'cipc'], selfEmployedOnly: true, requirementLevel: 'recommended' },
+  { key: 'consentForm', categoryKey: 'application', displayName: 'Consent to Credit Check', scope: 'application', keywords: ['consent', 'credit check', 'declaration'], pendingWhenMissing: 'pending_signature' },
+  { key: 'proofOfDeposit', categoryKey: 'property_deposit', displayName: 'Proof of Deposit', scope: 'application', keywords: ['proof of deposit', 'deposit proof', 'source of funds'], requiresDeposit: true },
+]
 
 function getBondDocumentRequirement(row = {}) {
   return row.requirement || row.requiredDocument || row.rawRequirement || row.raw?.requiredDocument || {}
@@ -10037,78 +10390,20 @@ function getBondDocumentLinkedDocument(row = {}) {
 function getBondDocumentRequirementKey(row = {}) {
   const requirement = getBondDocumentRequirement(row)
   const document = getBondDocumentLinkedDocument(row)
-  return String(
-    row.canonicalRequirementInstanceId ||
-      row.requiredDocumentCanonicalId ||
-      row.requiredDocumentId ||
-      getRequirementCanonicalId(requirement) ||
-      getDocumentCanonicalId(document) ||
-      requirement?.id ||
-      row.requiredDocumentKey ||
-      row.documentType ||
-      '',
-  )
+  return String(row.canonicalRequirementInstanceId || row.requiredDocumentCanonicalId || row.requiredDocumentId || getRequirementCanonicalId(requirement) || getDocumentCanonicalId(document) || requirement?.id || row.requiredDocumentKey || row.documentType || row.id || '')
 }
 
 function isBondDocumentRequired(row = {}) {
   const requirement = getBondDocumentRequirement(row)
-  const raw = String(
-    row.requirementLevel ||
-      row.requirement_level ||
-      row.priority ||
-      requirement?.requirementLevel ||
-      requirement?.requirement_level ||
-      requirement?.priority ||
-      requirement?.priorityLevel ||
-      '',
-  ).trim().toLowerCase()
+  const raw = String(row.requirementLevel || row.requirement_level || row.priority || requirement?.requirementLevel || requirement?.priority || '').trim().toLowerCase()
   if (row.isOptional || requirement?.isOptional || raw === 'optional' || raw === 'recommended' || raw === 'low') return false
   if (row.notRequired || requirement?.notRequired || raw === 'not_required') return false
   return Boolean(row.isRequired ?? requirement?.isRequired ?? requirement?.required ?? true)
 }
 
-function getBondDocumentCategory(row = {}) {
-  const requirement = getBondDocumentRequirement(row)
-  const haystack = [
-    row.displayName,
-    row.name,
-    row.label,
-    row.category,
-    row.categoryLabel,
-    row.categoryGroup,
-    row.categoryGroupLabel,
-    row.documentType,
-    row.documentTypeLabel,
-    row.requiredDocumentKey,
-    requirement?.key,
-    requirement?.label,
-    requirement?.documentLabel,
-    requirement?.groupKey,
-  ].map((value) => ` ${String(value || '').toLowerCase()} `).join(' ')
-  return BOND_DOCUMENT_CENTRE_CATEGORIES.find((category) =>
-    category.tokens.length && category.tokens.some((token) => haystack.includes(token))
-  ) || BOND_DOCUMENT_CENTRE_CATEGORIES.at(-1)
-}
-
 function getBondDocumentFileUrl(row = {}) {
   const document = getBondDocumentLinkedDocument(row)
   return row.fileUrl || row.url || document?.url || document?.publicUrl || document?.downloadUrl || document?.file_url || document?.fileUrl || ''
-}
-
-function getBondDocumentStatus(row = {}) {
-  const required = isBondDocumentRequired(row)
-  const fileUrl = getBondDocumentFileUrl(row)
-  const document = getBondDocumentLinkedDocument(row)
-  const rawStatus = String(row.status || row.requiredDocumentStatus || document?.review_status || document?.status || '').trim().toLowerCase()
-  if (rawStatus === 'not_required' || rawStatus === 'not applicable' || rawStatus === 'not_applicable') return 'not_required'
-  if (rawStatus === 'reupload_required' || rawStatus === 'replacement_requested') return 'reupload_required'
-  const normalized = normalizeDocumentCommandStatus(rawStatus, { hasDocument: Boolean(fileUrl || document?.id) })
-  if (normalized === 'missing' || normalized === 'requested') return required ? 'outstanding' : 'not_uploaded'
-  if (normalized === 'pending_review' || normalized === 'uploaded' || normalized === 'generated') return 'uploaded'
-  if (normalized === 'verified') return 'verified'
-  if (normalized === 'expired') return 'expired'
-  if (normalized === 'rejected') return 'rejected'
-  return fileUrl ? 'uploaded' : required ? 'outstanding' : 'not_uploaded'
 }
 
 function getBondDocumentUploadedBy(row = {}) {
@@ -10122,23 +10417,105 @@ function getBondDocumentUploadedAt(row = {}) {
   return row.uploadedAt || row.uploadedOn || row.updatedAt || document?.uploaded_at || document?.uploadedAt || document?.created_at || document?.createdAt || document?.updated_at || ''
 }
 
-function buildBondDocumentCentreRows({ requiredRows = [], libraryRows = [] } = {}) {
-  const requirementKeys = new Set()
+function getBondDocumentStatus(row = {}) {
+  const required = isBondDocumentRequired(row)
+  const fileUrl = getBondDocumentFileUrl(row)
+  const document = getBondDocumentLinkedDocument(row)
+  const rawStatus = String(row.status || row.requiredDocumentStatus || document?.review_status || document?.status || '').trim().toLowerCase()
+  if (rawStatus === 'not_required' || rawStatus === 'not applicable' || rawStatus === 'not_applicable') return 'not_required'
+  if (rawStatus === 'pending_signature' || rawStatus === 'signature_pending' || rawStatus === 'unsigned') return 'pending_signature'
+  if (rawStatus === 'reupload_required' || rawStatus === 'replacement_requested' || rawStatus === 'replacement_required') return 'replacement_required'
+  const normalized = normalizeDocumentCommandStatus(rawStatus, { hasDocument: Boolean(fileUrl || document?.id) })
+  if (normalized === 'missing' || normalized === 'requested') return required ? 'missing' : 'not_required'
+  if (normalized === 'pending_review') return 'pending_verification'
+  if (normalized === 'uploaded' || normalized === 'generated') return 'uploaded'
+  if (normalized === 'verified') return 'verified'
+  if (normalized === 'expired') return 'replacement_required'
+  if (normalized === 'rejected') return 'rejected'
+  return fileUrl ? 'uploaded' : required ? 'missing' : 'not_required'
+}
+
+function getBondDocumentRowText(row = {}) {
+  const requirement = getBondDocumentRequirement(row)
+  const document = getBondDocumentLinkedDocument(row)
+  return [row.displayName, row.name, row.label, row.category, row.categoryLabel, row.categoryGroupLabel, row.documentType, row.documentTypeLabel, row.requiredDocumentKey, requirement?.key, requirement?.label, requirement?.documentLabel, document?.name, document?.document_type].map((value) => String(value || '').toLowerCase()).join(' ')
+}
+
+function getBondDocumentCategory(row = {}) {
+  const requirement = getBondDocumentRequirement(row)
+  const explicitKey = String(row.categoryKey || row.category_key || requirement?.categoryKey || '').trim().toLowerCase()
+  const haystack = getBondDocumentRowText(row)
+  return BOND_DOCUMENT_CENTRE_CATEGORIES.find((category) => category.key === explicitKey) || BOND_DOCUMENT_CENTRE_CATEGORIES.find((category) => category.tokens.length && category.tokens.some((token) => haystack.includes(token))) || BOND_DOCUMENT_CENTRE_CATEGORIES.at(-1)
+}
+
+function getBondDocumentApplicantOptions(applicationViewModel = {}) {
+  const applicants = Array.isArray(applicationViewModel?.applicants) ? applicationViewModel.applicants : []
+  const fallback = { role: 'primary_applicant', roleLabel: 'Primary', fullName: applicationViewModel?.applicant?.fullName || 'Primary applicant' }
+  return (applicants.length ? applicants : [fallback]).map((applicant, index) => {
+    const role = applicant?.role || (index === 0 ? 'primary_applicant' : `applicant_${index + 1}`)
+    return { key: String(applicant?.id || applicant?.key || role), role, roleLabel: applicant?.roleLabel || (index === 0 ? 'Primary applicant' : 'Co-applicant'), label: applicant?.fullName || applicant?.name || (index === 0 ? 'Primary applicant' : 'Co-applicant'), applicant: applicant || {} }
+  })
+}
+
+function getBondDocumentApplicantKey(row = {}, applicantOptions = []) {
+  const rawKey = firstPresent(row.applicantKey, row.applicant_key, row.applicantId, row.applicant_id, row.participantId, row.participant_id, row.requirement?.applicantKey, row.requiredDocument?.applicantKey, '')
+  if (rawKey) return String(rawKey)
+  const roleText = [row.requiredParty, row.ownerLabel, row.linkedToLabel, row.relatedWorkflow, row.requirement?.participantRole, row.requirement?.participant_role].map((value) => String(value || '').toLowerCase()).join(' ')
+  const roleMatch = applicantOptions.find((option) => roleText && roleText.includes(String(option.role || option.roleLabel || '').toLowerCase()))
+  return roleMatch?.key || 'primary_applicant'
+}
+
+function isSelfEmployedBondApplicant(applicant = {}) {
+  const textValue = [applicant.employmentStatus, applicant.employer, applicant.occupation].map((value) => String(value || '').toLowerCase()).join(' ')
+  return textValue.includes('self') || textValue.includes('business owner') || textValue.includes('sole proprietor')
+}
+
+function findBondLibraryDocumentForRequirement(definition = {}, libraryRows = []) {
+  const keywords = definition.keywords || []
+  return libraryRows.find((row) => keywords.some((keyword) => getBondDocumentRowText(row).includes(keyword)) && getBondDocumentFileUrl(row)) || null
+}
+
+function buildBondDerivedRequirementRows({ applicationViewModel = {}, libraryRows = [] } = {}) {
+  const applicantOptions = getBondDocumentApplicantOptions(applicationViewModel)
+  const depositAmount = Number(applicationViewModel?.financials?.deposit?.raw || parseCurrencyNumber(applicationViewModel?.financials?.deposit?.display || ''))
   const rows = []
-  requiredRows.forEach((row) => {
+  applicantOptions.forEach((option) => {
+    const selfEmployed = isSelfEmployedBondApplicant(option.applicant)
+    BOND_DERIVED_DOCUMENT_REQUIREMENTS.forEach((definition) => {
+      if (definition.scope !== 'applicant') return
+      if (definition.selfEmployedOnly && !selfEmployed) return
+      if (definition.excludeWhenSelfEmployed && selfEmployed) return
+      const matched = findBondLibraryDocumentForRequirement(definition, libraryRows)
+      rows.push({ id: `derived:${option.key}:${definition.key}`, displayName: definition.displayName, categoryKey: definition.categoryKey, documentType: definition.key, requiredDocumentKey: definition.key, applicantKey: option.key, applicantLabel: option.label, applicantRoleLabel: option.roleLabel, requirementLevel: definition.requirementLevel || 'required', status: matched ? getBondDocumentStatus(matched) : definition.pendingWhenMissing || 'missing', source: 'derived_bond_requirement', linkedDocument: matched ? getBondDocumentLinkedDocument(matched) : null, fileUrl: matched ? getBondDocumentFileUrl(matched) : '', uploadedBy: matched ? getBondDocumentUploadedBy(matched) : '', uploadedAt: matched ? getBondDocumentUploadedAt(matched) : '', requirement: { id: `derived:${option.key}:${definition.key}`, key: definition.key, label: definition.displayName, applicantKey: option.key, applicantLabel: option.label } })
+    })
+  })
+  BOND_DERIVED_DOCUMENT_REQUIREMENTS.forEach((definition) => {
+    if (definition.scope !== 'application') return
+    if (definition.requiresDeposit && !(depositAmount > 0)) return
+    const matched = findBondLibraryDocumentForRequirement(definition, libraryRows)
+    rows.push({ id: `derived:application:${definition.key}`, displayName: definition.displayName, categoryKey: definition.categoryKey, documentType: definition.key, requiredDocumentKey: definition.key, applicantKey: 'application', applicantLabel: 'Application', applicantRoleLabel: 'Application', requirementLevel: definition.requirementLevel || 'required', status: matched ? getBondDocumentStatus(matched) : definition.pendingWhenMissing || 'missing', source: 'derived_bond_requirement', linkedDocument: matched ? getBondDocumentLinkedDocument(matched) : null, fileUrl: matched ? getBondDocumentFileUrl(matched) : '', uploadedBy: matched ? getBondDocumentUploadedBy(matched) : '', uploadedAt: matched ? getBondDocumentUploadedAt(matched) : '', requirement: { id: `derived:application:${definition.key}`, key: definition.key, label: definition.displayName, applicantKey: 'application', applicantLabel: 'Application' } })
+  })
+  return rows
+}
+
+function buildBondDocumentCentreRows({ requiredRows = [], libraryRows = [], applicationViewModel = {} } = {}) {
+  const applicantOptions = getBondDocumentApplicantOptions(applicationViewModel)
+  const requirementRows = requiredRows.length ? requiredRows : buildBondDerivedRequirementRows({ applicationViewModel, libraryRows })
+  const requirementKeys = new Set()
+  const baseRows = []
+  requirementRows.forEach((row) => {
     const requirementKey = getBondDocumentRequirementKey(row)
     if (requirementKey) requirementKeys.add(requirementKey)
-    rows.push(row)
+    baseRows.push(row)
   })
   libraryRows.forEach((row) => {
     const requirementKey = getBondDocumentRequirementKey(row)
     if (requirementKey && requirementKeys.has(requirementKey)) return
     if (!getBondDocumentFileUrl(row) && row.source !== 'document_request') return
-    rows.push(row)
+    baseRows.push(row)
   })
-
   const seen = new Set()
-  return rows.map((row, index) => {
+  return baseRows.map((row, index) => {
     const requirement = getBondDocumentRequirement(row)
     const document = getBondDocumentLinkedDocument(row)
     const fileUrl = getBondDocumentFileUrl(row)
@@ -10146,32 +10523,10 @@ function buildBondDocumentCentreRows({ requiredRows = [], libraryRows = [] } = {
     const category = getBondDocumentCategory(row)
     const required = isBondDocumentRequired(row)
     const uploadedAt = getBondDocumentUploadedAt(row)
-    const stableKey = String(
-      getBondDocumentRequirementKey(row) ||
-        row.id ||
-        document?.id ||
-        `${row.displayName || row.name || row.label || 'document'}:${index}`,
-    )
-    return {
-      key: stableKey,
-      id: row.id || stableKey,
-      displayName: row.displayName || row.name || row.label || requirement?.label || requirement?.documentLabel || 'Document',
-      required,
-      importanceLabel: required ? 'Required' : 'Recommended',
-      status,
-      statusMeta: BOND_DOCUMENT_STATUS_META[status] || BOND_DOCUMENT_STATUS_META.outstanding,
-      category,
-      uploadedBy: fileUrl ? getBondDocumentUploadedBy(row) : '',
-      uploadedAt: fileUrl ? uploadedAt : '',
-      uploadedAtLabel: fileUrl && uploadedAt ? formatDate(uploadedAt, '') : '',
-      fileUrl,
-      requirement,
-      requiredDocument: row.requiredDocument || requirement,
-      linkedDocument: document,
-      raw: row.raw || row,
-      canReview: fileUrl ? canReviewDocumentRequirement(requirement, document) : false,
-      canReplace: fileUrl ? canReplaceDocumentRequirement(requirement, document) : false,
-    }
+    const applicantKey = getBondDocumentApplicantKey(row, applicantOptions)
+    const applicant = applicantOptions.find((option) => option.key === applicantKey) || applicantOptions[0]
+    const stableKey = String(getBondDocumentRequirementKey(row) || row.id || document?.id || `${row.displayName || row.name || row.label || 'document'}:${index}`)
+    return { key: stableKey, id: row.id || stableKey, displayName: row.displayName || row.name || row.label || requirement?.label || requirement?.documentLabel || 'Document', required, importanceLabel: status === 'not_required' ? 'Not Required' : required ? 'Required' : 'Recommended', status, statusMeta: BOND_DOCUMENT_STATUS_META[status] || BOND_DOCUMENT_STATUS_META.missing, category, applicantKey, applicantLabel: row.applicantLabel || row.applicant_label || applicant?.label || 'Primary applicant', applicantRoleLabel: row.applicantRoleLabel || applicant?.roleLabel || '', uploadedBy: fileUrl ? getBondDocumentUploadedBy(row) : row.uploadedBy || '', uploadedAt: fileUrl ? uploadedAt : row.uploadedAt || '', uploadedAtLabel: fileUrl && uploadedAt ? formatDate(uploadedAt, '') : '', fileUrl, requirement, requiredDocument: row.requiredDocument || requirement, linkedDocument: document, raw: row.raw || row, canReview: fileUrl ? canReviewDocumentRequirement(requirement, document) : false, canReplace: fileUrl ? canReplaceDocumentRequirement(requirement, document) : false, source: row.source || '' }
   }).filter((row) => {
     if (!row.key || seen.has(row.key)) return false
     seen.add(row.key)
@@ -10179,379 +10534,89 @@ function buildBondDocumentCentreRows({ requiredRows = [], libraryRows = [] } = {
   })
 }
 
+function isBondDocumentSatisfied(row = {}) {
+  return ['uploaded', 'pending_verification', 'verified'].includes(row.status)
+}
+
+function isBondDocumentSubmissionBlocker(row = {}) {
+  return row.required && ['missing', 'rejected', 'replacement_required', 'pending_signature'].includes(row.status)
+}
+
 function normalizeBondDocumentFilter(value = '') {
   const normalized = String(value || '').trim().toLowerCase()
-  if (normalized === 'critical') return 'required'
-  if (normalized === 'missing') return 'outstanding'
-  if (['all', 'required', 'uploaded', 'outstanding', 'verified'].includes(normalized)) return normalized
-  return 'all'
+  if (normalized === 'critical' || normalized === 'missing' || normalized === 'all' || normalized === 'outstanding') return 'required'
+  if (['required', 'uploaded', 'verification', 'additional'].includes(normalized)) return normalized
+  return 'required'
 }
 
 function getBondDocumentCentreSummary(rows = []) {
-  const uploaded = rows.filter((row) => ['uploaded', 'verified'].includes(row.status)).length
-  const verified = rows.filter((row) => row.status === 'verified').length
-  const outstanding = rows.filter((row) => ['outstanding', 'rejected', 'expired', 'reupload_required'].includes(row.status)).length
-  const notRequired = rows.filter((row) => row.status === 'not_required').length
-  return {
-    total: rows.length,
-    required: rows.filter((row) => row.required).length,
-    uploaded,
-    verified,
-    outstanding,
-    notRequired,
-  }
+  const requiredRows = rows.filter((row) => row.required && row.status !== 'not_required')
+  const uploaded = requiredRows.filter(isBondDocumentSatisfied).length
+  return { total: rows.length, required: requiredRows.length, uploaded, verified: rows.filter((row) => row.status === 'verified').length, outstanding: requiredRows.filter(isBondDocumentSubmissionBlocker).length, notRequired: rows.filter((row) => row.status === 'not_required').length, percentComplete: requiredRows.length ? Math.round((uploaded / requiredRows.length) * 100) : 0, unknown: !rows.length }
 }
 
-function filterBondDocumentRows(rows = [], filter = 'all') {
+function filterBondDocumentRows(rows = [], filter = 'required') {
   const activeFilter = normalizeBondDocumentFilter(filter)
-  if (activeFilter === 'required') return rows.filter((row) => row.required)
-  if (activeFilter === 'uploaded') return rows.filter((row) => ['uploaded', 'verified'].includes(row.status))
-  if (activeFilter === 'outstanding') return rows.filter((row) => ['outstanding', 'rejected', 'expired', 'reupload_required'].includes(row.status))
-  if (activeFilter === 'verified') return rows.filter((row) => row.status === 'verified')
+  if (activeFilter === 'required') return rows.filter((row) => row.required || row.status === 'not_required')
+  if (activeFilter === 'uploaded') return rows.filter((row) => row.fileUrl || ['uploaded', 'pending_verification', 'verified', 'rejected', 'replacement_required'].includes(row.status))
+  if (activeFilter === 'verification') return rows.filter((row) => row.fileUrl && ['uploaded', 'pending_verification', 'rejected', 'replacement_required'].includes(row.status))
+  if (activeFilter === 'additional') return rows.filter((row) => !row.required || row.status === 'not_required' || !['transaction_required_documents', 'derived_bond_requirement'].includes(row.source))
   return rows
 }
 
 function groupBondDocumentCentreRows(rows = []) {
   const groups = BOND_DOCUMENT_CENTRE_CATEGORIES.map((category) => ({ ...category, rows: [] }))
   rows.forEach((row) => {
-    const categoryKey = row.category?.key || 'supporting'
-    const group = groups.find((item) => item.key === categoryKey) || groups.at(-1)
+    const group = groups.find((item) => item.key === row.category?.key) || groups.at(-1)
     group.rows.push(row)
   })
   return groups.filter((group) => group.rows.length)
 }
 
-function BondDocumentCentre({
-  requiredRows = [],
-  libraryRows = [],
-  documentHealthSummary = {},
-  activeFilter = 'all',
-  onFilterChange,
-  onUpload,
-  onUploadRequirement,
-  onOpenDocument,
-  onReplaceDocument,
-  onVerifyDocument,
-  onRejectDocument,
-  onRequestDocuments,
-}) {
+function BondDocumentCentre({ requiredRows = [], libraryRows = [], applicationViewModel = {}, activeFilter = 'required', onFilterChange, onUpload, onUploadRequirement, onOpenDocument, onReplaceDocument, onVerifyDocument, onRejectDocument, onRequestDocuments }) {
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
-  const rows = useMemo(
-    () => buildBondDocumentCentreRows({ requiredRows, libraryRows }),
-    [libraryRows, requiredRows],
-  )
+  const [selectedApplicantKey, setSelectedApplicantKey] = useState('')
+  const [focusedRowKey, setFocusedRowKey] = useState('')
+  const rows = useMemo(() => buildBondDocumentCentreRows({ requiredRows, libraryRows, applicationViewModel }), [applicationViewModel, libraryRows, requiredRows])
   const activeFilterKey = normalizeBondDocumentFilter(activeFilter)
+  const applicantOptions = useMemo(() => getBondDocumentApplicantOptions(applicationViewModel), [applicationViewModel])
+  const activeApplicantKey = selectedApplicantKey && applicantOptions.some((option) => option.key === selectedApplicantKey) ? selectedApplicantKey : applicantOptions[0]?.key || 'primary_applicant'
   const summary = getBondDocumentCentreSummary(rows)
-  const visibleRows = filterBondDocumentRows(rows, activeFilterKey)
-  const groups = groupBondDocumentCentreRows(visibleRows)
-  const receivedPercent = summary.total ? Math.round((summary.uploaded / summary.total) * 100) : 0
-  const verifiedPercent = summary.total ? Math.round((summary.verified / summary.total) * 100) : 0
-  const outstandingPercent = summary.total ? Math.round((summary.outstanding / summary.total) * 100) : 0
-  const ringGradient = summary.total
-    ? `conic-gradient(#16a34a 0 ${verifiedPercent}%, #22c55e ${verifiedPercent}% ${receivedPercent}%, #ef4444 ${receivedPercent}% ${receivedPercent + outstandingPercent}%, #e2e8f0 ${receivedPercent + outstandingPercent}% 100%)`
-    : 'conic-gradient(#e2e8f0 0 100%)'
-  const readinessOutstanding = Number(documentHealthSummary.blockerCount || documentHealthSummary.missingCount || summary.outstanding || 0)
-  const activityRows = (documentHealthSummary.recentActivity || []).slice(0, 4)
-  const filters = [
-    ['all', 'All', summary.total],
-    ['required', 'Required', summary.required],
-    ['uploaded', 'Uploaded', summary.uploaded],
-    ['outstanding', 'Outstanding', summary.outstanding],
-    ['verified', 'Verified', summary.verified],
-  ]
-  const toggleGroup = (key) => {
-    setCollapsedGroups((current) => {
-      const next = new Set(current)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+  const selectedApplicantRows = rows.filter((row) => row.applicantKey === activeApplicantKey || row.applicantKey === 'application')
+  const selectedRequiredRows = selectedApplicantRows.filter((row) => row.required && row.status !== 'not_required')
+  const selectedReceivedCount = selectedRequiredRows.filter(isBondDocumentSatisfied).length
+  const selectedProgressPercent = selectedRequiredRows.length ? Math.round((selectedReceivedCount / selectedRequiredRows.length) * 100) : 0
+  const requirementGroups = groupBondDocumentCentreRows(filterBondDocumentRows(selectedApplicantRows, 'required'))
+  const submissionBlockers = rows.filter(isBondDocumentSubmissionBlocker)
+  const categorySummaries = groupBondDocumentCentreRows(rows.filter((row) => row.required || row.status === 'not_required')).map((group) => {
+    const requiredGroupRows = group.rows.filter((row) => row.required && row.status !== 'not_required')
+    const received = requiredGroupRows.filter(isBondDocumentSatisfied).length
+    const attention = requiredGroupRows.some((row) => ['pending_verification', 'rejected', 'replacement_required'].includes(row.status))
+    return { ...group, requiredCount: requiredGroupRows.length, received, attention, complete: requiredGroupRows.length > 0 && received >= requiredGroupRows.length }
+  })
+  const ringGradient = summary.required ? `conic-gradient(#16a34a 0 ${summary.percentComplete}%, #ef4444 ${summary.percentComplete}% 100%)` : 'conic-gradient(#e2e8f0 0 100%)'
+  const tabs = [['required', 'Required Documents'], ['uploaded', 'Uploaded'], ['verification', 'Verification'], ['additional', 'Additional Documents']]
+  const toggleGroup = (key) => setCollapsedGroups((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next })
+  const focusRequirement = (row) => { onFilterChange?.('required'); setSelectedApplicantKey(row.applicantKey || activeApplicantKey); setFocusedRowKey(row.key); setCollapsedGroups((current) => { const next = new Set(current); next.delete(row.category?.key); return next }) }
+  const renderStatus = (row) => { const MetaIcon = row.statusMeta.icon || Clock3; return <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${row.statusMeta.tone}`}><MetaIcon size={13} />{row.statusMeta.label}</span> }
+  const renderPrimaryAction = (row) => {
+    if (row.status === 'not_required') return null
+    if (row.status === 'missing') return <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}><Upload size={14} />Upload</Button>
+    if (row.status === 'pending_signature') return <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}><FileCheck2 size={14} />Manage</Button>
+    if (row.status === 'pending_verification') return <Button type="button" variant="secondary" size="sm" onClick={() => onVerifyDocument?.(row)}><CheckCircle2 size={14} />Review</Button>
+    if (row.status === 'rejected' || row.status === 'replacement_required') return <Button type="button" variant="secondary" size="sm" onClick={() => onReplaceDocument?.(row)}><Upload size={14} />Replace</Button>
+    return <Button type="button" variant="secondary" size="sm" onClick={() => onOpenDocument?.(row)}><ExternalLink size={14} />View</Button>
   }
-  const showEmptyUploadedState = !rows.some((row) => row.fileUrl)
-  const showCompleteState = rows.length > 0 && !summary.outstanding
+  const renderMoreMenu = (row) => <details className="relative"><summary className="inline-flex size-8 cursor-pointer list-none items-center justify-center rounded-[8px] border border-borderSoft bg-white text-textMuted transition hover:border-primary/40 hover:text-primary"><MoreHorizontal size={15} /></summary><div className="absolute right-0 z-20 mt-2 w-48 overflow-hidden rounded-[12px] border border-borderSoft bg-white py-1 text-left shadow-[0_16px_34px_rgba(15,23,42,0.14)]">{row.fileUrl ? <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onOpenDocument?.(row)}><ExternalLink size={14} />View</button> : null}{row.fileUrl ? <a href={row.fileUrl} download className="flex w-full items-center gap-2 px-3 py-2 text-sm text-textBody hover:bg-surfaceAlt"><Download size={14} />Download</a> : null}<button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onUploadRequirement?.(row)}><Upload size={14} />{row.fileUrl ? 'Replace' : 'Upload'}</button>{row.fileUrl ? <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onVerifyDocument?.(row)}><CheckCircle2 size={14} />Mark verified</button> : null}{row.fileUrl ? <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-700 hover:bg-red-50" onClick={() => onRejectDocument?.(row)}><X size={14} />Reject</button> : null}</div></details>
+  const renderDocumentTable = (tableRows = [], emptyTitle = 'No documents found') => <article className="overflow-hidden rounded-[16px] border border-borderDefault bg-white shadow-[0_12px_28px_rgba(15,23,42,0.045)]"><div className="hidden grid-cols-[minmax(240px,1.35fr)_180px_150px_150px_150px_115px] border-b border-borderSoft bg-surfaceAlt px-4 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted lg:grid"><span>Document</span><span>Applicant</span><span>Category</span><span>Uploaded By</span><span>Status</span><span className="text-right">Actions</span></div>{tableRows.length ? <div className="divide-y divide-borderSoft">{tableRows.map((row) => <article key={row.key} className="grid gap-3 px-4 py-3 text-sm lg:grid-cols-[minmax(240px,1.35fr)_180px_150px_150px_150px_115px] lg:items-center"><div className="min-w-0"><strong className="block truncate text-textStrong">{row.displayName}</strong><span className="mt-0.5 block truncate text-xs text-textMuted">{row.uploadedAtLabel || (row.fileUrl ? 'Uploaded date unavailable' : 'No file uploaded')}</span></div><span className="min-w-0 truncate text-textMuted">{row.applicantLabel || 'Application'}</span><span className="min-w-0 truncate text-textMuted">{row.category?.label || 'Other'}</span><span className="min-w-0 truncate text-textMuted">{row.uploadedBy || '-'}</span><span>{renderStatus(row)}</span><div className="flex items-center gap-2 lg:justify-end">{renderPrimaryAction(row)}{renderMoreMenu(row)}</div></article>)}</div> : <div className="px-4 py-12 text-center"><strong className="text-sm font-semibold text-textStrong">{emptyTitle}</strong><p className="mt-1 text-sm text-textMuted">Use the document actions above when files are received.</p></div>}</article>
+  const uploadedRows = filterBondDocumentRows(rows, 'uploaded')
+  const verificationRows = filterBondDocumentRows(rows, 'verification')
+  const additionalRows = filterBondDocumentRows(rows, 'additional')
 
   return (
     <section className="space-y-5">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold tracking-[-0.02em] text-textStrong">Document Centre</h2>
-          <p className="mt-1 text-sm leading-6 text-textMuted">Manage application and supporting documents. Track requirements, uploads and verification status.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" onClick={onUpload}>
-            <Upload size={14} />
-            Upload Document
-          </Button>
-          <details className="relative">
-            <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-[10px] border border-borderSoft bg-white px-3 text-sm font-semibold text-textStrong transition hover:border-primary/40 hover:bg-primarySoft">
-              <MoreHorizontal size={15} />
-              More
-            </summary>
-            <div className="absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-[12px] border border-borderSoft bg-white py-1 shadow-[0_18px_38px_rgba(15,23,42,0.14)]">
-              <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-textBody hover:bg-surfaceAlt" onClick={onRequestDocuments}>
-                <FileText size={14} />
-                Request documents
-              </button>
-              <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onFilterChange?.('outstanding')}>
-                <AlertTriangle size={14} />
-                View outstanding
-              </button>
-              <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onFilterChange?.('all')}>
-                <ListChecks size={14} />
-                View checklist
-              </button>
-            </div>
-          </details>
-        </div>
-      </header>
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.38fr)]">
-        <article className="min-w-0 overflow-hidden rounded-[18px] border border-borderDefault bg-white shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-          <div className="flex flex-col gap-3 border-b border-borderSoft px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2">
-              {filters.map(([key, label, count]) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={`inline-flex h-8 items-center gap-2 rounded-[9px] border px-3 text-xs font-semibold transition ${
-                    activeFilterKey === key
-                      ? 'border-primary/20 bg-primarySoft text-primary'
-                      : 'border-borderSoft bg-white text-textMuted hover:border-primary/30 hover:text-primary'
-                  }`}
-                  onClick={() => onFilterChange?.(key)}
-                >
-                  {label}
-                  <span>{count}</span>
-                </button>
-              ))}
-            </div>
-            <label className="flex w-fit items-center gap-2 text-xs font-medium text-textMuted">
-              Group by
-              <select className="h-8 rounded-[9px] border border-borderSoft bg-white px-3 text-xs font-semibold text-textStrong outline-none">
-                <option>Document type</option>
-              </select>
-            </label>
-          </div>
-
-          <div className="hidden grid-cols-[minmax(260px,1.25fr)_160px_160px_135px_110px] border-b border-borderSoft bg-surfaceAlt px-4 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted lg:grid">
-            <span>Document</span>
-            <span>Status</span>
-            <span>Uploaded By</span>
-            <span>Uploaded On</span>
-            <span className="text-right">Actions</span>
-          </div>
-
-          {rows.length ? (
-            <div className="divide-y divide-borderSoft">
-              {groups.map((group) => {
-                const Icon = group.icon || FileText
-                const collapsed = collapsedGroups.has(group.key)
-                return (
-                  <section key={group.key}>
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between gap-3 bg-surfaceAlt/70 px-4 py-3 text-left transition hover:bg-surfaceAlt"
-                      onClick={() => toggleGroup(group.key)}
-                    >
-                      <span className="flex min-w-0 items-center gap-3">
-                        <span className={`inline-flex size-7 shrink-0 items-center justify-center rounded-[9px] ${group.tone}`}>
-                          <Icon size={15} />
-                        </span>
-                        <strong className="truncate text-sm font-semibold text-textStrong">{group.label} ({group.rows.length})</strong>
-                      </span>
-                      <ChevronRight size={15} className={`shrink-0 text-textMuted transition ${collapsed ? '' : 'rotate-90'}`} />
-                    </button>
-                    {!collapsed ? (
-                      <div className="divide-y divide-borderSoft">
-                        {group.rows.map((row) => (
-                          <article key={row.key} className="grid gap-3 px-4 py-3 text-sm lg:min-h-[54px] lg:grid-cols-[minmax(260px,1.25fr)_160px_160px_135px_110px] lg:items-center">
-                            <div className="min-w-0">
-                              {row.fileUrl ? (
-                                <button type="button" className="block max-w-full truncate text-left font-semibold text-textStrong hover:text-primary" onClick={() => onOpenDocument?.(row)}>
-                                  {row.displayName}
-                                </button>
-                              ) : (
-                                <strong className="block truncate font-semibold text-textStrong">{row.displayName}</strong>
-                              )}
-                              <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold ${row.required ? 'border-red-100 bg-red-50 text-red-600' : 'border-slate-200 bg-slate-100 text-slate-600'}`}>
-                                {row.importanceLabel}
-                              </span>
-                            </div>
-                            <div>
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${row.statusMeta.tone}`}>{row.statusMeta.label}</span>
-                            </div>
-                            <span className="min-w-0 truncate text-textMuted">{row.uploadedBy || '-'}</span>
-                            <span className="text-textMuted">{row.uploadedAtLabel || '-'}</span>
-                            <div className="flex items-center gap-2 lg:justify-end">
-                              {!row.fileUrl ? (
-                                <Button type="button" variant="secondary" size="sm" onClick={() => onUploadRequirement?.(row)}>
-                                  <Upload size={14} />
-                                  Upload
-                                </Button>
-                              ) : (
-                                <details className="relative">
-                                  <summary className="inline-flex size-8 cursor-pointer list-none items-center justify-center rounded-[8px] border border-borderSoft bg-white text-textMuted transition hover:border-primary/40 hover:text-primary">
-                                    <MoreHorizontal size={15} />
-                                  </summary>
-                                  <div className="absolute right-0 z-20 mt-2 w-40 overflow-hidden rounded-[12px] border border-borderSoft bg-white py-1 text-left shadow-[0_16px_34px_rgba(15,23,42,0.14)]">
-                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onOpenDocument?.(row)}>
-                                      <ExternalLink size={14} />
-                                      View
-                                    </button>
-                                    {row.fileUrl ? (
-                                      <a href={row.fileUrl} download className="flex w-full items-center gap-2 px-3 py-2 text-sm text-textBody hover:bg-surfaceAlt">
-                                        <Download size={14} />
-                                        Download
-                                      </a>
-                                    ) : null}
-                                    {row.canReplace ? (
-                                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onReplaceDocument?.(row)}>
-                                        <Upload size={14} />
-                                        Replace
-                                      </button>
-                                    ) : null}
-                                    {row.canReview ? (
-                                      <>
-                                        <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onVerifyDocument?.(row)}>
-                                          <CheckCircle2 size={14} />
-                                          Verify
-                                        </button>
-                                        <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-700 hover:bg-red-50" onClick={() => onRejectDocument?.(row)}>
-                                          <X size={14} />
-                                          Reject
-                                        </button>
-                                      </>
-                                    ) : null}
-                                  </div>
-                                </details>
-                              )}
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    ) : null}
-                  </section>
-                )
-              })}
-              {!visibleRows.length ? (
-                <div className="px-4 py-10 text-center">
-                  <strong className="text-sm font-semibold text-textStrong">No documents match this filter.</strong>
-                  <p className="mt-1 text-sm text-textMuted">Switch filters to view the full application checklist.</p>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="px-4 py-12 text-center">
-              <strong className="text-base font-semibold text-textStrong">No documents uploaded yet</strong>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-textMuted">Required documents will appear here as they are received.</p>
-              <div className="mt-4 flex flex-wrap justify-center gap-2">
-                <Button type="button" variant="secondary" onClick={onRequestDocuments}>Request Documents</Button>
-                <Button type="button" onClick={onUpload}>Upload Document</Button>
-              </div>
-            </div>
-          )}
-
-          {showEmptyUploadedState && rows.length ? (
-            <div className="border-t border-borderSoft bg-surfaceAlt px-4 py-3 text-sm text-textMuted">
-              No documents uploaded yet. Request documents from the applicant or upload a file against a requirement.
-            </div>
-          ) : null}
-          {showCompleteState ? (
-            <div className="border-t border-success/20 bg-successSoft px-4 py-3 text-sm font-semibold text-success">
-              All required documents received. Ready for bank submission when the application checks are complete.
-            </div>
-          ) : null}
-        </article>
-
-        <aside className="space-y-4 xl:order-none">
-          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-            <h3 className="text-sm font-semibold text-textStrong">Document Summary</h3>
-            <div className="mt-4 flex items-center gap-4">
-              <div className="relative flex size-24 shrink-0 items-center justify-center rounded-full" style={{ background: ringGradient }}>
-                <div className="flex size-16 flex-col items-center justify-center rounded-full bg-white shadow-inner">
-                  <strong className="text-xl font-semibold text-textStrong">{summary.total}</strong>
-                  <span className="text-[0.68rem] font-semibold uppercase text-textMuted">Total</span>
-                </div>
-              </div>
-              <dl className="grid flex-1 gap-2 text-sm">
-                {[
-                  ['Uploaded', summary.uploaded, 'bg-emerald-500'],
-                  ['Verified', summary.verified, 'bg-emerald-600'],
-                  ['Outstanding', summary.outstanding, 'bg-red-500'],
-                  ['Not Required', summary.notRequired, 'bg-slate-300'],
-                ].map(([label, value, dot]) => (
-                  <div key={label} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
-                    <span className={`size-2 rounded-full ${dot}`} />
-                    <dt className="truncate text-xs text-textMuted">{label}</dt>
-                    <dd className="text-sm font-semibold text-textStrong">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          </article>
-
-          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-            <h3 className="text-sm font-semibold text-textStrong">Submission Impact</h3>
-            <div className={`mt-4 rounded-[13px] border px-3 py-3 ${documentHealthSummary.submissionReady ? 'border-success/20 bg-successSoft text-success' : 'border-red-100 bg-red-50 text-red-700'}`}>
-              <div className="flex items-start gap-3">
-                {documentHealthSummary.submissionReady ? <CheckCircle2 size={18} className="mt-0.5 shrink-0" /> : <AlertTriangle size={18} className="mt-0.5 shrink-0" />}
-                <div>
-                  <strong className="block text-sm">{documentHealthSummary.submissionReady ? 'Ready to Submit' : 'Not Ready to Submit'}</strong>
-                  <p className="mt-1 text-xs leading-5">
-                    {documentHealthSummary.submissionReady
-                      ? 'All required application documents have been received.'
-                      : `${readinessOutstanding} required document${readinessOutstanding === 1 ? '' : 's'} outstanding. Please complete all required documents before submitting to banks.`}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </article>
-
-          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-            <h3 className="text-sm font-semibold text-textStrong">Quick Actions</h3>
-            <div className="mt-3 divide-y divide-borderSoft">
-              {[
-                ['Request Documents from Applicant', 'Send document request for outstanding items', FileText, onRequestDocuments],
-                ['Upload Documents', 'Add files to the application document pack', Upload, onUpload],
-                ['View Document Checklist', 'See all document requirements', ListChecks, () => onFilterChange?.('all')],
-              ].map(([label, helper, Icon, action]) => (
-                <button key={label} type="button" className="flex w-full items-center gap-3 py-3 text-left" onClick={action}>
-                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-primarySoft text-primary">
-                    {createElement(Icon, { size: 15 })}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <strong className="block truncate text-sm text-textStrong">{label}</strong>
-                    <span className="mt-0.5 block truncate text-xs text-textMuted">{helper}</span>
-                  </span>
-                  <ChevronRight size={15} className="shrink-0 text-primary" />
-                </button>
-              ))}
-            </div>
-          </article>
-
-          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-textStrong">Recent Activity</h3>
-              <button type="button" className="text-xs font-semibold text-primary hover:text-primaryDark" onClick={() => onFilterChange?.('all')}>View all</button>
-            </div>
-            <div className="mt-3 max-h-[260px] divide-y divide-borderSoft overflow-y-auto pr-1">
-              {activityRows.length ? activityRows.map((row) => (
-                <article key={row.id || `${row.label}:${row.timestamp}`} className="flex gap-3 py-3">
-                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-red-50 text-red-600">
-                    <FileText size={15} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <strong className="block truncate text-sm text-textStrong">{row.label || 'Document activity'}</strong>
-                    <span className="mt-0.5 block truncate text-xs text-textMuted">{row.detail || 'Updated'} {row.timestamp ? `- ${formatDateTime(row.timestamp, '')}` : ''}</span>
-                  </span>
-                </article>
-              )) : (
-                <p className="rounded-[12px] border border-dashed border-borderDefault bg-surfaceAlt px-3 py-6 text-sm text-textMuted">No document activity yet.</p>
-              )}
-            </div>
-          </article>
-        </aside>
-      </section>
+      <header className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><nav className="flex min-w-0 gap-6 overflow-x-auto border-b border-borderSoft">{tabs.map(([key, label]) => <button key={key} type="button" className={`relative h-11 whitespace-nowrap px-1 text-sm font-semibold transition ${activeFilterKey === key ? 'text-primary' : 'text-textMuted hover:text-primary'}`} onClick={() => onFilterChange?.(key)}>{label}{activeFilterKey === key ? <span className="absolute inset-x-0 bottom-[-1px] h-0.5 rounded-full bg-primary" /> : null}</button>)}</nav><div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="secondary" size="sm" onClick={onRequestDocuments}><FileText size={14} />Request Documents</Button><Button type="button" size="sm" onClick={onUpload}><Upload size={14} />Upload Document</Button><details className="relative"><summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-[10px] border border-borderSoft bg-white px-3 text-sm font-semibold text-textStrong transition hover:border-primary/40 hover:bg-primarySoft"><MoreHorizontal size={15} />More</summary><div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-[12px] border border-borderSoft bg-white py-1 shadow-[0_18px_38px_rgba(15,23,42,0.14)]"><button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-textBody hover:bg-surfaceAlt" onClick={onRequestDocuments}><FileText size={14} />Request documents</button><button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-textBody hover:bg-surfaceAlt" onClick={() => onFilterChange?.('required')}><AlertTriangle size={14} />View blockers</button></div></details></div></header>
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.38fr)]"><div className="min-w-0 space-y-4">{activeFilterKey === 'required' ? <article className="min-w-0 overflow-hidden rounded-[18px] border border-borderDefault bg-white shadow-[0_12px_28px_rgba(15,23,42,0.045)]"><div className="border-b border-borderSoft px-4 py-4"><p className="text-sm leading-6 text-textMuted">The following documents are required based on the application information.</p><div className="mt-4 grid gap-4 lg:grid-cols-[minmax(220px,340px)_minmax(220px,1fr)] lg:items-end"><label className="block text-xs font-semibold text-textMuted">Applicant<select className="mt-2 h-10 w-full rounded-[10px] border border-borderSoft bg-white px-3 text-sm font-semibold text-textStrong outline-none transition focus:border-primary" value={activeApplicantKey} onChange={(event) => setSelectedApplicantKey(event.target.value)}>{applicantOptions.map((option) => <option key={option.key} value={option.key}>{option.label} ({option.roleLabel?.replace(/ applicant/i, '') || 'Applicant'})</option>)}</select></label><div className="lg:justify-self-end"><div className="flex items-center justify-between gap-3 text-sm"><span className="font-semibold text-primary">{selectedReceivedCount} / {selectedRequiredRows.length} received ({selectedProgressPercent}%)</span><span className="text-xs text-textMuted">Section progress</span></div><div className="mt-2 h-2 min-w-[220px] overflow-hidden rounded-full bg-surfaceAlt"><span className="block h-full rounded-full bg-primary transition-all" style={{ width: `${selectedProgressPercent}%` }} /></div></div></div></div>{rows.length ? <div className="divide-y divide-borderSoft">{requirementGroups.map((group) => { const Icon = group.icon || FileText; const collapsed = collapsedGroups.has(group.key); return <section key={group.key}><button type="button" className="flex w-full items-center justify-between gap-3 bg-surfaceAlt/70 px-4 py-3 text-left transition hover:bg-surfaceAlt" onClick={() => toggleGroup(group.key)}><span className="flex min-w-0 items-center gap-3"><span className={`inline-flex size-7 shrink-0 items-center justify-center rounded-[8px] ${group.tone}`}><Icon size={15} /></span><strong className="truncate text-sm font-semibold uppercase tracking-[0.03em] text-textStrong">{group.label}</strong></span><ChevronRight size={15} className={`shrink-0 text-textMuted transition ${collapsed ? '' : 'rotate-90'}`} /></button>{!collapsed ? <div className="divide-y divide-borderSoft">{group.rows.map((row) => <article key={row.key} className={`grid gap-3 px-4 py-3 text-sm transition lg:min-h-[58px] lg:grid-cols-[minmax(260px,1fr)_190px_150px_120px] lg:items-center ${focusedRowKey === row.key ? 'bg-primarySoft/70' : ''}`}><div className="min-w-0"><strong className="block truncate text-textStrong">{row.displayName}</strong><span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold uppercase tracking-[0.03em] ${row.required ? 'border-red-100 bg-red-50 text-red-600' : 'border-slate-200 bg-slate-100 text-slate-600'}`}>{row.importanceLabel}</span></div><div className="min-w-0">{renderStatus(row)}{row.uploadedAtLabel || row.uploadedBy ? <span className="mt-0.5 block truncate text-xs text-textMuted">{[row.uploadedAtLabel, row.uploadedBy ? `by ${row.uploadedBy}` : ''].filter(Boolean).join(' ')}</span> : null}</div><span className="min-w-0 truncate text-xs text-textMuted">{row.applicantLabel || 'Application'}</span><div className="flex items-center gap-2 lg:justify-end">{renderPrimaryAction(row)}{renderMoreMenu(row)}</div></article>)}</div> : null}</section> })}</div> : <div className="px-4 py-12 text-center"><strong className="text-base font-semibold text-textStrong">Document requirements unavailable</strong><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-textMuted">Applicable requirements could not be derived for this application yet. This application is not treated as ready until the requirement pack is available.</p></div>}</article> : null}{activeFilterKey === 'uploaded' ? renderDocumentTable(uploadedRows, 'No uploaded documents yet') : null}{activeFilterKey === 'verification' ? renderDocumentTable(verificationRows, 'No documents require verification') : null}{activeFilterKey === 'additional' ? renderDocumentTable(additionalRows, 'No additional documents yet') : null}</div><aside className="space-y-4 xl:order-none"><article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]"><h3 className="text-sm font-semibold text-textStrong">Document Review</h3><div className="mt-4 flex items-center gap-4"><div className="relative flex size-24 shrink-0 items-center justify-center rounded-full" style={{ background: ringGradient }}><div className="flex size-16 flex-col items-center justify-center rounded-full bg-white shadow-inner"><strong className="text-xl font-semibold text-textStrong">{summary.percentComplete}%</strong><span className="text-[0.62rem] font-semibold uppercase text-primary">Complete</span></div></div><div className="min-w-0"><strong className={`block text-sm font-semibold ${summary.unknown ? 'text-orange-700' : summary.outstanding ? 'text-orange-700' : 'text-success'}`}>{summary.unknown ? 'Requirements unavailable' : `${summary.uploaded} of ${summary.required} documents received`}</strong><p className="mt-1 text-xs leading-5 text-textMuted">Based on applicable requirements</p></div></div><div className="mt-4 divide-y divide-borderSoft">{categorySummaries.map((category) => { const dotClass = category.complete ? 'bg-success' : category.attention ? 'bg-orange-500' : category.requiredCount ? 'bg-red-500' : 'bg-slate-300'; return <button key={category.key} type="button" className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 py-2 text-left text-sm" onClick={() => { onFilterChange?.('required'); setCollapsedGroups((current) => { const next = new Set(current); next.delete(category.key); return next }) }}><span className="truncate font-medium text-textStrong">{category.label}</span><span className="text-xs font-semibold text-textStrong">{category.received}/{category.requiredCount || category.rows.length}</span><span className={`size-2 rounded-full ${dotClass}`} /></button> })}</div><div className="mt-4 rounded-[13px] border border-red-100 bg-red-50 p-3"><h4 className="text-sm font-semibold text-red-700">Required before submission</h4><div className="mt-2 space-y-1">{submissionBlockers.length ? submissionBlockers.slice(0, 5).map((row) => <button key={row.key} type="button" className="flex w-full items-center gap-2 rounded-[8px] px-1 py-1 text-left text-xs font-medium text-red-700 hover:bg-white/70" onClick={() => focusRequirement(row)}><AlertTriangle size={13} /><span className="min-w-0 flex-1 truncate">{row.displayName}</span></button>) : <p className="text-xs leading-5 text-success">No document submission blockers.</p>}</div><p className="mt-3 border-t border-red-100 pt-2 text-xs font-semibold text-red-700">{submissionBlockers.length} submission blocker{submissionBlockers.length === 1 ? '' : 's'}</p></div></article><article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]"><h3 className="text-sm font-semibold text-textStrong">Quick Actions</h3><div className="mt-3 divide-y divide-borderSoft">{[['Request Documents from Applicant', 'Send document request for outstanding items', FileText, onRequestDocuments], ['Upload Documents', 'Add files to the application document pack', Upload, onUpload], ['View Full Document Checklist', 'See all required and optional documents', ListChecks, () => onFilterChange?.('required')]].map(([label, helper, Icon, action]) => <button key={label} type="button" className="flex w-full items-center gap-3 py-3 text-left" onClick={action}><span className="inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-primarySoft text-primary">{createElement(Icon, { size: 15 })}</span><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-textStrong">{label}</strong><span className="mt-0.5 block truncate text-xs text-textMuted">{helper}</span></span><ChevronRight size={15} className="shrink-0 text-primary" /></button>)}</div></article></aside></section>
     </section>
   )
 }
@@ -11498,12 +11563,22 @@ function maskBondReferralAccountNumber(value = '') {
 
 function buildBondReferralDraft({ incentive = null, referringAgency = {}, referringAgent = {}, transaction = {} } = {}) {
   const defaultAmount = parseCurrencyNumber(transaction?.referral_incentive_amount || transaction?.agency_incentive_amount || transaction?.agency_commission_amount)
+  const referringAgencyName = !isBondReferralPlaceholderName(referringAgency?.name)
+    ? referringAgency.name
+    : !isBondReferralPlaceholderName(incentive?.referringAgencyName)
+      ? incentive.referringAgencyName
+      : ''
+  const referringAgentName = !isBondReferralPlaceholderName(referringAgent?.name)
+    ? referringAgent.name
+    : !isBondReferralPlaceholderName(incentive?.referringAgentName)
+      ? incentive.referringAgentName
+      : ''
   return {
     incentiveType: incentive?.incentiveType || 'referral_incentive',
     referringAgencyId: incentive?.referringAgencyId || referringAgency?.id || '',
-    referringAgencyName: incentive?.referringAgencyName || referringAgency?.name || '',
+    referringAgencyName,
     referringAgentId: incentive?.referringAgentId || referringAgent?.id || '',
-    referringAgentName: incentive?.referringAgentName || referringAgent?.name || '',
+    referringAgentName,
     referringAgentEmail: incentive?.referringAgentEmail || referringAgent?.email || '',
     amountExclVat: incentive?.amountExclVat ?? (defaultAmount || ''),
     vatRate: incentive?.vatRate ?? 15,
@@ -11514,13 +11589,33 @@ function buildBondReferralDraft({ incentive = null, referringAgency = {}, referr
     invoiceNotes: incentive?.invoiceNotes || '',
     expectedPayoutDate: incentive?.expectedPayoutDate || '',
     payoutMethod: incentive?.payoutMethod || 'EFT',
-    payableTo: incentive?.payableTo || referringAgency?.name || '',
-    accountHolder: incentive?.accountHolder || referringAgency?.name || '',
+    payableTo: incentive?.payableTo || referringAgencyName,
+    accountHolder: incentive?.accountHolder || referringAgencyName,
     bankName: incentive?.bankName || '',
     accountNumber: incentive?.accountNumber || '',
     branchCode: incentive?.branchCode || '',
     paymentReference: incentive?.paymentReference || transaction?.transaction_reference || '',
     notes: incentive?.notes || '',
+  }
+}
+
+function isBondReferralPlaceholderName(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  return !normalized || ['referring agency', 'current referring agency', 'not assigned', 'agent not assigned', 'current referring agent'].includes(normalized)
+}
+
+function resolveBondReferralParty({ canonical = {}, incentiveId = '', incentiveName = '', incentiveEmail = '', fallbackName = '' } = {}) {
+  const canonicalName = canonical?.name || ''
+  const name = !isBondReferralPlaceholderName(canonicalName)
+    ? canonicalName
+    : !isBondReferralPlaceholderName(incentiveName)
+      ? incentiveName
+      : fallbackName
+  return {
+    ...canonical,
+    id: canonical?.id || incentiveId || '',
+    name,
+    email: canonical?.email || incentiveEmail || '',
   }
 }
 
@@ -11570,13 +11665,27 @@ function BondReconciliationWorkspace({
   canEdit = false,
   onSaveIncentive,
   onTransition,
+  onViewApplication,
 }) {
+  const canonicalReferringAgency = resolveBondReferralParty({
+    canonical: referringAgency,
+    incentiveId: incentive?.referringAgencyId,
+    incentiveName: incentive?.referringAgencyName,
+    fallbackName: 'Referring agency',
+  })
+  const canonicalReferringAgent = resolveBondReferralParty({
+    canonical: referringAgent,
+    incentiveId: incentive?.referringAgentId,
+    incentiveName: incentive?.referringAgentName,
+    incentiveEmail: incentive?.referringAgentEmail,
+    fallbackName: 'Agent not assigned',
+  })
   const [editOpen, setEditOpen] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [invoiceOpen, setInvoiceOpen] = useState(false)
   const [agencyQuery, setAgencyQuery] = useState('')
   const [agentQuery, setAgentQuery] = useState('')
-  const [draft, setDraft] = useState(() => buildBondReferralDraft({ incentive, referringAgency, referringAgent, transaction }))
+  const [draft, setDraft] = useState(() => buildBondReferralDraft({ incentive, referringAgency: canonicalReferringAgency, referringAgent: canonicalReferringAgent, transaction }))
   const [paymentDraft, setPaymentDraft] = useState({
     paidAt: new Date().toISOString().slice(0, 10),
     paidAmount: incentive?.amountExclVat ?? '',
@@ -11603,7 +11712,7 @@ function BondReconciliationWorkspace({
   const invoiceStatus = incentive?.invoiceStatus || 'not_ready'
   const invoiceStatusMeta = getBondReferralInvoiceStatusMeta(invoiceStatus)
   const InvoiceStatusIcon = invoiceStatusMeta.icon
-  const amountExclVat = Number(incentive?.amountExclVat ?? draft.amountExclVat ?? 0)
+  const amountExclVat = incentive ? Number(incentive?.amountExclVat ?? 0) : 0
   const vatRate = Number(incentive?.vatRate ?? draft.vatRate ?? 15)
   const vatAmount = Number(incentive?.vatAmount ?? (Number.isFinite(amountExclVat) ? amountExclVat * (vatRate / 100) : 0))
   const amountInclVat = Number(incentive?.amountInclVat ?? amountExclVat + vatAmount)
@@ -11614,15 +11723,15 @@ function BondReconciliationWorkspace({
   const busy = Boolean(loadingAction)
   const agencyOptions = [
     {
-      id: referringAgency?.id || incentive?.referringAgencyId || '',
-      name: referringAgency?.name || incentive?.referringAgencyName || 'Current referring agency',
+      id: canonicalReferringAgency?.id || '',
+      name: canonicalReferringAgency?.name || 'Current referring agency',
     },
   ].filter((item) => item.name)
   const agentOptions = [
     {
-      id: referringAgent?.id || incentive?.referringAgentId || '',
-      name: referringAgent?.name || incentive?.referringAgentName || 'Current referring agent',
-      email: referringAgent?.email || incentive?.referringAgentEmail || '',
+      id: canonicalReferringAgent?.id || '',
+      name: canonicalReferringAgent?.name || 'Current referring agent',
+      email: canonicalReferringAgent?.email || '',
     },
   ].filter((item) => item.name)
   const filteredAgencyOptions = agencyOptions.filter((item) => String(item.name || '').toLowerCase().includes(agencyQuery.trim().toLowerCase()))
@@ -11632,7 +11741,7 @@ function BondReconciliationWorkspace({
   })
 
   function openIncentiveEditor() {
-    setDraft(buildBondReferralDraft({ incentive, referringAgency, referringAgent, transaction }))
+    setDraft(buildBondReferralDraft({ incentive, referringAgency: canonicalReferringAgency, referringAgent: canonicalReferringAgent, transaction }))
     setAgencyQuery('')
     setAgentQuery('')
     setEditOpen(true)
@@ -11660,6 +11769,7 @@ function BondReconciliationWorkspace({
 
   async function submitIncentive(event) {
     event.preventDefault()
+    if (!schemaAvailable) return
     await onSaveIncentive?.(draft)
     setEditOpen(false)
   }
@@ -11754,7 +11864,7 @@ function BondReconciliationWorkspace({
     if (!canEdit) return null
     if (!incentive) {
       return (
-        <Button type="button" onClick={openIncentiveEditor} disabled={!schemaAvailable || busy}>
+        <Button type="button" onClick={openIncentiveEditor} disabled={busy}>
           <CircleDollarSign size={14} />
           Create Incentive
         </Button>
@@ -11793,21 +11903,10 @@ function BondReconciliationWorkspace({
   }
 
   return (
-    <section className="space-y-5">
-      <header>
-        <h2 className="text-2xl font-semibold tracking-[-0.02em] text-textStrong">Reconciliation</h2>
-        <p className="mt-1 text-sm leading-6 text-textMuted">Track and manage agency incentives and referral earnings for this application.</p>
-      </header>
-
-      {!schemaAvailable ? (
-        <div className="rounded-[16px] border border-warning/25 bg-warningSoft px-4 py-3 text-sm text-warning">
-          Referral incentive tables are not available yet. Run the referral incentive migration before saving changes.
-        </div>
-      ) : null}
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.34fr)]">
-        <div className="space-y-5">
-          <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+    <section className="space-y-4">
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(280px,1fr)]">
+        <div className="space-y-4">
+          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <h3 className="text-base font-semibold text-textStrong">Incentive Overview</h3>
@@ -11821,22 +11920,21 @@ function BondReconciliationWorkspace({
                     <FileText size={14} />
                     Edit Incentive
                   </Button>
-                ) : null}
-                {renderPrimaryAction()}
+                ) : renderPrimaryAction()}
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-7">
               {[
                 ['Incentive Type', toTitle(String(incentive?.incentiveType || draft.incentiveType || 'referral_incentive').replace(/_/g, ' ')), CircleDollarSign],
-                ['Referring Agency', incentive?.referringAgencyName || referringAgency?.name || 'Not assigned', Building2],
-                ['Referring Agent', incentive?.referringAgentName || referringAgent?.name || 'Not assigned', UserRound],
-                ['Incentive Amount', formatCurrencyValue(amountExclVat, 'Not captured'), CreditCard, 'Excl. VAT'],
-                ['Status', statusMeta.label, StatusIcon],
+                ['Referring Agency', canonicalReferringAgency?.name || 'Not assigned', Building2],
+                ['Referring Agent', canonicalReferringAgent?.name || 'Not assigned', UserRound],
+                ['Incentive Amount', incentive ? formatCurrencyValue(amountExclVat, 'Not captured') : 'Not configured', CreditCard, 'Excl. VAT'],
+                ['Status', incentive ? statusMeta.label : 'Not configured', StatusIcon],
                 ['Qualifying Event', getBondReferralEventLabel(qualifyingEvent), Landmark],
                 ['Invoice Status', invoiceStatusMeta.label, InvoiceStatusIcon, getBondReferralEventLabel(invoiceTriggerEvent)],
               ].map(([label, value, Icon, helper]) => (
-                <div key={label} className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3.5 py-3">
+                <div key={label} className="min-w-0 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5">
                   <span className="flex items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
                     {createElement(Icon, { size: 14 })}
                     {label}
@@ -11847,19 +11945,19 @@ function BondReconciliationWorkspace({
               ))}
             </div>
 
-            <ol className="mt-6 grid gap-4 md:grid-cols-5">
+            <ol className="mt-5 grid gap-3 md:grid-cols-5">
               {BOND_REFERRAL_STATUS_ORDER.map((status, index) => {
                 const meta = getBondReferralStatusMeta(status)
                 const complete = index < statusIndex || effectiveStatus === 'reconciled'
                 const active = index === statusIndex && effectiveStatus !== 'reconciled'
                 return (
                   <li key={status} className="relative">
-                    {index > 0 ? <span className={`absolute left-[-50%] top-5 hidden h-px w-full md:block ${complete || active ? 'bg-primary' : 'bg-borderDefault'}`} /> : null}
+                    {index > 0 ? <span className={`absolute left-[-50%] top-4 hidden h-px w-full md:block ${complete || active ? 'bg-primary' : 'bg-borderDefault'}`} /> : null}
                     <div className="relative z-10 flex flex-col items-start gap-2 md:items-center md:text-center">
-                      <span className={`inline-flex size-10 items-center justify-center rounded-full border ${
+                      <span className={`inline-flex size-8 items-center justify-center rounded-full border ${
                         complete ? 'border-success bg-success text-white' : active ? 'border-primary bg-primarySoft text-primary ring-4 ring-primary/10' : 'border-borderSoft bg-surfaceAlt text-textMuted'
                       }`}>
-                        {complete ? <CheckCircle2 size={17} /> : createElement(meta.icon, { size: 17 })}
+                        {complete ? <CheckCircle2 size={15} /> : createElement(meta.icon, { size: 15 })}
                       </span>
                       <strong className="text-xs text-textStrong">{meta.label}</strong>
                       <span className="text-xs text-textMuted">{active ? (qualifyingMet ? 'Current' : 'Awaiting event') : complete ? 'Done' : 'Pending'}</span>
@@ -11870,11 +11968,11 @@ function BondReconciliationWorkspace({
             </ol>
           </article>
 
-          <section className="grid gap-5 xl:grid-cols-2">
-            <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <section className="grid gap-4 xl:grid-cols-2">
+            <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
               <h3 className="text-base font-semibold text-textStrong">Qualifying Criteria</h3>
               <p className="mt-1 text-sm leading-6 text-textMuted">Criteria are read from the live bond application workflow.</p>
-              <div className="mt-4 overflow-x-auto">
+              <div className="mt-3 overflow-x-auto">
                 <table className="min-w-[520px] w-full border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-borderSoft text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
@@ -11887,7 +11985,7 @@ function BondReconciliationWorkspace({
                     {criteria.map((item) => (
                       <tr key={item.key}>
                         <td className="py-3 pr-3">
-                          <strong className="text-textStrong">{item.label}</strong>
+                          <strong className="text-sm text-textStrong">{item.label}</strong>
                           {item.date ? <span className="mt-0.5 block text-xs text-textMuted">{formatDate(item.date, '')}</span> : null}
                         </td>
                         <td className="px-3 py-3 text-textMuted">{item.required ? 'Yes' : 'No'}</td>
@@ -11903,7 +12001,7 @@ function BondReconciliationWorkspace({
               </div>
             </article>
 
-            <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+            <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-base font-semibold text-textStrong">Payment Details</h3>
@@ -11932,8 +12030,16 @@ function BondReconciliationWorkspace({
             </article>
           </section>
 
-          <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-            <h3 className="text-base font-semibold text-textStrong">Related Transaction</h3>
+          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-base font-semibold text-textStrong">Related Transaction</h3>
+              {onViewApplication ? (
+                <Button type="button" variant="secondary" size="sm" onClick={onViewApplication}>
+                  View Application
+                  <ChevronRight size={14} />
+                </Button>
+              ) : null}
+            </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               {[
                 ['Application', applicationReference, FileText],
@@ -11952,23 +12058,23 @@ function BondReconciliationWorkspace({
         </div>
 
         <aside className="space-y-4">
-          <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
             <h3 className="text-base font-semibold text-textStrong">Incentive Summary</h3>
-            <div className="mt-4 rounded-[14px] border border-warning/25 bg-[#fffaf0] px-4 py-3">
-              <strong className="block text-2xl text-textStrong">{formatCurrencyValue(amountExclVat, 'R0')}</strong>
+            <div className="mt-3 rounded-[12px] border border-warning/25 bg-[#fffaf0] px-4 py-3">
+              <strong className="block text-2xl text-textStrong">{incentive ? formatCurrencyValue(amountExclVat, 'R0') : 'Not configured'}</strong>
               <span className="mt-1 block text-xs font-semibold text-textMuted">Incentive Amount (Excl. VAT)</span>
             </div>
-            <dl className="mt-4 space-y-2 text-sm">
+            <dl className="mt-3 space-y-2 text-sm">
               {[
-                ['VAT', formatCurrencyValue(vatAmount, 'R0')],
-                ['Total Incl. VAT', formatCurrencyValue(amountInclVat, 'R0')],
-                ['Referring Agency', incentive?.referringAgencyName || referringAgency?.name || 'Not assigned'],
-                ['Referring Agent', incentive?.referringAgentName || referringAgent?.name || 'Not assigned'],
+                ['VAT', incentive ? formatCurrencyValue(vatAmount, 'R0') : 'TBD'],
+                ['Total Incl. VAT', incentive ? formatCurrencyValue(amountInclVat, 'R0') : 'TBD'],
+                ['Referring Agency', canonicalReferringAgency?.name || 'Not assigned'],
+                ['Referring Agent', canonicalReferringAgent?.name || 'Not assigned'],
                 ['Qualifying Event', getBondReferralEventLabel(qualifyingEvent)],
                 ['Invoice Trigger', getBondReferralEventLabel(invoiceTriggerEvent)],
                 ['Invoice Status', invoiceStatusMeta.label],
                 ['Expected Payout', incentive?.expectedPayoutDate ? formatDate(incentive.expectedPayoutDate, '') : 'TBD'],
-                ['Status', statusMeta.label],
+                ['Status', incentive ? statusMeta.label : 'Not configured'],
               ].map(([label, value]) => (
                 <div key={label} className="flex items-center justify-between gap-3">
                   <dt className="text-textMuted">{label}</dt>
@@ -11981,7 +12087,7 @@ function BondReconciliationWorkspace({
             </div>
           </article>
 
-          <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-base font-semibold text-textStrong">Invoice Readiness</h3>
@@ -12018,10 +12124,10 @@ function BondReconciliationWorkspace({
             )}
           </article>
 
-          <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+          <article className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
             <h3 className="text-base font-semibold text-textStrong">Reconciliation History</h3>
-            <div className="mt-4 space-y-4">
-              {history.slice(0, 8).map((item) => (
+            <div className="mt-3 space-y-3">
+              {history.slice(0, 6).map((item) => (
                 <div key={item.id} className="flex gap-3">
                   <span className={`mt-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full border ${item.state === 'complete' ? 'border-success/25 bg-successSoft text-success' : 'border-warning/25 bg-warningSoft text-warning'}`}>
                     {item.state === 'complete' ? <CheckCircle2 size={14} /> : <Clock3 size={14} />}
@@ -12131,9 +12237,14 @@ function BondReconciliationWorkspace({
             <div className="flex items-center justify-between"><span className="text-textMuted">VAT ({vatRate}%)</span><strong className="text-textStrong">{formatCurrencyValue(Number(draft.amountExclVat || 0) * (vatRate / 100), 'R0')}</strong></div>
             <div className="mt-1 flex items-center justify-between"><span className="text-textMuted">Total Incl. VAT</span><strong className="text-textStrong">{formatCurrencyValue(Number(draft.amountExclVat || 0) * (1 + vatRate / 100), 'R0')}</strong></div>
           </div>
+          {!schemaAvailable ? (
+            <div className="rounded-[13px] border border-warning/25 bg-warningSoft px-4 py-3 text-sm text-warning">
+              Incentive saving is temporarily unavailable. Please try again later or contact support.
+            </div>
+          ) : null}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={() => setEditOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? 'Saving...' : 'Save Incentive'}</Button>
+            <Button type="submit" disabled={busy || !schemaAvailable}>{busy ? 'Saving...' : 'Save Incentive'}</Button>
           </div>
         </form>
       </Modal>
@@ -14558,6 +14669,7 @@ function AttorneyTransactionDetail() {
   const [sellerPortalBusy, setSellerPortalBusy] = useState(false)
   const [roleplayerConfirmOpen, setRoleplayerConfirmOpen] = useState(() => Boolean(location.state?.openBuyerOnboardingRoleplayers))
   const [roleplayerConfirmError, setRoleplayerConfirmError] = useState('')
+  const [buyerDeliveryTarget, setBuyerDeliveryTarget] = useState(null)
   const [roleplayerConfirmDraft, setRoleplayerConfirmDraft] = useState({
     transferAttorney: '',
     bondOriginator: '',
@@ -14601,6 +14713,7 @@ function AttorneyTransactionDetail() {
   })
   const [bondReferralIncentiveLoading, setBondReferralIncentiveLoading] = useState(false)
   const [bondApplicationPdfBusy, setBondApplicationPdfBusy] = useState(false)
+  const [bondApplicationDetailSection, setBondApplicationDetailSection] = useState('applicants')
   const [activityFilter, setActivityFilter] = useState('all')
   const processedBondConsultantDeepLinkRef = useRef('')
 
@@ -15659,6 +15772,30 @@ function AttorneyTransactionDetail() {
       onboardingCompleted,
       transaction,
       transferAttorney,
+    ],
+  )
+  const transactionBuyerAccessPolicy = useMemo(
+    () =>
+      resolveTransactionBuyerAccessPolicy({
+        ...(transaction || {}),
+        buyer,
+        buyerEmail,
+        buyer_email: buyerEmail,
+        buyerName: buyerDisplayName,
+        buyer_name: buyerDisplayName,
+        onboardingComplete: onboardingCompleted,
+        onboardingStatus: onboardingCompleted ? 'completed' : transaction?.onboarding_status,
+        transaction_participants: transactionParticipants,
+        documents,
+      }),
+    [
+      buyer,
+      buyerDisplayName,
+      buyerEmail,
+      documents,
+      onboardingCompleted,
+      transaction,
+      transactionParticipants,
     ],
   )
   const savedTransferRoleplayer = useMemo(
@@ -17264,41 +17401,18 @@ function AttorneyTransactionDetail() {
   const bondApplicationDetailModel = useMemo(() => {
     return bondApplicationViewModel.primaryApplicantDetail || {}
   }, [bondApplicationViewModel])
-  const bondApplicationFieldAlignment = bondApplicationViewModel.originatorFieldAlignment || bondApplicationViewModel.fieldAlignment || {}
-  const bondApplicationFieldAlignmentSections = useMemo(
-    () => Object.entries(bondApplicationFieldAlignment.sections || {})
-      .map(([label, summary]) => ({
-        label,
-        total: Number(summary?.total || 0),
-        captured: Number(summary?.captured || 0),
-        missing: Number(summary?.missing || 0),
-      }))
-      .filter((section) => section.total > 0),
-    [bondApplicationFieldAlignment.sections],
+  const bondApplicationAlignmentFields = useMemo(
+    () => getBondApplicationAlignmentFields(bondApplicationViewModel),
+    [bondApplicationViewModel],
   )
-  const bondApplicationFieldAlignmentMissingFields = useMemo(
-    () => (Array.isArray(bondApplicationFieldAlignment.fields) ? bondApplicationFieldAlignment.fields : [])
-      .filter((field) => !field?.captured)
-      .slice(0, 6),
-    [bondApplicationFieldAlignment.fields],
+  const bondApplicationSectionMetrics = useMemo(
+    () => buildBondApplicationSectionMetrics(bondApplicationViewModel),
+    [bondApplicationViewModel],
   )
-  const bondApplicationFieldAlignmentPercent = bondApplicationFieldAlignment.totalCount
-    ? Math.round((Number(bondApplicationFieldAlignment.capturedCount || 0) / Number(bondApplicationFieldAlignment.totalCount || 1)) * 100)
-    : 0
-  const bondApplicationConfirmationConfidence = bondApplicationViewModel.buyerConfirmationConfidence || bondApplicationViewModel.confirmationConfidence || {}
-  const bondApplicationConfirmedSections = Array.isArray(bondApplicationConfirmationConfidence.sections)
-    ? bondApplicationConfirmationConfidence.sections
-    : []
-  const bondApplicationUnconfirmedSections = Array.isArray(bondApplicationConfirmationConfidence.missingSections)
-    ? bondApplicationConfirmationConfidence.missingSections
-    : []
-  const bondApplicationOriginatorWorkspace = bondApplicationViewModel.originatorReviewWorkspace || {}
-  const bondApplicationOriginatorSourceBuckets = Array.isArray(bondApplicationOriginatorWorkspace.sourceBuckets)
-    ? bondApplicationOriginatorWorkspace.sourceBuckets
-    : []
-  const bondApplicationOriginatorActions = Array.isArray(bondApplicationOriginatorWorkspace.missingOriginatorActions)
-    ? bondApplicationOriginatorWorkspace.missingOriginatorActions.slice(0, 6)
-    : []
+  const bondApplicationSubmissionBlockers = useMemo(
+    () => buildBondApplicationSubmissionBlockers(bondApplicationViewModel),
+    [bondApplicationViewModel],
+  )
   const bondConsultantWorkspaceAction = useMemo(
     () =>
       resolveBondConsultantAction({
@@ -18148,34 +18262,30 @@ function AttorneyTransactionDetail() {
       : 'Bond Application'
   const bondHeaderReferringAgency = {
     id: firstPresent(
-      assignedAgent?.organisationId,
-      assignedAgent?.organisation_id,
       transaction?.referring_agency_id,
       transaction?.agency_id,
-      development?.organisation_id,
+      assignedAgent?.organisationId,
+      assignedAgent?.organisation_id,
     ),
     name: firstPresent(
-      assignedAgent?.organisationName,
-      assignedAgent?.firmName,
       transaction?.referring_agency_name,
       transaction?.agency_name,
-      development?.name,
+      assignedAgent?.organisationName,
+      assignedAgent?.firmName,
       'Referring agency',
     ),
     logoUrl: firstPresent(
-      getParticipantMediaUrl(assignedAgent, 'logo'),
       transaction?.referring_agency_logo_url,
       transaction?.agency_logo_url,
-      development?.logo_url,
-      development?.brand_logo_url,
+      getParticipantMediaUrl(assignedAgent, 'logo'),
     ),
   }
   const bondHeaderReferringAgent = {
-    id: firstPresent(assignedAgent?.profileId, assignedAgent?.profile_id, assignedAgent?.participantId, assignedAgent?.participant_id, transaction?.assigned_agent_id),
-    name: firstPresent(roleplayerForm.agentName, assignedAgent?.participantName, transaction?.assigned_agent, assignedAgent?.participantEmail, 'Agent not assigned'),
+    id: firstPresent(transaction?.referring_agent_id, transaction?.assigned_agent_id, assignedAgent?.profileId, assignedAgent?.profile_id, assignedAgent?.participantId, assignedAgent?.participant_id),
+    name: firstPresent(transaction?.referring_agent_name, transaction?.assigned_agent, assignedAgent?.participantName, assignedAgent?.participantEmail, roleplayerForm.agentName, 'Agent not assigned'),
     role: 'Agent',
-    email: firstPresent(roleplayerForm.agentEmail, assignedAgent?.participantEmail, transaction?.assigned_agent_email),
-    phone: firstPresent(roleplayerForm.agentPhone, assignedAgent?.participantPhone, transaction?.assigned_agent_phone),
+    email: firstPresent(transaction?.referring_agent_email, transaction?.assigned_agent_email, assignedAgent?.participantEmail, roleplayerForm.agentEmail),
+    phone: firstPresent(transaction?.referring_agent_phone, transaction?.assigned_agent_phone, assignedAgent?.participantPhone, roleplayerForm.agentPhone),
     avatarUrl: getParticipantMediaUrl(assignedAgent),
   }
   const bondHeaderConsultant = {
@@ -18672,7 +18782,12 @@ function AttorneyTransactionDetail() {
     }
   }
 
-  async function sendBuyerOnboardingViaResend({ resend = false, source = 'agent_transaction_workspace' } = {}) {
+  async function sendBuyerOnboardingViaResend({
+    resend = false,
+    source = 'agent_transaction_workspace',
+    target = buyerDeliveryTarget,
+    action = TRANSACTION_BUYER_DELIVERY_ACTIONS.sendOnboarding,
+  } = {}) {
     if (!transaction?.id) {
       throw new Error('Transaction data is not available for buyer onboarding.')
     }
@@ -18681,12 +18796,13 @@ function AttorneyTransactionDetail() {
     }
 
     const response = await invokeEdgeFunction('send-email', {
-      body: {
-        type: 'client_onboarding',
+      body: buildTransactionBuyerDeliveryPayload({
         transactionId: transaction.id,
+        target,
         resend,
         source,
-      },
+        action,
+      }),
     })
     const responseError = response?.error || response?.data?.error
     if (responseError) {
@@ -18733,6 +18849,10 @@ function AttorneyTransactionDetail() {
       const result = await sendBuyerOnboardingViaResend({
         resend: onboardingCompleted,
         source: 'transaction_workspace_recipient_action',
+        target: recipient,
+        action: onboardingCompleted
+          ? TRANSACTION_BUYER_DELIVERY_ACTIONS.sendPortalLink
+          : TRANSACTION_BUYER_DELIVERY_ACTIONS.sendOnboarding,
       })
       setOnboardingActionMessage(`Buyer onboarding sent to ${result?.recipientEmail || recipient.email}.`)
       await loadData({ background: true })
@@ -18792,11 +18912,12 @@ function AttorneyTransactionDetail() {
     }
   }
 
-  function openRoleplayerConfirmation() {
+  function openRoleplayerConfirmation(target = null) {
     if (!canManageTransactionRoleplayers) {
       setError('You do not have permission to manage transaction roleplayers.')
       return
     }
+    setBuyerDeliveryTarget(target ? normalizeTransactionBuyerDeliveryTarget(target) : null)
     setRoleplayerConfirmError('')
     setOnboardingActionMessage('')
     setRoleplayerConfirmDraft({
@@ -18810,6 +18931,11 @@ function AttorneyTransactionDetail() {
         '',
     })
     setRoleplayerConfirmOpen(true)
+  }
+
+  function closeRoleplayerConfirmation() {
+    setRoleplayerConfirmOpen(false)
+    setBuyerDeliveryTarget(null)
   }
 
   function openTransferAttorneyReassignment() {
@@ -18922,10 +19048,12 @@ function AttorneyTransactionDetail() {
       await recordBuyerOnboardingSent({
         transactionId: transaction.id,
         actorRole: workspaceRole,
-        recipientEmail: buyer?.email || roleplayerForm.buyerEmail || '',
+        recipientEmail: buyerDeliveryTarget?.email || buyer?.email || roleplayerForm.buyerEmail || '',
+        buyerTarget: buyerDeliveryTarget,
         roleplayers: selections,
       })
       setRoleplayerConfirmOpen(false)
+      setBuyerDeliveryTarget(null)
       setOnboardingActionMessage(
         bondOriginatorOption
           ? `Buyer onboarding link copied. The application is now in ${bondOriginatorOption.companyName || 'the selected originator'}'s inbox awaiting the buyer.`
@@ -18940,12 +19068,24 @@ function AttorneyTransactionDetail() {
     }
   }
 
-  async function handleAgentHeaderOnboardingAction() {
+  async function handleAgentHeaderOnboardingAction(target = null, action = null) {
+    const normalizedTarget = target
+      ? normalizeTransactionBuyerDeliveryTarget(target)
+      : normalizeTransactionBuyerDeliveryTarget({
+          name: buyerDisplayName || 'Buyer',
+          email: buyerEmail,
+          isPrimary: true,
+        })
     const recipient = {
       roleLabel: onboardingCompleted ? 'Client portal' : 'Buyer',
-      name: buyerDisplayName || 'Buyer',
-      email: buyerEmail,
+      name: normalizedTarget.name || buyerDisplayName || 'Buyer',
+      email: normalizedTarget.email || buyerEmail,
     }
+    const deliveryAction = action || (
+      onboardingCompleted
+        ? TRANSACTION_BUYER_DELIVERY_ACTIONS.sendPortalLink
+        : TRANSACTION_BUYER_DELIVERY_ACTIONS.sendOnboarding
+    )
 
     if (!recipient.email) {
       setOnboardingActionMessage('Buyer email is missing.')
@@ -18954,7 +19094,7 @@ function AttorneyTransactionDetail() {
     }
 
     if (!onboardingCompleted) {
-      openRoleplayerConfirmation()
+      openRoleplayerConfirmation(normalizedTarget)
       return
     }
 
@@ -18965,6 +19105,8 @@ function AttorneyTransactionDetail() {
       await sendBuyerOnboardingViaResend({
         resend: onboardingCompleted,
         source: onboardingCompleted ? 'agent_transaction_header_client_portal_resend' : 'agent_transaction_header_buyer_onboarding',
+        target: normalizedTarget,
+        action: deliveryAction,
       })
       setOnboardingActionMessage('Buyer portal link sent.')
       await loadData({ background: true })
@@ -19048,14 +19190,18 @@ function AttorneyTransactionDetail() {
       const sendResult = await sendBuyerOnboardingViaResend({
         resend: false,
         source: 'buyer_onboarding_roleplayer_confirmation',
+        target: buyerDeliveryTarget || recipient,
+        action: TRANSACTION_BUYER_DELIVERY_ACTIONS.sendOnboarding,
       })
       await recordBuyerOnboardingSent({
         transactionId: transaction.id,
         actorRole: workspaceRole,
-        recipientEmail: recipient.email,
+        recipientEmail: buyerDeliveryTarget?.email || recipient.email,
+        buyerTarget: buyerDeliveryTarget,
         roleplayers: selections,
       })
       setRoleplayerConfirmOpen(false)
+      setBuyerDeliveryTarget(null)
       setOnboardingActionMessage(
         bondOriginatorOption
           ? `Buyer onboarding sent to ${sendResult?.recipientEmail || recipient.email}. The application is now in ${bondOriginatorOption.companyName || 'the selected originator'}'s inbox awaiting the buyer.`
@@ -20207,10 +20353,10 @@ function AttorneyTransactionDetail() {
                       outstandingItems={agentOverviewOutstandingItems}
                       nextAction={agentOverviewNextAction}
                       documentRows={agentOverviewDocumentRows}
-                      partyRows={agentOverviewPartyRows}
-                      financialRows={agentOverviewFinancialRows}
-                      buyerProcessHandoff={buyerProcessHandoff}
-                      onOpenDocuments={() => openWorkspaceMenu('documents')}
+	                      partyRows={agentOverviewPartyRows}
+	                      financialRows={agentOverviewFinancialRows}
+	                      buyerProcessHandoff={buyerProcessHandoff}
+	                      onOpenDocuments={() => openWorkspaceMenu('documents')}
                       onOpenFinance={() => openWorkspaceMenu('finance')}
                       onOpenTimeline={() => openWorkspaceMenu('activity')}
                       onOpenStakeholders={() => openWorkspaceMenu('stakeholders')}
@@ -20424,6 +20570,13 @@ function AttorneyTransactionDetail() {
               </div>
             </section>
 
+            <BuyerPartyRosterPanel
+              policy={transactionBuyerAccessPolicy}
+              onboardingBusy={onboardingActionBusy}
+              onManageBuyers={() => openWorkspaceMenu('stakeholders')}
+              onSendBuyer={(decision, action) => void handleAgentHeaderOnboardingAction(decision, action)}
+            />
+
             <BuyerProcessHandoffPanel
               handoff={buyerProcessHandoff}
               compact
@@ -20547,6 +20700,7 @@ function AttorneyTransactionDetail() {
               <BondDocumentCentre
                 requiredRows={documentHealthSummary.requiredDocuments.length ? documentHealthSummary.requiredDocuments : requiredDocumentRows}
                 libraryRows={allDocumentLibraryRows.length ? allDocumentLibraryRows : documentLibraryRows}
+                applicationViewModel={bondApplicationViewModel}
                 documentHealthSummary={documentHealthSummary}
                 activeFilter={activeDocumentLibraryCategory}
                 onFilterChange={setActiveDocumentLibraryCategory}
@@ -21365,345 +21519,18 @@ function AttorneyTransactionDetail() {
               </div>
             </section>
 
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,0.7fr)_minmax(340px,0.3fr)]">
-              <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
-                <h3 className="text-base font-semibold text-textStrong">Application Details</h3>
-                <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                  {bondApplicationViewModel.applicants.map((applicant) => (
-                    <article key={`${applicant.role}-${applicant.fullName}`} className="rounded-[12px] border border-borderSoft bg-surfaceSubtle p-4">
-                      <div className="flex items-center gap-3">
-                        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primarySoft text-sm font-semibold text-primary">
-                          {applicant.initials}
-                        </span>
-                        <span className="min-w-0">
-                          <strong className="block truncate text-sm font-semibold text-textStrong">{applicant.fullName}</strong>
-                          <span className="block text-xs font-medium text-textMuted">{applicant.roleLabel}</span>
-                        </span>
-                      </div>
-                      <dl className="mt-4 grid gap-x-5 gap-y-1.5 sm:grid-cols-2">
-                        {[
-                          ['ID / Passport', applicant.idNumber, true],
-                          ['Email', applicant.email, true],
-                          ['Phone', applicant.phone, true],
-                          ['Marital Status', applicant.maritalStatus],
-                          ['Employment', applicant.employmentStatus, true],
-                          ['Employer', applicant.employer],
-                          ['Gross Income', applicant.financials.grossIncome.display],
-                          ['Total Income', applicant.financials.totalIncome.display, false, true],
-                          ['Monthly Expenses', applicant.financials.monthlyExpenses.display],
-                          ['Commitments', applicant.financials.monthlyCommitments.display],
-                        ].map(([label, value, required, emphasis]) => (
-                          <ApplicationDetailField key={`${applicant.role}-${label}`} label={label} value={formatApplicationValue(value)} required={Boolean(required)} emphasis={Boolean(emphasis)} />
-                        ))}
-                      </dl>
-                    </article>
-                  ))}
-                </div>
-                {[
-                  {
-                    title: 'Primary Applicant Details',
-                    rows: [
-                      ['ID Number', bondApplicationDetailModel.idNumber, true],
-                      ['Marital Status', bondApplicationDetailModel.maritalStatus],
-                      ['Email', bondApplicationViewModel.applicant.email, true],
-                      ['Dependants', bondApplicationDetailModel.dependants],
-                      ['Phone', bondApplicationViewModel.applicant.phone, true],
-                    ],
-                  },
-                  {
-                    title: 'Employment & Income',
-                    rows: [
-                      ['Employment Status', bondApplicationViewModel.applicant.employmentStatus, true],
-                      ['Gross Monthly Income', bondApplicationViewModel.financials.grossIncome.display, true],
-                      ['Employer', bondApplicationDetailModel.employer],
-                      ['Other Monthly Income', bondApplicationDetailModel.otherIncome],
-                      ['Occupation', bondApplicationDetailModel.occupation],
-                      ['Total Monthly Income', bondApplicationDetailModel.totalIncome, false, true],
-                      ['Employment Duration', bondApplicationDetailModel.employmentDuration],
-                    ],
-                  },
-                  {
-                    title: 'Financial Position',
-                    rows: [
-                      ['Monthly Expenses', bondApplicationViewModel.financials.monthlyExpenses.display],
-                      ['Disposable Income', bondApplicationDetailModel.disposableIncome, false, true],
-                      ['Existing Debt', bondApplicationViewModel.financials.existingDebt.display],
-                      ['Deposit Available', bondApplicationViewModel.financials.deposit.display],
-                      ['Monthly Commitments', bondApplicationDetailModel.monthlyCommitments],
-                      ['Loan to Value (LTV)', bondApplicationDetailModel.ltv],
-                    ],
-                  },
-                  {
-                    title: 'Property & Loan',
-                    rows: [
-                      ['Property / Unit', bondApplicationViewModel.property.label, true],
-                      ['Loan Amount Requested', bondApplicationViewModel.financials.bondAmountRequired.display, true],
-                      ['Loan Purpose', bondApplicationDetailModel.loanPurpose],
-                      ['Preferred Term', bondApplicationDetailModel.preferredTerm],
-                    ],
-                  },
-                ].map((section) => (
-                  <section key={section.title} className="mt-5 border-t border-borderSoft pt-5">
-                    <div className="grid gap-4 lg:grid-cols-[170px_minmax(0,1fr)]">
-                      <h4 className="text-sm font-semibold text-[#263a59]">{section.title}</h4>
-                      <dl className="grid gap-x-8 sm:grid-cols-2">
-                        {section.rows.map(([label, value, required, emphasis]) => (
-                          <ApplicationDetailField key={`${section.title}-${label}`} label={label} value={formatApplicationValue(value)} required={Boolean(required)} emphasis={Boolean(emphasis)} />
-                        ))}
-                      </dl>
-                    </div>
-                  </section>
-                ))}
-                <button type="button" className="mt-5 flex w-full items-center justify-center gap-2 rounded-[10px] border border-borderSoft px-3 py-2.5 text-sm font-semibold text-primary transition hover:border-primary/40 hover:bg-primarySoft" onClick={() => openWorkspaceMenu('application')}>
-                  <FileCheck2 size={15} />
-                  Edit Application
-                </button>
-              </article>
-
-              <aside className="space-y-5">
-                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface" data-bond-originator-review-workspace="phase-15">
-                  <div className="flex items-start justify-between gap-4">
-                    <span className="flex min-w-0 items-start gap-3">
-                      <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-primarySoft text-primary">
-                        <FileCheck2 size={17} />
-                      </span>
-                      <span className="min-w-0">
-                        <h3 className="text-base font-semibold text-textStrong">Originator Review Workspace</h3>
-                        <span className="mt-1 block text-xs text-textMuted">
-                          {bondApplicationOriginatorWorkspace.recommendedAction || 'Review application data before submission.'}
-                        </span>
-                      </span>
-                    </span>
-                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${Number(bondApplicationOriginatorWorkspace.score || 0) >= 85 ? 'bg-successSoft text-success' : Number(bondApplicationOriginatorWorkspace.score || 0) >= 65 ? 'bg-[#fff4e6] text-warning' : 'bg-red-50 text-red-600'}`}>
-                      {Number(bondApplicationOriginatorWorkspace.score || 0)}/100
-                    </span>
-                  </div>
-                  <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
-                    {bondApplicationOriginatorSourceBuckets.map((bucket) => (
-                      <div key={bucket.key} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-textMuted">{bucket.label}</span>
-                        <strong className="mt-1 block text-sm font-semibold text-textStrong">
-                          {Number(bucket.count || 0)}/{Number(bucket.total || 0)} · {Number(bucket.percent || 0)}%
-                        </strong>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-4 border-t border-borderSoft pt-3" data-bond-originator-action-list="true">
-                    <span className="text-xs font-semibold text-textStrong">Originator Action List</span>
-                    <div className="mt-2 space-y-2">
-                      {bondApplicationOriginatorActions.length ? bondApplicationOriginatorActions.map((item) => (
-                        <div key={`${item.type}-${item.key}`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[10px] border border-borderSoft bg-white px-3 py-2 text-sm">
-                          <span className="min-w-0">
-                            <span className="block truncate font-semibold text-textStrong">{item.label}</span>
-                            <span className="block truncate text-xs text-textMuted">{item.action}</span>
-                          </span>
-                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${item.priority === 'High' ? 'bg-red-50 text-red-600' : 'bg-[#fff4e6] text-warning'}`}>
-                            {item.priority}
-                          </span>
-                        </div>
-                      )) : (
-                        <p className="rounded-[10px] bg-successSoft px-3 py-2 text-sm font-semibold text-success">
-                          No originator action blockers detected.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </article>
-
-                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
-                  <div className="flex items-start justify-between gap-4">
-                    <span className="flex min-w-0 items-start gap-3">
-                      <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-successSoft text-success">
-                        <CheckCircle2 size={17} />
-                      </span>
-                      <span className="min-w-0">
-                        <h3 className="text-base font-semibold text-textStrong">Buyer Section Confirmations</h3>
-                        <span className="mt-1 block text-xs text-textMuted">
-                          {Number(bondApplicationConfirmationConfidence.confirmedCount || 0)} of {Number(bondApplicationConfirmationConfidence.totalSupportedSections || 0)} buyer sections confirmed
-                        </span>
-                      </span>
-                    </span>
-                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${Number(bondApplicationConfirmationConfidence.percent || 0) >= 100 ? 'bg-successSoft text-success' : Number(bondApplicationConfirmationConfidence.percent || 0) > 0 ? 'bg-[#fff4e6] text-warning' : 'bg-red-50 text-red-600'}`}>
-                      {Number(bondApplicationConfirmationConfidence.percent || 0)}%
-                    </span>
-                  </div>
-                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-surfaceAlt">
-                    <div
-                      className={`h-full rounded-full ${Number(bondApplicationConfirmationConfidence.percent || 0) >= 100 ? 'bg-success' : Number(bondApplicationConfirmationConfidence.percent || 0) > 0 ? 'bg-warning' : 'bg-red-500'}`}
-                      style={{ width: `${Math.min(100, Math.max(0, Number(bondApplicationConfirmationConfidence.percent || 0)))}%` }}
-                    />
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    {bondApplicationConfirmedSections.length ? bondApplicationConfirmedSections.map((section) => (
-                      <div key={section.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-sm">
-                        <span className="min-w-0 truncate text-textBody">{section.label}</span>
-                        <span className="shrink-0 rounded-full bg-successSoft px-2 py-0.5 text-[0.68rem] font-semibold text-success">
-                          {Number(section.confirmedFields || 0)}/{Number(section.totalFields || 0)}
-                        </span>
-                      </div>
-                    )) : (
-                      <p className="rounded-[10px] bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
-                        No buyer-confirmed prefill sections yet.
-                      </p>
-                    )}
-                  </div>
-                  {bondApplicationUnconfirmedSections.length ? (
-                    <div className="mt-4 border-t border-borderSoft pt-3">
-                      <span className="text-xs font-semibold text-textStrong">Unconfirmed Sections</span>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {bondApplicationUnconfirmedSections.map((section) => (
-                          <span key={section.key} className="max-w-full truncate rounded-full bg-[#fff4e6] px-2 py-1 text-[0.68rem] font-semibold text-warning">
-                            {section.label}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </article>
-
-                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
-                  <div className="flex items-start justify-between gap-4">
-                    <span className="flex min-w-0 items-start gap-3">
-                      <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-primarySoft text-primary">
-                        <ListChecks size={17} />
-                      </span>
-                      <span className="min-w-0">
-                        <h3 className="text-base font-semibold text-textStrong">Buyer Portal Field Alignment</h3>
-                        <span className="mt-1 block text-xs text-textMuted">
-                          {Number(bondApplicationFieldAlignment.capturedCount || 0)} of {Number(bondApplicationFieldAlignment.totalCount || 0)} originator fields matched
-                        </span>
-                      </span>
-                    </span>
-                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${bondApplicationFieldAlignmentPercent >= 90 ? 'bg-successSoft text-success' : bondApplicationFieldAlignmentPercent >= 70 ? 'bg-[#fff4e6] text-warning' : 'bg-red-50 text-red-600'}`}>
-                      {bondApplicationFieldAlignmentPercent}%
-                    </span>
-                  </div>
-                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-surfaceAlt">
-                    <div
-                      className={`h-full rounded-full ${bondApplicationFieldAlignmentPercent >= 90 ? 'bg-success' : bondApplicationFieldAlignmentPercent >= 70 ? 'bg-warning' : 'bg-red-500'}`}
-                      style={{ width: `${Math.min(100, Math.max(0, bondApplicationFieldAlignmentPercent))}%` }}
-                    />
-                  </div>
-                  <div className="mt-4 max-h-52 space-y-2 overflow-y-auto pr-1">
-                    {bondApplicationFieldAlignmentSections.map((section) => {
-                      const sectionPercent = section.total ? Math.round((section.captured / section.total) * 100) : 0
-                      return (
-                        <div key={section.label} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-sm">
-                          <span className="min-w-0 truncate text-textBody">{section.label}</span>
-                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${section.missing ? 'bg-[#fff4e6] text-warning' : 'bg-successSoft text-success'}`}>
-                            {section.captured}/{section.total} · {sectionPercent}%
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  {bondApplicationFieldAlignmentMissingFields.length ? (
-                    <div className="mt-4 border-t border-borderSoft pt-3">
-                      <span className="text-xs font-semibold text-textStrong">Missing Fields</span>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {bondApplicationFieldAlignmentMissingFields.map((field) => (
-                          <span key={field.key} className="max-w-full truncate rounded-full bg-[#fff4e6] px-2 py-1 text-[0.68rem] font-semibold text-warning">
-                            {field.label}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="mt-4 rounded-[10px] bg-successSoft px-3 py-2 text-sm font-semibold text-success">
-                      All tracked buyer portal fields are available to the originator view.
-                    </p>
-                  )}
-                </article>
-
-                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
-                  <h3 className="text-base font-semibold text-textStrong">Submission Readiness</h3>
-                  <div className="mt-4 grid gap-4 sm:grid-cols-[112px_minmax(0,1fr)] xl:grid-cols-1">
-                    <div className="flex items-center gap-4">
-                      <div
-                        className="grid size-24 shrink-0 place-items-center rounded-full"
-                        style={{ background: `conic-gradient(#0f8f68 ${bondApplicationViewModel.application.readinessPercent}%, #edf2f7 0)` }}
-                      >
-                        <div className="grid size-16 place-items-center rounded-full bg-white text-center shadow-inner">
-                          <div>
-                            <strong className="block text-xl font-semibold leading-none text-textStrong">{bondApplicationViewModel.application.readinessPercent}%</strong>
-                            <span className="mt-1 block text-[0.56rem] font-semibold uppercase tracking-[0.08em] text-success">Complete</span>
-                          </div>
-                        </div>
-                      </div>
-                      <strong className={bondApplicationOutstandingCount ? 'text-sm font-semibold text-warning' : 'text-sm font-semibold text-success'}>
-                        {bondApplicationOutstandingCount ? `${bondApplicationOutstandingCount} item${bondApplicationOutstandingCount === 1 ? '' : 's'} outstanding` : 'Ready for submission'}
-                      </strong>
-                    </div>
-                    <div className="space-y-1.5">
-                      {bondApplicationViewModel.readinessItems.map((item) => (
-                        <div key={item.key} className="flex items-center gap-2 text-sm leading-5">
-                          {item.complete ? <CheckCircle2 size={14} className="shrink-0 text-success" /> : <AlertTriangle size={14} className="shrink-0 text-warning" />}
-                          <span className="min-w-0 truncate text-textBody">{item.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className={`mt-4 rounded-[10px] px-3 py-2 text-sm font-semibold ${bondApplicationOutstandingCount ? 'bg-[#fff4e6] text-warning' : 'bg-successSoft text-success'}`}>
-                    Status: {bondApplicationOutstandingCount ? bondApplicationViewModel.application.readinessLabel : 'Ready for Bank Submission'}
-                  </div>
-                </article>
-
-                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
-                  <h3 className="text-base font-semibold text-textStrong">Action Centre</h3>
-                  <div className="mt-3 max-h-[300px] divide-y divide-borderSoft overflow-y-auto">
-                    {bondApplicationViewModel.actions.length ? bondApplicationViewModel.actions.slice(0, 5).map((action) => (
-                      <button key={action.id} type="button" className="flex w-full items-center justify-between gap-3 py-3 text-left" onClick={() => openWorkspaceMenu(action.target || 'application')}>
-                        <span className="flex min-w-0 items-center gap-3">
-                          <span className={`grid size-8 shrink-0 place-items-center rounded-[9px] ${action.priority === 'High' ? 'bg-red-50 text-red-600' : action.priority === 'Medium' ? 'bg-amber-50 text-amber-600' : 'bg-surfaceAlt text-textMuted'}`}>
-                            <FileText size={15} />
-                          </span>
-                          <span className="min-w-0">
-                            <strong className="block truncate text-sm font-semibold text-textStrong">{action.title}</strong>
-                            <span className="mt-0.5 block truncate text-xs text-textMuted">{action.description}</span>
-                          </span>
-                        </span>
-                        <span className={`shrink-0 rounded-full px-2 py-1 text-[0.68rem] font-semibold ${action.priority === 'High' ? 'bg-red-50 text-red-600' : action.priority === 'Medium' ? 'bg-amber-50 text-amber-600' : 'bg-surfaceAlt text-textMuted'}`}>{action.priority}</span>
-                      </button>
-                    )) : (
-                      <p className="rounded-[12px] border border-success/20 bg-successSoft px-3 py-4 text-sm text-success">No outstanding actions. Application is ready for the next step.</p>
-                    )}
-                  </div>
-                  <button type="button" className="mt-3 flex w-full items-center justify-between border-t border-borderSoft pt-3 text-sm font-semibold text-primary" onClick={() => openWorkspaceMenu(bondApplicationViewModel.actions[0]?.target || 'documents')}>
-                    View all tasks ({bondApplicationViewModel.actions.length})
-                    <ChevronRight size={15} />
-                  </button>
-                </article>
-
-                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
-                  <h3 className="text-base font-semibold text-textStrong">Risk Assessment</h3>
-                  <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] xl:grid-cols-1">
-                    <div>
-                      <strong className={`block text-xl font-semibold uppercase ${bondApplicationViewModel.risk.tone === 'danger' ? 'text-red-600' : bondApplicationViewModel.risk.tone === 'warning' ? 'text-warning' : 'text-success'}`}>
-                        {bondApplicationViewModel.risk.level}
-                      </strong>
-                      <p className="mt-2 text-sm text-textStrong">Risk Score: <strong>{bondApplicationViewModel.risk.score} / 100</strong></p>
-                    </div>
-                    <div>
-                      <span className="text-xs font-semibold text-textStrong">Key Risk Factors</span>
-                      <ul className="mt-2 space-y-1.5 text-sm text-textMuted">
-                        {bondApplicationViewModel.risk.factors.slice(0, 4).map((factor) => (
-                          <li key={factor} className="flex gap-2">
-                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
-                            <span>{factor}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                  {bondApplicationViewModel.risk.recommendation ? (
-                    <div className="mt-4 border-t border-borderSoft pt-3">
-                      <span className="text-xs font-semibold text-textStrong">Recommendation</span>
-                      <p className="mt-1 text-sm leading-5 text-textMuted">{bondApplicationViewModel.risk.recommendation}</p>
-                    </div>
-                  ) : null}
-                </article>
-              </aside>
-            </section>
+            <BondApplicationDetailsWorkspace
+              viewModel={bondApplicationViewModel}
+              detailModel={bondApplicationDetailModel}
+              alignmentFields={bondApplicationAlignmentFields}
+              sectionMetrics={bondApplicationSectionMetrics}
+              activeSection={bondApplicationDetailSection}
+              blockers={bondApplicationSubmissionBlockers}
+              loadingAction={bondHybridFinanceActionLoading}
+              onSectionChange={setBondApplicationDetailSection}
+              onEditApplication={() => openWorkspaceMenu('application')}
+              onOpenDocuments={() => openWorkspaceMenu('documents')}
+            />
           </section>
         ) : null}
 
@@ -21753,6 +21580,7 @@ function AttorneyTransactionDetail() {
             canEdit={canEditBondHybridFinanceWorkflow}
             onSaveIncentive={handleSaveBondReferralIncentive}
             onTransition={handleTransitionBondReferralIncentive}
+            onViewApplication={() => openWorkspaceMenu('application')}
           />
         ) : null}
 
@@ -22571,13 +22399,13 @@ function AttorneyTransactionDetail() {
 
       <Modal
         open={roleplayerConfirmOpen}
-        onClose={onboardingActionBusy ? undefined : () => setRoleplayerConfirmOpen(false)}
+        onClose={onboardingActionBusy ? undefined : closeRoleplayerConfirmation}
         title="Confirm Roleplayers"
         subtitle="Select the trusted roleplayers for this transaction before sending buyer onboarding."
         footer={(
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-              <Button type="button" variant="secondary" onClick={() => setRoleplayerConfirmOpen(false)} disabled={onboardingActionBusy}>
+              <Button type="button" variant="secondary" onClick={closeRoleplayerConfirmation} disabled={onboardingActionBusy}>
                 Cancel
               </Button>
               <Button type="button" variant="secondary" onClick={() => void handleCopyBuyerOnboardingLinkFromConfirmation()} disabled={onboardingActionBusy}>
@@ -22596,6 +22424,13 @@ function AttorneyTransactionDetail() {
           <p className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-secondary text-textMuted">
             Choose the preferred bond originator that should receive this buyer application. The transferring attorney is inherited from the seller's signed mandate.
           </p>
+          {buyerDeliveryTarget?.email || buyerDeliveryTarget?.name ? (
+            <div className="rounded-[14px] border border-primary/20 bg-primarySoft px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.1em] text-primary">Buyer recipient</p>
+              <p className="mt-1 text-sm font-semibold text-textStrong">{buyerDeliveryTarget?.name || 'Buyer'}</p>
+              <p className="mt-1 break-words text-xs text-textMuted">{buyerDeliveryTarget?.email || 'Email not captured'}</p>
+            </div>
+          ) : null}
           {partnerOptionsLoading ? (
             <p className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-sm font-semibold text-textMuted">
               Loading scoped partner defaults...

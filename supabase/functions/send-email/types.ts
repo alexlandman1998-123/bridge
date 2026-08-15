@@ -38,6 +38,13 @@ export type SendClientOnboardingPayload = {
   source?: string;
   deliveryMode?: "digital_portal" | "agent_assisted" | "hard_copy" | string;
   skipEmail?: boolean;
+  buyerDeliveryAction?: "send_onboarding" | "send_portal_link" | string;
+  buyerDeliveryVersion?: string;
+  buyerTargetId?: string | null;
+  buyerParticipantId?: string | null;
+  buyerPartyId?: string | null;
+  buyerEmail?: string | null;
+  buyerName?: string | null;
 } & DeliveryContextPayload;
 
 export type SendOnboardingSubmittedPayload = {

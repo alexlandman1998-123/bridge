@@ -1,4 +1,9 @@
 import { invokeEdgeFunction } from '../lib/supabaseClient'
+import {
+  TRANSACTION_BUYER_DELIVERY_ACTIONS,
+  buildTransactionBuyerDeliveryPayload,
+  normalizeTransactionBuyerDeliveryTarget,
+} from '../core/transactions/transactionBuyerDelivery'
 import { prepareNotificationOutbox, updateNotificationOutboxStatus } from './notificationOutboxService'
 import { NOTIFICATION_MODE, normalizeNotificationMode } from './communicationDeliveryService'
 
@@ -35,9 +40,16 @@ export async function prepareBuyerOnboardingNotification({
   notificationMode = '',
   clientIntakePreference = '',
   source = 'buyer_lead_offer_conversion',
+  buyerTarget = null,
   metadata = {},
 } = {}) {
   const mode = resolveBuyerOnboardingNotificationMode({ notificationMode, clientIntakePreference })
+  const target = normalizeTransactionBuyerDeliveryTarget({
+    ...(buyerTarget && typeof buyerTarget === 'object' ? buyerTarget : {}),
+    name: recipientName,
+    email,
+  })
+  const dedupeTarget = target.participantId || target.buyerPartyId || target.email || 'primary'
   const prepared = await prepareNotificationOutbox({
     organisationId,
     assignedUserId,
@@ -52,12 +64,19 @@ export async function prepareBuyerOnboardingNotification({
     subject: 'Complete your Arch9 buyer onboarding',
     message: 'Buyer onboarding is ready. Complete the requested details and documents in Arch9.',
     source: 'agent_workspace',
-    dedupeKey: `buyer-onboarding:${text(transactionId)}`,
+    dedupeKey: `buyer-onboarding:${text(transactionId)}:${dedupeTarget}`,
     metadata: {
       ...(metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {}),
       workflowSource: text(source) || 'buyer_lead_offer_conversion',
       clientIntakePreference: text(clientIntakePreference) || null,
       controlledDelivery: true,
+      buyerTarget: target.hasTarget
+        ? {
+            participantId: target.participantId || null,
+            buyerPartyId: target.buyerPartyId || null,
+            email: target.email || null,
+          }
+        : null,
     },
   })
 
@@ -83,12 +102,13 @@ export async function prepareBuyerOnboardingNotification({
 
   try {
     const response = await invokeEdgeFunction('send-email', {
-      body: {
-        type: 'client_onboarding',
-        transactionId: text(transactionId),
+      body: buildTransactionBuyerDeliveryPayload({
+        transactionId,
+        target,
         source: text(source) || 'buyer_lead_offer_conversion',
         deliveryMode: mode,
-      },
+        action: TRANSACTION_BUYER_DELIVERY_ACTIONS.sendOnboarding,
+      }),
     })
     if (response?.error || response?.data?.error) throw response.error || new Error(response.data.error)
     const sentItem = await updateNotificationOutboxStatus({ eventId: emailItem.id, status: 'sent', provider: 'send-email' })

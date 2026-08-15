@@ -717,6 +717,59 @@ const CLIENT_CONTROLLED_REMOVED_KEYS = new Set([
   'reservation_proof_document',
   'uses_representative',
 ])
+const BUYER_TARGETED_ONBOARDING_LINK_VERSION = 'transaction_buyer_link_phase6_v1'
+
+function getBuyerTargetSearchParam(searchParams, keys = []) {
+  if (!searchParams) return ''
+  return keys
+    .map((key) => String(searchParams.get(key) || '').trim())
+    .find(Boolean) || ''
+}
+
+function resolveBuyerOnboardingLinkTarget(searchParams) {
+  const buyerParticipantId = getBuyerTargetSearchParam(searchParams, [
+    'buyerParticipantId',
+    'buyer_participant_id',
+    'participantId',
+  ])
+  const buyerPartyId = getBuyerTargetSearchParam(searchParams, [
+    'buyerPartyId',
+    'buyer_party_id',
+    'buyerId',
+  ])
+  const buyerTargetId = getBuyerTargetSearchParam(searchParams, [
+    'buyerTargetId',
+    'buyer_target_id',
+    'buyer',
+  ])
+  const buyerTargetNonce = getBuyerTargetSearchParam(searchParams, [
+    'buyerTargetNonce',
+    'buyer_target_nonce',
+    'buyerLinkNonce',
+  ])
+  const buyerDeliveryAction = getBuyerTargetSearchParam(searchParams, [
+    'buyerDeliveryAction',
+    'buyer_delivery_action',
+  ])
+  const hasTarget = Boolean(buyerParticipantId || buyerPartyId || buyerTargetId || buyerTargetNonce || buyerDeliveryAction)
+
+  if (!hasTarget) return {}
+
+  return {
+    buyerTargetVersion: BUYER_TARGETED_ONBOARDING_LINK_VERSION,
+    buyer_target_version: BUYER_TARGETED_ONBOARDING_LINK_VERSION,
+    buyerTargetId: buyerTargetId || buyerParticipantId || buyerPartyId,
+    buyer_target_id: buyerTargetId || buyerParticipantId || buyerPartyId,
+    buyerParticipantId,
+    buyer_participant_id: buyerParticipantId,
+    buyerPartyId,
+    buyer_party_id: buyerPartyId,
+    buyerTargetNonce,
+    buyer_target_nonce: buyerTargetNonce,
+    buyerDeliveryAction,
+    buyer_delivery_action: buyerDeliveryAction,
+  }
+}
 
 function choiceCardClass(active) {
   return `h-full rounded-[16px] border px-3 py-3 text-left transition duration-150 ease-out md:rounded-[20px] md:px-5 md:py-5 ${
@@ -1971,6 +2024,7 @@ function ClientOnboarding() {
   const { token = '' } = useParams()
   const [searchParams] = useSearchParams()
   const onboardingRole = String(searchParams.get('role') || '').trim().toLowerCase()
+  const buyerLinkTarget = useMemo(() => resolveBuyerOnboardingLinkTarget(searchParams), [searchParams])
   const isDemoOnboarding = isBuyerOnboardingDemoToken(token)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -2023,10 +2077,12 @@ function ClientOnboarding() {
       })
       setPayload({
         ...data,
+        buyerLinkTarget,
         onboardingFlow: initialFlow,
       })
       setFormData({
         ...(data.formData || {}),
+        ...buyerLinkTarget,
         purchaser_type: initialPurchaserType,
         purchaser_entity_type: initialPurchaserEntityType,
         natural_person_purchase_mode: normalizedDetails.naturalPersonPurchaseMode,
@@ -2051,7 +2107,7 @@ function ClientOnboarding() {
     } finally {
       setLoading(false)
     }
-  }, [isDemoOnboarding, token])
+  }, [buyerLinkTarget, isDemoOnboarding, token])
 
   useEffect(() => {
     void loadData()
@@ -3097,11 +3153,14 @@ function ClientOnboarding() {
       setSaving(true)
       setError('')
       setPlatformFeeConsentError('')
-      const submissionData = sanitizeClientFormData(formData, {
-        purchaserType,
-        financeType: normalizedFinanceType,
-        fundingSources,
-      })
+      const submissionData = {
+        ...sanitizeClientFormData(formData, {
+          purchaserType,
+          financeType: normalizedFinanceType,
+          fundingSources,
+        }),
+        ...buyerLinkTarget,
+      }
       if (isDemoOnboarding) {
         setPayload((previous) => ({
           ...(previous || getDemoBuyerOnboardingPayload(token)),
@@ -3131,11 +3190,14 @@ function ClientOnboarding() {
     try {
       setSaving(true)
       setError('')
-      const submissionData = sanitizeClientFormData(formData, {
-        purchaserType,
-        financeType: normalizedFinanceType,
-        fundingSources,
-      })
+      const submissionData = {
+        ...sanitizeClientFormData(formData, {
+          purchaserType,
+          financeType: normalizedFinanceType,
+          fundingSources,
+        }),
+        ...buyerLinkTarget,
+      }
       validateOnboardingSubmission(
         submissionData,
         { transaction: payload?.transaction },

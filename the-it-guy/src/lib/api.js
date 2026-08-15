@@ -80,6 +80,11 @@ import {
   normalizeFinanceType,
 } from '../core/transactions/financeType'
 import { buildBuyerOnboardingCompletionHook } from '../core/transactions/buyerOnboardingCompletionHook.js'
+import {
+  buildBuyerOnboardingCompletionParticipantPatch,
+  resolveBuyerOnboardingCompletionTarget,
+} from '../core/transactions/transactionBuyerCompletion.js'
+import { buildTransactionBuyerOperationalAudit } from '../core/transactions/transactionBuyerOperationalAudit.js'
 import { buildBondFallbackQueueCandidate } from '../core/transactions/bondFallbackQueue.js'
 import { buildBondAssistanceRoutingDecision } from '../core/transactions/bondAssistanceRouting.js'
 import { buildAttorneyHandoffRepairQueueCandidate } from '../core/transactions/attorneyHandoffRepairQueue.js'
@@ -9019,6 +9024,107 @@ async function buildLiveTransactionChecklistData(
   }
 }
 
+const TRANSACTION_PARTICIPANT_FULL_SELECT = `
+  id,
+  transaction_id,
+  user_id,
+  role_type,
+  legal_role,
+  transaction_role,
+  status,
+  firm_id,
+  invited_by_user_id,
+  invitation_token,
+  invitation_expires_at,
+  invited_at,
+  accepted_at,
+  removed_at,
+  visibility_scope,
+  is_internal,
+  participant_name,
+  participant_email,
+  participant_phone,
+  participant_scope,
+  assignment_source,
+  buyer_party_id,
+  buyer_party_role,
+  buyer_party_position,
+  is_primary_buyer,
+  buyer_profile_status,
+  buyer_onboarding_status,
+  buyer_onboarding_completed_at,
+  buyer_manual_capture_status,
+  buyer_manual_capture_completed_at,
+  buyer_portal_invite_status,
+  buyer_portal_invited_at,
+  buyer_portal_last_sent_at,
+  buyer_portal_link_id,
+  buyer_source,
+  buyer_metadata,
+  can_view,
+  can_comment,
+  can_upload_documents,
+  can_edit_finance_workflow,
+  can_edit_attorney_workflow,
+  can_edit_core_transaction,
+  created_at,
+  updated_at
+`
+
+const TRANSACTION_PARTICIPANT_LEGACY_SELECT = `
+  id,
+  transaction_id,
+  user_id,
+  role_type,
+  legal_role,
+  status,
+  firm_id,
+  invited_by_user_id,
+  invitation_token,
+  invitation_expires_at,
+  invited_at,
+  accepted_at,
+  removed_at,
+  visibility_scope,
+  is_internal,
+  participant_name,
+  participant_email,
+  participant_scope,
+  assignment_source,
+  can_view,
+  can_comment,
+  can_upload_documents,
+  can_edit_finance_workflow,
+  can_edit_attorney_workflow,
+  can_edit_core_transaction,
+  created_at,
+  updated_at
+`
+
+function isMissingTransactionParticipantExtendedColumn(error) {
+  return [
+    'transaction_role',
+    'participant_phone',
+    'participant_scope',
+    'assignment_source',
+    'buyer_party_id',
+    'buyer_party_role',
+    'buyer_party_position',
+    'is_primary_buyer',
+    'buyer_profile_status',
+    'buyer_onboarding_status',
+    'buyer_onboarding_completed_at',
+    'buyer_manual_capture_status',
+    'buyer_manual_capture_completed_at',
+    'buyer_portal_invite_status',
+    'buyer_portal_invited_at',
+    'buyer_portal_last_sent_at',
+    'buyer_portal_link_id',
+    'buyer_source',
+    'buyer_metadata',
+  ].some((column) => isMissingColumnError(error, column))
+}
+
 function normalizeTransactionParticipantRow(row) {
   const shape = resolveTransactionParticipantShape(row)
   const roleType = normalizeRoleType(shape.roleType)
@@ -9070,6 +9176,22 @@ function normalizeTransactionParticipantRow(row) {
     firmRole: normalizeFirmRole(row?.firm_role, roleType === 'attorney' ? 'attorney' : roleType),
     participantName: row?.participant_name || '',
     participantEmail: row?.participant_email || '',
+    participantPhone: row?.participant_phone || '',
+    buyerPartyId: row?.buyer_party_id || null,
+    buyerPartyRole: row?.buyer_party_role || '',
+    buyerPartyPosition: Number.isFinite(Number(row?.buyer_party_position)) ? Number(row.buyer_party_position) : 0,
+    isPrimaryBuyer: row?.is_primary_buyer === true,
+    buyerProfileStatus: row?.buyer_profile_status || '',
+    buyerOnboardingStatus: row?.buyer_onboarding_status || '',
+    buyerOnboardingCompletedAt: row?.buyer_onboarding_completed_at || null,
+    buyerManualCaptureStatus: row?.buyer_manual_capture_status || '',
+    buyerManualCaptureCompletedAt: row?.buyer_manual_capture_completed_at || null,
+    buyerPortalInviteStatus: row?.buyer_portal_invite_status || '',
+    buyerPortalInvitedAt: row?.buyer_portal_invited_at || null,
+    buyerPortalLastSentAt: row?.buyer_portal_last_sent_at || null,
+    buyerPortalLinkId: row?.buyer_portal_link_id || null,
+    buyerSource: row?.buyer_source || '',
+    buyerMetadata: row?.buyer_metadata && typeof row.buyer_metadata === 'object' ? row.buyer_metadata : {},
     canView: row?.can_view !== false,
     canComment: row?.can_comment !== false,
     canUploadDocuments: row?.can_upload_documents !== false,
@@ -9861,35 +9983,7 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
     : []
 
   const defaults = buildDefaultParticipantRows(transaction, buyer, inheritedParticipants)
-  const rowSelect = `
-    id,
-    transaction_id,
-    user_id,
-    role_type,
-    legal_role,
-    status,
-    firm_id,
-    invited_by_user_id,
-    invitation_token,
-    invitation_expires_at,
-    invited_at,
-    accepted_at,
-    removed_at,
-    visibility_scope,
-    is_internal,
-    participant_name,
-    participant_email,
-    participant_scope,
-    assignment_source,
-    can_view,
-    can_comment,
-    can_upload_documents,
-    can_edit_finance_workflow,
-    can_edit_attorney_workflow,
-    can_edit_core_transaction,
-    created_at,
-    updated_at
-  `
+  const rowSelect = TRANSACTION_PARTICIPANT_FULL_SELECT
 
   const profileIdByEmail = await resolveProfileIdsByEmail(
     client,
@@ -9925,7 +10019,8 @@ async function ensureTransactionParticipants(client, { transaction, buyer }) {
       isMissingColumnError(upsertResult.error, 'visibility_scope') ||
       isMissingColumnError(upsertResult.error, 'is_internal') ||
       isMissingColumnError(upsertResult.error, 'participant_scope') ||
-      isMissingColumnError(upsertResult.error, 'assignment_source'))
+      isMissingColumnError(upsertResult.error, 'assignment_source') ||
+      isMissingTransactionParticipantExtendedColumn(upsertResult.error))
   ) {
     const missingCanEditCoreTransactionColumn = isMissingColumnError(upsertResult.error, 'can_edit_core_transaction')
     const missingUserIdColumn = isMissingColumnError(upsertResult.error, 'user_id')
@@ -26211,6 +26306,7 @@ export async function recordBuyerOnboardingSent({
   transactionId,
   actorRole = null,
   recipientEmail = '',
+  buyerTarget = null,
   roleplayers = [],
 } = {}) {
   if (!transactionId) return null
@@ -26233,6 +26329,48 @@ export async function recordBuyerOnboardingSent({
       'id, bond_assignment_status, bond_assignment_source, updated_at',
     )
   }
+  const target = buyerTarget && typeof buyerTarget === 'object' ? buyerTarget : {}
+  const targetParticipantId = normalizeNullableText(target.participantId || target.participant_id)
+  const targetBuyerPartyId = normalizeNullableText(target.buyerPartyId || target.buyer_party_id || target.buyerId || target.buyer_id)
+  const targetEmail = normalizeNullableText(target.email || target.buyerEmail || target.buyer_email || recipientEmail)?.toLowerCase() || ''
+  if (targetParticipantId || targetBuyerPartyId || targetEmail) {
+    const nowIso = new Date().toISOString()
+    let participantUpdateQuery = client
+      .from('transaction_participants')
+      .update({
+        buyer_profile_status: 'invited',
+        buyer_onboarding_status: 'sent',
+        buyer_metadata: {
+          ...(target.metadata && typeof target.metadata === 'object' ? target.metadata : {}),
+          lastBuyerOnboardingSentAt: nowIso,
+          lastBuyerOnboardingSentByRole: normalizedActorRole,
+        },
+        updated_at: nowIso,
+      })
+      .eq('transaction_id', transactionId)
+
+    if (targetParticipantId) {
+      participantUpdateQuery = participantUpdateQuery.eq('id', targetParticipantId)
+    } else if (targetBuyerPartyId) {
+      participantUpdateQuery = participantUpdateQuery.eq('buyer_party_id', targetBuyerPartyId)
+    } else {
+      participantUpdateQuery = participantUpdateQuery.ilike('participant_email', targetEmail)
+    }
+
+    const participantUpdate = await participantUpdateQuery.select('id')
+    if (
+      participantUpdate.error &&
+      !isMissingTableError(participantUpdate.error, 'transaction_participants') &&
+      !isMissingColumnError(participantUpdate.error, 'buyer_profile_status') &&
+      !isMissingColumnError(participantUpdate.error, 'buyer_onboarding_status') &&
+      !isMissingColumnError(participantUpdate.error, 'buyer_metadata') &&
+      !isMissingColumnError(participantUpdate.error, 'updated_at') &&
+      !isMissingColumnError(participantUpdate.error, 'buyer_party_id') &&
+      !isMissingColumnError(participantUpdate.error, 'participant_email')
+    ) {
+      throw participantUpdate.error
+    }
+  }
   await logTransactionEventIfPossible(client, {
     transactionId,
     eventType: 'buyer_onboarding_sent',
@@ -26241,6 +26379,13 @@ export async function recordBuyerOnboardingSent({
     eventData: {
       source: 'agent_send_buyer_onboarding',
       recipientEmail: normalizeNullableText(recipientEmail)?.toLowerCase() || null,
+      buyerTarget: targetParticipantId || targetBuyerPartyId || targetEmail
+        ? {
+            participantId: targetParticipantId || null,
+            buyerPartyId: targetBuyerPartyId || null,
+            email: targetEmail || null,
+          }
+        : null,
       roleplayers,
     },
   })
@@ -32496,9 +32641,7 @@ export async function fetchTransactionById(transactionId) {
       : Promise.resolve({ data: null, error: null }),
     client
       .from('transaction_participants')
-      .select(
-        'id, transaction_id, user_id, role_type, legal_role, status, firm_id, invited_by_user_id, invitation_token, invitation_expires_at, invited_at, accepted_at, removed_at, visibility_scope, is_internal, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
-      )
+      .select(TRANSACTION_PARTICIPANT_FULL_SELECT)
       .eq('transaction_id', transactionId),
     fetchTransactionRolePlayersIfPossible(client, transactionId),
     fetchTransactionDiscussion(transactionId, {
@@ -32537,13 +32680,12 @@ export async function fetchTransactionById(transactionId) {
       isMissingColumnError(participantsQuery.error, 'invited_by_user_id') ||
       isMissingColumnError(participantsQuery.error, 'invitation_token') ||
       isMissingColumnError(participantsQuery.error, 'invitation_expires_at') ||
-      isMissingColumnError(participantsQuery.error, 'is_internal'))
+      isMissingColumnError(participantsQuery.error, 'is_internal') ||
+      isMissingTransactionParticipantExtendedColumn(participantsQuery.error))
   ) {
     participantsQuery = await client
       .from('transaction_participants')
-      .select(
-        'id, transaction_id, user_id, role_type, participant_name, participant_email, can_view, can_comment, can_upload_documents, can_edit_finance_workflow, can_edit_attorney_workflow, can_edit_core_transaction, created_at, updated_at',
-      )
+      .select(TRANSACTION_PARTICIPANT_LEGACY_SELECT)
       .eq('transaction_id', transactionId)
   }
   if (participantsQuery.error && !isMissingSchemaError(participantsQuery.error)) {
@@ -32620,6 +32762,12 @@ export async function fetchTransactionById(transactionId) {
   const bondOriginatorAgentProgressView = await fetchAgentBondOriginatorProgressView(client, transactionId)
   const bondOriginatorAttorneyHandoffView = await fetchAttorneyBondOriginatorHandoffView(client, transactionId)
   const bondApplication = await fetchNormalizedBondApplicationBundle(client, transactionId)
+  const normalizedTransactionParticipants = (participantsQuery.data || []).map((row) => normalizeTransactionParticipantRow(row))
+  const buyerOperationalAudit = buildTransactionBuyerOperationalAudit({
+    transaction,
+    onboarding: null,
+    participants: normalizedTransactionParticipants,
+  })
 
   return {
     unit: unitQuery.data || null,
@@ -32642,7 +32790,8 @@ export async function fetchTransactionById(transactionId) {
     rolePlayers,
     transactionRolePlayers: rolePlayers,
     transaction_role_players: rolePlayers,
-    transactionParticipants: (participantsQuery.data || []).map((row) => normalizeTransactionParticipantRow(row)),
+    transactionParticipants: normalizedTransactionParticipants,
+    buyerOperationalAudit,
     activeViewerRole: 'developer',
     activeViewerPermissions: getRolePermissions({
       role: 'developer',
@@ -33980,6 +34129,11 @@ export async function fetchUnitDetail(unitId) {
     ? await fetchOnboardingFormDataForTransaction(client, transaction.id, transaction?.purchaser_type)
     : null
   timer.mark('onboarding_form_query_end')
+  const buyerOperationalAudit = buildTransactionBuyerOperationalAudit({
+    transaction,
+    onboarding,
+    participants: transactionParticipants,
+  })
 
   const payload = {
     unit,
@@ -34001,6 +34155,7 @@ export async function fetchUnitDetail(unitId) {
     purchaserTypeLabel: getPurchaserTypeLabel(transaction?.purchaser_type),
     transactionRequiredDocuments,
     transactionParticipants,
+    buyerOperationalAudit,
     activeViewerRole,
     activeViewerPermissions,
     transactionDiscussion,
@@ -39006,6 +39161,7 @@ async function recordBuyerOnboardingProjectionFailureMarker(
 const BUYER_ONBOARDING_PROJECTION_REPAIR_EVENT_TYPES = {
   required_documents: 'buyer_onboarding_required_documents_projection_failed',
   platform_fee_consent: 'buyer_onboarding_platform_fee_consent_projection_failed',
+  buyer_participant_completion: 'buyer_onboarding_buyer_participant_projection_failed',
   information_sheet: 'buyer_onboarding_information_sheet_projection_failed',
   roleplayer: 'buyer_onboarding_roleplayer_projection_failed',
   workflow_evidence: 'buyer_onboarding_workflow_evidence_projection_failed',
@@ -39027,6 +39183,9 @@ function normalizeBuyerOnboardingRepairProjection(value = '') {
   const canonical = normalized.replace(/^buyer_onboarding_/, '').replace(/_projection_failed$/, '')
   if (canonical === 'required_document' || canonical === 'required_documents') return 'required_documents'
   if (canonical === 'platform_fee' || canonical === 'platform_fee_consent') return 'platform_fee_consent'
+  if (canonical === 'buyer_participant' || canonical === 'buyer_participant_completion') {
+    return 'buyer_participant_completion'
+  }
   if (canonical === 'information_sheet') return 'information_sheet'
   if (canonical === 'roleplayer' || canonical === 'buyer_bond_originator_roleplayer') return 'roleplayer'
   if (canonical === 'workflow' || canonical === 'workflow_evidence') return 'workflow_evidence'
@@ -39740,6 +39899,235 @@ export async function fetchClientOnboardingByToken(token) {
   }
 }
 
+function isBuyerCompletionParticipantRow(row = {}) {
+  const roleValues = [
+    row.role_type,
+    row.transaction_role,
+    row.buyer_party_role,
+  ]
+    .map((value) => normalizeTextValue(value).toLowerCase())
+    .filter(Boolean)
+  return (
+    roleValues.some((role) => ['buyer', 'client', 'purchaser', 'primary_buyer', 'additional_buyer', 'co_buyer'].includes(role)) ||
+    Boolean(row.buyer_party_id || row.is_primary_buyer)
+  )
+}
+
+async function fetchBuyerCompletionParticipantsIfPossible(client, transactionId) {
+  if (!transactionId) {
+    return { rows: [], skipped: true, reason: 'missing_transaction' }
+  }
+
+  const query = await client
+    .from('transaction_participants')
+    .select(TRANSACTION_PARTICIPANT_FULL_SELECT)
+    .eq('transaction_id', transactionId)
+    .is('removed_at', null)
+
+  if (query.error) {
+    if (
+      isMissingTableError(query.error, 'transaction_participants') ||
+      isMissingSchemaError(query.error) ||
+      isPermissionDeniedError(query.error)
+    ) {
+      return { rows: [], skipped: true, reason: 'transaction_participants_unavailable' }
+    }
+    if (isMissingTransactionParticipantExtendedColumn(query.error)) {
+      return { rows: [], skipped: true, reason: 'buyer_participant_columns_unavailable' }
+    }
+    throw query.error
+  }
+
+  return {
+    rows: (query.data || []).filter(isBuyerCompletionParticipantRow),
+    skipped: false,
+    reason: '',
+  }
+}
+
+function matchBuyerCompletionParticipantRow(rows = [], target = {}) {
+  if (!target?.hasTarget) return null
+  const participantId = normalizeNullableText(target.participantId)
+  const buyerPartyId = normalizeNullableText(target.buyerPartyId)
+  const email = normalizeEmailAddress(target.email)
+
+  return (
+    (participantId ? rows.find((row) => normalizeNullableText(row?.id) === participantId) : null) ||
+    (buyerPartyId ? rows.find((row) => normalizeNullableText(row?.buyer_party_id) === buyerPartyId) : null) ||
+    (email ? rows.find((row) => normalizeEmailAddress(row?.participant_email) === email) : null) ||
+    null
+  )
+}
+
+function verifyBuyerCompletionTargetNonce(row = {}, target = {}) {
+  const submittedNonce = normalizeNullableText(target?.targetNonce)
+  if (!submittedNonce) {
+    return { valid: true, reason: '' }
+  }
+
+  const metadata = row?.buyer_metadata && typeof row.buyer_metadata === 'object' && !Array.isArray(row.buyer_metadata)
+    ? row.buyer_metadata
+    : {}
+  const expectedNonce = normalizeNullableText(
+    metadata.lastBuyerOnboardingLinkNonce ||
+      metadata.lastBuyerPortalLinkNonce ||
+      metadata.buyerTargetNonce ||
+      metadata.buyer_target_nonce,
+  )
+
+  if (!expectedNonce) {
+    return { valid: true, reason: 'target_nonce_not_recorded' }
+  }
+
+  return expectedNonce === submittedNonce
+    ? { valid: true, reason: '' }
+    : { valid: false, reason: 'buyer_target_nonce_mismatch' }
+}
+
+async function updateBuyerCompletionParticipantRow(client, { transactionId, row, patch }) {
+  if (!transactionId || !row?.id) {
+    return { data: null, skipped: true, reason: 'missing_participant' }
+  }
+
+  let payload = { ...patch }
+  let updateResult = await client
+    .from('transaction_participants')
+    .update(payload)
+    .eq('transaction_id', transactionId)
+    .eq('id', row.id)
+    .select('id, buyer_party_id, participant_email, buyer_profile_status, buyer_onboarding_status, buyer_onboarding_completed_at')
+    .maybeSingle()
+
+  if (updateResult.error && isMissingColumnError(updateResult.error, 'buyer_metadata')) {
+    payload = { ...payload }
+    delete payload.buyer_metadata
+    updateResult = await client
+      .from('transaction_participants')
+      .update(payload)
+      .eq('transaction_id', transactionId)
+      .eq('id', row.id)
+      .select('id, buyer_party_id, participant_email, buyer_profile_status, buyer_onboarding_status, buyer_onboarding_completed_at')
+      .maybeSingle()
+  }
+
+  if (updateResult.error && isMissingColumnError(updateResult.error, 'updated_at')) {
+    payload = { ...payload }
+    delete payload.updated_at
+    updateResult = await client
+      .from('transaction_participants')
+      .update(payload)
+      .eq('transaction_id', transactionId)
+      .eq('id', row.id)
+      .select('id, buyer_party_id, participant_email, buyer_profile_status, buyer_onboarding_status, buyer_onboarding_completed_at')
+      .maybeSingle()
+  }
+
+  if (updateResult.error) {
+    if (
+      isMissingTableError(updateResult.error, 'transaction_participants') ||
+      isMissingSchemaError(updateResult.error) ||
+      isPermissionDeniedError(updateResult.error) ||
+      isMissingTransactionParticipantExtendedColumn(updateResult.error)
+    ) {
+      return { data: null, skipped: true, reason: 'buyer_participant_completion_unavailable' }
+    }
+    throw updateResult.error
+  }
+
+  return { data: updateResult.data || null, skipped: false, reason: '' }
+}
+
+async function markTransactionBuyerOnboardingCompleted(
+  client,
+  {
+    transaction = null,
+    buyer = null,
+    formData = {},
+    completedAt = '',
+    source = 'buyer_onboarding_completed',
+  } = {},
+) {
+  const transactionId = normalizeNullableUuid(transaction?.id || transaction?.transaction_id)
+  if (!transactionId) {
+    return { status: 'skipped', reason: 'missing_transaction', target: null }
+  }
+
+  const participantLookup = await fetchBuyerCompletionParticipantsIfPossible(client, transactionId)
+  if (participantLookup.skipped) {
+    return { status: 'skipped', reason: participantLookup.reason, target: null }
+  }
+
+  const target = resolveBuyerOnboardingCompletionTarget({
+    buyers: participantLookup.rows,
+    formData,
+    buyer,
+  })
+  const matchedRow = matchBuyerCompletionParticipantRow(participantLookup.rows, target)
+  if (!matchedRow?.id) {
+    return {
+      status: 'skipped',
+      reason: 'buyer_participant_not_matched',
+      target,
+    }
+  }
+  const nonceVerification = verifyBuyerCompletionTargetNonce(matchedRow, target)
+  if (!nonceVerification.valid) {
+    return {
+      status: 'skipped',
+      reason: nonceVerification.reason,
+      target,
+    }
+  }
+
+  const completedTimestamp = normalizeNullableText(completedAt) || new Date().toISOString()
+  const patch = buildBuyerOnboardingCompletionParticipantPatch({
+    target,
+    completedAt: completedTimestamp,
+    source,
+    existingMetadata: matchedRow.buyer_metadata,
+  })
+  const updateResult = await updateBuyerCompletionParticipantRow(client, {
+    transactionId,
+    row: matchedRow,
+    patch,
+  })
+  if (updateResult.skipped) {
+    return {
+      status: 'skipped',
+      reason: updateResult.reason,
+      target,
+    }
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'buyer_onboarding_participant_completed',
+    createdByRole: 'client',
+    eventData: {
+      source,
+      version: target.version,
+      participantId: target.participantId || matchedRow.id,
+      buyerPartyId: target.buyerPartyId || matchedRow.buyer_party_id || null,
+      buyerEmail: target.email || normalizeEmailAddress(matchedRow.participant_email) || null,
+      buyerName: target.name || normalizeTextValue(matchedRow.participant_name) || null,
+      matchBasis: target.matchBasis,
+      completedAt: completedTimestamp,
+    },
+  })
+
+  return {
+    status: 'completed',
+    reason: '',
+    target,
+    participant: updateResult.data || {
+      id: matchedRow.id,
+      buyer_party_id: matchedRow.buyer_party_id || null,
+      participant_email: matchedRow.participant_email || null,
+    },
+    completedAt: completedTimestamp,
+  }
+}
+
 async function notifyTransactionOwnerOnOnboardingSubmitted(
   client,
   { transactionId, buyerName = '', developmentName = '', unitLabel = '', transactionReference = '' } = {},
@@ -40180,12 +40568,31 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
   }
 
   let buyerOnboardingCompletionHook = null
+  let buyerCompletionProjection = null
   let bondFallbackQueueCandidate = null
   let bondAssistanceRoutingDecision = null
   let attorneyHandoffRepairQueueCandidate = null
   let informationSheetCapture = null
 
   if (submit) {
+    try {
+      buyerCompletionProjection = await markTransactionBuyerOnboardingCompleted(client, {
+        transaction,
+        buyer,
+        formData: formDataForPersistence,
+        completedAt: now,
+        source: 'buyer_onboarding_completed',
+      })
+    } catch (buyerParticipantCompletionError) {
+      console.warn('Buyer participant completion projection failed after snapshot save', buyerParticipantCompletionError)
+      await recordBuyerOnboardingProjectionFailureMarker(client, {
+        ...projectionMarkerContext,
+        eventType: 'buyer_onboarding_buyer_participant_projection_failed',
+        projection: 'buyer_participant_completion',
+        error: buyerParticipantCompletionError,
+      })
+    }
+
     try {
       await acceptBuyerPlatformFeeConsent(client, {
         transaction,
@@ -40418,6 +40825,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
           completedAt: buyerOnboardingCompletionHook.completedAt,
           nextOperationalActions: buyerOnboardingCompletionHook.nextOperationalActions,
           steps: buyerOnboardingCompletionHook.steps,
+          buyerCompletion: buyerCompletionProjection?.target || null,
         },
       })
     } catch (completionHookEventError) {
@@ -40569,10 +40977,11 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       const developmentName = normalizeTextValue(developmentRecord?.name || '')
       const unitNumber = normalizeTextValue(unit?.unit_number || '')
       const unitLabel = unitNumber ? `Unit ${unitNumber}` : ''
+      const completedBuyerName = normalizeTextValue(buyerCompletionProjection?.target?.name || buyer?.name || '')
 
       await notifyTransactionOwnerOnOnboardingSubmitted(client, {
         transactionId: transaction.id,
-        buyerName: normalizeTextValue(buyer?.name || ''),
+        buyerName: completedBuyerName,
         developmentName,
         unitLabel,
         transactionReference: normalizeTextValue(transaction?.transaction_reference || ''),
@@ -40622,6 +41031,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     clientPortalPath,
     clientPortalLink,
     completionHook: buyerOnboardingCompletionHook,
+    buyerCompletion: buyerCompletionProjection,
     bondAssistanceRouting: bondAssistanceRoutingDecision,
     bondFallbackQueue: bondFallbackQueueCandidate,
     attorneyHandoffRepairQueue: attorneyHandoffRepairQueueCandidate,
@@ -40738,6 +41148,16 @@ async function runBuyerOnboardingProjectionRepair(client, projection, context) {
       formData,
       onboarding,
       acceptedAt: completedAt || new Date().toISOString(),
+    })
+  }
+
+  if (projection === 'buyer_participant_completion') {
+    return markTransactionBuyerOnboardingCompleted(client, {
+      transaction,
+      buyer,
+      formData,
+      completedAt: completedAt || new Date().toISOString(),
+      source: 'buyer_onboarding_projection_replay',
     })
   }
 
@@ -40975,6 +41395,75 @@ export async function replayBuyerOnboardingProjections({
     failedCount,
     results,
   }
+}
+
+export async function getTransactionBuyerOperationalAudit({ transactionId, actorRole = null } = {}) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) throw new Error('Transaction is required.')
+
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'agent')
+  if (!['agent', 'agency_admin', 'developer', 'internal_admin', 'admin', 'platform_admin'].includes(normalizedActorRole)) {
+    throw new Error('Your role does not have permission to audit buyer onboarding operations.')
+  }
+
+  const transactionQuery = await client
+    .from('transactions')
+    .select('id, buyer_id, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, purchaser_type, finance_type, stage, current_main_stage')
+    .eq('id', normalizedTransactionId)
+    .maybeSingle()
+
+  if (transactionQuery.error) throw transactionQuery.error
+  if (!transactionQuery.data?.id) throw new Error('Transaction not found.')
+
+  const onboardingQuery = await client
+    .from('transaction_onboarding')
+    .select('id, transaction_id, status, purchaser_type, submitted_at, is_active, created_at, updated_at')
+    .eq('transaction_id', normalizedTransactionId)
+    .eq('is_active', true)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (
+    onboardingQuery.error &&
+    !isMissingTableError(onboardingQuery.error, 'transaction_onboarding') &&
+    !isMissingColumnError(onboardingQuery.error, 'is_active') &&
+    !isMissingSchemaError(onboardingQuery.error) &&
+    !isPermissionDeniedError(onboardingQuery.error)
+  ) {
+    throw onboardingQuery.error
+  }
+
+  let participantsQuery = await client
+    .from('transaction_participants')
+    .select(TRANSACTION_PARTICIPANT_FULL_SELECT)
+    .eq('transaction_id', normalizedTransactionId)
+
+  if (participantsQuery.error && isMissingTransactionParticipantExtendedColumn(participantsQuery.error)) {
+    participantsQuery = await client
+      .from('transaction_participants')
+      .select(TRANSACTION_PARTICIPANT_LEGACY_SELECT)
+      .eq('transaction_id', normalizedTransactionId)
+  }
+
+  if (
+    participantsQuery.error &&
+    !isMissingTableError(participantsQuery.error, 'transaction_participants') &&
+    !isMissingSchemaError(participantsQuery.error) &&
+    !isPermissionDeniedError(participantsQuery.error)
+  ) {
+    throw participantsQuery.error
+  }
+
+  return buildTransactionBuyerOperationalAudit({
+    transaction: transactionQuery.data,
+    onboarding: onboardingQuery.error ? null : onboardingQuery.data || null,
+    participants: (participantsQuery.error ? [] : participantsQuery.data || []).map((row) =>
+      normalizeTransactionParticipantRow(row),
+    ),
+  })
 }
 
 async function upsertClientPortalOnboardingForm({ token, formData = {} }) {

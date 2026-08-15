@@ -2,6 +2,8 @@ export async function logOnboardingEmailSideEffects({
   supabase,
   transactionId,
   buyerEmail,
+  buyerParticipantId,
+  buyerPartyId,
   onboardingToken,
   emailId,
   resend,
@@ -10,6 +12,8 @@ export async function logOnboardingEmailSideEffects({
   supabase: any;
   transactionId: string;
   buyerEmail: string;
+  buyerParticipantId?: string | null;
+  buyerPartyId?: string | null;
   onboardingToken: string;
   emailId: string | null;
   resend: boolean;
@@ -26,6 +30,8 @@ export async function logOnboardingEmailSideEffects({
       action: "onboarding_email_sent",
       message: activityMessage,
       recipientEmail: buyerEmail,
+      buyerParticipantId: buyerParticipantId || null,
+      buyerPartyId: buyerPartyId || null,
       onboardingToken,
       emailId,
       resend,

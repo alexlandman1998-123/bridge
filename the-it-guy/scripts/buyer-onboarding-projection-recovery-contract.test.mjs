@@ -64,6 +64,13 @@ const projectionContracts = [
     repairHelper: 'acceptBuyerPlatformFeeConsent',
   },
   {
+    projection: 'buyer_participant_completion',
+    eventType: 'buyer_onboarding_buyer_participant_projection_failed',
+    saveHelper: 'markTransactionBuyerOnboardingCompleted',
+    catchName: 'buyerParticipantCompletionError',
+    repairHelper: 'markTransactionBuyerOnboardingCompleted',
+  },
+  {
     projection: 'information_sheet',
     eventType: 'buyer_onboarding_information_sheet_projection_failed',
     saveHelper: 'updateTransactionRequiredDocumentCaptureIfPossible',
