@@ -81,6 +81,10 @@ export {
   buildBondApplicationUxAudit,
 } from './ux/bondApplicationUxAudit.js'
 export {
+  BOND_APPLICATION_UX_WORKSPACE_VERSION,
+  buildBondApplicationUxWorkspaceModel,
+} from './ux/bondApplicationUxWorkspace.js'
+export {
   getPhase2GuidedBondApplicationEligibility,
   isPermanentEmploymentValue,
   isPhase3SupportedEmploymentValue,

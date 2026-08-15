@@ -42,6 +42,7 @@ import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from 
 import { normalizeFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
 import {
   buildBondApplicationState,
+  buildBondApplicationUxWorkspaceModel,
   buildLegacyBondApplicationPersistencePayload,
   calculateLegacyBondApplicationCompletion,
   getBondApplicationApplicantDefault,
@@ -11885,6 +11886,19 @@ function ClientPortal() {
     activeBondApplicationCardsComplete &&
     activeBondApplicationSectionConfirmed &&
     !activeBondApplicationSectionExpanded
+  const bondApplicationUxWorkspace = buildBondApplicationUxWorkspaceModel({
+    sections: BOND_APPLICATION_SECTION_TABS,
+    sectionStatusByKey: bondApplicationSectionStatusByKey,
+    activeSectionKey: activeBondApplicationSectionTab,
+    confirmedSectionKeys: bondApplicationConfirmedSectionKeys,
+    activeConfirmationCards: activeBondApplicationConfirmationCards,
+    firstMissingCard: activeBondApplicationFirstMissingCard,
+    requiredDocuments: bondApplicationRequiredDocuments,
+    progressPercent: bondApplicationProgressPercent,
+    dirty: bondApplicationDirty,
+    saving: bondApplicationSaving,
+    status: bondApplicationStatus,
+  })
 
   const readBondField = (path, fallback = '') => {
     const value = getNestedPortalValue(bondApplicationData, path.split('.'))
@@ -11987,6 +12001,166 @@ function ClientPortal() {
               </button>
             ) : null}
           </div>
+        </div>
+      </section>
+    )
+  }
+
+  const renderBondApplicationTaskWorkspace = () => {
+    const workspace = bondApplicationUxWorkspace
+    const nextAction = workspace.nextAction || {}
+    const handleNextAction = () => {
+      if (nextAction.disabled) return
+      if (nextAction.key === 'confirm_section') {
+        confirmActiveBondApplicationSection()
+        return
+      }
+      if (nextAction.key === 'complete_missing_field') {
+        scrollToBondApplicationField(nextAction.fieldPath)
+        return
+      }
+      if (nextAction.key === 'upload_document' || nextAction.key === 'continue_section') {
+        if (nextAction.targetSection) {
+          void handleBondApplicationSectionChange(nextAction.targetSection)
+        }
+        return
+      }
+      if (nextAction.key === 'save_progress') {
+        void persistBondApplicationDraft()
+        return
+      }
+      if (nextAction.key === 'submit_application') {
+        void handleBondApplicationSectionChange('declarations_consents')
+      }
+    }
+    const getSectionStateClasses = (state, active) => {
+      if (active) return 'border-[#9fb8d1] bg-[#eef4fb] text-[#1f3449] shadow-[0_10px_22px_rgba(47,84,120,0.12)]'
+      if (state === 'buyer_confirmed') return 'border-[#c6dfcf] bg-[#f4fbf6] text-[#2f7a51]'
+      if (state === 'ready_to_confirm') return 'border-[#ead9c6] bg-[#fffaf3] text-[#8a5a22]'
+      if (state === 'needs_input') return 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
+      return 'border-[#e3ebf4] bg-white text-[#5f7086]'
+    }
+    const getSummaryToneClasses = (tone) => {
+      if (tone === 'success') return 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]'
+      if (tone === 'warning') return 'border-[#ead9c6] bg-[#fffaf3] text-[#8a5a22]'
+      if (tone === 'danger') return 'border-[#f1ddd0] bg-[#fff6f0] text-[#a15b31]'
+      return 'border-[#dbe5ef] bg-white text-[#35546c]'
+    }
+
+    return (
+      <section className="space-y-4 rounded-[22px] border border-[#dbe5ef] bg-white px-4 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] sm:px-5" data-bond-ux-task-workspace="phase-10">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-w-0">
+            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#718196]">Guided application path</span>
+            <h4 className="mt-1 text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">
+              {workspace.activeSection?.label || 'Application'}
+            </h4>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-[#5f7288]">
+              Confirm what is already filled first, then complete only the details still blocking submission.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
+            {workspace.summaryCards.map((card) => (
+              <article key={card.key} className={`rounded-[14px] border px-3 py-2.5 ${getSummaryToneClasses(card.tone)}`}>
+                <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.1em] opacity-75">{card.label}</span>
+                <strong className="mt-1 block text-lg font-semibold tracking-[-0.03em]">{card.value}</strong>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(220px,320px)]">
+          <div className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+            <div className="mb-2 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#718196]">
+              <span>Submission progress</span>
+              <span>{workspace.progressPercent}%</span>
+            </div>
+            <div className="h-2.5 overflow-hidden rounded-full bg-[#e4ebf3]">
+              <div
+                className="h-full rounded-full bg-[linear-gradient(90deg,#3f78b1_0%,#2f8a64_100%)] transition-all duration-300"
+                style={{ width: `${workspace.progressPercent}%` }}
+              />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {workspace.blockerSections.slice(0, 4).map((section) => (
+                <button
+                  key={section.key}
+                  type="button"
+                  onClick={() => {
+                    void handleBondApplicationSectionChange(section.key)
+                  }}
+                  className="inline-flex min-h-[30px] items-center rounded-full border border-[#f1ddd0] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#a15b31]"
+                >
+                  {section.label}
+                </button>
+              ))}
+              {workspace.documentBlockers.length ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleBondApplicationSectionChange('documents')
+                  }}
+                  className="inline-flex min-h-[30px] items-center gap-1.5 rounded-full border border-[#f1ddd0] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#a15b31]"
+                >
+                  <FileText size={12} />
+                  {workspace.documentBlockers.length} document{workspace.documentBlockers.length === 1 ? '' : 's'}
+                </button>
+              ) : null}
+              {!workspace.blockerCount ? (
+                <span className="inline-flex min-h-[30px] items-center rounded-full border border-[#c6dfcf] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#2f7a51]">
+                  No tracked blockers
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="sticky bottom-3 z-10 rounded-[16px] border border-[#cbd9e8] bg-white px-4 py-3 shadow-[0_16px_34px_rgba(15,23,42,0.14)]" data-bond-ux-next-action-bar="true">
+            <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-[#718196]">Next action</span>
+            <strong className="mt-1 block text-sm font-semibold text-[#142132]">{nextAction.label}</strong>
+            <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{nextAction.detail}</p>
+            <button
+              type="button"
+              onClick={handleNextAction}
+              disabled={nextAction.disabled}
+              className="mt-3 inline-flex min-h-[40px] w-full items-center justify-center gap-2 rounded-[12px] bg-[#2f5478] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#244463] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"
+            >
+              {nextAction.label}
+              <ArrowRight size={15} />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" data-bond-ux-section-stepper="true">
+          {workspace.sectionCards.map((section, index) => (
+            <button
+              key={section.key}
+              type="button"
+              onClick={() => {
+                void handleBondApplicationSectionChange(section.key)
+              }}
+              className={`min-h-[104px] rounded-[15px] border px-3 py-3 text-left transition hover:border-[#b9ccdf] ${getSectionStateClasses(section.state, section.active)}`}
+            >
+              <span className="flex items-start justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block text-[0.62rem] font-semibold uppercase tracking-[0.1em] opacity-70">
+                    {index + 1}. {section.group}
+                  </span>
+                  <strong className="mt-1 block text-sm font-semibold">{section.label}</strong>
+                </span>
+                {section.confirmed ? (
+                  <CheckCircle2 size={16} className="shrink-0" />
+                ) : section.state === 'needs_input' ? (
+                  <AlertTriangle size={16} className="shrink-0" />
+                ) : (
+                  <Clock3 size={16} className="shrink-0" />
+                )}
+              </span>
+              <span className="mt-2 block text-xs leading-5 opacity-80">{section.description}</span>
+              <span className="mt-2 inline-flex rounded-full bg-white/70 px-2 py-0.5 text-[0.66rem] font-semibold">
+                {section.stateLabel}
+              </span>
+            </button>
+          ))}
         </div>
       </section>
     )
@@ -13531,6 +13705,8 @@ function ClientPortal() {
                       onLegacyHandoff={handleGuidedBondApplicationHandoff}
                     />
                   ) : (
+                  <>
+                  {renderBondApplicationTaskWorkspace()}
                   <section className="space-y-5 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
@@ -14183,6 +14359,7 @@ function ClientPortal() {
                       </div>
                     </div>
                   </section>
+                  </>
                   )
                 ) : null}
 
