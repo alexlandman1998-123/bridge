@@ -2,79 +2,78 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import {
-  BOND_ORIGINATOR_EVIDENCE_LINK_DEFINITIONS,
   BOND_ORIGINATOR_EVIDENCE_LINK_VERSION,
   buildBondOriginatorEvidenceDeepLinks,
-  resolveBondOriginatorEvidenceTransactionId,
 } from '../src/services/attorneyWorkflow/bondOriginatorEvidenceLinks.js'
+import {
+  BOND_LANE_PHASE6_ORIGINATOR_EVIDENCE_VERSION,
+  buildBondLanePhase6OriginatorEvidencePlan,
+} from '../src/services/attorneyWorkflow/bondLaneJourneyMap.js'
 
-function verifyTransactionResolution() {
-  assert.equal(resolveBondOriginatorEvidenceTransactionId('tx-123'), 'tx-123')
-  assert.equal(resolveBondOriginatorEvidenceTransactionId({ transaction_id: 'tx-456' }), 'tx-456')
-  assert.equal(resolveBondOriginatorEvidenceTransactionId({ transaction: { id: 'tx-789' } }), 'tx-789')
-  assert.equal(resolveBondOriginatorEvidenceTransactionId(null), '')
+function verifyPlan() {
+  const plan = buildBondLanePhase6OriginatorEvidencePlan()
+
+  assert.equal(plan.version, BOND_LANE_PHASE6_ORIGINATOR_EVIDENCE_VERSION)
+  assert.equal(plan.sourceVersion, BOND_ORIGINATOR_EVIDENCE_LINK_VERSION)
+  assert.equal(plan.status, 'ready_for_phase7')
+  assert.deepEqual(plan.structuralBlockers, [])
+  assert.ok(plan.attorneySurfaces.includes('BondOriginatorAgentProgressView'))
+  assert.ok(plan.attorneySurfaces.includes('BondOriginatorAttorneyHandoffView'))
+  assert.equal(plan.links.every((link) => link.coveredByOriginatorAction), true)
+  assert.equal(plan.links.length, 9)
 }
 
-function verifyReadOnlyEvidenceLinks() {
-  const bundle = buildBondOriginatorEvidenceDeepLinks({ id: 'tx-originator-1' })
-  const links = Object.values(bundle.links)
+function verifyDeepLinks() {
+  const model = buildBondOriginatorEvidenceDeepLinks({ id: 'tx phase 6/1' })
 
-  assert.equal(bundle.version, BOND_ORIGINATOR_EVIDENCE_LINK_VERSION)
-  assert.equal(bundle.transactionId, 'tx-originator-1')
-  assert.equal(bundle.available, true)
-  assert.equal(bundle.attorneyPolicy, 'read_only_deep_link_to_originator_workspace')
-  assert.equal(links.length, BOND_ORIGINATOR_EVIDENCE_LINK_DEFINITIONS.length)
-  assert.equal(links.every((link) => link.readOnlyForAttorney), true)
-  assert.equal(links.every((link) => link.href.includes('/bond/files/tx-originator-1')), true)
-  assert.equal(links.every((link) => Array.isArray(link.evidence) && link.evidence.length > 0), true)
-
-  assert.equal(bundle.links.application.targetWorkspaceTab, 'application')
-  assert.equal(bundle.links.documents.targetWorkspaceTab, 'documents')
-  assert.equal(bundle.links.bankFeedback.targetAction, 'update-bank-feedback')
-  assert.equal(bundle.links.offers.targetAction, 'capture-offer')
-  assert.equal(bundle.links.instruction.targetAction, 'send-attorney-instruction')
+  assert.equal(model.available, true)
+  assert.equal(model.transactionId, 'tx phase 6/1')
+  assert.equal(model.links.application.href, '/bond/files/tx%20phase%206%2F1?tab=application&action=review-application')
+  assert.equal(model.links.documents.href, '/bond/files/tx%20phase%206%2F1?tab=documents&action=request-docs')
+  assert.equal(model.links.bankFeedback.href, '/bond/files/tx%20phase%206%2F1?tab=workflow&action=update-bank-feedback')
+  assert.equal(model.links.offers.href, '/bond/files/tx%20phase%206%2F1?tab=workflow&action=capture-offer')
+  assert.equal(model.links.buyerDecision.href, '/bond/files/tx%20phase%206%2F1?tab=workflow&action=record-buyer-decision')
+  assert.equal(model.links.grant.href, '/bond/files/tx%20phase%206%2F1?tab=workflow&action=record-grant-received')
+  assert.equal(model.links.signedGrant.href, '/bond/files/tx%20phase%206%2F1?tab=workflow&action=record-grant-signed')
+  assert.equal(model.links.instruction.href, '/bond/files/tx%20phase%206%2F1?tab=workflow&action=send-attorney-instruction')
+  assert.equal(model.links.activity.href, '/bond/files/tx%20phase%206%2F1?tab=activity&action=monitor-registration')
+  assert.equal(model.links.instruction.readOnlyForAttorney, true)
 }
 
-function verifyUnavailableWithoutTransactionId() {
-  const bundle = buildBondOriginatorEvidenceDeepLinks({})
-  const links = Object.values(bundle.links)
-
-  assert.equal(bundle.available, false)
-  assert.equal(bundle.transactionId, '')
-  assert.equal(links.every((link) => link.href === ''), true)
-  assert.equal(links.every((link) => link.readOnlyForAttorney), true)
-}
-
-function verifyDoc() {
-  const docSource = readFileSync(new URL('../docs/attorney-bond-lane-phase6-originator-evidence-links.md', import.meta.url), 'utf8')
-  assert.match(docSource, /Bond Lane Phase 6 Originator Evidence Links/)
-  assert.match(docSource, /read-only/)
-  assert.match(docSource, /application/)
-  assert.match(docSource, /instruction/)
-  assert.match(docSource, /node scripts\/verify-attorney-bond-lane-phase6\.mjs/)
-}
-
-function verifyComponentWiring() {
+function verifyUiWiring() {
   const pageSource = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
   const progressSource = readFileSync(new URL('../src/components/bond/BondOriginatorAgentProgressView.jsx', import.meta.url), 'utf8')
   const handoffSource = readFileSync(new URL('../src/components/bond/BondOriginatorAttorneyHandoffView.jsx', import.meta.url), 'utf8')
 
   assert.match(pageSource, /buildBondOriginatorEvidenceDeepLinks/)
-  assert.match(pageSource, /deepLinks=\{bondOriginatorEvidenceLinks\}/)
+  assert.match(pageSource, /bondOriginatorEvidenceLinks/)
+  assert.match(pageSource, /openBondOriginatorEvidenceLink/)
   assert.match(pageSource, /onOpenDeepLink=\{openBondOriginatorEvidenceLink\}/)
+
   assert.match(progressSource, /deepLinks = null/)
-  assert.match(progressSource, /onOpenDeepLink = null/)
   assert.match(progressSource, /sourceLinks\.bankFeedback/)
   assert.match(progressSource, /sourceLinks\.documents/)
+  assert.match(progressSource, /sourceLinks\.activity/)
+  assert.match(progressSource, /ExternalLink/)
+
   assert.match(handoffSource, /deepLinks = null/)
   assert.match(handoffSource, /sourceLinks\.instruction/)
   assert.match(handoffSource, /sourceLinks\.signedGrant/)
+  assert.match(handoffSource, /Originator Activity/)
 }
 
-verifyTransactionResolution()
-verifyReadOnlyEvidenceLinks()
-verifyUnavailableWithoutTransactionId()
+function verifyDoc() {
+  const docSource = readFileSync(new URL('../docs/attorney-bond-lane-phase6-originator-evidence-links.md', import.meta.url), 'utf8')
+  assert.match(docSource, /Bond Lane Phase 6 Originator Evidence Links/)
+  assert.match(docSource, /send-attorney-instruction/)
+  assert.match(docSource, /record-grant-signed/)
+  assert.match(docSource, /read-only/)
+  assert.match(docSource, /node scripts\/verify-attorney-bond-lane-phase6\.mjs/)
+}
+
+verifyPlan()
+verifyDeepLinks()
+verifyUiWiring()
 verifyDoc()
-verifyComponentWiring()
 
 console.log('Attorney bond lane Phase 6 originator evidence link verification passed.')

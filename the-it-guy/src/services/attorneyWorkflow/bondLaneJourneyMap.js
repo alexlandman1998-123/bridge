@@ -10,6 +10,10 @@ import {
   BOND_HYBRID_FINANCE_WORKFLOW_TYPE,
 } from '../../core/transactions/bondHybridFinanceWorkflow.js'
 import {
+  BOND_ORIGINATOR_EVIDENCE_LINK_DEFINITIONS,
+  BOND_ORIGINATOR_EVIDENCE_LINK_VERSION,
+} from './bondOriginatorEvidenceLinks.js'
+import {
   ATTORNEY_WORKFLOW_COORDINATION_COMMAND_PRESETS,
   BOND_ATTORNEY_STAGE_COMMAND_PRESETS,
 } from '../../constants/attorneyWorkflowUsability.js'
@@ -20,6 +24,7 @@ export const BOND_LANE_PHASE2_ACTION_AUDIT_VERSION = 'bond-lane-phase2-action-au
 export const BOND_LANE_PHASE3_COMMAND_PLAN_VERSION = 'bond-lane-phase3-stage-command-plan-v1'
 export const BOND_LANE_PHASE4_GUARANTEE_COORDINATION_VERSION = 'bond-lane-phase4-guarantee-coordination-v1'
 export const BOND_LANE_PHASE5_LODGEMENT_COORDINATION_VERSION = 'bond-lane-phase5-lodgement-coordination-v1'
+export const BOND_LANE_PHASE6_ORIGINATOR_EVIDENCE_VERSION = 'bond-lane-phase6-originator-evidence-links-v1'
 
 export const BOND_ORIGINATOR_JOURNEY_LANES = Object.freeze([
   Object.freeze({
@@ -675,6 +680,61 @@ export function buildBondLanePhase5LodgementCoordinationPlan() {
       'Transfer can request bond readiness before all transfer-side lodgement steps are complete.',
       'Bond can request transfer readiness before marking bond lodged simultaneously.',
       'Coordination requests persist as professional-shared workflow notes with sourceCoordinationId metadata.',
+    ],
+    structuralBlockers,
+  }
+}
+
+export function buildBondLanePhase6OriginatorEvidencePlan() {
+  const phase5 = buildBondLanePhase5LodgementCoordinationPlan()
+  const originatorActionKeys = BOND_ORIGINATOR_PHASE2_REQUIRED_ACTIONS.map((action) => action.sourceActionKey)
+  const requiredLinkKeys = [
+    'application',
+    'documents',
+    'bankFeedback',
+    'offers',
+    'buyerDecision',
+    'grant',
+    'signedGrant',
+    'instruction',
+    'activity',
+  ]
+  const links = BOND_ORIGINATOR_EVIDENCE_LINK_DEFINITIONS.map((definition) => ({
+    key: definition.key,
+    label: definition.label,
+    actionKey: definition.action.key,
+    targetWorkspaceTab: definition.action.targetWorkspaceTab,
+    targetAction: definition.action.targetAction,
+    evidence: definition.evidence,
+    coveredByOriginatorAction: originatorActionKeys.includes(definition.action.key),
+  }))
+  const linkKeys = links.map((link) => link.key)
+  const structuralBlockers = [
+    ...phase5.structuralBlockers,
+    ...requiredLinkKeys
+      .filter((key) => !linkKeys.includes(key))
+      .map((key) => `Missing originator evidence deep link: ${key}`),
+    ...links
+      .filter((link) => !link.coveredByOriginatorAction)
+      .map((link) => `Originator evidence link is not covered by Phase 2 action baseline: ${link.key}`),
+  ]
+
+  return {
+    version: BOND_LANE_PHASE6_ORIGINATOR_EVIDENCE_VERSION,
+    phase5Version: phase5.version,
+    sourceVersion: BOND_ORIGINATOR_EVIDENCE_LINK_VERSION,
+    status: structuralBlockers.length ? 'blocked' : 'ready_for_phase7',
+    links,
+    attorneySurfaces: [
+      'BondOriginatorAgentProgressView',
+      'BondOriginatorAttorneyHandoffView',
+      'TransactionFinanceCommandCenter handoffPanel',
+    ],
+    rolloutRules: [
+      'Attorney-side originator panels remain read-only.',
+      'Deep links route to the bond file workspace with tab and action parameters.',
+      'Grant and signed grant document buttons still open document URLs directly where available.',
+      'Originator mutation remains governed by the bond originator workspace.',
     ],
     structuralBlockers,
   }

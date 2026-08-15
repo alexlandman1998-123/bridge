@@ -154,7 +154,7 @@ function BondOriginatorAttorneyHandoffView({
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <GrantDocumentButton document={grant.grantDocument} label="Grant" onOpenDocument={onOpenDocument} />
                       <GrantDocumentButton document={grant.signedGrantDocument} label="Signed grant" onOpenDocument={onOpenDocument} />
-                      {sourceLinks.grant?.href && onOpenDeepLink ? (
+                      {(sourceLinks.grant?.href || sourceLinks.signedGrant?.href) && onOpenDeepLink ? (
                         <Button type="button" variant="secondary" size="sm" onClick={() => openSourceLink(sourceLinks.signedGrant || sourceLinks.grant)}>
                           <ExternalLink size={14} />
                           Source

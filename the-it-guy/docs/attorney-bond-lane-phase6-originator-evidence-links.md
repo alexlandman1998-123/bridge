@@ -1,35 +1,46 @@
 # Bond Lane Phase 6 Originator Evidence Links
 
-Phase 6 gives the attorney workflow a read-only evidence map back to the bond originator workspace.
+Phase 6 gives attorneys direct navigation to the bond originator source workspace while keeping the attorney-side originator panels read-only.
 
 ## Evidence Links
 
-The evidence bundle exposes deep links for:
+Attorney-side originator panels now support deep links for:
 
-- Application intake.
-- Document requests and uploads.
-- Bank feedback.
-- Offers and buyer decision.
-- Grant and signed grant.
-- Attorney instruction.
-- Registration monitoring activity.
+- Application intake: `review-application`
+- Documents: `request-docs`
+- Bank feedback: `update-bank-feedback`
+- Offers: `capture-offer`
+- Buyer decision: `record-buyer-decision`
+- Grant: `record-grant-received`
+- Signed grant: `record-grant-signed`
+- Attorney instruction: `send-attorney-instruction`
+- Activity: `monitor-registration`
+
+Each link routes to `/bond/files/:transactionId` with `tab` and `action` query parameters that the bond file already understands.
 
 ## Runtime Behavior
 
-- Links are generated from the existing bond consultant action registry.
-- Attorneys receive navigation-only links into the originator workspace evidence.
-- The attorney workflow does not mutate bond originator application, document, bank, offer, grant, or instruction records through these links.
-- If no transaction id is available, links remain unavailable rather than guessing a destination.
+- `BondOriginatorAgentProgressView` can open exact originator documents, bank workflow, finance, and activity links.
+- `BondOriginatorAttorneyHandoffView` can open the instruction source, grant source, signed-grant source, and originator activity.
+- Direct grant document buttons still open the linked document URL when available.
+- If no deep link is provided, existing local callbacks still work.
 
-## Boundaries
+## Boundary
 
-- Phase 6 does not create a new permission model.
-- Phase 6 does not duplicate bond originator workflow state inside the attorney workflow.
-- Phase 6 does not publish bank payloads or grant documents automatically.
+The attorney can inspect the originator source record, but mutation remains governed by the bond originator workspace.
 
 ## Phase 7 Candidate
 
-Surface the evidence bundle in the attorney handoff panel so bond attorneys can jump directly to application, grant, signed grant, and instruction evidence.
+Run full scenario coverage across buyer/legal structures and finance combinations:
+
+- natural person
+- married buyers
+- multiple buyers
+- company buyer
+- trust buyer
+- cash transaction
+- bond transaction
+- seller existing bond with cancellation lane
 
 ## Verification
 
