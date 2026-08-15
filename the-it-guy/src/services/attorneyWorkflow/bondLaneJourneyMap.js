@@ -25,6 +25,7 @@ export const BOND_LANE_PHASE3_COMMAND_PLAN_VERSION = 'bond-lane-phase3-stage-com
 export const BOND_LANE_PHASE4_GUARANTEE_COORDINATION_VERSION = 'bond-lane-phase4-guarantee-coordination-v1'
 export const BOND_LANE_PHASE5_LODGEMENT_COORDINATION_VERSION = 'bond-lane-phase5-lodgement-coordination-v1'
 export const BOND_LANE_PHASE6_ORIGINATOR_EVIDENCE_VERSION = 'bond-lane-phase6-originator-evidence-links-v1'
+export const BOND_LANE_PHASE7_SCENARIO_COVERAGE_VERSION = 'bond-lane-phase7-scenario-coverage-v1'
 
 export const BOND_ORIGINATOR_JOURNEY_LANES = Object.freeze([
   Object.freeze({
@@ -396,6 +397,125 @@ export const BOND_PHASE5_LODGEMENT_COORDINATION_PAIRS = Object.freeze([
   }),
 ])
 
+export const BOND_PHASE7_SCENARIO_MATRIX = Object.freeze([
+  Object.freeze({
+    key: 'cash_individual_unmarried',
+    label: 'Cash individual buyer',
+    facts: {
+      financeType: 'cash',
+      buyerEntityType: 'individual',
+      buyerMaritalStatus: 'single',
+      sellerEntityType: 'individual',
+      sellerHasExistingBond: false,
+    },
+    expected: {
+      requiresBondOriginator: false,
+      requiresBondAttorney: false,
+      requiresCancellationAttorney: false,
+      buyerRequirementKeys: ['buyer_identity', 'buyer_proof_of_address'],
+    },
+  }),
+  Object.freeze({
+    key: 'cash_married_in_community',
+    label: 'Cash married buyer',
+    facts: {
+      financeType: 'cash',
+      buyerEntityType: 'individual',
+      buyerMaritalStatus: 'married_in_community',
+      sellerEntityType: 'individual',
+      sellerHasExistingBond: false,
+    },
+    expected: {
+      requiresBondOriginator: false,
+      requiresBondAttorney: false,
+      requiresCancellationAttorney: false,
+      buyerRequirementKeys: ['buyer_identity', 'buyer_marital_status', 'buyer_spouse_consent'],
+    },
+  }),
+  Object.freeze({
+    key: 'bond_married_out_of_community',
+    label: 'Bond married buyer',
+    facts: {
+      financeType: 'bond',
+      buyerEntityType: 'individual',
+      buyerMaritalStatus: 'married_out_of_community',
+      sellerEntityType: 'individual',
+      sellerHasExistingBond: false,
+    },
+    expected: {
+      requiresBondOriginator: true,
+      requiresBondAttorney: true,
+      requiresCancellationAttorney: false,
+      buyerRequirementKeys: ['buyer_identity', 'buyer_income_documents', 'buyer_bank_statements', 'buyer_marital_status', 'buyer_antenuptial_contract'],
+    },
+  }),
+  Object.freeze({
+    key: 'bond_multiple_buyers',
+    label: 'Bond multiple buyers',
+    facts: {
+      financeType: 'bond',
+      buyerEntityType: 'individual',
+      hasMultipleBuyers: true,
+      sellerEntityType: 'individual',
+      sellerHasExistingBond: false,
+    },
+    expected: {
+      requiresBondOriginator: true,
+      requiresBondAttorney: true,
+      requiresCancellationAttorney: false,
+      buyerRequirementKeys: ['buyer_identity', 'buyer_income_documents', 'buyer_bank_statements', 'co_buyer_finance_applications'],
+    },
+  }),
+  Object.freeze({
+    key: 'bond_company_buyer_trust_seller_cancellation',
+    label: 'Company buyer, trust seller, cancellation',
+    facts: {
+      financeType: 'bond',
+      buyerEntityType: 'company',
+      sellerEntityType: 'trust',
+      sellerHasExistingBond: true,
+    },
+    expected: {
+      requiresBondOriginator: true,
+      requiresBondAttorney: true,
+      requiresCancellationAttorney: true,
+      buyerRequirementKeys: ['buyer_company_registration', 'buyer_company_resolution', 'buyer_director_ids', 'buyer_company_financials'],
+    },
+  }),
+  Object.freeze({
+    key: 'hybrid_trust_buyer_company_seller_cancellation',
+    label: 'Hybrid trust buyer, company seller',
+    facts: {
+      financeType: 'hybrid',
+      buyerEntityType: 'trust',
+      sellerEntityType: 'company',
+      sellerHasExistingBond: true,
+    },
+    expected: {
+      requiresBondOriginator: true,
+      requiresBondAttorney: true,
+      requiresCancellationAttorney: true,
+      buyerRequirementKeys: ['buyer_trust_deed', 'buyer_letters_of_authority', 'buyer_trustee_ids', 'buyer_trustee_resolution'],
+    },
+  }),
+  Object.freeze({
+    key: 'unknown_finance_company_buyer',
+    label: 'Unknown finance company buyer',
+    facts: {
+      buyerEntityType: 'company',
+      sellerEntityType: 'individual',
+      sellerHasExistingBond: false,
+    },
+    expected: {
+      requiresBondOriginator: false,
+      requiresBondAttorney: false,
+      requiresCancellationAttorney: false,
+      attention: true,
+      buyerRequirementKeys: ['buyer_company_registration', 'buyer_company_resolution', 'buyer_director_ids'],
+    },
+  }),
+])
+
 function flatten(groups = [], property = 'stageKeys') {
   return groups.flatMap((group) => Array.isArray(group[property]) ? group[property] : [])
 }
@@ -415,6 +535,141 @@ function buildActionCoverage(actions = [], surfaces = []) {
     surface: surfaceIndex.get(action.surfaceKey) || null,
     covered: surfaceIndex.has(action.surfaceKey),
   }))
+}
+
+function normalizeScenarioText(value = '') {
+  return String(value || '').trim()
+}
+
+function normalizeScenarioKey(value = '') {
+  return normalizeScenarioText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+function normalizeScenarioBoolean(value) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value > 0
+  const normalized = normalizeScenarioKey(value)
+  if (!normalized) return null
+  if (['true', 'yes', 'y', '1', 'required', 'applicable', 'has_bond', 'existing_bond', 'bond_registered'].includes(normalized)) return true
+  if (['false', 'no', 'n', '0', 'not_required', 'not_applicable', 'none', 'no_bond', 'cash'].includes(normalized)) return false
+  return null
+}
+
+function normalizeBondScenarioFinanceType(value = '', facts = {}) {
+  const normalized = normalizeScenarioKey(value || facts.finance_type || facts.financeType)
+  if (!normalized && facts.isCashDeal === true) return 'cash'
+  if (['cash', 'cash_sale', 'cash_deal'].includes(normalized)) return 'cash'
+  if (['bond', 'bond_finance', 'mortgage', 'home_loan'].includes(normalized)) return 'bond'
+  if (['hybrid', 'combination', 'mixed', 'bond_and_cash'].includes(normalized)) return 'combination'
+  if (['developer', 'developer_finance'].includes(normalized)) return 'developer'
+  return 'unknown'
+}
+
+function normalizeBondScenarioEntityType(value = '') {
+  const normalized = normalizeScenarioKey(value)
+  if (['person', 'natural_person', 'individual', 'private_individual'].includes(normalized)) return 'individual'
+  if (['company', 'close_corporation', 'cc', 'pty', 'pty_ltd'].includes(normalized)) return 'company'
+  if (['trust', 'inter_vivos_trust'].includes(normalized)) return 'trust'
+  return 'unknown'
+}
+
+function buildBondBuyerRequirementKeys({
+  buyerEntityType = 'unknown',
+  buyerMaritalStatus = '',
+  hasMultipleBuyers = false,
+  requiresBondOriginator = false,
+} = {}) {
+  const requirements = []
+  if (buyerEntityType === 'individual') {
+    requirements.push('buyer_identity', 'buyer_proof_of_address')
+    if (requiresBondOriginator) requirements.push('buyer_income_documents', 'buyer_bank_statements')
+    const maritalStatus = normalizeScenarioKey(buyerMaritalStatus)
+    if (maritalStatus.includes('married')) requirements.push('buyer_marital_status')
+    if (maritalStatus.includes('in_community')) requirements.push('buyer_spouse_consent')
+    if (maritalStatus.includes('out_of_community') || maritalStatus.includes('anc')) requirements.push('buyer_antenuptial_contract')
+  } else if (buyerEntityType === 'company') {
+    requirements.push('buyer_company_registration', 'buyer_company_resolution', 'buyer_director_ids')
+    if (requiresBondOriginator) requirements.push('buyer_company_financials')
+  } else if (buyerEntityType === 'trust') {
+    requirements.push('buyer_trust_deed', 'buyer_letters_of_authority', 'buyer_trustee_ids', 'buyer_trustee_resolution')
+  } else {
+    requirements.push('buyer_capacity_to_confirm')
+  }
+  if (hasMultipleBuyers) requirements.push('co_buyer_finance_applications')
+  return unique(requirements)
+}
+
+export function buildBondLaneScenarioProfile(facts = {}) {
+  const financeType = normalizeBondScenarioFinanceType(facts.financeType || facts.finance_type, facts)
+  const buyerEntityType = normalizeBondScenarioEntityType(facts.buyerEntityType || facts.buyer_entity_type || facts.buyer?.entityType || facts.buyer?.entity_type)
+  const sellerEntityType = normalizeBondScenarioEntityType(facts.sellerEntityType || facts.seller_entity_type || facts.seller?.entityType || facts.seller?.entity_type)
+  const explicitBondOriginator = normalizeScenarioBoolean(facts.requiresBondOriginator ?? facts.requires_bond_originator)
+  const explicitBondAttorney = normalizeScenarioBoolean(facts.requiresBondAttorney ?? facts.requires_bond_attorney)
+  const sellerHasExistingBond = normalizeScenarioBoolean(facts.sellerHasExistingBond ?? facts.seller_has_existing_bond)
+  const explicitCancellation = normalizeScenarioBoolean(facts.requiresCancellationAttorney ?? facts.requires_cancellation_attorney ?? facts.cancellationRequired ?? facts.cancellation_required)
+  const hasMultipleBuyers = Boolean(facts.hasMultipleBuyers || facts.multipleBuyers || Number(facts.buyerCount || facts.buyer_count || 0) > 1)
+  const bondFinanceApplies = ['bond', 'combination', 'developer'].includes(financeType)
+  const requiresBondOriginator = explicitBondOriginator ?? bondFinanceApplies
+  const requiresBondAttorney = explicitBondAttorney ?? bondFinanceApplies
+  const requiresCancellationAttorney = explicitCancellation ?? sellerHasExistingBond ?? false
+  const attention = financeType === 'unknown' || buyerEntityType === 'unknown' || sellerEntityType === 'unknown'
+  const buyerRequirementKeys = buildBondBuyerRequirementKeys({
+    buyerEntityType,
+    buyerMaritalStatus: facts.buyerMaritalStatus || facts.buyer_marital_status || facts.buyer?.maritalStatus || facts.buyer?.marital_status,
+    hasMultipleBuyers,
+    requiresBondOriginator,
+  })
+
+  return {
+    financeType,
+    buyerEntityType,
+    sellerEntityType,
+    hasMultipleBuyers,
+    sellerHasExistingBond,
+    requiresBondOriginator,
+    requiresBondAttorney,
+    requiresCancellationAttorney,
+    status: attention ? 'attention' : 'covered',
+    lanePolicy: {
+      originatorLaneActive: requiresBondOriginator,
+      bondAttorneyLaneActive: requiresBondAttorney,
+      cancellationLaneActive: requiresCancellationAttorney,
+      cashRouteSuppressesBondLanes: financeType === 'cash' && !requiresBondOriginator && !requiresBondAttorney,
+      unknownFinanceRequiresConfirmation: financeType === 'unknown',
+      concurrentWorkAllowed: true,
+    },
+    buyerRequirementKeys,
+    coverageItems: [
+      {
+        key: 'finance_route',
+        label: 'Finance Route',
+        value: financeType,
+        status: financeType === 'unknown' ? 'attention' : 'covered',
+        detail: bondFinanceApplies ? 'Bond originator and bond attorney lanes apply.' : financeType === 'cash' ? 'Cash route suppresses bond lanes.' : 'Finance route must be confirmed.',
+      },
+      {
+        key: 'buyer_capacity',
+        label: 'Buyer Capacity',
+        value: buyerEntityType,
+        status: buyerEntityType === 'unknown' ? 'attention' : 'covered',
+        detail: `${buyerRequirementKeys.length} buyer requirement(s) tracked.`,
+      },
+      {
+        key: 'seller_capacity',
+        label: 'Seller Capacity',
+        value: sellerEntityType,
+        status: sellerEntityType === 'unknown' ? 'attention' : 'covered',
+        detail: requiresCancellationAttorney ? 'Seller existing bond/cancellation lane applies.' : 'No seller cancellation lane required.',
+      },
+      {
+        key: 'lane_activation',
+        label: 'Lane Activation',
+        value: requiresBondAttorney ? 'Bond lane active' : 'Bond lane inactive',
+        status: financeType === 'unknown' ? 'attention' : 'covered',
+        detail: requiresBondAttorney ? 'Originator and bond attorney work can run concurrently.' : 'No bond attorney lane unless finance requires it.',
+      },
+    ],
+  }
 }
 
 export function buildBondLaneJourneyMap() {
@@ -735,6 +990,72 @@ export function buildBondLanePhase6OriginatorEvidencePlan() {
       'Deep links route to the bond file workspace with tab and action parameters.',
       'Grant and signed grant document buttons still open document URLs directly where available.',
       'Originator mutation remains governed by the bond originator workspace.',
+    ],
+    structuralBlockers,
+  }
+}
+
+export function buildBondLanePhase7ScenarioCoveragePlan() {
+  const phase6 = buildBondLanePhase6OriginatorEvidencePlan()
+  const scenarios = BOND_PHASE7_SCENARIO_MATRIX.map((scenario) => {
+    const profile = buildBondLaneScenarioProfile(scenario.facts)
+    const missingBuyerRequirementKeys = (scenario.expected.buyerRequirementKeys || [])
+      .filter((key) => !profile.buyerRequirementKeys.includes(key))
+    const mismatches = [
+      profile.requiresBondOriginator !== scenario.expected.requiresBondOriginator
+        ? `requiresBondOriginator expected ${scenario.expected.requiresBondOriginator} got ${profile.requiresBondOriginator}`
+        : '',
+      profile.requiresBondAttorney !== scenario.expected.requiresBondAttorney
+        ? `requiresBondAttorney expected ${scenario.expected.requiresBondAttorney} got ${profile.requiresBondAttorney}`
+        : '',
+      profile.requiresCancellationAttorney !== scenario.expected.requiresCancellationAttorney
+        ? `requiresCancellationAttorney expected ${scenario.expected.requiresCancellationAttorney} got ${profile.requiresCancellationAttorney}`
+        : '',
+      scenario.expected.attention && profile.status !== 'attention'
+        ? `expected scenario attention status got ${profile.status}`
+        : '',
+      !scenario.expected.requiresBondAttorney && profile.lanePolicy.bondAttorneyLaneActive
+        ? 'bond attorney lane should be inactive'
+        : '',
+      ...missingBuyerRequirementKeys.map((key) => `missing buyer requirement ${key}`),
+    ].filter(Boolean)
+
+    return {
+      key: scenario.key,
+      label: scenario.label,
+      profile,
+      status: mismatches.length ? 'blocked' : 'covered',
+      mismatches,
+    }
+  })
+  const structuralBlockers = [
+    ...phase6.structuralBlockers,
+    ...scenarios.flatMap((scenario) => scenario.mismatches.map((message) => `${scenario.key}: ${message}`)),
+  ]
+
+  return {
+    version: BOND_LANE_PHASE7_SCENARIO_COVERAGE_VERSION,
+    phase6Version: phase6.version,
+    status: structuralBlockers.length ? 'blocked' : 'ready_for_phase8',
+    scenarioCount: scenarios.length,
+    scenarios,
+    coverageSummary: {
+      cashScenarios: scenarios.filter((scenario) => scenario.profile.financeType === 'cash').length,
+      bondScenarios: scenarios.filter((scenario) => ['bond', 'combination', 'developer'].includes(scenario.profile.financeType)).length,
+      unknownFinanceScenarios: scenarios.filter((scenario) => scenario.profile.financeType === 'unknown').length,
+      cancellationScenarios: scenarios.filter((scenario) => scenario.profile.requiresCancellationAttorney).length,
+      companyBuyerScenarios: scenarios.filter((scenario) => scenario.profile.buyerEntityType === 'company').length,
+      trustBuyerScenarios: scenarios.filter((scenario) => scenario.profile.buyerEntityType === 'trust').length,
+      marriedBuyerScenarios: scenarios.filter((scenario) => scenario.profile.buyerRequirementKeys.includes('buyer_marital_status')).length,
+      multipleBuyerScenarios: scenarios.filter((scenario) => scenario.profile.hasMultipleBuyers).length,
+    },
+    rolloutRules: [
+      'Cash finance suppresses bond originator and bond attorney lanes.',
+      'Bond, hybrid, and developer finance activate originator and bond attorney lanes.',
+      'Seller existing bond activates cancellation coordination without changing bond attorney ownership.',
+      'Company and trust buyers surface authority requirements for bond originator and attorney evidence review.',
+      'Unknown finance remains an attention state until finance is confirmed.',
+      'Concurrent work remains allowed across scenario variants.',
     ],
     structuralBlockers,
   }
