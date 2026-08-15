@@ -132,6 +132,22 @@ function derivedLiabilityTotal(applicationState = {}) {
   )
 }
 
+function participantLiabilitySummary(liabilities = []) {
+  const explicitTotal = number(firstAlignmentValue(
+    listAmountByLegacyKey(liabilities, 'total_liabilities'),
+    listAmountByLegacyKey(liabilities, 'liabilities_total'),
+  ))
+  const itemizedTotal = sumListAmounts(
+    (Array.isArray(liabilities) ? liabilities : []).filter((item) => !['total_liabilities', 'liabilities_total'].includes(item?.legacyKey)),
+    ['value', 'amount', 'balance'],
+  )
+  return {
+    explicitTotal,
+    itemizedTotal,
+    total: explicitTotal || itemizedTotal,
+  }
+}
+
 const ORIGINATOR_FIELD_ALIGNMENT_DEFINITIONS = [
   { key: 'status', group: 'Application', label: 'Status', paths: ['legacySubmission.status', 'meta.status'] },
   { key: 'submitted_at', group: 'Application', label: 'Submitted at', paths: ['legacySubmission.submittedAt', 'meta.submittedAt'] },
@@ -349,6 +365,134 @@ function buildBuyerConfirmationConfidence(data = {}, originatorFieldAlignment = 
   }
 }
 
+function buildOriginatorReviewWorkspace({
+  readinessPercent = 0,
+  fieldAlignment = {},
+  buyerConfirmationConfidence = {},
+  readinessItems = [],
+  documents = [],
+  actions = [],
+} = {}) {
+  const fieldAlignmentPercent = fieldAlignment?.totalCount
+    ? Math.round((Number(fieldAlignment.capturedCount || 0) / Number(fieldAlignment.totalCount || 1)) * 100)
+    : 0
+  const confirmationPercent = Number(buyerConfirmationConfidence?.percent || 0)
+  const score = Math.round((Number(readinessPercent || 0) * 0.4) + (fieldAlignmentPercent * 0.4) + (confirmationPercent * 0.2))
+  const missingFields = (Array.isArray(fieldAlignment.fields) ? fieldAlignment.fields : [])
+    .filter((field) => !field?.captured)
+    .map((field) => ({
+      key: field.key,
+      label: field.label || field.key,
+      group: field.group || 'Application',
+      action: `Request ${field.label || field.key}`,
+      type: 'missing_originator_field',
+      priority: ['Declarations', 'Primary Applicant', 'Finance', 'Property'].includes(field.group) ? 'High' : 'Medium',
+    }))
+  const unconfirmedSections = (Array.isArray(buyerConfirmationConfidence.missingSections) ? buyerConfirmationConfidence.missingSections : [])
+    .map((section) => ({
+      key: section.key,
+      label: section.label || toTitle(section.key),
+      action: `Confirm ${section.label || toTitle(section.key)}`,
+      type: 'unconfirmed_buyer_section',
+      priority: 'Medium',
+    }))
+  const outstandingReadinessItems = (Array.isArray(readinessItems) ? readinessItems : [])
+    .filter((item) => !item?.complete)
+    .map((item) => ({
+      key: item.key,
+      label: item.label,
+      action: `Complete ${item.label}`,
+      type: 'readiness_blocker',
+      priority: ['incomeProof', 'bankStatement', 'consent', 'idDocument'].includes(item.key) ? 'High' : 'Medium',
+    }))
+  const documentBlockers = (Array.isArray(documents) ? documents : [])
+    .filter((document) => !document?.isUploaded)
+    .map((document) => ({
+      key: document.key,
+      label: document.label,
+      action: `Upload ${document.label}`,
+      type: 'document_blocker',
+      priority: ['idDocument', 'incomeProof', 'bankStatement'].includes(document.key) ? 'High' : 'Medium',
+    }))
+  const workflowActions = (Array.isArray(actions) ? actions : [])
+    .map((item) => ({
+      key: item.id || item.key,
+      label: item.title || item.label,
+      action: item.title || item.label,
+      type: 'workflow_action',
+      priority: item.priority || 'Medium',
+    }))
+  const missingOriginatorActions = [
+    ...missingFields.slice(0, 8),
+    ...unconfirmedSections.slice(0, 4),
+    ...outstandingReadinessItems.slice(0, 5),
+    ...workflowActions.slice(0, 5),
+  ].slice(0, 12)
+  const sections = Object.entries(fieldAlignment.sections || {})
+    .map(([label, summary]) => ({
+      key: label,
+      label,
+      captured: Number(summary?.captured || 0),
+      total: Number(summary?.total || 0),
+      missing: Number(summary?.missing || 0),
+      status: Number(summary?.missing || 0) ? 'needs_data' : 'aligned',
+    }))
+    .filter((section) => section.total > 0)
+
+  return {
+    version: 'phase-15-v1',
+    source: 'buyer_portal_originator_review_workspace',
+    target: 'bond_originator_workspace',
+    score,
+    scoreLabel: score >= 85 ? 'Originator Ready' : score >= 65 ? 'Review Required' : 'Data Gaps',
+    readinessPercent: Number(readinessPercent || 0),
+    fieldAlignmentPercent,
+    confirmationPercent,
+    buyerConfirmedSections: Array.isArray(buyerConfirmationConfidence.sections) ? buyerConfirmationConfidence.sections : [],
+    systemPrefilledSections: sections,
+    missingOriginatorFields: missingFields,
+    unconfirmedBuyerSections: unconfirmedSections,
+    outstandingReadinessItems,
+    documentBlockers,
+    missingOriginatorActions,
+    sourceBuckets: [
+      {
+        key: 'buyer_confirmed',
+        label: 'Buyer-confirmed',
+        count: Number(buyerConfirmationConfidence.confirmedCount || 0),
+        total: Number(buyerConfirmationConfidence.totalSupportedSections || 0),
+        percent: confirmationPercent,
+      },
+      {
+        key: 'system_prefilled',
+        label: 'System-prefilled',
+        count: Number(fieldAlignment.capturedCount || 0),
+        total: Number(fieldAlignment.totalCount || 0),
+        percent: fieldAlignmentPercent,
+      },
+      {
+        key: 'missing_data',
+        label: 'Missing data',
+        count: missingFields.length + documentBlockers.length + outstandingReadinessItems.length,
+        total: Number(fieldAlignment.totalCount || 0) + documents.length + readinessItems.length,
+        percent: fieldAlignment.totalCount ? Math.max(0, 100 - fieldAlignmentPercent) : 0,
+      },
+    ],
+    handoffWarnings: [
+      missingFields.length ? `${missingFields.length} originator fields missing` : '',
+      unconfirmedSections.length ? `${unconfirmedSections.length} buyer sections unconfirmed` : '',
+      documentBlockers.length ? `${documentBlockers.length} supporting documents missing` : '',
+    ].filter(Boolean),
+    recommendedAction: missingFields.length
+      ? 'Resolve missing originator fields before bank submission.'
+      : unconfirmedSections.length
+        ? 'Review unconfirmed buyer sections before handoff.'
+        : documentBlockers.length
+          ? 'Collect outstanding documents before submission.'
+          : 'Application is ready for originator review.',
+  }
+}
+
 function toTitle(value) {
   return text(value)
     .replace(/[_-]+/g, ' ')
@@ -550,9 +694,10 @@ function buildApplicantViewModel(participant = {}, role = 'primary_applicant', f
   const monthlyExpenses = sumExpenseFields(expenses)
   const monthlyCommitmentTotal = sumListAmounts(monthlyCommitments, ['monthlyAmount', 'monthly_amount', 'amount'])
   const debtTotal = sumListAmounts(debts, ['outstandingBalance', 'outstanding_balance', 'currentBalance', 'current_balance'])
-  const liabilityTotal = sumListAmounts(liabilities, ['value', 'amount', 'balance'])
+  const liabilitySummary = participantLiabilitySummary(liabilities)
+  const liabilityTotal = liabilitySummary.total
   const assetTotal = sumListAmounts(assets, ['value', 'amount'])
-  const existingDebt = debtTotal + liabilityTotal
+  const existingDebt = liabilitySummary.explicitTotal || debtTotal + liabilitySummary.itemizedTotal
   const name = participantDisplayName(participant, fallbackName)
 
   return {
@@ -856,6 +1001,17 @@ export function buildBondApplicationViewModel({
   const readinessPercent = readinessItems.length ? Math.round((completedRequiredItems / readinessItems.length) * 100) : 0
   const completionPercent = number(transaction?.completion_percent || onboardingFormData?.completionPercent || onboardingFormData?.completion_percent || documentReadiness?.score) || readinessPercent
   const readiness = classifyReadiness(readinessPercent)
+  const applicationActions = buildActions(readinessItems, {
+    monthlyExpenses: { raw: monthlyExpenses },
+  })
+  const originatorReviewWorkspace = buildOriginatorReviewWorkspace({
+    readinessPercent,
+    fieldAlignment,
+    buyerConfirmationConfidence,
+    readinessItems,
+    documents,
+    actions: applicationActions,
+  })
   const risk = buildRisk({ readinessPercent, transaction, onboardingFormData, financials: { deposit: { raw: deposit }, expenseRatio: { raw: expenseRatio } }, documents })
   const disposableIncome = Math.max(0, totalIncome - monthlyExpenses - monthlyCommitments)
   const ltv = purchasePrice && bondAmountRequired ? Math.round((bondAmountRequired / purchasePrice) * 1000) / 10 : 0
@@ -932,13 +1088,12 @@ export function buildBondApplicationViewModel({
     },
     documents,
     readinessItems,
-    actions: buildActions(readinessItems, {
-      monthlyExpenses: { raw: monthlyExpenses },
-    }),
+    actions: applicationActions,
     fieldAlignment,
     originatorFieldAlignment: fieldAlignment,
     buyerConfirmationConfidence,
     confirmationConfidence: buyerConfirmationConfidence,
+    originatorReviewWorkspace,
     activity: buildActivity({ activityFeed, transaction, onboarding, documents }),
     risk,
     consultant: text(assignedConsultant) || 'Unassigned',
@@ -990,6 +1145,14 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
     .join('')
   const buyerConfirmationMissingRows = (Array.isArray(buyerConfirmationConfidence.missingSections) ? buyerConfirmationConfidence.missingSections : [])
     .map((section) => row(section.label || section.key, 'Not confirmed'))
+    .join('')
+  const originatorReviewWorkspace = vm.originatorReviewWorkspace || {}
+  const originatorSourceBucketRows = (Array.isArray(originatorReviewWorkspace.sourceBuckets) ? originatorReviewWorkspace.sourceBuckets : [])
+    .map((bucket) => row(bucket.label || bucket.key, `${bucket.count || 0}/${bucket.total || 0}${bucket.percent || bucket.percent === 0 ? ` (${bucket.percent}%)` : ''}`))
+    .join('')
+  const originatorActionRows = (Array.isArray(originatorReviewWorkspace.missingOriginatorActions) ? originatorReviewWorkspace.missingOriginatorActions : [])
+    .slice(0, 10)
+    .map((item) => row(item.label || item.key, `${item.priority || 'Medium'} priority - ${item.action || 'Review required'}`))
     .join('')
   const documentRows = (vm.documents || [])
     .map((item) => row(item.label, item.status || (item.isUploaded ? 'Uploaded' : 'Missing')))
@@ -1105,6 +1268,20 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
         <article class="card">
           <h2>Outstanding Items</h2>
           <table><tbody>${actionRows || row('Status', 'No outstanding actions')}</tbody></table>
+        </article>
+      </div>
+      <div class="section grid two">
+        <article class="card">
+          <h2>Originator Review Workspace</h2>
+          <table><tbody>
+            ${row('Review Score', `${originatorReviewWorkspace.score || 0}/100 - ${originatorReviewWorkspace.scoreLabel || 'Data Gaps'}`)}
+            ${row('Recommended Action', originatorReviewWorkspace.recommendedAction || 'Review application data before submission.')}
+            ${originatorSourceBucketRows || row('Source Separation', 'No source bucket data available')}
+          </tbody></table>
+        </article>
+        <article class="card">
+          <h2>Originator Action List</h2>
+          <table><tbody>${originatorActionRows || row('Status', 'No originator action blockers detected')}</tbody></table>
         </article>
       </div>
       <div class="section grid two">

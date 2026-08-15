@@ -50,6 +50,37 @@ const UNSUPPORTED_ACTIONS = Object.freeze([
   },
 ])
 
+const TRANSFER_ROLLOUT_REQUIRED_WORK_ACTIONS = Object.freeze([
+  'request_document',
+  'upload_document',
+  'open_documents',
+  'open_parties',
+  'open_finance',
+  'schedule_signing',
+  'add_note',
+])
+
+const TRANSFER_ROLLOUT_REQUIRED_STATUS_ACTIONS = Object.freeze([
+  'mark_complete',
+  'mark_in_progress',
+  'mark_blocked',
+  'mark_waiting',
+])
+
+const TRANSFER_ROLLOUT_ACTION_MODES = Object.freeze({
+  request_document: 'command',
+  upload_document: 'workspace_callback',
+  open_documents: 'workspace_callback',
+  open_parties: 'workspace_callback',
+  open_finance: 'workspace_callback',
+  schedule_signing: 'command',
+  add_note: 'command',
+  mark_complete: 'status_update',
+  mark_in_progress: 'status_update',
+  mark_blocked: 'status_update',
+  mark_waiting: 'status_update',
+})
+
 function text(value) {
   return String(value || '').trim()
 }
@@ -1738,6 +1769,107 @@ function buildTransferCommandQueue({ tasks = [], workActionsByTaskKey = {}, lane
   }
 }
 
+function buildTransferRolloutReadiness({ tasks = [], workActionsByTaskKey = {}, availableActions = {}, permissions = {}, commandQueue = null, scenario = null } = {}) {
+  const workActionRows = Object.entries(workActionsByTaskKey || {}).flatMap(([taskKey, actions]) => (
+    (Array.isArray(actions) ? actions : []).map((action) => ({
+      ...action,
+      taskKey,
+      executionMode: TRANSFER_ROLLOUT_ACTION_MODES[action.id] || 'workspace_callback',
+    }))
+  ))
+  const taskStatusActionRows = tasks.flatMap((task) => (
+    buildAvailableActions(task, permissions).primary.map((action) => ({
+      ...action,
+      taskKey: task.key,
+      executionMode: TRANSFER_ROLLOUT_ACTION_MODES[action.id] || 'status_update',
+    }))
+  ))
+  const selectedStatusActionRows = (Array.isArray(availableActions?.primary) ? availableActions.primary : []).map((action) => ({
+    ...action,
+    taskKey: 'selected_task',
+    executionMode: TRANSFER_ROLLOUT_ACTION_MODES[action.id] || 'status_update',
+  }))
+  const statusActionRows = taskStatusActionRows.length ? taskStatusActionRows : selectedStatusActionRows
+  const presentWorkActionIds = new Set(workActionRows.map((action) => action.id).filter(Boolean))
+  const presentStatusActionIds = new Set(statusActionRows.map((action) => action.id).filter(Boolean))
+  const missingWorkActions = TRANSFER_ROLLOUT_REQUIRED_WORK_ACTIONS.filter((actionId) => !presentWorkActionIds.has(actionId))
+  const missingStatusActions = TRANSFER_ROLLOUT_REQUIRED_STATUS_ACTIONS.filter((actionId) => !presentStatusActionIds.has(actionId))
+  const workActionsWithoutExecution = workActionRows.filter((action) => {
+    if (action.disabled) return false
+    if (action.executionMode === 'command') return !action.command || !action.workflowAction
+    return !action.target
+  })
+  const statusActionsWithoutExecution = statusActionRows.filter((action) => {
+    if (action.disabled) return false
+    if (action.executionMode === 'status_update') return !action.status
+    return false
+  })
+  const blockedBySequence = tasks.filter((task) => task.dependencySummary?.blocksWork === true)
+  const evidenceControlledTasks = tasks.filter((task) => task.relatedDocuments?.length || task.requiredDocumentKeys?.length)
+  const completionBlockedTasks = tasks.filter((task) => task.completionReadiness?.canComplete === false)
+  const completeReadyTasks = tasks.filter((task) => task.completionReadiness?.canComplete === true && task.displayStatus !== 'completed')
+  const coverageItems = Array.isArray(scenario?.coverageItems) ? scenario.coverageItems : []
+  const scenarioAttentionItems = coverageItems.filter((item) => item.status === 'attention')
+  const blockers = [
+    ...missingWorkActions.map((actionId) => `Missing work action: ${actionId}`),
+    ...missingStatusActions.map((actionId) => `Missing status action: ${actionId}`),
+    ...workActionsWithoutExecution.map((action) => `No execution route for ${action.id} on ${action.taskKey}`),
+    ...statusActionsWithoutExecution.map((action) => `No status route for ${action.id}`),
+    ...blockedBySequence.map((task) => `Sequence lock still active on ${task.key}`),
+  ]
+  const warnings = [
+    ...scenarioAttentionItems.map((item) => `${item.label}: ${item.value}`),
+    commandQueue?.counts?.total ? '' : 'Command queue has no open work items for the current matter state.',
+  ].filter(Boolean)
+
+  return {
+    status: blockers.length ? 'blocked' : warnings.length ? 'attention' : 'ready',
+    blockers,
+    warnings,
+    actionAudit: {
+      requiredWorkActions: TRANSFER_ROLLOUT_REQUIRED_WORK_ACTIONS,
+      requiredStatusActions: TRANSFER_ROLLOUT_REQUIRED_STATUS_ACTIONS,
+      presentWorkActions: [...presentWorkActionIds],
+      presentStatusActions: [...presentStatusActionIds],
+      missingWorkActions,
+      missingStatusActions,
+      executableWorkActions: workActionRows.filter((action) => !action.disabled && (action.command || action.target)).length,
+      executableStatusActions: statusActionRows.filter((action) => !action.disabled && action.status).length,
+      commandBackedWorkActions: workActionRows.filter((action) => action.command && action.workflowAction).map((action) => action.id),
+      callbackBackedWorkActions: workActionRows.filter((action) => !action.command && action.target).map((action) => action.id),
+      statusUpdateActions: statusActionRows.filter((action) => action.status).map((action) => action.id),
+    },
+    workflowProof: {
+      concurrentWorkAllowed: blockedBySequence.length === 0,
+      sequenceLockCount: blockedBySequence.length,
+      evidenceControlledTaskCount: evidenceControlledTasks.length,
+      completionBlockedTaskCount: completionBlockedTasks.length,
+      completeReadyTaskCount: completeReadyTasks.length,
+      commandQueueItemCount: commandQueue?.counts?.total || commandQueue?.items?.length || 0,
+    },
+    scenarioProof: {
+      coverageItemCount: coverageItems.length,
+      attentionItemCount: scenarioAttentionItems.length,
+      buyerEntityType: scenario?.buyer?.entityType || 'unknown',
+      buyerMaritalRegime: scenario?.buyer?.maritalRegime || '',
+      sellerEntityType: scenario?.seller?.entityType || 'unknown',
+      sellerMaritalRegime: scenario?.seller?.maritalRegime || '',
+      financeType: scenario?.finance?.type || 'unknown',
+      requiresGuarantees: Boolean(scenario?.finance?.requiresGuarantees),
+      requiresCancellation: Boolean(scenario?.cancellation?.required),
+    },
+    uatChecklist: [
+      'Open the authority task and confirm party capacity requirements.',
+      'Run a missing-document command from the lane command queue.',
+      'Upload or review evidence on a document-backed task.',
+      'Move an out-of-sequence task to waiting or blocked without closing earlier work.',
+      'Confirm a task cannot be completed until required evidence is ready.',
+      'Schedule buyer or seller signing from a signing task.',
+      'Confirm finance and cancellation routing match the matter facts.',
+    ],
+  }
+}
+
 export function buildTransferWorkspaceViewModel({
   workflow = null,
   workflowKey = 'transfer',
@@ -1818,6 +1950,15 @@ export function buildTransferWorkspaceViewModel({
   const nextActionableTask = selectedTaskIndex >= 0
     ? tasks.slice(selectedTaskIndex + 1).find((task) => task.displayStatus !== 'completed') || null
     : null
+  const availableActions = buildAvailableActions(selectedTask, permissions)
+  const rolloutReadiness = buildTransferRolloutReadiness({
+    tasks,
+    workActionsByTaskKey,
+    availableActions,
+    permissions,
+    commandQueue,
+    scenario,
+  })
 
   return {
     workflowKey,
@@ -1857,9 +1998,10 @@ export function buildTransferWorkspaceViewModel({
       scenarioRequirements: selectedTask?.scenarioRequirements || null,
     },
     permissions,
-    availableActions: buildAvailableActions(selectedTask, permissions),
+    availableActions,
     workActionsByTaskKey,
     commandQueue,
+    rolloutReadiness,
     unsupportedCapabilities: {
       delayedStatus: true,
       notApplicableStatus: true,

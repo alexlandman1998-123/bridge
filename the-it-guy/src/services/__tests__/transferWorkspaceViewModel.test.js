@@ -166,6 +166,24 @@ assert.ok(viewModel.commandQueue.items.some((item) => item.kind === 'document' &
 assert.ok(viewModel.commandQueue.items.some((item) => item.kind === 'signing' && item.command?.commandType === 'schedule_signing'))
 assert.ok(viewModel.commandQueue.items.some((item) => item.kind === 'evidence' && item.command?.commandType === 'complete_step'))
 assert.equal(viewModel.commandQueue.primaryItem.status, 'missing_documents')
+assert.equal(viewModel.rolloutReadiness.status, 'attention')
+assert.deepEqual(viewModel.rolloutReadiness.blockers, [])
+assert.equal(viewModel.rolloutReadiness.workflowProof.concurrentWorkAllowed, true)
+assert.ok(viewModel.rolloutReadiness.workflowProof.completionBlockedTaskCount > 0)
+assert.ok(viewModel.rolloutReadiness.actionAudit.requiredWorkActions.every((actionId) => viewModel.rolloutReadiness.actionAudit.presentWorkActions.includes(actionId)))
+assert.ok(viewModel.rolloutReadiness.actionAudit.requiredStatusActions.every((actionId) => viewModel.rolloutReadiness.actionAudit.presentStatusActions.includes(actionId)))
+assert.ok(viewModel.rolloutReadiness.actionAudit.commandBackedWorkActions.includes('request_document'))
+assert.ok(viewModel.rolloutReadiness.actionAudit.commandBackedWorkActions.includes('schedule_signing'))
+assert.ok(viewModel.rolloutReadiness.actionAudit.commandBackedWorkActions.includes('add_note'))
+assert.ok(viewModel.rolloutReadiness.actionAudit.callbackBackedWorkActions.includes('upload_document'))
+assert.ok(viewModel.rolloutReadiness.actionAudit.callbackBackedWorkActions.includes('open_documents'))
+assert.ok(viewModel.rolloutReadiness.actionAudit.callbackBackedWorkActions.includes('open_parties'))
+assert.ok(
+  viewModel.rolloutReadiness.actionAudit.callbackBackedWorkActions.includes('open_finance') ||
+  viewModel.rolloutReadiness.actionAudit.commandBackedWorkActions.includes('open_finance'),
+)
+assert.ok(viewModel.rolloutReadiness.actionAudit.statusUpdateActions.includes('mark_complete'))
+assert.ok(viewModel.rolloutReadiness.uatChecklist.length >= 6)
 
 viewModel.tasks.forEach((task) => {
   const taskActions = buildTransferTaskWorkActions(task, workflow.lane.permissions)

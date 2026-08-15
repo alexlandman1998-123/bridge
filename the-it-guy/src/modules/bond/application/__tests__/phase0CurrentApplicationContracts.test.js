@@ -95,8 +95,8 @@ function runDraftConstructionContract() {
   const clientPortalSource = readFile('src/pages/ClientPortal.jsx')
   const draftSource = readFile('src/modules/bond/application/legacy/buildLegacyBondApplicationDraft.js')
 
-  assertContains(clientPortalSource, 'buildLegacyBondApplicationDraft,')
-  assertContains(clientPortalSource, 'buildLegacyBondApplicationDraft(portal)')
+  assertContains(clientPortalSource, 'buildBondApplicationPrefillDraft')
+  assertContains(clientPortalSource, 'buildBondApplicationPrefillDraft(portal).application')
   assertContains(draftSource, 'portal?.onboardingFormData?.formData || {}')
   assertContains(draftSource, 'formData.bond_application')
   assertContains(draftSource, 'getBondApplicationApplicantDefault(\'primary\', portal)')

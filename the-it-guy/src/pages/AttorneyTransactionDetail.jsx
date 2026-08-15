@@ -17281,6 +17281,13 @@ function AttorneyTransactionDetail() {
   const bondApplicationUnconfirmedSections = Array.isArray(bondApplicationConfirmationConfidence.missingSections)
     ? bondApplicationConfirmationConfidence.missingSections
     : []
+  const bondApplicationOriginatorWorkspace = bondApplicationViewModel.originatorReviewWorkspace || {}
+  const bondApplicationOriginatorSourceBuckets = Array.isArray(bondApplicationOriginatorWorkspace.sourceBuckets)
+    ? bondApplicationOriginatorWorkspace.sourceBuckets
+    : []
+  const bondApplicationOriginatorActions = Array.isArray(bondApplicationOriginatorWorkspace.missingOriginatorActions)
+    ? bondApplicationOriginatorWorkspace.missingOriginatorActions.slice(0, 6)
+    : []
   const bondConsultantWorkspaceAction = useMemo(
     () =>
       resolveBondConsultantAction({
@@ -21443,6 +21450,55 @@ function AttorneyTransactionDetail() {
               </article>
 
               <aside className="space-y-5">
+                <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface" data-bond-originator-review-workspace="phase-15">
+                  <div className="flex items-start justify-between gap-4">
+                    <span className="flex min-w-0 items-start gap-3">
+                      <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-primarySoft text-primary">
+                        <FileCheck2 size={17} />
+                      </span>
+                      <span className="min-w-0">
+                        <h3 className="text-base font-semibold text-textStrong">Originator Review Workspace</h3>
+                        <span className="mt-1 block text-xs text-textMuted">
+                          {bondApplicationOriginatorWorkspace.recommendedAction || 'Review application data before submission.'}
+                        </span>
+                      </span>
+                    </span>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${Number(bondApplicationOriginatorWorkspace.score || 0) >= 85 ? 'bg-successSoft text-success' : Number(bondApplicationOriginatorWorkspace.score || 0) >= 65 ? 'bg-[#fff4e6] text-warning' : 'bg-red-50 text-red-600'}`}>
+                      {Number(bondApplicationOriginatorWorkspace.score || 0)}/100
+                    </span>
+                  </div>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
+                    {bondApplicationOriginatorSourceBuckets.map((bucket) => (
+                      <div key={bucket.key} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-textMuted">{bucket.label}</span>
+                        <strong className="mt-1 block text-sm font-semibold text-textStrong">
+                          {Number(bucket.count || 0)}/{Number(bucket.total || 0)} · {Number(bucket.percent || 0)}%
+                        </strong>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 border-t border-borderSoft pt-3" data-bond-originator-action-list="true">
+                    <span className="text-xs font-semibold text-textStrong">Originator Action List</span>
+                    <div className="mt-2 space-y-2">
+                      {bondApplicationOriginatorActions.length ? bondApplicationOriginatorActions.map((item) => (
+                        <div key={`${item.type}-${item.key}`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[10px] border border-borderSoft bg-white px-3 py-2 text-sm">
+                          <span className="min-w-0">
+                            <span className="block truncate font-semibold text-textStrong">{item.label}</span>
+                            <span className="block truncate text-xs text-textMuted">{item.action}</span>
+                          </span>
+                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${item.priority === 'High' ? 'bg-red-50 text-red-600' : 'bg-[#fff4e6] text-warning'}`}>
+                            {item.priority}
+                          </span>
+                        </div>
+                      )) : (
+                        <p className="rounded-[10px] bg-successSoft px-3 py-2 text-sm font-semibold text-success">
+                          No originator action blockers detected.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </article>
+
                 <article className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-surface">
                   <div className="flex items-start justify-between gap-4">
                     <span className="flex min-w-0 items-start gap-3">
