@@ -95,6 +95,11 @@ export {
   buildBondApplicationBrowserE2EContract,
 } from './ux/bondApplicationBrowserE2EContract.js'
 export {
+  BOND_APPLICATION_RELEASE_READINESS_CHECKS,
+  BOND_APPLICATION_RELEASE_READINESS_VERSION,
+  buildBondApplicationReleaseReadinessGate,
+} from './release/bondApplicationReleaseReadinessGate.js'
+export {
   getPhase2GuidedBondApplicationEligibility,
   isPermanentEmploymentValue,
   isPhase3SupportedEmploymentValue,

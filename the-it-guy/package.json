@@ -379,6 +379,8 @@
     "test:bond-consultants-management": "node src/services/__tests__/bondConsultantsManagementService.test.js",
     "test:bond-application-assignment": "node src/services/__tests__/bondApplicationAssignmentService.test.js",
     "test:bond-routing-rules": "node src/services/__tests__/bondRoutingRulesService.test.js",
+    "test:bond-application-prefill-phase18": "node scripts/bond-application-prefill-phase18.test.mjs",
+    "verify:bond-application-prefill-release-readiness": "node scripts/bond-application-prefill-phase10.test.mjs && node scripts/bond-application-prefill-phase11.test.mjs && node scripts/bond-application-prefill-phase15.test.mjs && node scripts/bond-application-prefill-phase16.test.mjs && node scripts/bond-application-prefill-phase18.test.mjs",
     "test:guided-bond-application-phase0": "node src/modules/bond/application/__tests__/phase0CurrentApplicationContracts.test.js",
     "test:guided-bond-application-phase1": "node src/modules/bond/application/__tests__/phase1DomainAdapter.test.js",
     "test:guided-bond-application-phase2": "node src/modules/bond/application/__tests__/phase2GuidedVerticalSlice.test.js",
