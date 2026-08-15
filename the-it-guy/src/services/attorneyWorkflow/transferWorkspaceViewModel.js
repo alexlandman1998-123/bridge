@@ -8,6 +8,11 @@ import {
   buildAttorneyWorkflowActionCommand,
   buildAttorneyWorkflowFollowUpCommand,
 } from '../../constants/attorneyWorkflowUsability.js'
+import {
+  normalizeDealFinanceType,
+  normalizeDocumentMaritalRegime,
+  normalizeDocumentPartyEntityType,
+} from '../../core/documents/documentPartyClassification.js'
 
 export const TRANSFER_WORKSPACE_PHASES = Object.freeze(getAttorneyJourneyPhasesForLane('transfer'))
 
@@ -51,6 +56,109 @@ function text(value) {
 
 function key(value) {
   return text(value).toLowerCase()
+}
+
+function titleize(value = '') {
+  return text(value)
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function asObject(value) {
+  if (!value) return {}
+  if (typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string') return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function readPath(source = {}, path = '') {
+  if (!source || typeof source !== 'object') return undefined
+  const parts = String(path || '').split('.').filter(Boolean)
+  let current = source
+  for (const part of parts) {
+    if (current === null || current === undefined || typeof current !== 'object') return undefined
+    current = current[part]
+  }
+  return current
+}
+
+function firstScenarioValue(sources = [], paths = []) {
+  for (const path of paths) {
+    for (const source of sources) {
+      const value = readPath(source, path)
+      if (value !== null && value !== undefined && text(value) !== '') return value
+    }
+  }
+  return ''
+}
+
+function normalizeScenarioBoolean(value) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value > 0
+  const normalized = key(value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  if (!normalized) return null
+  if (['true', 'yes', 'y', '1', 'required', 'applicable', 'has_bond', 'bond_registered'].includes(normalized)) return true
+  if (['false', 'no', 'n', '0', 'not_required', 'not_applicable', 'none', 'no_bond', 'cash'].includes(normalized)) return false
+  return null
+}
+
+function normalizeScenarioEntityType(value = '') {
+  const raw = text(value)
+  if (!raw) return 'unknown'
+  const normalized = normalizeDocumentPartyEntityType(raw)
+  if (normalized === 'close_corporation') return 'company'
+  return normalized || 'unknown'
+}
+
+function normalizeScenarioFinanceType(value = '', facts = {}) {
+  const raw = text(value)
+  if (raw) return normalizeDealFinanceType(raw) || 'unknown'
+  if (facts?.isCashDeal === true) return 'cash'
+  return 'unknown'
+}
+
+function scenarioDataRequirement({ id = '', label = '', fields = [], description = '', owner = 'transfer_attorney', severity = 'medium' } = {}) {
+  return {
+    id,
+    label: label || titleize(id),
+    fields,
+    description,
+    owner,
+    severity,
+  }
+}
+
+function mergeUniqueValues(...groups) {
+  const seen = new Set()
+  const merged = []
+  groups.flat().forEach((item) => {
+    const value = text(item)
+    if (!value || seen.has(value)) return
+    seen.add(value)
+    merged.push(value)
+  })
+  return merged
+}
+
+function mergeUniqueRequirements(...groups) {
+  const seen = new Set()
+  const merged = []
+  groups.flat().forEach((item) => {
+    if (!item) return
+    const id = text(item.id || item.label || JSON.stringify(item))
+    if (!id || seen.has(id)) return
+    seen.add(id)
+    merged.push(item)
+  })
+  return merged
 }
 
 function normalizeDisplayStatus(value, fallback = 'not_started') {
@@ -97,6 +205,8 @@ function buildTaskSearchText(task = {}) {
     task.phaseLabel,
     ...(task.requiredDocumentKeys || []),
     ...(task.evidenceRequirements || []),
+    ...(task.scenarioRequirements?.documents || []),
+    ...(task.scenarioRequirements?.evidence || []),
   ]
     .map(key)
     .filter(Boolean)
@@ -158,6 +268,369 @@ function isDocumentReady(document = {}) {
 
 const FICA_RECEIVED_STATUSES = new Set(['uploaded', 'under_review', 'pending_review', 'approved', 'accepted', 'verified', 'completed', 'ready'])
 const FICA_ACCEPTED_STATUSES = new Set(['approved', 'accepted', 'verified', 'completed', 'ready'])
+const GUARANTEE_STAGE_KEYS = new Set(['guarantees_requested', 'guarantees_received', 'transfer_guarantees_accepted'])
+const PARTY_DOCUMENT_KEYS = Object.freeze({
+  buyer: Object.freeze([
+    'buyer_id_document',
+    'buyer_proof_of_address',
+    'buyer_company_registration_documents',
+    'buyer_company_resolution',
+    'buyer_director_ids',
+    'buyer_authorised_signatory_id',
+    'buyer_trust_deed',
+    'buyer_letters_of_authority',
+    'buyer_trustee_ids',
+    'buyer_trustee_resolution',
+    'buyer_marital_status_documents',
+    'buyer_marital_capacity_documents',
+    'buyer_marriage_certificate',
+    'buyer_antenuptial_contract',
+    'buyer_spouse_consent',
+    'buyer_spousal_consent_if_required',
+  ]),
+  seller: Object.freeze([
+    'seller_id_document',
+    'seller_proof_of_address',
+    'seller_company_registration_documents',
+    'seller_company_resolution',
+    'seller_director_ids',
+    'seller_authorised_signatory_id',
+    'seller_trust_deed',
+    'seller_letters_of_authority',
+    'seller_trustee_ids',
+    'seller_trustee_resolution',
+    'seller_marital_status_documents',
+    'seller_marital_capacity_documents',
+    'seller_marriage_certificate',
+    'seller_antenuptial_contract',
+    'seller_spouse_consent',
+    'seller_spousal_consent_if_required',
+  ]),
+})
+
+function buildTransferScenarioSources({ workflow = null, lane = null, facts = {} } = {}) {
+  const routingProfile = asObject(
+    facts?.routingProfile ||
+      facts?.routing_profile ||
+      facts?.routing_profile_json ||
+      workflow?.routingProfile ||
+      workflow?.routing_profile ||
+      workflow?.routing_profile_json ||
+      workflow?.transaction?.routing_profile_json,
+  )
+  const onboarding = asObject(
+    workflow?.onboardingFormData ||
+      workflow?.onboarding_form_data ||
+      workflow?.transaction?.onboarding_form_data ||
+      workflow?.transaction?.onboardingFormData,
+  )
+  return [
+    facts,
+    routingProfile,
+    onboarding,
+    workflow?.transaction || {},
+    workflow || {},
+    lane || {},
+  ]
+}
+
+function buildPartyScenarioProfile(role = 'buyer', sources = []) {
+  const normalizedRole = role === 'seller' ? 'seller' : 'buyer'
+  const aliasRole = normalizedRole === 'buyer' ? 'purchaser' : 'seller'
+  const capitalizedRole = normalizedRole.charAt(0).toUpperCase() + normalizedRole.slice(1)
+  const entityType = normalizeScenarioEntityType(firstScenarioValue(sources, [
+    `${normalizedRole}EntityType`,
+    `${normalizedRole}_entity_type`,
+    `${aliasRole}EntityType`,
+    `${aliasRole}_entity_type`,
+    `${normalizedRole}Type`,
+    `${normalizedRole}_type`,
+    `${normalizedRole}.entityType`,
+    `${normalizedRole}.entity_type`,
+    `${normalizedRole}.type`,
+    `${normalizedRole}.legal_type`,
+    `routingProfile.${normalizedRole}EntityType`,
+    `routing_profile.${normalizedRole}EntityType`,
+  ]))
+  const maritalRegime = normalizeDocumentMaritalRegime(firstScenarioValue(sources, [
+    `${normalizedRole}MaritalStatus`,
+    `${normalizedRole}_marital_status`,
+    `${normalizedRole}MaritalRegime`,
+    `${normalizedRole}_marital_regime`,
+    `${aliasRole}MaritalStatus`,
+    `${aliasRole}_marital_status`,
+    `${normalizedRole}.maritalStatus`,
+    `${normalizedRole}.marital_status`,
+    `${normalizedRole}.maritalRegime`,
+    `${normalizedRole}.marital_regime`,
+    `${normalizedRole}.person.marital_status`,
+    `${normalizedRole}.person.marital_regime`,
+  ]))
+  const explicitSpouseConsent = normalizeScenarioBoolean(firstScenarioValue(sources, [
+    `${normalizedRole}SpouseConsentRequired`,
+    `${normalizedRole}_spouse_consent_required`,
+    `${normalizedRole}.spouseConsentRequired`,
+    `${normalizedRole}.spouse_consent_required`,
+    `${normalizedRole}.person.spouse_consent_required`,
+  ]))
+  const isCompany = entityType === 'company'
+  const isTrust = entityType === 'trust'
+  const isIndividual = entityType === 'individual'
+  const isKnownEntity = entityType !== 'unknown'
+  const spouseConsentRequired = explicitSpouseConsent ?? (isIndividual && maritalRegime === 'in_community')
+  const maritalStatusKnown = !isIndividual || Boolean(maritalRegime)
+  const authorityRequired = isCompany || isTrust || (isIndividual && Boolean(maritalRegime) && maritalRegime !== 'single')
+  const authorityLabel = isCompany
+    ? 'Company authority'
+    : isTrust
+      ? 'Trust authority'
+      : isIndividual && maritalRegime === 'single'
+        ? 'Individual capacity'
+        : isIndividual && maritalRegime
+          ? 'Marital capacity'
+          : isIndividual
+            ? 'Individual capacity to confirm'
+            : 'Capacity to confirm'
+
+  return {
+    role: normalizedRole,
+    roleLabel: capitalizedRole,
+    entityType,
+    entityTypeLabel: entityType === 'unknown' ? 'Entity type to confirm' : titleize(entityType),
+    maritalRegime,
+    maritalRegimeLabel: maritalRegime ? titleize(maritalRegime) : isIndividual ? 'Marital status to confirm' : '',
+    isCompany,
+    isTrust,
+    isIndividual,
+    isKnownEntity,
+    isLegalEntity: isCompany || isTrust,
+    authorityRequired,
+    spouseConsentRequired,
+    status: !isKnownEntity || !maritalStatusKnown ? 'attention' : 'covered',
+    coverageLabel: isIndividual
+      ? `${titleize(entityType)}${maritalRegime ? `, ${titleize(maritalRegime)}` : ''}`
+      : entityType === 'unknown'
+        ? 'Entity type to confirm'
+        : titleize(entityType),
+    detail: spouseConsentRequired
+      ? 'Spousal consent evidence applies.'
+      : authorityRequired
+        ? `${authorityLabel} evidence applies.`
+        : isKnownEntity
+          ? `${authorityLabel} applies.`
+          : 'Capture party type before closing authority checks.',
+  }
+}
+
+function buildPartyScenarioRequirements(profile = {}) {
+  const role = profile.role === 'seller' ? 'seller' : 'buyer'
+  const capitalizedRole = role.charAt(0).toUpperCase() + role.slice(1)
+  const data = []
+  const documents = []
+  const evidence = []
+
+  data.push(scenarioDataRequirement({
+    id: `${role}_entity_type`,
+    label: `${capitalizedRole} Entity Type`,
+    fields: [`${role}_entity_type`, `${role}EntityType`, `${role}.entity_type`, `${role}.legal_type`],
+    description: `Determines ${role} FICA and authority requirements.`,
+    owner: 'agent',
+    severity: 'high',
+  }))
+
+  if (profile.isIndividual || profile.entityType === 'unknown') {
+    data.push(scenarioDataRequirement({
+      id: `${role}_marital_status`,
+      label: `${capitalizedRole} Marital Status`,
+      fields: [`${role}_marital_status`, `${role}MaritalStatus`, `${role}.marital_status`, `${role}.person.marital_status`],
+      description: `Confirms ${role} signing capacity and spouse consent requirements.`,
+      owner: role,
+      severity: 'high',
+    }))
+  }
+
+  if (profile.isIndividual) {
+    documents.push(`${role}_id_document`, `${role}_proof_of_address`)
+    if (profile.maritalRegime && profile.maritalRegime !== 'single') {
+      documents.push(`${role}_marital_status_documents`)
+      evidence.push(`${capitalizedRole} marital capacity evidence is reviewed.`)
+    }
+    if (profile.maritalRegime === 'out_of_community') {
+      documents.push(`${role}_antenuptial_contract`)
+    }
+    if (profile.maritalRegime === 'in_community' || profile.spouseConsentRequired) {
+      documents.push(`${role}_spouse_consent`)
+      evidence.push(`${capitalizedRole} spousal consent route is confirmed.`)
+    }
+  } else if (profile.isCompany) {
+    data.push(scenarioDataRequirement({
+      id: `${role}_representative_capacity`,
+      label: `${capitalizedRole} Representative Capacity`,
+      fields: [`${role}_representative_capacity`, `${role}.company.authorised_signatory.capacity`, `${role}.representative_capacity`],
+      description: `Confirms the authorised ${role} company signer.`,
+      owner: role,
+      severity: 'high',
+    }))
+    documents.push(`${role}_company_registration_documents`, `${role}_company_resolution`, `${role}_director_ids`)
+    evidence.push(`${capitalizedRole} company registration, resolution, and signatory authority are reviewed.`)
+  } else if (profile.isTrust) {
+    data.push(scenarioDataRequirement({
+      id: `${role}_trustee_authority`,
+      label: `${capitalizedRole} Trustee Authority`,
+      fields: [`${role}_trustee_names`, `${role}.trust.trustees`, `${role}.trust.authorised_trustee.capacity`, `${role}_authority_basis`],
+      description: `Confirms the authorised ${role} trustee and authority basis.`,
+      owner: role,
+      severity: 'high',
+    }))
+    documents.push(`${role}_trust_deed`, `${role}_letters_of_authority`, `${role}_trustee_ids`, `${role}_trustee_resolution`)
+    evidence.push(`${capitalizedRole} trust deed, letters of authority, trustees, and resolution are reviewed.`)
+  }
+
+  return {
+    data,
+    documents: mergeUniqueValues(documents),
+    evidence,
+  }
+}
+
+function buildTransferScenarioProfile({ workflow = null, lane = null, facts = {} } = {}) {
+  const sources = buildTransferScenarioSources({ workflow, lane, facts })
+  const buyer = buildPartyScenarioProfile('buyer', sources)
+  const seller = buildPartyScenarioProfile('seller', sources)
+  const rawFinanceType = firstScenarioValue(sources, [
+    'financeType',
+    'finance_type',
+    'transaction_finance_type',
+    'purchase_finance_type',
+    'finance.financeType',
+    'finance.finance_type',
+    'routingProfile.financeType',
+    'routing_profile.financeType',
+  ])
+  const financeType = normalizeScenarioFinanceType(rawFinanceType, facts)
+  const explicitGuaranteesRequired = normalizeScenarioBoolean(firstScenarioValue(sources, [
+    'requiresGuarantees',
+    'requires_guarantees',
+    'guaranteesRequired',
+    'guarantees_required',
+  ]))
+  const requiresGuarantees = explicitGuaranteesRequired ?? (financeType === 'cash' ? false : financeType === 'unknown' ? true : ['bond', 'combination', 'hybrid', 'developer'].includes(financeType))
+  const isCashDeal = facts?.isCashDeal === true || (financeType === 'cash' && requiresGuarantees === false)
+  const sellerExistingBond = normalizeScenarioBoolean(firstScenarioValue(sources, [
+    'sellerHasExistingBond',
+    'seller_has_existing_bond',
+    'sellerHasBond',
+    'seller_has_bond',
+    'existingBond',
+    'existing_bond',
+    'bond_status',
+    'seller.bond_status',
+    'routingProfile.sellerHasExistingBond',
+    'routing_profile.sellerHasExistingBond',
+  ]))
+  const explicitCancellationRequired = normalizeScenarioBoolean(firstScenarioValue(sources, [
+    'cancellationRequired',
+    'cancellation_required',
+    'requiresCancellation',
+    'requires_cancellation',
+    'routingProfile.cancellationRequired',
+    'routing_profile.cancellationRequired',
+  ]))
+  const requiresCancellation = explicitCancellationRequired ?? sellerExistingBond ?? false
+  const financeLabel = financeType === 'unknown'
+    ? 'Finance route to confirm'
+    : financeType === 'combination'
+      ? 'Hybrid finance'
+      : titleize(financeType)
+  const cancellationLabel = sellerExistingBond === null && explicitCancellationRequired === null
+    ? 'Existing bond to confirm'
+    : requiresCancellation
+      ? 'Cancellation lane required'
+      : 'No cancellation lane required'
+
+  return {
+    laneKey: 'transfer',
+    buyer,
+    seller,
+    finance: {
+      type: financeType,
+      label: financeLabel,
+      isCashDeal,
+      requiresGuarantees,
+      status: financeType === 'unknown' ? 'attention' : 'covered',
+      detail: requiresGuarantees ? 'Guarantee and bond coordination tasks apply.' : 'Cash route; bond guarantee tasks are not required.',
+    },
+    cancellation: {
+      sellerHasExistingBond,
+      required: requiresCancellation,
+      status: sellerExistingBond === null && explicitCancellationRequired === null ? 'attention' : 'covered',
+      label: cancellationLabel,
+      detail: requiresCancellation ? 'Transfer must coordinate with cancellation where applicable.' : 'Transfer still confirms the seller bond position.',
+    },
+    coverageItems: [
+      {
+        key: 'buyer_capacity',
+        label: 'Buyer Capacity',
+        value: buyer.coverageLabel,
+        detail: buyer.detail,
+        status: buyer.status,
+      },
+      {
+        key: 'seller_capacity',
+        label: 'Seller Capacity',
+        value: seller.coverageLabel,
+        detail: seller.detail,
+        status: seller.status,
+      },
+      {
+        key: 'finance_route',
+        label: 'Finance Route',
+        value: financeLabel,
+        detail: requiresGuarantees ? 'Guarantees tracked.' : 'Cash route tracked.',
+        status: financeType === 'unknown' ? 'attention' : 'covered',
+      },
+      {
+        key: 'cancellation_route',
+        label: 'Cancellation Route',
+        value: cancellationLabel,
+        detail: requiresCancellation ? 'Cancellation dependency tracked.' : 'Existing bond position tracked.',
+        status: sellerExistingBond === null && explicitCancellationRequired === null ? 'attention' : 'covered',
+      },
+    ],
+  }
+}
+
+function applyTransferScenarioToTask(definition = {}, scenario = null) {
+  if (!scenario) return definition
+  const taskKey = definition.key
+  const isBuyerFicaTask = /^buyer_fica/.test(taskKey)
+  const isSellerFicaTask = /^seller_fica/.test(taskKey)
+  const isAuthorityTask = taskKey === 'entity_authority_checked'
+  if (!isBuyerFicaTask && !isSellerFicaTask && !isAuthorityTask) return definition
+
+  const roles = isBuyerFicaTask ? ['buyer'] : isSellerFicaTask ? ['seller'] : ['buyer', 'seller']
+  const requirementGroups = roles.map((role) => buildPartyScenarioRequirements(scenario[role]))
+  const scopedPartyKeys = new Set(roles.flatMap((role) => PARTY_DOCUMENT_KEYS[role] || []))
+  const knownPartyTypes = roles.every((role) => scenario[role]?.entityType && scenario[role].entityType !== 'unknown')
+  const existingDocuments = Array.isArray(definition.requiredDocuments) ? definition.requiredDocuments : []
+  const baseDocuments = knownPartyTypes
+    ? existingDocuments.filter((documentKey) => !scopedPartyKeys.has(documentKey))
+    : existingDocuments
+  const scenarioDocuments = requirementGroups.flatMap((group) => group.documents)
+  const scenarioEvidence = requirementGroups.flatMap((group) => group.evidence)
+
+  return {
+    ...definition,
+    requiredData: mergeUniqueRequirements(definition.requiredData || [], requirementGroups.flatMap((group) => group.data)),
+    requiredDocuments: mergeUniqueValues(baseDocuments, scenarioDocuments),
+    evidenceRequirements: mergeUniqueValues(definition.evidenceRequirements || [], scenarioEvidence),
+    scenarioRequirements: {
+      roles,
+      documents: mergeUniqueValues(scenarioDocuments),
+      evidence: mergeUniqueValues(scenarioEvidence),
+    },
+  }
+}
 
 function rowMatchesPartyFica(document = {}, party = '') {
   const normalizedParty = key(party)
@@ -251,10 +724,10 @@ function isTaskOverdue(task = {}, now = new Date()) {
   return Number.isFinite(dueTime) && dueTime < new Date(now).getTime()
 }
 
-function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, facts = {}, workflow = null, documents = [] } = {}) {
-  const definitions = getAttorneyStageDefinitionsForLane(workflowKey).filter(
-    (definition) => definition.key !== 'guarantees_received' || !facts?.isCashDeal,
-  )
+function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, facts = {}, workflow = null, documents = [], scenario = null } = {}) {
+  const definitions = getAttorneyStageDefinitionsForLane(workflowKey)
+    .filter((definition) => scenario?.finance?.requiresGuarantees === false ? !GUARANTEE_STAGE_KEYS.has(definition.key) : true)
+    .map((definition) => applyTransferScenarioToTask(definition, scenario))
   const laneSteps = Array.isArray(lane?.steps) ? lane.steps : []
   const storedStepMap = new Map(
     laneSteps.map((step) => [getStoredStepKey(step, workflowKey), step]),
@@ -313,6 +786,7 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, facts = {},
       evidenceRequirements: [...(definition.evidenceRequirements || [])],
       requiredData: [...(definition.requiredData || [])],
       requiredDocumentKeys: [...(definition.requiredDocuments || [])],
+      scenarioRequirements: definition.scenarioRequirements || null,
       defaultVisibility: definition.defaultVisibility || 'professional_shared',
       clientVisibleAllowed: definition.clientVisibleAllowed !== false,
       requiresNote: Boolean(definition.requiresNote),
@@ -1278,7 +1752,8 @@ export function buildTransferWorkspaceViewModel({
 } = {}) {
   const lane = workflow?.lane || null
   const permissions = lane?.permissions || {}
-  const tasks = buildWorkflowTasks({ workflowKey, lane, facts: workflow?.facts || {}, workflow, documents }).map((task) => {
+  const scenario = buildTransferScenarioProfile({ workflow, lane, facts: workflow?.facts || {} })
+  const tasks = buildWorkflowTasks({ workflowKey, lane, facts: workflow?.facts || {}, workflow, documents, scenario }).map((task) => {
     const relatedDocuments = task.derivedCompletion?.relatedDocuments?.length
       ? task.derivedCompletion.relatedDocuments
       : buildRelatedDocuments(task, lane, documents)
@@ -1352,6 +1827,7 @@ export function buildTransferWorkspaceViewModel({
     tasks,
     visibleTasks,
     phases,
+    scenario,
     selectedTask,
     nextActionableTask,
     currentPhase,
@@ -1378,6 +1854,7 @@ export function buildTransferWorkspaceViewModel({
       tabs: selectedTabs,
       workActions: selectedWorkActions,
       outcomeSummary: selectedOutcomeSummary,
+      scenarioRequirements: selectedTask?.scenarioRequirements || null,
     },
     permissions,
     availableActions: buildAvailableActions(selectedTask, permissions),
