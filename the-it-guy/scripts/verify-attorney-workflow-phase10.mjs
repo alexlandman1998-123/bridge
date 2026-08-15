@@ -68,10 +68,10 @@ function verifyWaitingCoordinationCommand() {
   })
 
   assert.equal(command.commandType, 'add_note')
-  assert.equal(command.label, 'Request Handoff')
+  assert.equal(command.label, 'Request Bond Readiness')
   assert.equal(command.laneKey, 'transfer')
   assert.equal(command.draft.visibility, 'professional_shared')
-  assert.match(command.draft.message, /Coordination request for Bond Attorney/)
+  assert.match(command.draft.message, /Simultaneous lodgement request for Bond Attorney/)
   assert.match(command.draft.message, /Needed: Bond Lodgement Pack Ready/)
   assert.equal(command.draft.workPacket, command.workPacket)
   assert.equal(command.workPacket.laneKey, 'transfer')
@@ -81,6 +81,7 @@ function verifyWaitingCoordinationCommand() {
   assert.equal(command.workPacket.sourceCoordinationLaneKey, 'bond')
   assert.equal(command.workPacket.sourceCoordinationTargetStage, 'bond_lodgement_ready')
   assert.equal(command.workPacket.sourceCoordinationStatus, 'waiting')
+  assert.match(command.workPacket.checklist.join(' '), /bond lodgement pack is ready/)
 }
 
 function verifyBlockedCoordinationCommand() {

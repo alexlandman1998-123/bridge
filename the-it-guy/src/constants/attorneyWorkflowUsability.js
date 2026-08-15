@@ -162,6 +162,28 @@ export const ATTORNEY_WORKFLOW_COORDINATION_COMMAND_PRESETS = Object.freeze({
       'Update bond guarantee wording accepted once transfer acceptance is saved.',
     ],
   }),
+  bond_bond_lodgement_ready: Object.freeze({
+    label: 'Request Bond Readiness',
+    subject: 'Bond lodgement readiness',
+    messagePrefix: 'Simultaneous lodgement request for Bond Attorney.',
+    description: 'Ask the bond attorney to confirm approval to lodge, bond pack readiness, and simultaneous lodgement constraints.',
+    checklist: [
+      'Confirm bank approval to lodge has been received.',
+      'Confirm the bond lodgement pack is ready.',
+      'Record any condition that affects simultaneous lodgement timing.',
+    ],
+  }),
+  transfer_transfer_lodgement_ready: Object.freeze({
+    label: 'Request Transfer Readiness',
+    subject: 'Transfer lodgement readiness',
+    messagePrefix: 'Simultaneous lodgement request for Transfer Attorney.',
+    description: 'Ask the transfer attorney to confirm the transfer pack is ready for simultaneous lodgement.',
+    checklist: [
+      'Confirm transfer lodgement pack readiness.',
+      'Confirm guarantees and cancellation dependencies are resolved.',
+      'Record target lodgement date or remaining blocker.',
+    ],
+  }),
 })
 
 function normalizeLaneKey(value = '') {
@@ -1627,7 +1649,7 @@ export function buildAttorneyWorkflowCoordinationCommand(item = {}, context = {}
     laneKey,
     stageKey,
     commandType: 'add_note',
-    label: preset?.label || (item.status === 'ready' ? 'Add Coordination Note' : 'Request Handoff'),
+    label: item.status === 'ready' ? 'Add Coordination Note' : preset?.label || 'Request Handoff',
     description: preset?.description || 'Prepare a professional coordination update for the linked legal workflow.',
     workPacket,
     draft,

@@ -9,12 +9,17 @@ import {
   BOND_HYBRID_FINANCE_STAGES,
   BOND_HYBRID_FINANCE_WORKFLOW_TYPE,
 } from '../../core/transactions/bondHybridFinanceWorkflow.js'
-import { BOND_ATTORNEY_STAGE_COMMAND_PRESETS } from '../../constants/attorneyWorkflowUsability.js'
+import {
+  ATTORNEY_WORKFLOW_COORDINATION_COMMAND_PRESETS,
+  BOND_ATTORNEY_STAGE_COMMAND_PRESETS,
+} from '../../constants/attorneyWorkflowUsability.js'
 import { BOND_CONSULTANT_ACTIONS } from '../bondConsultantActionService.js'
 
 export const BOND_LANE_PHASE1_JOURNEY_VERSION = 'bond-lane-phase1-originator-attorney-map-v1'
 export const BOND_LANE_PHASE2_ACTION_AUDIT_VERSION = 'bond-lane-phase2-action-audit-v1'
 export const BOND_LANE_PHASE3_COMMAND_PLAN_VERSION = 'bond-lane-phase3-stage-command-plan-v1'
+export const BOND_LANE_PHASE4_GUARANTEE_COORDINATION_VERSION = 'bond-lane-phase4-guarantee-coordination-v1'
+export const BOND_LANE_PHASE5_LODGEMENT_COORDINATION_VERSION = 'bond-lane-phase5-lodgement-coordination-v1'
 
 export const BOND_ORIGINATOR_JOURNEY_LANES = Object.freeze([
   Object.freeze({
@@ -332,6 +337,60 @@ export const BOND_PHASE2_ACTION_SURFACES = Object.freeze([
   }),
 ])
 
+export const BOND_PHASE4_GUARANTEE_COORDINATION_PAIRS = Object.freeze([
+  Object.freeze({
+    key: 'bond_guarantees_to_transfer_acceptance',
+    requestingLaneKey: 'transfer',
+    dependencyLaneKey: 'bond',
+    coordinationItemId: 'bond_bond_guarantees_issued',
+    dependencyStageKey: 'guarantees_issued',
+    receivingStageKey: 'guarantees_received',
+    acceptanceStageKey: 'transfer_guarantees_accepted',
+    handoffKey: 'bond_attorney_to_transfer_attorney',
+    commandPresetKey: 'bond_bond_guarantees_issued',
+    outcome: 'Transfer attorney can request, receive, check, and accept guarantees issued by the bond attorney.',
+  }),
+  Object.freeze({
+    key: 'transfer_acceptance_to_bond_wording',
+    requestingLaneKey: 'bond',
+    dependencyLaneKey: 'transfer',
+    coordinationItemId: 'transfer_transfer_guarantee_acceptance',
+    dependencyStageKey: 'transfer_guarantees_accepted',
+    receivingStageKey: 'guarantee_wording_accepted',
+    acceptanceStageKey: 'guarantee_wording_accepted',
+    handoffKey: 'bond_attorney_to_transfer_attorney',
+    commandPresetKey: 'transfer_transfer_guarantee_acceptance',
+    outcome: 'Bond attorney can request transfer attorney acceptance or corrections before marking guarantee wording accepted.',
+  }),
+])
+
+export const BOND_PHASE5_LODGEMENT_COORDINATION_PAIRS = Object.freeze([
+  Object.freeze({
+    key: 'bond_readiness_to_transfer_lodgement',
+    requestingLaneKey: 'transfer',
+    dependencyLaneKey: 'bond',
+    coordinationItemId: 'bond_bond_lodgement_ready',
+    dependencyStageKey: 'bond_lodgement_ready',
+    requestingStageKey: 'lodgement_ready',
+    coordinatedStageKey: 'bond_lodged',
+    handoffKey: 'bond_attorney_to_lodgement_coordination',
+    commandPresetKey: 'bond_bond_lodgement_ready',
+    outcome: 'Transfer attorney can request bond lodgement readiness before confirming simultaneous lodgement.',
+  }),
+  Object.freeze({
+    key: 'transfer_readiness_to_bond_lodgement',
+    requestingLaneKey: 'bond',
+    dependencyLaneKey: 'transfer',
+    coordinationItemId: 'transfer_transfer_lodgement_ready',
+    dependencyStageKey: 'lodgement_ready',
+    requestingStageKey: 'bond_lodgement_ready',
+    coordinatedStageKey: 'bond_lodged',
+    handoffKey: 'bond_attorney_to_lodgement_coordination',
+    commandPresetKey: 'transfer_transfer_lodgement_ready',
+    outcome: 'Bond attorney can request transfer lodgement readiness before marking the bond lodged simultaneously.',
+  }),
+])
+
 function flatten(groups = [], property = 'stageKeys') {
   return groups.flatMap((group) => Array.isArray(group[property]) ? group[property] : [])
 }
@@ -516,6 +575,106 @@ export function buildBondLanePhase3CommandPlan() {
       'Use existing workflow mutation endpoints for step, note, document, and signing updates.',
       'Keep originator mutation in the bond file workspace; attorney-side originator panels remain read-only.',
       'Allow bond attorney stages to be opened and updated independently so concurrent work is not blocked by previous incomplete stages.',
+    ],
+    structuralBlockers,
+  }
+}
+
+export function buildBondLanePhase4GuaranteeCoordinationPlan() {
+  const phase3 = buildBondLanePhase3CommandPlan()
+  const map = buildBondLaneJourneyMap()
+  const transferGuaranteeHandoff = map.handoffs.find((handoff) => handoff.key === 'bond_attorney_to_transfer_attorney') || null
+  const attorneyStageKeys = map.attorney.stageKeys
+  const commandPresetKeys = Object.keys(ATTORNEY_WORKFLOW_COORDINATION_COMMAND_PRESETS)
+
+  const pairs = BOND_PHASE4_GUARANTEE_COORDINATION_PAIRS.map((pair) => ({
+    ...pair,
+    commandPreset: ATTORNEY_WORKFLOW_COORDINATION_COMMAND_PRESETS[pair.commandPresetKey] || null,
+    commandPresetCovered: commandPresetKeys.includes(pair.commandPresetKey),
+    handoffCovered: transferGuaranteeHandoff?.key === pair.handoffKey,
+    bondStageCovered:
+      attorneyStageKeys.includes(pair.dependencyStageKey) ||
+      attorneyStageKeys.includes(pair.receivingStageKey) ||
+      attorneyStageKeys.includes(pair.acceptanceStageKey),
+  }))
+
+  const structuralBlockers = [
+    ...phase3.structuralBlockers,
+    ...pairs
+      .filter((pair) => !pair.commandPresetCovered)
+      .map((pair) => `Missing guarantee coordination command preset: ${pair.commandPresetKey}`),
+    ...pairs
+      .filter((pair) => !pair.handoffCovered)
+      .map((pair) => `Missing guarantee handoff for coordination pair: ${pair.key}`),
+    ...pairs
+      .filter((pair) => pair.requestingLaneKey === 'bond' && !pair.bondStageCovered)
+      .map((pair) => `Missing bond guarantee receiving stage for coordination pair: ${pair.key}`),
+    ...pairs
+      .filter((pair) => pair.dependencyLaneKey === 'bond' && !pair.bondStageCovered)
+      .map((pair) => `Missing bond guarantee dependency stage for coordination pair: ${pair.key}`),
+  ]
+
+  return {
+    version: BOND_LANE_PHASE4_GUARANTEE_COORDINATION_VERSION,
+    phase3Version: phase3.version,
+    status: structuralBlockers.length ? 'blocked' : 'ready_for_phase5',
+    handoff: transferGuaranteeHandoff,
+    pairs,
+    rolloutRules: [
+      'Bond attorney guarantee issuance and transfer attorney guarantee acceptance are represented as one paired exchange.',
+      'Transfer can request issued guarantees from bond without completing unrelated transfer stages first.',
+      'Bond can request transfer wording acceptance before marking bond guarantee wording accepted.',
+      'Coordination requests stay professional-shared and persist as workflow notes with sourceCoordinationId metadata.',
+    ],
+    structuralBlockers,
+  }
+}
+
+export function buildBondLanePhase5LodgementCoordinationPlan() {
+  const phase4 = buildBondLanePhase4GuaranteeCoordinationPlan()
+  const map = buildBondLaneJourneyMap()
+  const lodgementHandoff = map.handoffs.find((handoff) => handoff.key === 'bond_attorney_to_lodgement_coordination') || null
+  const attorneyStageKeys = map.attorney.stageKeys
+  const commandPresetKeys = Object.keys(ATTORNEY_WORKFLOW_COORDINATION_COMMAND_PRESETS)
+
+  const pairs = BOND_PHASE5_LODGEMENT_COORDINATION_PAIRS.map((pair) => ({
+    ...pair,
+    commandPreset: ATTORNEY_WORKFLOW_COORDINATION_COMMAND_PRESETS[pair.commandPresetKey] || null,
+    commandPresetCovered: commandPresetKeys.includes(pair.commandPresetKey),
+    handoffCovered: lodgementHandoff?.key === pair.handoffKey,
+    bondStageCovered:
+      attorneyStageKeys.includes(pair.dependencyStageKey) ||
+      attorneyStageKeys.includes(pair.requestingStageKey) ||
+      attorneyStageKeys.includes(pair.coordinatedStageKey),
+  }))
+
+  const structuralBlockers = [
+    ...phase4.structuralBlockers,
+    ...pairs
+      .filter((pair) => !pair.commandPresetCovered)
+      .map((pair) => `Missing lodgement coordination command preset: ${pair.commandPresetKey}`),
+    ...pairs
+      .filter((pair) => !pair.handoffCovered)
+      .map((pair) => `Missing lodgement handoff for coordination pair: ${pair.key}`),
+    ...pairs
+      .filter((pair) => pair.requestingLaneKey === 'bond' && !pair.bondStageCovered)
+      .map((pair) => `Missing bond lodgement requesting stage for coordination pair: ${pair.key}`),
+    ...pairs
+      .filter((pair) => pair.dependencyLaneKey === 'bond' && !pair.bondStageCovered)
+      .map((pair) => `Missing bond lodgement dependency stage for coordination pair: ${pair.key}`),
+  ]
+
+  return {
+    version: BOND_LANE_PHASE5_LODGEMENT_COORDINATION_VERSION,
+    phase4Version: phase4.version,
+    status: structuralBlockers.length ? 'blocked' : 'ready_for_phase6',
+    handoff: lodgementHandoff,
+    pairs,
+    rolloutRules: [
+      'Bond lodgement readiness and transfer lodgement readiness are paired but independently actionable.',
+      'Transfer can request bond readiness before all transfer-side lodgement steps are complete.',
+      'Bond can request transfer readiness before marking bond lodged simultaneously.',
+      'Coordination requests persist as professional-shared workflow notes with sourceCoordinationId metadata.',
     ],
     structuralBlockers,
   }
