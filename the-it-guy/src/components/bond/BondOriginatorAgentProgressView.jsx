@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle2, Clock3, FileText, Landmark, ListChecks } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Clock3, ExternalLink, FileText, Landmark, ListChecks } from 'lucide-react'
 import { useMemo } from 'react'
 import { buildBondOriginatorAgentProgressViewModel } from '../../modules/bond/integrations'
 import Button from '../ui/Button'
@@ -264,9 +264,11 @@ function BondOriginatorAgentProgressView({
   progressView = null,
   financeWorkflow = null,
   transaction = null,
+  deepLinks = null,
   onOpenFinance = null,
   onOpenDocuments = null,
   onOpenActivity = null,
+  onOpenDeepLink = null,
   compact = false,
 }) {
   const progressSource = useMemo(
@@ -363,6 +365,14 @@ function BondOriginatorAgentProgressView({
   })
 
   const statusTone = available ? 'transaction-chip-watch' : 'transaction-chip-muted'
+  const sourceLinks = deepLinks?.links || deepLinks || {}
+  const openSourceLink = (link, fallback = null) => {
+    if (link?.href && typeof onOpenDeepLink === 'function') {
+      onOpenDeepLink(link)
+      return
+    }
+    fallback?.()
+  }
 
   return (
     <section className={`rounded-[18px] border border-borderDefault bg-white shadow-[0_12px_28px_rgba(15,23,42,0.05)] ${compact ? 'p-4' : 'p-5'}`}>
@@ -386,20 +396,20 @@ function BondOriginatorAgentProgressView({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {onOpenDocuments ? (
-            <Button type="button" variant="secondary" size="sm" onClick={onOpenDocuments}>
+          {onOpenDocuments || sourceLinks.documents?.href ? (
+            <Button type="button" variant="secondary" size="sm" onClick={() => openSourceLink(sourceLinks.documents, onOpenDocuments)}>
               <FileText size={14} />
               Documents
             </Button>
           ) : null}
-          {onOpenActivity ? (
-            <Button type="button" variant="secondary" size="sm" onClick={onOpenActivity}>
+          {onOpenActivity || sourceLinks.activity?.href ? (
+            <Button type="button" variant="secondary" size="sm" onClick={() => openSourceLink(sourceLinks.activity, onOpenActivity)}>
               <Clock3 size={14} />
               Activity
             </Button>
           ) : null}
-          {onOpenFinance ? (
-            <Button type="button" size="sm" onClick={onOpenFinance}>
+          {onOpenFinance || sourceLinks.bankFeedback?.href || sourceLinks.offers?.href ? (
+            <Button type="button" size="sm" onClick={() => openSourceLink(sourceLinks.bankFeedback || sourceLinks.offers, onOpenFinance)}>
               Finance
               <ArrowRight size={14} />
             </Button>
@@ -450,7 +460,14 @@ function BondOriginatorAgentProgressView({
             <div className="overflow-hidden rounded-[10px] border border-borderDefault bg-white">
               <div className="flex items-center justify-between gap-3 border-b border-borderSoft px-4 py-3">
                 <h4 className="text-sm font-semibold text-textStrong">Bank applications</h4>
-                <span className="text-helper font-medium text-textMuted">{bankRows.length} tracked</span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-helper font-medium text-textMuted">{bankRows.length} tracked</span>
+                  {sourceLinks.bankFeedback?.href && onOpenDeepLink ? (
+                    <button type="button" className="inline-flex size-8 items-center justify-center rounded-full border border-borderSoft bg-white text-textMuted transition hover:border-primary/40 hover:text-primary" onClick={() => openSourceLink(sourceLinks.bankFeedback)} aria-label="Open originator bank workflow">
+                      <ExternalLink size={14} aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
               </div>
               {bankRows.length ? (
                 <div className="overflow-x-auto">
@@ -483,7 +500,14 @@ function BondOriginatorAgentProgressView({
             <div className="overflow-hidden rounded-[10px] border border-borderDefault bg-white">
               <div className="flex items-center justify-between gap-3 border-b border-borderSoft px-4 py-3">
                 <h4 className="text-sm font-semibold text-textStrong">Documents requested</h4>
-                <span className="text-helper font-medium text-textMuted">{documentRows.length || documentCount} open</span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-helper font-medium text-textMuted">{documentRows.length || documentCount} open</span>
+                  {sourceLinks.documents?.href && onOpenDeepLink ? (
+                    <button type="button" className="inline-flex size-8 items-center justify-center rounded-full border border-borderSoft bg-white text-textMuted transition hover:border-primary/40 hover:text-primary" onClick={() => openSourceLink(sourceLinks.documents)} aria-label="Open originator document requests">
+                      <ExternalLink size={14} aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
               </div>
               {documentRows.length ? (
                 <div className="divide-y divide-borderSoft">
@@ -511,6 +535,11 @@ function BondOriginatorAgentProgressView({
           <div className="flex items-center gap-2">
             <Clock3 size={16} className="text-primary" aria-hidden="true" />
             <h4 className="text-sm font-semibold text-textStrong">Recent Updates</h4>
+            {sourceLinks.activity?.href && onOpenDeepLink ? (
+              <button type="button" className="ml-auto inline-flex size-8 items-center justify-center rounded-full border border-borderSoft bg-white text-textMuted transition hover:border-primary/40 hover:text-primary" onClick={() => openSourceLink(sourceLinks.activity)} aria-label="Open originator activity">
+                <ExternalLink size={14} aria-hidden="true" />
+              </button>
+            ) : null}
           </div>
           <ol className="mt-3 space-y-3">
             {recentEvents.map((event) => (

@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, FileCheck2, Landmark, Scale, UserRound } from 'lucide-react'
+import { CheckCircle2, Download, ExternalLink, FileCheck2, Landmark, Scale, UserRound } from 'lucide-react'
 import { useMemo } from 'react'
 import { buildBondOriginatorAttorneyHandoffViewModel } from '../../modules/bond/integrations'
 import Button from '../ui/Button'
@@ -55,8 +55,10 @@ function BondOriginatorAttorneyHandoffView({
   transaction = null,
   documents = [],
   rolePlayers = [],
+  deepLinks = null,
   onOpenDocument = null,
   onOpenRoleplayers = null,
+  onOpenDeepLink = null,
 }) {
   const model = useMemo(
     () => buildBondOriginatorAttorneyHandoffViewModel({
@@ -77,6 +79,10 @@ function BondOriginatorAttorneyHandoffView({
     : model.available
       ? 'transaction-chip-watch'
       : 'transaction-chip-muted'
+  const sourceLinks = deepLinks?.links || deepLinks || {}
+  const openSourceLink = (link) => {
+    if (link?.href && typeof onOpenDeepLink === 'function') onOpenDeepLink(link)
+  }
 
   return (
     <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
@@ -97,12 +103,20 @@ function BondOriginatorAttorneyHandoffView({
           <p className="mt-2 max-w-3xl text-sm leading-6 text-textMuted">{model.summary}</p>
           <p className="mt-2 text-helper font-medium text-textMuted">Last update: {formatDateTime(model.lastUpdatedAt)}</p>
         </div>
-        {onOpenRoleplayers ? (
-          <Button type="button" variant="secondary" size="sm" onClick={onOpenRoleplayers}>
-            <UserRound size={14} />
-            Roleplayers
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {sourceLinks.instruction?.href && onOpenDeepLink ? (
+            <Button type="button" variant="secondary" size="sm" onClick={() => openSourceLink(sourceLinks.instruction)}>
+              <ExternalLink size={14} />
+              Instruction
+            </Button>
+          ) : null}
+          {onOpenRoleplayers ? (
+            <Button type="button" variant="secondary" size="sm" onClick={onOpenRoleplayers}>
+              <UserRound size={14} />
+              Roleplayers
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -140,6 +154,12 @@ function BondOriginatorAttorneyHandoffView({
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <GrantDocumentButton document={grant.grantDocument} label="Grant" onOpenDocument={onOpenDocument} />
                       <GrantDocumentButton document={grant.signedGrantDocument} label="Signed grant" onOpenDocument={onOpenDocument} />
+                      {sourceLinks.grant?.href && onOpenDeepLink ? (
+                        <Button type="button" variant="secondary" size="sm" onClick={() => openSourceLink(sourceLinks.signedGrant || sourceLinks.grant)}>
+                          <ExternalLink size={14} />
+                          Source
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 </article>
@@ -168,6 +188,12 @@ function BondOriginatorAttorneyHandoffView({
             <span className="mt-2 block">Bond attorney: {model.assignments.bondAttorney || 'Not assigned'}</span>
             <span className="mt-1 block">Cancellation attorney: {model.assignments.cancellationAttorney || 'Not assigned'}</span>
           </div>
+          {sourceLinks.activity?.href && onOpenDeepLink ? (
+            <Button type="button" variant="secondary" size="sm" className="mt-3 w-full justify-center" onClick={() => openSourceLink(sourceLinks.activity)}>
+              <ExternalLink size={14} />
+              Originator Activity
+            </Button>
+          ) : null}
         </aside>
       </div>
 

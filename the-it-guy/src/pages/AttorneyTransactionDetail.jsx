@@ -150,6 +150,7 @@ import {
   getBondConsultantActionDeepLinkState,
   resolveBondConsultantAction,
 } from '../services/bondConsultantActionService'
+import { buildBondOriginatorEvidenceDeepLinks } from '../services/attorneyWorkflow/bondOriginatorEvidenceLinks'
 import {
   markBondGrantMilestone,
   markBondInstructionSent,
@@ -15428,6 +15429,14 @@ function AttorneyTransactionDetail() {
   const transactionWorkspaceBasePath = location.pathname.startsWith('/bond/files/')
     ? `/bond/files/${transactionId}`
     : `/transactions/${transactionId}`
+  const bondOriginatorEvidenceLinks = useMemo(
+    () => buildBondOriginatorEvidenceDeepLinks(transaction || transactionId || {}),
+    [transaction, transactionId],
+  )
+  const openBondOriginatorEvidenceLink = useCallback((link = {}) => {
+    if (!link?.href) return
+    navigate(link.href)
+  }, [navigate])
   const transferStageKey = getAttorneyTransferStage({ transaction, stage: transaction?.stage, unit, development })
   const transferStageLabel = stageLabelFromAttorneyKey(transferStageKey)
   const lifecycleState = normalizeLifecycleState(
@@ -16269,8 +16278,10 @@ function AttorneyTransactionDetail() {
           transaction={transaction}
           documents={documents}
           rolePlayers={transactionRolePlayers}
+          deepLinks={bondOriginatorEvidenceLinks}
           onOpenDocument={handleOpenFinanceDocument}
           onOpenRoleplayers={() => openWorkspaceMenu('stakeholders')}
+          onOpenDeepLink={openBondOriginatorEvidenceLink}
         />
       ) : null}
       viewerRole={workspaceRole}
@@ -21752,8 +21763,10 @@ function AttorneyTransactionDetail() {
                 progressView={bondOriginatorAgentProgressView}
                 financeWorkflow={transactionFinanceWorkflow}
                 transaction={transaction}
+                deepLinks={bondOriginatorEvidenceLinks}
                 onOpenDocuments={() => openWorkspaceMenu('documents')}
                 onOpenActivity={() => openWorkspaceMenu('activity')}
+                onOpenDeepLink={openBondOriginatorEvidenceLink}
               />
             ) : financeCommandCenterPanel}
           </section>
