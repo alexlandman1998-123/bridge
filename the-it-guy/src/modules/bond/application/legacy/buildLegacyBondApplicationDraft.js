@@ -30,6 +30,9 @@ export function getBondApplicationApplicantDefault(roleKey, source = {}) {
   const [firstName = '', ...surnameParts] = buyerName.split(/\s+/)
   const surnameFromBuyer = surnameParts.join(' ')
   const formData = source?.onboardingFormData?.formData || {}
+  const spouseName = String(formData.spouse_full_name || '').trim()
+  const [spouseFirstName = '', ...spouseSurnameParts] = spouseName.split(/\s+/)
+  const spouseSurnameFromFullName = spouseSurnameParts.join(' ')
 
   if (roleKey === 'co_applicant') {
     return {
@@ -37,8 +40,8 @@ export function getBondApplicationApplicantDefault(roleKey, source = {}) {
       label: 'Co-applicant',
       title: '',
       gender: '',
-      first_name: formData.spouse_full_name || '',
-      last_name: '',
+      first_name: formData.spouse_first_name || spouseFirstName || formData.spouse_full_name || '',
+      last_name: formData.spouse_last_name || formData.spouse_surname || spouseSurnameFromFullName || '',
       date_of_birth: '',
       id_type: '',
       id_number: formData.spouse_identity_number || '',

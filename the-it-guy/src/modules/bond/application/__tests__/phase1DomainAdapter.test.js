@@ -320,7 +320,7 @@ function runViewModelAndRuntimeBoundaryCompatibility() {
   })
 
   const clientPortalSource = readFile('src/pages/ClientPortal.jsx')
-  assert.ok(clientPortalSource.includes('buildLegacyBondApplicationDraft(portal)'))
+  assert.ok(clientPortalSource.includes('buildBondApplicationPrefillDraft(portal).application'))
   assert.equal(clientPortalSource.includes('isGuidedBondApplicationV2Enabled'), false)
   assert.ok(clientPortalSource.includes("activeBondApplicationTab === 'offers'"))
   assert.ok(clientPortalSource.includes("activeBondApplicationTab === 'grant'"))

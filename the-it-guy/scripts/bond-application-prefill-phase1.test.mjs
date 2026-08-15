@@ -164,7 +164,8 @@ function runLegacyDraftPrefillChecks() {
   assert.equal(primary.last_name, 'Mokoena')
   assert.equal(primary.id_number, '9001015009087')
   assert.equal(primary.marital_status, 'single')
-  assert.equal(coApplicant.first_name, 'Co Applicant')
+  assert.equal(coApplicant.first_name, 'Co')
+  assert.equal(coApplicant.last_name, 'Applicant')
   assert.equal(coApplicant.id_number, '9101015009088')
   assert.equal(coApplicant.email, 'co@example.com')
 

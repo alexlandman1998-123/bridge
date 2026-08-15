@@ -53,6 +53,11 @@ export {
   getBondApplicationPrefillSourceForPath,
 } from './prefill/bondApplicationPrefillBuilder.js'
 export {
+  BOND_APPLICATION_PREFILL_COVERAGE_SCENARIOS,
+  BOND_APPLICATION_PREFILL_COVERAGE_VERSION,
+  buildBondApplicationPrefillCoverageAudit,
+} from './prefill/bondApplicationPrefillCoverageAudit.js'
+export {
   BOND_APPLICATION_PREFILL_CONFIRMATION_CARD_DEFINITIONS,
   BOND_APPLICATION_PREFILL_CONFIRMATION_VERSION,
   buildBondApplicationPrefillConfirmationCards,

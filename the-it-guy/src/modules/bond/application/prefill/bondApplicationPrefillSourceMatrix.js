@@ -322,12 +322,23 @@ export const BOND_APPLICATION_PREFILL_SOURCE_MATRIX = Object.freeze([
   field({
     path: 'applicants.co_applicant.first_name',
     legacyPath: 'applicants[co_applicant].first_name',
-    label: 'Co-applicant full name',
+    label: 'Co-applicant first name',
     section: 'personal_details',
-    originatorField: 'Co-applicant name',
+    originatorField: 'Co-applicant first name',
     sources: [
       source(savedBondApplication, 'formData.bond_application.applicants[co_applicant].first_name'),
-      source(buyerOnboarding, 'formData.spouse_full_name'),
+      source(buyerOnboarding, ['formData.spouse_first_name', 'formData.spouse_full_name.first', 'formData.spouse_full_name']),
+    ],
+  }),
+  field({
+    path: 'applicants.co_applicant.last_name',
+    legacyPath: 'applicants[co_applicant].last_name',
+    label: 'Co-applicant surname',
+    section: 'personal_details',
+    originatorField: 'Co-applicant surname',
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.applicants[co_applicant].last_name'),
+      source(buyerOnboarding, ['formData.spouse_last_name', 'formData.spouse_surname', 'formData.spouse_full_name.last']),
     ],
   }),
   field({
@@ -441,6 +452,48 @@ export const BOND_APPLICATION_PREFILL_SOURCE_MATRIX = Object.freeze([
     ],
   }),
   field({
+    path: 'employment.primary.occupation_status',
+    label: 'Occupation status',
+    section: 'employment',
+    originatorField: 'Occupation status',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.employment.primary.occupation_status'),
+      source(buyerOnboarding, ['formData.occupation_status', 'formData.employment_status']),
+    ],
+  }),
+  field({
+    path: 'employment.primary.nature_of_occupation',
+    label: 'Nature of occupation',
+    section: 'employment',
+    originatorField: 'Nature of occupation',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.employment.primary.nature_of_occupation'),
+      source(buyerOnboarding, ['formData.nature_of_occupation', 'formData.occupation', 'formData.job_title']),
+    ],
+  }),
+  field({
+    path: 'employment.primary.employment_years',
+    label: 'Employment years',
+    section: 'employment',
+    originatorField: 'Employment years',
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.employment.primary.employment_years'),
+      source(buyerOnboarding, ['formData.employment_years', 'formData.years_employed']),
+    ],
+  }),
+  field({
+    path: 'employment.primary.employment_months',
+    label: 'Employment months',
+    section: 'employment',
+    originatorField: 'Employment months',
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.employment.primary.employment_months'),
+      source(buyerOnboarding, ['formData.employment_months', 'formData.months_employed']),
+    ],
+  }),
+  field({
     path: 'income_deductions_expenses.primary.gross_salary',
     label: 'Gross monthly income',
     section: 'income_deductions_expenses',
@@ -451,6 +504,28 @@ export const BOND_APPLICATION_PREFILL_SOURCE_MATRIX = Object.freeze([
     ],
   }),
   field({
+    path: 'income_deductions_expenses.primary.rental_income',
+    label: 'Rental income',
+    section: 'income_deductions_expenses',
+    originatorField: 'Rental income',
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.income_deductions_expenses.primary.rental_income'),
+      source(savedBondApplication, 'formData.bond_application.income.rental_income'),
+      source(buyerOnboarding, ['formData.rental_income', 'formData.monthly_rental_income']),
+    ],
+  }),
+  field({
+    path: 'income_deductions_expenses.primary.other_income_value',
+    label: 'Other monthly income',
+    section: 'income_deductions_expenses',
+    originatorField: 'Other income',
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.income_deductions_expenses.primary.other_income_value'),
+      source(savedBondApplication, 'formData.bond_application.income.other_income'),
+      source(buyerOnboarding, ['formData.other_income', 'formData.other_monthly_income']),
+    ],
+  }),
+  field({
     path: 'income_deductions_expenses.primary.rental_expense',
     label: 'Rental or housing expense',
     section: 'income_deductions_expenses',
@@ -458,6 +533,7 @@ export const BOND_APPLICATION_PREFILL_SOURCE_MATRIX = Object.freeze([
     sources: [
       source(savedBondApplication, 'formData.bond_application.income_deductions_expenses.primary.rental_expense'),
       source(savedBondApplication, 'formData.bond_application.expenses.housing'),
+      source(buyerOnboarding, ['formData.rental_expense', 'formData.monthly_rent', 'formData.housing_expense']),
     ],
   }),
   field({
@@ -468,6 +544,40 @@ export const BOND_APPLICATION_PREFILL_SOURCE_MATRIX = Object.freeze([
     sources: [
       source(savedBondApplication, 'formData.bond_application.income_deductions_expenses.primary.water_electricity'),
       source(savedBondApplication, 'formData.bond_application.expenses.utilities'),
+      source(buyerOnboarding, ['formData.water_electricity', 'formData.utilities', 'formData.monthly_utilities']),
+    ],
+  }),
+  field({
+    path: 'income_deductions_expenses.primary.groceries',
+    label: 'Groceries',
+    section: 'income_deductions_expenses',
+    originatorField: 'Groceries expense',
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.income_deductions_expenses.primary.groceries'),
+      source(savedBondApplication, 'formData.bond_application.expenses.groceries'),
+      source(buyerOnboarding, ['formData.groceries', 'formData.monthly_groceries']),
+    ],
+  }),
+  field({
+    path: 'income_deductions_expenses.primary.transport',
+    label: 'Transport',
+    section: 'income_deductions_expenses',
+    originatorField: 'Transport expense',
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.income_deductions_expenses.primary.transport'),
+      source(savedBondApplication, 'formData.bond_application.expenses.transport'),
+      source(buyerOnboarding, ['formData.transport', 'formData.monthly_transport']),
+    ],
+  }),
+  field({
+    path: 'income_deductions_expenses.primary.other_expenses_value',
+    label: 'Other monthly expenses',
+    section: 'income_deductions_expenses',
+    originatorField: 'Other expenses',
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.income_deductions_expenses.primary.other_expenses_value'),
+      source(savedBondApplication, 'formData.bond_application.expenses.other_expenses'),
+      source(buyerOnboarding, ['formData.other_expenses', 'formData.other_monthly_expenses']),
     ],
   }),
   field({
@@ -518,6 +628,128 @@ export const BOND_APPLICATION_PREFILL_SOURCE_MATRIX = Object.freeze([
     ],
   }),
   field({
+    path: 'loan_details.debit_order_bank_name',
+    label: 'Debit order bank name',
+    section: 'loan_details',
+    originatorField: 'Debit order bank',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.loan_details.debit_order_bank_name'),
+      source(buyerOnboarding, ['formData.debit_order_bank_name', 'formData.bank_name', 'formData.primary_bank_name']),
+    ],
+  }),
+  field({
+    path: 'loan_details.debit_order_account_number',
+    label: 'Debit order account number',
+    section: 'loan_details',
+    originatorField: 'Debit order account number',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.loan_details.debit_order_account_number'),
+      source(buyerOnboarding, ['formData.debit_order_account_number', 'formData.bank_account_number', 'formData.primary_account_number']),
+    ],
+  }),
+  field({
+    path: 'loan_details.preferred_debit_order_date',
+    label: 'Preferred debit order date',
+    section: 'loan_details',
+    originatorField: 'Preferred debit order date',
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.loan_details.preferred_debit_order_date'),
+      source(buyerOnboarding, ['formData.preferred_debit_order_date', 'formData.debit_order_date']),
+    ],
+  }),
+  field({
+    path: 'banking_liabilities.primary_bank_name',
+    label: 'Primary bank name',
+    section: 'banking_liabilities',
+    originatorField: 'Primary bank',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.banking_liabilities.primary_bank_name'),
+      source(buyerOnboarding, ['formData.primary_bank_name', 'formData.bank_name']),
+    ],
+  }),
+  field({
+    path: 'banking_liabilities.primary_account_type',
+    label: 'Primary account type',
+    section: 'banking_liabilities',
+    originatorField: 'Primary account type',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.banking_liabilities.primary_account_type'),
+      source(buyerOnboarding, ['formData.primary_account_type', 'formData.bank_account_type']),
+    ],
+  }),
+  field({
+    path: 'banking_liabilities.primary_account_number',
+    label: 'Primary account number',
+    section: 'banking_liabilities',
+    originatorField: 'Primary account number',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.banking_liabilities.primary_account_number'),
+      source(buyerOnboarding, ['formData.primary_account_number', 'formData.bank_account_number']),
+    ],
+  }),
+  field({
+    path: 'credit_history.currently_under_administration',
+    label: 'Currently under administration',
+    section: 'credit_history',
+    originatorField: 'Currently under administration',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.credit_history.currently_under_administration'),
+      source(buyerOnboarding, 'formData.currently_under_administration'),
+    ],
+  }),
+  field({
+    path: 'credit_history.judgments_taken',
+    label: 'Judgments taken',
+    section: 'credit_history',
+    originatorField: 'Judgments taken',
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.credit_history.judgments_taken'),
+      source(savedBondApplication, 'formData.bond_application.credit_history.judgments'),
+      source(buyerOnboarding, ['formData.judgments_taken', 'formData.judgments']),
+    ],
+  }),
+  field({
+    path: 'credit_history.currently_under_debt_review',
+    label: 'Currently under debt review',
+    section: 'credit_history',
+    originatorField: 'Debt review status',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.credit_history.currently_under_debt_review'),
+      source(savedBondApplication, 'formData.bond_application.credit_history.under_debt_review'),
+      source(buyerOnboarding, ['formData.currently_under_debt_review', 'formData.under_debt_review']),
+    ],
+  }),
+  field({
+    path: 'credit_history.ever_declared_insolvent',
+    label: 'Ever declared insolvent',
+    section: 'credit_history',
+    originatorField: 'Insolvency status',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.credit_history.ever_declared_insolvent'),
+      source(savedBondApplication, 'formData.bond_application.credit_history.insolvent'),
+      source(buyerOnboarding, ['formData.ever_declared_insolvent', 'formData.insolvent']),
+    ],
+  }),
+  field({
+    path: 'credit_history.bound_by_surety_agreements',
+    label: 'Bound by surety agreements',
+    section: 'credit_history',
+    originatorField: 'Surety agreement status',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.credit_history.bound_by_surety_agreements'),
+      source(buyerOnboarding, 'formData.bound_by_surety_agreements'),
+    ],
+  }),
+  field({
     path: 'assets_liabilities.fixed_property',
     label: 'Fixed property owned',
     section: 'assets_liabilities',
@@ -525,6 +757,18 @@ export const BOND_APPLICATION_PREFILL_SOURCE_MATRIX = Object.freeze([
     sources: [
       source(savedBondApplication, 'formData.bond_application.assets_liabilities.fixed_property'),
       source(savedBondApplication, 'formData.bond_application.assets.property_owned'),
+      source(buyerOnboarding, ['formData.fixed_property', 'formData.property_owned']),
+    ],
+  }),
+  field({
+    path: 'assets_liabilities.vehicles',
+    label: 'Vehicles',
+    section: 'assets_liabilities',
+    originatorField: 'Vehicle assets',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.assets_liabilities.vehicles'),
+      source(buyerOnboarding, ['formData.vehicles', 'formData.vehicle_value']),
     ],
   }),
   field({
@@ -535,6 +779,30 @@ export const BOND_APPLICATION_PREFILL_SOURCE_MATRIX = Object.freeze([
     sources: [
       source(savedBondApplication, 'formData.bond_application.assets_liabilities.investments'),
       source(savedBondApplication, 'formData.bond_application.assets.investments'),
+      source(buyerOnboarding, 'formData.investments'),
+    ],
+  }),
+  field({
+    path: 'assets_liabilities.total_assets',
+    label: 'Total assets',
+    section: 'assets_liabilities',
+    originatorField: 'Total assets',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.assets_liabilities.total_assets'),
+      source(buyerOnboarding, 'formData.total_assets'),
+    ],
+  }),
+  field({
+    path: 'assets_liabilities.total_liabilities',
+    label: 'Total liabilities',
+    section: 'assets_liabilities',
+    originatorField: 'Total liabilities',
+    required: true,
+    sources: [
+      source(savedBondApplication, 'formData.bond_application.assets_liabilities.total_liabilities'),
+      source(savedBondApplication, 'formData.bond_application.assets_liabilities.liabilities_total'),
+      source(buyerOnboarding, ['formData.total_liabilities', 'formData.liabilities_total']),
     ],
   }),
   field({
@@ -545,6 +813,7 @@ export const BOND_APPLICATION_PREFILL_SOURCE_MATRIX = Object.freeze([
     sources: [
       source(savedBondApplication, 'formData.bond_application.assets_liabilities.net_asset_value'),
       source(savedBondApplication, 'formData.bond_application.assets.net_worth'),
+      source(buyerOnboarding, ['formData.net_asset_value', 'formData.net_worth']),
     ],
   }),
   field({
