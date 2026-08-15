@@ -33,6 +33,112 @@ const VISIBILITY_LABELS = {
   client_visible: 'Client Visible',
 }
 
+export const BOND_ATTORNEY_STAGE_COMMAND_PRESETS = Object.freeze({
+  bond_instruction_received: Object.freeze({
+    label: 'Confirm Instruction',
+    description: 'Confirm the bank or originator instruction has been logged on the bond matter.',
+    note: 'Bond instruction received and logged. Instruction source, date, and matter reference confirmed.',
+    checklist: ['Confirm instruction source and date.', 'Check bank reference or instruction number.', 'Save the instruction document on the matter.'],
+  }),
+  bank_reference_captured: Object.freeze({
+    label: 'Capture Bank Details',
+    description: 'Record the bank, branch, bond amount, and reference details needed for registration.',
+    note: 'Bank details captured. Bond bank, approval amount, and reference/account details checked against the instruction.',
+    checklist: ['Capture the registering bank.', 'Capture branch or reference/account number.', 'Check approved bond amount against the finance instruction.'],
+  }),
+  bond_approval_letter_received: Object.freeze({
+    label: 'Confirm Approval Letter',
+    description: 'Confirm the grant or approval letter is available and reviewed.',
+    note: 'Grant or approval letter received. Approval amount and conditions reviewed.',
+    checklist: ['Save the approval letter or grant.', 'Check approval amount and expiry.', 'Identify any bank conditions that affect signing or lodgement.'],
+  }),
+  bank_requirements_confirmed: Object.freeze({
+    label: 'Review Conditions',
+    description: 'Review bank requirements and identify outstanding condition owners.',
+    note: 'Bank conditions reviewed. Outstanding requirements, owners, and follow-up dates captured where applicable.',
+    checklist: ['Review bank conditions checklist.', 'Separate pre-signing and pre-lodgement conditions.', 'Assign every outstanding condition to an owner.'],
+  }),
+  bank_conditions_outstanding: Object.freeze({
+    commandType: 'add_note',
+    label: 'Capture Conditions',
+    description: 'Record outstanding bank conditions without forcing the stage to complete.',
+    note: 'Outstanding bank conditions captured. Owners, next follow-up, and required evidence recorded.',
+    checklist: ['List each outstanding condition.', 'Capture the responsible party for each condition.', 'Set the next follow-up or due date.'],
+  }),
+  bank_conditions_resolved: Object.freeze({
+    label: 'Resolve Conditions',
+    description: 'Confirm outstanding bank conditions are cleared.',
+    note: 'Bank conditions resolved. Clearance evidence and bank/internal confirmation saved.',
+    checklist: ['Confirm each outstanding condition is cleared.', 'Save bank or internal clearance confirmation.', 'Check no unresolved condition blocks lodgement.'],
+  }),
+  bond_documents_prepared: Object.freeze({
+    label: 'Confirm Document Pack',
+    description: 'Confirm the bond document pack is ready for buyer signature.',
+    note: 'Bond document pack prepared. Parties, property, bond amount, and bank requirements checked.',
+    checklist: ['Prepare bond document pack.', 'Check parties and property description.', 'Check bond amount and bank requirements.'],
+  }),
+  buyer_bond_signing_scheduled: Object.freeze({
+    label: 'Confirm Signing Scheduled',
+    description: 'Record the buyer bond signing appointment or remote signing instruction.',
+    note: 'Buyer bond signing scheduled. Date, channel, signer, and document pack confirmed.',
+    checklist: ['Confirm buyer availability.', 'Confirm signing method and location/channel.', 'Send signing requirements to the buyer.'],
+  }),
+  buyer_signed_bond_documents: Object.freeze({
+    label: 'Confirm Signed Docs',
+    description: 'Confirm buyer signatures and supporting checks are complete.',
+    note: 'Buyer signed bond documents received. Signing, witnessing, and FICA checks completed.',
+    checklist: ['Save signed bond documents.', 'Check signatures and witnessing.', 'Confirm FICA or bank signing requirements are satisfied.'],
+  }),
+  bond_documents_sent_to_bank: Object.freeze({
+    label: 'Confirm Bank Submission',
+    description: 'Confirm signed bond documents were sent to the bank or uploaded to the bank portal.',
+    note: 'Signed bond documents sent to bank. Submission date, channel, and reference captured.',
+    checklist: ['Submit signed documents to the bank or portal.', 'Capture submission date and reference.', 'Record any bank response SLA or next follow-up.'],
+  }),
+  bank_approval_to_lodge_received: Object.freeze({
+    label: 'Confirm Approval To Lodge',
+    description: 'Confirm bank approval to lodge and the reference required for simultaneous lodgement.',
+    note: 'Bank approval to lodge received. Approval date/reference captured and lodgement blockers checked.',
+    checklist: ['Save bank approval-to-lodge evidence.', 'Capture approval date/reference.', 'Confirm no bank conditions still block lodgement.'],
+  }),
+  guarantees_issued: Object.freeze({
+    label: 'Confirm Guarantees Issued',
+    description: 'Confirm guarantees were issued to the transfer attorney.',
+    note: 'Guarantees issued to transfer attorney. Values, wording, expiry, and delivery evidence checked.',
+    checklist: ['Check guarantee values against the bond approval.', 'Check wording and expiry.', 'Send guarantees to the transfer attorney and save delivery evidence.'],
+  }),
+  guarantee_wording_accepted: Object.freeze({
+    label: 'Confirm Wording Accepted',
+    description: 'Confirm transfer attorney acceptance of guarantee wording.',
+    note: 'Guarantee wording accepted by transfer attorney. Amendments resolved and acceptance evidence saved.',
+    checklist: ['Confirm transfer attorney acceptance.', 'Resolve wording amendments if any.', 'Save acceptance evidence on the matter.'],
+  }),
+  bond_lodgement_ready: Object.freeze({
+    label: 'Mark Bond Ready',
+    description: 'Confirm the bond pack is ready for simultaneous lodgement.',
+    note: 'Bond lodgement pack ready. Bank approval, signed docs, guarantees, and transfer coordination confirmed.',
+    checklist: ['Check bank approval to lodge.', 'Check signed bond pack is complete.', 'Confirm simultaneous lodgement readiness with transfer.'],
+  }),
+  bond_lodged: Object.freeze({
+    label: 'Mark Bond Lodged',
+    description: 'Confirm the bond was lodged with the transfer.',
+    note: 'Bond lodged simultaneously with transfer. Lodgement date and deeds reference captured.',
+    checklist: ['Capture lodgement date.', 'Capture deeds office or lodgement reference.', 'Confirm simultaneous lodgement with transfer.'],
+  }),
+  bond_registered: Object.freeze({
+    label: 'Confirm Registration',
+    description: 'Confirm bond registration and registration date.',
+    note: 'Bond registration confirmed. Registration date and bank notification status captured.',
+    checklist: ['Capture registration date.', 'Confirm deeds office registration.', 'Notify or queue final bank confirmation.'],
+  }),
+  bond_close_out_complete: Object.freeze({
+    label: 'Close Bond Matter',
+    description: 'Confirm final bank close-out and archive readiness.',
+    note: 'Bond matter close-out complete. Final bank confirmation and close-out checklist completed.',
+    checklist: ['Complete final bank confirmation.', 'Check all bond documents are filed.', 'Complete close-out checklist and archive readiness.'],
+  }),
+})
+
 function normalizeLaneKey(value = '') {
   const normalized = String(value || '').trim().toLowerCase().replace(/_attorney$/, '')
   if (normalized === 'bond') return 'bond'
@@ -342,6 +448,97 @@ function buildCommand({
   }
 }
 
+function getBondAttorneyStageCommandPreset(stageKey = '') {
+  return BOND_ATTORNEY_STAGE_COMMAND_PRESETS[stageKey] || null
+}
+
+function buildBondAttorneyStageSpecificCommand({
+  action = {},
+  laneKey = 'transfer',
+  stageKey = '',
+  actionType = '',
+  actionLabel = '',
+  actionDescription = '',
+  now = null,
+} = {}) {
+  if (laneKey !== 'bond') return null
+  const preset = getBondAttorneyStageCommandPreset(stageKey)
+  if (!preset) return null
+  if (!['complete_stage_evidence', 'resolve_blocker', 'update_matter_data', 'manage_signing', 'review_workflow'].includes(actionType)) return null
+
+  const blocked = actionType === 'resolve_blocker'
+  const commandType = blocked ? 'add_note' : preset.commandType || 'complete_step'
+  const priority = blocked ? 'urgent' : commandPriorityForAction(action)
+  const label = blocked ? 'Add Bond Blocker Note' : preset.label || 'Update Bond Stage'
+  const visibility = preset.visibility || 'internal'
+  const requestedFrom = preset.requestedFrom || action.target || 'bond_attorney'
+  const description = preset.description || actionDescription || 'Capture the bond attorney workflow update.'
+  const workPacket = buildWorkPacket({
+    action,
+    laneKey,
+    stageKey,
+    subject: preset.label || actionLabel,
+    commandType,
+    requestedFrom,
+    priority,
+    visibility,
+    checklist: preset.checklist || [],
+    now,
+  })
+
+  if (commandType === 'add_note') {
+    return buildCommand({
+      action,
+      laneKey,
+      stageKey,
+      commandType,
+      label,
+      description,
+      workPacket,
+      draft: buildNoteDraft({
+        laneKey,
+        visibility,
+        message: sentence(blocked ? `Blocker update for ${preset.label}.` : preset.note, blocked ? actionDescription : ''),
+        workPacket,
+      }),
+    })
+  }
+
+  if (commandType === 'schedule_signing') {
+    return buildCommand({
+      action,
+      laneKey,
+      stageKey,
+      commandType,
+      label,
+      description,
+      workPacket,
+      draft: buildNoteDraft({
+        laneKey,
+        visibility,
+        message: sentence(preset.note, actionDescription),
+        workPacket,
+      }),
+    })
+  }
+
+  return buildCommand({
+    action,
+    laneKey,
+    stageKey,
+    commandType: 'complete_step',
+    label,
+    description,
+    workPacket,
+    draft: {
+      laneKey,
+      status: 'completed',
+      note: sentence(preset.note, actionDescription),
+      workPacket,
+    },
+  })
+}
+
 export function buildAttorneyWorkflowActionCommand(action = {}, context = {}) {
   const laneKey = normalizeLaneKey(action.laneKey || context.laneKey)
   const stageKey = normalizeAttorneyStageKey(action.stageKey || context.stageKey || '', laneKey)
@@ -350,6 +547,16 @@ export function buildAttorneyWorkflowActionCommand(action = {}, context = {}) {
   const actionDescription = compactText(action.description || '')
   const subject = stripActionPrefix(actionLabel) || actionLabel
   const now = context.now || null
+  const bondStageCommand = buildBondAttorneyStageSpecificCommand({
+    action,
+    laneKey,
+    stageKey,
+    actionType,
+    actionLabel,
+    actionDescription,
+    now,
+  })
+  if (bondStageCommand) return bondStageCommand
 
   if (actionType === 'assign_attorney') {
     const workPacket = buildWorkPacket({

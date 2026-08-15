@@ -9,10 +9,12 @@ import {
   BOND_HYBRID_FINANCE_STAGES,
   BOND_HYBRID_FINANCE_WORKFLOW_TYPE,
 } from '../../core/transactions/bondHybridFinanceWorkflow.js'
+import { BOND_ATTORNEY_STAGE_COMMAND_PRESETS } from '../../constants/attorneyWorkflowUsability.js'
 import { BOND_CONSULTANT_ACTIONS } from '../bondConsultantActionService.js'
 
 export const BOND_LANE_PHASE1_JOURNEY_VERSION = 'bond-lane-phase1-originator-attorney-map-v1'
 export const BOND_LANE_PHASE2_ACTION_AUDIT_VERSION = 'bond-lane-phase2-action-audit-v1'
+export const BOND_LANE_PHASE3_COMMAND_PLAN_VERSION = 'bond-lane-phase3-stage-command-plan-v1'
 
 export const BOND_ORIGINATOR_JOURNEY_LANES = Object.freeze([
   Object.freeze({
@@ -472,6 +474,48 @@ export function buildBondLanePhase2ActionAudit() {
       'Originator progress and handoff panels inside the attorney workspace are intentionally read-only; mutation remains in the bond file deep-link surfaces.',
       'Bond attorney actions currently use generic workflow commands; stage-specific forms for bank conditions, guarantees, and lodgement references are Phase 3 candidates.',
       'Guarantee wording acceptance is represented in the bond attorney lane and transfer lane, but the cross-lane command should be tested as a coordinated two-party workflow in Phase 3.',
+    ],
+    structuralBlockers,
+  }
+}
+
+export function buildBondLanePhase3CommandPlan() {
+  const phase2 = buildBondLanePhase2ActionAudit()
+  const presetStageKeys = Object.keys(BOND_ATTORNEY_STAGE_COMMAND_PRESETS)
+  const attorneyStageKeys = phase2.attorney.requiredActions.map((action) => action.stageKey)
+  const missingPresetStageKeys = attorneyStageKeys.filter((stageKey) => !presetStageKeys.includes(stageKey))
+  const unusedPresetStageKeys = presetStageKeys.filter((stageKey) => !attorneyStageKeys.includes(stageKey))
+  const noteOnlyStageKeys = presetStageKeys.filter((stageKey) => BOND_ATTORNEY_STAGE_COMMAND_PRESETS[stageKey]?.commandType === 'add_note')
+  const stageSpecificCommands = phase2.attorney.requiredActions.map((action) => {
+    const preset = BOND_ATTORNEY_STAGE_COMMAND_PRESETS[action.stageKey] || null
+    return {
+      actionId: action.id,
+      stageKey: action.stageKey,
+      stageLabel: action.label,
+      commandLabel: preset?.label || action.label,
+      commandType: preset?.commandType || 'complete_step',
+      checklist: preset?.checklist || [],
+      hasPreset: Boolean(preset),
+      noteOnly: preset?.commandType === 'add_note',
+    }
+  })
+
+  const structuralBlockers = [
+    ...phase2.structuralBlockers,
+    ...missingPresetStageKeys.map((stageKey) => `Missing bond stage command preset: ${stageKey}`),
+    ...unusedPresetStageKeys.map((stageKey) => `Unused bond stage command preset: ${stageKey}`),
+  ]
+
+  return {
+    version: BOND_LANE_PHASE3_COMMAND_PLAN_VERSION,
+    phase2Version: phase2.version,
+    status: structuralBlockers.length ? 'blocked' : 'ready_for_phase4',
+    stageSpecificCommands,
+    noteOnlyStageKeys,
+    rolloutRules: [
+      'Use existing workflow mutation endpoints for step, note, document, and signing updates.',
+      'Keep originator mutation in the bond file workspace; attorney-side originator panels remain read-only.',
+      'Allow bond attorney stages to be opened and updated independently so concurrent work is not blocked by previous incomplete stages.',
     ],
     structuralBlockers,
   }
